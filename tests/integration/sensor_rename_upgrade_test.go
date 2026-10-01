@@ -21,7 +21,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -175,17 +174,18 @@ func TestSensorRenameUpgrade(t *testing.T) {
 	}
 	execFile(t, db, filepath.Join("testdata", "sensor_rename_seed.sql"))
 	before := effectiveAccess(t, db)
+	known := permissionCatalog(t, db)
 	assetsUpdatedAt := queryString(t, db, `SELECT updated_at::text FROM assets WHERE id = '11111111-0000-0000-0000-00000000000f'`)
 
 	// 2. Upgrade: everything from 000230 on, in one go.
 	for _, m := range pending {
 		execFile(t, db, m.up)
 	}
-	assertUpgraded(t, db, before, assetsUpdatedAt)
+	assertUpgraded(t, db, before, known, assetsUpdatedAt)
 
 	// 3. Re-running the rename on an upgraded database changes nothing.
 	execFile(t, db, pending[0].up)
-	assertUpgraded(t, db, before, assetsUpdatedAt)
+	assertUpgraded(t, db, before, known, assetsUpdatedAt)
 
 	items, err := postgres.CheckSensorRename(ctx, db, true)
 	if err != nil {
@@ -234,45 +234,50 @@ func TestSensorRenameUpgrade(t *testing.T) {
 	for _, m := range pending {
 		execFile(t, db, m.up)
 	}
-	assertUpgraded(t, db, before, assetsUpdatedAt)
+	assertUpgraded(t, db, before, known, assetsUpdatedAt)
 }
 
 // renamedCatalog is the sensor permission catalog the rename produces.
-// Migrations after 000230 may add permissions (000231 adds sensors:zones:*
-// and grants them to the system roles); those are not part of the rename and
-// are left out of the comparison.
 var renamedCatalog = []string{
 	"sensors:read", "sensors:write", "sensors:delete",
 	"sensors:commands:read", "sensors:commands:write", "sensors:commands:delete",
 }
 
-// withoutLaterPermissions drops, from an access map taken after the upgrade,
-// every permission that a migration after the rename introduced.
-func withoutLaterPermissions(t *testing.T, db *sql.DB, access map[string]string) map[string]string {
+// permissionCatalog returns the permission ids that exist before the upgrade,
+// spelled as the rename spells them (agents:* -> sensors:*).
+func permissionCatalog(t *testing.T, db *sql.DB) map[string]bool {
 	t.Helper()
-	rows, err := db.Query(`SELECT id FROM permissions WHERE id LIKE 'sensors:%'`)
+	rows, err := db.Query(`SELECT replace(id, 'agents:', 'sensors:') FROM permissions`)
 	if err != nil {
 		t.Fatalf("permission catalog: %v", err)
 	}
 	defer rows.Close()
-	later := map[string]bool{}
+	known := map[string]bool{}
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Contains(renamedCatalog, id) {
-			later[id] = true
-		}
+		known[id] = true
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("permission catalog: %v", err)
 	}
+	return known
+}
+
+// withoutLaterPermissions drops, from an access map taken after the upgrade,
+// every permission that did not exist before it: migrations after 000230 add
+// permissions and grant them to the system roles (000231 sensors:zones:*,
+// 000232 findings:credentials:reveal), and those grants are not part of the
+// rename. Every permission that existed at 000230 is still compared, so a
+// grant the rename gained or lost is caught.
+func withoutLaterPermissions(access map[string]string, known map[string]bool) map[string]string {
 	out := make(map[string]string, len(access))
 	for who, perms := range access {
 		kept := []string{}
 		for _, p := range strings.Split(perms, ",") {
-			if !later[p] {
+			if known[p] {
 				kept = append(kept, p)
 			}
 		}
@@ -281,9 +286,9 @@ func withoutLaterPermissions(t *testing.T, db *sql.DB, access map[string]string)
 	return out
 }
 
-func assertUpgraded(t *testing.T, db *sql.DB, before map[string]string, assetsUpdatedAt string) {
+func assertUpgraded(t *testing.T, db *sql.DB, before map[string]string, known map[string]bool, assetsUpdatedAt string) {
 	t.Helper()
-	if got := withoutLaterPermissions(t, db, effectiveAccess(t, db)); fmt.Sprint(got) != fmt.Sprint(before) {
+	if got := withoutLaterPermissions(effectiveAccess(t, db), known); fmt.Sprint(got) != fmt.Sprint(before) {
 		t.Errorf("effective access changed by the upgrade:\nbefore %v\nafter  %v", before, got)
 	}
 	for _, c := range []struct{ name, q, want string }{

@@ -54,6 +54,7 @@ import (
 	"github.com/openctemio/api/pkg/crypto"
 	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/attachment"
+	"github.com/openctemio/api/pkg/domain/credential"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/domain/tenant"
@@ -654,6 +655,8 @@ type Services struct {
 
 	// Encryption
 	Encryptor crypto.Encryptor
+	// CredentialSecrets seals leaked-credential secrets (built on Encryptor).
+	CredentialSecrets *credential.SecretProtector
 
 	// JWT
 	JWTGenerator *jwt.Generator
@@ -831,6 +834,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
+	// Leaked-credential secrets are sealed with the platform credential key
+	// on every write path, and the fingerprint HMAC is keyed from it.
+	s.CredentialSecrets = credential.NewSecretProtector(s.Encryptor, []byte(cfg.Encryption.Key))
+	s.CredentialImport.SetSecretProtector(s.CredentialSecrets)
+	s.Exposure.SetSecretProtector(s.CredentialSecrets)
 
 	// Initialize dashboard service
 	s.Dashboard = app.NewDashboardService(repos.Dashboard, log)

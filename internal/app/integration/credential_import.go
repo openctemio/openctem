@@ -18,7 +18,11 @@ const csvBoolTrue = "true"
 type CredentialImportService struct {
 	exposureRepo exposure.Repository
 	historyRepo  exposure.StateHistoryRepository
-	logger       *logger.Logger
+	// secrets seals the leaked secret before it is stored and opens it for the
+	// audited reveal. Never nil: the constructor installs a development
+	// (no-key) protector that SetSecretProtector replaces.
+	secrets *credential.SecretProtector
+	logger  *logger.Logger
 }
 
 // NewCredentialImportService creates a new CredentialImportService.
@@ -30,7 +34,16 @@ func NewCredentialImportService(
 	return &CredentialImportService{
 		exposureRepo: exposureRepo,
 		historyRepo:  historyRepo,
+		secrets:      credential.NewSecretProtector(nil, nil),
 		logger:       log.With("service", "credential_import"),
+	}
+}
+
+// SetSecretProtector installs the protector built from the platform
+// encryption key. nil is ignored.
+func (s *CredentialImportService) SetSecretProtector(p *credential.SecretProtector) {
+	if p != nil {
+		s.secrets = p
 	}
 }
 
@@ -175,6 +188,11 @@ func (s *CredentialImportService) createCredentialExposure(
 		sev = exposure.SeverityMedium
 	}
 
+	details := cred.ToDetails()
+	if err := s.secrets.Seal(details); err != nil {
+		return credential.ImportItemResult{}, false, err
+	}
+
 	// Create exposure event
 	event, err := exposure.NewExposureEvent(
 		tenantID,
@@ -182,7 +200,7 @@ func (s *CredentialImportService) createCredentialExposure(
 		sev,
 		cred.Identifier,
 		cred.GetSourceString(),
-		cred.ToDetails(),
+		details,
 	)
 	if err != nil {
 		return credential.ImportItemResult{}, false, fmt.Errorf("failed to create exposure event: %w", err)
@@ -347,8 +365,15 @@ func (s *CredentialImportService) updateExistingCredential(
 		}
 		// Update details
 		newDetails := cred.ToDetails()
+		if err := s.secrets.Seal(newDetails); err != nil {
+			return credential.ImportItemResult{}, false, err
+		}
 		for k, v := range newDetails {
 			existing.SetDetail(k, v)
+		}
+		if _, sealed := newDetails[credential.DetailSecretCiphertext]; sealed {
+			// A legacy row's plaintext must not survive next to the new ciphertext.
+			existing.RemoveDetail(credential.DetailSecretValue)
 		}
 		if err := s.exposureRepo.Update(ctx, existing); err != nil {
 			return credential.ImportItemResult{}, false, fmt.Errorf("failed to update: %w", err)
@@ -589,20 +614,24 @@ type CredentialListResult struct {
 	TotalPages int              `json:"total_pages"`
 }
 
-// CredentialItem represents a credential leak item.
+// CredentialItem represents a credential leak item. It never carries the
+// plaintext secret: only a mask and a keyed fingerprint. The plaintext is
+// returned by RevealSecret alone.
 type CredentialItem struct {
-	ID             string         `json:"id"`
-	Identifier     string         `json:"identifier"`
-	CredentialType string         `json:"credential_type"`
-	SecretValue    string         `json:"secret_value,omitempty"`
-	Source         string         `json:"source"`
-	Severity       string         `json:"severity"`
-	State          string         `json:"state"`
-	FirstSeenAt    time.Time      `json:"first_seen_at"`
-	LastSeenAt     time.Time      `json:"last_seen_at"`
-	IsVerified     bool           `json:"is_verified"`
-	IsRevoked      bool           `json:"is_revoked"`
-	Details        map[string]any `json:"details,omitempty"`
+	ID                string         `json:"id"`
+	Identifier        string         `json:"identifier"`
+	CredentialType    string         `json:"credential_type"`
+	HasSecret         bool           `json:"has_secret"`
+	SecretMasked      string         `json:"secret_masked,omitempty"`
+	SecretFingerprint string         `json:"secret_fingerprint,omitempty"`
+	Source            string         `json:"source"`
+	Severity          string         `json:"severity"`
+	State             string         `json:"state"`
+	FirstSeenAt       time.Time      `json:"first_seen_at"`
+	LastSeenAt        time.Time      `json:"last_seen_at"`
+	IsVerified        bool           `json:"is_verified"`
+	IsRevoked         bool           `json:"is_revoked"`
+	Details           map[string]any `json:"details,omitempty"`
 }
 
 // List retrieves credential leaks with filtering and pagination.
@@ -721,24 +750,62 @@ func (s *CredentialImportService) toCredentialItem(event *exposure.ExposureEvent
 
 	// Extract credential-specific fields from details
 	credType, _ := details["credential_type"].(string)
-	secretValue, _ := details["secret_value"].(string)
 	isVerified, _ := details["is_verified"].(bool)
 	isRevoked, _ := details["is_revoked"].(bool)
 
+	hasSecret := credential.HasSecret(details)
+	safe := credential.RedactDetails(details)
+	masked, _ := safe[credential.DetailSecretMasked].(string)
+	fingerprint, _ := safe[credential.DetailSecretFingerprint].(string)
+
 	return CredentialItem{
-		ID:             event.ID().String(),
-		Identifier:     event.Title(),
-		CredentialType: credType,
-		SecretValue:    secretValue,
-		Source:         event.Source(),
-		Severity:       event.Severity().String(),
-		State:          event.State().String(),
-		FirstSeenAt:    event.FirstSeenAt(),
-		LastSeenAt:     event.LastSeenAt(),
-		IsVerified:     isVerified,
-		IsRevoked:      isRevoked,
-		Details:        details,
+		ID:                event.ID().String(),
+		Identifier:        event.Title(),
+		CredentialType:    credType,
+		HasSecret:         hasSecret,
+		SecretMasked:      masked,
+		SecretFingerprint: fingerprint,
+		Source:            event.Source(),
+		Severity:          event.Severity().String(),
+		State:             event.State().String(),
+		FirstSeenAt:       event.FirstSeenAt(),
+		LastSeenAt:        event.LastSeenAt(),
+		IsVerified:        isVerified,
+		IsRevoked:         isRevoked,
+		Details:           safe,
 	}
+}
+
+// ErrNoSecret is returned by RevealSecret when the credential has no stored
+// secret value.
+var ErrNoSecret = fmt.Errorf("%w: credential has no stored secret", shared.ErrNotFound)
+
+// RevealSecret returns the plaintext secret of one leaked credential in the
+// tenant. Callers must gate it on findings:credentials:reveal and audit it.
+func (s *CredentialImportService) RevealSecret(ctx context.Context, tenantID, id string) (string, error) {
+	parsedID, err := shared.IDFromString(id)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid credential ID", shared.ErrValidation)
+	}
+	parsedTenant, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenant, parsedID)
+	if err != nil {
+		return "", err
+	}
+	if event == nil || event.TenantID() != parsedTenant || event.EventType() != exposure.EventTypeCredentialLeaked {
+		return "", exposure.NewExposureEventNotFoundError(id)
+	}
+	secret, ok, err := s.secrets.Open(event.Details())
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", ErrNoSecret
+	}
+	return secret, nil
 }
 
 // IdentityExposure represents aggregated exposures for a single identity.

@@ -32,6 +32,7 @@ var permSeedMigrations = []string{
 	"000096_fix_applied_status.up.sql",
 	"000153_ctem_permissions.up.sql",
 	"000231_scan_zones.up.sql", // sensors:zones:* (RFC-023 D16)
+	"000232_credentials_reveal_permission.up.sql", // findings:credentials:reveal
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with

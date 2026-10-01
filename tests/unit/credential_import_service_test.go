@@ -87,8 +87,12 @@ func (m *credImportMockExposureRepo) GetByID(_ context.Context, id shared.ID) (*
 	}
 	return e, nil
 }
-func (m *credImportMockExposureRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*exposure.ExposureEvent, error) {
-	return nil, nil
+func (m *credImportMockExposureRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*exposure.ExposureEvent, error) {
+	e, ok := m.events[id.String()]
+	if !ok || e.TenantID() != tenantID {
+		return nil, exposure.NewExposureEventNotFoundError(id.String())
+	}
+	return e, nil
 }
 
 func (m *credImportMockExposureRepo) GetByFingerprint(_ context.Context, _ shared.ID, fingerprint string) (*exposure.ExposureEvent, error) {
@@ -2131,8 +2135,12 @@ func TestCredentialImportService_ToCredentialItem_Fields(t *testing.T) {
 	if item.CredentialType != "aws_key" {
 		t.Errorf("expected credential_type aws_key, got %s", item.CredentialType)
 	}
-	if item.SecretValue != "AKIAIOSFODNN7EXAMPLE" {
-		t.Errorf("expected secret_value, got %s", item.SecretValue)
+	// A legacy row stores the secret in plaintext; reads return only a mask.
+	if !item.HasSecret || item.SecretMasked != "AKIA********" {
+		t.Errorf("expected has_secret and mask AKIA********, got %v %q", item.HasSecret, item.SecretMasked)
+	}
+	if _, leaked := item.Details["secret_value"]; leaked {
+		t.Error("details must not carry the plaintext secret")
 	}
 	if !item.IsVerified {
 		t.Error("expected is_verified=true")

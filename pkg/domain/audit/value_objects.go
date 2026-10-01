@@ -159,6 +159,9 @@ const (
 	ActionCredentialUpdated  Action = "credential.updated"
 	ActionCredentialDeleted  Action = "credential.deleted"
 	ActionCredentialAccessed Action = "credential.accessed"
+	// ActionCredentialRevealed records that a user was shown a leaked
+	// credential's plaintext secret (POST /credentials/{id}/reveal).
+	ActionCredentialRevealed Action = "credential.revealed"
 
 	// Group actions
 	ActionGroupCreated Action = "group.created"
@@ -322,6 +325,7 @@ func (a Action) IsValid() bool {
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
+		ActionCredentialRevealed,
 		ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
@@ -558,7 +562,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSensorDeactivated, ActionSensorKeyRegenerated,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
-		ActionCredentialDeleted,
+		ActionCredentialDeleted, ActionCredentialRevealed,
 		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled:
 		return SeverityHigh
 

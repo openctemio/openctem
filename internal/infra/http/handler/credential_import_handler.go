@@ -26,14 +26,14 @@ type CredentialImportHandler struct {
 	service   *app.CredentialImportService
 	validator *validator.Validator
 	logger    *logger.Logger
-	// audit, when set, records a non-repudiable event each time plaintext
-	// leaked-secret values are returned to a caller. Nil-safe: the handler
-	// behaves identically minus the audit when unset (tests/stub builds).
+	// audit records every reveal of a plaintext leaked secret. The read
+	// endpoints return only a mask and a fingerprint, so the reveal endpoint
+	// is the one place plaintext leaves, and it refuses to run without audit.
 	audit *auditapp.AuditService
 }
 
-// SetAuditService wires the audit logger so plaintext credential reads leave
-// an access trail (AUTHZ-07). Optional; nil disables the audit only.
+// SetAuditService wires the audit logger. Without it the reveal endpoint
+// answers 503: a plaintext secret is never returned unaudited.
 func (h *CredentialImportHandler) SetAuditService(svc *auditapp.AuditService) {
 	h.audit = svc
 }
@@ -53,19 +53,18 @@ func (h *CredentialImportHandler) buildAuditContext(r *http.Request) auditapp.Au
 	}
 }
 
-// auditPlaintextAccess records that an endpoint which returns plaintext
-// leaked-secret values was read. scope describes the read (e.g. "list", a
-// credential id, or an identity). Nil-safe: no-op when the audit service is
-// not wired.
-func (h *CredentialImportHandler) auditPlaintextAccess(r *http.Request, scope string) {
+// auditReveal records that the caller was shown the plaintext secret of one
+// leaked credential. The event is written before the secret is sent; an error
+// means the secret must not be sent.
+func (h *CredentialImportHandler) auditReveal(r *http.Request, id, identifier string) error {
 	if h.audit == nil {
-		return
+		return errors.New("audit service not configured")
 	}
-	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialAccessed, auditdom.ResourceTypeCredential, scope).
-		WithMessage(fmt.Sprintf("Leaked-credential plaintext endpoint accessed: %s", scope)).
-		WithMetadata("scope", scope).
-		WithSeverity(auditdom.SeverityMedium)
-	_ = h.audit.LogEvent(r.Context(), h.buildAuditContext(r), event)
+	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialRevealed, auditdom.ResourceTypeCredential, id).
+		WithResourceName(identifier).
+		WithMessage(fmt.Sprintf("Leaked credential secret revealed: %s", identifier)).
+		WithSeverity(auditdom.SeverityHigh)
+	return h.audit.LogEvent(r.Context(), h.buildAuditContext(r), event)
 }
 
 // NewCredentialImportHandler creates a new credential import handler.
@@ -317,7 +316,6 @@ func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.auditPlaintextAccess(r, "list")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
@@ -348,10 +346,74 @@ func (h *CredentialImportHandler) GetByID(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	h.auditPlaintextAccess(r, "credential:"+id)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(item)
+}
+
+// RevealCredentialResponse carries one leaked credential's plaintext secret.
+type RevealCredentialResponse struct {
+	ID          string `json:"id"`
+	SecretValue string `json:"secret_value"`
+}
+
+// RevealSecret handles POST /api/v1/credentials/{id}/reveal
+// @Summary Reveal a leaked credential's secret
+// @Description Returns the plaintext secret of one leaked credential. Requires findings:credentials:reveal; every call is written to the audit log before the secret is returned, and the call fails if it cannot be audited.
+// @Tags Credentials
+// @Produce json
+// @Param id path string true "Credential ID"
+// @Success 200 {object} RevealCredentialResponse
+// @Failure 400 {object} apierror.Error
+// @Failure 401 {object} apierror.Error
+// @Failure 403 {object} apierror.Error
+// @Failure 404 {object} apierror.Error
+// @Failure 503 {object} apierror.Error
+// @Router /credentials/{id}/reveal [post]
+func (h *CredentialImportHandler) RevealSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := r.PathValue("id")
+	if id == "" {
+		apierror.BadRequest("missing credential id").WriteJSON(w)
+		return
+	}
+	if h.audit == nil {
+		apierror.ServiceUnavailable("Credential reveal is unavailable").WriteJSON(w)
+		return
+	}
+
+	item, err := h.service.GetByID(r.Context(), tenantID, id)
+	if err != nil {
+		apierror.NotFound("credential not found").WriteJSON(w)
+		return
+	}
+	secret, err := h.service.RevealSecret(r.Context(), tenantID, id)
+	switch {
+	case err == nil:
+	case errors.Is(err, app.ErrCredentialNoSecret):
+		apierror.NotFound("credential has no stored secret").WriteJSON(w)
+		return
+	case errors.Is(err, credential.ErrSecretUnreadable):
+		h.logger.Error("leaked credential secret cannot be decrypted", "id", id, "tenant_id", tenantID)
+		apierror.InternalServerError("secret cannot be decrypted").WriteJSON(w)
+		return
+	default:
+		h.logger.Error("failed to reveal credential", "error", err, "id", id)
+		apierror.NotFound("credential not found").WriteJSON(w)
+		return
+	}
+
+	if err := h.auditReveal(r, id, item.Identifier); err != nil {
+		h.logger.Error("credential reveal refused: audit not recorded", "error", err, "id", id)
+		apierror.ServiceUnavailable("Credential reveal is unavailable").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(RevealCredentialResponse{ID: id, SecretValue: secret})
 }
 
 // GetStats handles GET /api/v1/credentials/stats
@@ -452,7 +514,6 @@ func (h *CredentialImportHandler) GetRelatedCredentials(w http.ResponseWriter, r
 		return
 	}
 
-	h.auditPlaintextAccess(r, "related:"+id)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(items)
@@ -498,7 +559,6 @@ func (h *CredentialImportHandler) GetExposuresForIdentity(w http.ResponseWriter,
 		return
 	}
 
-	h.auditPlaintextAccess(r, "identity:"+identity)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)

@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/credential"
 	"github.com/openctemio/api/pkg/domain/exposure"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -145,6 +146,8 @@ func toExposureResponse(e *exposure.ExposureEvent) ExposureResponse {
 	if e.ResolvedBy() != nil {
 		resolvedBy = e.ResolvedBy().String()
 	}
+	// A leaked credential's secret (sealed or legacy plaintext) never leaves
+	// through the exposure endpoints; see credential.RedactDetails.
 	return ExposureResponse{
 		ID: e.ID().String(),
 
@@ -154,7 +157,7 @@ func toExposureResponse(e *exposure.ExposureEvent) ExposureResponse {
 		State:           e.State().String(),
 		Title:           e.Title(),
 		Description:     e.Description(),
-		Details:         e.Details(),
+		Details:         credential.RedactDetails(e.Details()),
 		CTEMID:          e.CTEMID(),
 		Fingerprint:     e.Fingerprint(),
 		Source:          e.Source(),

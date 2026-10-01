@@ -111,6 +111,9 @@ const (
 	// Credential leak permissions (findings:credentials:*)
 	CredentialsRead  Permission = "findings:credentials:read"
 	CredentialsWrite Permission = "findings:credentials:write"
+	// CredentialsReveal returns a leaked credential's plaintext secret. Read
+	// returns only a mask and a fingerprint; every reveal is audited.
+	CredentialsReveal Permission = "findings:credentials:reveal"
 
 	// Remediation permissions (findings:remediation:*)
 	RemediationRead  Permission = "findings:remediation:read"
@@ -435,7 +438,7 @@ func AllPermissions() []Permission {
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
-		CredentialsRead, CredentialsWrite,
+		CredentialsRead, CredentialsWrite, CredentialsReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
 		PoliciesRead, PoliciesWrite, PoliciesDelete,

@@ -19,7 +19,7 @@ Permissions are included in the access token and checked using `middleware.Requi
 of truth is `permission.AllPermissions()` in
 `pkg/domain/permission/permission.go`; `permission.IsValid()` /
 `ParsePermission()` validate against it. As of this writing it defines
-**164 permissions**, grouped by module. Rather than hand-mirror all 164 (which
+**168 permissions**, grouped by module. Rather than hand-mirror all 168 (which
 would drift), the table below lists the module groups and the count each
 contributes — derive the exact strings from `AllPermissions()`.
 
@@ -27,9 +27,9 @@ contributes — derive the exact strings from `AllPermissions()`.
 |--------------|-------|---------------------|
 | Core (dashboard, audit, settings) | 4 | `dashboard:read`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
-| Findings | 31 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
+| Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 22 | `scans:read/write/delete/execute`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
-| Agents | 6 | `agents:read/write/delete`, `commands:read/write/delete` |
+| Sensors | 9 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete` |
 | Team | 23 | `team:*`, `members:*`, `groups:*`, `roles:*`, `permission_sets:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
@@ -41,7 +41,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
-| **Total** | **164** | |
+| **Total** | **168** | |
 
 > There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and
 > no `/api/v1/projects/*` routes; the resource hierarchy is
@@ -175,6 +175,24 @@ These routes use the tenant ID embedded in the JWT access token.
 > `(tenant_id, zone_id)` and `(tenant_id, sensor_id)`, so a zone or sensor of
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
+
+#### Leaked credentials (`/api/v1/credentials`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/credentials` · `/{id}` · `/{id}/related` · `/identities` · `/identities/{identity}/exposures` · `/stats` | `findings:credentials:read` |
+| `POST /api/v1/credentials/import` · `/import/csv` · `/{id}/resolve` · `/accept` · `/false-positive` · `/reactivate` | `findings:credentials:write` |
+| `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` |
+
+> **The leaked secret is reveal-only.** Read endpoints (here and under
+> `/api/v1/exposures`) return `secret_masked` and `secret_fingerprint` (a
+> keyed HMAC), never the plaintext. `findings:credentials:reveal` is held by
+> owner and admin only (migration `000232`); viewer and member read the
+> masked value. Every reveal writes `credential.revealed` to the audit log
+> before the secret is returned, and the call answers 503 if the audit event
+> cannot be written. At rest the secret is AES-256-GCM encrypted with
+> `APP_ENCRYPTION_KEY` (`details.secret_value_enc`); the server seals legacy
+> plaintext rows on start, and `cmd/encrypt-credentials` does the same offline.
 
 #### Vulnerabilities (`/api/v1/vulnerabilities`) - Global
 

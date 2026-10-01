@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/api/internal/app/outbox"
 
 	"github.com/google/uuid"
+	"github.com/openctemio/api/pkg/domain/credential"
 	exposuredom "github.com/openctemio/api/pkg/domain/exposure"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -25,7 +26,36 @@ type ExposureService struct {
 	// EPSS/KEV) to exposures on the read path. Optional — nil means exposures
 	// are returned without enrichment (prior behavior).
 	enricher *ExposureEnricher
-	logger   *logger.Logger
+	// secrets seals a leaked secret ("secret_value" in details) before it is
+	// stored. nil until SetSecretProtector; sealDetails then uses a no-key
+	// protector, which still keeps the plaintext out of read responses.
+	secrets *credential.SecretProtector
+	logger  *logger.Logger
+}
+
+// SetSecretProtector installs the protector built from the platform
+// encryption key, so secrets that arrive through the generic exposure
+// endpoints are encrypted at rest like imported leaked credentials.
+func (s *ExposureService) SetSecretProtector(p *credential.SecretProtector) { s.secrets = p }
+
+// sealDetails returns details with any leaked secret sealed. The caller's map
+// is not modified.
+func (s *ExposureService) sealDetails(details map[string]any) (map[string]any, error) {
+	if !credential.HasSecret(details) {
+		return details, nil
+	}
+	p := s.secrets
+	if p == nil {
+		p = credential.NewSecretProtector(nil, nil)
+	}
+	out := make(map[string]any, len(details))
+	for k, v := range details {
+		out[k] = v
+	}
+	if err := p.Seal(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // SetEnricher wires read-time exposure enrichment. Safe to call after
@@ -98,7 +128,11 @@ func (s *ExposureService) CreateExposure(ctx context.Context, input CreateExposu
 		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
-	event, err := exposuredom.NewExposureEvent(tenantID, eventType, severity, input.Title, input.Source, input.Details)
+	details, err := s.sealDetails(input.Details)
+	if err != nil {
+		return nil, err
+	}
+	event, err := exposuredom.NewExposureEvent(tenantID, eventType, severity, input.Title, input.Source, details)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +218,11 @@ func (s *ExposureService) IngestExposure(ctx context.Context, input CreateExposu
 		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
-	event, err := exposuredom.NewExposureEvent(tenantID, eventType, severity, input.Title, input.Source, input.Details)
+	details, err := s.sealDetails(input.Details)
+	if err != nil {
+		return nil, err
+	}
+	event, err := exposuredom.NewExposureEvent(tenantID, eventType, severity, input.Title, input.Source, details)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +306,12 @@ func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs 
 			continue
 		}
 
-		event, err := exposuredom.NewExposureEvent(tenantID, eventType, severity, input.Title, input.Source, input.Details)
+		details, err := s.sealDetails(input.Details)
+		if err != nil {
+			failures = append(failures, IngestItemError{Index: i, Reason: "secret could not be stored"})
+			continue
+		}
+		event, err := exposuredom.NewExposureEvent(tenantID, eventType, severity, input.Title, input.Source, details)
 		if err != nil {
 			failures = append(failures, IngestItemError{Index: i, Reason: err.Error()})
 			continue

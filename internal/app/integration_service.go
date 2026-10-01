@@ -66,6 +66,9 @@ var (
 	NewSecretStoreService      = integration.NewSecretStoreService
 	NewWebhookService          = integration.NewWebhookService
 
+	// ErrCredentialNoSecret: a leaked credential was found but holds no secret.
+	ErrCredentialNoSecret = integration.ErrNoSecret
+
 	// GitHub inbound-webhook helpers (pure).
 	VerifyGitHubSignature = integration.VerifyGitHubSignature
 	ParseGitHubPush       = integration.ParseGitHubPush

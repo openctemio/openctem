@@ -402,6 +402,20 @@ func run() int {
 		WireAssetLifecycleWorker(workers.AssetLifecycleWorker)
 	}
 
+	// Seal leaked-credential secrets still stored in plaintext (rows written
+	// before secrets were encrypted, or without a key). Idempotent, batched,
+	// SKIP LOCKED: safe on every start and across replicas.
+	go func() {
+		n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
+		if err != nil {
+			log.Error("leaked credential secret backfill failed", "error", err, "sealed", n)
+			return
+		}
+		if n > 0 {
+			log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
+		}
+	}()
+
 	// ==========================================================================
 	// Start Server
 	// ==========================================================================
