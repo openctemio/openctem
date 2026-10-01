@@ -79,7 +79,7 @@ func registerThreatIntelRoutes(
 		// nor toggle them (403). Operators use /api/v1/admin/threat-intel.
 		tiSyncWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
 		r.POST("/sync", h.RefusePlatformFeedWrite, tiSyncWriteMW...)
-		r.PATCH("/sync/{source}", h.RefusePlatformFeedWrite, tiSyncWriteMW...)
+		r.PATCH("/sync/{source}", h.RefusePlatformFeedToggle, tiSyncWriteMW...)
 
 		// CVE enrichment (combine EPSS + KEV data)
 		r.GET("/enrich/{cveId}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))
@@ -208,8 +208,8 @@ func registerVulnerabilityRoutes(
 		vulnWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
 		vulnDeleteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesDelete))
 		r.POST("/", h.RefuseSharedCatalogWrite, vulnWriteMW...)
-		r.PUT("/{id}", h.RefuseSharedCatalogWrite, vulnWriteMW...)
-		r.DELETE("/{id}", h.RefuseSharedCatalogWrite, vulnDeleteMW...)
+		r.PUT("/{id}", h.RefuseSharedCatalogEntryWrite, vulnWriteMW...)
+		r.DELETE("/{id}", h.RefuseSharedCatalogEntryWrite, vulnDeleteMW...)
 	}, baseMiddlewares...)
 
 	// Build tenant middleware chain from JWT token (used by /findings group below)
