@@ -27206,7 +27206,7 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      summary: Change the threat-intelligence feed sync (not allowed)
+      summary: Run the threat-intelligence feed sync (not allowed)
       tags:
       - Threat Intelligence
   /threat-intel/sync/{source}:
@@ -27218,6 +27218,7 @@ paths:
       - description: Feed (epss, kev)
         in: path
         name: source
+        required: true
         type: string
       produces:
       - application/json
@@ -28102,6 +28103,7 @@ paths:
       - description: Vulnerability ID
         in: path
         name: id
+        required: true
         type: string
       produces:
       - application/json
@@ -28110,7 +28112,7 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      summary: Write the shared CVE catalog (not allowed)
+      summary: Edit or delete a shared CVE catalog entry (not allowed)
       tags:
       - Vulnerabilities
     get:
@@ -28151,6 +28153,7 @@ paths:
       - description: Vulnerability ID
         in: path
         name: id
+        required: true
         type: string
       produces:
       - application/json
@@ -28159,7 +28162,7 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      summary: Write the shared CVE catalog (not allowed)
+      summary: Edit or delete a shared CVE catalog entry (not allowed)
       tags:
       - Vulnerabilities
   /vulnerabilities/{id}/affected-assets:
