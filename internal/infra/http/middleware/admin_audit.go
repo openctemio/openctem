@@ -80,11 +80,25 @@ func (m *AuditMiddleware) AuditLog(action, resourceType, resourceIDParam string)
 			}
 			builder.Request(r.Method, r.URL.Path, requestBody)
 
-			// Wrap response writer to capture status code
-			wrappedWriter := &auditResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			// A create route has no id in its URL. Let the handler name what it
+			// created (SetAuditResource), and remember the start of a 201 body so
+			// its top-level "id" can stand in when the handler does not.
+			created := &auditCreatedResource{}
+			r = r.WithContext(context.WithValue(r.Context(), auditResourceKey{}, created))
+			wrappedWriter := &auditResponseWriter{ResponseWriter: w, statusCode: http.StatusOK, sniff: resourceID == nil}
 
 			// Call next handler
 			next.ServeHTTP(wrappedWriter, r)
+
+			if resourceID == nil && wrappedWriter.statusCode == http.StatusCreated {
+				id := created.id
+				if id == nil {
+					id = topLevelID(wrappedWriter.head.Bytes())
+				}
+				if id != nil {
+					builder.Resource(resourceType, id, created.name)
+				}
+			}
 
 			// Set response status
 			builder.Response(wrappedWriter.statusCode)
@@ -165,12 +179,19 @@ func (m *AuditMiddleware) LogAuthSuccess(r *http.Request, adminUser *admin.Admin
 // Response Writer Wrapper
 // =============================================================================
 
-// auditResponseWriter wraps http.ResponseWriter to capture the status code.
+// auditResponseWriter wraps http.ResponseWriter to capture the status code
+// and, when sniff is set, the first auditSniffLimit bytes of the body.
 type auditResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
 	written    bool
+	sniff      bool
+	head       bytes.Buffer
 }
+
+// auditSniffLimit bounds how much of a response body is kept to find the id
+// of a created resource. Create responses are small; the id comes first.
+const auditSniffLimit = 64 * 1024
 
 func (w *auditResponseWriter) WriteHeader(statusCode int) {
 	if !w.written {
@@ -193,6 +214,11 @@ func (w *auditResponseWriter) Write(b []byte) (int, error) {
 	if !w.written {
 		w.statusCode = http.StatusOK
 		w.written = true
+	}
+	if w.sniff && w.statusCode == http.StatusCreated {
+		if room := auditSniffLimit - w.head.Len(); room > 0 {
+			w.head.Write(b[:min(len(b), room)])
+		}
 	}
 	return w.ResponseWriter.Write(b)
 }
@@ -278,14 +304,42 @@ func (m *AuditMiddleware) AuditTargetMappingDelete() func(http.Handler) http.Han
 // Helper to extract resource name from response
 // =============================================================================
 
-// SetAuditResourceName sets the resource name in the current request's audit log.
-// Call this from handlers to provide more context for audit logs.
-func SetAuditResourceName(ctx context.Context, name string) {
-	// This would require storing a mutable reference in context
-	// For now, resource names are captured at audit log creation time
-	// This is a placeholder for future enhancement
-	_ = ctx
-	_ = name
+type auditResourceKey struct{}
+
+// auditCreatedResource is what a handler reports about the resource it
+// created, read by AuditLog after the handler returns.
+type auditCreatedResource struct {
+	id   *shared.ID
+	name string
+}
+
+// SetAuditResource records the id (and a display name) of the resource the
+// current request created, for the admin audit row. Create routes have no id
+// in their URL; without this their audit rows carried no resource_id. It is
+// used only when the route has no URL id and the response is 201, so a
+// sub-resource created under /admin/tenants/{tenantId}/... keeps the
+// organization as its audited resource. A no-op outside an audited request.
+func SetAuditResource(ctx context.Context, id shared.ID, name string) {
+	if c, ok := ctx.Value(auditResourceKey{}).(*auditCreatedResource); ok && !id.IsZero() {
+		c.id = &id
+		c.name = name
+	}
+}
+
+// topLevelID returns the top-level "id" of a JSON object body, or nil. Only
+// the id is decoded; nothing else in the body is kept.
+func topLevelID(body []byte) *shared.ID {
+	var v struct {
+		ID string `json:"id"`
+	}
+	if len(body) == 0 || json.Unmarshal(body, &v) != nil || v.ID == "" {
+		return nil
+	}
+	id, err := shared.IDFromString(v.ID)
+	if err != nil {
+		return nil
+	}
+	return &id
 }
 
 // ExtractResourceIDFromPath extracts a resource ID from the URL path.
