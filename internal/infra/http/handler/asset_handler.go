@@ -1662,7 +1662,7 @@ func (h *AssetHandler) validateSyncAsset(
 	}
 
 	if a.Type() != asset.AssetTypeRepository {
-		return nil, nil, errors.New("asset is not a repository")
+		return nil, nil, fmt.Errorf("%w: only repository assets can be synced", shared.ErrValidation)
 	}
 
 	repoExt, err := h.service.GetRepositoryExtension(ctx, tenantID, id)

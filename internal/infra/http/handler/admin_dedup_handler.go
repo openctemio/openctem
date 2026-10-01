@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -55,11 +57,18 @@ func (h *AdminDedupHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	// Capture the surviving asset before the merge (its ID doesn't change) so we
 	// can recompute finding fingerprints on it afterwards.
 	keepID, keepErr := h.repo.ReviewKeepAssetID(r.Context(), tenantID, reviewID)
+	if errors.Is(keepErr, sql.ErrNoRows) {
+		apierror.NotFound("Dedup review").WriteJSON(w)
+		return
+	}
 	if keepErr != nil {
 		h.logger.Warn("could not resolve keep asset id before merge", "review_id", reviewID, "error", keepErr)
 	}
 
 	if err := h.repo.ApproveAndMerge(r.Context(), tenantID, reviewID, userID); err != nil {
+		if writeDedupReviewError(w, err) {
+			return
+		}
 		h.logger.Error("failed to approve merge", "review_id", reviewID, "error", err)
 		apierror.InternalServerError("failed to execute merge").WriteJSON(w)
 		return
@@ -108,6 +117,9 @@ func (h *AdminDedupHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
 	if err := h.repo.RejectReview(r.Context(), tenantID, reviewID, userID); err != nil {
+		if writeDedupReviewError(w, err) {
+			return
+		}
 		h.logger.Error("failed to reject review", "review_id", reviewID, "error", err)
 		apierror.InternalServerError("failed to reject review").WriteJSON(w)
 		return
@@ -115,6 +127,21 @@ func (h *AdminDedupHandler) Reject(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "rejected"})
+}
+
+// writeDedupReviewError answers the caller-caused review errors — an unknown
+// (or other tenant's) review, or one that is no longer pending — and reports
+// whether it wrote a response.
+func writeDedupReviewError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("Dedup review").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict("Dedup review is no longer pending").WriteJSON(w)
+	default:
+		return false
+	}
+	return true
 }
 
 // MergeLog handles GET /api/v1/admin/assets/merge-log

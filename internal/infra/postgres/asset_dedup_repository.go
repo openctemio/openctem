@@ -3,11 +3,14 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/lib/pq"
+
+	"github.com/openctemio/api/pkg/domain/shared"
 )
 
 // AssetDedupReview represents a pending dedup review entry.
@@ -145,11 +148,14 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 		WHERE id = $1 AND tenant_id = $2
 		FOR UPDATE
 	`, reviewID, tenantID).Scan(&rev.ID, &rev.TenantID, &rev.KeepAssetID, pq.Array(&rev.MergeAssetIDs), &rev.Status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: dedup review not found", shared.ErrNotFound)
+	}
 	if err != nil {
 		return fmt.Errorf("get review: %w", err)
 	}
 	if rev.Status != "pending" {
-		return fmt.Errorf("review already %s", rev.Status)
+		return fmt.Errorf("%w: review already %s", shared.ErrConflict, rev.Status)
 	}
 
 	keepID := rev.KeepAssetID
@@ -355,14 +361,22 @@ func (r *AssetDedupRepository) repointUnique(
 // tenantID is verified to prevent cross-tenant access.
 func (r *AssetDedupRepository) RejectReview(ctx context.Context, tenantID string, reviewID string, reviewedBy string) error {
 	now := time.Now()
-	_, err := r.db.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_dedup_review SET
 			status = 'rejected',
 			reviewed_by = $3,
 			reviewed_at = $4
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 	`, reviewID, tenantID, reviewedBy, now)
-	return err
+	if err != nil {
+		return err
+	}
+	// Zero rows means no pending review with this id in this tenant. Reporting
+	// success there told the caller a rejection happened when nothing changed.
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("%w: no pending dedup review with this id", shared.ErrNotFound)
+	}
+	return nil
 }
 
 func isUndefinedTableError(err error) bool {
