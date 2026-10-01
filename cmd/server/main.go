@@ -53,6 +53,9 @@ var (
 	routeMethod = flag.String("route-method", "", "Filter routes by HTTP method")
 	routePath   = flag.String("route-path", "", "Filter routes containing this path")
 	routeSort   = flag.String("route-sort", "path", "Sort routes by: path, method, handler")
+
+	sensorUpgradeCheck = flag.Bool("sensor-upgrade-check", false,
+		"Report data and schema still carrying the pre-sensor 'agent' vocabulary after migration 000228, then exit (0 = clean, 1 = leftovers)")
 )
 
 func main() {
@@ -98,6 +101,11 @@ func run() int {
 		log.Error("database schema check failed — refusing to start", "error", err)
 		return 1
 	}
+
+	if *sensorUpgradeCheck {
+		return runSensorUpgradeCheck(ctx, db.DB, os.Stdout)
+	}
+	logSensorUpgradeLeftovers(ctx, db.DB, log)
 
 	redisClient, err := redis.New(&cfg.Redis, log)
 	if err != nil {

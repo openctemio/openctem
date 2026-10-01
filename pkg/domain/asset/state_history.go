@@ -480,3 +480,30 @@ func ComplianceChangesOptions() ListStateHistoryOptions {
 		SortOrder: "desc",
 	}
 }
+
+// historicalChangeSourceSensor is how rows written before the agent → sensor
+// rename (RFC-023 §9.5) spell ChangeSourceSensor. asset_state_history is
+// append-only, so those rows keep it; reads map it with Canonical and filters
+// match both spellings via WithHistoricalSources.
+const historicalChangeSourceSensor ChangeSource = "agent"
+
+// Canonical returns the current spelling of a change source.
+func (s ChangeSource) Canonical() ChangeSource {
+	if s == historicalChangeSourceSensor {
+		return ChangeSourceSensor
+	}
+	return s
+}
+
+// WithHistoricalSources returns the sources plus the historical spelling of
+// the sensor source when it is among them.
+func WithHistoricalSources(sources []ChangeSource) []ChangeSource {
+	out := make([]ChangeSource, 0, len(sources)+1)
+	for _, s := range sources {
+		out = append(out, s)
+		if s == ChangeSourceSensor {
+			out = append(out, historicalChangeSourceSensor)
+		}
+	}
+	return out
+}

@@ -44,18 +44,31 @@ BEGIN
 END $$;
 
 -- 12. Provenance values
+ALTER TABLE assets DISABLE TRIGGER trigger_assets_updated_at;
+ALTER TABLE asset_services DISABLE TRIGGER trigger_asset_services_updated_at;
 UPDATE assets         SET discovery_source = 'agent' WHERE discovery_source = 'sensor';
 UPDATE asset_services SET discovery_source = 'agent' WHERE discovery_source = 'sensor';
-
-ALTER TABLE asset_state_history DROP CONSTRAINT IF EXISTS chk_state_history_source;
-UPDATE asset_state_history SET source = 'agent' WHERE source = 'sensor';
-ALTER TABLE asset_state_history ADD CONSTRAINT chk_state_history_source CHECK (source IS NULL OR source IN
-    ('scan', 'manual', 'integration', 'system', 'agent', 'api'));
-
 ALTER TABLE assets DROP CONSTRAINT IF EXISTS chk_assets_source_type;
 UPDATE assets SET source_type = 'agent' WHERE source_type = 'sensor';
 ALTER TABLE assets ADD CONSTRAINT chk_assets_source_type CHECK (source_type IS NULL OR source_type IN
     ('manual', 'integration', 'discovery', 'import', 'api', 'agent', 'scan'));
+ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
+ALTER TABLE asset_services ENABLE TRIGGER trigger_asset_services_updated_at;
+
+-- asset_state_history is append-only: rows written as 'sensor' after the
+-- upgrade cannot be rewritten. The original constraint comes back validated
+-- when there are none, NOT VALID (enforced for new rows only) otherwise.
+ALTER TABLE asset_state_history DROP CONSTRAINT IF EXISTS chk_state_history_source;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM asset_state_history WHERE source = 'sensor') THEN
+        ALTER TABLE asset_state_history ADD CONSTRAINT chk_state_history_source CHECK (source IS NULL OR source IN
+            ('scan', 'manual', 'integration', 'system', 'agent', 'api')) NOT VALID;
+    ELSE
+        ALTER TABLE asset_state_history ADD CONSTRAINT chk_state_history_source CHECK (source IS NULL OR source IN
+            ('scan', 'manual', 'integration', 'system', 'agent', 'api'));
+    END IF;
+END $$;
 
 -- 11. Stored configuration
 UPDATE integrations

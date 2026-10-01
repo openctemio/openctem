@@ -178,7 +178,8 @@ func (r *AssetStateHistoryRepository) List(ctx context.Context, tenantID shared.
 		conditions = append(conditions, fmt.Sprintf("h.change_type IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
-	sources := opts.EffectiveSources()
+	// A sensor filter also matches rows written before the rename.
+	sources := asset.WithHistoricalSources(opts.EffectiveSources())
 	if len(sources) > 0 {
 		placeholders := make([]string, len(sources))
 		for i, s := range sources {
@@ -518,7 +519,7 @@ func (r *AssetStateHistoryRepository) CountBySource(ctx context.Context, tenantI
 		if err := rows.Scan(&source, &count); err != nil {
 			return nil, fmt.Errorf("failed to scan source count: %w", err)
 		}
-		result[asset.ChangeSource(source)] = count
+		result[asset.ChangeSource(source).Canonical()] += count
 	}
 
 	return result, rows.Err()
@@ -715,7 +716,7 @@ func (r *AssetStateHistoryRepository) reconstituteStateChange(
 		nullStringValue(newValue),
 		nullStringValue(reason),
 		nullStringValue(metadata),
-		asset.ChangeSource(nullStringValue(source)),
+		asset.ChangeSource(nullStringValue(source)).Canonical(),
 		changedByPtr,
 		changedAt,
 		createdAt,

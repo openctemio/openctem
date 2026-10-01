@@ -16,6 +16,8 @@
 --     log is hash-chained; rewriting history would break verification by
 --     design. Queries treat both families as one (pkg/domain/audit).
 --   * admin_audit_logs, notification_events, webhook_deliveries: history.
+--   * asset_state_history rows with source 'agent': the table is append-only
+--     (a trigger rejects UPDATE); new rows are written as 'sensor'.
 --   * commands.payload key "agent_preference": sensor protocol v1 job content
 --     that deployed sensors read (pkg/sensorproto/legacyv1).
 --   * sensors.type values (worker, scanner, sensor, collector, runner, agent,
@@ -409,19 +411,27 @@ WHERE provider = 'tenable' AND config ? 'agent_id';
 
 -- ---------------------------------------------------------------------------
 -- 12. Provenance values written by the server: 'agent' → 'sensor'
+--     (asset_state_history is append-only — a trigger rejects UPDATE — so its
+--     historical rows keep 'agent' and the constraint accepts both)
 -- ---------------------------------------------------------------------------
+-- A vocabulary change is not an edit of the asset: keep updated_at as it was.
+ALTER TABLE assets DISABLE TRIGGER trigger_assets_updated_at;
+ALTER TABLE asset_services DISABLE TRIGGER trigger_asset_services_updated_at;
+
 ALTER TABLE assets DROP CONSTRAINT IF EXISTS chk_assets_source_type;
 UPDATE assets SET source_type = 'sensor' WHERE source_type = 'agent';
 ALTER TABLE assets ADD CONSTRAINT chk_assets_source_type CHECK (source_type IS NULL OR source_type IN
     ('manual', 'integration', 'discovery', 'import', 'api', 'sensor', 'scan'));
 
-ALTER TABLE asset_state_history DROP CONSTRAINT IF EXISTS chk_state_history_source;
-UPDATE asset_state_history SET source = 'sensor' WHERE source = 'agent';
-ALTER TABLE asset_state_history ADD CONSTRAINT chk_state_history_source CHECK (source IS NULL OR source IN
-    ('scan', 'manual', 'integration', 'system', 'sensor', 'api'));
-
 UPDATE assets         SET discovery_source = 'sensor' WHERE discovery_source = 'agent';
 UPDATE asset_services SET discovery_source = 'sensor' WHERE discovery_source = 'agent';
+
+ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
+ALTER TABLE asset_services ENABLE TRIGGER trigger_asset_services_updated_at;
+
+ALTER TABLE asset_state_history DROP CONSTRAINT IF EXISTS chk_state_history_source;
+ALTER TABLE asset_state_history ADD CONSTRAINT chk_state_history_source CHECK (source IS NULL OR source IN
+    ('scan', 'manual', 'integration', 'system', 'sensor', 'agent', 'api'));
 
 -- ---------------------------------------------------------------------------
 -- 13. Catalog comments
