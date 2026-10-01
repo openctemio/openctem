@@ -141,20 +141,13 @@ func NewHTTPFetcher(config HTTPConfig) (*HTTPFetcher, error) {
 					}
 				}
 				// Use the first valid pinned IP
-				addr = net.JoinHostPort(pinnedIPs[0].String(), port)
-			} else {
-				// For redirects, validate the new host
-				newIPs, err := net.LookupIP(host)
-				if err != nil {
-					return nil, fmt.Errorf("DNS lookup failed: %w", err)
-				}
-				for _, ip := range newIPs {
-					if httpsec.IsIPBlocked(ip) {
-						return nil, fmt.Errorf("redirect to blocked IP: %s", ip.String())
-					}
-				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(pinnedIPs[0].String(), port))
 			}
-			return dialer.DialContext(ctx, network, addr)
+			// A redirect to another host: resolve it once, vet every
+			// answer and dial the vetted address. Resolving here and then
+			// dialing the hostname would let a rebinding DNS server answer
+			// the second lookup with an internal address.
+			return httpsec.SafeDialContext(ctx, network, addr)
 		},
 		MaxIdleConns:          10,
 		IdleConnTimeout:       90 * time.Second,
