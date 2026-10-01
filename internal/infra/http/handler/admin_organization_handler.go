@@ -307,6 +307,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	middleware.SetAuditResource(r.Context(), t.ID(), t.Name())
 	resp := AdminCreateOrganizationResponse{}
 	if ownerCreated {
 		setup, serr := h.provisioning.ReissueSetupLink(r.Context(), t.ID().String(), owner.ID().String(), adminAuditContext(r, t.ID().String()))
