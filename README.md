@@ -401,7 +401,7 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
 | `-backup-name` | `ADMIN_BACKUP_NAME` | Backup display name (defaults to email prefix) |
 | `-no-backup` | — | Skip the break-glass backup (not recommended; prints a warning) |
 | `-force` | — | Delete and re-create an existing admin with the same email (and its sign-in account) |
-| `-link` | — | Link an administrator created before sign-in accounts to one (keeps role and authenticator) |
+| `-link` | — | Link an administrator created before sign-in accounts (v0.8 and older) to a new one and reactivate it (keeps role and authenticator) |
 
 ## Security
 

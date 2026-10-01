@@ -58,7 +58,7 @@ func main() {
 	backupName := flag.String("backup-name", "", "Break-glass backup admin name (defaults to email prefix)")
 	noBackup := flag.Bool("no-backup", false, "Do not create a break-glass backup admin (not recommended)")
 	force := flag.Bool("force", false, "Delete and re-create an existing admin with the same email")
-	linkOnly := flag.Bool("link", false, "Only link the existing admin with this email to a sign-in account (keeps role and authenticator)")
+	linkOnly := flag.Bool("link", false, "Only link the existing admin with this email (one from v0.8 or older) to a new sign-in account and reactivate it (keeps role and authenticator)")
 	flag.Parse()
 
 	opts := adminbootstrap.Options{
