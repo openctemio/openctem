@@ -147,10 +147,13 @@ func TestValidateSingleTarget_IPv6(t *testing.T) {
 		target string
 		wantOK bool
 	}{
-		// Note: Full IPv6 addresses with all 8 segments are matched by hostPortRegex
-		// due to the colon. This is a known limitation - IPv6 should be bracketed [::1] in URLs
-		// For now, we only test what the current implementation actually supports
+		// IP addresses are recognized before host:port, so an IPv6 address
+		// ending in digits is not misread as "host:port".
 		{"blocked - localhost ::1", "::1", false},
+		{"public, ends in digits", "2001:4860:4860::8888", true},
+		{"public, full form", "2001:4860:4860:0:0:0:0:8844", true},
+		{"blocked - unique local", "fd00:1::5", false},
+		{"blocked - link-local", "fe80::1", false},
 	}
 
 	for _, tt := range tests {

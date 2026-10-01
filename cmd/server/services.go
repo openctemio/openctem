@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/openctemio/api/internal/app/pipeline"
 	"github.com/openctemio/api/internal/app/reclassify"
 	"github.com/openctemio/api/internal/app/scan"
+	scanzoneapp "github.com/openctemio/api/internal/app/scanzone"
 	"github.com/openctemio/api/internal/app/scim"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
@@ -522,9 +524,10 @@ type Services struct {
 	Notification   *app.NotificationService
 
 	// Sensors & Commands
-	Sensor  *app.SensorService
-	Command *command.Service
-	Ingest  *ingest.Service
+	Sensor   *app.SensorService
+	ScanZone *scanzoneapp.Service
+	Command  *command.Service
+	Ingest   *ingest.Service
 
 	// Scanning & Pipelines
 	ScanProfile     *app.ScanProfileService
@@ -1326,7 +1329,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithProfileRepo(repos.ScanProfile),
 		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
 		scan.WithScopeExclusionFilter(s.Scope),
+		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
+		// Hostnames route by the address they resolve to from the platform.
+		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
 	)
+	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 
 	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans
 	// when a finding transitions to fix_applied and the user requests scan-based verification.

@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/scanprofile"
+	"github.com/openctemio/api/pkg/domain/scanzone"
 	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/templatesource"
@@ -192,6 +193,8 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
+	zones               ZoneDirectory        // optional; nil = zone routing off (RFC-023)
+	zoneResolver        scanzone.Resolver    // resolves hostname targets for zone routing
 	logger              *logger.Logger
 }
 

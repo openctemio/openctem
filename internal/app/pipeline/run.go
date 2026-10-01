@@ -337,6 +337,20 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		return err
 	}
 
+	// A run routed to a scan zone (RFC-023) keeps every step inside it: the
+	// command is stamped with the zone and left to the zone's sensors (the
+	// claim predicate enforces it), never pinned elsewhere or sent to
+	// platform sensors.
+	if zoneID := pipeline.ScanZoneFromContext(run.Context); zoneID != nil {
+		cmd.SetScanZone(*zoneID)
+		if err := s.commandRepo.Create(ctx, cmd); err != nil {
+			return err
+		}
+		stepRun.Queue()
+		stepRun.CommandID = &cmd.ID
+		return s.stepRunRepo.Update(ctx, stepRun)
+	}
+
 	// Determine sensor routing based on preference
 	usePlatform, sensorID := s.determineSensorRouting(ctx, run.TenantID, step.Tool, settings.SensorPreference)
 
@@ -470,6 +484,19 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 
 	// Update step run status
 	stepRun := run.GetStepRun(stepKey)
+
+	// A zone-routed scan runs one command per batch under this step: the step
+	// finishes with the last batch, and fails if any batch failed.
+	if b := s.checkStepBatches(ctx, run, stepRun); b.batched {
+		if b.wait {
+			return nil
+		}
+		if b.failed > 0 {
+			return s.failStep(ctx, run, stepRun, b.summary(), errCodeBatchFailed, false)
+		}
+		findingsCount = b.findings
+	}
+
 	if stepRun != nil {
 		stepRun.Complete(findingsCount, output)
 		// FIXED: Don't silently suppress errors - log them instead
@@ -572,11 +599,26 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 		return err
 	}
 
-	// Update step run status
 	stepRun := run.GetStepRun(stepKey)
+	allowRetry := true
+	if b := s.checkStepBatches(ctx, run, stepRun); b.batched {
+		if b.wait {
+			return nil // the batch's error stays on its command; the last batch reports
+		}
+		// A retry would re-dispatch the step through the generic step path,
+		// without zone routing: a batched step is failed, not retried.
+		allowRetry = false
+		errorMessage, errorCode = b.summary(), errCodeBatchFailed
+	}
+	return s.failStep(ctx, run, stepRun, errorMessage, errorCode, allowRetry)
+}
+
+// failStep records a step failure and settles the run.
+func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipeline.StepRun, errorMessage, errorCode string, allowRetry bool) error {
 	if stepRun != nil {
+		stepKey := stepRun.StepKey
 		// Check if retry is possible
-		if stepRun.CanRetry() {
+		if allowRetry && stepRun.CanRetry() {
 			stepRun.PrepareRetry()
 			// FIXED: Don't silently suppress errors - log them instead
 			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
@@ -641,6 +683,61 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 
 	// Continue with other steps
 	return s.scheduleRunnableSteps(ctx, run, template)
+}
+
+// errCodeBatchFailed is the step error code when a zone batch failed.
+const errCodeBatchFailed = "BATCH_FAILED"
+
+// stepBatches is what the zone batches of one step amount to (RFC-023).
+type stepBatches struct {
+	batched    bool // the step has more than one command
+	wait       bool // another batch is still active, or another caller finalizes
+	total      int
+	failed     int
+	findings   int
+	firstError string
+}
+
+func (b stepBatches) summary() string {
+	msg := fmt.Sprintf("%d of %d scan batches failed", b.failed, b.total)
+	if b.firstError != "" {
+		msg += ": " + b.firstError
+	}
+	return msg
+}
+
+// checkStepBatches reports whether stepRun is a batched step and, if so,
+// whether this caller should record its outcome now. A step with zero or one
+// command is not batched and keeps the original single-command behavior.
+func (s *Service) checkStepBatches(ctx context.Context, run *pipeline.Run, stepRun *pipeline.StepRun) stepBatches {
+	gate, ok := s.commandRepo.(command.StepBatchGate)
+	if !ok || stepRun == nil {
+		return stepBatches{}
+	}
+	st, err := gate.StepBatchState(ctx, run.TenantID, stepRun.ID)
+	if err != nil {
+		s.logger.Error("failed to read step batches; settling the step from this command alone",
+			"run_id", run.ID.String(), "step_key", stepRun.StepKey, "error", err)
+		return stepBatches{}
+	}
+	if st.Total <= 1 {
+		return stepBatches{}
+	}
+	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, firstError: st.FirstError}
+	if st.Active > 0 {
+		s.logger.Info("scan batch finished; waiting for the others",
+			"run_id", run.ID.String(), "step_key", stepRun.StepKey, "active", st.Active, "total", st.Total)
+		b.wait = true
+		return b
+	}
+	claimed, err := gate.ClaimStepFinalization(ctx, stepRun.ID)
+	if err != nil {
+		s.logger.Error("failed to claim step finalization", "run_id", run.ID.String(), "error", err)
+		b.wait = true
+		return b
+	}
+	b.wait = !claimed
+	return b
 }
 
 // calculateRunStats calculates run statistics from step runs.

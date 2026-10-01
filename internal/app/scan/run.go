@@ -170,7 +170,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	// previously skipped this entirely, which both let internal targets through
 	// AND silently dropped the targets (they were never attached to the run, so
 	// the workflow scanned an empty asset group — nothing).
-	validatedTargets, err := s.validateScanTargets(CreateScanInput{
+	validatedTargets, err := s.validateScanTargets(ctx, CreateScanInput{
 		TenantID: input.TenantID,
 		Targets:  input.Targets,
 	})

@@ -159,6 +159,23 @@ These routes use the tenant ID embedded in the JWT access token.
 > four granular perms onto every role that already held `findings:write`, so the
 > tightening is honest-not-breaking: nobody lost an action they could perform before.
 
+#### Scan zones (`/api/v1/scan-zones`, RFC-023)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/scan-zones` · `/{id}` · `/coverage` | `sensors:zones:read` |
+| `POST /api/v1/scan-zones` | `sensors:zones:write` |
+| `PATCH /api/v1/scan-zones/{id}` | `sensors:zones:write` |
+| `PUT` · `DELETE /api/v1/scan-zones/{id}/sensors/{sensorId}` | `sensors:zones:write` |
+| `DELETE /api/v1/scan-zones/{id}` | `sensors:zones:delete` |
+
+> Seeded by migration `000231`: owner and admin hold all three, member and
+> viewer hold `sensors:zones:read` (RFC-023 D16). Object level: every query
+> carries `tenant_id`, and `scan_zone_sensors` has composite foreign keys
+> `(tenant_id, zone_id)` and `(tenant_id, sensor_id)`, so a zone or sensor of
+> another tenant cannot be linked even by a wrong handler. See
+> [scan-zones.md](scan-zones.md).
+
 #### Vulnerabilities (`/api/v1/vulnerabilities`) - Global
 
 | Endpoint | Permission Required |

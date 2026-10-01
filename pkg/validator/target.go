@@ -183,14 +183,15 @@ func (v *TargetValidator) ValidateSingleTarget(target string) ValidatedTarget {
 		return v.validateCIDR(target)
 	}
 
-	// 3. Check if it's host:port format
-	if matches := hostPortRegex.FindStringSubmatch(target); len(matches) == 3 {
-		return v.validateHostPort(target, matches[1], matches[2])
-	}
-
-	// 4. Check if it's an IP address
+	// 3. Check if it's an IP address. Before host:port: an IPv6 address such
+	// as fd00::5 also matches the host:port pattern ("fd00:" + port 5).
 	if ip := net.ParseIP(target); ip != nil {
 		return v.validateIP(target, ip)
+	}
+
+	// 4. Check if it's host:port format
+	if matches := hostPortRegex.FindStringSubmatch(target); len(matches) == 3 {
+		return v.validateHostPort(target, matches[1], matches[2])
 	}
 
 	// 5. Check if it's a domain (including wildcard)

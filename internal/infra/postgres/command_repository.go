@@ -47,9 +47,9 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 			result, scheduled_at, schedule_id, step_run_id,
 			is_platform_job, platform_sensor_id,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
-			queue_priority, queued_at, dispatch_attempts
+			queue_priority, queued_at, dispatch_attempts, scan_zone_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -78,6 +78,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 		cmd.QueuePriority,
 		nullTime(cmd.QueuedAt),
 		cmd.DispatchAttempts,
+		nullIDString(cmd.ScanZoneID),
 	)
 
 	if err != nil {
@@ -127,10 +128,12 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 
 	if sensorID != nil {
 		query += fmt.Sprintf(" AND (sensor_id = $%d OR sensor_id IS NULL)", argIndex)
+		query += " AND " + zoneClaimPredicate(fmt.Sprintf("$%d", argIndex))
 		args = append(args, sensorID.String())
 		argIndex++
 	} else {
-		query += " AND sensor_id IS NULL"
+		// No sensor identity: nothing pinned, and no zone membership to prove.
+		query += " AND sensor_id IS NULL AND scan_zone_id IS NULL"
 	}
 
 	// Capability gate: keep a command only if it declares no required
@@ -179,6 +182,31 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 	}
 
 	return commands, nil
+}
+
+// zoneClaimPredicate is the claim-time zone check (RFC-023 D7 layer 2) for
+// the sensor bound to sensorParam. A command with no zone keeps the pre-zone
+// behavior. A zone-stamped command, pinned or not, is offered only to a
+// sensor that is assigned to that zone (same tenant, enforced again here) and
+// that has the command's tool: the reaper unpins stuck commands and an
+// unassignment unpins pending ones, and neither may release a zone's job to a
+// sensor outside the zone.
+func zoneClaimPredicate(sensorParam string) string {
+	return `(
+		commands.scan_zone_id IS NULL
+		OR EXISTS (
+			SELECT 1
+			FROM scan_zone_sensors zs
+			JOIN sensors zsn ON zsn.id = zs.sensor_id AND zsn.tenant_id = zs.tenant_id
+			WHERE zs.zone_id = commands.scan_zone_id
+			  AND zs.tenant_id = commands.tenant_id
+			  AND zs.sensor_id = ` + sensorParam + `
+			  AND (
+				COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLIF(commands.payload->>'preferred_tool', '')) IS NULL
+				OR COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLIF(commands.payload->>'preferred_tool', '')) = ANY(zsn.tools)
+			  )
+		)
+	)`
 }
 
 // List lists commands with filters and pagination.
@@ -230,12 +258,16 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 // sensor. The status='pending' guard makes the claim a no-op (0 rows) if another
 // poller already acknowledged it, so two sensors polling the same unassigned
 // command can't both proceed (double dispatch).
+//
+// The zone predicate is the same as the poll's (RFC-023 layer 2): a sensor
+// cannot acknowledge, by id, a zone command it would never have been offered.
 func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID string) (bool, error) {
 	query := `
 		UPDATE commands
 		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW()
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 		  AND (sensor_id IS NULL OR sensor_id = $3)
+		  AND ` + zoneClaimPredicate("$3") + `
 	`
 	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID)
 	if err != nil {
@@ -324,7 +356,7 @@ func (r *CommandRepository) selectQuery() string {
 		       result, scheduled_at, schedule_id, step_run_id,
 		       is_platform_job, platform_sensor_id,
 		       auth_token_hash, auth_token_prefix, auth_token_expires_at,
-		       queue_priority, queued_at, dispatch_attempts
+		       queue_priority, queued_at, dispatch_attempts, scan_zone_id
 		FROM commands
 	`
 }
@@ -408,6 +440,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		queuePriority      int
 		queuedAt           sql.NullTime
 		dispatchAttempts   int
+		scanZoneID         sql.NullString
 	)
 
 	var errorMessage sql.NullString
@@ -438,6 +471,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		&queuePriority,
 		&queuedAt,
 		&dispatchAttempts,
+		&scanZoneID,
 	)
 
 	if err != nil {
@@ -518,6 +552,11 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		cmd.QueuedAt = &queuedAt.Time
 	}
 
+	if scanZoneID.Valid {
+		zid, _ := shared.IDFromString(scanZoneID.String)
+		cmd.ScanZoneID = &zid
+	}
+
 	return cmd, nil
 }
 
@@ -548,6 +587,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		queuePriority      int
 		queuedAt           sql.NullTime
 		dispatchAttempts   int
+		scanZoneID         sql.NullString
 	)
 
 	var errorMessage sql.NullString
@@ -578,6 +618,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		&queuePriority,
 		&queuedAt,
 		&dispatchAttempts,
+		&scanZoneID,
 	)
 
 	if err != nil {
@@ -653,6 +694,11 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 
 	if queuedAt.Valid {
 		cmd.QueuedAt = &queuedAt.Time
+	}
+
+	if scanZoneID.Valid {
+		zid, _ := shared.IDFromString(scanZoneID.String)
+		cmd.ScanZoneID = &zid
 	}
 
 	return cmd, nil
@@ -1199,4 +1245,44 @@ func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID,
 		return 0, fmt.Errorf("failed to read rows affected: %w", err)
 	}
 	return rows, nil
+}
+
+var _ command.StepBatchGate = (*CommandRepository)(nil)
+
+// StepBatchState reports the zone batches that share one step run.
+func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRunID shared.ID) (command.StepBatch, error) {
+	var b command.StepBatch
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*),
+		       count(*) FILTER (WHERE status IN ('pending', 'acknowledged', 'running')),
+		       count(*) FILTER (WHERE status IN ('failed', 'expired', 'canceled')),
+		       COALESCE(sum(CASE WHEN jsonb_typeof(result->'findings_count') = 'number'
+		                         THEN (result->>'findings_count')::numeric END), 0)::bigint,
+		       COALESCE((array_agg(error_message ORDER BY completed_at NULLS LAST, id)
+		                 FILTER (WHERE status IN ('failed', 'expired', 'canceled')
+		                           AND COALESCE(error_message, '') <> ''))[1], '')
+		FROM commands
+		WHERE tenant_id = $1 AND step_run_id = $2`,
+		tenantID.String(), stepRunID.String()).Scan(&b.Total, &b.Active, &b.Failed, &b.Findings, &b.FirstError)
+	if err != nil {
+		return b, fmt.Errorf("step batch state: %w", err)
+	}
+	return b, nil
+}
+
+// ClaimStepFinalization stamps completed_at on a step run that has none yet.
+// Two batches finishing at the same moment both see "no batch active"; only
+// the one whose UPDATE matches records the outcome.
+func (r *CommandRepository) ClaimStepFinalization(ctx context.Context, stepRunID shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE step_runs SET completed_at = NOW() WHERE id = $1 AND completed_at IS NULL`,
+		stepRunID.String())
+	if err != nil {
+		return false, fmt.Errorf("claim step finalization: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("claim step finalization: %w", err)
+	}
+	return n == 1, nil
 }

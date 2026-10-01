@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -236,9 +237,53 @@ func TestSensorRenameUpgrade(t *testing.T) {
 	assertUpgraded(t, db, before, assetsUpdatedAt)
 }
 
+// renamedCatalog is the sensor permission catalog the rename produces.
+// Migrations after 000230 may add permissions (000231 adds sensors:zones:*
+// and grants them to the system roles); those are not part of the rename and
+// are left out of the comparison.
+var renamedCatalog = []string{
+	"sensors:read", "sensors:write", "sensors:delete",
+	"sensors:commands:read", "sensors:commands:write", "sensors:commands:delete",
+}
+
+// withoutLaterPermissions drops, from an access map taken after the upgrade,
+// every permission that a migration after the rename introduced.
+func withoutLaterPermissions(t *testing.T, db *sql.DB, access map[string]string) map[string]string {
+	t.Helper()
+	rows, err := db.Query(`SELECT id FROM permissions WHERE id LIKE 'sensors:%'`)
+	if err != nil {
+		t.Fatalf("permission catalog: %v", err)
+	}
+	defer rows.Close()
+	later := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(renamedCatalog, id) {
+			later[id] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("permission catalog: %v", err)
+	}
+	out := make(map[string]string, len(access))
+	for who, perms := range access {
+		kept := []string{}
+		for _, p := range strings.Split(perms, ",") {
+			if !later[p] {
+				kept = append(kept, p)
+			}
+		}
+		out[who] = strings.Join(kept, ",")
+	}
+	return out
+}
+
 func assertUpgraded(t *testing.T, db *sql.DB, before map[string]string, assetsUpdatedAt string) {
 	t.Helper()
-	if got := effectiveAccess(t, db); fmt.Sprint(got) != fmt.Sprint(before) {
+	if got := withoutLaterPermissions(t, db, effectiveAccess(t, db)); fmt.Sprint(got) != fmt.Sprint(before) {
 		t.Errorf("effective access changed by the upgrade:\nbefore %v\nafter  %v", before, got)
 	}
 	for _, c := range []struct{ name, q, want string }{
@@ -266,7 +311,8 @@ func assertUpgraded(t *testing.T, db *sql.DB, before map[string]string, assetsUp
 		{"asset updated_at untouched", `SELECT updated_at::text FROM assets WHERE id = '11111111-0000-0000-0000-00000000000f'`, assetsUpdatedAt},
 		{"append-only state history kept", `SELECT source FROM asset_state_history WHERE asset_id = '11111111-0000-0000-0000-00000000000f'`, "agent"},
 		{"hash-chained audit kept", `SELECT action || '/' || resource_type FROM audit_logs WHERE tenant_id = '11111111-0000-0000-0000-000000000001'`, "agent.created/agent"},
-		{"permission catalog", `SELECT count(*)::text FROM permissions WHERE id LIKE 'sensors:%'`, "6"},
+		{"permission catalog", `SELECT count(*)::text FROM permissions WHERE id = ANY('{` + strings.Join(renamedCatalog, ",") + `}')`, "6"},
+		{"no agents:* permission left", `SELECT count(*)::text FROM permissions WHERE id LIKE 'agents:%'`, "0"},
 	} {
 		if got := queryString(t, db, c.q); got != c.want {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)

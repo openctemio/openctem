@@ -155,3 +155,25 @@ type CommandStats struct {
 	Failed    int64
 	Canceled  int64
 }
+
+// StepBatch summarizes the commands that share one pipeline step run. A
+// zone-routed scan (RFC-023) dispatches one command per zone batch under a
+// single step run, so the step may only finish when the last batch does.
+type StepBatch struct {
+	Total      int    // commands linked to the step run
+	Active     int    // still pending, acknowledged or running
+	Failed     int    // failed, expired or canceled
+	Findings   int    // sum of the batches' reported findings_count
+	FirstError string // first failure message, in completion order
+}
+
+// StepBatchGate is implemented by the command repository. It is an optional
+// extension of Repository, asserted where needed, so test doubles of
+// Repository do not all have to grow it.
+type StepBatchGate interface {
+	// StepBatchState reports the batches of a step run.
+	StepBatchState(ctx context.Context, tenantID, stepRunID shared.ID) (StepBatch, error)
+	// ClaimStepFinalization returns true for exactly one caller per step run:
+	// the one that may record the step's outcome once every batch is done.
+	ClaimStepFinalization(ctx context.Context, stepRunID shared.ID) (bool, error)
+}

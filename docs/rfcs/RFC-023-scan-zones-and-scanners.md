@@ -4,6 +4,9 @@
 > implemented** (api#563, migration 000230; contract:
 > [RFC-023-sensor-rename-contract.md](RFC-023-sensor-rename-contract.md)).
 > SDK, sensor binary, Helm and UI steps pending.
+> **Phase 1 (scan zones), API implemented** (migration 000231; §8.1;
+> architecture: [scan-zones.md](../architecture/scan-zones.md), which also
+> holds the UI contract). Zones UI pending.
 > Scope: api + agent + ui (+ sdk-go for job verification).
 > OpenCTEM is an open platform: anyone can build tools, agents, connectors and
 > collectors with the SDK and push results in. Zones and every security control
@@ -210,6 +213,28 @@ tenant-scoped.
 | **4 — Credentials, networks, platform, trust, supply chain** | Signed templates/updates (P7), cosign + SLSA L3 + SBOM releases (P8), optional mTLS/SPIFFE (P3); credential tiers T1 vault pull / T2 scoped envelope release (D12); networks + site-aware asset identity (D15); platform shared scanners/zones (D14); trust tiers + verified sensors (D22). | api + sdk-go + agent + ui |
 
 Each phase is shippable alone; Phase 0 is independent and should land first.
+
+### 8.1 Phase 1 as implemented (API)
+
+Decisions taken while building it, where this RFC left room:
+
+| Topic | Decision |
+|---|---|
+| Permissions (D16) | `sensors:zones:read/write/delete`, in the `sensors` module next to `sensors:commands:*` (not a bare `zones:*`). Owner/admin all three, member/viewer read. Sensor assignment is `sensors:zones:write`. |
+| `scan_networks` | Not created: Phase 4 (D15) is its first reader. Zones carry no `network_id` yet; adding it later is additive. |
+| Table name | `scan_zone_sensors` (§5 said `scan_zone_scanners`; every row of `sensors` can be assigned until roles land in Phase 2). |
+| Same-tenant rule (§11) | Composite foreign keys `(tenant_id, zone_id)` and `(tenant_id, sensor_id)`; platform sensors are refused by the insert. |
+| Default zone | At most one per tenant; it may have no ranges; it receives public targets and public hostnames no range holds. Without one, those are dispatched as before zones (any tenant sensor, never silently platform, D14). |
+| Range bounds | Deny-list overlap refused (so `/0` too), IPv4 ≥ /8, IPv6 ≥ /32, ≤ 256 prefixes per zone, ≤ 500 zones per tenant; `a-b` ranges expand to at most 16 CIDRs. |
+| Batching | One command per batch of `targets_per_job`; one target per command for scanners that read a single target. This removes the Phase 0 "only the first target is scanned" caveat for zoned tenants. Tenants without zones keep the Phase 0 dispatch unchanged. |
+| Least busy | Fewest active commands pinned to the sensor, then `current_jobs/max_concurrent_jobs`, balanced within the run. "Approved" = `status='active'` until Phase 2 adds approval state. |
+| No healthy sensor | Batches are stamped with the zone, left unpinned, and wait for a zone sensor (warning on the run). A zone with no sensors assigned makes its targets uncovered. |
+| Claim predicate (layer 2) | Applies to poll and acknowledge, to pinned commands too, and survives the reaper unpinning a command. Tool match: `payload.scanner` / `payload.preferred_tool`. |
+| Run completion | All batches share the step run; the step settles once, after the last batch, with summed findings; a failed batch fails the step without a generic retry. |
+| Workflow scans | Must route to a single zone (`ZONE_SPLIT_REQUIRED` otherwise); every step command is stamped with it. |
+| Non-network tools | Tools whose supported targets are only files, repositories or containers are not zone-routed (D20, before the tool manifest exists). |
+| Results (§6 step 5) | Stamped on the command only (`commands.scan_zone_id`): v1 ingest does not carry the command, so per-record zone provenance waits for D21 (Phase 2). |
+| Run report | `GET /pipeline-runs/{id}` gains `dispatch` (resolved/excluded counts, warnings, uncovered targets with reasons, zone routing). |
 
 ## 9. Renaming and compatibility plan
 
@@ -462,10 +487,21 @@ platform → sensor). Each use case below names the control that answers it.
 - Everything here is tenant-scoped; a zone or scanner id from another tenant is
   rejected in SQL, not only in handlers.
 
-## 12. Open questions
+## 12. Open questions (answered for Phase 1)
 
 1. Should a public target in a tenant with zones but no internet-facing scanner
    fall back to platform scanners if the tenant opted in, or be skipped? (Proposal:
    skipped unless the tenant explicitly enabled shared scanners.)
+   **Answer:** it never goes to platform scanners implicitly (D14). With a
+   default zone it goes to that zone's sensors, and waits there if none is
+   online. Without a default zone it is dispatched as before zones, to any
+   tenant sensor; the coverage view warns about it
+   (`public_addresses_without_default_zone`). Opting in to shared scanners is
+   Phase 4 and will be explicit.
 2. Domain/hostname routing: route by resolved IP only (proposal), or also allow
    suffix rules (`*.corp.example`) on zones?
+   **Answer:** resolved IP only, as proposed. The platform resolves the name at
+   trigger time; the narrowest zone holding any resolved address wins; a name
+   resolving to a private address outside every zone, to the deny list, or not
+   resolving at all is reported as uncovered with the reason and never sent.
+   Suffix rules can be added later without changing this behaviour.

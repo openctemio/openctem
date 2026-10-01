@@ -42,6 +42,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
+		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
 		// Team
 		TeamRead, TeamUpdate, TeamDelete,
 		MembersRead, MembersInvite, MembersWrite,
@@ -120,6 +121,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
+		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
 		// Team (no team:delete)
 		TeamRead, TeamUpdate,
 		MembersRead, MembersInvite, MembersWrite,
@@ -202,6 +204,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Sensors (read + write, no delete)
 		SensorsRead, SensorsWrite,
 		CommandsRead, CommandsWrite,
+		ScanZonesRead, // zones are managed by owners and admins (RFC-023 D16)
 		// Team (read only)
 		TeamRead,
 		MembersRead,
@@ -276,6 +279,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Sensors (read only)
 		SensorsRead,
 		CommandsRead,
+		ScanZonesRead,
 		// Team (read only)
 		TeamRead,
 		MembersRead,

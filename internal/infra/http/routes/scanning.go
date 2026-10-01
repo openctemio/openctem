@@ -245,6 +245,32 @@ func registerSensorManagementRoutes(
 	})
 }
 
+// registerScanZoneRoutes registers the scan zone management API (RFC-023
+// Phase 1). Reads need sensors:zones:read; creating, editing and sensor
+// assignment need sensors:zones:write; deleting needs sensors:zones:delete.
+func registerScanZoneRoutes(
+	router Router,
+	h *handler.ScanZoneHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/scan-zones", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScanZonesRead))
+		// Before /{id} so chi does not read "coverage" as an id.
+		r.GET("/coverage", h.Coverage, middleware.Require(permission.ScanZonesRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ScanZonesRead))
+
+		r.POST("/", h.Create, middleware.Require(permission.ScanZonesWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScanZonesWrite))
+		r.PUT("/{id}/sensors/{sensorId}", h.AssignSensor, middleware.Require(permission.ScanZonesWrite))
+		r.DELETE("/{id}/sensors/{sensorId}", h.UnassignSensor, middleware.Require(permission.ScanZonesWrite))
+
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScanZonesDelete))
+	}, tenantMiddlewares...)
+}
+
 // registerPipelineRoutes registers pipeline management endpoints.
 // Pipelines orchestrate multi-step scan workflows via templates, steps, and runs.
 func registerPipelineRoutes(

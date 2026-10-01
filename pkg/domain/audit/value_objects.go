@@ -141,6 +141,14 @@ const (
 	// hard rotation recorded by ActionSensorKeyRegenerated.
 	ActionSensorKeyRenewed Action = "sensor.key_renewed"
 
+	// Scan zone actions (RFC-023): every change to a zone or to which sensors
+	// serve it.
+	ActionScanZoneCreated          Action = "scan_zone.created"
+	ActionScanZoneUpdated          Action = "scan_zone.updated"
+	ActionScanZoneDeleted          Action = "scan_zone.deleted"
+	ActionScanZoneSensorAssigned   Action = "scan_zone.sensor_assigned"
+	ActionScanZoneSensorUnassigned Action = "scan_zone.sensor_unassigned"
+
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
 	ActionAPIKeyRevoked Action = "api_key.revoked"
@@ -310,6 +318,8 @@ func (a Action) IsValid() bool {
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
+		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
+		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
 		ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
@@ -389,6 +399,9 @@ func (a Action) Category() string {
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed:
 		return "sensor"
+	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
+		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
+		return "scan_zone"
 	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
 		return "api_key"
 	case ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted:
@@ -434,6 +447,7 @@ const (
 	ResourceTypeSettings         ResourceType = "settings"
 	ResourceTypeToken            ResourceType = "token"
 	ResourceTypeSensor           ResourceType = "sensor"
+	ResourceTypeScanZone         ResourceType = "scan_zone"
 	ResourceTypeGroup            ResourceType = "group"
 	ResourceTypePermissionSet    ResourceType = "permission_set"
 	ResourceTypeRole             ResourceType = "role"
@@ -467,7 +481,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor,
+		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
