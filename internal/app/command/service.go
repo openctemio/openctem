@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	commanddom "github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -283,7 +284,17 @@ type FailInput struct {
 	ErrorMessage string `json:"error_message"`
 }
 
+// MaxFailErrorMessageBytes caps the agent-supplied error message stored on a
+// failed command (it is persisted and rendered in the UI / pipeline runs).
+const MaxFailErrorMessageBytes = 4 << 10 // 4 KiB
+
 // Fail marks a command as failed.
+//
+// Only a command the agent is actually working on can be failed: acknowledged
+// or running, or still pending when it is explicitly assigned to the calling
+// agent (an agent rejecting a job it was handed before claiming it). Before,
+// Fail had no state check, so any tenant agent could flip an unassigned
+// pending command — or a completed one — to failed.
 func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Command, error) {
 	cmd, err := s.Get(ctx, input.TenantID, input.CommandID)
 	if err != nil {
@@ -293,12 +304,34 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 		return nil, err
 	}
 
-	cmd.Fail(input.ErrorMessage)
+	switch cmd.Status {
+	case commanddom.CommandStatusAcknowledged, commanddom.CommandStatusRunning:
+	case commanddom.CommandStatusPending:
+		if cmd.AgentID == nil || cmd.AgentID.String() != input.AgentID {
+			return nil, shared.NewDomainError("INVALID_STATE", "command must be claimed before it can be failed", shared.ErrValidation)
+		}
+	default:
+		return nil, shared.NewDomainError("INVALID_STATE", "command is already finished", shared.ErrConflict)
+	}
+
+	cmd.Fail(truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes))
 	if err := s.repo.Update(ctx, cmd); err != nil {
 		return nil, err
 	}
 
 	return cmd, nil
+}
+
+// truncateUTF8 cuts s to at most maxBytes without splitting a UTF-8 rune.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 // CancelCommand marks a command as canceled.

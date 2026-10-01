@@ -1142,6 +1142,8 @@ func TestCommandService_FailCommand_Success(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
+	// Fail requires a claimed command (acknowledged/running).
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	input := command.FailInput{
 		TenantID:     tenantID,
@@ -1207,6 +1209,8 @@ func TestCommandService_FailCommand_UpdateError(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
+	// Fail requires a claimed command (acknowledged/running).
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 	repo.updateErr = errors.New("update failed")
 
 	input := command.FailInput{
@@ -1744,6 +1748,8 @@ func TestCommandService_FailCommand_EmptyErrorMessage(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
+	// Fail requires a claimed command (acknowledged/running).
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
 
 	input := command.FailInput{
 		TenantID:     tenantID,
