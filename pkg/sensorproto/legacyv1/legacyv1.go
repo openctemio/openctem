@@ -35,6 +35,9 @@ const (
 	PathPrefix = "/api/v1/agent"
 	// CredentialsPathPrefix is the v1 credential-leak ingest mount.
 	CredentialsPathPrefix = "/api/v1/agent/credentials"
+	// HeartbeatPath is the v1 heartbeat. A disabled sensor that announced the
+	// doorbell feature may reach this one path, to be told to pause.
+	HeartbeatPath = "/api/v1/agent/heartbeat"
 	// ingestJobsPath is where an async ingest job is polled (RFC-005).
 	ingestJobsPath = "/api/v1/agent/ingest/jobs/"
 )
@@ -82,11 +85,41 @@ func NormalizeDiscoverySource(s string) string {
 
 // Heartbeat is the v1 heartbeat response. Field order matches the sorted map
 // keys the handler encoded before the rename, so the bytes are identical.
+//
+// The doorbell fields after TenantID are an additive v1 extension (RFC-023
+// §9.2a). All are omitempty, so a heartbeat with nothing to say is
+// byte-identical to the v1 response; a client that ignores the body, like
+// sdk-go v0.6.0, is unaffected either way.
 type Heartbeat struct {
 	SensorID string `json:"agent_id"`
 	Status   string `json:"status"`
 	TenantID string `json:"tenant_id"`
+
+	// PendingJobs is how many commands this sensor could claim right now
+	// (capped at 100): poll GET /api/v1/agent/commands when it is > 0.
+	PendingJobs int `json:"pending_jobs,omitempty"`
+	// ConfigVersion is an opaque digest of what the platform governs about
+	// the sensor; it changes when that changes. Sent to doorbell-aware
+	// sensors only.
+	ConfigVersion string `json:"config_version,omitempty"`
+	// Actions are typed control directives from a closed set: pause,
+	// resume, drain, rotate_key, update. Never free-form text.
+	Actions []string `json:"actions,omitempty"`
+	// NextHeartbeatSeconds is the server-advised interval to the next
+	// heartbeat, already bounded by the server.
+	NextHeartbeatSeconds int `json:"next_heartbeat_seconds,omitempty"`
 }
+
+// HeaderSensorFeatures is the request header a sensor lists its optional
+// protocol features in (comma-separated, case-insensitive).
+const HeaderSensorFeatures = "X-OpenCTEM-Sensor-Features"
+
+// FeatureDoorbell announces that the sensor acts on the heartbeat doorbell.
+// It opts the sensor into the hints that would otherwise change the v1
+// response of an idle or disabled sensor: config_version and the idle
+// next_heartbeat_seconds on every heartbeat, and a 200 with the pause action
+// instead of a 401 while the sensor is disabled.
+const FeatureDoorbell = "doorbell"
 
 // Command is the v1 shape of a command (poll, acknowledge, start, complete,
 // fail).

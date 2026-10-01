@@ -694,6 +694,38 @@ func scopesForSensor(t sensordom.SensorType) []string {
 // - Revoked: access permanently revoked
 // The Health field (unknown/online/offline/error) is for monitoring only.
 func (s *SensorService) AuthenticateByAPIKey(ctx context.Context, apiKey string) (*sensordom.Sensor, error) {
+	id, err := s.authenticate(ctx, apiKey, false)
+	if err != nil {
+		return nil, err
+	}
+	return id.Sensor, nil
+}
+
+// SensorIdentity is the sensor a presented key belongs to, with what the
+// heartbeat doorbell needs beyond the sensor row itself.
+type SensorIdentity struct {
+	Sensor *sensordom.Sensor
+	// KeyExpiresAt is the expiry of the key the sensor actually presented
+	// (nil = never expires). With rotation overlap that is the
+	// sensor_api_keys row, not the inline key on the sensor row.
+	KeyExpiresAt *time.Time
+	// Paused is true when an administrator disabled the sensor. Disabling is
+	// reversible, so a disabled sensor may still learn over the heartbeat
+	// that it is paused; every other route keeps rejecting its key.
+	Paused bool
+}
+
+// AuthenticateIdentity authenticates a sensor key like AuthenticateByAPIKey,
+// with one difference: a disabled (not revoked) sensor with a valid,
+// unexpired key is returned with Paused set instead of being refused. The
+// caller decides what a paused sensor may reach — only the heartbeat, to be
+// told to pause (RFC-023 §9.2a). A paused sensor's last-seen time is not
+// touched.
+func (s *SensorService) AuthenticateIdentity(ctx context.Context, apiKey string) (SensorIdentity, error) {
+	return s.authenticate(ctx, apiKey, true)
+}
+
+func (s *SensorService) authenticate(ctx context.Context, apiKey string, allowPaused bool) (SensorIdentity, error) {
 	// Backward-compat lookup: try the peppered hash first; on miss
 	// fall back to the legacy plain SHA-256. Rows written before the
 	// pepper was deployed match the legacy variant; the next key
@@ -712,18 +744,16 @@ func (s *SensorService) AuthenticateByAPIKey(ctx context.Context, apiKey string)
 		// Inline-hash miss: try the multi-key store (RFC-014 Phase 3). Only
 		// reached for keys issued by self-renewal under rotation overlap; the
 		// common inline-key path above is unchanged.
-		if sensor, rowErr := s.authByAPIKeyRow(ctx, apiKey, hash); rowErr == nil {
-			return sensor, nil
+		if id, rowErr := s.authByAPIKeyRow(ctx, apiKey, hash, allowPaused); rowErr == nil {
+			return id, nil
 		}
-		return nil, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
+		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
 	}
 
 	// Check admin-controlled status (not health)
-	if !a.Status.CanAuthenticate() {
-		if a.Status == sensordom.SensorStatusRevoked {
-			return nil, shared.NewDomainError("FORBIDDEN", "sensor access has been revoked", shared.ErrForbidden)
-		}
-		return nil, shared.NewDomainError("FORBIDDEN", "sensor is disabled", shared.ErrForbidden)
+	paused, err := checkSensorStatus(a, allowPaused)
+	if err != nil {
+		return SensorIdentity{}, err
 	}
 
 	// Reject an expired key (RFC-014 Phase 1b). NULL expiry (the default and
@@ -731,19 +761,36 @@ func (s *SensorService) AuthenticateByAPIKey(ctx context.Context, apiKey string)
 	// configures a key TTL and sensors renew. An expired sensor must re-enroll or
 	// be admin-regenerated; unauthorized (not forbidden) signals "renew/re-auth".
 	if a.IsKeyExpired() {
-		return nil, shared.NewDomainError("UNAUTHORIZED", "api key expired", shared.ErrUnauthorized)
+		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "api key expired", shared.ErrUnauthorized)
 	}
 
-	// Update last seen and health (async). Bounded with a timeout so a slow DB
-	// can't accumulate unbounded goroutines under heavy sensor traffic.
-	sensorID := a.ID
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.repo.UpdateLastSeen(ctx, sensorID)
-	}()
+	if !paused {
+		// Update last seen and health (async). Bounded with a timeout so a slow DB
+		// can't accumulate unbounded goroutines under heavy sensor traffic.
+		sensorID := a.ID
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.repo.UpdateLastSeen(ctx, sensorID)
+		}()
+	}
 
-	return a, nil
+	return SensorIdentity{Sensor: a, KeyExpiresAt: a.KeyExpiresAt, Paused: paused}, nil
+}
+
+// checkSensorStatus applies the admin-controlled status: active passes,
+// revoked never does, and disabled passes as paused only when allowPaused.
+func checkSensorStatus(a *sensordom.Sensor, allowPaused bool) (paused bool, err error) {
+	if a.Status.CanAuthenticate() {
+		return false, nil
+	}
+	if a.Status == sensordom.SensorStatusDisabled && allowPaused {
+		return true, nil
+	}
+	if a.Status == sensordom.SensorStatusRevoked {
+		return false, shared.NewDomainError("FORBIDDEN", "sensor access has been revoked", shared.ErrForbidden)
+	}
+	return false, shared.NewDomainError("FORBIDDEN", "sensor is disabled", shared.ErrForbidden)
 }
 
 // authByAPIKeyRow resolves a sensor via the multi-key sensor_api_keys store
@@ -751,10 +798,11 @@ func (s *SensorService) AuthenticateByAPIKey(ctx context.Context, apiKey string)
 // falls through to a single generic error. GetByHash already filters to active
 // keys; IsValid additionally rejects expired ones. The owning sensor's
 // admin-controlled status still governs — a revoked/disabled sensor cannot
-// authenticate with any of its keys.
-func (s *SensorService) authByAPIKeyRow(ctx context.Context, apiKey, pepperedHash string) (*sensordom.Sensor, error) {
+// authenticate with any of its keys (a disabled one only reaches the
+// heartbeat, as paused, when allowPaused).
+func (s *SensorService) authByAPIKeyRow(ctx context.Context, apiKey, pepperedHash string, allowPaused bool) (SensorIdentity, error) {
 	if s.apiKeyRepo == nil {
-		return nil, shared.ErrUnauthorized
+		return SensorIdentity{}, shared.ErrUnauthorized
 	}
 
 	key, err := s.apiKeyRepo.GetByHash(ctx, pepperedHash)
@@ -762,18 +810,19 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, apiKey, pepperedHas
 		key, err = s.apiKeyRepo.GetByHash(ctx, crypto.HashToken(apiKey))
 	}
 	if err != nil || key == nil || !key.IsValid() {
-		return nil, shared.ErrUnauthorized
+		return SensorIdentity{}, shared.ErrUnauthorized
 	}
 
 	a, err := s.repo.GetByID(ctx, key.SensorID)
 	if err != nil {
-		return nil, shared.ErrUnauthorized
+		return SensorIdentity{}, shared.ErrUnauthorized
 	}
-	if !a.Status.CanAuthenticate() {
-		if a.Status == sensordom.SensorStatusRevoked {
-			return nil, shared.NewDomainError("FORBIDDEN", "sensor access has been revoked", shared.ErrForbidden)
-		}
-		return nil, shared.NewDomainError("FORBIDDEN", "sensor is disabled", shared.ErrForbidden)
+	paused, err := checkSensorStatus(a, allowPaused)
+	if err != nil {
+		return SensorIdentity{}, err
+	}
+	if paused {
+		return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, Paused: true}, nil
 	}
 
 	// Async per-key audit + sensor liveness.
@@ -785,7 +834,7 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, apiKey, pepperedHas
 		_ = s.repo.UpdateLastSeen(bg, sensorID)
 	}()
 
-	return a, nil
+	return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt}, nil
 }
 
 // ActivateSensor activates a sensor (admin action).

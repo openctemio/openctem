@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/lib/pq"
@@ -37,8 +39,10 @@ import (
 	"github.com/openctemio/api/internal/app/command"
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/infra/postgres"
+	sensordom "github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/api/pkg/validator"
 	"github.com/openctemio/api/tools/lint/openapicontract"
 )
@@ -46,12 +50,16 @@ import (
 var updateProtocolV1 = flag.Bool("update-protocol-v1", false, "re-record testdata/protocol_v1 golden files")
 
 type v1Harness struct {
-	t      *testing.T
-	db     *sql.DB
-	srv    *httptest.Server
-	key    string
-	masks  []mask
-	client *http.Client
+	t        *testing.T
+	db       *sql.DB
+	srv      *httptest.Server
+	key      string
+	masks    []mask
+	client   *http.Client
+	sensorID string
+	tenantID string
+	header   http.Header // extra request headers for the next calls
+	ingest   *IngestHandler
 }
 
 type mask struct{ from, to string }
@@ -86,6 +94,10 @@ func newV1Harness(t *testing.T) *v1Harness {
 
 	v := validator.New()
 	ih := NewIngestHandler(ingestSvc, sensorSvc, log)
+	// The doorbell is wired as in production: flow.golden proves an idle
+	// heartbeat is still byte-identical with it on.
+	ih.SetDoorbell(app.NewDoorbell(postgres.NewCommandRepository(db),
+		app.DefaultDoorbellConfig().Normalized(5*time.Minute), log))
 	ch := NewCommandHandler(cmdSvc, v, log)
 	sh := NewScanSessionHandler(sessionSvc, v, log)
 
@@ -128,7 +140,8 @@ func newV1Harness(t *testing.T) *v1Harness {
 		t.Fatalf("create sensor: %v", err)
 	}
 
-	h := &v1Harness{t: t, db: sqldb, srv: srv, key: out.APIKey, client: srv.Client()}
+	h := &v1Harness{t: t, db: sqldb, srv: srv, key: out.APIKey, client: srv.Client(),
+		sensorID: out.Sensor.ID.String(), tenantID: tenantID.String(), ingest: ih}
 	h.masks = []mask{
 		{tenantID.String(), "<tenant>"},
 		{out.Sensor.ID.String(), "<self>"},
@@ -171,6 +184,11 @@ func (h *v1Harness) do(method, path string, body any, auth bool) (string, []byte
 	if auth {
 		req.Header.Set("Authorization", "Bearer "+h.key)
 	}
+	for k, vs := range h.header {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
+	}
 	resp, err := h.client.Do(req)
 	if err != nil {
 		h.t.Fatalf("%s %s: %v", method, path, err)
@@ -194,6 +212,7 @@ var (
 	timeRe = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})`)
 	keyRe  = regexp.MustCompile(`"api_key":"[^"]+"`)
 	durRe  = regexp.MustCompile(`"duration_ms":\d+`)
+	cfgRe  = regexp.MustCompile(`"config_version":"[0-9a-f]{16}"`)
 )
 
 func (h *v1Harness) mask(s string) string {
@@ -204,6 +223,7 @@ func (h *v1Harness) mask(s string) string {
 	s = timeRe.ReplaceAllString(s, "<time>")
 	s = keyRe.ReplaceAllString(s, `"api_key":"<api-key>"`)
 	s = durRe.ReplaceAllString(s, `"duration_ms":<ms>`)
+	s = cfgRe.ReplaceAllString(s, `"config_version":"<config-version>"`)
 	return s
 }
 
@@ -271,6 +291,83 @@ func TestProtocolV1_GoldenWire(t *testing.T) {
 	step(http.MethodPost, "/api/v1/agent/renew", nil)
 
 	compareGolden(t, "flow.golden", strings.Join(transcript, "\n----\n"))
+}
+
+// TestProtocolV1_GoldenDoorbell pins the heartbeat doorbell (RFC-023 §9.2a),
+// an ADDITIVE protocol v1 extension: pending_jobs, config_version, actions
+// and next_heartbeat_seconds are new optional fields, all omitempty. An idle
+// sensor that did not announce the doorbell feature still gets the exact v1
+// bytes (first and last heartbeat below, and flow.golden); the other
+// transcripts show the fields a deployed v1 sensor that ignores the body
+// (sdk-go v0.6.0) never reads.
+func TestProtocolV1_GoldenDoorbell(t *testing.T) {
+	h := newV1Harness(t)
+	var transcript []string
+	step := func(note, method, path string) []byte {
+		tr, raw := h.do(method, path, nil, true)
+		transcript = append(transcript, "# "+note+"\n"+tr)
+		return raw
+	}
+	aware := http.Header{legacyv1.HeaderSensorFeatures: {legacyv1.FeatureDoorbell}}
+	ctx := context.Background()
+
+	step("idle, v1 sensor: plain v1 response", http.MethodPost, "/api/v1/agent/heartbeat")
+
+	pool := h.seedCommand("cmd-pool")
+	pinned := shared.NewID().String()
+	if _, err := h.db.ExecContext(ctx,
+		`INSERT INTO commands (id, tenant_id, sensor_id, type, priority, payload, status, created_at)
+		 VALUES ($1, $2, $3, 'scan', 'normal', '{"scanner":"semgrep"}', 'pending', NOW())`,
+		pinned, h.tenantID, h.sensorID); err != nil {
+		t.Fatalf("seed pinned command: %v", err)
+	}
+	h.masks = append(h.masks, mask{pinned, "<cmd-pinned>"})
+	step("work waiting, v1 sensor: pending_jobs and the busy interval only", http.MethodPost, "/api/v1/agent/heartbeat")
+	h.header = aware
+	step("work waiting, doorbell-aware sensor: plus config_version", http.MethodPost, "/api/v1/agent/heartbeat")
+
+	// The sensor reacts by polling; the doorbell never carries the job.
+	step("poll", http.MethodGet, "/api/v1/agent/commands?limit=10")
+	step("claim the pool command", http.MethodPost, "/api/v1/agent/commands/"+pool+"/acknowledge")
+	step("claim the pinned command", http.MethodPost, "/api/v1/agent/commands/"+pinned+"/acknowledge")
+	step("idle, doorbell-aware sensor: config_version and the idle interval", http.MethodPost, "/api/v1/agent/heartbeat")
+	h.header = nil
+	step("idle again, v1 sensor: plain v1 response", http.MethodPost, "/api/v1/agent/heartbeat")
+
+	if _, err := h.db.ExecContext(ctx, `UPDATE sensors SET status = 'disabled' WHERE id = $1`, h.sensorID); err != nil {
+		t.Fatal(err)
+	}
+	step("disabled, v1 sensor: unchanged v1 401", http.MethodPost, "/api/v1/agent/heartbeat")
+	h.header = aware
+	step("disabled, doorbell-aware sensor: 200 with pause", http.MethodPost, "/api/v1/agent/heartbeat")
+	step("disabled, doorbell-aware sensor, any other route: 401", http.MethodGet, "/api/v1/agent/commands")
+
+	if _, err := h.db.ExecContext(ctx, `UPDATE sensors SET status = 'revoked' WHERE id = $1`, h.sensorID); err != nil {
+		t.Fatal(err)
+	}
+	step("revoked, doorbell-aware sensor: 401", http.MethodPost, "/api/v1/agent/heartbeat")
+
+	compareGolden(t, "doorbell.golden", strings.Join(transcript, "\n----\n"))
+}
+
+type failingPendingWork struct{}
+
+func (failingPendingWork) PendingWorkForSensor(context.Context, shared.ID, shared.ID, []string, int) (sensordom.PendingWork, error) {
+	return sensordom.PendingWork{}, errors.New("database is down")
+}
+
+// A failing doorbell query must not fail the heartbeat: 200, no hints.
+func TestProtocolV1_DoorbellQueryFailureKeepsHeartbeat(t *testing.T) {
+	h := newV1Harness(t)
+	h.ingest.SetDoorbell(app.NewDoorbell(failingPendingWork{}, app.DefaultDoorbellConfig(), logger.NewNop()))
+	h.seedCommand("cmd")
+	h.header = http.Header{legacyv1.HeaderSensorFeatures: {"other, Doorbell"}}
+	tr, _ := h.do(http.MethodPost, "/api/v1/agent/heartbeat", nil, true)
+	want := "POST /api/v1/agent/heartbeat\nstatus: 200\nContent-Type: application/json\n\n" +
+		`{"agent_id":"<self>","status":"ok","tenant_id":"<tenant>"}` + "\n"
+	if tr != want {
+		t.Errorf("heartbeat with a failing doorbell query:\n%s\nwant\n%s", tr, want)
+	}
 }
 
 // TestProtocolV1_RouteTable pins every route a v1 sensor can call.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/openctemio/api/pkg/domain/command"
+	sensordom "github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
 )
@@ -118,37 +119,19 @@ func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id s
 func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, capabilities []string, limit int) ([]*command.Command, error) {
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
-		AND status = 'pending'
-		AND (expires_at IS NULL OR expires_at > NOW())
-		AND (scheduled_at IS NULL OR scheduled_at <= NOW())
-	`
+		AND ` + pendingReadyPredicate
 
 	args := []any{tenantID.String()}
-	argIndex := 2
 
 	if sensorID != nil {
-		query += fmt.Sprintf(" AND (sensor_id = $%d OR sensor_id IS NULL)", argIndex)
-		query += " AND " + zoneClaimPredicate(fmt.Sprintf("$%d", argIndex))
+		query += " AND (sensor_id = $2 OR sensor_id IS NULL) AND " + zoneClaimPredicate("$2")
 		args = append(args, sensorID.String())
-		argIndex++
 	} else {
 		// No sensor identity: nothing pinned, and no zone membership to prove.
 		query += " AND sensor_id IS NULL AND scan_zone_id IS NULL"
 	}
 
-	// Capability gate: keep a command only if it declares no required
-	// capabilities, or every required capability is one this sensor advertises.
-	// jsonb_typeof(...) IS DISTINCT FROM 'array' covers a missing key (SQL NULL)
-	// and any malformed value, so those always pass through as unscoped.
-	query += fmt.Sprintf(`
-		AND (
-			jsonb_typeof(payload->'required_capabilities') IS DISTINCT FROM 'array'
-			OR NOT EXISTS (
-				SELECT 1
-				FROM jsonb_array_elements_text(payload->'required_capabilities') AS rc(cap)
-				WHERE rc.cap <> ALL(COALESCE($%d::text[], ARRAY[]::text[]))
-			)
-		)`, argIndex)
+	query += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1))
 	args = append(args, pq.Array(capabilities))
 
 	query += fmt.Sprintf(`
@@ -182,6 +165,81 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 	}
 
 	return commands, nil
+}
+
+// pendingReadyPredicate keeps a command that is waiting and due: pending, not
+// expired, and not scheduled for later.
+const pendingReadyPredicate = `commands.status = 'pending'
+		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
+		AND (commands.scheduled_at IS NULL OR commands.scheduled_at <= NOW())`
+
+// capabilityClaimPredicate is the capability gate: keep a command only if it
+// declares no required capabilities, or every required capability is one the
+// sensor (bound to capsParam, a text[]) advertises.
+// jsonb_typeof(...) IS DISTINCT FROM 'array' covers a missing key (SQL NULL)
+// and any malformed value, so those always pass through as unscoped.
+func capabilityClaimPredicate(capsParam string) string {
+	return `(
+			jsonb_typeof(commands.payload->'required_capabilities') IS DISTINCT FROM 'array'
+			OR NOT EXISTS (
+				SELECT 1
+				FROM jsonb_array_elements_text(commands.payload->'required_capabilities') AS rc(cap)
+				WHERE rc.cap <> ALL(COALESCE(` + capsParam + `::text[], ARRAY[]::text[]))
+			)
+		)`
+}
+
+// PendingWorkForSensor is the heartbeat doorbell's read (RFC-023 §9.2a): how
+// many commands the sensor could claim right now (capped at limit), and a
+// fingerprint of its zone assignments, in one statement.
+//
+// "Could claim" is exactly what the poll (GetPendingForSensor) would offer:
+// pinned to the sensor or unpinned, ready, zone claim predicate, capability
+// gate. The query only splits the poll's (sensor_id = $2 OR sensor_id IS NULL)
+// into two counts so each half is an index range on idx_commands_pending_poll
+// / idx_commands_pending_unassigned instead of a filter over every pending row
+// of the tenant, and pre-filters unpinned zone commands to the sensor's zones
+// once (a condition the zone claim predicate implies) instead of running that
+// predicate's subquery per row. The predicate itself is still applied as-is.
+func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, sensorID shared.ID, capabilities []string, limit int) (sensordom.PendingWork, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+	claimable := pendingReadyPredicate + `
+		AND ` + zoneClaimPredicate("$2") + `
+		AND ` + capabilityClaimPredicate("$3")
+	query := `
+		SELECT
+			LEAST($4::int,
+				(SELECT count(*) FROM (
+					SELECT 1 FROM commands
+					WHERE commands.tenant_id = $1 AND commands.sensor_id = $2
+					  AND ` + claimable + `
+					LIMIT $4) pinned)
+				+
+				(SELECT count(*) FROM (
+					SELECT 1 FROM commands
+					WHERE commands.tenant_id = $1 AND commands.sensor_id IS NULL
+					  AND (commands.scan_zone_id IS NULL OR commands.scan_zone_id = ANY(ARRAY(
+						SELECT m.zone_id FROM scan_zone_sensors m
+						WHERE m.tenant_id = $1 AND m.sensor_id = $2)))
+					  AND ` + claimable + `
+					LIMIT $4) unpinned)
+			) AS pending,
+			COALESCE((
+				SELECT string_agg(z.id::text || '@' || to_char(z.updated_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS'), ',' ORDER BY z.id)
+				FROM scan_zone_sensors zs
+				JOIN scan_zones z ON z.id = zs.zone_id AND z.tenant_id = zs.tenant_id
+				WHERE zs.tenant_id = $1 AND zs.sensor_id = $2
+			), '') AS zones`
+
+	var out sensordom.PendingWork
+	err := r.db.QueryRowContext(ctx, query, tenantID.String(), sensorID.String(), pq.Array(capabilities), limit).
+		Scan(&out.Count, &out.ZoneFingerprint)
+	if err != nil {
+		return sensordom.PendingWork{}, fmt.Errorf("failed to read pending work: %w", err)
+	}
+	return out, nil
 }
 
 // zoneClaimPredicate is the claim-time zone check (RFC-023 D7 layer 2) for

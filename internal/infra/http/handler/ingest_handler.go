@@ -48,6 +48,10 @@ type contextKey string
 
 const sensorContextKey contextKey = "sensor"
 
+// sensorIdentityContextKey carries the app.SensorIdentity AuthenticateSource
+// resolved (paused flag, presented key expiry) for the heartbeat doorbell.
+const sensorIdentityContextKey contextKey = "sensor_identity"
+
 // IngestHandler handles ingestion-related HTTP requests.
 // It supports CTIS, SARIF, Recon, and raw scanner output formats.
 type IngestHandler struct {
@@ -61,6 +65,16 @@ type IngestHandler struct {
 	ingestJobRepo       ingestjob.Repository
 	asyncMode           bool
 	maxPendingPerTenant int
+
+	// doorbell computes the heartbeat hints (RFC-023 §9.2a). Nil keeps the
+	// plain v1 heartbeat response.
+	doorbell *app.Doorbell
+}
+
+// SetDoorbell wires the heartbeat doorbell. Optional; without it the
+// heartbeat answers exactly as protocol v1 did before the doorbell.
+func (h *IngestHandler) SetDoorbell(d *app.Doorbell) {
+	h.doorbell = d
 }
 
 // SetAsyncIngest enables async ingest: the CTIS endpoint enqueues the payload
@@ -257,6 +271,13 @@ type ChunkIngestResponse struct {
 // =============================================================================
 
 // AuthenticateSource is middleware that authenticates the sensor by API key.
+//
+// A disabled sensor is refused everywhere, as before, with one exception for
+// the heartbeat doorbell (RFC-023 §9.2a): on POST /api/v1/agent/heartbeat, a
+// disabled sensor that announced the doorbell feature is let through as
+// paused, so the heartbeat can answer it with the typed pause action. The
+// exception is matched on the exact path and method and is default-deny:
+// every other route, and a sensor that did not opt in, still gets the v1 401.
 func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiKey := extractAPIKey(r)
@@ -265,15 +286,20 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 			return
 		}
 
-		agt, err := h.sensorService.AuthenticateByAPIKey(r.Context(), apiKey)
+		id, err := h.sensorService.AuthenticateIdentity(r.Context(), apiKey)
+		if err == nil && id.Paused && !(isHeartbeatRequest(r) && sensorHasFeature(r, legacyv1.FeatureDoorbell)) {
+			err = errSensorPaused
+		}
 		if err != nil {
 			h.logger.Debug("authentication failed", "error", err)
 			apierror.Unauthorized("Invalid API key").WriteJSON(w)
 			return
 		}
+		agt := id.Sensor
 
 		// Add sensor to context
 		ctx := context.WithValue(r.Context(), sensorContextKey, agt)
+		ctx = context.WithValue(ctx, sensorIdentityContextKey, id)
 		// Expose the authenticated sensor's tenant to tenant-keyed
 		// middleware that runs later in the chain (ingest/telemetry
 		// rate limiters). Sensor API-key auth is the tenant-binding
@@ -288,6 +314,41 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// errSensorPaused refuses a disabled sensor outside the doorbell exception.
+var errSensorPaused = errors.New("sensor is disabled")
+
+// isHeartbeatRequest reports whether r is the v1 heartbeat.
+func isHeartbeatRequest(r *http.Request) bool {
+	return r.Method == http.MethodPost && r.URL.Path == legacyv1.HeartbeatPath
+}
+
+// sensorHasFeature reports whether the sensor listed feature in the
+// X-OpenCTEM-Sensor-Features request header.
+func sensorHasFeature(r *http.Request, feature string) bool {
+	for _, v := range r.Header.Values(legacyv1.HeaderSensorFeatures) {
+		for _, f := range strings.Split(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(f), feature) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sensorIdentityFromContext returns the identity AuthenticateSource
+// resolved, falling back to the bare sensor (no paused flag, the sensor
+// row's key expiry) when only that is in the context.
+func sensorIdentityFromContext(ctx context.Context) app.SensorIdentity {
+	if id, ok := ctx.Value(sensorIdentityContextKey).(app.SensorIdentity); ok && id.Sensor != nil {
+		return id
+	}
+	agt := SensorFromContext(ctx)
+	if agt == nil {
+		return app.SensorIdentity{}
+	}
+	return app.SensorIdentity{Sensor: agt, KeyExpiresAt: agt.KeyExpiresAt}
 }
 
 // SensorFromContext retrieves the authenticated sensor from context.
@@ -577,10 +638,11 @@ func (h *IngestHandler) IngestReconReport(w http.ResponseWriter, r *http.Request
 
 // Heartbeat handles POST /api/v1/agent/heartbeat
 // @Summary      Sensor heartbeat
-// @Description  Send a heartbeat to indicate sensor is alive
+// @Description  Send a heartbeat to indicate sensor is alive. The response is also a doorbell (RFC-023 §9.2a): pending_jobs > 0 means poll GET /agent/commands now; next_heartbeat_seconds is the advised interval; actions are typed directives (pause, resume, drain, rotate_key, update). A sensor that sends X-OpenCTEM-Sensor-Features: doorbell also gets config_version and, while disabled, a 200 with the pause action instead of a 401.
 // @Tags         Sensor
 // @Accept       json
 // @Produce      json
+// @Param        X-OpenCTEM-Sensor-Features  header  string  false  "Optional protocol features, comma-separated (doorbell)"
 // @Param        request  body      HeartbeatRequest  false  "Heartbeat data"
 // @Success      200  {object}  legacyv1.Heartbeat
 // @Failure      401  {object}  apierror.Error
@@ -592,6 +654,7 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
+	id := sensorIdentityFromContext(r.Context())
 
 	// Parse heartbeat request (optional body)
 	var req HeartbeatRequest
@@ -602,30 +665,48 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update sensor metrics via service
-	if err := h.sensorService.UpdateHeartbeat(r.Context(), agt.ID, app.SensorHeartbeatData{
-		Version:  req.Version,
-		Hostname: req.Hostname,
-		// The connection's address under the trusted-proxy rule, so a
-		// sensor cannot claim someone else's address.
-		IPAddress:     getClientIP(r),
-		CPUPercent:    req.CPUPercent,
-		MemoryPercent: req.MemoryPercent,
-		CurrentJobs:   req.ActiveJobs,
-		Region:        req.Region,
-		DiskReadMBPS:  req.DiskReadMBPS,
-		DiskWriteMBPS: req.DiskWriteMBPS,
-		NetworkRxMBPS: req.NetworkRxMBPS,
-		NetworkTxMBPS: req.NetworkTxMBPS,
-	}); err != nil {
-		h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", agt.ID)
-		// Don't fail the request - heartbeat should be resilient
+	// Update sensor metrics via service. A paused (disabled) sensor is only
+	// told to pause: it does not come online and its row is not written.
+	if !id.Paused {
+		if err := h.sensorService.UpdateHeartbeat(r.Context(), agt.ID, app.SensorHeartbeatData{
+			Version:  req.Version,
+			Hostname: req.Hostname,
+			// The connection's address under the trusted-proxy rule, so a
+			// sensor cannot claim someone else's address.
+			IPAddress:     getClientIP(r),
+			CPUPercent:    req.CPUPercent,
+			MemoryPercent: req.MemoryPercent,
+			CurrentJobs:   req.ActiveJobs,
+			Region:        req.Region,
+			DiskReadMBPS:  req.DiskReadMBPS,
+			DiskWriteMBPS: req.DiskWriteMBPS,
+			NetworkRxMBPS: req.NetworkRxMBPS,
+			NetworkTxMBPS: req.NetworkTxMBPS,
+		}); err != nil {
+			h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", agt.ID)
+			// Don't fail the request - heartbeat should be resilient
+		}
 	}
 
 	resp := legacyv1.Heartbeat{
 		SensorID: agt.ID.String(),
 		Status:   "ok",
 		TenantID: sensorTenantString(agt), // "" for tenant-less platform sensors
+	}
+
+	// Doorbell hints (RFC-023 §9.2a). Ring never fails; with nothing to say
+	// every field stays zero and the response is the plain v1 one.
+	if h.doorbell != nil {
+		hints := h.doorbell.Ring(r.Context(), app.DoorbellRequest{
+			Identity: id,
+			Aware:    sensorHasFeature(r, legacyv1.FeatureDoorbell),
+		})
+		resp.PendingJobs = hints.PendingJobs
+		resp.ConfigVersion = hints.ConfigVersion
+		resp.NextHeartbeatSeconds = hints.NextHeartbeatSeconds
+		for _, a := range hints.Actions {
+			resp.Actions = append(resp.Actions, string(a))
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

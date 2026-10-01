@@ -170,6 +170,25 @@ type SensorConfigConfig struct {
 	// expiry: renewed keys never expire. Set AGENT_KEY_TTL (e.g. "24h") to opt
 	// into short-lived, auto-rotating sensor credentials.
 	KeyTTL time.Duration
+	// KeyRenewBefore is how long before the presented key expires the
+	// heartbeat starts ringing rotate_key. Zero (the default) means half of
+	// KeyTTL, or 24h when no TTL is set. SENSOR_KEY_RENEW_BEFORE.
+	KeyRenewBefore time.Duration
+
+	// Heartbeat doorbell (RFC-023 §9.2a): the intervals the heartbeat
+	// response advises in next_heartbeat_seconds. Every value is clamped to
+	// [HeartbeatMinInterval, HeartbeatMaxInterval], and the maximum to half
+	// of WORKER_HEARTBEAT_TIMEOUT so a sensor that follows the advice is
+	// never marked offline.
+	HeartbeatInterval       time.Duration // SENSOR_HEARTBEAT_INTERVAL, idle (default 30s)
+	HeartbeatBusyInterval   time.Duration // SENSOR_HEARTBEAT_BUSY_INTERVAL, work waiting (default 5s)
+	HeartbeatLoadedInterval time.Duration // SENSOR_HEARTBEAT_LOADED_INTERVAL, platform under load (default 2m)
+	HeartbeatMinInterval    time.Duration // SENSOR_HEARTBEAT_MIN_INTERVAL (default 5s)
+	HeartbeatMaxInterval    time.Duration // SENSOR_HEARTBEAT_MAX_INTERVAL (default 5m)
+	// HeartbeatSlowQuery is the doorbell query latency that counts as "under
+	// load" and advises HeartbeatLoadedInterval. SENSOR_HEARTBEAT_SLOW_QUERY
+	// (default 250ms).
+	HeartbeatSlowQuery time.Duration
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -716,6 +735,14 @@ func Load() (*Config, error) {
 			TemplatesDir: getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
 			PublicAPIURL: getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:       getEnvDuration("SENSOR_KEY_TTL", 0),
+
+			KeyRenewBefore:          getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
+			HeartbeatInterval:       getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
+			HeartbeatBusyInterval:   getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
+			HeartbeatLoadedInterval: getEnvDuration("SENSOR_HEARTBEAT_LOADED_INTERVAL", 2*time.Minute),
+			HeartbeatMinInterval:    getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
+			HeartbeatMaxInterval:    getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
+			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),

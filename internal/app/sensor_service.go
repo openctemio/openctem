@@ -24,6 +24,10 @@ type (
 	SelectSensorResult                = sensor.SelectSensorResult
 	TenantAvailableCapabilitiesOutput = sensor.TenantAvailableCapabilitiesOutput
 	UpdateSensorInput                 = sensor.UpdateSensorInput
+	SensorIdentity                    = sensor.SensorIdentity
+	Doorbell                          = sensor.Doorbell
+	DoorbellConfig                    = sensor.DoorbellConfig
+	DoorbellRequest                   = sensor.DoorbellRequest
 )
 
 var (
@@ -31,6 +35,8 @@ var (
 	NewSensorSelector              = sensor.NewSensorSelector
 	NewSensorConfigTemplateService = sensor.NewSensorConfigTemplateService
 	ErrNoSensorAvailable           = sensor.ErrNoSensorAvailable
+	NewDoorbell                    = sensor.NewDoorbell
+	DefaultDoorbellConfig          = sensor.DefaultDoorbellConfig
 )
 
 // Selection-mode constants re-exported for legacy callers.
