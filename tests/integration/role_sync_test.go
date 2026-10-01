@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"database/sql"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/api/internal/infra/controller"
+	"github.com/openctemio/api/internal/testdb"
 )
 
 // The hourly role-sync reconciler used to re-grant the system role named in
@@ -37,7 +37,7 @@ type roleSyncFixture struct {
 
 func newRoleSyncFixture(t *testing.T) *roleSyncFixture {
 	t.Helper()
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := testdb.URL()
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping role-sync DB test")
 	}

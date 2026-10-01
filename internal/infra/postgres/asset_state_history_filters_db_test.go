@@ -3,12 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -17,7 +17,7 @@ import (
 // change-type filter (previously ignored), new_value, the asset-scope and
 // internet-facing EXISTS filters, and the tenant-scoped asset ref lookup.
 func TestStateHistoryList_ChangeViewFilters(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}
@@ -128,7 +128,7 @@ func TestStateHistoryList_ChangeViewFilters(t *testing.T) {
 // ON CONFLICT set), so the history said "public" while the asset stayed
 // "unknown". It must now fill the gap, and never override a known value.
 func TestUpsertBatch_ExposureFillsGapOnly(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}

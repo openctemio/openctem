@@ -39,6 +39,7 @@ import (
 	"github.com/openctemio/api/internal/app/command"
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/api/internal/testdb"
 	sensordom "github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -66,7 +67,7 @@ type mask struct{ from, to string }
 
 func newV1Harness(t *testing.T) *v1Harness {
 	t.Helper()
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping protocol v1 golden test")
 	}

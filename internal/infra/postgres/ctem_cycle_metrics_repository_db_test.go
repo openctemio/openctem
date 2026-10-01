@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"math"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -19,7 +19,7 @@ import (
 // all against the real app_test schema. Skipped unless DATABASE_URL is
 // set.
 func TestCTEMCycleMetricsRepository(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed metrics test")
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -23,7 +23,7 @@ import (
 // refused through every role-setting path and the database is unchanged, while
 // the owner can still grant the owner role.
 func TestRoleGrantCeiling_AdminSelfEscalationRefused(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := testdb.URL()
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping role grant ceiling DB test")
 	}

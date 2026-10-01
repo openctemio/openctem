@@ -3,10 +3,10 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/exposure"
 )
 
@@ -18,7 +18,7 @@ import (
 
 func openExposureRefreshDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping exposure-refresh DB test")
 	}

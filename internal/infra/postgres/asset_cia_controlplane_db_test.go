@@ -3,11 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/asset"
 )
 
@@ -16,7 +16,7 @@ import (
 // silently-dropped-column class (the ratings must be threaded through the INSERT,
 // UPDATE, SELECT and scan paths). Skipped unless DATABASE_URL is set.
 func TestAsset_CIAImpactRoundTrip(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}
@@ -101,7 +101,7 @@ func TestAsset_CIAImpactRoundTrip(t *testing.T) {
 // flag survives a Create -> GetByID round trip on an asset relationship.
 // Skipped unless DATABASE_URL is set.
 func TestRelationship_ControlPlaneRoundTrip(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}

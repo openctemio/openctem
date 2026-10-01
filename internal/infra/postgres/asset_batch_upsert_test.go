@@ -3,13 +3,13 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/asset"
 )
 
@@ -76,7 +76,7 @@ func TestAssetValuesPlaceholders(t *testing.T) {
 // assets upsert against the real schema via PREPARE (parses/plans without
 // executing). Skipped unless DATABASE_URL is set.
 func TestAssetUpsertSQL_PreparesAgainstSchema(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping schema-level PREPARE check")
 	}

@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -308,7 +308,7 @@ func setPlatformAdminContext(t *testing.T, tx *sql.Tx) {
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping RLS isolation tests")
 	}
@@ -332,7 +332,7 @@ func setupRLSTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
 	// Connect as non-superuser for RLS testing
-	dbURL := os.Getenv("DATABASE_URL_RLS_TEST")
+	dbURL := testdb.RLSURL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL_RLS_TEST not set; skipping RLS test-user tests")
 	}

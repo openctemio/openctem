@@ -3,12 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/pagination"
@@ -50,7 +50,7 @@ func TestBuildWhereClause_NoSLAStatusWhenUnset(t *testing.T) {
 // board's ?sla_status=overdue,exceeded query, and an 'on_track' finding is not.
 // Skipped unless DATABASE_URL is set (runs in CI, which provisions Postgres).
 func TestList_SLAStatusFilter(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}

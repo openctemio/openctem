@@ -3,12 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -19,7 +19,7 @@ import (
 // or a placeholder-numbering slip in either scanner would surface here rather
 // than in the auth path at runtime. Skipped unless DATABASE_URL is set.
 func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping schema-level check")
 	}

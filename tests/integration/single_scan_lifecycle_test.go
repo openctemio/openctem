@@ -4,13 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
 	scansvc "github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
@@ -59,7 +59,7 @@ func (availableSensors) SelectSensor(context.Context, scansvc.SelectSensorReques
 func openLifecycleDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping single-scan lifecycle tests")
 	}

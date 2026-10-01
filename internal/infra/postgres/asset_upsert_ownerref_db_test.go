@@ -3,11 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/asset"
 )
 
@@ -21,7 +21,7 @@ import (
 // Update, so a regression (owner_ref dropped from the batch INSERT again) fails
 // here. Skipped unless DATABASE_URL is set.
 func TestUpsertBatch_PersistsOwnerRef(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}

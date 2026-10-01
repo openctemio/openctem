@@ -4,19 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
 func openCharterEvalDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed charter evaluation test")
 	}

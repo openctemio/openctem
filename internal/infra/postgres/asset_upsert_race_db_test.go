@@ -3,11 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -20,7 +20,7 @@ import (
 // returns persistedIDs (name -> the id the row actually holds) so the caller can
 // remap. This test proves the loser gets the winner's id back.
 func TestUpsertBatch_ConcurrentCreateSameName_ReturnsWinnerID(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}

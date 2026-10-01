@@ -3,11 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
@@ -23,7 +23,7 @@ import (
 // regression (columns dropped from the INSERT again) fails here. Skipped unless
 // DATABASE_URL is set.
 func TestCreate_PersistsClassificationColumns(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}

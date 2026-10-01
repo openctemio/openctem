@@ -3,12 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -25,7 +25,7 @@ import (
 func openTimeoutDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping MarkTimedOutRuns tests")
 	}

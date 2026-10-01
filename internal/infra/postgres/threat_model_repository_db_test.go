@@ -3,11 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/threatmodel"
 	"github.com/openctemio/api/pkg/pagination"
@@ -17,7 +17,7 @@ import (
 // (delete-and-insert) path, tenant-scoping, threat filtering, and catalog reads
 // against the real schema. Skipped unless DATABASE_URL is set.
 func TestThreatModelRepository_SaveReplaceAndScope(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed threat model test")
 	}
@@ -152,7 +152,7 @@ func TestThreatModelRepository_SaveReplaceAndScope(t *testing.T) {
 // TestThreatModelRepository_CatalogReads validates the global (tenant-agnostic)
 // catalog reads against the seeded attack-16.1 dataset.
 func TestThreatModelRepository_CatalogReads(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping catalog read test")
 	}
@@ -202,7 +202,7 @@ func TestThreatModelRepository_CatalogReads(t *testing.T) {
 // oracle reader: only OPEN threats at/above the score threshold contribute
 // their entry/target/hop asset ids, and the query is tenant-scoped.
 func TestThreatModelRepository_AssetsOnOpenThreatPaths(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed threat-path oracle test")
 	}

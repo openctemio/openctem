@@ -3,10 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
+
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -17,7 +18,7 @@ import (
 //
 // DB-gated: needs DATABASE_URL pointing at app_test (never the live DB).
 func TestBusinessContextLookupRepo_GetForAssets(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}
@@ -89,7 +90,7 @@ func TestBusinessContextLookupRepo_GetForAssets(t *testing.T) {
 // (target of an is_control_plane edge, per the #467 depends_on data model)
 // inherits that criticality via ControlPlaneServes*. DB-gated.
 func TestBusinessContextLookupRepo_ControlPlanePropagation(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}
@@ -157,7 +158,7 @@ func TestBusinessContextLookupRepo_ControlPlanePropagation(t *testing.T) {
 // criticality (Feature 1). It also confirms a cycle terminates and that a
 // critical asset beyond the depth cap does NOT propagate. DB-gated.
 func TestBusinessContextLookupRepo_ControlPlaneMultiHop(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}
@@ -246,7 +247,7 @@ func TestBusinessContextLookupRepo_ControlPlaneMultiHop(t *testing.T) {
 // asset in a child BU inherits the MAX criticality up the parent chain, only
 // raises, and a flat BU is unchanged. DB-gated.
 func TestBusinessContextLookupRepo_BUHierarchyInheritance(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}

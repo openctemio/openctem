@@ -7,14 +7,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/lib/pq"
+
 	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -48,7 +49,7 @@ func (c *captureReclassifyQueue) count() int {
 //
 // DB-gated: needs DATABASE_URL pointing at app_test (never the live DB).
 func TestPriorityRuleHandler_MutationsEnqueueReclassify(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}
