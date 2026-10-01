@@ -50,6 +50,24 @@ func (l *TenantConcurrencyLimiter) release(tenantID string) {
 	}
 }
 
+// TryAcquire takes one in-flight slot for tenantID, reporting false when the
+// tenant is at the cap. A nil or disabled limiter always succeeds. Every
+// successful TryAcquire must be paired with Release.
+func (l *TenantConcurrencyLimiter) TryAcquire(tenantID string) bool {
+	if l == nil || l.max <= 0 {
+		return true
+	}
+	return l.acquire(tenantID)
+}
+
+// Release returns a slot TryAcquire took. No-op on a nil or disabled limiter.
+func (l *TenantConcurrencyLimiter) Release(tenantID string) {
+	if l == nil || l.max <= 0 {
+		return
+	}
+	l.release(tenantID)
+}
+
 // Middleware enforces the per-tenant in-flight cap.
 func (l *TenantConcurrencyLimiter) Middleware() func(http.Handler) http.Handler {
 	if l == nil || l.max <= 0 {
