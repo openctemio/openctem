@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/httpsec"
@@ -50,7 +51,7 @@ type slackMessage struct {
 type slackBlock struct {
 	Type     string          `json:"type"`
 	Text     *slackTextBlock `json:"text,omitempty"`
-	Elements []slackElement  `json:"elements,omitempty"`
+	Elements []any           `json:"elements,omitempty"` // slackElement or slackButton
 	Fields   []slackField    `json:"fields,omitempty"`
 }
 
@@ -63,6 +64,14 @@ type slackTextBlock struct {
 type slackElement struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
+}
+
+// slackButton is a Block Kit button. Its label is plain_text and the link is
+// the url field, so neither goes through mrkdwn parsing.
+type slackButton struct {
+	Type string          `json:"type"`
+	Text *slackTextBlock `json:"text"`
+	URL  string          `json:"url"`
 }
 
 type slackField struct {
@@ -157,7 +166,7 @@ func (c *SlackClient) buildMessage(msg Message) slackMessage {
 			Type: "section",
 			Text: &slackTextBlock{
 				Type: "mrkdwn",
-				Text: msg.Body,
+				Text: slackEscape(msg.Body),
 			},
 		})
 	}
@@ -168,7 +177,7 @@ func (c *SlackClient) buildMessage(msg Message) slackMessage {
 		for key, value := range msg.Fields {
 			fields = append(fields, slackField{
 				Type: "mrkdwn",
-				Text: fmt.Sprintf("*%s:*\n%s", key, value),
+				Text: fmt.Sprintf("*%s:*\n%s", slackEscape(key), slackEscape(value)),
 			})
 		}
 		blocks = append(blocks, slackBlock{
@@ -177,14 +186,16 @@ func (c *SlackClient) buildMessage(msg Message) slackMessage {
 		})
 	}
 
-	// URL button
+	// URL button. A button takes a plain_text label and a url field; the old
+	// "<url|label>" string was not a valid button text object.
 	if msg.URL != "" {
 		blocks = append(blocks, slackBlock{
 			Type: "actions",
-			Elements: []slackElement{
-				{
+			Elements: []any{
+				slackButton{
 					Type: "button",
-					Text: fmt.Sprintf("<%s|View Details>", msg.URL),
+					Text: &slackTextBlock{Type: "plain_text", Text: "View Details"},
+					URL:  msg.URL,
 				},
 			},
 		})
@@ -194,10 +205,10 @@ func (c *SlackClient) buildMessage(msg Message) slackMessage {
 	if msg.FooterText != "" {
 		blocks = append(blocks, slackBlock{
 			Type: "context",
-			Elements: []slackElement{
-				{
+			Elements: []any{
+				slackElement{
 					Type: "mrkdwn",
-					Text: msg.FooterText,
+					Text: slackEscape(msg.FooterText),
 				},
 			},
 		})
@@ -214,4 +225,17 @@ func (c *SlackClient) buildMessage(msg Message) slackMessage {
 	return slackMessage{
 		Attachments: attachments,
 	}
+}
+
+// slackEscaper escapes the three characters Slack's mrkdwn treats as control
+// characters (https://api.slack.com/reference/surfaces/formatting#escaping).
+// Without it, text from a finding or sensor report can write <!channel>,
+// <!here>, <@U123> (mentions) or <https://evil|label> (a disguised link) into
+// a channel. Formatting characters (*, _, ~, `) only change emphasis and are
+// left as they are.
+var slackEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// slackEscape makes untrusted text safe for a Slack mrkdwn text object.
+func slackEscape(s string) string {
+	return slackEscaper.Replace(s)
 }
