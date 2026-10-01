@@ -16,6 +16,7 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	registerRL := authRateLimiter.RegisterMiddleware()
 	passwordRL := authRateLimiter.PasswordMiddleware()
 	tokenExchangeRL := authRateLimiter.TokenExchangeMiddleware()
+	mfaRL := authRateLimiter.MFAMiddleware()
 
 	// Public login-capability snapshot: tells the UI which social buttons (and
 	// the Entra SSO env fallback) are actually usable, so it can hide dead
@@ -58,13 +59,15 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			r.POST("/login", loginHandler.ServeHTTP)
 
 			// Second login step (2FA). Authorized only by the short-lived
-			// challenge token a password login returns; same strict limit as
-			// login since each call can try a code.
-			mfaVerifyHandler := ChainFunc(h.LocalAuth.VerifyMFA, loginRL)
+			// challenge token a password login returns. Its own buckets (per
+			// challenge, and per IP), not the login one: the sign-ins that led
+			// here must not use up the code attempts. Guessing is bounded by
+			// the challenge's attempt cap and the per-user lockout.
+			mfaVerifyHandler := ChainFunc(h.LocalAuth.VerifyMFA, mfaRL)
 			r.POST("/mfa/verify", mfaVerifyHandler.ServeHTTP)
-			mfaEnrollStartHandler := ChainFunc(h.LocalAuth.StartMFAEnrollment, loginRL)
+			mfaEnrollStartHandler := ChainFunc(h.LocalAuth.StartMFAEnrollment, mfaRL)
 			r.POST("/mfa/enroll/start", mfaEnrollStartHandler.ServeHTTP)
-			mfaEnrollConfirmHandler := ChainFunc(h.LocalAuth.ConfirmMFAEnrollment, loginRL)
+			mfaEnrollConfirmHandler := ChainFunc(h.LocalAuth.ConfirmMFAEnrollment, mfaRL)
 			r.POST("/mfa/enroll/confirm", mfaEnrollConfirmHandler.ServeHTTP)
 
 			// Token operations - separate rate limit (20/min)
