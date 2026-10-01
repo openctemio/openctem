@@ -991,20 +991,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Attachment = app.NewAttachmentService(repos.Attachment, fileStorage, log)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
 	storageResolver := app.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
-	s.Attachment.SetTenantStorageResolver(storageResolver, func(cfg attachment.StorageConfig) (attachment.FileStorage, error) {
-		switch cfg.Provider {
-		case "local":
-			basePath := cfg.BasePath
-			if basePath == "" {
-				basePath = "./data/attachments"
-			}
-			return storage.NewLocalStorage(basePath), nil
-		case "s3", "minio":
-			return storage.NewS3Storage(cfg.Bucket, cfg.Region, cfg.Endpoint, cfg.AccessKey, cfg.SecretKey)
-		default:
-			return nil, fmt.Errorf("unsupported tenant storage provider: %s", cfg.Provider)
-		}
-	})
+	// "local" is always the operator storage above, never a tenant-chosen
+	// path; a tenant's own S3/MinIO bucket goes through the SSRF guard.
+	s.Attachment.SetTenantStorageResolver(storageResolver, storage.NewTenantStorageFactory(fileStorage))
 	// Wire the attachment store as the backing store for manual finding evidence
 	// (POST/GET /findings/{id}/evidence). Tenant-scoped; does not touch the
 	// pentest campaign gate.
@@ -1764,6 +1753,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			cfg.Auth,
 			log,
 		)
+		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
+		// GETDEL = single use) so a login can finish on any replica. Without
+		// Redis the service keeps them in process.
+		if redisClient != nil {
+			s.OAuth.SetPKCEStore(redisClient)
+		} else {
+			log.Warn("oauth: no Redis client; PKCE verifiers kept in process (single-replica only)")
+		}
 	}
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.

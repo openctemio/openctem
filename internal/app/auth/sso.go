@@ -849,8 +849,8 @@ func entraUserInfoFromClaims(claims *oidcClaims) (*SSOUserInfo, error) {
 // nonce, and the PKCE verifier (stored ENCRYPTED), and returns the matching
 // S256 code_challenge for the authorize URL.
 //
-// PKCE verifier storage — the crux: unlike Path A (oauth.go), which embeds the
-// RAW verifier in the signed-but-unencrypted state, this state round-trips
+// PKCE verifier storage — the crux: (Path A, oauth.go, keeps its verifier in
+// Redis keyed by state and never sends it.) This state round-trips
 // through the browser AND is sent to the IdP as the `state` param, so anything
 // stored in the clear there is exposed to a redirect interceptor — which would
 // defeat PKCE. We instead ENCRYPT the verifier (AES-256-GCM via s.encryptor,
@@ -860,7 +860,7 @@ func entraUserInfoFromClaims(claims *oidcClaims) (*SSOUserInfo, error) {
 // (works across replicas, unlike an in-memory store) and needs no cookie/proxy
 // changes — the verifier rides inside the existing `state` the UI already
 // round-trips. (In dev without APP_ENCRYPTION_KEY the encryptor is a no-op, so
-// the verifier is plaintext — same posture as Path A, acceptable for dev only.)
+// the verifier is plaintext — acceptable for dev only.)
 func (s *SSOService) generateState(orgSlug, provider string) (state, nonce, codeChallenge string, err error) {
 	randomBytes := make([]byte, 16)
 	if _, err := rand.Read(randomBytes); err != nil {

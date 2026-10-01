@@ -3,7 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	samldom "github.com/openctemio/api/pkg/domain/samlprovider"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -24,7 +27,15 @@ type SAMLHandler struct {
 	svc         *app.SAMLService
 	cookieCfg   CookieConfig
 	frontendURL string // origin the browser is redirected to after login
+	publicURL   string // configured public origin (APP_URL); see samlBaseURL
 	logger      *logger.Logger
+}
+
+// SetPublicURL sets the configured public origin (APP_URL) the SP URLs are
+// built on. When empty, forwarded headers are honored only from trusted
+// proxies.
+func (h *SAMLHandler) SetPublicURL(publicURL string) {
+	h.publicURL = publicURL
 }
 
 // NewSAMLHandler creates the handler. cookieCfg + frontendURL drive the
@@ -42,7 +53,7 @@ func samlRequestCookieName(org string) string { return "saml_authn_" + org }
 // Login handles GET /api/v1/auth/saml/{org}/login — SP-initiated login.
 func (h *SAMLHandler) Login(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
-	redirectURL, requestID, err := h.svc.Login(r.Context(), org, requestBaseURL(r))
+	redirectURL, requestID, err := h.svc.Login(r.Context(), org, h.baseURL(r))
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
@@ -77,7 +88,7 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 
 	// A SAML response is a few KB; cap the form body the service parses.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	result, err := h.svc.ACS(r.Context(), org, requestBaseURL(r), r, possibleRequestIDs)
+	result, err := h.svc.ACS(r.Context(), org, h.baseURL(r), r, possibleRequestIDs)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
@@ -100,26 +111,93 @@ func (h *SAMLHandler) redirectWithError(w http.ResponseWriter, r *http.Request, 
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
-// requestBaseURL derives the deployment origin (scheme://host), honoring the
-// reverse-proxy forwarded headers so the SP URLs match the public address.
-func requestBaseURL(r *http.Request) string {
+// baseURL is the deployment origin (scheme://host) the SP URLs are built
+// on: entity ID, ACS URL, and the audience/destination an assertion must
+// carry. See samlBaseURL.
+func (h *SAMLHandler) baseURL(r *http.Request) string {
+	return samlBaseURL(r, h.publicURL, trustedProxiesForAuth)
+}
+
+// samlBaseURL derives the SP origin. In order:
+//
+//  1. the configured public URL (APP_URL), when set — the only source a
+//     client cannot influence, and what production should use;
+//  2. X-Forwarded-Proto / X-Forwarded-Host, but only when the TCP peer is a
+//     trusted proxy (SERVER_TRUSTED_PROXIES) and the values are well formed;
+//  3. the request's own Host and TLS state.
+//
+// Taking the forwarded headers from any client let a request to the ACS
+// choose the audience the SP checks, so an assertion issued to a different
+// service provider at the same IdP could be replayed here.
+func samlBaseURL(r *http.Request, publicURL string, trusted *httpsec.TrustedProxySet) string {
+	if origin, ok := originOf(publicURL); ok {
+		return origin
+	}
+
 	scheme := "https"
-	if fp := r.Header.Get("X-Forwarded-Proto"); fp != "" {
-		scheme = fp
-	} else if r.TLS == nil {
+	if r.TLS == nil {
 		scheme = "http"
 	}
-	host := r.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = r.Host
+	host := r.Host
+
+	if fromTrustedProxy(r, trusted) {
+		if fp := strings.ToLower(firstForwardedValue(r.Header.Get("X-Forwarded-Proto"))); fp == "http" || fp == "https" {
+			scheme = fp
+		}
+		if fh := firstForwardedValue(r.Header.Get("X-Forwarded-Host")); validForwardedHost(fh) {
+			host = fh
+		}
 	}
 	return scheme + "://" + host
+}
+
+// originOf returns scheme://host[:port] of an absolute http(s) URL.
+func originOf(raw string) (string, bool) {
+	if raw == "" {
+		return "", false
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", false
+	}
+	return u.Scheme + "://" + u.Host, true
+}
+
+func fromTrustedProxy(r *http.Request, trusted *httpsec.TrustedProxySet) bool {
+	if trusted == nil || trusted.IsEmpty() {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && trusted.Contains(ip)
+}
+
+// firstForwardedValue takes the left-most entry of a comma-separated
+// forwarded header (the value the outermost proxy set).
+func firstForwardedValue(v string) string {
+	if i := strings.IndexByte(v, ','); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimSpace(v)
+}
+
+// validForwardedHost accepts host or host:port with DNS/IP characters only,
+// so nothing that changes the URL structure is echoed into SP URLs.
+func validForwardedHost(h string) bool {
+	if h == "" || len(h) > 253 {
+		return false
+	}
+	u, err := url.Parse("http://" + h)
+	return err == nil && u.Host == h && u.Path == "" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && !strings.ContainsAny(h, " \\\t\r\n")
 }
 
 // Metadata handles GET /api/v1/auth/saml/{org}/metadata (public).
 func (h *SAMLHandler) Metadata(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
-	xmlStr, err := h.svc.Metadata(r.Context(), org, requestBaseURL(r))
+	xmlStr, err := h.svc.Metadata(r.Context(), org, h.baseURL(r))
 	if err != nil {
 		apierror.NotFound("tenant").WriteJSON(w)
 		return

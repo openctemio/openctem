@@ -25,8 +25,8 @@ type Attachment struct {
 	uploadedBy  shared.ID
 	// Optional context linking: which entity this attachment belongs to.
 	// Allows cascade cleanup when a finding/retest is deleted.
-	contextType string    // "finding", "retest", "campaign", "" (general)
-	contextID   string    // entity UUID (or empty for general uploads)
+	contextType     string // "finding", "retest", "campaign", "" (general)
+	contextID       string // entity UUID (or empty for general uploads)
 	contentHash     string // SHA-256 hash for dedup within a finding
 	storageProvider string // "local", "s3", "minio" — where the file physically lives
 	createdAt       time.Time
@@ -82,17 +82,17 @@ func ReconstituteAttachment(
 }
 
 // Getters
-func (a *Attachment) ID() shared.ID      { return a.id }
-func (a *Attachment) TenantID() shared.ID { return a.tenantID }
-func (a *Attachment) Filename() string    { return a.filename }
-func (a *Attachment) ContentType() string { return a.contentType }
-func (a *Attachment) Size() int64         { return a.size }
-func (a *Attachment) StorageKey() string  { return a.storageKey }
-func (a *Attachment) UploadedBy() shared.ID { return a.uploadedBy }
-func (a *Attachment) ContextType() string { return a.contextType }
-func (a *Attachment) ContextID() string    { return a.contextID }
+func (a *Attachment) ID() shared.ID           { return a.id }
+func (a *Attachment) TenantID() shared.ID     { return a.tenantID }
+func (a *Attachment) Filename() string        { return a.filename }
+func (a *Attachment) ContentType() string     { return a.contentType }
+func (a *Attachment) Size() int64             { return a.size }
+func (a *Attachment) StorageKey() string      { return a.storageKey }
+func (a *Attachment) UploadedBy() shared.ID   { return a.uploadedBy }
+func (a *Attachment) ContextType() string     { return a.contextType }
+func (a *Attachment) ContextID() string       { return a.contextID }
 func (a *Attachment) ContentHash() string     { return a.contentHash }
-func (a *Attachment) StorageProvider() string  { return a.storageProvider }
+func (a *Attachment) StorageProvider() string { return a.storageProvider }
 func (a *Attachment) CreatedAt() time.Time    { return a.createdAt }
 
 // SetContentHash sets the SHA-256 hash for dedup.
