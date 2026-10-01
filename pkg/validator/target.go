@@ -180,8 +180,17 @@ func (v *TargetValidator) ValidateSingleTarget(target string) ValidatedTarget {
 		return v.validateURL(target)
 	}
 
-	// 2. Check if it's a CIDR range
+	// 2. Check if it's a CIDR range. Anything else with a slash is usually a
+	// filesystem path or a repository, which are not network targets.
 	if strings.Contains(target, "/") {
+		if looksLikePathOrRepo(target) {
+			return ValidatedTarget{
+				Original: target,
+				Type:     TargetTypeUnknown,
+				Value:    target,
+				Error:    "not a network target: filesystem paths and repositories are scanned through repository assets; add the repository as an asset and scan its asset group",
+			}
+		}
 		return v.validateCIDR(target)
 	}
 
@@ -241,6 +250,21 @@ func (v *TargetValidator) validateURL(target string) ValidatedTarget {
 	return result
 }
 
+// looksLikePathOrRepo reports whether a target containing a slash is a
+// filesystem path or a repository reference rather than a CIDR: more than
+// one slash, or a single slash that is neither followed by a numeric prefix
+// length nor preceded by an IP address (CIDRs are "<ip>/<prefix>").
+func looksLikePathOrRepo(target string) bool {
+	if strings.Count(target, "/") > 1 {
+		return true
+	}
+	addr, prefix, _ := strings.Cut(target, "/")
+	if prefix != "" && strings.Trim(prefix, "0123456789") == "" {
+		return false // "<something>/<digits>" is a CIDR attempt; report it as one
+	}
+	return net.ParseIP(addr) == nil
+}
+
 // validateCIDR validates a CIDR range target.
 func (v *TargetValidator) validateCIDR(target string) ValidatedTarget {
 	result := ValidatedTarget{
@@ -252,7 +276,7 @@ func (v *TargetValidator) validateCIDR(target string) ValidatedTarget {
 
 	_, ipNet, err := net.ParseCIDR(target)
 	if err != nil {
-		result.Error = "invalid CIDR format"
+		result.Error = "invalid CIDR format (expected an address and prefix length, e.g. 10.0.0.0/24)"
 		return result
 	}
 

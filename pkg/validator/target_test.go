@@ -186,6 +186,10 @@ func TestValidateSingleTarget_CIDR(t *testing.T) {
 		{"too large /8", "8.0.0.0/8", false, "CIDR range too large"},
 		{"invalid format", "invalid/24", false, "invalid CIDR format"},
 		{"invalid prefix", "8.8.8.8/33", false, "invalid CIDR format"},
+		{"absolute path", "/srv/code/app", false, "not a network target"},
+		{"relative path", "workspace/testrepo", false, "not a network target"},
+		{"repo reference", "github.com/org/repo", false, "not a network target"},
+		{"hostname with prefix is still a CIDR attempt", "example.com/24", false, "invalid CIDR format"},
 	}
 
 	for _, tt := range tests {
@@ -197,6 +201,9 @@ func TestValidateSingleTarget_CIDR(t *testing.T) {
 			}
 			if !tt.wantOK && result.Error == "" {
 				t.Errorf("ValidateSingleTarget(%q) expected error but got none", tt.target)
+			}
+			if tt.wantErr != "" && !strings.Contains(result.Error, tt.wantErr) {
+				t.Errorf("ValidateSingleTarget(%q) error = %q, want it to contain %q", tt.target, result.Error, tt.wantErr)
 			}
 		})
 	}
