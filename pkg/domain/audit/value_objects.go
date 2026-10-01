@@ -486,7 +486,8 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
-		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey:
+		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
+		ResourceTypeCredential:
 		return true
 	}
 	return false
