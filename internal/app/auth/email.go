@@ -382,3 +382,53 @@ func formatDuration(d time.Duration) string {
 	}
 	return d.String()
 }
+
+// The methods below make EmailService an auth.SecurityNotifier. They send in
+// the background (the change they report is already committed) and only log
+// failures, so a slow or broken SMTP server never fails the user's request.
+
+// NotifyMFADisabled tells the user 2FA was turned off on their account.
+func (s *EmailService) NotifyMFADisabled(ctx context.Context, userEmail, userName, ipAddress string) {
+	s.sendSecurityNotice(ctx, userEmail, userName, ipAddress,
+		"Two-factor authentication was turned off",
+		"Two-factor authentication was just turned off for your account. Signing in now needs only your password.")
+}
+
+// NotifyRecoveryCodeUsed tells the user a recovery code was used to sign in.
+func (s *EmailService) NotifyRecoveryCodeUsed(ctx context.Context, userEmail, userName, ipAddress string, remaining int) {
+	s.sendSecurityNotice(ctx, userEmail, userName, ipAddress,
+		"A recovery code was used to sign in",
+		fmt.Sprintf("One of your two-factor recovery codes was just used to sign in to your account. You have %d unused recovery codes left; generate new ones from your account settings if you are running low.", remaining))
+}
+
+// NotifyPasswordChanged sends the existing password-changed email.
+func (s *EmailService) NotifyPasswordChanged(ctx context.Context, userEmail, userName, ipAddress string) {
+	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	go func() {
+		defer cancel()
+		_ = s.SendPasswordChangedEmail(bg, userEmail, userName, ipAddress)
+	}()
+}
+
+func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userName, ipAddress, subject, message string) {
+	if !s.IsConfigured() {
+		return
+	}
+	data := emaildom.SecurityNoticeData{
+		UserName:   userName,
+		Email:      userEmail,
+		Subject:    subject,
+		Message:    message,
+		OccurredAt: time.Now().UTC().Format("January 2, 2006 at 3:04 PM MST"),
+		IPAddress:  ipAddress,
+		AppName:    s.appName,
+		SupportURL: fmt.Sprintf("%s/support", s.config.BaseURL),
+	}
+	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	go func() {
+		defer cancel()
+		if err := s.sender.SendTemplate(bg, userEmail, emaildom.TemplateSecurityNotice, data); err != nil {
+			s.logger.Error("failed to send security notice email", "error", err)
+		}
+	}()
+}

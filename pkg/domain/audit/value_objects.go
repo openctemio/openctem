@@ -110,6 +110,15 @@ const (
 	ActionPermissionDenied Action = "permission.denied"
 	ActionTokenRevoked     Action = "token.revoked"
 
+	// Account security actions (the user acting on their own account).
+	ActionAuthMFAEnabled                  Action = "auth.mfa_enabled"
+	ActionAuthMFADisabled                 Action = "auth.mfa_disabled"
+	ActionAuthMFAFailed                   Action = "auth.mfa_failed"
+	ActionAuthMFARecoveryCodeUsed         Action = "auth.mfa_recovery_code_used"
+	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
+	ActionAuthSessionRevoked              Action = "auth.session_revoked"
+	ActionAuthPasswordChanged             Action = "auth.password_changed"
+
 	// Settings actions
 	ActionSettingsUpdated Action = "settings.updated"
 
@@ -295,6 +304,8 @@ func (a Action) IsValid() bool {
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
+		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionAgentCreated, ActionAgentUpdated, ActionAgentDeleted,
 		ActionAgentActivated, ActionAgentDeactivated, ActionAgentRevoked,
@@ -366,7 +377,9 @@ func (a Action) Category() string {
 		return "sla_policy"
 	case ActionScanStarted, ActionScanCompleted, ActionScanFailed:
 		return "scan"
-	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked:
+	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
+		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged:
 		return "security"
 	case ActionSettingsUpdated:
 		return "settings"
@@ -524,6 +537,7 @@ func SeverityForAction(a Action) Severity {
 
 	// High - privilege changes and pipeline failures
 	case ActionUserSuspended, ActionUserDeactivated,
+		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionAgentDeactivated, ActionAgentKeyRegenerated,
@@ -535,6 +549,7 @@ func SeverityForAction(a Action) Severity {
 
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
+		ActionAuthMFAEnabled, ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated,

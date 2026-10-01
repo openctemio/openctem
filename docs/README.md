@@ -36,6 +36,7 @@
 ### Authorization & Access Control
 - [Authorization Matrix](architecture/authorization-matrix.md) - **Canonical "how we do authz"**: the layered model (permission / team-role / module-gate / data-scope / RLS), routes-by-auth-type, the settled rules we lock going forward (allow-only, no deny-gate, no expiring grants), the two CI invariants that stop drift, and how-to recipes (add a permission, gate a route, object-level authz)
 - [Access Control Rules](architecture/access-control-rules.md) - Scope rules + assignment rules (who sees which data, how roles are assigned)
+- [User Two-Factor Authentication](architecture/user-two-factor-authentication.md) - TOTP 2FA for organization users (RFC-024): login challenge → `/auth/mfa/verify`, forced enrollment under "Require MFA", token-mint policy gate, recovery codes, immediate session revocation, My account API
 - [Permission Real-time Sync](architecture/permission-realtime-sync.md) - Effective-permission cache, per-user version bump, 0-second revocation, 409-on-stale-write
 - [Authorization Audit (2026-09)](authz-audit.md) - End-to-end review that produced the standardization: AUTHZ-01..17 findings, endpoint inventory, and the deferred/behavior-changing items awaiting signoff
 

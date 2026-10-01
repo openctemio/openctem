@@ -209,6 +209,9 @@ type AuthConfig struct {
 	Provider       config.AuthProvider
 	LocalValidator *jwt.Generator
 	OIDCValidator  *keycloak.Validator
+	// RevokedSessions makes a signed-out session's access tokens fail on the
+	// next request (nil = they stay valid until they expire).
+	RevokedSessions middleware.RevokedSessionChecker
 }
 
 // Register registers all application routes.
@@ -256,6 +259,7 @@ func Register(
 		OIDCValidator:         authCfg.OIDCValidator,
 		Logger:                log,
 		SessionTimeoutMinutes: cfg.Server.SessionTimeoutMinutes,
+		RevokedSessions:       authCfg.RevokedSessions,
 	}
 	authMiddleware := middleware.UnifiedAuth(unifiedAuthCfg)
 

@@ -141,6 +141,9 @@ type Repositories struct {
 	// Session (raw *sql.DB required)
 	Session      *postgres.SessionRepository
 	RefreshToken *postgres.RefreshTokenRepository
+	// UserMFA holds user two-factor state (TOTP secret, recovery codes,
+	// login challenges).
+	UserMFA *postgres.UserMFARepository
 
 	// Admin (Platform Admin)
 	Admin         *postgres.AdminRepository
@@ -341,6 +344,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		// Session (raw *sql.DB required)
 		Session:      postgres.NewSessionRepository(db.DB),
 		RefreshToken: postgres.NewRefreshTokenRepository(db.DB),
+		UserMFA:      postgres.NewUserMFARepository(db),
 
 		// Admin (Platform Admin)
 		Admin:         postgres.NewAdminRepository(db),

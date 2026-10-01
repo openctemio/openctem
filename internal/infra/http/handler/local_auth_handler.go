@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/password"
 	"github.com/openctemio/api/pkg/validator"
@@ -210,6 +211,9 @@ type LoginResponse struct {
 	// (RFC-022). Such an account belongs to no organization; the client sends
 	// it to the admin console rather than organization onboarding.
 	PlatformAdmin bool `json:"platform_admin,omitempty"`
+	// RecoveryCodes is present only on the response that completes a forced
+	// 2FA enrollment (POST /auth/mfa/enroll/confirm). Shown once.
+	RecoveryCodes []string `json:"recovery_codes,omitempty"`
 }
 
 // UserInfo contains basic user information.
@@ -258,6 +262,20 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Password was right but a second factor is needed: answer with the
+	// challenge only. No cookie is set and no session exists yet.
+	if result.MFAChallenge != nil {
+		writeMFAChallenge(w, result.MFAChallenge)
+		return
+	}
+
+	h.writeLoginSuccess(w, r, result, nil)
+}
+
+// writeLoginSuccess sets the session cookies and writes the login response
+// shared by password login and the second-factor steps. recoveryCodes is set
+// only when the login just completed a forced 2FA enrollment.
+func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Request, result *app.LoginResult, recoveryCodes []string) {
 	// Convert tenant memberships to response format
 	tenants := make([]TenantInfo, len(result.Tenants))
 	for i, t := range result.Tenants {
@@ -314,6 +332,7 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		},
 		Tenants:          tenants,
 		SuspendedTenants: suspendedTenants,
+		RecoveryCodes:    recoveryCodes,
 	}
 	if h.platformAdmin != nil {
 		resp.PlatformAdmin = h.platformAdmin.IsPlatformAdmin(r.Context(), result.User.ID())
@@ -917,8 +936,11 @@ func (h *LocalAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.authService.ChangePassword(r.Context(), userID, app.ChangePasswordInput{
-		CurrentPassword: req.CurrentPassword,
-		NewPassword:     req.NewPassword,
+		CurrentPassword:  req.CurrentPassword,
+		NewPassword:      req.NewPassword,
+		CurrentSessionID: middleware.GetSessionID(r.Context()),
+		IPAddress:        getClientIP(r),
+		UserAgent:        r.UserAgent(),
 	}); err != nil {
 		h.handleAuthError(w, err)
 		return
@@ -927,7 +949,7 @@ func (h *LocalAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Password changed successfully",
+		"message": "Password changed successfully. Your other sessions have been signed out.",
 	})
 }
 
@@ -994,6 +1016,7 @@ func (h *LocalAuthHandler) RevokeSession(w http.ResponseWriter, r *http.Request)
 		h.handleAuthError(w, err)
 		return
 	}
+	h.authService.LogSessionRevoked(r.Context(), selfAuditContext(r), sessionID, false)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1024,6 +1047,7 @@ func (h *LocalAuthHandler) RevokeAllSessions(w http.ResponseWriter, r *http.Requ
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	h.authService.LogSessionRevoked(r.Context(), selfAuditContext(r), "", true)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1160,7 +1184,30 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Forbidden("This organization requires SSO sign-in. Please sign in through your identity provider.").WriteJSON(w)
 	case errors.Is(err, app.ErrTenantRequired):
 		apierror.BadRequest("tenant_id is required").WriteJSON(w)
-	// Session/Token errors
+	// Two-factor authentication
+	case errors.Is(err, app.ErrMFAChallengeInvalid):
+		apierror.Unauthorized("Your sign-in verification expired or is no longer valid. Please sign in again.").WriteJSON(w)
+	case errors.Is(err, app.ErrMFACodeInvalid):
+		apierror.Unauthorized("Invalid verification code").WriteJSON(w)
+	case errors.Is(err, app.ErrMFAEnrollmentRequired):
+		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
+			"This organization requires two-factor authentication. Sign in again to set it up.").WriteJSON(w)
+	case errors.Is(err, app.ErrMFANotSupported):
+		apierror.BadRequest("Two-factor authentication for this account is managed by your identity provider").WriteJSON(w)
+	case errors.Is(err, app.ErrMFAAlreadyEnabled):
+		apierror.Conflict("Two-factor authentication is already enabled").WriteJSON(w)
+	case errors.Is(err, app.ErrMFANotEnabled):
+		apierror.BadRequest("Two-factor authentication is not enabled").WriteJSON(w)
+	case errors.Is(err, app.ErrMFANoPendingSetup):
+		apierror.BadRequest("Start two-factor setup first").WriteJSON(w)
+	case errors.Is(err, app.ErrMFAUnavailable):
+		apierror.ServiceUnavailable("Two-factor authentication is not available on this server").WriteJSON(w)
+	// Session/Token errors. A malformed, forged or expired refresh JWT (or
+	// anything else presented as one, e.g. a 2FA challenge token) is a 401,
+	// not a server error.
+	case errors.Is(err, jwt.ErrInvalidToken), errors.Is(err, jwt.ErrExpiredToken),
+		errors.Is(err, jwt.ErrInvalidTokenType):
+		apierror.Unauthorized("Invalid or expired refresh token").WriteJSON(w)
 	case errors.Is(err, session.ErrRefreshTokenNotFound):
 		apierror.Unauthorized("Invalid or expired refresh token").WriteJSON(w)
 	case errors.Is(err, session.ErrRefreshTokenExpired):

@@ -2434,6 +2434,23 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_openctemio_api_internal_app.MFAStatus:
+    properties:
+      enabled:
+        type: boolean
+      enabled_at:
+        type: string
+      recovery_codes_remaining:
+        type: integer
+      required_by_organization:
+        description: |-
+          RequiredByOrganization is true when any organization the user belongs
+          to requires 2FA.
+        type: boolean
+      supported:
+        description: Supported is false for federated accounts (2FA is the IdP's job).
+        type: boolean
+    type: object
   github_com_openctemio_api_internal_app.ProgramMetrics:
     properties:
       mttd_internet_facing:
@@ -2721,6 +2738,7 @@ definitions:
     - SERVICE_UNAVAILABLE
     - VALIDATION_FAILED
     - RATE_LIMIT_EXCEEDED
+    - MFA_ENROLLMENT_REQUIRED
     type: string
     x-enum-varnames:
     - CodeBadRequest
@@ -2734,6 +2752,7 @@ definitions:
     - CodeServiceUnavailable
     - CodeValidationFailed
     - CodeRateLimitExceeded
+    - CodeMFAEnrollmentRequired
   github_com_openctemio_api_pkg_apierror.Error:
     properties:
       code:
@@ -8184,6 +8203,13 @@ definitions:
           (RFC-022). Such an account belongs to no organization; the client sends
           it to the admin console rather than organization onboarding.
         type: boolean
+      recovery_codes:
+        description: |-
+          RecoveryCodes is present only on the response that completes a forced
+          2FA enrollment (POST /auth/mfa/enroll/confirm). Shown once.
+        items:
+          type: string
+        type: array
       refresh_token:
         description: Also set in httpOnly cookie
         type: string
@@ -8205,6 +8231,60 @@ definitions:
         type: string
       user:
         $ref: '#/definitions/internal_infra_http_handler.UserInfo'
+    type: object
+  internal_infra_http_handler.MFACodeRequest:
+    properties:
+      code:
+        maxLength: 16
+        type: string
+    required:
+    - code
+    type: object
+  internal_infra_http_handler.MFADisableRequest:
+    properties:
+      code:
+        maxLength: 32
+        type: string
+      password:
+        maxLength: 128
+        type: string
+    required:
+    - code
+    - password
+    type: object
+  internal_infra_http_handler.MFAEnrollmentConfirmRequest:
+    properties:
+      code:
+        maxLength: 16
+        type: string
+      mfa_token:
+        maxLength: 128
+        type: string
+    required:
+    - code
+    - mfa_token
+    type: object
+  internal_infra_http_handler.MFAEnrollmentStartRequest:
+    properties:
+      mfa_token:
+        maxLength: 128
+        type: string
+    required:
+    - mfa_token
+    type: object
+  internal_infra_http_handler.MFARecoveryCodesResponse:
+    properties:
+      recovery_codes:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.MFASetupResponse:
+    properties:
+      otpauth_uri:
+        type: string
+      secret:
+        type: string
     type: object
   internal_infra_http_handler.NotificationEventCategoryResponse:
     properties:
@@ -10876,12 +10956,20 @@ definitions:
     type: object
   internal_infra_http_handler.UserResponse:
     properties:
+      auth_provider:
+        description: |-
+          AuthProvider is how the account signs in ("local" = password; others
+          are identity providers). The account page uses it to decide whether to
+          offer password change and 2FA.
+        type: string
       avatar_url:
         type: string
       created_at:
         type: string
       email:
         type: string
+      email_verified:
+        type: boolean
       id:
         type: string
       is_platform_admin:
@@ -10958,6 +11046,20 @@ definitions:
         type: string
     required:
     - token
+    type: object
+  internal_infra_http_handler.VerifyMFARequest:
+    properties:
+      code:
+        maxLength: 16
+        type: string
+      mfa_token:
+        maxLength: 128
+        type: string
+      recovery_code:
+        maxLength: 32
+        type: string
+    required:
+    - mfa_token
     type: object
   internal_infra_http_handler.VulnerabilityResponse:
     properties:
@@ -14959,6 +15061,117 @@ paths:
       security:
       - BearerAuth: []
       summary: User logout
+      tags:
+      - Authentication
+  /auth/mfa/enroll/confirm:
+    post:
+      consumes:
+      - application/json
+      description: Confirms the authenticator with a code, turns 2FA on and completes
+        the login. The response is a login response plus recovery_codes, shown once.
+      parameters:
+      - description: Challenge token and code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.MFAEnrollmentConfirmRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.LoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Confirm required 2FA enrollment
+      tags:
+      - Authentication
+  /auth/mfa/enroll/start:
+    post:
+      consumes:
+      - application/json
+      description: 'For a login that returned mfa_purpose=enroll: returns a new TOTP
+        secret to add to an authenticator app.'
+      parameters:
+      - description: Challenge token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.MFAEnrollmentStartRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.MFASetupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Start required 2FA enrollment
+      tags:
+      - Authentication
+  /auth/mfa/verify:
+    post:
+      consumes:
+      - application/json
+      description: Completes a password login with a TOTP code or a recovery code.
+        Returns the same response as a password login without 2FA.
+      parameters:
+      - description: Challenge token and code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.VerifyMFARequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.LoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Verify second factor
       tags:
       - Authentication
   /auth/oauth/{provider}/authorize:
@@ -25590,6 +25803,167 @@ paths:
       security:
       - BearerAuth: []
       summary: Update current user profile
+      tags:
+      - Users
+  /users/me/2fa:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_internal_app.MFAStatus'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get my 2FA status
+      tags:
+      - Users
+  /users/me/2fa/disable:
+    post:
+      consumes:
+      - application/json
+      description: Turns 2FA off. Requires the current password and an authenticator
+        code or unused recovery code.
+      parameters:
+      - description: Password and code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.MFADisableRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Disable 2FA
+      tags:
+      - Users
+  /users/me/2fa/enable:
+    post:
+      consumes:
+      - application/json
+      description: Confirms the authenticator with a code and turns 2FA on. Signs
+        out every other session. Returns recovery codes, shown once.
+      parameters:
+      - description: Authenticator code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.MFACodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.MFARecoveryCodesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Enable 2FA
+      tags:
+      - Users
+  /users/me/2fa/recovery-codes:
+    post:
+      consumes:
+      - application/json
+      description: Replaces every recovery code. Requires a current authenticator
+        code. Returns the new codes, shown once.
+      parameters:
+      - description: Authenticator code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.MFACodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.MFARecoveryCodesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Regenerate 2FA recovery codes
+      tags:
+      - Users
+  /users/me/2fa/setup:
+    post:
+      description: Generates a new TOTP secret. Nothing changes until it is confirmed
+        with POST /users/me/2fa/enable.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.MFASetupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Start 2FA setup
       tags:
       - Users
   /users/me/change-password:

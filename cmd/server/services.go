@@ -639,6 +639,9 @@ type Services struct {
 	WebSocketHub *websocket.Hub
 	// F-8: Single-use ticket service used by WS upgrade auth.
 	WSTicket *app.WSTicketService
+	// SessionRevocations rejects access tokens of signed-out sessions
+	// immediately (nil without Redis).
+	SessionRevocations *redis.SessionRevocationStore
 
 	// Email
 	Email        *app.EmailService
@@ -1677,6 +1680,27 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// F-8: single-use WebSocket ticket service, Redis-backed.
 	if redisClient != nil {
 		s.WSTicket = app.NewWSTicketService(newWSTicketStore(redisClient), 30*time.Second, log)
+	}
+
+	// Two-factor authentication (TOTP). Secrets are encrypted with the same
+	// AES-GCM key as integration credentials.
+	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.App.Name)
+	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
+
+	// Immediate session revocation: signing a session out (logout, "sign out
+	// this device", password change, enabling 2FA, suspension) records its id
+	// in Redis so the auth middleware rejects its still-unexpired access
+	// tokens on the next request. Without Redis they expire naturally.
+	if redisClient != nil {
+		if tokens, err := redis.NewTokenStore(redisClient, log); err != nil {
+			log.Warn("session revocation store unavailable", "error", err)
+		} else if store, err := redis.NewSessionRevocationStore(tokens); err != nil {
+			log.Warn("session revocation store unavailable", "error", err)
+		} else {
+			s.SessionRevocations = store
+			s.Auth.SetSessionRevocationStore(store)
+			s.Session.SetRevocationStore(store, cfg.Auth.AccessTokenDuration+time.Minute)
+		}
 	}
 
 	// Wire permission services to session service

@@ -170,6 +170,12 @@ func run() int {
 		return 1
 	}
 
+	// Account security e-mails (2FA turned off, recovery code used, password
+	// changed) go to the user through the system SMTP server.
+	if services.Auth != nil && services.Email != nil {
+		services.Auth.SetSecurityNotifier(services.Email)
+	}
+
 	// Wire SMTP availability checker into auth service for smart email verification.
 	// When no SMTP is configured (system or tenant), email verification is auto-disabled
 	// so first-time deployments can register users without setting up SMTP first.
@@ -317,6 +323,9 @@ func run() int {
 		Provider:       cfg.Auth.Provider,
 		LocalValidator: services.JWTGenerator,
 		OIDCValidator:  keycloakValidator,
+	}
+	if services.SessionRevocations != nil {
+		authCfg.RevokedSessions = services.SessionRevocations
 	}
 
 	server := http.NewServer(cfg, log)
