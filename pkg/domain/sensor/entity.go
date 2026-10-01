@@ -195,6 +195,10 @@ type Sensor struct {
 	MaxConcurrentJobs int
 	Region            string
 
+	// Outbox is the last outbox snapshot the sensor reported on its
+	// heartbeat; nil when it never reported one. Display data only.
+	Outbox *OutboxStats
+
 	// Statistics
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"
 	LastOfflineAt *time.Time // When sensor went offline (heartbeat timeout)

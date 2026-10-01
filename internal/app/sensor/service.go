@@ -334,6 +334,11 @@ type SensorHeartbeatData struct {
 	DiskWriteMBPS float64
 	NetworkRxMBPS float64
 	NetworkTxMBPS float64
+
+	// Outbox is the sensor's outbox state, nil when the heartbeat did not
+	// carry one. It is clamped here, at the ingest boundary. nil leaves the
+	// stored snapshot untouched (see sensordom.HeartbeatUpdate.Outbox).
+	Outbox *sensordom.OutboxStats
 }
 
 // UpdateHeartbeat updates sensor metrics from heartbeat.
@@ -380,6 +385,12 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 
 	clientIP := net.ParseIP(data.IPAddress)
 
+	var outbox *sensordom.OutboxStats
+	if data.Outbox != nil {
+		clamped := data.Outbox.Clamp()
+		outbox = &clamped
+	}
+
 	updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, sensordom.HeartbeatUpdate{
 		TenantID:      a.TenantID,
 		Version:       data.Version,
@@ -393,6 +404,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		NetworkRxMBPS: data.NetworkRxMBPS,
 		NetworkTxMBPS: data.NetworkTxMBPS,
 		LoadScore:     snapshot.LoadScore,
+		Outbox:        outbox,
 	})
 	if err != nil {
 		return err

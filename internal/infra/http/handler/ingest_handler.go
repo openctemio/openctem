@@ -239,6 +239,42 @@ type HeartbeatRequest struct {
 	DiskWriteMBPS float64 `json:"disk_write_mbps,omitempty"`
 	NetworkRxMBPS float64 `json:"network_rx_mbps,omitempty"`
 	NetworkTxMBPS float64 `json:"network_tx_mbps,omitempty"`
+
+	// Outbox is the state of the sensor's durable outbox (results queued on
+	// disk, waiting to be delivered). Optional: SDKs without an outbox omit
+	// it, and a heartbeat without it leaves the stored snapshot untouched.
+	// Display data only; values are clamped before they are stored.
+	Outbox *HeartbeatOutbox `json:"outbox,omitempty"`
+}
+
+// HeartbeatOutbox is the outbox block of the heartbeat request.
+type HeartbeatOutbox struct {
+	// PendingCount is the number of items waiting to be delivered.
+	PendingCount int64 `json:"pending_count"`
+	// PendingBytes is the size on disk of those items.
+	PendingBytes int64 `json:"pending_bytes"`
+	// OldestAgeSeconds is the age of the oldest pending item (0 when empty).
+	OldestAgeSeconds int64 `json:"oldest_age_seconds"`
+	// DeadLetterCount is the number of items the platform refused for good.
+	DeadLetterCount int64 `json:"dead_letter_count"`
+	// EvictedCount is the number of items dropped by the size/age cap since
+	// the sensor process started.
+	EvictedCount int64 `json:"evicted_count"`
+}
+
+// toOutboxStats returns the clamped domain snapshot, or nil for nil.
+func (o *HeartbeatOutbox) toOutboxStats() *sensor.OutboxStats {
+	if o == nil {
+		return nil
+	}
+	stats := sensor.OutboxStats{
+		PendingCount:     o.PendingCount,
+		PendingBytes:     o.PendingBytes,
+		OldestAgeSeconds: o.OldestAgeSeconds,
+		DeadLetterCount:  o.DeadLetterCount,
+		EvictedCount:     o.EvictedCount,
+	}.Clamp()
+	return &stats
 }
 
 // CheckFingerprintsRequest represents the request for checking fingerprint existence.
@@ -692,6 +728,7 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 			DiskWriteMBPS: req.DiskWriteMBPS,
 			NetworkRxMBPS: req.NetworkRxMBPS,
 			NetworkTxMBPS: req.NetworkTxMBPS,
+			Outbox:        req.Outbox.toOutboxStats(),
 		}); err != nil {
 			h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", agt.ID)
 			// Don't fail the request - heartbeat should be resilient

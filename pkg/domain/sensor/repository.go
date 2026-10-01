@@ -41,6 +41,12 @@ type HeartbeatUpdate struct {
 	NetworkRxMBPS float64
 	NetworkTxMBPS float64
 	LoadScore     float64
+
+	// Outbox is the outbox snapshot carried by the heartbeat, already
+	// clamped. nil leaves the stored snapshot untouched: SDKs without an
+	// outbox never send one, and a sensor downgraded to such an SDK keeps its
+	// last snapshot, whose reported-at time shows how old it is.
+	Outbox *OutboxStats
 }
 
 // Repository defines the interface for sensor persistence.

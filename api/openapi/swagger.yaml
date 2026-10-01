@@ -7707,6 +7707,28 @@ definitions:
       timestamp:
         type: string
     type: object
+  internal_infra_http_handler.HeartbeatOutbox:
+    properties:
+      dead_letter_count:
+        description: DeadLetterCount is the number of items the platform refused for
+          good.
+        type: integer
+      evicted_count:
+        description: |-
+          EvictedCount is the number of items dropped by the size/age cap since
+          the sensor process started.
+        type: integer
+      oldest_age_seconds:
+        description: OldestAgeSeconds is the age of the oldest pending item (0 when
+          empty).
+        type: integer
+      pending_bytes:
+        description: PendingBytes is the size on disk of those items.
+        type: integer
+      pending_count:
+        description: PendingCount is the number of items waiting to be delivered.
+        type: integer
+    type: object
   internal_infra_http_handler.HeartbeatRequest:
     properties:
       active_jobs:
@@ -7739,6 +7761,14 @@ definitions:
         type: number
       network_tx_mbps:
         type: number
+      outbox:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.HeartbeatOutbox'
+        description: |-
+          Outbox is the state of the sensor's durable outbox (results queued on
+          disk, waiting to be delivered). Optional: SDKs without an outbox omit
+          it, and a heartbeat without it leaves the stored snapshot untouched.
+          Display data only; values are clamped before they are stored.
       region:
         type: string
       scanners:
@@ -10077,6 +10107,21 @@ definitions:
         maxLength: 500
         type: string
     type: object
+  internal_infra_http_handler.SensorOutboxResponse:
+    properties:
+      dead_letter_count:
+        type: integer
+      evicted_count:
+        type: integer
+      oldest_age_seconds:
+        type: integer
+      pending_bytes:
+        type: integer
+      pending_count:
+        type: integer
+      reported_at:
+        type: string
+    type: object
   internal_infra_http_handler.SensorRegenerateAPIKeyResponse:
     properties:
       api_key:
@@ -10130,6 +10175,18 @@ definitions:
         type: number
       name:
         type: string
+      outbox:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.SensorOutboxResponse'
+        description: |-
+          Outbox is the last outbox state the sensor reported on its heartbeat;
+          null when it never reported one (an SDK without a durable outbox).
+      outbox_warning:
+        description: |-
+          OutboxWarning is true when the last snapshot shows lost or stuck
+          results: dead_letter_count > 0, evicted_count > 0, or
+          oldest_age_seconds > 3600. False when there is no snapshot.
+        type: boolean
       region:
         type: string
       status:
