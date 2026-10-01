@@ -478,7 +478,8 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 	//
 	// The same statement closes what the run leaves behind. Its commands that
 	// never reported are failed (a sensor that died mid-scan otherwise left its
-	// command 'running' forever), and the scan records the timeout, the way the
+	// command 'running' forever), its open step runs end as 'timeout', and the
+	// scan records the timeout, the way the
 	// pipeline service records a completed or failed run (otherwise the scan
 	// read "never run" after its run was reaped).
 	query := `
@@ -507,6 +508,14 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 			  AND c.payload->>'pipeline_run_id' = t.id::text
 			  AND c.status IN ('pending', 'acknowledged', 'running')
 			RETURNING c.id
+		), closed_steps AS (
+			UPDATE step_runs sr
+			SET status = 'timeout',
+			    completed_at = NOW()
+			FROM timed_out t
+			WHERE sr.pipeline_run_id = t.id
+			  AND sr.status IN ('pending', 'queued', 'running')
+			RETURNING sr.id
 		), recorded_scans AS (
 			UPDATE scans s
 			SET last_run_id = t.id,
@@ -522,11 +531,12 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 		SELECT
 			(SELECT COUNT(*) FROM timed_out),
 			(SELECT COUNT(*) FROM closed_commands),
+			(SELECT COUNT(*) FROM closed_steps),
 			(SELECT COUNT(*) FROM recorded_scans)
 	`
 
-	var runs, commands, scans int64
-	if err := r.db.QueryRowContext(ctx, query, AbsoluteRunTimeoutSeconds).Scan(&runs, &commands, &scans); err != nil {
+	var runs, commands, steps, scans int64
+	if err := r.db.QueryRowContext(ctx, query, AbsoluteRunTimeoutSeconds).Scan(&runs, &commands, &steps, &scans); err != nil {
 		return 0, fmt.Errorf("failed to mark timed out runs: %w", err)
 	}
 	return runs, nil

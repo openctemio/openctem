@@ -236,6 +236,14 @@ func TestScanRun_TimeoutClosesTheCommandAndRecordsTheScan(t *testing.T) {
 		t.Errorf("command status after its run timed out = %q, want failed — a dead sensor's command "+
 			"must not stay 'running' forever", got)
 	}
+	var stepStatus string
+	if err := db.QueryRowContext(ctx,
+		`SELECT status FROM step_runs WHERE pipeline_run_id = $1`, run.ID.String()).Scan(&stepStatus); err != nil {
+		t.Fatalf("read step run: %v", err)
+	}
+	if stepStatus != "timeout" {
+		t.Errorf("step run status = %q, want timeout", stepStatus)
+	}
 	got := readScanSummary(ctx, t, db, scanID.String())
 	if got.lastStatus.String != "timeout" || got.total != 1 || got.failed != 1 {
 		t.Errorf("scan summary after a timeout = {last=%q total=%d ok=%d failed=%d}, want {timeout 1 0 1}",
