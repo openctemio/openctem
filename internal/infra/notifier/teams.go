@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/httpsec"
@@ -155,7 +156,7 @@ func (c *TeamsClient) buildMessage(msg Message) teamsMessage {
 		Items: []teamsBody{
 			{
 				Type:   "TextBlock",
-				Text:   fmt.Sprintf("%s %s", emoji, msg.Title),
+				Text:   fmt.Sprintf("%s %s", emoji, teamsEscape(msg.Title)),
 				Weight: "Bolder",
 				Size:   "Medium",
 				Wrap:   true,
@@ -167,7 +168,7 @@ func (c *TeamsClient) buildMessage(msg Message) teamsMessage {
 	if msg.Body != "" {
 		body = append(body, teamsBody{
 			Type: "TextBlock",
-			Text: msg.Body,
+			Text: teamsEscape(msg.Body),
 			Wrap: true,
 		})
 	}
@@ -177,8 +178,8 @@ func (c *TeamsClient) buildMessage(msg Message) teamsMessage {
 		facts := make([]teamsFact, 0, len(msg.Fields))
 		for key, value := range msg.Fields {
 			facts = append(facts, teamsFact{
-				Title: key,
-				Value: value,
+				Title: teamsEscape(key),
+				Value: teamsEscape(value),
 			})
 		}
 		body = append(body, teamsBody{
@@ -191,7 +192,7 @@ func (c *TeamsClient) buildMessage(msg Message) teamsMessage {
 	if msg.FooterText != "" {
 		body = append(body, teamsBody{
 			Type:  "TextBlock",
-			Text:  msg.FooterText,
+			Text:  teamsEscape(msg.FooterText),
 			Size:  "Small",
 			Color: "Light",
 			Wrap:  true,
@@ -241,4 +242,18 @@ func (c *TeamsClient) getSeverityTeamsColor(severity string) string {
 	default:
 		return "default"
 	}
+}
+
+// teamsEscaper backslash-escapes the characters that build a markdown link in
+// Adaptive Card TextBlocks and FactSet values ([label](url) renders as a
+// clickable link whose target is hidden behind the label). Without it, text
+// from a finding or sensor report can plant a disguised link in a channel.
+// The backslash itself is escaped first so "\[" cannot undo the escape.
+// Emphasis and list markers only change formatting and are left alone; our
+// own link is an Action.OpenUrl, which is not markdown.
+var teamsEscaper = strings.NewReplacer(`\`, `\\`, "[", `\[`, "]", `\]`)
+
+// teamsEscape makes untrusted text unable to form a markdown link.
+func teamsEscape(s string) string {
+	return teamsEscaper.Replace(s)
 }
