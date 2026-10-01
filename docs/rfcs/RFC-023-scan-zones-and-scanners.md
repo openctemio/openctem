@@ -106,6 +106,39 @@ behaving well, so:
 | D23 | **Conformance suite in the SDK** (`platform/conformance`): a fake control plane that proves a sensor rejects unsigned, expired, replayed and out-of-range jobs, never dials the deny list, reports skips, and honours revocation. Required for *verified*. | Makes "secure by default" checkable by third parties and in our CI. |
 | D24 | **Versioned protocol.** The server publishes a minimum protocol version and a deprecation window; sensors below it keep pushing (collectors) but receive no new jobs; the UI flags "upgrade required". | Lets the platform evolve security requirements without breaking the ecosystem overnight. |
 
+## 4b. Protocol v2: identity, integrity and supply chain
+
+Target model for every sensor (first- or third-party), chosen to be the most
+secure option that still works through corporate proxies and for third-party
+developers. Sources: GitHub Actions runner auth, Kubernetes kubelet TLS
+bootstrapping, Tenable sensor linking, Elastic Fleet message signing, Datadog
+Remote Config (TUF), Nuclei template signing (and its CVE-2024-43405 bypass),
+RFC 9421 / 9449 / 9530 / 8705, OWASP API Top 10 2023, NIST SP 800-204/207,
+CISA Secure by Design.
+
+| # | Decision |
+|---|---|
+| P1 | **No bearer secret on the wire after enrollment.** Enrollment uses a single-use token (≤60 min, hashed at rest, bound to tenant + role, optionally zone). The sensor generates an **Ed25519 key pair locally** (private key never leaves the host; file mode 0600, or the OS keystore/TPM when available) and registers only the public key. Today's `rda_` keys become v1-only. |
+| P2 | **Every request is signed** with HTTP Message Signatures (**RFC 9421**) over method, target URI, **Content-Digest (RFC 9530)**, `created` and a nonce, keyed by the sensor id. The server allows ±5 min clock skew and rejects replayed nonces. Unlike mTLS this survives TLS-terminating proxies and load balancers, and a captured request or log line cannot be replayed or reused. |
+| P3 | **Optional mTLS mode** for self-hosted, high-assurance deployments: kubelet-style CSR enrollment, client certificates of ≤24 h renewed at half-life, and a SPIFFE federation hook for organisations already running SPIRE. |
+| P4 | **Automatic key rotation and instant revocation.** The sensor rotates its key every 30 days (the new public key is submitted signed by the old one); revocation and quarantine are checked on every request, not at connect. |
+| P5 | **Jobs are JWS (EdDSA) envelopes** carrying tenant, sensor id, command id, targets, tool, args digest, zone ranges, `iat`/`exp`, nonce and key id. The SDK verifies before parsing anything else and **executes exactly the verified bytes** (the Nuclei CVE-2024-43405 lesson: never verify one representation and run another). |
+| P6 | **Signing keys rotate without re-enrolling the fleet** (avoids Elastic Fleet's forced re-enrolment): an offline **root key** signs a published key set of online job-signing keys with expiries (TUF-style roles); the sensor pins the root public key at enrollment and refreshes the key set on heartbeat. |
+| P7 | **Content and updates are signed too:** scan templates and checks (code-type templates must be signed), tool bundles and sensor self-updates are delivered with TUF metadata (expiry, rollback and freeze protection). |
+| P8 | **Supply chain for every release** of the SDK, the agent and the images: keyless **Sigstore cosign** signatures, **SLSA Build L3** provenance, a CycloneDX **SBOM**, `-trimpath` reproducible builds, `govulncheck` + `gosec` + lint gates; installers verify signatures before running anything. |
+| P9 | **Push integrity:** the signed request covers the body digest; each report carries an `Idempotency-Key` (retries never duplicate); strict schema validation with size, depth and decompression limits; per-sensor quotas and rate limits; provenance stamped **by the server**; anomalous pushes (volume spikes, out-of-zone or out-of-job assets) are quarantined for review instead of merged. |
+| P10 | **Transport:** TLS 1.3 preferred with 1.2 as the floor, and the hybrid post-quantum key exchange (X25519MLKEM768) that Go's `crypto/tls` already negotiates by default; operator-supplied CA bundle pinning (no hard-coded leaf pins, which break inspecting proxies); `InsecureSkipVerify` impossible without an explicit dev flag; redirects never carry credentials across origins or downgrade to HTTP; HTTPS long-poll kept (proxy- and firewall-friendly), with HTTP/2. |
+| P11 | **Crypto agility:** every envelope and key carries an algorithm id, so signatures can move to post-quantum ML-DSA later without a protocol break. |
+| P12 | **Tamper-evident audit** of enrollment, approval, key rotation and revocation, job signing, credential release and quarantine, in the hash-chained audit log (whose current chain-break bug is fixed first). |
+| P13 | **SDK secure defaults are not optional:** the SDK's HTTP client, resolver guard, verification and bounded readers are on by default and cannot be silently weakened; a conformance suite (D23) proves it for third-party sensors. |
+
+**v1 during the transition.** v1 sensors (static `rda_` key, unsigned jobs)
+keep working (§9), but receive compensating server-side controls: zone routing
+and the claim predicate (layers 1–2), push scopes, quotas and quarantine,
+default key expiry, and "legacy" labelling. Private-network jobs go to v1
+scanners only where the tenant has allowed legacy scanners. Raising the minimum
+protocol (C7) then retires v1 on the operator's schedule.
+
 ## 5. Data model (Phase 1–2)
 
 ```
@@ -170,8 +203,8 @@ tenant-scoped.
 | **0 — Fix what is broken today** (no new concepts) | All targets dispatched, batched by `TargetsPerJob`; remove the silent platform fallback (D14); exclusions fail closed on every path; agent: block `::/128`, reject target-bearing `extra_args`, pin resolved IPs; poll matches tool; Tenable `infra` capability fixed. | api + agent |
 | **1 — Zones** | Tables, API, permissions, routing (D4–D6), claim predicate (layer 2), private targets allowed in zones, Scan zones UI, zone picker + routing preview on New scan. | api + ui |
 | **2 — Sensors resource** | Sensor roles + capability negotiation (D18–D18b, D20), *Settings → Sensors* (Scanners/Agents/Collectors tabs), enrollment approval, default key TTL + auto-renew, health flags + Update status + quarantine, external engines via bridge (Nessus Pro first), push scopes enforced (D21). | api + agent + ui |
-| **3 — Protocol enforcement in the SDK** | Signed jobs (D9), manifest + local allow-list + guarded resolver (D8, D19), typed `extra_args` allow-lists (D11), conformance suite (D23); our agent adopts it; private-target jobs require `signed_jobs`+`zone_guard` (D20); protocol versioning (D24). | sdk-go + agent + api |
-| **4 — Credentials, networks, platform, trust** | Credential tiers T1 vault pull / T2 scoped envelope release (D12); networks + site-aware asset identity (D15); platform shared scanners/zones (D14); trust tiers + verified sensors (D22). | api + sdk-go + agent + ui |
+| **3 — Protocol v2 + enforcement in the SDK** | Ed25519 sensor identity + RFC 9421 request signing + key rotation (P1, P2, P4), JWS jobs with a TUF-style key hierarchy (P5, P6, D9), manifest + local allow-list + guarded resolver (D8, D19), typed `extra_args` allow-lists (D11), conformance suite (D23); our agent adopts it; private-target jobs require `signed_jobs`+`zone_guard` (D20); protocol versioning (D24). | sdk-go + agent + api |
+| **4 — Credentials, networks, platform, trust, supply chain** | Signed templates/updates (P7), cosign + SLSA L3 + SBOM releases (P8), optional mTLS/SPIFFE (P3); credential tiers T1 vault pull / T2 scoped envelope release (D12); networks + site-aware asset identity (D15); platform shared scanners/zones (D14); trust tiers + verified sensors (D22). | api + sdk-go + agent + ui |
 
 Each phase is shippable alone; Phase 0 is independent and should land first.
 
