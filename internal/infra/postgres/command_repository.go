@@ -1222,21 +1222,25 @@ func (r *CommandRepository) GetStatsByTenant(ctx context.Context, tenantID share
 // Tenant scoping is enforced — only commands belonging to the given tenant are affected.
 // Returns the number of commands canceled.
 func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID, runID shared.ID) (int64, error) {
-	// We must find commands via step_runs.pipeline_run_id since commands
-	// link to step_runs (not directly to pipeline_runs).
+	// A command belongs to the run either through commands.step_run_id or
+	// through the pipeline_run_id the dispatcher writes into its payload. The
+	// scan dispatcher only writes the payload key (step_run_id stays NULL), so
+	// matching on step_runs alone canceled nothing for a scan: the run read
+	// "canceled" while the sensor kept scanning.
 	query := `
 		UPDATE commands c
 		SET status = 'canceled',
 		    -- NOTE: commands has no updated_at column (no migration adds one), so
 		    -- assigning it made every pipeline cancel fail with 42703.
 		    completed_at = NOW()
-		FROM step_runs sr
-		WHERE c.step_run_id = sr.id
-		  AND c.tenant_id = $1
-		  AND sr.pipeline_run_id = $2
+		WHERE c.tenant_id = $1
 		  AND c.status IN ('pending', 'acknowledged', 'running')
+		  AND (
+		        c.payload->>'pipeline_run_id' = $3
+		        OR c.step_run_id IN (SELECT sr.id FROM step_runs sr WHERE sr.pipeline_run_id = $2)
+		  )
 	`
-	result, err := r.db.ExecContext(ctx, query, tenantID.String(), runID.String())
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), runID.String(), runID.String())
 	if err != nil {
 		return 0, fmt.Errorf("failed to cancel commands by pipeline run: %w", err)
 	}

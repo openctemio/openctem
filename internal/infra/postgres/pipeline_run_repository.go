@@ -475,33 +475,61 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 	// previous wording ('scan exceeded configured timeout') asserted a cause,
 	// and was shown to users whose scanner had in fact failed immediately with
 	// a specific error.
+	//
+	// The same statement closes what the run leaves behind. Its commands that
+	// never reported are failed (a sensor that died mid-scan otherwise left its
+	// command 'running' forever), and the scan records the timeout, the way the
+	// pipeline service records a completed or failed run (otherwise the scan
+	// read "never run" after its run was reaped).
 	query := `
-		UPDATE pipeline_runs pr
-		SET status = 'timeout',
-		    completed_at = NOW(),
-		    error_message = 'no result reported before timeout — the sensor may be offline, or never picked up the command'
-		WHERE pr.status IN ('pending', 'running')
-		  AND pr.started_at IS NOT NULL
-		  AND EXTRACT(EPOCH FROM (NOW() - pr.started_at)) > LEAST(
-		        COALESCE(
-		          (SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = pr.scan_id),
-		          $1::bigint
-		        ),
-		        $1::bigint
-		      )
+		WITH timed_out AS (
+			UPDATE pipeline_runs pr
+			SET status = 'timeout',
+			    completed_at = NOW(),
+			    error_message = 'no result reported before timeout — the sensor may be offline, or never picked up the command'
+			WHERE pr.status IN ('pending', 'running')
+			  AND pr.started_at IS NOT NULL
+			  AND EXTRACT(EPOCH FROM (NOW() - pr.started_at)) > LEAST(
+			        COALESCE(
+			          (SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = pr.scan_id),
+			          $1::bigint
+			        ),
+			        $1::bigint
+			      )
+			RETURNING pr.id, pr.tenant_id, pr.scan_id
+		), closed_commands AS (
+			UPDATE commands c
+			SET status = 'failed',
+			    error_message = 'scan run timed out before this command reported a result',
+			    completed_at = NOW()
+			FROM timed_out t
+			WHERE c.tenant_id = t.tenant_id
+			  AND c.payload->>'pipeline_run_id' = t.id::text
+			  AND c.status IN ('pending', 'acknowledged', 'running')
+			RETURNING c.id
+		), recorded_scans AS (
+			UPDATE scans s
+			SET last_run_id = t.id,
+			    last_run_at = NOW(),
+			    last_run_status = 'timeout',
+			    total_runs = s.total_runs + 1,
+			    failed_runs = s.failed_runs + 1,
+			    updated_at = NOW()
+			FROM timed_out t
+			WHERE s.id = t.scan_id
+			RETURNING s.id
+		)
+		SELECT
+			(SELECT COUNT(*) FROM timed_out),
+			(SELECT COUNT(*) FROM closed_commands),
+			(SELECT COUNT(*) FROM recorded_scans)
 	`
 
-	result, err := r.db.ExecContext(ctx, query, AbsoluteRunTimeoutSeconds)
-	if err != nil {
+	var runs, commands, scans int64
+	if err := r.db.QueryRowContext(ctx, query, AbsoluteRunTimeoutSeconds).Scan(&runs, &commands, &scans); err != nil {
 		return 0, fmt.Errorf("failed to mark timed out runs: %w", err)
 	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	return rowsAffected, nil
+	return runs, nil
 }
 
 // ListPendingRetries atomically claims failed pipeline_runs eligible for automatic retry.
