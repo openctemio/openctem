@@ -1,12 +1,14 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/metrics"
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
@@ -92,6 +94,8 @@ func registerSensorRoutes(
 	commandHandler *handler.CommandHandler,
 	scanSessionHandler *handler.ScanSessionHandler,
 	runtimeTelemetryHandler *handler.RuntimeTelemetryHandler,
+	suppressionHandler *handler.SuppressionHandler,
+	moduleGate *middleware.ModuleGate,
 	telemetryRateLimiter *middleware.TelemetryRateLimiter,
 	ingestRateLimiter *middleware.TelemetryRateLimiter,
 	log *logger.Logger,
@@ -173,6 +177,16 @@ func registerSensorRoutes(
 		r.POST("/commands/{id}/start", commandHandler.Start)
 		r.POST("/commands/{id}/complete", commandHandler.Complete)
 		r.POST("/commands/{id}/fail", commandHandler.Fail)
+
+		// Active suppression rules of the sensor's tenant, for the sensor-side
+		// security gate (additive v1 route, legacyv1.SuppressionsPath). Tenant
+		// from the sensor identity only; an empty list when the suppressions
+		// module is disabled for the tenant.
+		if suppressionHandler != nil {
+			r.GET("/suppressions", suppressionHandler.SensorActiveRules(func(ctx context.Context, tenantID string) bool {
+				return moduleGate.IsEnabled(ctx, tenantID, moduledom.ModuleSuppressions)
+			}))
+		}
 
 		// Scan session management
 		if scanSessionHandler != nil {

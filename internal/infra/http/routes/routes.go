@@ -622,7 +622,7 @@ func Register(
 
 	// Ingest/Sensor routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter, ingestRateLimiter, log)
+		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, h.Suppression, h.ModuleGate, telemetryRateLimiter, ingestRateLimiter, log)
 	}
 
 	// Sensor protocol v2 results (RFC-026): its own route group and

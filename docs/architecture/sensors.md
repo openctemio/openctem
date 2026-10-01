@@ -56,6 +56,18 @@ Two tests hold the line:
   path that says *agent* outside `legacyv1`, the rename tooling and the
   AI-agent identifiers.
 
+## Suppression rules for the sensor-side gate
+
+`GET /api/v1/agent/suppressions` (RFC-023 §9.2b, additive v1 route) returns
+the sensor's tenant's approved, unexpired suppression rules as
+`{"count": n, "rules": [{rule_id, tool_name, path_pattern, asset_id, expires_at}]}`.
+The sensor's security gate (`-fail-on`) uses them to stop failing a CI job on a
+finding the platform has suppressed. Tenant from the sensor identity; platform
+sensors get 403; an empty list when the suppressions module is disabled.
+Ingest applies the same rules server-side whatever the sensor does. Before this
+route the SDK called the user route `/api/v1/suppressions/active` with its
+sensor key and always got 401.
+
 ## Heartbeat doorbell
 
 `POST /api/v1/agent/heartbeat` is also a doorbell (RFC-023 §9.2a): it tells
