@@ -929,14 +929,14 @@ func (s *AuditService) LogAgentKeyRenewed(ctx context.Context, actx AuditContext
 	return s.LogEvent(ctx, actx, event)
 }
 
-// LogAPIKeyCreated logs the creation of a tenant `oct_` API key. Only the
-// non-secret prefix and the granted scopes are recorded — never the key.
-func (s *AuditService) LogAPIKeyCreated(ctx context.Context, actx AuditContext, keyID, keyName, prefix string, scopes []string) error {
+// LogAPIKeyCreated logs the creation of a tenant `oct_` API key. Only the key
+// id, name and granted scopes are recorded — nothing derived from the secret
+// (the hash-chained audit row must not carry key material, not even a prefix).
+func (s *AuditService) LogAPIKeyCreated(ctx context.Context, actx AuditContext, keyID, keyName string, scopes []string) error {
 	event := NewSuccessEvent(auditdom.ActionAPIKeyCreated, auditdom.ResourceTypeAPIKey, keyID).
 		WithResourceName(keyName).
 		WithSeverity(auditdom.SeverityMedium).
 		WithMessage(fmt.Sprintf("API key '%s' created", keyName)).
-		WithMetadata("key_prefix", prefix).
 		WithMetadata("scopes", scopes)
 	return s.LogEvent(ctx, actx, event)
 }

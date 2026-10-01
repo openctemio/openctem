@@ -190,7 +190,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 		"prefix", prefix,
 	)
 	if s.audit != nil && input.AuditContext != nil {
-		_ = s.audit.LogAPIKeyCreated(ctx, *input.AuditContext, key.ID().String(), key.Name(), prefix, key.Scopes())
+		_ = s.audit.LogAPIKeyCreated(ctx, *input.AuditContext, key.ID().String(), key.Name(), key.Scopes())
 	}
 
 	return &CreateResult{
