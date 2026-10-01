@@ -88,8 +88,8 @@ var (
 	// PlatformSensorsActive tracks active platform sensors
 	PlatformSensorsActive = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "platform_agents_active",
-			Help: "Current number of active platform agents",
+			Name: "platform_sensors_active",
+			Help: "Current number of active platform sensors",
 		},
 	)
 

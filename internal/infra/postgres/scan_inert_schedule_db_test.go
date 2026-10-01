@@ -57,7 +57,7 @@ func seedScheduleScan(ctx context.Context, t *testing.T, db *sql.DB, tenantID sh
 	//nolint:gosec // G201: scheduleType/status are test-local literals, and `next`
 	// is one of two fixed strings above — no external input reaches this string.
 	q := `INSERT INTO scans (id, tenant_id, name, scan_type, scanner_name, targets,
-	                         status, schedule_type, agent_preference, timeout_seconds, next_run_at)
+	                         status, schedule_type, sensor_preference, timeout_seconds, next_run_at)
 	      VALUES ($1, $2, $3, 'single', 'probe-scanner', ARRAY['example.test'],
 	              $4, $5, 'tenant', 3600, ` + next + `)`
 	if _, err := db.ExecContext(ctx, q, id.String(), tenantID.String(), name, status, scheduleType); err != nil {

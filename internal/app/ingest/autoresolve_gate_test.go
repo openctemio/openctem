@@ -46,20 +46,20 @@ func TestSensorMayAutoResolveTool(t *testing.T) {
 		// Legit flows keep working.
 		{"declared tool", declared, "semgrep", true},
 		{"declared tool, case-insensitive", declared, "trivy", true},
-		{"legacy agent without declared tools (backward compat)", legacy, "nuclei", true},
+		{"legacy sensor without declared tools (backward compat)", legacy, "nuclei", true},
 		{"server-side synthetic ingest", &sensor.Sensor{TenantID: &tid}, "tenable", true},
 		{"server-side synthetic ingest, defectdojo", &sensor.Sensor{TenantID: &tid}, "defectdojo", true},
 
 		// Attacks: a sensor claiming another tool's name.
-		{"tool not declared by the agent", declared, "nuclei", false},
-		{"reserved tool name from declared agent", declared, "defectdojo", false},
-		{"reserved tool name from legacy agent", legacy, "pentest-manual", false},
+		{"tool not declared by the sensor", declared, "nuclei", false},
+		{"reserved tool name from declared sensor", declared, "defectdojo", false},
+		{"reserved tool name from legacy sensor", legacy, "pentest-manual", false},
 		{"reserved tool name, case/space variant", legacy, " Burp_Suite ", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := svc.sensorMayAutoResolveTool(context.Background(), tc.agt, tc.tool); got != tc.want {
-				t.Fatalf("agentMayAutoResolveTool(%q) = %v, want %v", tc.tool, got, tc.want)
+				t.Fatalf("sensorMayAutoResolveTool(%q) = %v, want %v", tc.tool, got, tc.want)
 			}
 		})
 	}

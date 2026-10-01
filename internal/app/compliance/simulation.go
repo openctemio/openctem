@@ -400,7 +400,7 @@ func (s *SimulationService) tryDispatchLive(ctx context.Context, tenantID shared
 		"command_id":     cmdID.String(),
 		"technique_id":   sim.MitreTechniqueID(),
 		"target_asset":   assetID.String(),
-		"status":         "dispatched — awaiting agent safe-check result",
+		"status":         "dispatched — awaiting sensor safe-check result",
 	})
 	if err := s.runRepo.Create(ctx, run); err != nil {
 		s.logger.Warn("failed to persist running simulation run; falling back to synthetic",

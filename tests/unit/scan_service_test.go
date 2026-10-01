@@ -1657,9 +1657,9 @@ func TestScanService_TriggerScan_NoSensorAvailable(t *testing.T) {
 
 	deps.toolRepo.addTool("nuclei", true)
 	deps.sensorSelector.available = false
-	deps.sensorSelector.message = "no agents online"
+	deps.sensorSelector.message = "no sensors online"
 
-	s := createTestScanInRepo(deps, tenantID, "No Agent Scan", scan.ScanTypeSingle)
+	s := createTestScanInRepo(deps, tenantID, "No Sensor Scan", scan.ScanTypeSingle)
 
 	input := scanservice.TriggerScanExecInput{
 		TenantID: tenantID.String(),
@@ -1668,7 +1668,7 @@ func TestScanService_TriggerScan_NoSensorAvailable(t *testing.T) {
 
 	_, err := svc.TriggerScan(context.Background(), input)
 	if err == nil {
-		t.Fatal("expected error when no agent available")
+		t.Fatal("expected error when no sensor available")
 	}
 }
 
@@ -2149,7 +2149,7 @@ func TestScanService_CreateScan_SensorPreference(t *testing.T) {
 
 	input := scanservice.CreateScanInput{
 		TenantID:         tenantID.String(),
-		Name:             "Tenant Agent Scan",
+		Name:             "Tenant Sensor Scan",
 		AssetGroupID:     ag.ID().String(),
 		ScanType:         "single",
 		ScannerName:      "nuclei",
@@ -2161,7 +2161,7 @@ func TestScanService_CreateScan_SensorPreference(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if result.SensorPreference != scan.SensorPreferenceTenant {
-		t.Errorf("expected agent preference 'tenant', got %s", result.SensorPreference)
+		t.Errorf("expected sensor preference 'tenant', got %s", result.SensorPreference)
 	}
 }
 

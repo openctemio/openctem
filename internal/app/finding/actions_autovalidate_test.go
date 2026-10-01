@@ -83,7 +83,7 @@ func TestAutoQueueValidations_NoSensor_StopsBatch(t *testing.T) {
 
 	got := s.autoQueueValidations(context.Background(), shared.NewID(), newFindingIDs(10))
 	if got != 0 {
-		t.Fatalf("queued = %d, want 0 when no validation agent is online", got)
+		t.Fatalf("queued = %d, want 0 when no validation sensor is online", got)
 	}
 	if len(av.calls) != 1 {
 		t.Fatalf("validator attempted %d times, want 1 (must short-circuit the batch)", len(av.calls))

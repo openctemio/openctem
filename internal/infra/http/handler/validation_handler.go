@@ -105,12 +105,12 @@ type evidenceResponse struct {
 func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("agent authentication required").WriteJSON(w)
+		apierror.Unauthorized("sensor authentication required").WriteJSON(w)
 		return
 	}
 	if agt.TenantID == nil {
 		// Platform sensors are not tenant-scoped — validation evidence is.
-		apierror.Forbidden("a tenant-scoped agent is required").WriteJSON(w)
+		apierror.Forbidden("a tenant-scoped sensor is required").WriteJSON(w)
 		return
 	}
 	tenantID := *agt.TenantID
@@ -190,7 +190,7 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 		result, err = h.ingest.Ingest(r.Context(), tenantID, findingID, simRunID, ev)
 	} else {
 		h.logger.Info("validation evidence recorded as advisory (no assigned validate command cited)",
-			"agent_id", agt.ID.String(), "finding_id", findingID.String())
+			"sensor_id", agt.ID.String(), "finding_id", findingID.String())
 		result, err = h.ingest.IngestAdvisory(r.Context(), tenantID, findingID, simRunID, ev)
 	}
 	if err != nil {
@@ -224,7 +224,7 @@ func (h *ValidationHandler) authorizeEvidenceCommand(
 	}
 	deny := func(reason string) (*commanddom.Command, bool) {
 		h.logger.Warn("validation evidence rejected: command does not authorize it",
-			"agent_id", sensorID.String(), "command_id", sanitizeLogField(commandID),
+			"sensor_id", sensorID.String(), "command_id", sanitizeLogField(commandID),
 			"finding_id", findingID.String(), "reason", reason)
 		apierror.Forbidden("command does not authorize evidence for this finding").WriteJSON(w)
 		return nil, false
@@ -245,7 +245,7 @@ func (h *ValidationHandler) authorizeEvidenceCommand(
 		return deny("not a validate command")
 	}
 	if cmd.SensorID == nil || *cmd.SensorID != sensorID {
-		return deny("not assigned to this agent")
+		return deny("not assigned to this sensor")
 	}
 	switch cmd.Status {
 	case commanddom.CommandStatusPending, commanddom.CommandStatusAcknowledged, commanddom.CommandStatusRunning:

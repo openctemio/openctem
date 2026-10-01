@@ -186,11 +186,11 @@ const (
 	AuditActionAdminRotateKey  = "admin.rotate_key" // historical: admin API keys were removed
 
 	// Platform sensor actions
-	AuditActionSensorCreate  = "agent.create"
-	AuditActionSensorUpdate  = "agent.update"
-	AuditActionSensorDelete  = "agent.delete"
-	AuditActionSensorEnable  = "agent.enable"
-	AuditActionSensorDisable = "agent.disable"
+	AuditActionSensorCreate  = "sensor.create"
+	AuditActionSensorUpdate  = "sensor.update"
+	AuditActionSensorDelete  = "sensor.delete"
+	AuditActionSensorEnable  = "sensor.enable"
+	AuditActionSensorDisable = "sensor.disable"
 
 	// Bootstrap token actions
 	AuditActionTokenCreate = "token.create"
@@ -213,7 +213,7 @@ const (
 // Resource type constants.
 const (
 	ResourceTypeAdmin         = "admin"
-	ResourceTypeSensor        = "agent"
+	ResourceTypeSensor        = "sensor"
 	ResourceTypeToken         = "token"
 	ResourceTypeJob           = "job"
 	ResourceTypeTargetMapping = "target_mapping"

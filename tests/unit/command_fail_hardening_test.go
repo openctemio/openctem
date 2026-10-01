@@ -80,7 +80,7 @@ func TestCommandFail_ErrorMessageIsBounded(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "sensor-test", cmd.ID.String())
 
 	huge := strings.Repeat("é", command.MaxFailErrorMessageBytes) // 2 bytes per rune
 	failed, err := svc.Fail(context.Background(), command.FailInput{

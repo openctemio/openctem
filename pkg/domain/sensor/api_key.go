@@ -15,10 +15,10 @@ const (
 	ScopeCommandsRead    APIKeyScope = "commands:read"    // Poll for pending commands
 	ScopeCommandsExec    APIKeyScope = "commands:execute" // Execute commands and report results
 	ScopeCommandsWrite   APIKeyScope = "commands:write"   // Create commands (admin only)
-	ScopeSensorHeartbeat APIKeyScope = "agent:heartbeat"  // Send heartbeat/status updates
-	ScopeSensorRead      APIKeyScope = "agent:read"       // Read own sensor config
-	ScopeSensorWrite     APIKeyScope = "agent:write"      // Update own sensor config
-	ScopeAdminSensors    APIKeyScope = "admin:agents"     // Manage other sensors
+	ScopeSensorHeartbeat APIKeyScope = "sensor:heartbeat"  // Send heartbeat/status updates
+	ScopeSensorRead      APIKeyScope = "sensor:read"       // Read own sensor config
+	ScopeSensorWrite     APIKeyScope = "sensor:write"      // Update own sensor config
+	ScopeAdminSensors    APIKeyScope = "admin:sensors"     // Manage other sensors
 	ScopeAdminKeys       APIKeyScope = "admin:keys"       // Manage API keys
 	ScopeAdminTokens     APIKeyScope = "admin:tokens"     // Manage registration tokens
 )

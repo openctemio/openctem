@@ -19,10 +19,10 @@ import (
 // Security event constants for logging and metrics.
 const (
 	SecurityEventAuthFailure        = "security.auth.failure"
-	SecurityEventSensorNotFound     = "security.agent.not_found"
+	SecurityEventSensorNotFound     = "security.sensor.not_found"
 	SecurityEventAPIKeyInvalid      = "security.apikey.invalid"
-	SecurityEventSensorInactive     = "security.agent.inactive"
-	SecurityEventSensorTypeMismatch = "security.agent.type_mismatch"
+	SecurityEventSensorInactive     = "security.sensor.inactive"
+	SecurityEventSensorTypeMismatch = "security.sensor.type_mismatch"
 	SecurityEventJobAccessDenied    = "security.job.access_denied"
 	SecurityEventTokenInvalid       = "security.token.invalid"
 )

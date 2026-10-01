@@ -1418,7 +1418,7 @@ func buildMinimalReportNoVuln() *ctis.Report {
 // newTestSensor returns a minimal *sensor.Sensor for use in ProcessBatch tests.
 func newTestSensor(t *testing.T, tenantID shared.ID) *sensor.Sensor {
 	t.Helper()
-	agt, err := sensor.NewSensor(tenantID, "test-agent", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
+	agt, err := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
 	require.NoError(t, err)
 	return agt
 }

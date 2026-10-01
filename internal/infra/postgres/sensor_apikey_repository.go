@@ -30,15 +30,15 @@ func NewSensorAPIKeyRepository(db *DB) *SensorAPIKeyRepository {
 var _ sensordom.APIKeyRepository = (*SensorAPIKeyRepository)(nil)
 
 const sensorAPIKeyColumns = `
-	id, agent_id, name, key_hash, key_prefix, scopes,
+	id, sensor_id, name, key_hash, key_prefix, scopes,
 	expires_at, last_used_at, host(last_used_ip), use_count,
 	is_active, revoked_at, revoked_reason, created_at`
 
 // Create inserts a new API key.
 func (r *SensorAPIKeyRepository) Create(ctx context.Context, key *sensordom.APIKey) error {
 	query := `
-		INSERT INTO agent_api_keys (
-			id, agent_id, name, key_hash, key_prefix, scopes,
+		INSERT INTO sensor_api_keys (
+			id, sensor_id, name, key_hash, key_prefix, scopes,
 			expires_at, last_used_at, last_used_ip, use_count,
 			is_active, revoked_at, revoked_reason, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
@@ -60,14 +60,14 @@ func (r *SensorAPIKeyRepository) Create(ctx context.Context, key *sensordom.APIK
 		key.CreatedAt,
 	)
 	if err != nil {
-		return fmt.Errorf("create agent api key: %w", err)
+		return fmt.Errorf("create sensor api key: %w", err)
 	}
 	return nil
 }
 
 // GetByID retrieves a key by ID.
 func (r *SensorAPIKeyRepository) GetByID(ctx context.Context, id shared.ID) (*sensordom.APIKey, error) {
-	query := "SELECT" + sensorAPIKeyColumns + " FROM agent_api_keys WHERE id = $1"
+	query := "SELECT" + sensorAPIKeyColumns + " FROM sensor_api_keys WHERE id = $1"
 	return r.scanOne(r.db.QueryRowContext(ctx, query, id.String()))
 }
 
@@ -76,16 +76,16 @@ func (r *SensorAPIKeyRepository) GetByID(ctx context.Context, id shared.ID) (*se
 // the caller via APIKey.IsValid so an expired-but-active key still resolves (and
 // is then rejected) rather than silently 404ing.
 func (r *SensorAPIKeyRepository) GetByHash(ctx context.Context, hash string) (*sensordom.APIKey, error) {
-	query := "SELECT" + sensorAPIKeyColumns + " FROM agent_api_keys WHERE key_hash = $1 AND is_active = TRUE"
+	query := "SELECT" + sensorAPIKeyColumns + " FROM sensor_api_keys WHERE key_hash = $1 AND is_active = TRUE"
 	return r.scanOne(r.db.QueryRowContext(ctx, query, hash))
 }
 
 // GetBySensorID retrieves all keys for a sensor, newest first.
 func (r *SensorAPIKeyRepository) GetBySensorID(ctx context.Context, sensorID shared.ID) ([]*sensordom.APIKey, error) {
-	query := "SELECT" + sensorAPIKeyColumns + " FROM agent_api_keys WHERE agent_id = $1 " + orderByCreatedAtDesc
+	query := "SELECT" + sensorAPIKeyColumns + " FROM sensor_api_keys WHERE sensor_id = $1 " + orderByCreatedAtDesc
 	rows, err := r.db.QueryContext(ctx, query, sensorID.String())
 	if err != nil {
-		return nil, fmt.Errorf("get keys by agent: %w", err)
+		return nil, fmt.Errorf("get keys by sensor: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	return r.scanMany(rows)
@@ -93,11 +93,11 @@ func (r *SensorAPIKeyRepository) GetBySensorID(ctx context.Context, sensorID sha
 
 // List lists keys with optional filters.
 func (r *SensorAPIKeyRepository) List(ctx context.Context, filter sensordom.APIKeyFilter) ([]*sensordom.APIKey, error) {
-	query := "SELECT" + sensorAPIKeyColumns + " FROM agent_api_keys WHERE 1=1"
+	query := "SELECT" + sensorAPIKeyColumns + " FROM sensor_api_keys WHERE 1=1"
 	args := []any{}
 	i := 1
 	if filter.SensorID != nil {
-		query += fmt.Sprintf(" AND agent_id = $%d", i)
+		query += fmt.Sprintf(" AND sensor_id = $%d", i)
 		args = append(args, filter.SensorID.String())
 		i++
 	}
@@ -109,7 +109,7 @@ func (r *SensorAPIKeyRepository) List(ctx context.Context, filter sensordom.APIK
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list agent api keys: %w", err)
+		return nil, fmt.Errorf("list sensor api keys: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	return r.scanMany(rows)
@@ -118,7 +118,7 @@ func (r *SensorAPIKeyRepository) List(ctx context.Context, filter sensordom.APIK
 // Update updates a key's mutable fields.
 func (r *SensorAPIKeyRepository) Update(ctx context.Context, key *sensordom.APIKey) error {
 	query := `
-		UPDATE agent_api_keys
+		UPDATE sensor_api_keys
 		SET name = $2, scopes = $3, expires_at = $4, last_used_at = $5,
 		    last_used_ip = $6, use_count = $7, is_active = $8,
 		    revoked_at = $9, revoked_reason = $10
@@ -136,16 +136,16 @@ func (r *SensorAPIKeyRepository) Update(ctx context.Context, key *sensordom.APIK
 		nullString(key.RevokedReason),
 	)
 	if err != nil {
-		return fmt.Errorf("update agent api key: %w", err)
+		return fmt.Errorf("update sensor api key: %w", err)
 	}
 	return oneRowAffected(res, sensordom.ErrSensorNotFound)
 }
 
 // Delete removes a key.
 func (r *SensorAPIKeyRepository) Delete(ctx context.Context, id shared.ID) error {
-	res, err := r.db.ExecContext(ctx, "DELETE FROM agent_api_keys WHERE id = $1", id.String())
+	res, err := r.db.ExecContext(ctx, "DELETE FROM sensor_api_keys WHERE id = $1", id.String())
 	if err != nil {
-		return fmt.Errorf("delete agent api key: %w", err)
+		return fmt.Errorf("delete sensor api key: %w", err)
 	}
 	return oneRowAffected(res, sensordom.ErrSensorNotFound)
 }
@@ -155,12 +155,12 @@ func (r *SensorAPIKeyRepository) Delete(ctx context.Context, id shared.ID) error
 // update).
 func (r *SensorAPIKeyRepository) RecordUsage(ctx context.Context, id shared.ID, ip string) error {
 	query := `
-		UPDATE agent_api_keys
+		UPDATE sensor_api_keys
 		SET use_count = use_count + 1, last_used_at = NOW(), last_used_ip = $2
 		WHERE id = $1`
 	_, err := r.db.ExecContext(ctx, query, id.String(), nullInet(ip))
 	if err != nil {
-		return fmt.Errorf("record agent api key usage: %w", err)
+		return fmt.Errorf("record sensor api key usage: %w", err)
 	}
 	return nil
 }
@@ -168,12 +168,12 @@ func (r *SensorAPIKeyRepository) RecordUsage(ctx context.Context, id shared.ID, 
 // Revoke deactivates a key with a reason.
 func (r *SensorAPIKeyRepository) Revoke(ctx context.Context, id shared.ID, reason string) error {
 	query := `
-		UPDATE agent_api_keys
+		UPDATE sensor_api_keys
 		SET is_active = FALSE, revoked_at = NOW(), revoked_reason = $2
 		WHERE id = $1 AND is_active = TRUE`
 	res, err := r.db.ExecContext(ctx, query, id.String(), nullString(reason))
 	if err != nil {
-		return fmt.Errorf("revoke agent api key: %w", err)
+		return fmt.Errorf("revoke sensor api key: %w", err)
 	}
 	return oneRowAffected(res, sensordom.ErrSensorNotFound)
 }
@@ -182,10 +182,10 @@ func (r *SensorAPIKeyRepository) Revoke(ctx context.Context, id shared.ID, reaso
 func (r *SensorAPIKeyRepository) CountActiveBySensorID(ctx context.Context, sensorID shared.ID) (int, error) {
 	var n int
 	err := r.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM agent_api_keys WHERE agent_id = $1 AND is_active = TRUE",
+		"SELECT COUNT(*) FROM sensor_api_keys WHERE sensor_id = $1 AND is_active = TRUE",
 		sensorID.String()).Scan(&n)
 	if err != nil {
-		return 0, fmt.Errorf("count active agent api keys: %w", err)
+		return 0, fmt.Errorf("count active sensor api keys: %w", err)
 	}
 	return n, nil
 }

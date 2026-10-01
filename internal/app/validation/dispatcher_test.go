@@ -82,7 +82,7 @@ func TestCommandDispatcher_Dispatch_BuildsValidateCommand(t *testing.T) {
 		}
 	}
 	if !hasValidate {
-		t.Errorf("required_capabilities %v missing 'validate' (agent routing)", p.RequiredCapabilities)
+		t.Errorf("required_capabilities %v missing 'validate' (sensor routing)", p.RequiredCapabilities)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestCommandDispatcher_Dispatch_NucleiJobRequiresNucleiCapability(t *testing
 		t.Errorf("required_capabilities %v missing %q", p.RequiredCapabilities, SensorCapabilityValidateNuclei)
 	}
 	if hasBase {
-		t.Errorf("nuclei job must not require the base %q capability (would route to safe-check-only agents)", SensorCapabilityValidate)
+		t.Errorf("nuclei job must not require the base %q capability (would route to safe-check-only sensors)", SensorCapabilityValidate)
 	}
 }
 

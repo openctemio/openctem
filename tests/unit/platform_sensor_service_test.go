@@ -264,9 +264,9 @@ func newTestSensorService(repo *mockSensorRepo) *app.SensorService {
 
 func createTestSensor(t *testing.T, tenantID shared.ID, name string) *sensor.Sensor {
 	t.Helper()
-	a, err := sensor.NewSensor(tenantID, name, sensor.SensorTypeWorker, "test agent", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
+	a, err := sensor.NewSensor(tenantID, name, sensor.SensorTypeWorker, "test sensor", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
 	if err != nil {
-		t.Fatalf("failed to create test agent: %v", err)
+		t.Fatalf("failed to create test sensor: %v", err)
 	}
 	return a
 }
@@ -282,9 +282,9 @@ func TestCreateSensor_Success(t *testing.T) {
 
 	input := app.CreateSensorInput{
 		TenantID:      tenantID.String(),
-		Name:          "Test Worker Agent",
+		Name:          "Test Worker Sensor",
 		Type:          "worker",
-		Description:   "A test worker agent",
+		Description:   "A test worker sensor",
 		Capabilities:  []string{"sast", "sca"},
 		Tools:         []string{"semgrep", "trivy"},
 		ExecutionMode: "daemon",
@@ -292,20 +292,20 @@ func TestCreateSensor_Success(t *testing.T) {
 
 	output, err := svc.CreateSensor(context.Background(), input)
 	if err != nil {
-		t.Fatalf("CreateAgent failed: %v", err)
+		t.Fatalf("CreateSensor failed: %v", err)
 	}
 
 	if output == nil {
 		t.Fatal("Expected non-nil output")
 	}
 	if output.Sensor == nil {
-		t.Fatal("Expected non-nil agent")
+		t.Fatal("Expected non-nil sensor")
 	}
 	if output.APIKey == "" {
 		t.Error("Expected non-empty API key")
 	}
-	if output.Sensor.Name != "Test Worker Agent" {
-		t.Errorf("Expected name 'Test Worker Agent', got '%s'", output.Sensor.Name)
+	if output.Sensor.Name != "Test Worker Sensor" {
+		t.Errorf("Expected name 'Test Worker Sensor', got '%s'", output.Sensor.Name)
 	}
 	if output.Sensor.Type != sensor.SensorTypeWorker {
 		t.Errorf("Expected type worker, got %s", output.Sensor.Type)
@@ -329,7 +329,7 @@ func TestCreateSensor_InvalidTenantID(t *testing.T) {
 
 	input := app.CreateSensorInput{
 		TenantID: "not-a-uuid",
-		Name:     "Bad Agent",
+		Name:     "Bad Sensor",
 		Type:     "worker",
 	}
 
@@ -367,7 +367,7 @@ func TestCreateSensor_RepoError(t *testing.T) {
 
 	input := app.CreateSensorInput{
 		TenantID: tenantID.String(),
-		Name:     "Failing Agent",
+		Name:     "Failing Sensor",
 		Type:     "worker",
 	}
 
@@ -384,14 +384,14 @@ func TestCreateSensor_WithMaxConcurrentJobs(t *testing.T) {
 
 	input := app.CreateSensorInput{
 		TenantID:          tenantID.String(),
-		Name:              "Capacity Agent",
+		Name:              "Capacity Sensor",
 		Type:              "worker",
 		MaxConcurrentJobs: 10,
 	}
 
 	output, err := svc.CreateSensor(context.Background(), input)
 	if err != nil {
-		t.Fatalf("CreateAgent failed: %v", err)
+		t.Fatalf("CreateSensor failed: %v", err)
 	}
 
 	if output.Sensor.MaxConcurrentJobs != 10 {
@@ -407,14 +407,14 @@ func TestCreateSensor_DefaultExecutionMode(t *testing.T) {
 	// Worker should default to daemon mode
 	input := app.CreateSensorInput{
 		TenantID: tenantID.String(),
-		Name:     "Default Mode Agent",
+		Name:     "Default Mode Sensor",
 		Type:     "worker",
 		// ExecutionMode not set
 	}
 
 	output, err := svc.CreateSensor(context.Background(), input)
 	if err != nil {
-		t.Fatalf("CreateAgent failed: %v", err)
+		t.Fatalf("CreateSensor failed: %v", err)
 	}
 
 	if output.Sensor.ExecutionMode != sensor.ExecutionModeDaemon {
@@ -431,16 +431,16 @@ func TestGetSensor_Success(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Get Me Agent")
+	a := createTestSensor(t, tenantID, "Get Me Sensor")
 	repo.sensors[a.ID] = a
 
 	result, err := svc.GetSensor(context.Background(), tenantID.String(), a.ID.String())
 	if err != nil {
-		t.Fatalf("GetAgent failed: %v", err)
+		t.Fatalf("GetSensor failed: %v", err)
 	}
 
-	if result.Name != "Get Me Agent" {
-		t.Errorf("Expected name 'Get Me Agent', got '%s'", result.Name)
+	if result.Name != "Get Me Sensor" {
+		t.Errorf("Expected name 'Get Me Sensor', got '%s'", result.Name)
 	}
 }
 
@@ -451,7 +451,7 @@ func TestGetSensor_NotFound(t *testing.T) {
 
 	_, err := svc.GetSensor(context.Background(), tenantID.String(), shared.NewID().String())
 	if err == nil {
-		t.Fatal("Expected error for non-existent agent")
+		t.Fatal("Expected error for non-existent sensor")
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("Expected ErrNotFound, got: %v", err)
@@ -478,7 +478,7 @@ func TestGetSensor_InvalidSensorID(t *testing.T) {
 
 	_, err := svc.GetSensor(context.Background(), tenantID.String(), "not-a-uuid")
 	if err == nil {
-		t.Fatal("Expected error for invalid agent ID")
+		t.Fatal("Expected error for invalid sensor ID")
 	}
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("Expected validation error, got: %v", err)
@@ -491,7 +491,7 @@ func TestGetSensor_WrongTenant(t *testing.T) {
 	tenantID := shared.NewID()
 	otherTenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Wrong Tenant Agent")
+	a := createTestSensor(t, tenantID, "Wrong Tenant Sensor")
 	repo.sensors[a.ID] = a
 
 	_, err := svc.GetSensor(context.Background(), otherTenantID.String(), a.ID.String())
@@ -513,7 +513,7 @@ func TestListSensors_WithFilters(t *testing.T) {
 	tenantID := shared.NewID()
 
 	// Add sensors
-	for _, name := range []string{"Agent Alpha", "Agent Beta", "Agent Gamma"} {
+	for _, name := range []string{"Sensor Alpha", "Sensor Beta", "Sensor Gamma"} {
 		a := createTestSensor(t, tenantID, name)
 		repo.sensors[a.ID] = a
 	}
@@ -524,11 +524,11 @@ func TestListSensors_WithFilters(t *testing.T) {
 		PerPage:  10,
 	})
 	if err != nil {
-		t.Fatalf("ListAgents failed: %v", err)
+		t.Fatalf("ListSensors failed: %v", err)
 	}
 
 	if len(result.Data) != 3 {
-		t.Errorf("Expected 3 agents, got %d", len(result.Data))
+		t.Errorf("Expected 3 sensors, got %d", len(result.Data))
 	}
 }
 
@@ -558,11 +558,11 @@ func TestListSensors_EmptyResult(t *testing.T) {
 		PerPage:  10,
 	})
 	if err != nil {
-		t.Fatalf("ListAgents failed: %v", err)
+		t.Fatalf("ListSensors failed: %v", err)
 	}
 
 	if len(result.Data) != 0 {
-		t.Errorf("Expected 0 agents, got %d", len(result.Data))
+		t.Errorf("Expected 0 sensors, got %d", len(result.Data))
 	}
 }
 
@@ -587,7 +587,7 @@ func TestUpdateSensor_Success(t *testing.T) {
 
 	result, err := svc.UpdateSensor(context.Background(), input)
 	if err != nil {
-		t.Fatalf("UpdateAgent failed: %v", err)
+		t.Fatalf("UpdateSensor failed: %v", err)
 	}
 
 	if result.Name != "Updated Name" {
@@ -611,7 +611,7 @@ func TestUpdateSensor_NotFound(t *testing.T) {
 
 	_, err := svc.UpdateSensor(context.Background(), input)
 	if err == nil {
-		t.Fatal("Expected error for non-existent agent")
+		t.Fatal("Expected error for non-existent sensor")
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("Expected ErrNotFound, got: %v", err)
@@ -623,7 +623,7 @@ func TestUpdateSensor_ChangeStatus(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Status Agent")
+	a := createTestSensor(t, tenantID, "Status Sensor")
 	repo.sensors[a.ID] = a
 
 	// Disable sensor
@@ -635,7 +635,7 @@ func TestUpdateSensor_ChangeStatus(t *testing.T) {
 
 	result, err := svc.UpdateSensor(context.Background(), input)
 	if err != nil {
-		t.Fatalf("UpdateAgent (disable) failed: %v", err)
+		t.Fatalf("UpdateSensor (disable) failed: %v", err)
 	}
 
 	if result.Status != sensor.SensorStatusDisabled {
@@ -648,7 +648,7 @@ func TestUpdateSensor_ChangeMaxConcurrentJobs(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Capacity Agent")
+	a := createTestSensor(t, tenantID, "Capacity Sensor")
 	repo.sensors[a.ID] = a
 
 	maxJobs := 20
@@ -660,7 +660,7 @@ func TestUpdateSensor_ChangeMaxConcurrentJobs(t *testing.T) {
 
 	result, err := svc.UpdateSensor(context.Background(), input)
 	if err != nil {
-		t.Fatalf("UpdateAgent failed: %v", err)
+		t.Fatalf("UpdateSensor failed: %v", err)
 	}
 
 	if result.MaxConcurrentJobs != 20 {
@@ -682,12 +682,12 @@ func TestDeleteSensor_Success(t *testing.T) {
 
 	err := svc.DeleteSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
 	if err != nil {
-		t.Fatalf("DeleteAgent failed: %v", err)
+		t.Fatalf("DeleteSensor failed: %v", err)
 	}
 
 	// Verify sensor was deleted
 	if _, exists := repo.sensors[a.ID]; exists {
-		t.Error("Expected agent to be deleted")
+		t.Error("Expected sensor to be deleted")
 	}
 }
 
@@ -698,7 +698,7 @@ func TestDeleteSensor_NotFound(t *testing.T) {
 
 	err := svc.DeleteSensor(context.Background(), tenantID.String(), shared.NewID().String(), nil)
 	if err == nil {
-		t.Fatal("Expected error for non-existent agent")
+		t.Fatal("Expected error for non-existent sensor")
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("Expected ErrNotFound, got: %v", err)
@@ -727,13 +727,13 @@ func TestActivateSensor_Success(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Disabled Agent")
+	a := createTestSensor(t, tenantID, "Disabled Sensor")
 	a.Disable("maintenance")
 	repo.sensors[a.ID] = a
 
 	result, err := svc.ActivateSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
 	if err != nil {
-		t.Fatalf("ActivateAgent failed: %v", err)
+		t.Fatalf("ActivateSensor failed: %v", err)
 	}
 
 	if result.Status != sensor.SensorStatusActive {
@@ -746,13 +746,13 @@ func TestActivateSensor_RevokedSensor(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Revoked Agent")
+	a := createTestSensor(t, tenantID, "Revoked Sensor")
 	a.Revoke("compromised")
 	repo.sensors[a.ID] = a
 
 	_, err := svc.ActivateSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
 	if err == nil {
-		t.Fatal("Expected error when activating revoked agent")
+		t.Fatal("Expected error when activating revoked sensor")
 	}
 	if !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("Expected ErrForbidden, got: %v", err)
@@ -766,7 +766,7 @@ func TestActivateSensor_NotFound(t *testing.T) {
 
 	_, err := svc.ActivateSensor(context.Background(), tenantID.String(), shared.NewID().String(), nil)
 	if err == nil {
-		t.Fatal("Expected error for non-existent agent")
+		t.Fatal("Expected error for non-existent sensor")
 	}
 }
 
@@ -779,12 +779,12 @@ func TestDisableSensor_Success(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Active Agent")
+	a := createTestSensor(t, tenantID, "Active Sensor")
 	repo.sensors[a.ID] = a
 
 	result, err := svc.DisableSensor(context.Background(), tenantID.String(), a.ID.String(), "maintenance window", nil)
 	if err != nil {
-		t.Fatalf("DisableAgent failed: %v", err)
+		t.Fatalf("DisableSensor failed: %v", err)
 	}
 
 	if result.Status != sensor.SensorStatusDisabled {
@@ -800,12 +800,12 @@ func TestDisableSensor_DefaultReason(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Default Reason Agent")
+	a := createTestSensor(t, tenantID, "Default Reason Sensor")
 	repo.sensors[a.ID] = a
 
 	result, err := svc.DisableSensor(context.Background(), tenantID.String(), a.ID.String(), "", nil)
 	if err != nil {
-		t.Fatalf("DisableAgent failed: %v", err)
+		t.Fatalf("DisableSensor failed: %v", err)
 	}
 
 	if result.StatusMessage != "Disabled by administrator" {
@@ -827,7 +827,7 @@ func TestRevokeSensor_Success(t *testing.T) {
 
 	result, err := svc.RevokeSensor(context.Background(), tenantID.String(), a.ID.String(), "compromised", nil)
 	if err != nil {
-		t.Fatalf("RevokeAgent failed: %v", err)
+		t.Fatalf("RevokeSensor failed: %v", err)
 	}
 
 	if result.Status != sensor.SensorStatusRevoked {
@@ -844,7 +844,7 @@ func TestAuthenticateByAPIKey_Success(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Auth Agent")
+	a := createTestSensor(t, tenantID, "Auth Sensor")
 	a.SetAPIKey("testhash123", "rda_test")
 	repo.sensors[a.ID] = a
 	repo.apiKeyMap["testhash123"] = a
@@ -864,7 +864,7 @@ func TestAuthenticateByAPIKey_DisabledSensor(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Disabled Auth Agent")
+	a := createTestSensor(t, tenantID, "Disabled Auth Sensor")
 	a.Disable("disabled")
 	// We need to set the hash for a known key so the lookup succeeds
 	a.SetAPIKey("knownhash", "rda_test")
@@ -888,7 +888,7 @@ func TestHeartbeat_Success(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Heartbeat Agent")
+	a := createTestSensor(t, tenantID, "Heartbeat Sensor")
 	repo.sensors[a.ID] = a
 
 	input := app.SensorHeartbeatInput{
@@ -925,7 +925,7 @@ func TestHeartbeat_SensorNotFound(t *testing.T) {
 
 	err := svc.Heartbeat(context.Background(), input)
 	if err == nil {
-		t.Fatal("Expected error for non-existent agent")
+		t.Fatal("Expected error for non-existent sensor")
 	}
 }
 
@@ -938,17 +938,17 @@ func TestFindAvailableSensors_Success(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a1 := createTestSensor(t, tenantID, "Available Agent 1")
-	a2 := createTestSensor(t, tenantID, "Available Agent 2")
+	a1 := createTestSensor(t, tenantID, "Available Sensor 1")
+	a2 := createTestSensor(t, tenantID, "Available Sensor 2")
 	repo.findAvail = []*sensor.Sensor{a1, a2}
 
 	sensors, err := svc.FindAvailableSensors(context.Background(), tenantID, []string{"sast"}, "semgrep")
 	if err != nil {
-		t.Fatalf("FindAvailableAgents failed: %v", err)
+		t.Fatalf("FindAvailableSensors failed: %v", err)
 	}
 
 	if len(sensors) != 2 {
-		t.Errorf("Expected 2 available agents, got %d", len(sensors))
+		t.Errorf("Expected 2 available sensors, got %d", len(sensors))
 	}
 }
 
@@ -961,11 +961,11 @@ func TestFindAvailableSensors_NoSensors(t *testing.T) {
 
 	sensors, err := svc.FindAvailableSensors(context.Background(), tenantID, []string{"sast"}, "nuclei")
 	if err != nil {
-		t.Fatalf("FindAvailableAgents failed: %v", err)
+		t.Fatalf("FindAvailableSensors failed: %v", err)
 	}
 
 	if len(sensors) != 0 {
-		t.Errorf("Expected 0 agents, got %d", len(sensors))
+		t.Errorf("Expected 0 sensors, got %d", len(sensors))
 	}
 }
 
@@ -996,10 +996,10 @@ func TestClaimJob_Error(t *testing.T) {
 
 	err := svc.ClaimJob(context.Background(), sensorID)
 	if err == nil {
-		t.Fatal("Expected error when agent has no capacity")
+		t.Fatal("Expected error when sensor has no capacity")
 	}
 	if !errors.Is(err, sensor.ErrSensorNoCapacity) {
-		t.Errorf("Expected ErrAgentNoCapacity, got: %v", err)
+		t.Errorf("Expected ErrSensorNoCapacity, got: %v", err)
 	}
 }
 
@@ -1027,7 +1027,7 @@ func TestRegenerateAPIKey_Success(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	a := createTestSensor(t, tenantID, "Regen Key Agent")
+	a := createTestSensor(t, tenantID, "Regen Key Sensor")
 	a.SetAPIKey("oldhash", "rda_old")
 	repo.sensors[a.ID] = a
 
@@ -1054,7 +1054,7 @@ func TestRegenerateAPIKey_SensorNotFound(t *testing.T) {
 
 	_, err := svc.RegenerateAPIKey(context.Background(), tenantID.String(), shared.NewID().String(), nil)
 	if err == nil {
-		t.Fatal("Expected error for non-existent agent")
+		t.Fatal("Expected error for non-existent sensor")
 	}
 }
 
@@ -1156,12 +1156,12 @@ func TestSensor_HasCapacity(t *testing.T) {
 	a.CurrentJobs = 3
 
 	if !a.HasCapacity() {
-		t.Error("Agent with 3/5 jobs should have capacity")
+		t.Error("Sensor with 3/5 jobs should have capacity")
 	}
 
 	a.CurrentJobs = 5
 	if a.HasCapacity() {
-		t.Error("Agent with 5/5 jobs should not have capacity")
+		t.Error("Sensor with 5/5 jobs should not have capacity")
 	}
 }
 
@@ -1182,15 +1182,15 @@ func TestSensor_MatchesRequirements(t *testing.T) {
 	// Has capabilities: ["sast"], tools: ["semgrep"]
 
 	if !a.MatchesRequirements([]string{"sast"}, "semgrep") {
-		t.Error("Agent should match sast + semgrep requirements")
+		t.Error("Sensor should match sast + semgrep requirements")
 	}
 
 	if a.MatchesRequirements([]string{"dast"}, "nuclei") {
-		t.Error("Agent should not match dast + nuclei requirements")
+		t.Error("Sensor should not match dast + nuclei requirements")
 	}
 
 	if a.MatchesRequirements([]string{"sast"}, "trivy") {
-		t.Error("Agent should not match sast + trivy (wrong tool)")
+		t.Error("Sensor should not match sast + trivy (wrong tool)")
 	}
 }
 
@@ -1199,11 +1199,11 @@ func TestSensor_IsAvailable(t *testing.T) {
 	a := createTestSensor(t, tenantID, "Available Test")
 
 	if !a.IsAvailable() {
-		t.Error("Active agent should be available")
+		t.Error("Active sensor should be available")
 	}
 
 	a.Disable("test")
 	if a.IsAvailable() {
-		t.Error("Disabled agent should not be available")
+		t.Error("Disabled sensor should not be available")
 	}
 }

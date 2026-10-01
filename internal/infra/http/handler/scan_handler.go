@@ -67,7 +67,7 @@ type CreateScanRequest struct {
 	Timezone            string         `json:"timezone" validate:"max=50"`
 	Tags                []string       `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner        bool           `json:"run_on_tenant_runner"`
-	SensorPreference    string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	SensorPreference    string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	ProfileID           string         `json:"profile_id" validate:"omitempty,uuid"`
 	TimeoutSeconds      int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
 	MaxRetries          int            `json:"max_retries" validate:"omitempty,min=0,max=10"`
@@ -89,7 +89,7 @@ type UpdateScanRequest struct {
 	Timezone            string         `json:"timezone" validate:"max=50"`
 	Tags                []string       `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner        *bool          `json:"run_on_tenant_runner"`
-	SensorPreference    string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	SensorPreference    string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	ProfileID           *string        `json:"profile_id" validate:"omitempty"`
 	TimeoutSeconds      *int           `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
 	MaxRetries          *int           `json:"max_retries" validate:"omitempty,min=0,max=10"`
@@ -181,7 +181,7 @@ type ScanDetailResponse struct {
 	NextRunAt           *string        `json:"next_run_at,omitempty"`
 	Tags                []string       `json:"tags,omitempty"`
 	RunOnTenantRunner   bool           `json:"run_on_tenant_runner"`
-	SensorPreference    string         `json:"agent_preference"`
+	SensorPreference    string         `json:"sensor_preference"`
 	ProfileID           *string        `json:"profile_id,omitempty"`
 	TimeoutSeconds      int            `json:"timeout_seconds"`
 	MaxRetries          int            `json:"max_retries"`

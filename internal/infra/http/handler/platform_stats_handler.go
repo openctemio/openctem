@@ -26,9 +26,9 @@ func NewPlatformStatsHandler(sensorService *app.SensorService, log *logger.Logge
 
 // TierStatsResponse represents statistics for a single platform sensor tier.
 type TierStatsResponse struct {
-	TotalSensors   int `json:"total_agents"`
-	OnlineSensors  int `json:"online_agents"`
-	OfflineSensors int `json:"offline_agents"`
+	TotalSensors   int `json:"total_sensors"`
+	OnlineSensors  int `json:"online_sensors"`
+	OfflineSensors int `json:"offline_sensors"`
 	TotalCapacity  int `json:"total_capacity"`
 	CurrentLoad    int `json:"current_load"`
 	AvailableSlots int `json:"available_slots"`

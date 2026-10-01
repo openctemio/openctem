@@ -33,7 +33,7 @@ const (
 
 var (
 	// ErrNoSensorAvailable is returned when no suitable sensor is found.
-	ErrNoSensorAvailable = errors.New("no suitable agent available")
+	ErrNoSensorAvailable = errors.New("no suitable sensor available")
 )
 
 // metricsFreshness bounds how old a sensor's resource metrics may be before
@@ -67,7 +67,7 @@ func NewSensorSelector(
 		sensorRepo:  sensorRepo,
 		commandRepo: commandRepo,
 		sensorState: sensorState,
-		logger:      log.With("service", "agent_selector"),
+		logger:      log.With("service", "sensor_selector"),
 		weights:     sensordom.DefaultLoadBalancingWeights(),
 	}
 }
@@ -78,7 +78,7 @@ func NewSensorSelector(
 // selection arbitrary.
 func (s *SensorSelector) SetLoadBalancingWeights(w sensordom.LoadBalancingWeights) {
 	if w.IsZero() {
-		s.logger.Warn("ignoring all-zero agent load-balancing weights; keeping defaults")
+		s.logger.Warn("ignoring all-zero sensor load-balancing weights; keeping defaults")
 		return
 	}
 	s.weights = w
@@ -111,14 +111,14 @@ func (s *SensorSelector) selectTenantSensor(ctx context.Context, req SelectSenso
 	// Find available tenant sensors with capacity
 	sensors, err := s.sensorRepo.FindAvailableWithCapacity(ctx, req.TenantID, req.Capabilities, req.Tool)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find tenant agents: %w", err)
+		return nil, fmt.Errorf("failed to find tenant sensors: %w", err)
 	}
 
 	if len(sensors) == 0 {
 		if req.AllowQueue {
 			return &SelectSensorResult{
 				Queued:  true,
-				Message: "No tenant agent available, job will be queued",
+				Message: "No tenant sensor available, job will be queued",
 			}, nil
 		}
 		return nil, ErrNoSensorAvailable
@@ -129,7 +129,7 @@ func (s *SensorSelector) selectTenantSensor(ctx context.Context, req SelectSenso
 
 	return &SelectSensorResult{
 		Sensor:  selected,
-		Message: "Tenant agent assigned",
+		Message: "Tenant sensor assigned",
 	}, nil
 }
 
@@ -198,9 +198,9 @@ func (s *SensorSelector) CheckSensorAvailability(ctx context.Context, tenantID s
 
 	// Generate message
 	if result.Available {
-		result.Message = "Tenant agent available"
+		result.Message = "Tenant sensor available"
 	} else {
-		result.Message = "No tenant agent available. Deploy an agent to execute scans."
+		result.Message = "No tenant sensor available. Deploy a sensor to execute scans."
 	}
 
 	return result

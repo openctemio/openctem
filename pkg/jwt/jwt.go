@@ -743,7 +743,7 @@ func AllJobScopes() []JobTokenScope {
 // These are more restrictive than user tokens - tied to a specific job and sensor.
 type JobTokenClaims struct {
 	TokenType TokenType       `json:"token_type"`
-	SensorID  string          `json:"agent_id"`           // Platform sensor ID
+	SensorID  string          `json:"sensor_id"`           // Platform sensor ID
 	JobID     string          `json:"job_id"`             // Command/Job ID
 	TenantID  string          `json:"tenant_id"`          // Tenant owning the job
 	Scopes    []JobTokenScope `json:"scopes"`             // Allowed operations
@@ -796,7 +796,7 @@ func (g *Generator) GenerateJobToken(
 	scopes []JobTokenScope,
 ) (*JobToken, error) {
 	if sensorID == "" {
-		return nil, errors.New("agent_id is required")
+		return nil, errors.New("sensor_id is required")
 	}
 	if jobID == "" {
 		return nil, errors.New("job_id is required")
@@ -884,7 +884,7 @@ func (g *Generator) ValidateJobTokenForJob(tokenString, expectedSensorID, expect
 
 	// Verify sensor matches
 	if claims.SensorID != expectedSensorID {
-		return nil, fmt.Errorf("%w: agent mismatch", ErrInvalidToken)
+		return nil, fmt.Errorf("%w: sensor mismatch", ErrInvalidToken)
 	}
 
 	// Verify job matches

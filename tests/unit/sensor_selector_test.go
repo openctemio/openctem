@@ -176,10 +176,10 @@ func TestSensorSelSelectSensor_SingleSensor(t *testing.T) {
 		t.Fatal("expected non-nil result")
 	}
 	if result.Sensor == nil {
-		t.Fatal("expected agent to be set")
+		t.Fatal("expected sensor to be set")
 	}
 	if result.Sensor.ID != a.ID {
-		t.Errorf("expected agent %s, got %s", a.ID, result.Sensor.ID)
+		t.Errorf("expected sensor %s, got %s", a.ID, result.Sensor.ID)
 	}
 	if result.Queued {
 		t.Error("expected Queued=false")
@@ -213,10 +213,10 @@ func TestSensorSelSelectSensor_MultipleSensors_LeastLoaded(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.Sensor == nil {
-		t.Fatal("expected agent to be set")
+		t.Fatal("expected sensor to be set")
 	}
 	if result.Sensor.ID != low.ID {
-		t.Errorf("expected least-loaded agent %q, got %q", low.Name, result.Sensor.Name)
+		t.Errorf("expected least-loaded sensor %q, got %q", low.Name, result.Sensor.Name)
 	}
 }
 
@@ -240,7 +240,7 @@ func TestSensorSelSelectSensor_NoSensors_Error(t *testing.T) {
 		t.Error("expected nil result")
 	}
 	if !errors.Is(err, app.ErrNoSensorAvailable) {
-		t.Errorf("expected ErrNoAgentAvailable, got %v", err)
+		t.Errorf("expected ErrNoSensorAvailable, got %v", err)
 	}
 }
 
@@ -270,7 +270,7 @@ func TestSensorSelSelectSensor_NoSensors_AllowQueue(t *testing.T) {
 		t.Error("expected Queued=true")
 	}
 	if result.Sensor != nil {
-		t.Error("expected Agent to be nil when queued")
+		t.Error("expected Sensor to be nil when queued")
 	}
 	if result.Message == "" {
 		t.Error("expected a non-empty message in queued result")
@@ -309,7 +309,7 @@ func TestSensorSelSelectSensor_PassesToolAndCapabilities(t *testing.T) {
 	t.Parallel()
 
 	repo := newSensorSelMockSensorRepo()
-	a := makeSensorSelSensor("agent-with-tool", 0, 5)
+	a := makeSensorSelSensor("sensor-with-tool", 0, 5)
 	repo.availableSensors = []*sensor.Sensor{a}
 
 	sel := newSensorSelSelector(repo)
@@ -383,7 +383,7 @@ func TestSensorSelSelectSensor_EqualLoad(t *testing.T) {
 	// because the implementation starts bestLoad at 1.0 (100%) and the first
 	// sensor with load < 1.0 wins; subsequent equal-load sensors do not replace.
 	if result.Sensor.ID != first.ID {
-		t.Errorf("expected first agent to win on equal load, got %s", result.Sensor.Name)
+		t.Errorf("expected first sensor to win on equal load, got %s", result.Sensor.Name)
 	}
 }
 
@@ -411,10 +411,10 @@ func TestSensorSelSelectSensor_SensorWithUnlimitedCapacity(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.Sensor == nil {
-		t.Fatal("expected agent to be set")
+		t.Fatal("expected sensor to be set")
 	}
 	if result.Sensor.ID != unlimited.ID {
-		t.Errorf("expected unlimited-capacity agent, got %s", result.Sensor.Name)
+		t.Errorf("expected unlimited-capacity sensor, got %s", result.Sensor.Name)
 	}
 }
 
@@ -444,10 +444,10 @@ func TestSensorSelSelectSensor_AllFullyLoaded(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result == nil {
-		t.Fatal("expected non-nil SelectAgentResult")
+		t.Fatal("expected non-nil SelectSensorResult")
 	}
 	if result.Sensor != nil {
-		t.Errorf("expected nil Agent when all agents are at 100%% load, got %s", result.Sensor.Name)
+		t.Errorf("expected nil Sensor when all sensors are at 100%% load, got %s", result.Sensor.Name)
 	}
 }
 
@@ -494,7 +494,7 @@ func TestSensorSelCheckAvailability_TenantSensorAvailable(t *testing.T) {
 		t.Fatal("expected non-nil availability result")
 	}
 	if !result.HasTenantSensor {
-		t.Error("expected HasTenantAgent=true")
+		t.Error("expected HasTenantSensor=true")
 	}
 	if !result.Available {
 		t.Error("expected Available=true")
@@ -517,7 +517,7 @@ func TestSensorSelCheckAvailability_NoSensorsAvailable(t *testing.T) {
 	result := sel.CheckSensorAvailability(context.Background(), shared.NewID(), "nuclei", true)
 
 	if result.HasTenantSensor {
-		t.Error("expected HasTenantAgent=false")
+		t.Error("expected HasTenantSensor=false")
 	}
 	if result.Available {
 		t.Error("expected Available=false")
@@ -543,7 +543,7 @@ func TestSensorSelCheckAvailability_RepoError(t *testing.T) {
 		t.Fatal("expected non-nil result even on repo error")
 	}
 	if result.HasTenantSensor {
-		t.Error("expected HasTenantAgent=false on repo error")
+		t.Error("expected HasTenantSensor=false on repo error")
 	}
 	if result.Available {
 		t.Error("expected Available=false on repo error")
@@ -603,10 +603,10 @@ func TestSensorSelCheckAvailability_MultipleSensors(t *testing.T) {
 	result := sel.CheckSensorAvailability(context.Background(), shared.NewID(), "trivy", true)
 
 	if !result.HasTenantSensor {
-		t.Error("expected HasTenantAgent=true with multiple agents")
+		t.Error("expected HasTenantSensor=true with multiple sensors")
 	}
 	if !result.Available {
-		t.Error("expected Available=true with multiple agents")
+		t.Error("expected Available=true with multiple sensors")
 	}
 }
 
@@ -636,7 +636,7 @@ func TestSensorSelLeastLoaded_ZeroCurrentJobs(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.Sensor.ID != idle.ID {
-		t.Errorf("expected idle agent, got %s", result.Sensor.Name)
+		t.Errorf("expected idle sensor, got %s", result.Sensor.Name)
 	}
 }
 
@@ -659,7 +659,7 @@ func TestSensorSelLeastLoaded_SingleSensorPartialLoad(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.Sensor.ID != a.ID {
-		t.Errorf("expected agent %s, got %s", a.ID, result.Sensor.ID)
+		t.Errorf("expected sensor %s, got %s", a.ID, result.Sensor.ID)
 	}
 }
 
@@ -685,7 +685,7 @@ func TestSensorSelLeastLoaded_MaxJobsOne(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.Sensor.ID != empty.ID {
-		t.Errorf("expected empty-slot agent, got %s", result.Sensor.Name)
+		t.Errorf("expected empty-slot sensor, got %s", result.Sensor.Name)
 	}
 }
 
@@ -730,7 +730,7 @@ func TestSensorSelLoadBalancing_CPUBreaksJobLoadTie(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.Sensor == nil {
-		t.Fatal("expected an agent to be selected")
+		t.Fatal("expected a sensor to be selected")
 	}
 	if result.Sensor.ID != cool.ID {
 		t.Errorf("selected %q (95%% CPU) over %q (5%% CPU) at identical job load; "+
@@ -767,19 +767,19 @@ func TestSensorSelLoadBalancing_WeightsChangeSelection(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if result.Sensor == nil {
-			t.Fatal("expected an agent to be selected")
+			t.Fatal("expected a sensor to be selected")
 		}
 		return result.Sensor.Name
 	}
 
 	// CPU dominant → avoid the CPU-heavy sensor.
 	if got := selectWith(sensor.LoadBalancingWeights{JobLoad: 0.1, CPU: 0.9}); got != "mem-heavy" {
-		t.Errorf("with CPU weighted 0.9 the CPU-heavy agent should lose; selected %q", got)
+		t.Errorf("with CPU weighted 0.9 the CPU-heavy sensor should lose; selected %q", got)
 	}
 
 	// Memory dominant → avoid the memory-heavy sensor instead.
 	if got := selectWith(sensor.LoadBalancingWeights{JobLoad: 0.1, Memory: 0.9}); got != "cpu-heavy" {
-		t.Errorf("with memory weighted 0.9 the memory-heavy agent should lose; selected %q; "+
+		t.Errorf("with memory weighted 0.9 the memory-heavy sensor should lose; selected %q; "+
 			"AGENT_LB_* weights do not affect scheduling", got)
 	}
 }
@@ -838,7 +838,7 @@ func TestSensorSelLoadBalancing_ZeroWeightsRejected(t *testing.T) {
 	}
 	if result.Sensor.ID != cool.ID {
 		t.Errorf("all-zero weights should fall back to the defaults, but selection "+
-			"picked %q over the idle agent", result.Sensor.Name)
+			"picked %q over the idle sensor", result.Sensor.Name)
 	}
 }
 
@@ -865,9 +865,9 @@ func TestSensorSelErrNoSensorAvailable(t *testing.T) {
 	t.Parallel()
 
 	if app.ErrNoSensorAvailable == nil {
-		t.Fatal("ErrNoAgentAvailable should not be nil")
+		t.Fatal("ErrNoSensorAvailable should not be nil")
 	}
 	if app.ErrNoSensorAvailable.Error() == "" {
-		t.Error("ErrNoAgentAvailable should have a non-empty message")
+		t.Error("ErrNoSensorAvailable should have a non-empty message")
 	}
 }

@@ -570,21 +570,21 @@ func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID s
 
 	// Count sensors with this capability (via array)
 	sensorQuery := `
-		SELECT name FROM agents
+		SELECT name FROM sensors
 		WHERE $1 = ANY(capabilities)
 		ORDER BY name
 		LIMIT 10
 	`
 	sensorRows, err := r.db.QueryContext(ctx, sensorQuery, capName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count agents: %w", err)
+		return nil, fmt.Errorf("failed to count sensors: %w", err)
 	}
 	defer sensorRows.Close()
 
 	for sensorRows.Next() {
 		var sensorName string
 		if err := sensorRows.Scan(&sensorName); err != nil {
-			return nil, fmt.Errorf("failed to scan agent name: %w", err)
+			return nil, fmt.Errorf("failed to scan sensor name: %w", err)
 		}
 		stats.SensorNames = append(stats.SensorNames, sensorName)
 	}
@@ -685,14 +685,14 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 		}
 
 		sensorQuery := `
-			SELECT cap_name, COUNT(DISTINCT a.id) as agent_count
+			SELECT cap_name, COUNT(DISTINCT a.id) as sensor_count
 			FROM UNNEST(ARRAY[` + strings.Join(namePlaceholders, ", ") + `]::text[]) AS cap_name
-			LEFT JOIN agents a ON cap_name = ANY(a.capabilities)
+			LEFT JOIN sensors a ON cap_name = ANY(a.capabilities)
 			GROUP BY cap_name
 		`
 		sensorRows, err := r.db.QueryContext(ctx, sensorQuery, nameArgs...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to count agents: %w", err)
+			return nil, fmt.Errorf("failed to count sensors: %w", err)
 		}
 		defer sensorRows.Close()
 
@@ -700,7 +700,7 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 			var capName string
 			var count int
 			if err := sensorRows.Scan(&capName, &count); err != nil {
-				return nil, fmt.Errorf("failed to scan agent count: %w", err)
+				return nil, fmt.Errorf("failed to scan sensor count: %w", err)
 			}
 			if id, ok := nameToID[capName]; ok {
 				if stats, ok := result[id]; ok {

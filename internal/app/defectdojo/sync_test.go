@@ -87,7 +87,7 @@ func TestSyncTenant_PullsConvertsIngests_TenantIsolated(t *testing.T) {
 	// Tenant isolation: ingest ran under a synthetic sensor scoped to the
 	// AUTHENTICATED tenant.
 	if ing.gotSensor == nil || ing.gotSensor.TenantID == nil || *ing.gotSensor.TenantID != tenantID {
-		t.Errorf("ingest agent tenant = %v, want %s", ing.gotSensor, tenantID)
+		t.Errorf("ingest sensor tenant = %v, want %s", ing.gotSensor, tenantID)
 	}
 	// Auto-resolve safety: import is partial.
 	if ing.gotInput.CoverageType != ingest.CoverageTypePartial {

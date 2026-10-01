@@ -62,7 +62,7 @@ func NewSensorService(repo sensordom.Repository, auditService *auditapp.AuditSer
 	return &SensorService{
 		repo:         repo,
 		auditService: auditService,
-		logger:       log.With("service", "agent"),
+		logger:       log.With("service", "sensor"),
 		lbWeights:    sensordom.DefaultLoadBalancingWeights(),
 	}
 }
@@ -72,7 +72,7 @@ func NewSensorService(repo sensordom.Repository, auditService *auditapp.AuditSer
 // ignored so a misconfiguration cannot flatten every sensor's score to 0.
 func (s *SensorService) SetLoadBalancingWeights(w sensordom.LoadBalancingWeights) {
 	if w.IsZero() {
-		s.logger.Warn("ignoring all-zero agent load-balancing weights; keeping defaults")
+		s.logger.Warn("ignoring all-zero sensor load-balancing weights; keeping defaults")
 		return
 	}
 	s.lbWeights = w
@@ -115,13 +115,13 @@ type CreateSensorInput struct {
 
 // CreateSensorOutput represents the output after creating a sensor.
 type CreateSensorOutput struct {
-	Sensor *sensordom.Sensor `json:"agent"`
+	Sensor *sensordom.Sensor `json:"sensor"`
 	APIKey string            `json:"api_key"` // Only returned on creation
 }
 
 // CreateSensor creates a new sensor and generates an API key.
 func (s *SensorService) CreateSensor(ctx context.Context, input CreateSensorInput) (*CreateSensorOutput, error) {
-	s.logger.Info("creating agent", "name", input.Name, "type", input.Type)
+	s.logger.Info("creating sensor", "name", input.Name, "type", input.Type)
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -175,7 +175,7 @@ func (s *SensorService) GetSensor(ctx context.Context, tenantID, sensorID string
 
 	aid, err := shared.IDFromString(sensorID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 	}
 
 	return s.repo.GetByTenantAndID(ctx, tid, aid)
@@ -238,7 +238,7 @@ func (s *SensorService) ListSensors(ctx context.Context, input ListSensorsInput)
 // UpdateSensorInput represents the input for updating a sensor.
 type UpdateSensorInput struct {
 	TenantID          string   `json:"tenant_id" validate:"required,uuid"`
-	SensorID          string   `json:"agent_id" validate:"required,uuid"`
+	SensorID          string   `json:"sensor_id" validate:"required,uuid"`
 	Name              string   `json:"name" validate:"omitempty,min=1,max=255"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -376,7 +376,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		// The sensor was disabled/revoked (or deleted) between authentication
 		// and this write. The guarded UPDATE left it untouched — which is the
 		// point — and there is no connect event to record.
-		s.logger.Debug("heartbeat ignored for non-active agent", "agent_id", a.ID.String())
+		s.logger.Debug("heartbeat ignored for non-active sensor", "sensor_id", a.ID.String())
 		return nil
 	}
 
@@ -406,7 +406,7 @@ func (s *SensorService) DeleteSensor(ctx context.Context, tenantID, sensorID str
 
 	aid, err := shared.IDFromString(sensorID)
 	if err != nil {
-		return fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+		return fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 	}
 
 	// Verify sensor belongs to tenant and get sensor info for audit
@@ -510,7 +510,7 @@ func (s *SensorService) revokeAllKeyRows(ctx context.Context, sensorID shared.ID
 // never expires) so the sensor can schedule its next renewal.
 func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (string, *time.Time, error) {
 	if a == nil {
-		return "", nil, shared.NewDomainError("UNAUTHORIZED", "no authenticated agent", shared.ErrUnauthorized)
+		return "", nil, shared.NewDomainError("UNAUTHORIZED", "no authenticated sensor", shared.ErrUnauthorized)
 	}
 
 	fresh, err := s.repo.GetByID(ctx, a.ID)
@@ -519,9 +519,9 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (s
 	}
 	if !fresh.Status.CanAuthenticate() {
 		if fresh.Status == sensordom.SensorStatusRevoked {
-			return "", nil, shared.NewDomainError("FORBIDDEN", "agent access has been revoked", shared.ErrForbidden)
+			return "", nil, shared.NewDomainError("FORBIDDEN", "sensor access has been revoked", shared.ErrForbidden)
 		}
-		return "", nil, shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
+		return "", nil, shared.NewDomainError("FORBIDDEN", "sensor is disabled", shared.ErrForbidden)
 	}
 
 	apiKey, hash, prefix, err := s.generateSensorAPIKey()
@@ -543,8 +543,8 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (s
 		if err := s.issueOverlappingKey(ctx, fresh, hash, prefix, *expiresAt); err != nil {
 			return "", nil, err
 		}
-		s.logger.Info("agent renewed its API key (overlap)",
-			"agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor, "expires_at", expiresAt)
+		s.logger.Info("sensor renewed its API key (overlap)",
+			"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor, "expires_at", expiresAt)
 		s.auditKeyRenewed(ctx, fresh, expiresAt, true)
 		return apiKey, expiresAt, nil
 	}
@@ -557,11 +557,11 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (s
 		return "", nil, err
 	}
 	if !updated {
-		return "", nil, shared.NewDomainError("FORBIDDEN", "agent is not active", shared.ErrForbidden)
+		return "", nil, shared.NewDomainError("FORBIDDEN", "sensor is not active", shared.ErrForbidden)
 	}
 
-	s.logger.Info("agent renewed its API key",
-		"agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor, "expires_at", expiresAt)
+	s.logger.Info("sensor renewed its API key",
+		"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor, "expires_at", expiresAt)
 	s.auditKeyRenewed(ctx, fresh, expiresAt, false)
 	return apiKey, expiresAt, nil
 }
@@ -618,7 +618,7 @@ func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordo
 		}
 		if err := s.repo.UpdateKeyExpiry(ctx, fresh.ID, &grace); err != nil {
 			s.logger.Warn("failed to retire inline key after overlap renewal",
-				"agent_id", fresh.ID.String(), "error", err)
+				"sensor_id", fresh.ID.String(), "error", err)
 		}
 	}
 
@@ -693,9 +693,9 @@ func (s *SensorService) AuthenticateByAPIKey(ctx context.Context, apiKey string)
 	// Check admin-controlled status (not health)
 	if !a.Status.CanAuthenticate() {
 		if a.Status == sensordom.SensorStatusRevoked {
-			return nil, shared.NewDomainError("FORBIDDEN", "agent access has been revoked", shared.ErrForbidden)
+			return nil, shared.NewDomainError("FORBIDDEN", "sensor access has been revoked", shared.ErrForbidden)
 		}
-		return nil, shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
+		return nil, shared.NewDomainError("FORBIDDEN", "sensor is disabled", shared.ErrForbidden)
 	}
 
 	// Reject an expired key (RFC-014 Phase 1b). NULL expiry (the default and
@@ -743,9 +743,9 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, apiKey, pepperedHas
 	}
 	if !a.Status.CanAuthenticate() {
 		if a.Status == sensordom.SensorStatusRevoked {
-			return nil, shared.NewDomainError("FORBIDDEN", "agent access has been revoked", shared.ErrForbidden)
+			return nil, shared.NewDomainError("FORBIDDEN", "sensor access has been revoked", shared.ErrForbidden)
 		}
-		return nil, shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
+		return nil, shared.NewDomainError("FORBIDDEN", "sensor is disabled", shared.ErrForbidden)
 	}
 
 	// Async per-key audit + sensor liveness.
@@ -768,7 +768,7 @@ func (s *SensorService) ActivateSensor(ctx context.Context, tenantID, sensorID s
 	}
 
 	if a.Status == sensordom.SensorStatusRevoked {
-		return nil, shared.NewDomainError("FORBIDDEN", "cannot activate revoked agent", shared.ErrForbidden)
+		return nil, shared.NewDomainError("FORBIDDEN", "cannot activate revoked sensor", shared.ErrForbidden)
 	}
 
 	a.Activate()
@@ -782,7 +782,7 @@ func (s *SensorService) ActivateSensor(ctx context.Context, tenantID, sensorID s
 		_ = s.auditService.LogSensorActivated(ctx, *auditCtx, sensorID, a.Name)
 	}
 
-	s.logger.Info("agent activated", "agent_id", sensorID)
+	s.logger.Info("sensor activated", "sensor_id", sensorID)
 	return a, nil
 }
 
@@ -807,7 +807,7 @@ func (s *SensorService) DisableSensor(ctx context.Context, tenantID, sensorID, r
 		_ = s.auditService.LogSensorDeactivated(ctx, *auditCtx, sensorID, a.Name, reason)
 	}
 
-	s.logger.Info("agent disabled", "agent_id", sensorID, "reason", reason)
+	s.logger.Info("sensor disabled", "sensor_id", sensorID, "reason", reason)
 	return a, nil
 }
 
@@ -832,7 +832,7 @@ func (s *SensorService) RevokeSensor(ctx context.Context, tenantID, sensorID, re
 		_ = s.auditService.LogSensorRevoked(ctx, *auditCtx, sensorID, a.Name, reason)
 	}
 
-	s.logger.Info("agent revoked", "agent_id", sensorID, "reason", reason)
+	s.logger.Info("sensor revoked", "sensor_id", sensorID, "reason", reason)
 	return a, nil
 }
 
@@ -933,7 +933,7 @@ func (s *SensorService) hashSensorAPIKey(key string) string {
 // TenantAvailableCapabilitiesOutput represents the output for available capabilities.
 type TenantAvailableCapabilitiesOutput struct {
 	Capabilities []string `json:"capabilities"` // Unique capability names available to tenant
-	TotalSensors int      `json:"total_agents"` // Total number of online sensors
+	TotalSensors int      `json:"total_sensors"` // Total number of online sensors
 }
 
 // GetAvailableCapabilitiesForTenant returns all capabilities available to a tenant.
@@ -1000,7 +1000,7 @@ func (s *SensorService) GetTenantSensorStats(ctx context.Context, tenantID strin
 	}
 	stats, err := s.repo.GetTenantSensorStats(ctx, parsedTenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get tenant agent stats: %w", err)
+		return nil, fmt.Errorf("failed to get tenant sensor stats: %w", err)
 	}
 	return stats, nil
 }
@@ -1011,7 +1011,7 @@ func (s *SensorService) GetPlatformStats(ctx context.Context, tenantID shared.ID
 
 	stats, err := s.repo.GetPlatformSensorStats(ctx, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get platform agent stats: %w", err)
+		return nil, fmt.Errorf("failed to get platform sensor stats: %w", err)
 	}
 
 	// If no platform sensors exist, return disabled

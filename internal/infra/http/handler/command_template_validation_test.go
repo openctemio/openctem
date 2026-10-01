@@ -79,7 +79,7 @@ func TestValidateInlineScanTemplates_RefusesUnparseableTemplateCarrier(t *testin
 			err := validateInlineScanTemplates(json.RawMessage(payload))
 			if err == nil {
 				t.Fatal("approved a payload carrying custom_templates that it could not parse; " +
-					"the agent decodes and executes whatever it can read")
+					"the sensor decodes and executes whatever it can read")
 			}
 			if !strings.Contains(err.Error(), "could not be parsed") {
 				t.Errorf("rejected, but not for the expected reason: %v", err)

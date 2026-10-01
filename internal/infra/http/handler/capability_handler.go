@@ -75,9 +75,9 @@ type CapabilityResponse struct {
 // CapabilityUsageStatsResponse represents usage statistics for a capability.
 type CapabilityUsageStatsResponse struct {
 	ToolCount   int      `json:"tool_count"`
-	SensorCount int      `json:"agent_count"`
+	SensorCount int      `json:"sensor_count"`
 	ToolNames   []string `json:"tool_names,omitempty"`
-	SensorNames []string `json:"agent_names,omitempty"`
+	SensorNames []string `json:"sensor_names,omitempty"`
 }
 
 // toCapabilityResponse converts a domain capability to a response.

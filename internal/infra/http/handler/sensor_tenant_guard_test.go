@@ -15,7 +15,7 @@ func TestRequireSensorTenant_RejectsNilTenant(t *testing.T) {
 	rec := httptest.NewRecorder()
 	agt := &sensor.Sensor{ID: shared.NewID()} // TenantID nil
 	if requireSensorTenant(rec, agt) {
-		t.Fatal("expected false for nil-tenant agent")
+		t.Fatal("expected false for nil-tenant sensor")
 	}
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", rec.Code)
@@ -27,7 +27,7 @@ func TestRequireSensorTenant_AllowsTenantSensor(t *testing.T) {
 	tid := shared.NewID()
 	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid}
 	if !requireSensorTenant(rec, agt) {
-		t.Fatal("expected true for tenant-bound agent")
+		t.Fatal("expected true for tenant-bound sensor")
 	}
 	if rec.Code != http.StatusOK { // nothing written
 		t.Fatalf("expected no error response, got %d", rec.Code)
@@ -36,7 +36,7 @@ func TestRequireSensorTenant_AllowsTenantSensor(t *testing.T) {
 
 func TestSensorTenantString_NilSafe(t *testing.T) {
 	if got := sensorTenantString(nil); got != "" {
-		t.Errorf("nil agent: expected empty, got %q", got)
+		t.Errorf("nil sensor: expected empty, got %q", got)
 	}
 	if got := sensorTenantString(&sensor.Sensor{}); got != "" {
 		t.Errorf("nil tenant: expected empty, got %q", got)

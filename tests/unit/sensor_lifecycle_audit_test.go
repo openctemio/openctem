@@ -24,7 +24,7 @@ func TestUpdateHeartbeat_LogsConnectOnOfflineToOnlineTransition(t *testing.T) {
 	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	tenantID := shared.NewID()
-	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline // previously offline
 
 	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{Version: "1.0.0"}); err != nil {
@@ -39,13 +39,13 @@ func TestUpdateHeartbeat_LogsConnectOnOfflineToOnlineTransition(t *testing.T) {
 		t.Errorf("action = %q, want %q", got.Action(), auditdom.ActionSensorConnected)
 	}
 	if got.ResourceType() != auditdom.ResourceTypeSensor {
-		t.Errorf("resource_type = %q, want %q (UI reads 'agent')", got.ResourceType(), auditdom.ResourceTypeSensor)
+		t.Errorf("resource_type = %q, want %q (UI reads 'sensor')", got.ResourceType(), auditdom.ResourceTypeSensor)
 	}
 	if got.ResourceID() != a.ID.String() {
-		t.Errorf("resource_id = %q, want agent id %q", got.ResourceID(), a.ID.String())
+		t.Errorf("resource_id = %q, want sensor id %q", got.ResourceID(), a.ID.String())
 	}
 	if got.TenantID() == nil || *got.TenantID() != tenantID {
-		t.Errorf("tenant_id = %v, want %s (must use the agent's own tenant)", got.TenantID(), tenantID)
+		t.Errorf("tenant_id = %v, want %s (must use the sensor's own tenant)", got.TenantID(), tenantID)
 	}
 }
 
@@ -55,7 +55,7 @@ func TestUpdateHeartbeat_NoConnectLogOnSteadyStateHeartbeat(t *testing.T) {
 	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	tenantID := shared.NewID()
-	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOnline // already online — a normal recurring heartbeat
 
 	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{Version: "1.0.0"}); err != nil {
@@ -73,7 +73,7 @@ func TestUpdateHeartbeat_ConnectLogsOnceThenGoesQuiet(t *testing.T) {
 	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	tenantID := shared.NewID()
-	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline
 
 	// First heartbeat is the transition -> one connect event.
@@ -98,7 +98,7 @@ func TestUpdateHeartbeat_NoConnectLogForPlatformSensor(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
 
-	a := repo.seedSensor(shared.NewID(), "platform-agent", sensor.SensorTypeWorker)
+	a := repo.seedSensor(shared.NewID(), "platform-sensor", sensor.SensorTypeWorker)
 	a.TenantID = nil // platform sensor — shared infra, no owning tenant
 	a.Health = sensor.SensorHealthOffline
 
@@ -107,7 +107,7 @@ func TestUpdateHeartbeat_NoConnectLogForPlatformSensor(t *testing.T) {
 	}
 
 	if auditRepo.createCalls != 0 {
-		t.Fatalf("platform agent (no tenant) must not produce a tenant-scoped connect event; got %d", auditRepo.createCalls)
+		t.Fatalf("platform sensor (no tenant) must not produce a tenant-scoped connect event; got %d", auditRepo.createCalls)
 	}
 }
 
@@ -118,7 +118,7 @@ func TestSensorHealthReconcile_LogsDisconnectForNewlyOfflineSensor(t *testing.T)
 	repo := newSensorSvcMockRepo()
 
 	tenantID := shared.NewID()
-	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
 	// The controller flow: MarkStaleSensorsOffline already flipped health to
 	// offline and returns the id; GetByID then resolves tenant + name.
 	a.Health = sensor.SensorHealthOffline
@@ -133,7 +133,7 @@ func TestSensorHealthReconcile_LogsDisconnectForNewlyOfflineSensor(t *testing.T)
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if n != 1 {
-		t.Fatalf("Reconcile reported %d offline agents, want 1", n)
+		t.Fatalf("Reconcile reported %d offline sensors, want 1", n)
 	}
 	if auditRepo.createCalls != 1 {
 		t.Fatalf("expected exactly 1 disconnect audit event, got %d", auditRepo.createCalls)
@@ -166,7 +166,7 @@ func TestSensorHealthReconcile_NoDisconnectWhenNothingWentOffline(t *testing.T) 
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if auditRepo.createCalls != 0 {
-		t.Fatalf("no agents went offline; expected 0 audit writes, got %d", auditRepo.createCalls)
+		t.Fatalf("no sensors went offline; expected 0 audit writes, got %d", auditRepo.createCalls)
 	}
 }
 
@@ -174,7 +174,7 @@ func TestSensorHealthReconcile_NoDisconnectForPlatformSensor(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
 
-	a := repo.seedSensor(shared.NewID(), "platform-agent", sensor.SensorTypeWorker)
+	a := repo.seedSensor(shared.NewID(), "platform-sensor", sensor.SensorTypeWorker)
 	a.TenantID = nil // platform sensor
 	a.Health = sensor.SensorHealthOffline
 	repo.staleOfflineIDs = []shared.ID{a.ID}
@@ -187,13 +187,13 @@ func TestSensorHealthReconcile_NoDisconnectForPlatformSensor(t *testing.T) {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if auditRepo.createCalls != 0 {
-		t.Fatalf("platform agent (no tenant) must not produce a tenant-scoped disconnect event; got %d", auditRepo.createCalls)
+		t.Fatalf("platform sensor (no tenant) must not produce a tenant-scoped disconnect event; got %d", auditRepo.createCalls)
 	}
 }
 
 func TestSensorHealthReconcile_NilAuditServiceIsSafe(t *testing.T) {
 	repo := newSensorSvcMockRepo()
-	a := repo.seedSensor(shared.NewID(), "agent-1", sensor.SensorTypeWorker)
+	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline
 	repo.staleOfflineIDs = []shared.ID{a.ID}
 

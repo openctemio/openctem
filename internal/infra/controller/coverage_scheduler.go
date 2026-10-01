@@ -175,9 +175,9 @@ func (c *CoverageScheduler) toCoverageConfig(intg *integration.Integration) (sca
 		if id, err := shared.IDFromString(tc.SensorID); err == nil {
 			cfg.SensorID = &id
 		} else {
-			c.logger.Warn("ignoring invalid pinned agent_id on tenable integration",
+			c.logger.Warn("ignoring invalid pinned sensor_id on tenable integration",
 				"integration_id", intg.ID().String(),
-				"agent_id", tc.SensorID)
+				"sensor_id", tc.SensorID)
 		}
 	}
 	return cfg, true

@@ -45,10 +45,10 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 	}
 
 	query := `
-		INSERT INTO agents (
+		INSERT INTO sensors (
 			id, tenant_id, name, type, description, capabilities, tools,
 			execution_mode, status, health, status_message,
-			is_platform_agent,
+			is_platform_sensor,
 			api_key_hash, api_key_prefix, metadata, labels, config,
 			version, hostname, ip_address,
 			max_concurrent_jobs, current_jobs,
@@ -98,9 +98,9 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 
 	if err != nil {
 		if isUniqueViolation(err) {
-			return shared.NewDomainError("ALREADY_EXISTS", "agent already exists", shared.ErrAlreadyExists)
+			return shared.NewDomainError("ALREADY_EXISTS", "sensor already exists", shared.ErrAlreadyExists)
 		}
-		return fmt.Errorf("failed to create agent: %w", err)
+		return fmt.Errorf("failed to create sensor: %w", err)
 	}
 
 	return nil
@@ -111,13 +111,13 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 func (r *SensorRepository) CountByTenant(ctx context.Context, tenantID shared.ID) (int, error) {
 	query := `
 		SELECT COUNT(*)
-		FROM agents
-		WHERE tenant_id = $1 AND is_platform_agent = FALSE
+		FROM sensors
+		WHERE tenant_id = $1 AND is_platform_sensor = FALSE
 	`
 	var count int
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count agents: %w", err)
+		return 0, fmt.Errorf("failed to count sensors: %w", err)
 	}
 	return count, nil
 }
@@ -154,7 +154,7 @@ func (r *SensorRepository) List(ctx context.Context, filter sensor.Filter, page 
 	var result pagination.Result[*sensor.Sensor]
 
 	baseQuery := r.selectQuery()
-	countQuery := "SELECT COUNT(*) FROM agents"
+	countQuery := "SELECT COUNT(*) FROM sensors"
 	whereClause, args := r.buildWhereClause(filter)
 
 	if whereClause != "" {
@@ -166,7 +166,7 @@ func (r *SensorRepository) List(ctx context.Context, filter sensor.Filter, page 
 	var total int64
 	err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
 	if err != nil {
-		return result, fmt.Errorf("failed to count agents: %w", err)
+		return result, fmt.Errorf("failed to count sensors: %w", err)
 	}
 
 	// Apply pagination
@@ -175,7 +175,7 @@ func (r *SensorRepository) List(ctx context.Context, filter sensor.Filter, page 
 
 	rows, err := r.db.QueryContext(ctx, baseQuery, args...)
 	if err != nil {
-		return result, fmt.Errorf("failed to list agents: %w", err)
+		return result, fmt.Errorf("failed to list sensors: %w", err)
 	}
 	defer rows.Close()
 
@@ -212,7 +212,7 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 	}
 
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET name = $2, type = $3, description = $4, capabilities = $5, tools = $6,
 		    execution_mode = $7, status = $8, health = $9, status_message = $10,
 		    api_key_hash = $11, api_key_prefix = $12, metadata = $13, labels = $14, config = $15,
@@ -270,7 +270,7 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("failed to update agent: %w", err)
+		return fmt.Errorf("failed to update sensor: %w", err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()
@@ -283,10 +283,10 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 
 // Delete deletes a sensor.
 func (r *SensorRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM agents WHERE id = $1"
+	query := "DELETE FROM sensors WHERE id = $1"
 	result, err := r.db.ExecContext(ctx, query, id.String())
 	if err != nil {
-		return fmt.Errorf("failed to delete agent: %w", err)
+		return fmt.Errorf("failed to delete sensor: %w", err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()
@@ -301,7 +301,7 @@ func (r *SensorRepository) Delete(ctx context.Context, id shared.ID) error {
 // Note: This updates Health (automatic), not Status (admin-controlled).
 func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) error {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET last_seen_at = NOW(),
 		    health = 'online',
 		    updated_at = NOW()
@@ -316,7 +316,7 @@ func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) err
 // never revive one — unlike a full-row Update that would rewrite status.
 func (r *SensorRepository) UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET key_expires_at = $2,
 		    updated_at = NOW()
 		WHERE id = $1 AND status = 'active'
@@ -337,7 +337,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 	}
 
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET version = COALESCE(NULLIF($3, ''), version),
 		    hostname = COALESCE(NULLIF($4, ''), hostname),
 		    region = COALESCE(NULLIF($5, ''), region),
@@ -362,7 +362,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		hb.LoadScore,
 	)
 	if err != nil {
-		return false, fmt.Errorf("failed to update agent heartbeat: %w", err)
+		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
 	}
 	n, _ := result.RowsAffected()
 	return n > 0, nil
@@ -373,7 +373,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 // revoke cannot install a fresh key on a revoked sensor.
 func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET api_key_hash = $2,
 		    api_key_prefix = $3,
 		    key_expires_at = $4,
@@ -385,7 +385,7 @@ func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash,
 	}
 	result, err := r.db.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt))
 	if err != nil {
-		return false, fmt.Errorf("failed to update agent api key: %w", err)
+		return false, fmt.Errorf("failed to update sensor api key: %w", err)
 	}
 	n, _ := result.RowsAffected()
 	return n > 0, nil
@@ -394,7 +394,7 @@ func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash,
 // IncrementStats increments sensor statistics.
 func (r *SensorRepository) IncrementStats(ctx context.Context, id shared.ID, findings, scans, errors int64) error {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET total_findings = total_findings + $2,
 		    total_scans = total_scans + $3,
 		    error_count = error_count + $4,
@@ -426,7 +426,7 @@ func (r *SensorRepository) FindByCapabilities(ctx context.Context, tenantID shar
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find agents: %w", err)
+		return nil, fmt.Errorf("failed to find sensors: %w", err)
 	}
 	defer rows.Close()
 
@@ -468,7 +468,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 		`
 		rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 		if err != nil {
-			return nil, fmt.Errorf("failed to find available agent: %w", err)
+			return nil, fmt.Errorf("failed to find available sensor: %w", err)
 		}
 		defer rows.Close()
 
@@ -492,7 +492,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 	`
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), tool)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find agent with tool: %w", err)
+		return nil, fmt.Errorf("failed to find sensor with tool: %w", err)
 	}
 	defer rows.Close()
 
@@ -535,7 +535,7 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find agents with capacity: %w", err)
+		return nil, fmt.Errorf("failed to find sensors with capacity: %w", err)
 	}
 	defer rows.Close()
 
@@ -558,7 +558,7 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 // Returns error if the sensor is at capacity or not available.
 func (r *SensorRepository) ClaimJob(ctx context.Context, id shared.ID) error {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET current_jobs = current_jobs + 1,
 		    updated_at = NOW()
 		WHERE id = $1
@@ -572,7 +572,7 @@ func (r *SensorRepository) ClaimJob(ctx context.Context, id shared.ID) error {
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return shared.NewDomainError("NO_CAPACITY", "agent has no available capacity", shared.ErrValidation)
+		return shared.NewDomainError("NO_CAPACITY", "sensor has no available capacity", shared.ErrValidation)
 	}
 
 	return nil
@@ -581,7 +581,7 @@ func (r *SensorRepository) ClaimJob(ctx context.Context, id shared.ID) error {
 // ReleaseJob atomically decrements the current_jobs counter for a sensor.
 func (r *SensorRepository) ReleaseJob(ctx context.Context, id shared.ID) error {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET current_jobs = GREATEST(current_jobs - 1, 0),
 		    updated_at = NOW()
 		WHERE id = $1
@@ -602,7 +602,7 @@ func (r *SensorRepository) ReleaseJob(ctx context.Context, id shared.ID) error {
 // unreachable by this sweep forever.
 func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.Duration) (int64, error) {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET health = 'offline',
 		    updated_at = NOW()
 		WHERE health = 'online'
@@ -611,7 +611,7 @@ func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.
 
 	result, err := r.db.ExecContext(ctx, query, timeout.String())
 	if err != nil {
-		return 0, fmt.Errorf("failed to mark stale agents as offline: %w", err)
+		return 0, fmt.Errorf("failed to mark stale sensors as offline: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -626,7 +626,7 @@ func (r *SensorRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, name, type, description, capabilities, tools,
 		       execution_mode, status, health, status_message,
-		       is_platform_agent, tier,
+		       is_platform_sensor, tier,
 		       api_key_hash, api_key_prefix, metadata, labels, config,
 		       version, hostname, ip_address,
 		       cpu_percent, memory_percent, max_concurrent_jobs, current_jobs, region,
@@ -635,7 +635,7 @@ func (r *SensorRepository) selectQuery() string {
 		       last_seen_at, last_offline_at, last_error_at,
 		       total_findings, total_scans, error_count,
 		       created_at, updated_at, key_expires_at
-		FROM agents
+		FROM sensors
 	`
 }
 
@@ -785,7 +785,7 @@ func (r *SensorRepository) scanSensor(row *sql.Row) (*sensor.Sensor, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to scan agent: %w", err)
+		return nil, fmt.Errorf("failed to scan sensor: %w", err)
 	}
 
 	a.ID, _ = shared.IDFromString(id)
@@ -854,17 +854,17 @@ func (r *SensorRepository) scanSensor(row *sql.Row) (*sensor.Sensor, error) {
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal agent metadata (id=%s): %v", a.ID, err)
+			log.Printf("[DEBUG] failed to unmarshal sensor metadata (id=%s): %v", a.ID, err)
 		}
 	}
 	if len(labels) > 0 {
 		if err := json.Unmarshal(labels, &a.Labels); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal agent labels (id=%s): %v", a.ID, err)
+			log.Printf("[DEBUG] failed to unmarshal sensor labels (id=%s): %v", a.ID, err)
 		}
 	}
 	if len(config) > 0 {
 		if err := json.Unmarshal(config, &a.Config); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal agent config (id=%s): %v", a.ID, err)
+			log.Printf("[DEBUG] failed to unmarshal sensor config (id=%s): %v", a.ID, err)
 		}
 	}
 
@@ -950,7 +950,7 @@ func (r *SensorRepository) scanSensorFromRows(rows *sql.Rows) (*sensor.Sensor, e
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan agent: %w", err)
+		return nil, fmt.Errorf("failed to scan sensor: %w", err)
 	}
 
 	a.ID, _ = shared.IDFromString(id)
@@ -1019,17 +1019,17 @@ func (r *SensorRepository) scanSensorFromRows(rows *sql.Rows) (*sensor.Sensor, e
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal agent metadata (id=%s): %v", a.ID, err)
+			log.Printf("[DEBUG] failed to unmarshal sensor metadata (id=%s): %v", a.ID, err)
 		}
 	}
 	if len(labels) > 0 {
 		if err := json.Unmarshal(labels, &a.Labels); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal agent labels (id=%s): %v", a.ID, err)
+			log.Printf("[DEBUG] failed to unmarshal sensor labels (id=%s): %v", a.ID, err)
 		}
 	}
 	if len(config) > 0 {
 		if err := json.Unmarshal(config, &a.Config); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal agent config (id=%s): %v", a.ID, err)
+			log.Printf("[DEBUG] failed to unmarshal sensor config (id=%s): %v", a.ID, err)
 		}
 	}
 
@@ -1045,7 +1045,7 @@ func (r *SensorRepository) scanSensorFromRows(rows *sql.Rows) (*sensor.Sensor, e
 func (r *SensorRepository) GetAvailableToolsForTenant(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	query := `
 		SELECT DISTINCT unnest(tools) AS tool_name
-		FROM agents
+		FROM sensors
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
@@ -1079,7 +1079,7 @@ func (r *SensorRepository) GetAvailableToolsForTenant(ctx context.Context, tenan
 func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
 	query := `
 		SELECT EXISTS (
-			SELECT 1 FROM agents
+			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
 			  AND status = 'active'
 			  AND health = 'online'
@@ -1102,7 +1102,7 @@ func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared
 func (r *SensorRepository) GetAvailableCapabilitiesForTenant(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	query := `
 		SELECT DISTINCT unnest(capabilities) AS capability_name
-		FROM agents
+		FROM sensors
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
@@ -1140,7 +1140,7 @@ func (r *SensorRepository) GetAvailableCapabilitiesForTenant(ctx context.Context
 // Preserves last_seen_at as the time of the last successful heartbeat.
 func (r *SensorRepository) UpdateOfflineTimestamp(ctx context.Context, id shared.ID) error {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET last_offline_at = NOW(),
 		    health = 'offline',
 		    updated_at = NOW()
@@ -1160,7 +1160,7 @@ func (r *SensorRepository) UpdateOfflineTimestamp(ctx context.Context, id shared
 // NULL last_seen_at counts as stale — see MarkStaleAsOffline for why.
 func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, timeout time.Duration) ([]shared.ID, error) {
 	query := `
-		UPDATE agents
+		UPDATE sensors
 		SET last_offline_at = NOW(),
 		    health = 'offline',
 		    updated_at = NOW()
@@ -1171,7 +1171,7 @@ func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, timeout 
 
 	rows, err := r.db.QueryContext(ctx, query, timeout.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to mark stale agents offline: %w", err)
+		return nil, fmt.Errorf("failed to mark stale sensors offline: %w", err)
 	}
 	defer rows.Close()
 
@@ -1179,7 +1179,7 @@ func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, timeout 
 	for rows.Next() {
 		var idStr string
 		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("failed to scan agent id: %w", err)
+			return nil, fmt.Errorf("failed to scan sensor id: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
@@ -1188,7 +1188,7 @@ func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, timeout 
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate stale agents: %w", err)
+		return nil, fmt.Errorf("failed to iterate stale sensors: %w", err)
 	}
 
 	return ids, nil
@@ -1205,7 +1205,7 @@ func (r *SensorRepository) GetSensorsOfflineSince(ctx context.Context, since tim
 
 	rows, err := r.db.QueryContext(ctx, query, since)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get agents offline since: %w", err)
+		return nil, fmt.Errorf("failed to get sensors offline since: %w", err)
 	}
 	defer rows.Close()
 
@@ -1231,27 +1231,27 @@ func (r *SensorRepository) GetSensorsOfflineSince(ctx context.Context, since tim
 func (r *SensorRepository) GetPlatformSensorStats(ctx context.Context, tenantID shared.ID) (*sensor.PlatformSensorStatsResult, error) {
 	// Single CTE query combining sensor stats and queued job count to avoid N+1
 	query := `
-		WITH agent_stats AS (
+		WITH sensor_stats AS (
 			SELECT
 				COALESCE(labels->>'tier', 'shared') AS tier,
-				COUNT(*) AS total_agents,
-				COUNT(*) FILTER (WHERE health = 'online') AS online_agents,
+				COUNT(*) AS total_sensors,
+				COUNT(*) FILTER (WHERE health = 'online') AS online_sensors,
 				COALESCE(SUM(max_concurrent_jobs), 0) AS total_capacity,
 				COALESCE(SUM(current_jobs), 0) AS current_load
-			FROM agents
-			WHERE is_platform_agent = TRUE AND status = 'active'
+			FROM sensors
+			WHERE is_platform_sensor = TRUE AND status = 'active'
 			GROUP BY COALESCE(labels->>'tier', 'shared')
 		), queued AS (
 			SELECT COUNT(*) AS cnt FROM commands
 			WHERE is_platform_job = TRUE AND status IN ('pending', 'queued') AND tenant_id = $1
 		)
-		SELECT q.cnt, a.tier, a.total_agents, a.online_agents, a.total_capacity, a.current_load
-		FROM agent_stats a, queued q
+		SELECT q.cnt, a.tier, a.total_sensors, a.online_sensors, a.total_capacity, a.current_load
+		FROM sensor_stats a, queued q
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to query platform agent stats: %w", err)
+		return nil, fmt.Errorf("failed to query platform sensor stats: %w", err)
 	}
 	defer rows.Close()
 
@@ -1263,7 +1263,7 @@ func (r *SensorRepository) GetPlatformSensorStats(ctx context.Context, tenantID 
 		var tier string
 		var tb sensor.TierBreakdown
 		if err := rows.Scan(&result.CurrentQueuedJobs, &tier, &tb.TotalSensors, &tb.OnlineSensors, &tb.TotalCapacity, &tb.CurrentLoad); err != nil {
-			return nil, fmt.Errorf("failed to scan platform agent stats: %w", err)
+			return nil, fmt.Errorf("failed to scan platform sensor stats: %w", err)
 		}
 		result.TierBreakdown[tier] = tb
 		result.TotalSensors += tb.TotalSensors
@@ -1273,7 +1273,7 @@ func (r *SensorRepository) GetPlatformSensorStats(ctx context.Context, tenantID 
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate platform agent stats: %w", err)
+		return nil, fmt.Errorf("failed to iterate platform sensor stats: %w", err)
 	}
 
 	// Handle case where no sensors exist but we still need queued count
@@ -1300,33 +1300,33 @@ func (r *SensorRepository) GetTenantSensorStats(ctx context.Context, tenantID sh
 	}
 
 	query := `
-WITH tenant_agents AS (
+WITH tenant_sensors AS (
   SELECT id, status, health, type, execution_mode, current_jobs, last_seen_at
-  FROM agents
-  WHERE tenant_id = $1 AND is_platform_agent = FALSE
+  FROM sensors
+  WHERE tenant_id = $1 AND is_platform_sensor = FALSE
 )
 SELECT category, key, value FROM (
-  SELECT 'total'::text         AS category, ''::text       AS key, COUNT(*)::float8 AS value FROM tenant_agents
+  SELECT 'total'::text         AS category, ''::text       AS key, COUNT(*)::float8 AS value FROM tenant_sensors
   UNION ALL
-  SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online'
+  SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_sensors WHERE status = 'active' AND health = 'online'
   AND last_seen_at IS NOT NULL
   UNION ALL
-  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online'
+  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_sensors WHERE status = 'active' AND health = 'online'
   AND last_seen_at IS NOT NULL AND execution_mode = 'daemon'
   UNION ALL
-  SELECT 'status',               status,                            COUNT(*)::float8 FROM tenant_agents GROUP BY status
+  SELECT 'status',               status,                            COUNT(*)::float8 FROM tenant_sensors GROUP BY status
   UNION ALL
-  SELECT 'health',               health,                            COUNT(*)::float8 FROM tenant_agents GROUP BY health
+  SELECT 'health',               health,                            COUNT(*)::float8 FROM tenant_sensors GROUP BY health
   UNION ALL
-  SELECT 'type',                 type,                              COUNT(*)::float8 FROM tenant_agents GROUP BY type
+  SELECT 'type',                 type,                              COUNT(*)::float8 FROM tenant_sensors GROUP BY type
   UNION ALL
-  SELECT 'execution_mode',       execution_mode,                    COUNT(*)::float8 FROM tenant_agents GROUP BY execution_mode
+  SELECT 'execution_mode',       execution_mode,                    COUNT(*)::float8 FROM tenant_sensors GROUP BY execution_mode
 ) sub
 `
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tenant agent stats: %w", err)
+		return nil, fmt.Errorf("failed to query tenant sensor stats: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -1334,7 +1334,7 @@ SELECT category, key, value FROM (
 		var category, key string
 		var value float64
 		if err := rows.Scan(&category, &key, &value); err != nil {
-			return nil, fmt.Errorf("failed to scan tenant agent stats row: %w", err)
+			return nil, fmt.Errorf("failed to scan tenant sensor stats row: %w", err)
 		}
 		switch category {
 		case "total":
@@ -1354,7 +1354,7 @@ SELECT category, key, value FROM (
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating tenant agent stats: %w", err)
+		return nil, fmt.Errorf("error iterating tenant sensor stats: %w", err)
 	}
 
 	return stats, nil
@@ -1364,7 +1364,7 @@ SELECT category, key, value FROM (
 func (r *SensorRepository) HasSensorForCapability(ctx context.Context, tenantID shared.ID, capability string) (bool, error) {
 	query := `
 		SELECT EXISTS (
-			SELECT 1 FROM agents
+			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
 			  AND status = 'active'
 			  AND health = 'online'

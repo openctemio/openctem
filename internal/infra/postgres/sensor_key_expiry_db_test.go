@@ -49,9 +49,9 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 
 	repo := NewSensorRepository(&DB{DB: db})
 
-	a, err := sensor.NewSensor(tenantID, "expiry-agent", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
+	a, err := sensor.NewSensor(tenantID, "expiry-sensor", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
 	if err != nil {
-		t.Fatalf("new agent: %v", err)
+		t.Fatalf("new sensor: %v", err)
 	}
 	// Truncate to microseconds — Postgres TIMESTAMPTZ resolution — so the
 	// equality assertions below aren't defeated by sub-microsecond drift.
@@ -59,7 +59,7 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	a.SetAPIKeyWithExpiry("hash-keyexp-1", "rda_keyexp1", &exp)
 
 	if err := repo.Create(ctx, a); err != nil {
-		t.Fatalf("create agent: %v", err)
+		t.Fatalf("create sensor: %v", err)
 	}
 
 	got, err := repo.GetByAPIKeyHash(ctx, "hash-keyexp-1")
@@ -77,7 +77,7 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	newExp := time.Now().Add(48 * time.Hour).Truncate(time.Microsecond)
 	got.SetAPIKeyWithExpiry("hash-keyexp-2", "rda_keyexp2", &newExp)
 	if err := repo.Update(ctx, got); err != nil {
-		t.Fatalf("update agent: %v", err)
+		t.Fatalf("update sensor: %v", err)
 	}
 	got2, err := repo.GetByAPIKeyHash(ctx, "hash-keyexp-2")
 	if err != nil {
@@ -90,7 +90,7 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	// A never-expiring key (nil) must also round-trip as nil.
 	got2.SetAPIKey("hash-keyexp-3", "rda_keyexp3")
 	if err := repo.Update(ctx, got2); err != nil {
-		t.Fatalf("update agent (nil expiry): %v", err)
+		t.Fatalf("update sensor (nil expiry): %v", err)
 	}
 	got3, err := repo.GetByAPIKeyHash(ctx, "hash-keyexp-3")
 	if err != nil {
@@ -106,19 +106,19 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 		t.Fatalf("UpdateKeyExpiry (active): %v", err)
 	}
 	if got, _ := repo.GetByID(ctx, a.ID); got.KeyExpiresAt == nil || !got.KeyExpiresAt.Equal(guardExp) {
-		t.Errorf("expected UpdateKeyExpiry to set expiry on active agent, got %v", got.KeyExpiresAt)
+		t.Errorf("expected UpdateKeyExpiry to set expiry on active sensor, got %v", got.KeyExpiresAt)
 	}
 
 	// Status guard: once the sensor is revoked, UpdateKeyExpiry is a no-op — it
 	// must never rewrite a revoked sensor's key (DEFECT 2 fix).
-	if _, err := db.ExecContext(ctx, `UPDATE agents SET status = 'revoked' WHERE id = $1`, a.ID.String()); err != nil {
-		t.Fatalf("revoke agent: %v", err)
+	if _, err := db.ExecContext(ctx, `UPDATE sensors SET status = 'revoked' WHERE id = $1`, a.ID.String()); err != nil {
+		t.Fatalf("revoke sensor: %v", err)
 	}
 	future := time.Now().Add(99 * time.Hour).Truncate(time.Microsecond)
 	if err := repo.UpdateKeyExpiry(ctx, a.ID, &future); err != nil {
 		t.Fatalf("UpdateKeyExpiry (revoked): %v", err)
 	}
 	if got, _ := repo.GetByID(ctx, a.ID); got.KeyExpiresAt == nil || got.KeyExpiresAt.Equal(future) {
-		t.Errorf("status guard failed: revoked agent's key_expires_at was rewritten to %v", got.KeyExpiresAt)
+		t.Errorf("status guard failed: revoked sensor's key_expires_at was rewritten to %v", got.KeyExpiresAt)
 	}
 }

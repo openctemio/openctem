@@ -48,7 +48,7 @@ type Settings struct {
 	NotifyOnComplete     bool             `json:"notify_on_complete,omitempty"`
 	NotifyOnFailure      bool             `json:"notify_on_failure,omitempty"`
 	NotificationChannels []string         `json:"notification_channels,omitempty"`
-	SensorPreference     SensorPreference `json:"agent_preference,omitempty"` // Sensor selection mode: auto, tenant, platform
+	SensorPreference     SensorPreference `json:"sensor_preference,omitempty"` // Sensor selection mode: auto, tenant, platform
 }
 
 // DefaultSettings returns default pipeline settings.

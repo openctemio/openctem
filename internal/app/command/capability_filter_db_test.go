@@ -42,29 +42,29 @@ func TestGetPendingForSensor_CapabilityFilter(t *testing.T) {
 	//    the nuclei-scoped one.
 	got := pendingIDs(ctx, t, repo, tenantID, &sensorID, []string{"validate"})
 	if got[nucleiCmd.String()] {
-		t.Error("plain 'validate' agent was offered a 'validate:nuclei'-scoped command it cannot run")
+		t.Error("plain 'validate' sensor was offered a 'validate:nuclei'-scoped command it cannot run")
 	}
 	if !got[plainCmd.String()] {
-		t.Error("unscoped command was withheld from an agent (should go to any agent)")
+		t.Error("unscoped command was withheld from a sensor (should go to any sensor)")
 	}
 
 	// 2. A nuclei-capable sensor must see BOTH.
 	got = pendingIDs(ctx, t, repo, tenantID, &sensorID, []string{"validate", "validate:nuclei"})
 	if !got[nucleiCmd.String()] {
-		t.Error("nuclei-capable agent was NOT offered the 'validate:nuclei' command it can run")
+		t.Error("nuclei-capable sensor was NOT offered the 'validate:nuclei' command it can run")
 	}
 	if !got[plainCmd.String()] {
-		t.Error("nuclei-capable agent was withheld the unscoped command")
+		t.Error("nuclei-capable sensor was withheld the unscoped command")
 	}
 
 	// 3. A sensor with no capabilities may still claim the unscoped command, but
 	//    never the scoped one.
 	got = pendingIDs(ctx, t, repo, tenantID, &sensorID, nil)
 	if got[nucleiCmd.String()] {
-		t.Error("agent with no capabilities was offered a capability-scoped command")
+		t.Error("sensor with no capabilities was offered a capability-scoped command")
 	}
 	if !got[plainCmd.String()] {
-		t.Error("agent with no capabilities was withheld an unscoped command")
+		t.Error("sensor with no capabilities was withheld an unscoped command")
 	}
 }
 
@@ -94,7 +94,7 @@ func pendingIDs(
 	t.Helper()
 	cmds, err := repo.GetPendingForSensor(ctx, tenantID, sensorID, capabilities, 50)
 	if err != nil {
-		t.Fatalf("GetPendingForAgent: %v", err)
+		t.Fatalf("GetPendingForSensor: %v", err)
 	}
 	ids := make(map[string]bool, len(cmds))
 	for _, c := range cmds {

@@ -1540,7 +1540,7 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	}
 
 	// Set discovery info
-	discoverySource := "agent"
+	discoverySource := "sensor"
 	discoveryTool := ""
 	if tool != nil {
 		discoveryTool = tool.Name

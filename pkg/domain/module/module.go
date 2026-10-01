@@ -193,7 +193,7 @@ const (
 
 	// Settings
 	ModuleIntegrations         = "integrations"
-	ModuleSensors              = "agents"
+	ModuleSensors              = "sensors"
 	ModuleTeam                 = "team"
 	ModuleGroups               = "groups"
 	ModuleRoles                = "roles"
@@ -412,7 +412,7 @@ var ModulePermissionMapping = map[string]string{
 
 	// Settings modules
 	ModuleIntegrations:         "integrations:read",
-	ModuleSensors:              "agents:read",
+	ModuleSensors:              "sensors:read",
 	ModuleTeam:                 "team:read",
 	ModuleGroups:               "team:groups:read",
 	ModuleRoles:                "team:roles:read",

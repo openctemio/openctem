@@ -18,7 +18,7 @@ import (
 func TestCommandHandler_ConflictMapsTo409(t *testing.T) {
 	h := &CommandHandler{logger: logger.NewNop()}
 	rec := httptest.NewRecorder()
-	h.handleServiceError(rec, shared.NewDomainError("CONFLICT", "command already claimed by another agent", shared.ErrConflict))
+	h.handleServiceError(rec, shared.NewDomainError("CONFLICT", "command already claimed by another sensor", shared.ErrConflict))
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", rec.Code)
 	}

@@ -266,7 +266,7 @@ func TestCapabilityService_GetUsageStats_Success(t *testing.T) {
 		ToolCount:   3,
 		SensorCount: 2,
 		ToolNames:   []string{"Tool1", "Tool2", "Tool3"},
-		SensorNames: []string{"Agent1", "Agent2"},
+		SensorNames: []string{"Sensor1", "Sensor2"},
 	})
 
 	// Get usage stats
@@ -279,7 +279,7 @@ func TestCapabilityService_GetUsageStats_Success(t *testing.T) {
 		t.Errorf("expected ToolCount 3, got %d", stats.ToolCount)
 	}
 	if stats.SensorCount != 2 {
-		t.Errorf("expected AgentCount 2, got %d", stats.SensorCount)
+		t.Errorf("expected SensorCount 2, got %d", stats.SensorCount)
 	}
 	if len(stats.ToolNames) != 3 {
 		t.Errorf("expected 3 tool names, got %d", len(stats.ToolNames))
@@ -304,7 +304,7 @@ func TestCapabilityService_GetUsageStats_ZeroUsage(t *testing.T) {
 		t.Errorf("expected ToolCount 0, got %d", stats.ToolCount)
 	}
 	if stats.SensorCount != 0 {
-		t.Errorf("expected AgentCount 0, got %d", stats.SensorCount)
+		t.Errorf("expected SensorCount 0, got %d", stats.SensorCount)
 	}
 }
 

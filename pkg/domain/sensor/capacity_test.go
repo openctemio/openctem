@@ -29,7 +29,7 @@ func newTestSensor(t *testing.T) *Sensor {
 	t.Helper()
 	a, err := NewSensor(shared.NewID(), "probe", SensorTypeRunner, "", nil, []string{"gitleaks"}, ExecutionModeDaemon)
 	if err != nil {
-		t.Fatalf("NewAgent: %v", err)
+		t.Fatalf("NewSensor: %v", err)
 	}
 	return a
 }
@@ -39,7 +39,7 @@ func TestNewSensor_IsSchedulableByDefault(t *testing.T) {
 	a := newTestSensor(t)
 
 	if a.MaxConcurrentJobs <= 0 {
-		t.Fatalf("a new agent has capacity %d; the scheduler requires "+
+		t.Fatalf("a new sensor has capacity %d; the scheduler requires "+
 			"current_jobs < max_concurrent_jobs, so it would never be given work",
 			a.MaxConcurrentJobs)
 	}
@@ -56,12 +56,12 @@ func TestNewSensor_DefaultMatchesTheColumnDefault(t *testing.T) {
 	const columnDefault = 5 // sensors.max_concurrent_jobs DEFAULT 5
 
 	if DefaultMaxConcurrentJobs != columnDefault {
-		t.Errorf("DefaultMaxConcurrentJobs = %d but the agents column defaults to %d; "+
+		t.Errorf("DefaultMaxConcurrentJobs = %d but the sensors column defaults to %d; "+
 			"pick one number or the schema and the code will keep contradicting each other",
 			DefaultMaxConcurrentJobs, columnDefault)
 	}
 	if a := newTestSensor(t); a.MaxConcurrentJobs != DefaultMaxConcurrentJobs {
-		t.Errorf("new agent capacity = %d, want %d", a.MaxConcurrentJobs, DefaultMaxConcurrentJobs)
+		t.Errorf("new sensor capacity = %d, want %d", a.MaxConcurrentJobs, DefaultMaxConcurrentJobs)
 	}
 }
 
@@ -87,11 +87,11 @@ func TestSetMaxConcurrentJobs_RefusesNonPositive(t *testing.T) {
 
 		if a.MaxConcurrentJobs != before {
 			t.Errorf("SetMaxConcurrentJobs(%d) stored %d; a non-positive capacity makes the "+
-				"agent permanently unschedulable with no error reported anywhere",
+				"sensor permanently unschedulable with no error reported anywhere",
 				bad, a.MaxConcurrentJobs)
 		}
 		if !(a.CurrentJobs < a.MaxConcurrentJobs) {
-			t.Errorf("after SetMaxConcurrentJobs(%d) the agent fails the availability test", bad)
+			t.Errorf("after SetMaxConcurrentJobs(%d) the sensor fails the availability test", bad)
 		}
 	}
 }

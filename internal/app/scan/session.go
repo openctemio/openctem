@@ -54,7 +54,7 @@ type RegisterScanOutput struct {
 func (s *ScanSessionService) RegisterScan(ctx context.Context, agt *sensor.Sensor, input RegisterScanInput) (*RegisterScanOutput, error) {
 	// Platform sensors must have tenant context from job assignment
 	if agt.TenantID == nil {
-		return nil, fmt.Errorf("agent has no tenant context: platform agents require job assignment")
+		return nil, fmt.Errorf("sensor has no tenant context: platform sensors require job assignment")
 	}
 	tenantID := *agt.TenantID
 
@@ -118,7 +118,7 @@ type UpdateScanSessionInput struct {
 func (s *ScanSessionService) UpdateScanSession(ctx context.Context, agt *sensor.Sensor, scanID string, input UpdateScanSessionInput) error {
 	// Platform sensors must have tenant context from job assignment
 	if agt.TenantID == nil {
-		return fmt.Errorf("agent has no tenant context: platform agents require job assignment")
+		return fmt.Errorf("sensor has no tenant context: platform sensors require job assignment")
 	}
 	tenantID := *agt.TenantID
 
@@ -134,7 +134,7 @@ func (s *ScanSessionService) UpdateScanSession(ctx context.Context, agt *sensor.
 
 	// Verify sensor owns this session
 	if session.SensorID != nil && !session.SensorID.Equals(agt.ID) {
-		return shared.NewDomainError("FORBIDDEN", "scan session belongs to different agent", shared.ErrForbidden)
+		return shared.NewDomainError("FORBIDDEN", "scan session belongs to different sensor", shared.ErrForbidden)
 	}
 
 	switch input.Status {

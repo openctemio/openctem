@@ -127,19 +127,19 @@ const (
 	ActionDataImported Action = "data.imported"
 
 	// Sensor actions
-	ActionSensorCreated        Action = "agent.created"
-	ActionSensorUpdated        Action = "agent.updated"
-	ActionSensorDeleted        Action = "agent.deleted"
-	ActionSensorActivated      Action = "agent.activated"
-	ActionSensorDeactivated    Action = "agent.deactivated"
-	ActionSensorRevoked        Action = "agent.revoked"
-	ActionSensorKeyRegenerated Action = "agent.key_regenerated"
-	ActionSensorConnected      Action = "agent.connected"
-	ActionSensorDisconnected   Action = "agent.disconnected"
+	ActionSensorCreated        Action = "sensor.created"
+	ActionSensorUpdated        Action = "sensor.updated"
+	ActionSensorDeleted        Action = "sensor.deleted"
+	ActionSensorActivated      Action = "sensor.activated"
+	ActionSensorDeactivated    Action = "sensor.deactivated"
+	ActionSensorRevoked        Action = "sensor.revoked"
+	ActionSensorKeyRegenerated Action = "sensor.key_regenerated"
+	ActionSensorConnected      Action = "sensor.connected"
+	ActionSensorDisconnected   Action = "sensor.disconnected"
 	// ActionSensorKeyRenewed records a sensor rotating its OWN credential via
 	// POST /agent/renew (self-service, kubelet-style), as opposed to the admin
 	// hard rotation recorded by ActionSensorKeyRegenerated.
-	ActionSensorKeyRenewed Action = "agent.key_renewed"
+	ActionSensorKeyRenewed Action = "sensor.key_renewed"
 
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
@@ -388,7 +388,7 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed:
-		return "agent"
+		return "sensor"
 	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
 		return "api_key"
 	case ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted:
@@ -433,7 +433,7 @@ const (
 	ResourceTypeAsset            ResourceType = "asset"
 	ResourceTypeSettings         ResourceType = "settings"
 	ResourceTypeToken            ResourceType = "token"
-	ResourceTypeSensor           ResourceType = "agent"
+	ResourceTypeSensor           ResourceType = "sensor"
 	ResourceTypeGroup            ResourceType = "group"
 	ResourceTypePermissionSet    ResourceType = "permission_set"
 	ResourceTypeRole             ResourceType = "role"

@@ -399,9 +399,9 @@ func (a *AdminUser) HasPermission(action string) bool {
 		return a.role.CanManageAdmins()
 
 	// Sensor management
-	case "agent:create", "agent:update", "agent:delete", "agent:disable", "agent:enable":
+	case "sensor:create", "sensor:update", "sensor:delete", "sensor:disable", "sensor:enable":
 		return a.role.CanManageSensors()
-	case "agent:list", "agent:get", "agent:stats":
+	case "sensor:list", "sensor:get", "sensor:stats":
 		return true // All roles can view
 
 	// Token management

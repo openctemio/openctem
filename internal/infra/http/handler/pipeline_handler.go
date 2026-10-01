@@ -63,7 +63,7 @@ type PipelineSettingsRequest struct {
 	NotifyOnComplete     bool     `json:"notify_on_complete"`
 	NotifyOnFailure      bool     `json:"notify_on_failure"`
 	NotificationChannels []string `json:"notification_channels"`
-	SensorPreference     string   `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	SensorPreference     string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 }
 
 // UIPositionRequest represents a visual position in the workflow builder.
@@ -132,7 +132,7 @@ type PipelineSettingsResponse struct {
 	NotifyOnComplete     bool     `json:"notify_on_complete"`
 	NotifyOnFailure      bool     `json:"notify_on_failure"`
 	NotificationChannels []string `json:"notification_channels,omitempty"`
-	SensorPreference     string   `json:"agent_preference"`
+	SensorPreference     string   `json:"sensor_preference"`
 }
 
 // UIPositionResponse represents a visual position in the workflow builder response.

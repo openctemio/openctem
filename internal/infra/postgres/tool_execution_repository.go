@@ -37,7 +37,7 @@ func (r *ToolExecutionRepository) Create(ctx context.Context, execution *tool.To
 
 	query := `
 		INSERT INTO tool_executions (
-			id, tenant_id, tool_id, agent_id, pipeline_run_id, step_run_id,
+			id, tenant_id, tool_id, sensor_id, pipeline_run_id, step_run_id,
 			status, input_config, targets_count, findings_count, output_summary,
 			error_message, started_at, completed_at, duration_ms, created_at
 		) VALUES (
@@ -72,7 +72,7 @@ func (r *ToolExecutionRepository) Create(ctx context.Context, execution *tool.To
 	return nil
 }
 
-const toolExecutionSelectCols = `id, tenant_id, tool_id, agent_id, pipeline_run_id, step_run_id,
+const toolExecutionSelectCols = `id, tenant_id, tool_id, sensor_id, pipeline_run_id, step_run_id,
 			status, input_config, targets_count, findings_count, output_summary,
 			error_message, started_at, completed_at, duration_ms, created_at`
 
@@ -150,7 +150,7 @@ func (r *ToolExecutionRepository) List(
 	}
 
 	if filter.SensorID != nil {
-		baseQuery += fmt.Sprintf(" AND agent_id = $%d", argIndex)
+		baseQuery += fmt.Sprintf(" AND sensor_id = $%d", argIndex)
 		args = append(args, filter.SensorID.String())
 		argIndex++
 	}
@@ -176,7 +176,7 @@ func (r *ToolExecutionRepository) List(
 
 	// Get items
 	selectQuery := `
-		SELECT id, tenant_id, tool_id, agent_id, pipeline_run_id, step_run_id,
+		SELECT id, tenant_id, tool_id, sensor_id, pipeline_run_id, step_run_id,
 			status, input_config, targets_count, findings_count, output_summary,
 			error_message, started_at, completed_at, duration_ms, created_at
 		` + baseQuery + " ORDER BY started_at DESC LIMIT $" + fmt.Sprint(argIndex) + " OFFSET $" + fmt.Sprint(argIndex+1)

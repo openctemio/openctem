@@ -105,7 +105,7 @@ func run() int {
 	log.Info("redis connected")
 
 	sensorStateStore := redis.NewSensorStateStore(redisClient, log)
-	log.Info("agent state store initialized")
+	log.Info("sensor state store initialized")
 
 	jobNotifier := redis.NewJobNotifier(redisClient, log)
 	if err := jobNotifier.StartListener(ctx); err != nil {

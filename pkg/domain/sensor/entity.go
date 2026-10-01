@@ -237,7 +237,7 @@ func NewSensor(
 	}
 
 	if !sensorType.IsValid() {
-		return nil, shared.NewDomainError("VALIDATION", "invalid agent type", shared.ErrValidation)
+		return nil, shared.NewDomainError("VALIDATION", "invalid sensor type", shared.ErrValidation)
 	}
 
 	if !executionMode.IsValid() {

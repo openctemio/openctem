@@ -262,7 +262,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// embed CR/LF in those fields to forge log lines downstream
 	// (CodeQL go/log-injection). Strip control chars before logging.
 	s.logger.Info("ingesting report",
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 		"tenant_id", tenantID.String(),
 		"report_id", sanitizeIngestLogField(report.Metadata.ID),
 		"source_type", sanitizeIngestLogField(report.Metadata.SourceType),
@@ -534,7 +534,7 @@ func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID,
 // IngestSARIF processes a SARIF log and ingests it as findings.
 func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData []byte) (*Output, error) {
 	s.logger.Info("ingesting SARIF data",
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 	)
 
 	// Convert SARIF to CTIS using SDK
@@ -550,12 +550,12 @@ func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData
 // IngestRecon processes recon data and ingests it.
 func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInput *ctis.ReconToCTISInput) (*Output, error) {
 	s.logger.Info("ingesting recon data",
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 	)
 
 	// Convert Recon to CTIS using SDK
 	opts := ctis.DefaultReconConverterOptions()
-	opts.DiscoverySource = "agent"
+	opts.DiscoverySource = "sensor"
 	report, err := ctis.ConvertReconToCTIS(reconInput, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert recon data: %w", err)
@@ -569,7 +569,7 @@ func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInpu
 func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, input CheckFingerprintsInput) (*CheckFingerprintsOutput, error) {
 	// Platform sensors must have tenant context from job assignment
 	if agt.TenantID == nil {
-		return nil, fmt.Errorf("agent has no tenant context: platform agents require job assignment")
+		return nil, fmt.Errorf("sensor has no tenant context: platform sensors require job assignment")
 	}
 	tenantID := *agt.TenantID
 
@@ -592,7 +592,7 @@ func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, inp
 // every fingerprint is treated as new.
 func (s *Service) BaselineDiff(ctx context.Context, agt *sensor.Sensor, input BaselineDiffInput) (*BaselineDiffOutput, error) {
 	if agt == nil || agt.TenantID == nil {
-		return nil, fmt.Errorf("agent has no tenant context: platform agents require job assignment")
+		return nil, fmt.Errorf("sensor has no tenant context: platform sensors require job assignment")
 	}
 	tenantID := *agt.TenantID
 
@@ -679,8 +679,8 @@ func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sens
 		return true
 	}
 	if _, reserved := reservedAutoResolveTools[strings.ToLower(strings.TrimSpace(toolName))]; reserved {
-		s.logger.Warn("auto-resolve skipped: tool name is reserved for non-agent sources",
-			"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
+		s.logger.Warn("auto-resolve skipped: tool name is reserved for non-sensor sources",
+			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
 		return false
 	}
 
@@ -694,8 +694,8 @@ func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sens
 	}
 
 	if len(tools) == 0 {
-		s.logger.Warn("auto-resolve allowed for legacy agent with no declared tools; declare the agent's tools to scope auto-resolve",
-			"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
+		s.logger.Warn("auto-resolve allowed for legacy sensor with no declared tools; declare the sensor's tools to scope auto-resolve",
+			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
 		return true
 	}
 	for _, t := range tools {
@@ -703,8 +703,8 @@ func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sens
 			return true
 		}
 	}
-	s.logger.Warn("auto-resolve skipped: reported tool is not among the agent's declared tools",
-		"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName),
+	s.logger.Warn("auto-resolve skipped: reported tool is not among the sensor's declared tools",
+		"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName),
 		"declared_tools", sanitizeIngestLogField(strings.Join(tools, ",")))
 	return false
 }
@@ -712,16 +712,16 @@ func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sens
 // validateSensor checks if the sensor is valid for ingestion.
 func (s *Service) validateSensor(agt *sensor.Sensor) error {
 	if agt == nil {
-		return shared.NewDomainError("UNAUTHORIZED", "agent authentication required", shared.ErrUnauthorized)
+		return shared.NewDomainError("UNAUTHORIZED", "sensor authentication required", shared.ErrUnauthorized)
 	}
 
 	if agt.TenantID == nil {
-		return shared.NewDomainError("INVALID_AGENT", "agent has no tenant context: platform agents require job assignment", nil)
+		return shared.NewDomainError("INVALID_AGENT", "sensor has no tenant context: platform sensors require job assignment", nil)
 	}
 
 	// Check sensor status
 	if !agt.Status.CanAuthenticate() {
-		return shared.NewDomainError("FORBIDDEN", "agent is not active", shared.ErrForbidden)
+		return shared.NewDomainError("FORBIDDEN", "sensor is not active", shared.ErrForbidden)
 	}
 
 	return nil
@@ -753,7 +753,7 @@ func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
 			1, // scans
 			int64(len(output.Errors)),
 		); err != nil {
-			s.logger.Warn("failed to update agent stats", "agent_id", sensorID.String(), "error", err)
+			s.logger.Warn("failed to update sensor stats", "sensor_id", sensorID.String(), "error", err)
 		}
 	}()
 }
@@ -801,8 +801,8 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 	}
 
 	metadata := map[string]any{
-		"agent_id":               agt.ID.String(),
-		"agent_name":             agt.Name,
+		"sensor_id":               agt.ID.String(),
+		"sensor_name":             agt.Name,
 		"report_id":              output.ReportID,
 		"source_type":            report.Metadata.SourceType,
 		"findings_count":         len(report.Findings),

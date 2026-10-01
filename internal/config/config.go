@@ -698,7 +698,7 @@ func Load() (*Config, error) {
 			URL:   getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
-			TemplatesDir: getEnv("AGENT_CONFIG_TEMPLATES_DIR", "configs/agent-templates"),
+			TemplatesDir: getEnv("AGENT_CONFIG_TEMPLATES_DIR", "configs/sensor-templates"),
 			PublicAPIURL: getEnv("AGENT_PUBLIC_API_URL", ""),
 			KeyTTL:       getEnvDuration("AGENT_KEY_TTL", 0),
 		},

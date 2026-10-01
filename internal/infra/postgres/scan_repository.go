@@ -85,7 +85,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
 			scanner_name, scanner_config, targets_per_job,
 			schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
-			tags, run_on_tenant_runner, agent_preference, profile_id, timeout_seconds,
+			tags, run_on_tenant_runner, sensor_preference, profile_id, timeout_seconds,
 			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
@@ -258,7 +258,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    asset_group_id = $4, asset_group_ids = $5, targets = $6, scan_type = $7, pipeline_id = $8,
 		    scanner_name = $9, scanner_config = $10, targets_per_job = $11,
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
-		    tags = $18, run_on_tenant_runner = $19, agent_preference = $20, profile_id = $21, timeout_seconds = $22,
+		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
 		    updated_at = $26
 		WHERE id = $1 AND tenant_id = $27
@@ -655,7 +655,7 @@ func (r *ScanRepository) selectQuery() string {
 		       asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
 		       scanner_name, scanner_config, targets_per_job,
 		       schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
-		       tags, run_on_tenant_runner, agent_preference, profile_id, timeout_seconds,
+		       tags, run_on_tenant_runner, sensor_preference, profile_id, timeout_seconds,
 		       max_retries, retry_backoff_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,

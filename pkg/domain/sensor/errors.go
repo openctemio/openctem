@@ -14,22 +14,22 @@ import (
 
 var (
 	// ErrSensorNotFound is returned when a sensor is not found.
-	ErrSensorNotFound = fmt.Errorf("%w: agent not found", shared.ErrNotFound)
+	ErrSensorNotFound = fmt.Errorf("%w: sensor not found", shared.ErrNotFound)
 
 	// ErrSensorAlreadyExists is returned when a sensor with the same name exists.
-	ErrSensorAlreadyExists = fmt.Errorf("%w: agent already exists", shared.ErrAlreadyExists)
+	ErrSensorAlreadyExists = fmt.Errorf("%w: sensor already exists", shared.ErrAlreadyExists)
 
 	// ErrSensorDisabled is returned when trying to use a disabled sensor.
-	ErrSensorDisabled = fmt.Errorf("%w: agent is disabled", shared.ErrForbidden)
+	ErrSensorDisabled = fmt.Errorf("%w: sensor is disabled", shared.ErrForbidden)
 
 	// ErrSensorRevoked is returned when trying to use a revoked sensor.
-	ErrSensorRevoked = fmt.Errorf("%w: agent access has been revoked", shared.ErrForbidden)
+	ErrSensorRevoked = fmt.Errorf("%w: sensor access has been revoked", shared.ErrForbidden)
 
 	// ErrSensorLimitReached is returned when the sensor limit for a tenant is reached.
-	ErrSensorLimitReached = fmt.Errorf("%w: agent limit reached for this plan", shared.ErrForbidden)
+	ErrSensorLimitReached = fmt.Errorf("%w: sensor limit reached for this plan", shared.ErrForbidden)
 
 	// ErrSensorNoCapacity is returned when a sensor has no capacity for more jobs.
-	ErrSensorNoCapacity = fmt.Errorf("%w: agent has no capacity for more jobs", shared.ErrConflict)
+	ErrSensorNoCapacity = fmt.Errorf("%w: sensor has no capacity for more jobs", shared.ErrConflict)
 
 	// ErrInvalidAPIKey is returned when an API key is invalid.
 	ErrInvalidAPIKey = fmt.Errorf("%w: invalid API key", shared.ErrUnauthorized)
@@ -41,16 +41,16 @@ var (
 
 var (
 	// ErrPlatformSensorNotFound is returned when a platform sensor is not found.
-	ErrPlatformSensorNotFound = fmt.Errorf("%w: platform agent not found", shared.ErrNotFound)
+	ErrPlatformSensorNotFound = fmt.Errorf("%w: platform sensor not found", shared.ErrNotFound)
 
 	// ErrNoPlatformSensorAvailable is returned when no platform sensor is available.
-	ErrNoPlatformSensorAvailable = fmt.Errorf("%w: no platform agent available", shared.ErrConflict)
+	ErrNoPlatformSensorAvailable = fmt.Errorf("%w: no platform sensor available", shared.ErrConflict)
 
 	// ErrAllPlatformSensorsOverloaded is returned when sensors exist but all are at capacity.
-	ErrAllPlatformSensorsOverloaded = fmt.Errorf("%w: all platform agents are at capacity", shared.ErrConflict)
+	ErrAllPlatformSensorsOverloaded = fmt.Errorf("%w: all platform sensors are at capacity", shared.ErrConflict)
 
 	// ErrPlatformSensorAccessDenied is returned when tenant doesn't have platform sensor access.
-	ErrPlatformSensorAccessDenied = fmt.Errorf("%w: platform agent access not included in plan", shared.ErrForbidden)
+	ErrPlatformSensorAccessDenied = fmt.Errorf("%w: platform sensor access not included in plan", shared.ErrForbidden)
 
 	// ErrPlatformConcurrentLimitReached is returned when concurrent platform job limit is reached.
 	ErrPlatformConcurrentLimitReached = fmt.Errorf("%w: concurrent platform job limit reached", shared.ErrConflict)
@@ -68,7 +68,7 @@ var (
 	ErrAuthTokenExpired = fmt.Errorf("%w: command auth token has expired", shared.ErrUnauthorized)
 
 	// ErrSensorMismatch is returned when sensor ID doesn't match the command's assigned sensor.
-	ErrSensorMismatch = fmt.Errorf("%w: agent not authorized for this command", shared.ErrForbidden)
+	ErrSensorMismatch = fmt.Errorf("%w: sensor not authorized for this command", shared.ErrForbidden)
 )
 
 // =============================================================================
@@ -92,7 +92,7 @@ var (
 	ErrBootstrapTokenInvalid = fmt.Errorf("%w: invalid bootstrap token", shared.ErrUnauthorized)
 
 	// ErrSensorConstraintViolation is returned when sensor doesn't meet token constraints.
-	ErrSensorConstraintViolation = fmt.Errorf("%w: agent does not meet token constraints", shared.ErrValidation)
+	ErrSensorConstraintViolation = fmt.Errorf("%w: sensor does not meet token constraints", shared.ErrValidation)
 )
 
 // =============================================================================

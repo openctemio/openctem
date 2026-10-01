@@ -190,7 +190,7 @@ func TestPlatformStatsHandler_GetStats_Success(t *testing.T) {
 	err := json.Unmarshal(rr.Body.Bytes(), &resp)
 	require.NoError(t, err, "response should be valid JSON")
 
-	assert.True(t, resp.Enabled, "enabled should be true when agents exist")
+	assert.True(t, resp.Enabled, "enabled should be true when sensors exist")
 	assert.Equal(t, "dedicated", resp.MaxTier)
 	assert.Contains(t, resp.AccessibleTiers, "shared")
 	assert.Contains(t, resp.AccessibleTiers, "dedicated")
@@ -271,13 +271,13 @@ func TestPlatformStatsHandler_GetStats_NoPlatformSensors(t *testing.T) {
 
 	h.GetStats(rr, req)
 
-	assert.Equal(t, http.StatusOK, rr.Code, "should return 200 even with no agents")
+	assert.Equal(t, http.StatusOK, rr.Code, "should return 200 even with no sensors")
 
 	var resp handler.PlatformStatsResponse
 	err := json.Unmarshal(rr.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	assert.False(t, resp.Enabled, "enabled should be false when no agents")
+	assert.False(t, resp.Enabled, "enabled should be false when no sensors")
 	assert.Equal(t, "shared", resp.MaxTier, "default tier should be shared")
 	assert.Equal(t, []string{"shared"}, resp.AccessibleTiers)
 	assert.Equal(t, 0, resp.MaxConcurrent)
@@ -285,5 +285,5 @@ func TestPlatformStatsHandler_GetStats_NoPlatformSensors(t *testing.T) {
 	assert.Equal(t, 0, resp.CurrentActive)
 	assert.Equal(t, 0, resp.CurrentQueued)
 	assert.Equal(t, 0, resp.AvailableSlots)
-	assert.Empty(t, resp.TierStats, "tier_stats should be empty with no agents")
+	assert.Empty(t, resp.TierStats, "tier_stats should be empty with no sensors")
 }

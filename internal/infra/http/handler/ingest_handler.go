@@ -45,7 +45,7 @@ type ChunkData struct {
 // contextKey is a custom type for context keys.
 type contextKey string
 
-const sensorContextKey contextKey = "agent"
+const sensorContextKey contextKey = "sensor"
 
 // IngestHandler handles ingestion-related HTTP requests.
 // It supports CTIS, SARIF, Recon, and raw scanner output formats.
@@ -603,13 +603,13 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		NetworkRxMBPS: req.NetworkRxMBPS,
 		NetworkTxMBPS: req.NetworkTxMBPS,
 	}); err != nil {
-		h.logger.Error("failed to update agent heartbeat", "error", err, "agent_id", agt.ID)
+		h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", agt.ID)
 		// Don't fail the request - heartbeat should be resilient
 	}
 
 	resp := map[string]interface{}{
 		"status":    "ok",
-		"agent_id":  agt.ID.String(),
+		"sensor_id":  agt.ID.String(),
 		"tenant_id": sensorTenantString(agt), // "" for tenant-less platform sensors
 	}
 
@@ -649,11 +649,11 @@ func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) {
 			// Disabled/revoked in the auth→renew window. Generic message; log specifics.
-			h.logger.Debug("agent key renewal refused", "agent_id", agt.ID.String(), "error", err)
+			h.logger.Debug("sensor key renewal refused", "sensor_id", agt.ID.String(), "error", err)
 			apierror.Forbidden("Agent cannot renew").WriteJSON(w)
 			return
 		}
-		h.logger.Error("agent key renewal failed", "agent_id", agt.ID.String(), "error", err)
+		h.logger.Error("sensor key renewal failed", "sensor_id", agt.ID.String(), "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
@@ -928,7 +928,7 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 		"is_final", req.IsFinal,
 		"assets_created", output.AssetsCreated,
 		"findings_created", output.FindingsCreated,
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 		"tenant_id", agt.TenantID.String(),
 		"compressed_size", len(compressedData),
 		"decompressed_size", len(decompressedData),

@@ -72,9 +72,9 @@ type Repository interface {
 // CapabilityUsageStats contains usage statistics for a capability.
 type CapabilityUsageStats struct {
 	ToolCount   int      `json:"tool_count"`
-	SensorCount int      `json:"agent_count"`
+	SensorCount int      `json:"sensor_count"`
 	ToolNames   []string `json:"tool_names,omitempty"`  // Names of tools using this capability
-	SensorNames []string `json:"agent_names,omitempty"` // Names of sensors with this capability
+	SensorNames []string `json:"sensor_names,omitempty"` // Names of sensors with this capability
 }
 
 // ToolCapabilityRepository defines the interface for tool-capability junction table.

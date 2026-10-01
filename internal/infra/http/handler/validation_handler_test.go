@@ -139,7 +139,7 @@ func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
 		t.Fatalf("evidence rows = %d, want 1", len(repo.rows))
 	}
 	if repo.rows[0].TenantID != tenantID {
-		t.Error("evidence tenant must come from the agent context, not the body")
+		t.Error("evidence tenant must come from the sensor context, not the body")
 	}
 	if fm.current.Status() != vulnerability.FindingStatusResolved {
 		t.Errorf("finding status = %s, want resolved", fm.current.Status())
@@ -326,7 +326,7 @@ func TestValidationHandler_IngestEvidence_ForeignOrStaleCommandRejected(t *testi
 	scanCmd.Status = commanddom.CommandStatusRunning
 
 	cases := map[string]*commanddom.Command{
-		"other agent":        validateCmd(t, tenantID, &other, findingID, commanddom.CommandStatusRunning),
+		"other sensor":        validateCmd(t, tenantID, &other, findingID, commanddom.CommandStatusRunning),
 		"unassigned":         validateCmd(t, tenantID, nil, findingID, commanddom.CommandStatusPending),
 		"completed":          validateCmd(t, tenantID, &me, findingID, commanddom.CommandStatusCompleted),
 		"failed":             validateCmd(t, tenantID, &me, findingID, commanddom.CommandStatusFailed),

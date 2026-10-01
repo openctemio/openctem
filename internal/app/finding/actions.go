@@ -189,7 +189,7 @@ func (s *FindingActionsService) autoQueueValidations(ctx context.Context, tenant
 			// re-querying per finding. Observable (not silent) — and self-heals
 			// the moment a validation sensor comes online.
 			if errors.Is(err, validation.ErrNoValidationSensor) {
-				s.logger.Info("proof-of-fix auto-validation skipped: no validation-capable agent online",
+				s.logger.Info("proof-of-fix auto-validation skipped: no validation-capable sensor online",
 					"tenant_id", tenantID.String(), "pending", len(findingIDs)-queued)
 				break
 			}

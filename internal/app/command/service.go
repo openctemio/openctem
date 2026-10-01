@@ -31,7 +31,7 @@ func NewService(repo commanddom.Repository, log *logger.Logger) *Service {
 // CreateInput represents the input for creating a command.
 type CreateInput struct {
 	TenantID  string          `json:"tenant_id" validate:"required,uuid"`
-	SensorID  string          `json:"agent_id,omitempty" validate:"omitempty,uuid"`
+	SensorID  string          `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
 	Type      string          `json:"type" validate:"required,oneof=scan collect health_check config_update cancel"`
 	Priority  string          `json:"priority" validate:"omitempty,oneof=low normal high critical"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
@@ -61,7 +61,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*commanddom.Co
 	if input.SensorID != "" {
 		sensorID, err := shared.IDFromString(input.SensorID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 		}
 		cmd.SetSensorID(sensorID)
 	}
@@ -96,7 +96,7 @@ func (s *Service) Get(ctx context.Context, tenantID, commandID string) (*command
 // ListInput represents the input for listing commands.
 type ListInput struct {
 	TenantID string `json:"tenant_id" validate:"required,uuid"`
-	SensorID string `json:"agent_id,omitempty" validate:"omitempty,uuid"`
+	SensorID string `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
 	Type     string `json:"type" validate:"omitempty,oneof=scan collect health_check config_update cancel"`
 	Status   string `json:"status" validate:"omitempty,oneof=pending acknowledged running completed failed canceled expired"`
 	Priority string `json:"priority" validate:"omitempty,oneof=low normal high critical"`
@@ -118,7 +118,7 @@ func (s *Service) List(ctx context.Context, input ListInput) (pagination.Result[
 	if input.SensorID != "" {
 		sensorID, err := shared.IDFromString(input.SensorID)
 		if err != nil {
-			return pagination.Result[*commanddom.Command]{}, fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+			return pagination.Result[*commanddom.Command]{}, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 		}
 		filter.SensorID = &sensorID
 	}
@@ -145,7 +145,7 @@ func (s *Service) List(ctx context.Context, input ListInput) (pagination.Result[
 // PollInput represents the input for polling commands.
 type PollInput struct {
 	TenantID string `json:"tenant_id" validate:"required,uuid"`
-	SensorID string `json:"agent_id,omitempty" validate:"omitempty,uuid"`
+	SensorID string `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
 	// Capabilities is the polling sensor's advertised capability set. It gates
 	// which capability-scoped commands the sensor may claim (see
 	// command.Repository.GetPendingForSensor). Empty = only unscoped commands.
@@ -164,7 +164,7 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	if input.SensorID != "" {
 		aid, err := shared.IDFromString(input.SensorID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 		}
 		sensorID = &aid
 	}
@@ -204,7 +204,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 		return nil, err
 	}
 	if !claimed {
-		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another agent", shared.ErrConflict)
+		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another sensor", shared.ErrConflict)
 	}
 
 	// Return the freshly-claimed state.
@@ -249,7 +249,7 @@ func ensureSensorOwnsCommand(cmd *commanddom.Command, sensorID string) error {
 // CompleteInput represents the input for completing a command.
 type CompleteInput struct {
 	TenantID  string          `json:"tenant_id" validate:"required,uuid"`
-	SensorID  string          `json:"agent_id" validate:"required,uuid"`
+	SensorID  string          `json:"sensor_id" validate:"required,uuid"`
 	CommandID string          `json:"command_id" validate:"required,uuid"`
 	Result    json.RawMessage `json:"result,omitempty"`
 }
@@ -279,7 +279,7 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 // FailInput represents the input for failing a command.
 type FailInput struct {
 	TenantID     string `json:"tenant_id" validate:"required,uuid"`
-	SensorID     string `json:"agent_id" validate:"required,uuid"`
+	SensorID     string `json:"sensor_id" validate:"required,uuid"`
 	CommandID    string `json:"command_id" validate:"required,uuid"`
 	ErrorMessage string `json:"error_message"`
 }

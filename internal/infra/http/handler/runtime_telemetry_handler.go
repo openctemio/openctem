@@ -100,7 +100,7 @@ type ingestResponse struct {
 func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("agent authentication required").WriteJSON(w)
+		apierror.Unauthorized("sensor authentication required").WriteJSON(w)
 		return
 	}
 	if !requireSensorTenant(w, agt) {
@@ -130,7 +130,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 	// records to the originating telemetry event.
 	const q = `
 		INSERT INTO runtime_telemetry_events
-		       (tenant_id, agent_id, endpoint_asset_id, event_type, severity, observed_at, properties, correlation_id)
+		       (tenant_id, sensor_id, endpoint_asset_id, event_type, severity, observed_at, properties, correlation_id)
 		VALUES ($1, $2, NULLIF($3,'')::uuid, $4, COALESCE(NULLIF($5,''),'info'), $6, $7, NULLIF($8,'')::uuid)
 		RETURNING id
 	`
@@ -216,7 +216,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			h.logger.Warn("runtime telemetry insert failed",
 				"tenant_id", agt.TenantID.String(),
-				"agent_id", agt.ID.String(),
+				"sensor_id", agt.ID.String(),
 				"event_type", ev.EventType,
 				"error", err,
 			)
@@ -245,7 +245,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 	if resp.Unpaired > 0 {
 		h.logger.Warn("runtime telemetry accepted without an endpoint asset link",
 			"tenant_id", agt.TenantID.String(),
-			"agent_id", agt.ID.String(),
+			"sensor_id", agt.ID.String(),
 			"unpaired", resp.Unpaired,
 			"accepted", resp.Accepted,
 			"impact", "invisible to asset-scoped detection correlation and per-asset dashboards; "+
@@ -280,7 +280,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 	// telemetry volume without the row-by-row chatter.
 	h.logger.Debug("runtime telemetry ingested",
 		"tenant_id", agt.TenantID.String(),
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 		"accepted", resp.Accepted,
 		"rejected", resp.Rejected,
 	)

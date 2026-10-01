@@ -235,7 +235,7 @@ func TestRetest_Inconclusive_NoTransition(t *testing.T) {
 }
 
 func TestRetest_DispatcherError_PersistsEvidence(t *testing.T) {
-	boom := errors.New("agent queue down")
+	boom := errors.New("sensor queue down")
 	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeError}, err: boom}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
 	svc, repo, _ := newProofSvc(disp, cap)

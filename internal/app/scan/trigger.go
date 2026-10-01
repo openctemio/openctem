@@ -413,7 +413,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		"targets_per_job":    sc.TargetsPerJob,
 		"routing_tags":       sc.Tags,
 		"tenant_runner_only": sc.RunOnTenantRunner,
-		"agent_preference":   string(sc.SensorPreference),
+		"sensor_preference":   string(sc.SensorPreference),
 		"context":            run.Context,
 		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
 		// single `target`, not `scanner_name`/`scanner_config` — send both sets
@@ -454,7 +454,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	// Determine whether to use platform sensors based on SensorSelector
 	usePlatform, err := s.shouldUsePlatformSensor(ctx, sc, targets)
 	if err != nil {
-		s.logger.Warn("failed to determine agent selection, falling back to tenant only",
+		s.logger.Warn("failed to determine sensor selection, falling back to tenant only",
 			"error", err, "scan_id", sc.ID.String())
 		usePlatform = false
 	}
@@ -646,13 +646,13 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	// targets must be public.
 	if sc.SensorPreference == scan.SensorPreferencePlatform {
 		if internal {
-			return false, fmt.Errorf("%w: platform agents cannot scan internal targets or asset groups; use a tenant agent",
+			return false, fmt.Errorf("%w: platform sensors cannot scan internal targets or asset groups; use a tenant sensor",
 				shared.ErrValidation)
 		}
 		if s.sensorSelector != nil {
 			canUse, reason := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)
 			if !canUse {
-				return false, fmt.Errorf("platform agents not available: %s", reason)
+				return false, fmt.Errorf("platform sensors not available: %s", reason)
 			}
 		}
 		return true, nil

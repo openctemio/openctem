@@ -50,7 +50,7 @@ var ErrNotNetworkAddressable = fmt.Errorf("%w: asset is not network-addressable 
 // surfaces a 400 with the message rather than a 500. The gate is self-arming:
 // the moment a tenant registers a sensor advertising the "validate" capability,
 // dispatch begins — no code change or redeploy.
-var ErrNoValidationSensor = fmt.Errorf("%w: no validation-capable agent is online for this tenant; deploy a validation agent to run this check", shared.ErrValidation)
+var ErrNoValidationSensor = fmt.Errorf("%w: no validation-capable sensor is online for this tenant; deploy a validation sensor to run this check", shared.ErrValidation)
 
 // SensorAvailability reports whether a validation-capable sensor is currently
 // online for a tenant. It is the validation-side mirror of the scan dispatch
@@ -184,7 +184,7 @@ func (s *RunService) ensureSensorAvailable(ctx context.Context, tenantID shared.
 	}
 	ok, err := s.availability.HasValidationSensor(ctx, tenantID)
 	if err != nil {
-		return fmt.Errorf("validation agent availability check: %w", err)
+		return fmt.Errorf("validation sensor availability check: %w", err)
 	}
 	if !ok {
 		return ErrNoValidationSensor

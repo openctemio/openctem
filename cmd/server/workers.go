@@ -130,7 +130,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Initialize sensor health checker if worker is enabled
 	if cfg.Worker.Enabled {
 		w.SensorHealthChecker = jobs.NewSensorHealthChecker(repos.Sensor, &cfg.Worker, log)
-		log.Info("agent health checker initialized",
+		log.Info("sensor health checker initialized",
 			"heartbeat_timeout", cfg.Worker.HeartbeatTimeout,
 			"check_interval", cfg.Worker.HealthCheckInterval,
 		)
@@ -218,7 +218,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		&controller.SensorHealthControllerConfig{
 			Interval:     30 * time.Second,
 			StaleTimeout: 90 * time.Second,
-			Logger:       log.With("controller", "agent-health"),
+			Logger:       log.With("controller", "sensor-health"),
 		},
 	))
 

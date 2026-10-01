@@ -207,11 +207,11 @@ func TestShouldUsePlatformSensor(t *testing.T) {
 		want    bool
 		wantErr bool
 	}{
-		{"auto, tenant agent busy, platform not allowed: wait for tenant", stubSelector{false, false}, scan.SensorPreferenceAuto, false, public, false, false},
-		{"auto, tenant agent busy, platform allowed, public: platform", stubSelector{false, true}, scan.SensorPreferenceAuto, false, public, true, false},
+		{"auto, tenant sensor busy, platform not allowed: wait for tenant", stubSelector{false, false}, scan.SensorPreferenceAuto, false, public, false, false},
+		{"auto, tenant sensor busy, platform allowed, public: platform", stubSelector{false, true}, scan.SensorPreferenceAuto, false, public, true, false},
 		{"auto, internal target never goes to platform", stubSelector{false, true}, scan.SensorPreferenceAuto, false, internal, false, false},
 		{"auto, asset group never goes to platform", stubSelector{false, true}, scan.SensorPreferenceAuto, true, public, false, false},
-		{"auto, tenant agent available: tenant", stubSelector{true, true}, scan.SensorPreferenceAuto, false, public, false, false},
+		{"auto, tenant sensor available: tenant", stubSelector{true, true}, scan.SensorPreferenceAuto, false, public, false, false},
 		{"explicit platform with internal target: refused", stubSelector{false, true}, scan.SensorPreferencePlatform, false, internal, false, true},
 		{"explicit platform, not allowed: refused", stubSelector{false, false}, scan.SensorPreferencePlatform, false, public, false, true},
 		{"explicit platform, allowed, public: platform", stubSelector{false, true}, scan.SensorPreferencePlatform, false, public, true, false},

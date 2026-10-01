@@ -30,7 +30,7 @@ func NewSensorHandler(service *app.SensorService, v *validator.Validator, log *l
 	return &SensorHandler{
 		service:   service,
 		validator: v,
-		logger:    log.With("handler", "agent"),
+		logger:    log.With("handler", "sensor"),
 	}
 }
 
@@ -94,7 +94,7 @@ type SensorResponse struct {
 
 // CreateSensorResponse includes the API key (only shown once).
 type CreateSensorResponse struct {
-	Sensor *SensorResponse `json:"agent"`
+	Sensor *SensorResponse `json:"sensor"`
 	APIKey string          `json:"api_key"`
 }
 
@@ -589,9 +589,9 @@ func (h *SensorHandler) handleValidationError(w http.ResponseWriter, err error) 
 func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
-		apierror.NotFound("Agent").WriteJSON(w)
+		apierror.NotFound("Sensor").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
-		apierror.Conflict("Agent already exists").WriteJSON(w)
+		apierror.Conflict("Sensor already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
@@ -695,7 +695,7 @@ type SensorConfigTemplatesResponse struct {
 func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Request) {
 	if h.templateService == nil {
 		apierror.New(http.StatusServiceUnavailable, "TEMPLATE_SERVICE_DISABLED",
-			"Agent config template service is not configured").WriteJSON(w)
+			"Sensor config template service is not configured").WriteJSON(w)
 		return
 	}
 
@@ -713,7 +713,7 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 	// headers — embedding a credential there is a known leakage vector.
 	// Caller passes the freshly issued key from sensor creation/regeneration
 	// in the X-Sensor-API-Key header. If absent, we render a placeholder.
-	apiKey := r.Header.Get("X-Agent-API-Key")
+	apiKey := r.Header.Get("X-Sensor-API-Key")
 	if apiKey == "" {
 		apiKey = "<YOUR_API_KEY>"
 	}
@@ -729,7 +729,7 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 		BaseURL: baseURL,
 	})
 	if err != nil {
-		h.logger.Error("failed to render agent config templates", "error", err, "agent_id", sensorID)
+		h.logger.Error("failed to render sensor config templates", "error", err, "sensor_id", sensorID)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}

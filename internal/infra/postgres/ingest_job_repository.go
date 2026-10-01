@@ -24,7 +24,7 @@ func NewIngestJobRepository(db *DB) *IngestJobRepository {
 }
 
 const ingestJobColumns = `
-	id, tenant_id, agent_id, report_id, source_type, payload, payload_sha,
+	id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
 	status, attempts, max_attempts, priority, result, error, locked_by, locked_at,
 	available_at, created_at, updated_at`
 
@@ -33,7 +33,7 @@ const ingestJobColumns = `
 func (r *IngestJobRepository) Enqueue(ctx context.Context, job *ingestjob.Job) (*ingestjob.Job, bool, error) {
 	query := `
 		INSERT INTO ingest_jobs (
-			id, tenant_id, agent_id, report_id, source_type, payload, payload_sha,
+			id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
 			status, attempts, max_attempts, priority, available_at, created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)

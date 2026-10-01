@@ -39,19 +39,19 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 	slug := "aak-" + tenantID.String()[:8]
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
-		tenantID.String(), "agent-apikey-test", slug); err != nil {
+		tenantID.String(), "sensor-apikey-test", slug); err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
 
 	sensorRepo := NewSensorRepository(&DB{DB: db})
-	a, err := sensordom.NewSensor(tenantID, "aak-agent", sensordom.SensorTypeRunner, "", nil, nil, sensordom.ExecutionModeStandalone)
+	a, err := sensordom.NewSensor(tenantID, "aak-sensor", sensordom.SensorTypeRunner, "", nil, nil, sensordom.ExecutionModeStandalone)
 	if err != nil {
-		t.Fatalf("new agent: %v", err)
+		t.Fatalf("new sensor: %v", err)
 	}
 	a.SetAPIKey("inline-hash", "rda_inline12")
 	if err := sensorRepo.Create(ctx, a); err != nil {
-		t.Fatalf("create agent: %v", err)
+		t.Fatalf("create sensor: %v", err)
 	}
 
 	repo := NewSensorAPIKeyRepository(&DB{DB: db})
@@ -70,7 +70,7 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 		t.Fatalf("get by hash N: %v", err)
 	}
 	if got.SensorID != a.ID || !got.IsValid() {
-		t.Fatalf("round-trip mismatch: agent=%v valid=%v", got.SensorID, got.IsValid())
+		t.Fatalf("round-trip mismatch: sensor=%v valid=%v", got.SensorID, got.IsValid())
 	}
 	if len(got.Scopes) != len(sensordom.RunnerScopes()) {
 		t.Errorf("scopes not round-tripped: %v", got.Scopes)

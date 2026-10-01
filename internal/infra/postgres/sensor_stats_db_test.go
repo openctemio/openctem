@@ -44,7 +44,7 @@ func TestGetTenantSensorStats_RunsAndCountsOnlineActive(t *testing.T) {
 
 	stats, err := repo.GetTenantSensorStats(ctx, tenantID)
 	if err != nil {
-		t.Fatalf("GetTenantAgentStats errored — the CTE does not project a column "+
+		t.Fatalf("GetTenantSensorStats errored — the CTE does not project a column "+
 			"the outer query filters on, so this endpoint 500s for every tenant: %v", err)
 	}
 
@@ -54,13 +54,13 @@ func TestGetTenantSensorStats_RunsAndCountsOnlineActive(t *testing.T) {
 	// Two online sensors have a heartbeat; the third is online but never seen, so
 	// the query's `AND last_seen_at IS NOT NULL` excludes it.
 	if stats.OnlineActive != 2 {
-		t.Errorf("OnlineActive = %d, want 2 (the never-heartbeated online agent is "+
+		t.Errorf("OnlineActive = %d, want 2 (the never-heartbeated online sensor is "+
 			"excluded by the query's own last_seen_at predicate)", stats.OnlineActive)
 	}
 	if stats.ByHealth["online"] != 3 {
 		t.Errorf("ByHealth[online] = %d, want 3", stats.ByHealth["online"])
 	}
 	if stats.ByStatus["active"] != 4 {
-		t.Errorf("ByStatus[active] = %d, want 4 (seedAgent creates active agents)", stats.ByStatus["active"])
+		t.Errorf("ByStatus[active] = %d, want 4 (seedSensor creates active sensors)", stats.ByStatus["active"])
 	}
 }

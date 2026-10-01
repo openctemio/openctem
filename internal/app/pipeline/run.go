@@ -281,7 +281,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 
 // queueStepForExecutionWithSettings creates a command with specific settings.
 func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) error {
-	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool, "agent_preference", settings.SensorPreference)
+	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool, "sensor_preference", settings.SensorPreference)
 
 	// Security validation: Last line of defense before sending to sensor
 	if s.securityValidator != nil {
@@ -306,7 +306,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		"preferred_tool":        step.Tool,
 		"timeout_seconds":       step.TimeoutSeconds,
 		"context":               run.Context,
-		"agent_preference":      string(settings.SensorPreference),
+		"sensor_preference":      string(settings.SensorPreference),
 	}
 
 	if run.AssetID != nil {
@@ -344,14 +344,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		// Route to platform sensors
 		initialPriority := s.calculatePipelineInitialPriority(cmd.Priority)
 		cmd.SetPlatformJob(initialPriority)
-		s.logger.Info("routing step to platform agents", "step_key", step.StepKey)
+		s.logger.Info("routing step to platform sensors", "step_key", step.StepKey)
 	} else if sensorID != nil {
 		// Route to specific tenant sensor
 		cmd.SetSensorID(*sensorID)
-		s.logger.Info("routing step to tenant agent", "step_key", step.StepKey, "agent_id", sensorID.String())
+		s.logger.Info("routing step to tenant sensor", "step_key", step.StepKey, "sensor_id", sensorID.String())
 	} else {
 		// No specific sensor, command available to any tenant sensor
-		s.logger.Info("no specific agent assigned, command available to all tenant agents", "step_key", step.StepKey)
+		s.logger.Info("no specific sensor assigned, command available to all tenant sensors", "step_key", step.StepKey)
 	}
 
 	if err := s.commandRepo.Create(ctx, cmd); err != nil {

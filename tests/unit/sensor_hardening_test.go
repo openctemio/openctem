@@ -55,7 +55,7 @@ func (r *copyingSensorRepo) Update(ctx context.Context, a *sensor.Sensor) error 
 func TestUpdateHeartbeat_ConcurrentRevokeStaysRevoked(t *testing.T) {
 	base := newSensorSvcMockRepo()
 	tenantID := shared.NewID()
-	a := base.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	a := base.seedSensor(tenantID, "sensor-1", sensor.SensorTypeRunner)
 	a.SetAPIKey("old-hash", "rda_old0")
 
 	repo := &copyingSensorRepo{sensorSvcMockRepo: base}
@@ -83,7 +83,7 @@ func TestUpdateHeartbeat_ConcurrentRevokeStaysRevoked(t *testing.T) {
 		t.Fatalf("heartbeat overwrote the admin-rotated key hash: %q", stored.APIKeyHash)
 	}
 	if stored.Version == "9.9.9" {
-		t.Error("heartbeat metrics must not be written to a revoked agent")
+		t.Error("heartbeat metrics must not be written to a revoked sensor")
 	}
 	if base.updateCalls != 0 {
 		t.Errorf("heartbeat must not use the full-row Update, got %d calls", base.updateCalls)
@@ -93,7 +93,7 @@ func TestUpdateHeartbeat_ConcurrentRevokeStaysRevoked(t *testing.T) {
 func TestUpdateHeartbeat_ActiveSensorUpdatesOnlyLivenessColumns(t *testing.T) {
 	base := newSensorSvcMockRepo()
 	tenantID := shared.NewID()
-	a := base.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	a := base.seedSensor(tenantID, "sensor-1", sensor.SensorTypeRunner)
 	a.SetAPIKey("keep-hash", "rda_keep")
 	a.Health = sensor.SensorHealthOffline
 
@@ -110,7 +110,7 @@ func TestUpdateHeartbeat_ActiveSensorUpdatesOnlyLivenessColumns(t *testing.T) {
 		t.Errorf("heartbeat fields not persisted: %+v", stored)
 	}
 	if stored.Health != sensor.SensorHealthOnline || stored.LastSeenAt == nil {
-		t.Error("expected agent online with last_seen set")
+		t.Error("expected sensor online with last_seen set")
 	}
 	if stored.LoadScore == 0 {
 		t.Error("expected load score recomputed from metrics")
@@ -130,7 +130,7 @@ func TestUpdateHeartbeat_RevokedSensorNoConnectAudit(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
 	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
-	a := repo.seedSensor(shared.NewID(), "agent-1", sensor.SensorTypeWorker)
+	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline
 	a.Revoke("gone")
 
@@ -138,7 +138,7 @@ func TestUpdateHeartbeat_RevokedSensorNoConnectAudit(t *testing.T) {
 		t.Fatalf("UpdateHeartbeat: %v", err)
 	}
 	if auditRepo.createCalls != 0 {
-		t.Errorf("expected no connect audit for a revoked agent, got %d", auditRepo.createCalls)
+		t.Errorf("expected no connect audit for a revoked sensor, got %d", auditRepo.createCalls)
 	}
 }
 
@@ -146,21 +146,21 @@ func TestUpdateHeartbeat_RevokedSensorNoConnectAudit(t *testing.T) {
 // key write (the targeted UPDATE is status-guarded).
 func TestRenewAPIKey_RevokedDuringRenewIsRejected(t *testing.T) {
 	base := newSensorSvcMockRepo()
-	a := base.seedSensor(shared.NewID(), "agent-1", sensor.SensorTypeRunner)
+	a := base.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeRunner)
 	a.SetAPIKey("old-hash", "rda_old0")
 
 	repo := &revokeOnKeyWriteRepo{sensorSvcMockRepo: base}
 	svc := app.NewSensorService(repo, nil, logger.NewNop())
 
 	if _, _, err := svc.RenewAPIKey(context.Background(), a); err == nil {
-		t.Fatal("expected renewal to fail for an agent revoked mid-renewal")
+		t.Fatal("expected renewal to fail for a sensor revoked mid-renewal")
 	}
 	stored := base.sensors[a.ID.String()]
 	if stored.Status != sensor.SensorStatusRevoked {
-		t.Fatalf("renewal revived a revoked agent: %q", stored.Status)
+		t.Fatalf("renewal revived a revoked sensor: %q", stored.Status)
 	}
 	if stored.APIKeyHash != "old-hash" {
-		t.Fatal("renewal installed a fresh key on a revoked agent")
+		t.Fatal("renewal installed a fresh key on a revoked sensor")
 	}
 }
 
@@ -193,7 +193,7 @@ func TestRegenerateAPIKey_RevokesRenewedKeyRows(t *testing.T) {
 	tenantID := shared.NewID()
 
 	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
-		TenantID: tenantID.String(), Name: "regen-agent", Type: "runner",
+		TenantID: tenantID.String(), Name: "regen-sensor", Type: "runner",
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -229,7 +229,7 @@ func TestRenewAPIKey_WritesAuditEvent(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
 	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
-	a := repo.seedSensor(shared.NewID(), "agent-1", sensor.SensorTypeRunner)
+	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeRunner)
 
 	if _, _, err := svc.RenewAPIKey(context.Background(), a); err != nil {
 		t.Fatalf("renew: %v", err)

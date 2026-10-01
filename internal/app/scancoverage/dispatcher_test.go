@@ -50,7 +50,7 @@ func TestDispatchTenableScan_BuildsRoutableCommand(t *testing.T) {
 		t.Fatal("tenant not set on command")
 	}
 	if fc.created.SensorID != nil {
-		t.Fatal("agent should be unpinned (capability-routed) by default")
+		t.Fatal("sensor should be unpinned (capability-routed) by default")
 	}
 
 	var p map[string]any
@@ -91,7 +91,7 @@ func TestDispatchTenableScan_GeneratesSessionAndPinsSensor(t *testing.T) {
 		t.Fatal("session id should be generated when empty")
 	}
 	if fc.created.SensorID == nil || *fc.created.SensorID != sensor {
-		t.Fatal("agent id should be pinned when provided (C3)")
+		t.Fatal("sensor id should be pinned when provided (C3)")
 	}
 }
 

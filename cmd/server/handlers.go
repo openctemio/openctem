@@ -490,7 +490,7 @@ func newSensorHandlerWithTemplates(
 
 	templatesDir := cfg.SensorConfig.TemplatesDir
 	if templatesDir == "" {
-		templatesDir = "configs/agent-templates"
+		templatesDir = "configs/sensor-templates"
 	}
 	tmplSvc := app.NewSensorConfigTemplateService(templatesDir, log)
 	h.SetTemplateService(tmplSvc)

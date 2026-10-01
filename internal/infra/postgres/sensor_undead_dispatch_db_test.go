@@ -36,7 +36,7 @@ func openSensorDB(t *testing.T) *sql.DB {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		t.Skip("DATABASE_URL not set; skipping undead-agent tests")
+		t.Skip("DATABASE_URL not set; skipping undead-sensor tests")
 	}
 
 	db, err := sql.Open("postgres", dbURL)
@@ -64,17 +64,17 @@ func seedSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.I
 	}
 
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO agents (id, tenant_id, name, type, status, health,
+		`INSERT INTO sensors (id, tenant_id, name, type, status, health,
 		                     api_key_hash, api_key_prefix, tools, execution_mode,
 		                     max_concurrent_jobs, current_jobs, total_scans, last_seen_at)
-		 VALUES ($1, $2, $3, 'agent', 'active', $4, $5, $6, ARRAY[$7], 'daemon', 5, 0, $8, $9)`,
+		 VALUES ($1, $2, $3, 'sensor', 'active', $4, $5, $6, ARRAY[$7], 'daemon', 5, 0, $8, $9)`,
 		id.String(), tenantID.String(), "undead probe "+id.String(),
 		health, "hash-"+id.String(), id.String()[:8], tool, totalScans, seenArg)
 	if err != nil {
-		t.Fatalf("seed agent (health=%s, lastSeen=%v): %v", health, lastSeen, err)
+		t.Fatalf("seed sensor (health=%s, lastSeen=%v): %v", health, lastSeen, err)
 	}
 	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM agents WHERE id = $1`, id.String())
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, id.String())
 	})
 	return id
 }
@@ -82,8 +82,8 @@ func seedSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.I
 func sensorHealth(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) string {
 	t.Helper()
 	var h string
-	if err := db.QueryRowContext(ctx, `SELECT health FROM agents WHERE id = $1`, id.String()).Scan(&h); err != nil {
-		t.Fatalf("read agent health: %v", err)
+	if err := db.QueryRowContext(ctx, `SELECT health FROM sensors WHERE id = $1`, id.String()).Scan(&h); err != nil {
+		t.Fatalf("read sensor health: %v", err)
 	}
 	return h
 }
@@ -104,7 +104,7 @@ func TestMarkStaleAsOffline_ReapsNeverHeartbeatedSensor(t *testing.T) {
 	}
 
 	if got := sensorHealth(ctx, t, db, undead); got != "offline" {
-		t.Errorf("never-heartbeated agent health = %q, want %q — the sweep still cannot reach it", got, "offline")
+		t.Errorf("never-heartbeated sensor health = %q, want %q — the sweep still cannot reach it", got, "offline")
 	}
 }
 
@@ -119,7 +119,7 @@ func TestMarkStaleSensorsOffline_ReapsNeverHeartbeatedSensor(t *testing.T) {
 
 	ids, err := repo.MarkStaleSensorsOffline(ctx, 5*time.Minute)
 	if err != nil {
-		t.Fatalf("MarkStaleAgentsOffline: %v", err)
+		t.Fatalf("MarkStaleSensorsOffline: %v", err)
 	}
 
 	var reported bool
@@ -129,10 +129,10 @@ func TestMarkStaleSensorsOffline_ReapsNeverHeartbeatedSensor(t *testing.T) {
 		}
 	}
 	if !reported {
-		t.Errorf("undead agent not in the reaped set — the health monitor cannot audit-log what it never selects")
+		t.Errorf("undead sensor not in the reaped set — the health monitor cannot audit-log what it never selects")
 	}
 	if got := sensorHealth(ctx, t, db, undead); got != "offline" {
-		t.Errorf("never-heartbeated agent health = %q, want %q", got, "offline")
+		t.Errorf("never-heartbeated sensor health = %q, want %q", got, "offline")
 	}
 }
 
@@ -152,11 +152,11 @@ func TestMarkStaleSweeps_LeaveLiveSensorAlone(t *testing.T) {
 		t.Fatalf("MarkStaleAsOffline: %v", err)
 	}
 	if _, err := repo.MarkStaleSensorsOffline(ctx, 5*time.Minute); err != nil {
-		t.Fatalf("MarkStaleAgentsOffline: %v", err)
+		t.Fatalf("MarkStaleSensorsOffline: %v", err)
 	}
 
 	if got := sensorHealth(ctx, t, db, live); got != "online" {
-		t.Errorf("live agent health = %q, want %q — the widened sweep is reaping healthy agents", got, "online")
+		t.Errorf("live sensor health = %q, want %q — the widened sweep is reaping healthy sensors", got, "online")
 	}
 }
 
@@ -179,13 +179,13 @@ func TestFindAvailableWithTool_SkipsNeverHeartbeatedSensor(t *testing.T) {
 		t.Fatalf("FindAvailableWithTool: %v", err)
 	}
 	if got == nil {
-		t.Fatal("no agent selected, want the live one")
+		t.Fatal("no sensor selected, want the live one")
 	}
 	if got.ID.String() == undead.String() {
-		t.Fatalf("dispatch picked the never-heartbeated agent — it sorts first on total_scans ASC")
+		t.Fatalf("dispatch picked the never-heartbeated sensor — it sorts first on total_scans ASC")
 	}
 	if got.ID.String() != live.String() {
-		t.Errorf("dispatch picked %s, want the live agent %s", got.ID, live)
+		t.Errorf("dispatch picked %s, want the live sensor %s", got.ID, live)
 	}
 }
 
@@ -206,7 +206,7 @@ func TestGetAvailableToolsForTenant_IgnoresNeverHeartbeatedSensor(t *testing.T) 
 	}
 	for _, tool := range tools {
 		if tool == "nuclei" {
-			t.Fatalf("nuclei advertised as available, but its only agent has never heartbeated")
+			t.Fatalf("nuclei advertised as available, but its only sensor has never heartbeated")
 		}
 	}
 }

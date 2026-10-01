@@ -166,7 +166,7 @@ func TestSetIngestChannel_RejectsInvalid(t *testing.T) {
 		t.Fatalf("new finding: %v", err)
 	}
 
-	for _, bad := range []vulnerability.IngestChannel{"", "SCANNER", "agent", "integration "} {
+	for _, bad := range []vulnerability.IngestChannel{"", "SCANNER", "sensor", "integration "} {
 		f.SetIngestChannel(bad)
 		if f.IngestChannel() != "" {
 			t.Errorf("SetIngestChannel(%q) stored %q; invalid values must be ignored", bad, f.IngestChannel())

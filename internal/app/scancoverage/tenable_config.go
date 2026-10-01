@@ -15,7 +15,7 @@ const (
 	// ExecutionModeSensor (default) — a runner on the customer network reaches
 	// Nessus/Tenable and pushes results back via polling. The control plane
 	// holds NO scanner credentials. This is the recommended, secure default.
-	ExecutionModeSensor ExecutionMode = "agent"
+	ExecutionModeSensor ExecutionMode = "sensor"
 
 	// ExecutionModeDirect — the backend calls Tenable REST itself. Only for
 	// Tenable cloud / a reachable .sc where the operator accepts the control
@@ -68,7 +68,7 @@ func ParseTenableConfig(config map[string]any) (TenableConfig, error) {
 		case ExecutionModeSensor, ExecutionModeDirect:
 			c.ExecutionMode = ExecutionMode(v)
 		default:
-			return c, fmt.Errorf("invalid execution_mode %q (want agent|direct)", v)
+			return c, fmt.Errorf("invalid execution_mode %q (want sensor|direct)", v)
 		}
 	}
 
@@ -85,7 +85,7 @@ func ParseTenableConfig(config map[string]any) (TenableConfig, error) {
 	c.BatchSize = intFromConfig(config, "batch_size")
 	c.LicenseCap = intFromConfig(config, "license_cap")
 	c.SafetyMargin = intFromConfig(config, "safety_margin")
-	c.SensorID = strings.TrimSpace(stringFromConfig(config, "agent_id"))
+	c.SensorID = strings.TrimSpace(stringFromConfig(config, "sensor_id"))
 	c.TemplateUUID = strings.TrimSpace(stringFromConfig(config, "template_uuid"))
 
 	if c.BatchSize < 0 || c.LicenseCap < 0 || c.SafetyMargin < 0 {
@@ -123,7 +123,7 @@ func ValidateTenableIntegration(cfg TenableConfig, hasCredentials bool, baseURL 
 	switch cfg.ExecutionMode {
 	case ExecutionModeSensor:
 		if hasCredentials {
-			return fmt.Errorf("agent-mode Tenable integration must not store credentials in the control plane; configure them on the runner")
+			return fmt.Errorf("sensor-mode Tenable integration must not store credentials in the control plane; configure them on the runner")
 		}
 	case ExecutionModeDirect:
 		if !hasCredentials {

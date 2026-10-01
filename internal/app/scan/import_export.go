@@ -43,7 +43,7 @@ type ScanConfigExport struct {
 	// Routing
 	Tags              []string `json:"tags,omitempty"`
 	RunOnTenantRunner bool     `json:"run_on_tenant_runner"`
-	SensorPreference  string   `json:"agent_preference,omitempty"`
+	SensorPreference  string   `json:"sensor_preference,omitempty"`
 
 	// Profile and timeout
 	ProfileID      string `json:"profile_id,omitempty"`

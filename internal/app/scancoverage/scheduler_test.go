@@ -266,7 +266,7 @@ func TestScheduler_PinnedSensorForwarded(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	if disp.calls[0].SensorID == nil || *disp.calls[0].SensorID != sensor {
-		t.Fatal("pinned agent id must be forwarded to the dispatcher (C3)")
+		t.Fatal("pinned sensor id must be forwarded to the dispatcher (C3)")
 	}
 }
 

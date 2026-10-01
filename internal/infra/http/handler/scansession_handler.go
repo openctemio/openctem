@@ -56,7 +56,7 @@ func (h *ScanSessionHandler) handleServiceError(w http.ResponseWriter, err error
 type ScanSessionResponse struct {
 	ID             string         `json:"id"`
 	TenantID       string         `json:"tenant_id,omitempty"`
-	SensorID       string         `json:"agent_id,omitempty"`
+	SensorID       string         `json:"sensor_id,omitempty"`
 	ScannerName    string         `json:"scanner_name"`
 	ScannerVersion string         `json:"scanner_version,omitempty"`
 	ScannerType    string         `json:"scanner_type,omitempty"`

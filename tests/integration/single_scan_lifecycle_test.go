@@ -131,7 +131,7 @@ func seedLifecycleScan(ctx context.Context, t *testing.T, db *sql.DB, tenantID s
 	scanID := shared.NewID()
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO scans (id, tenant_id, name, scan_type, scanner_name, targets,
-		                    status, schedule_type, agent_preference, timeout_seconds)
+		                    status, schedule_type, sensor_preference, timeout_seconds)
 		 VALUES ($1, $2, $3, 'single', $4, ARRAY['example.test'],
 		         'active', 'manual', 'tenant', 3600)`,
 		scanID.String(), tenantID.String(), "probe scan "+scanID.String(), toolName); err != nil {
@@ -229,7 +229,7 @@ func TestTriggerSingleScan_ProducesAReportableRun(t *testing.T) {
 	}
 	// The legacy key must survive: the sensor SDK reads it.
 	if routed.RunID != run.ID.String() {
-		t.Errorf("payload run_id = %q, want %q — the agent SDK still reads this key",
+		t.Errorf("payload run_id = %q, want %q — the sensor SDK still reads this key",
 			routed.RunID, run.ID.String())
 	}
 	// And the command the step points at must be the one we just read.

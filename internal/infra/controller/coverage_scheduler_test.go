@@ -154,7 +154,7 @@ func TestCoverageScheduler_PinsSensorFromConfig(t *testing.T) {
 			tenableIntegration(t, tenant, map[string]any{
 				"engine":           "nessus_pro",
 				"coverage_enabled": true,
-				"agent_id":         sensor.String(),
+				"sensor_id":         sensor.String(),
 			}),
 		},
 		Total: 1,
@@ -169,7 +169,7 @@ func TestCoverageScheduler_PinsSensorFromConfig(t *testing.T) {
 		t.Fatalf("reconcile: %v", err)
 	}
 	if len(disp.calls) != 1 || disp.calls[0].SensorID == nil || *disp.calls[0].SensorID != sensor {
-		t.Fatalf("pinned agent_id must be forwarded, got %+v", disp.calls)
+		t.Fatalf("pinned sensor_id must be forwarded, got %+v", disp.calls)
 	}
 }
 

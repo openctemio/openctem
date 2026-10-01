@@ -2352,7 +2352,7 @@ func TestToolService_RecordToolExecution_WithSensor(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if result.SensorID == nil || *result.SensorID != sensorID {
-		t.Error("expected agent ID to be set")
+		t.Error("expected sensor ID to be set")
 	}
 }
 
@@ -2823,7 +2823,7 @@ func TestToolService_RecordToolExecution_InvalidSensorID(t *testing.T) {
 
 	_, err := svc.RecordToolExecution(context.Background(), input)
 	if err == nil {
-		t.Fatal("expected error for invalid agent ID")
+		t.Fatal("expected error for invalid sensor ID")
 	}
 }
 

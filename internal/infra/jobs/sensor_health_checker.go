@@ -26,7 +26,7 @@ func NewSensorHealthChecker(sensorRepo sensor.Repository, cfg *config.SensorConf
 	return &SensorHealthChecker{
 		sensorRepo: sensorRepo,
 		config:     cfg,
-		logger:     log.With("component", "agent-health-checker"),
+		logger:     log.With("component", "sensor-health-checker"),
 		stopCh:     make(chan struct{}),
 	}
 }
@@ -34,11 +34,11 @@ func NewSensorHealthChecker(sensorRepo sensor.Repository, cfg *config.SensorConf
 // Start starts the health checker in a background goroutine.
 func (c *SensorHealthChecker) Start() {
 	if !c.config.Enabled {
-		c.logger.Info("agent health checker is disabled")
+		c.logger.Info("sensor health checker is disabled")
 		return
 	}
 
-	c.logger.Info("starting agent health checker",
+	c.logger.Info("starting sensor health checker",
 		"heartbeat_timeout", c.config.HeartbeatTimeout,
 		"check_interval", c.config.HealthCheckInterval,
 	)
@@ -49,10 +49,10 @@ func (c *SensorHealthChecker) Start() {
 
 // Stop stops the health checker gracefully.
 func (c *SensorHealthChecker) Stop() {
-	c.logger.Info("stopping agent health checker")
+	c.logger.Info("stopping sensor health checker")
 	close(c.stopCh)
 	c.wg.Wait()
-	c.logger.Info("agent health checker stopped")
+	c.logger.Info("sensor health checker stopped")
 }
 
 func (c *SensorHealthChecker) run() {
@@ -80,12 +80,12 @@ func (c *SensorHealthChecker) checkStaleSensors() {
 
 	count, err := c.sensorRepo.MarkStaleAsOffline(ctx, c.config.HeartbeatTimeout)
 	if err != nil {
-		c.logger.Error("failed to mark stale agents as offline", "error", err)
+		c.logger.Error("failed to mark stale sensors as offline", "error", err)
 		return
 	}
 
 	if count > 0 {
-		c.logger.Info("marked stale agents as offline (health)",
+		c.logger.Info("marked stale sensors as offline (health)",
 			"count", count,
 			"timeout", c.config.HeartbeatTimeout,
 		)

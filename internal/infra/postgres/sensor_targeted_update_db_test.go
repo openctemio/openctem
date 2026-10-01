@@ -45,7 +45,7 @@ func TestSensorTargetedUpdates_ExecuteAgainstSchema(t *testing.T) {
 			t.Fatalf("UpdateHeartbeat (tenant=%v) failed against schema: %v", tenant, err)
 		}
 		if ok {
-			t.Fatal("random agent id must match no row")
+			t.Fatal("random sensor id must match no row")
 		}
 	}
 
@@ -56,7 +56,7 @@ func TestSensorTargetedUpdates_ExecuteAgainstSchema(t *testing.T) {
 			t.Fatalf("UpdateAPIKey (requireActive=%v) failed against schema: %v", requireActive, err)
 		}
 		if ok {
-			t.Fatal("random agent id must match no row")
+			t.Fatal("random sensor id must match no row")
 		}
 	}
 }

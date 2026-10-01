@@ -78,15 +78,15 @@ func seedJobSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID share
 
 	id := shared.NewID()
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO agents (id, tenant_id, name, type, status, api_key_hash, api_key_prefix)
-		 VALUES ($1, $2, $3, 'agent', 'active', $4, $5)`,
+		`INSERT INTO sensors (id, tenant_id, name, type, status, api_key_hash, api_key_prefix)
+		 VALUES ($1, $2, $3, 'sensor', 'active', $4, $5)`,
 		id.String(), tenantID.String(), "job probe "+id.String(),
 		"hash-"+id.String(), id.String()[:8])
 	if err != nil {
-		t.Fatalf("seed agent: %v", err)
+		t.Fatalf("seed sensor: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM agents WHERE id = $1`, id.String())
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, id.String())
 	})
 	return id
 }
@@ -110,7 +110,7 @@ func seedPlatformJob(ctx context.Context, t *testing.T, db *sql.DB, tenantID sha
 
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO commands (
-			id, tenant_id, agent_id, platform_agent_id, type, priority, payload, status,
+			id, tenant_id, sensor_id, platform_sensor_id, type, priority, payload, status,
 			is_platform_job, dispatch_attempts,
 			acknowledged_at, queued_at
 		) VALUES (
@@ -138,7 +138,7 @@ func commandState(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) (
 
 	var sensorID, platformSensorID sql.NullString
 	err := db.QueryRowContext(ctx,
-		`SELECT status, dispatch_attempts, agent_id, platform_agent_id FROM commands WHERE id = $1`,
+		`SELECT status, dispatch_attempts, sensor_id, platform_sensor_id FROM commands WHERE id = $1`,
 		id.String()).Scan(&status, &attempts, &sensorID, &platformSensorID)
 	if err != nil {
 		t.Fatalf("read command state: %v", err)
@@ -179,13 +179,13 @@ func TestRecoverStuckJobs_RecoversJobClaimedByTenantSensor(t *testing.T) {
 
 	status, attempts, sensorSet, _ := commandState(ctx, t, db, id)
 	if status != "pending" {
-		t.Errorf("status = %q, want \"pending\": a platform job claimed by a tenant agent that "+
+		t.Errorf("status = %q, want \"pending\": a platform job claimed by a tenant sensor that "+
 			"went offline is unreachable by every other reaper, so if recovery skips it the job "+
 			"is stuck forever and its pipeline run never ends", status)
 	}
 	if sensorSet {
-		t.Error("agent_id still set after recovery: the job is back in the queue but still " +
-			"looks claimed, so no other agent will take it")
+		t.Error("sensor_id still set after recovery: the job is back in the queue but still " +
+			"looks claimed, so no other sensor will take it")
 	}
 	if attempts != 1 {
 		t.Errorf("dispatch_attempts = %d, want 1: without an increment there is no stopping "+
@@ -217,7 +217,7 @@ func TestRecoverStuckJobs_RecoversJobClaimedByPlatformSensor(t *testing.T) {
 		t.Errorf("status = %q, want \"pending\"", status)
 	}
 	if platformSensorSet {
-		t.Error("platform_agent_id still set after recovery")
+		t.Error("platform_sensor_id still set after recovery")
 	}
 }
 
@@ -279,7 +279,7 @@ func TestRecoverStuckJobs_IgnoresFreshlyAcknowledgedJob(t *testing.T) {
 
 	status, _, _, _ := commandState(ctx, t, db, id)
 	if status != "acknowledged" {
-		t.Errorf("status = %q, want \"acknowledged\": the agent has had 5 of its 30 minutes and "+
+		t.Errorf("status = %q, want \"acknowledged\": the sensor has had 5 of its 30 minutes and "+
 			"is probably still working", status)
 	}
 }

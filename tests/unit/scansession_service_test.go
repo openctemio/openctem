@@ -282,12 +282,12 @@ func newTestScanSessionService() (*app.ScanSessionService, *scanSessionMockRepo,
 }
 
 func newTestSensorWithTenant(tenantID shared.ID) *sensor.Sensor {
-	agt, _ := sensor.NewSensor(tenantID, "test-agent", sensor.SensorTypeRunner, "test", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeStandalone)
+	agt, _ := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeRunner, "test", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeStandalone)
 	return agt
 }
 
 func newTestSensorWithoutTenant() *sensor.Sensor {
-	agt, _ := sensor.NewSensor(shared.NewID(), "platform-agent", sensor.SensorTypeWorker, "platform", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
+	agt, _ := sensor.NewSensor(shared.NewID(), "platform-sensor", sensor.SensorTypeWorker, "platform", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
 	agt.TenantID = nil // Platform sensor has no tenant
 	agt.IsPlatformSensor = true
 	return agt
@@ -356,7 +356,7 @@ func TestScanSessionService_RegisterScan_Success(t *testing.T) {
 			t.Errorf("expected branch main, got %s", s.Branch)
 		}
 		if s.SensorID == nil || !s.SensorID.Equals(agt.ID) {
-			t.Error("expected agent_id to match")
+			t.Error("expected sensor_id to match")
 		}
 	}
 }
@@ -368,10 +368,10 @@ func TestScanSessionService_RegisterScan_NoTenantContext(t *testing.T) {
 
 	_, err := svc.RegisterScan(context.Background(), agt, input)
 	if err == nil {
-		t.Fatal("expected error for agent without tenant context")
+		t.Fatal("expected error for sensor without tenant context")
 	}
 
-	if err.Error() != "agent has no tenant context: platform agents require job assignment" {
+	if err.Error() != "sensor has no tenant context: platform sensors require job assignment" {
 		t.Errorf("unexpected error message: %s", err.Error())
 	}
 }
@@ -595,7 +595,7 @@ func TestScanSessionService_UpdateScanSession_NoTenantContext(t *testing.T) {
 
 	err := svc.UpdateScanSession(context.Background(), agt, shared.NewID().String(), input)
 	if err == nil {
-		t.Fatal("expected error for agent without tenant context")
+		t.Fatal("expected error for sensor without tenant context")
 	}
 }
 
@@ -643,7 +643,7 @@ func TestScanSessionService_UpdateScanSession_WrongSensor(t *testing.T) {
 
 	err := svc.UpdateScanSession(context.Background(), otherSensor, session.ID.String(), input)
 	if err == nil {
-		t.Fatal("expected forbidden error when agent does not own session")
+		t.Fatal("expected forbidden error when sensor does not own session")
 	}
 	if !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("expected ErrForbidden, got %v", err)
@@ -1099,7 +1099,7 @@ func TestScanSessionService_UpdateScanSession_NilSensorID_OnSession(t *testing.T
 	// When session has no SensorID, ownership check should pass (no owner to verify against)
 	err := svc.UpdateScanSession(context.Background(), agt, session.ID.String(), input)
 	if err != nil {
-		t.Fatalf("expected no error when session has nil AgentID, got %v", err)
+		t.Fatalf("expected no error when session has nil SensorID, got %v", err)
 	}
 }
 

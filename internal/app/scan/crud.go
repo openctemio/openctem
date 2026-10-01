@@ -37,7 +37,7 @@ type CreateScanInput struct {
 	Timezone         string         `json:"timezone" validate:"max=50"`
 	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner     bool           `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
+	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
 	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`                             // Optional scan profile (tool configs, quality gates)
 	TimeoutSeconds   int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`            // Max execution time (default 3600, min 30, max 86400)
 	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
@@ -425,7 +425,7 @@ func (s *Service) checkScanSensorAvailability(ctx context.Context, tenantID shar
 	}
 	sensorAvail := s.sensorSelector.CheckSensorAvailability(ctx, tenantID, toolToCheck, input.TenantRunner)
 	if !sensorAvail.Available {
-		s.logger.Warn("no agent available for scan",
+		s.logger.Warn("no sensor available for scan",
 			"tenant_id", tenantID.String(),
 			"tool", toolToCheck,
 			"message", sensorAvail.Message,
@@ -590,7 +590,7 @@ type UpdateScanInput struct {
 	Timezone         string         `json:"timezone" validate:"max=50"`
 	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner     *bool          `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	// ProfileID: pointer with sentinel:
 	//   nil           = leave unchanged
 	//   pointer to "" = unlink profile

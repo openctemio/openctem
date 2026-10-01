@@ -41,11 +41,11 @@ func NewCommandRepository(db *DB) *CommandRepository {
 func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) error {
 	query := `
 		INSERT INTO commands (
-			id, tenant_id, agent_id, type, priority, payload,
+			id, tenant_id, sensor_id, type, priority, payload,
 			status, error_message,
 			created_at, expires_at, acknowledged_at, started_at, completed_at,
 			result, scheduled_at, schedule_id, step_run_id,
-			is_platform_job, platform_agent_id,
+			is_platform_job, platform_sensor_id,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
 			queue_priority, queued_at, dispatch_attempts
 		)
@@ -126,11 +126,11 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 	argIndex := 2
 
 	if sensorID != nil {
-		query += fmt.Sprintf(" AND (agent_id = $%d OR agent_id IS NULL)", argIndex)
+		query += fmt.Sprintf(" AND (sensor_id = $%d OR sensor_id IS NULL)", argIndex)
 		args = append(args, sensorID.String())
 		argIndex++
 	} else {
-		query += " AND agent_id IS NULL"
+		query += " AND sensor_id IS NULL"
 	}
 
 	// Capability gate: keep a command only if it declares no required
@@ -233,9 +233,9 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID string) (bool, error) {
 	query := `
 		UPDATE commands
-		SET status = 'acknowledged', agent_id = $3, acknowledged_at = NOW()
+		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW()
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
-		  AND (agent_id IS NULL OR agent_id = $3)
+		  AND (sensor_id IS NULL OR sensor_id = $3)
 	`
 	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID)
 	if err != nil {
@@ -252,11 +252,11 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 func (r *CommandRepository) Update(ctx context.Context, cmd *command.Command) error {
 	query := `
 		UPDATE commands
-		SET agent_id = $2, type = $3, priority = $4, payload = $5,
+		SET sensor_id = $2, type = $3, priority = $4, payload = $5,
 		    status = $6, error_message = $7,
 		    expires_at = $8, acknowledged_at = $9, started_at = $10, completed_at = $11,
 		    result = $12, scheduled_at = $13, schedule_id = $14,
-		    is_platform_job = $15, platform_agent_id = $16,
+		    is_platform_job = $15, platform_sensor_id = $16,
 		    auth_token_hash = $17, auth_token_prefix = $18, auth_token_expires_at = $19,
 		    queue_priority = $20, queued_at = $21, dispatch_attempts = $22
 		WHERE id = $1 AND tenant_id = $23
@@ -318,11 +318,11 @@ func (r *CommandRepository) Delete(ctx context.Context, id shared.ID) error {
 
 func (r *CommandRepository) selectQuery() string {
 	return `
-		SELECT id, tenant_id, agent_id, type, priority, payload,
+		SELECT id, tenant_id, sensor_id, type, priority, payload,
 		       status, error_message,
 		       created_at, expires_at, acknowledged_at, started_at, completed_at,
 		       result, scheduled_at, schedule_id, step_run_id,
-		       is_platform_job, platform_agent_id,
+		       is_platform_job, platform_sensor_id,
 		       auth_token_hash, auth_token_prefix, auth_token_expires_at,
 		       queue_priority, queued_at, dispatch_attempts
 		FROM commands
@@ -341,7 +341,7 @@ func (r *CommandRepository) buildWhereClause(filter command.Filter) (string, []a
 	}
 
 	if filter.SensorID != nil {
-		conditions = append(conditions, fmt.Sprintf("agent_id = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("sensor_id = $%d", argIndex))
 		args = append(args, filter.SensorID.String())
 		argIndex++
 	}
@@ -749,7 +749,7 @@ func (r *CommandRepository) CountQueuedPlatformJobsByTenant(ctx context.Context,
 		WHERE tenant_id = $1
 		AND is_platform_job = TRUE
 		AND status = 'pending'
-		AND platform_agent_id IS NULL
+		AND platform_sensor_id IS NULL
 	`
 	var count int
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count)
@@ -766,7 +766,7 @@ func (r *CommandRepository) CountQueuedPlatformJobs(ctx context.Context) (int, e
 		FROM commands
 		WHERE is_platform_job = TRUE
 		AND status = 'pending'
-		AND platform_agent_id IS NULL
+		AND platform_sensor_id IS NULL
 	`
 	var count int
 	err := r.db.QueryRowContext(ctx, query).Scan(&count)
@@ -781,7 +781,7 @@ func (r *CommandRepository) GetQueuedPlatformJobs(ctx context.Context, limit int
 	query := r.selectQuery() + `
 		WHERE is_platform_job = TRUE
 		AND status = 'pending'
-		AND platform_agent_id IS NULL
+		AND platform_sensor_id IS NULL
 		ORDER BY queue_priority DESC, queued_at ASC
 		LIMIT $1
 	`
@@ -851,7 +851,7 @@ func (r *CommandRepository) UpdateQueuePriorities(ctx context.Context) (int64, e
 		SET queue_priority = calculate_queue_priority(priority, queued_at, tenant_id)
 		WHERE is_platform_job = TRUE
 		AND status = 'pending'
-		AND platform_agent_id IS NULL
+		AND platform_sensor_id IS NULL
 	`
 
 	result, err := r.db.ExecContext(ctx, query)
@@ -936,14 +936,14 @@ func (r *CommandRepository) GetQueuePosition(ctx context.Context, commandID shar
 			FROM commands
 			WHERE is_platform_job = TRUE
 			AND status = 'pending'
-			AND platform_agent_id IS NULL
+			AND platform_sensor_id IS NULL
 		),
 		total AS (
 			SELECT COUNT(*) as total_count
 			FROM commands
 			WHERE is_platform_job = TRUE
 			AND status = 'pending'
-			AND platform_agent_id IS NULL
+			AND platform_sensor_id IS NULL
 		)
 		SELECT r.position, t.total_count, r.queue_priority
 		FROM ranked r, total t
@@ -1015,7 +1015,7 @@ func (r *CommandRepository) ListPlatformJobsAdmin(ctx context.Context, sensorID,
 	conditions = append(conditions, "is_platform_job = TRUE")
 
 	if sensorID != nil {
-		conditions = append(conditions, fmt.Sprintf("platform_agent_id = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("platform_sensor_id = $%d", argIndex))
 		args = append(args, sensorID.String())
 		argIndex++
 	}
@@ -1070,7 +1070,7 @@ func (r *CommandRepository) ListPlatformJobsAdmin(ctx context.Context, sensorID,
 
 // GetPlatformJobsBySensor lists platform jobs assigned to a sensor.
 func (r *CommandRepository) GetPlatformJobsBySensor(ctx context.Context, sensorID shared.ID, status *command.CommandStatus) ([]*command.Command, error) {
-	query := r.selectQuery() + " WHERE platform_agent_id = $1 AND is_platform_job = TRUE"
+	query := r.selectQuery() + " WHERE platform_sensor_id = $1 AND is_platform_job = TRUE"
 	args := []any{sensorID.String()}
 
 	if status != nil {
@@ -1082,7 +1082,7 @@ func (r *CommandRepository) GetPlatformJobsBySensor(ctx context.Context, sensorI
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get platform jobs by agent: %w", err)
+		return nil, fmt.Errorf("failed to get platform jobs by sensor: %w", err)
 	}
 	defer rows.Close()
 

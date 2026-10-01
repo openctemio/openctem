@@ -61,7 +61,7 @@ func (r *ScanSessionRepository) Create(ctx context.Context, s *scansession.ScanS
 
 	query := `
 		INSERT INTO scan_sessions (
-			id, tenant_id, agent_id,
+			id, tenant_id, sensor_id,
 			scanner_name, scanner_version, scanner_type,
 			asset_type, asset_value, asset_id,
 			commit_sha, branch, base_commit_sha,
@@ -411,7 +411,7 @@ func (r *ScanSessionRepository) ListRunning(ctx context.Context, tenantID shared
 func (r *ScanSessionRepository) selectQuery() string {
 	return `
 		SELECT
-			id, tenant_id, agent_id,
+			id, tenant_id, sensor_id,
 			scanner_name, scanner_version, scanner_type,
 			asset_type, asset_value, asset_id,
 			commit_sha, branch, base_commit_sha,
@@ -436,7 +436,7 @@ func (r *ScanSessionRepository) buildWhereClause(filter scansession.Filter) (str
 	}
 
 	if filter.SensorID != nil {
-		conditions = append(conditions, fmt.Sprintf("agent_id = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("sensor_id = $%d", argIndex))
 		args = append(args, filter.SensorID.String())
 		argIndex++
 	}

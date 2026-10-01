@@ -125,7 +125,7 @@ func (a *scanSensorSelectorAdapter) CheckSensorAvailability(ctx context.Context,
 // CanUsePlatformSensors implements scan.SensorSelector.
 // In OSS edition, platform sensors are not available.
 func (a *scanSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
-	return false, "Platform agents not available in OSS edition"
+	return false, "Platform sensors not available in OSS edition"
 }
 
 // SelectSensor implements scan.SensorSelector.
@@ -183,7 +183,7 @@ func (a *pipelineSensorSelectorAdapter) SelectSensor(ctx context.Context, req pi
 // CanUsePlatformSensors implements pipeline.SensorSelector.
 // In OSS edition, platform sensors are not available.
 func (a *pipelineSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
-	return false, "Platform agents not available in OSS edition"
+	return false, "Platform sensors not available in OSS edition"
 }
 
 // Template Syncer adapter lives in internal/app/template/scan_adapter.go

@@ -72,7 +72,7 @@ func NewSensorHealthController(
 
 // Name returns the controller name.
 func (c *SensorHealthController) Name() string {
-	return "agent-health"
+	return "sensor-health"
 }
 
 // Interval returns the reconciliation interval.
@@ -87,23 +87,23 @@ func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
 	// This also updates last_offline_at timestamp for historical queries
 	offlineSensorIDs, err := c.sensorRepo.MarkStaleSensorsOffline(ctx, c.config.StaleTimeout)
 	if err != nil {
-		c.logger.Error("failed to mark stale agents as offline",
-			"controller", "agent-health",
+		c.logger.Error("failed to mark stale sensors as offline",
+			"controller", "sensor-health",
 			"error", err,
 		)
 		return 0, err
 	}
 
 	if len(offlineSensorIDs) > 0 {
-		c.logger.Info("marked stale agents as offline",
-			"controller", "agent-health",
+		c.logger.Info("marked stale sensors as offline",
+			"controller", "sensor-health",
 			"count", len(offlineSensorIDs),
 			"stale_timeout", c.config.StaleTimeout,
 		)
 		for _, sensorID := range offlineSensorIDs {
-			c.logger.Debug("agent marked offline due to heartbeat timeout",
-				"controller", "agent-health",
-				"agent_id", sensorID,
+			c.logger.Debug("sensor marked offline due to heartbeat timeout",
+				"controller", "sensor-health",
+				"sensor_id", sensorID,
 				"stale_timeout", c.config.StaleTimeout,
 			)
 			c.auditDisconnect(ctx, sensorID)
@@ -128,9 +128,9 @@ func (c *SensorHealthController) auditDisconnect(ctx context.Context, sensorID s
 
 	a, err := c.sensorRepo.GetByID(ctx, sensorID)
 	if err != nil {
-		c.logger.Warn("could not load agent for disconnect audit",
-			"controller", "agent-health",
-			"agent_id", sensorID,
+		c.logger.Warn("could not load sensor for disconnect audit",
+			"controller", "sensor-health",
+			"sensor_id", sensorID,
 			"error", err,
 		)
 		return

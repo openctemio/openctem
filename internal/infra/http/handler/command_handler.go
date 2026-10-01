@@ -80,7 +80,7 @@ func (h *CommandHandler) SetSimulationFinalizer(svc simulationRunFinalizer) {
 type CommandResponse struct {
 	ID             string          `json:"id"`
 	TenantID       string          `json:"tenant_id,omitempty"`
-	SensorID       string          `json:"agent_id,omitempty"`
+	SensorID       string          `json:"sensor_id,omitempty"`
 	Type           string          `json:"type"`
 	Priority       string          `json:"priority"`
 	Payload        json.RawMessage `json:"payload,omitempty"`
@@ -121,7 +121,7 @@ func toCommandResponse(c *commanddom.Command) CommandResponse {
 
 // CreateCommandRequest represents the request to create a command.
 type CreateCommandRequest struct {
-	SensorID  string          `json:"agent_id" validate:"omitempty,uuid"`
+	SensorID  string          `json:"sensor_id" validate:"omitempty,uuid"`
 	Type      string          `json:"type" validate:"required,oneof=scan collect health_check config_update cancel"`
 	Priority  string          `json:"priority" validate:"omitempty,oneof=low normal high critical"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
@@ -298,7 +298,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	input := command.ListInput{
 		TenantID: tenantID,
-		SensorID: r.URL.Query().Get("agent_id"),
+		SensorID: r.URL.Query().Get("sensor_id"),
 		Type:     r.URL.Query().Get("type"),
 		Status:   r.URL.Query().Get("status"),
 		Priority: r.URL.Query().Get("priority"),

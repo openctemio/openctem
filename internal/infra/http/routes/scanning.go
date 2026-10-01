@@ -194,7 +194,7 @@ func registerSensorManagementRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	// Sensor management routes - tenant from JWT token
-	router.Group("/api/v1/agents", func(r Router) {
+	router.Group("/api/v1/sensors", func(r Router) {
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.SensorsRead))
 		// Tenant-wide aggregated stats — must be registered BEFORE /{id} so

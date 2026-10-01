@@ -771,8 +771,8 @@ func (s *AuditService) LogUserRegistered(ctx context.Context, actx AuditContext,
 func (s *AuditService) LogSensorCreated(ctx context.Context, actx AuditContext, sensorID, sensorName, sensorType string) error {
 	event := NewSuccessEvent(auditdom.ActionSensorCreated, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
-		WithMessage(fmt.Sprintf("Agent '%s' created (type: %s)", sensorName, sensorType)).
-		WithMetadata("agent_type", sensorType)
+		WithMessage(fmt.Sprintf("Sensor '%s' created (type: %s)", sensorName, sensorType)).
+		WithMetadata("sensor_type", sensorType)
 	return s.LogEvent(ctx, actx, event)
 }
 
@@ -781,7 +781,7 @@ func (s *AuditService) LogSensorUpdated(ctx context.Context, actx AuditContext, 
 	event := NewSuccessEvent(auditdom.ActionSensorUpdated, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithChanges(changes).
-		WithMessage(fmt.Sprintf("Agent '%s' updated", sensorName))
+		WithMessage(fmt.Sprintf("Sensor '%s' updated", sensorName))
 	return s.LogEvent(ctx, actx, event)
 }
 
@@ -790,7 +790,7 @@ func (s *AuditService) LogSensorDeleted(ctx context.Context, actx AuditContext, 
 	event := NewSuccessEvent(auditdom.ActionSensorDeleted, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithSeverity(auditdom.SeverityCritical).
-		WithMessage(fmt.Sprintf("Agent '%s' deleted", sensorName))
+		WithMessage(fmt.Sprintf("Sensor '%s' deleted", sensorName))
 	return s.LogEvent(ctx, actx, event)
 }
 
@@ -798,7 +798,7 @@ func (s *AuditService) LogSensorDeleted(ctx context.Context, actx AuditContext, 
 func (s *AuditService) LogSensorActivated(ctx context.Context, actx AuditContext, sensorID, sensorName string) error {
 	event := NewSuccessEvent(auditdom.ActionSensorActivated, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
-		WithMessage(fmt.Sprintf("Agent '%s' activated", sensorName))
+		WithMessage(fmt.Sprintf("Sensor '%s' activated", sensorName))
 	return s.LogEvent(ctx, actx, event)
 }
 
@@ -890,7 +890,7 @@ func (s *AuditService) LogSensorDeactivated(ctx context.Context, actx AuditConte
 	event := NewSuccessEvent(auditdom.ActionSensorDeactivated, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithSeverity(auditdom.SeverityHigh).
-		WithMessage(fmt.Sprintf("Agent '%s' deactivated: %s", sensorName, reason)).
+		WithMessage(fmt.Sprintf("Sensor '%s' deactivated: %s", sensorName, reason)).
 		WithMetadata("reason", reason)
 	return s.LogEvent(ctx, actx, event)
 }
@@ -900,7 +900,7 @@ func (s *AuditService) LogSensorRevoked(ctx context.Context, actx AuditContext, 
 	event := NewSuccessEvent(auditdom.ActionSensorRevoked, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithSeverity(auditdom.SeverityCritical).
-		WithMessage(fmt.Sprintf("Agent '%s' access revoked: %s", sensorName, reason)).
+		WithMessage(fmt.Sprintf("Sensor '%s' access revoked: %s", sensorName, reason)).
 		WithMetadata("reason", reason)
 	return s.LogEvent(ctx, actx, event)
 }
@@ -910,7 +910,7 @@ func (s *AuditService) LogSensorKeyRegenerated(ctx context.Context, actx AuditCo
 	event := NewSuccessEvent(auditdom.ActionSensorKeyRegenerated, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithSeverity(auditdom.SeverityHigh).
-		WithMessage(fmt.Sprintf("Agent '%s' API key regenerated", sensorName))
+		WithMessage(fmt.Sprintf("Sensor '%s' API key regenerated", sensorName))
 	return s.LogEvent(ctx, actx, event)
 }
 
@@ -921,7 +921,7 @@ func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContex
 	event := NewSuccessEvent(auditdom.ActionSensorKeyRenewed, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithSeverity(auditdom.SeverityMedium).
-		WithMessage(fmt.Sprintf("Agent '%s' renewed its API key", sensorName)).
+		WithMessage(fmt.Sprintf("Sensor '%s' renewed its API key", sensorName)).
 		WithMetadata("overlap", overlap)
 	if expiresAt != nil {
 		event = event.WithMetadata("expires_at", expiresAt.UTC().Format(time.RFC3339))
@@ -962,7 +962,7 @@ func (s *AuditService) LogAPIKeyDeleted(ctx context.Context, actx AuditContext, 
 func (s *AuditService) LogSensorConnected(ctx context.Context, actx AuditContext, sensorID, sensorName, ipAddress string) error {
 	event := NewSuccessEvent(auditdom.ActionSensorConnected, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
-		WithMessage(fmt.Sprintf("Agent '%s' connected from %s", sensorName, ipAddress)).
+		WithMessage(fmt.Sprintf("Sensor '%s' connected from %s", sensorName, ipAddress)).
 		WithMetadata("ip_address", ipAddress)
 	return s.LogEvent(ctx, actx, event)
 }
@@ -971,6 +971,6 @@ func (s *AuditService) LogSensorConnected(ctx context.Context, actx AuditContext
 func (s *AuditService) LogSensorDisconnected(ctx context.Context, actx AuditContext, sensorID, sensorName string) error {
 	event := NewSuccessEvent(auditdom.ActionSensorDisconnected, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
-		WithMessage(fmt.Sprintf("Agent '%s' disconnected (heartbeat timeout)", sensorName))
+		WithMessage(fmt.Sprintf("Sensor '%s' disconnected (heartbeat timeout)", sensorName))
 	return s.LogEvent(ctx, actx, event)
 }

@@ -66,14 +66,14 @@ func TestRunService_ValidateFinding_GateClosed_SkipsAndDoesNotDispatch(t *testin
 
 	_, err := svc.ValidateFinding(context.Background(), shared.NewID(), f.ID())
 	if !errors.Is(err, ErrNoValidationSensor) {
-		t.Fatalf("error = %v, want ErrNoValidationAgent", err)
+		t.Fatalf("error = %v, want ErrNoValidationSensor", err)
 	}
 	// Wraps ErrValidation so the HTTP layer returns 400, not 500.
 	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("ErrNoValidationAgent should wrap ErrValidation")
+		t.Errorf("ErrNoValidationSensor should wrap ErrValidation")
 	}
 	if !disp.got.JobID.IsZero() {
-		t.Error("dispatcher must NOT be called when no agent is available")
+		t.Error("dispatcher must NOT be called when no sensor is available")
 	}
 }
 
@@ -129,10 +129,10 @@ func TestRunService_DispatchSimulationCheck_GateClosed_SkipsAndDoesNotDispatch(t
 
 	_, err := svc.DispatchSimulationCheck(context.Background(), shared.NewID(), shared.NewID(), assetID, "T1046")
 	if !errors.Is(err, ErrNoValidationSensor) {
-		t.Fatalf("error = %v, want ErrNoValidationAgent", err)
+		t.Fatalf("error = %v, want ErrNoValidationSensor", err)
 	}
 	if !disp.got.JobID.IsZero() {
-		t.Error("dispatcher must NOT be called when no agent is available")
+		t.Error("dispatcher must NOT be called when no sensor is available")
 	}
 }
 

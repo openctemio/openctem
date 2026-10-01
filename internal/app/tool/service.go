@@ -1289,7 +1289,7 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 type RecordToolExecutionInput struct {
 	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
 	ToolID        string         `json:"tool_id" validate:"required,uuid"`
-	SensorID      string         `json:"agent_id" validate:"omitempty,uuid"`
+	SensorID      string         `json:"sensor_id" validate:"omitempty,uuid"`
 	PipelineRunID string         `json:"pipeline_run_id" validate:"omitempty,uuid"`
 	StepRunID     string         `json:"step_run_id" validate:"omitempty,uuid"`
 	InputConfig   map[string]any `json:"input_config"`
@@ -1312,7 +1312,7 @@ func (s *Service) RecordToolExecution(ctx context.Context, input RecordToolExecu
 	if input.SensorID != "" {
 		aid, err := shared.IDFromString(input.SensorID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 		}
 		sensorID = &aid
 	}
@@ -1462,7 +1462,7 @@ func (s *Service) GetTenantToolStats(ctx context.Context, tenantID string, days 
 type ListToolExecutionsInput struct {
 	TenantID      string `json:"tenant_id" validate:"required,uuid"`
 	ToolID        string `json:"tool_id" validate:"omitempty,uuid"`
-	SensorID      string `json:"agent_id" validate:"omitempty,uuid"`
+	SensorID      string `json:"sensor_id" validate:"omitempty,uuid"`
 	PipelineRunID string `json:"pipeline_run_id" validate:"omitempty,uuid"`
 	Status        string `json:"status" validate:"omitempty,oneof=running completed failed timeout"`
 	Page          int    `json:"page"`
@@ -1491,7 +1491,7 @@ func (s *Service) ListToolExecutions(ctx context.Context, input ListToolExecutio
 	if input.SensorID != "" {
 		sensorID, err := shared.IDFromString(input.SensorID)
 		if err != nil {
-			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 		}
 		filter.SensorID = &sensorID
 	}

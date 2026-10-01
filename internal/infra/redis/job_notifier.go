@@ -93,8 +93,8 @@ func (n *JobNotifier) Subscribe(sensorID string, capabilities []string) <-chan *
 	ch := make(chan *JobNotification, 10)
 	n.subscribers[sensorID] = ch
 
-	n.logger.Debug("agent subscribed for job notifications",
-		"agent_id", sensorID,
+	n.logger.Debug("sensor subscribed for job notifications",
+		"sensor_id", sensorID,
 		"capabilities", capabilities,
 	)
 
@@ -109,8 +109,8 @@ func (n *JobNotifier) Unsubscribe(sensorID string) {
 	if ch, ok := n.subscribers[sensorID]; ok {
 		close(ch)
 		delete(n.subscribers, sensorID)
-		n.logger.Debug("agent unsubscribed from job notifications",
-			"agent_id", sensorID,
+		n.logger.Debug("sensor unsubscribed from job notifications",
+			"sensor_id", sensorID,
 		)
 	}
 }
@@ -179,8 +179,8 @@ func (n *JobNotifier) dispatchNotification(notification *JobNotification) {
 			dispatched++
 		default:
 			// Channel full, sensor is busy
-			n.logger.Debug("agent channel full, skipping notification",
-				"agent_id", sensorID,
+			n.logger.Debug("sensor channel full, skipping notification",
+				"sensor_id", sensorID,
 				"job_id", notification.JobID,
 			)
 		}

@@ -174,14 +174,14 @@ const (
 
 const (
 	// Sensor permissions (sensors:*)
-	SensorsRead   Permission = "agents:read"
-	SensorsWrite  Permission = "agents:write"
-	SensorsDelete Permission = "agents:delete"
+	SensorsRead   Permission = "sensors:read"
+	SensorsWrite  Permission = "sensors:write"
+	SensorsDelete Permission = "sensors:delete"
 
 	// Command permissions (sensors:commands:*)
-	CommandsRead   Permission = "agents:commands:read"
-	CommandsWrite  Permission = "agents:commands:write"
-	CommandsDelete Permission = "agents:commands:delete"
+	CommandsRead   Permission = "sensors:commands:read"
+	CommandsWrite  Permission = "sensors:commands:write"
+	CommandsDelete Permission = "sensors:commands:delete"
 )
 
 // =============================================================================

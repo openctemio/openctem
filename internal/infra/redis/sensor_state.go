@@ -17,13 +17,13 @@ import (
 // SensorState key patterns for Redis.
 const (
 	// Key patterns
-	sensorHeartbeatKey      = "agent:heartbeat:%s"       // sensor:heartbeat:{sensor_id}
-	sensorStatusKey         = "agent:status:%s"          // sensor:status:{sensor_id}
-	sensorJobsKey           = "agent:jobs:%s"            // sensor:jobs:{sensor_id} (sorted set)
-	sensorConfigKey         = "agent:config:%s"          // sensor:config:{sensor_id} (cached config)
-	sensorPrevHealthKey     = "agent:prev_health:%s"     // sensor:prev_health:{sensor_id} (previous health state)
-	platformSensorOnlineKey = "platform:agents:online"   // sorted set of online platform sensors
-	platformSensorStatusKey = "platform:agent:status:%s" // platform:sensor:status:{sensor_id}
+	sensorHeartbeatKey      = "sensor:heartbeat:%s"       // sensor:heartbeat:{sensor_id}
+	sensorStatusKey         = "sensor:status:%s"          // sensor:status:{sensor_id}
+	sensorJobsKey           = "sensor:jobs:%s"            // sensor:jobs:{sensor_id} (sorted set)
+	sensorConfigKey         = "sensor:config:%s"          // sensor:config:{sensor_id} (cached config)
+	sensorPrevHealthKey     = "sensor:prev_health:%s"     // sensor:prev_health:{sensor_id} (previous health state)
+	platformSensorOnlineKey = "platform:sensors:online"   // sorted set of online platform sensors
+	platformSensorStatusKey = "platform:sensor:status:%s" // platform:sensor:status:{sensor_id}
 	queueStatsKey           = "platform:queue:stats"     // hash with queue statistics
 
 	// Default TTLs
@@ -53,7 +53,7 @@ func NewSensorStateStore(client *Client, log *logger.Logger) *SensorStateStore {
 
 // SensorHeartbeat represents the heartbeat data stored in Redis.
 type SensorHeartbeat struct {
-	SensorID      string    `json:"agent_id"`
+	SensorID      string    `json:"sensor_id"`
 	TenantID      string    `json:"tenant_id,omitempty"` // Empty for platform sensors
 	IsPlatform    bool      `json:"is_platform"`
 	Status        string    `json:"status"`
@@ -91,7 +91,7 @@ func (s *SensorStateStore) RecordHeartbeat(ctx context.Context, hb *SensorHeartb
 			Score:  score,
 			Member: hb.SensorID,
 		}).Err(); err != nil {
-			s.logger.Warn("failed to update platform agent online set", "error", err)
+			s.logger.Warn("failed to update platform sensor online set", "error", err)
 		}
 	}
 
@@ -154,7 +154,7 @@ func (s *SensorStateStore) RemoveHeartbeat(ctx context.Context, sensorID shared.
 
 // CachedSensorConfig represents the cached sensor configuration to avoid DB reads on every heartbeat.
 type CachedSensorConfig struct {
-	SensorID      string   `json:"agent_id"`
+	SensorID      string   `json:"sensor_id"`
 	TenantID      string   `json:"tenant_id,omitempty"` // Empty for platform sensors
 	IsPlatform    bool     `json:"is_platform"`
 	Status        string   `json:"status"` // Admin-controlled status (active, disabled, revoked)
@@ -172,11 +172,11 @@ func (s *SensorStateStore) SetSensorConfig(ctx context.Context, config *CachedSe
 
 	data, err := json.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal agent config: %w", err)
+		return fmt.Errorf("failed to marshal sensor config: %w", err)
 	}
 
 	if err := s.client.Set(ctx, key, string(data), sensorConfigTTL); err != nil {
-		return fmt.Errorf("failed to cache agent config: %w", err)
+		return fmt.Errorf("failed to cache sensor config: %w", err)
 	}
 
 	return nil
@@ -192,12 +192,12 @@ func (s *SensorStateStore) GetSensorConfig(ctx context.Context, sensorID shared.
 		if errors.Is(err, ErrKeyNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get agent config: %w", err)
+		return nil, fmt.Errorf("failed to get sensor config: %w", err)
 	}
 
 	var config CachedSensorConfig
 	if err := json.Unmarshal([]byte(data), &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal agent config: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal sensor config: %w", err)
 	}
 
 	return &config, nil
@@ -207,7 +207,7 @@ func (s *SensorStateStore) GetSensorConfig(ctx context.Context, sensorID shared.
 func (s *SensorStateStore) InvalidateSensorConfig(ctx context.Context, sensorID shared.ID) error {
 	key := fmt.Sprintf(sensorConfigKey, sensorID.String())
 	if err := s.client.Del(ctx, key); err != nil {
-		return fmt.Errorf("failed to invalidate agent config: %w", err)
+		return fmt.Errorf("failed to invalidate sensor config: %w", err)
 	}
 	return nil
 }
@@ -281,7 +281,7 @@ func (s *SensorStateStore) GetLastHeartbeatTime(ctx context.Context, sensorID sh
 // Used by health monitor to detect sensors that went offline.
 func (s *SensorStateStore) GetSensorsWithStaleHeartbeat(ctx context.Context, threshold time.Duration) ([]string, error) {
 	// Get all sensor heartbeat keys
-	pattern := "agent:heartbeat:*"
+	pattern := "sensor:heartbeat:*"
 	keys, err := s.client.Scan(ctx, pattern, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan heartbeat keys: %w", err)
@@ -320,13 +320,13 @@ func (s *SensorStateStore) MarkSensorOfflineInCache(ctx context.Context, sensorI
 
 	// Remove from online platform sensors set
 	if err := s.client.client.ZRem(ctx, platformSensorOnlineKey, sensorID.String()).Err(); err != nil {
-		s.logger.Warn("failed to remove from online set", "agent_id", sensorID, "error", err)
+		s.logger.Warn("failed to remove from online set", "sensor_id", sensorID, "error", err)
 	}
 
 	// Delete the heartbeat key (so TTL cleanup doesn't conflict)
 	key := fmt.Sprintf(sensorHeartbeatKey, sensorID.String())
 	if err := s.client.Del(ctx, key); err != nil {
-		s.logger.Warn("failed to delete heartbeat key", "agent_id", sensorID, "error", err)
+		s.logger.Warn("failed to delete heartbeat key", "sensor_id", sensorID, "error", err)
 	}
 
 	return nil
@@ -338,7 +338,7 @@ func (s *SensorStateStore) MarkSensorOfflineInCache(ctx context.Context, sensorI
 
 // PlatformSensorState represents the state of a platform sensor.
 type PlatformSensorState struct {
-	SensorID      string    `json:"agent_id"`
+	SensorID      string    `json:"sensor_id"`
 	Health        string    `json:"health"`
 	CurrentJobs   int       `json:"current_jobs"`
 	MaxConcurrent int       `json:"max_concurrent"`
@@ -361,11 +361,11 @@ func (s *SensorStateStore) SetPlatformSensorState(ctx context.Context, state *Pl
 
 	data, err := json.Marshal(state)
 	if err != nil {
-		return fmt.Errorf("failed to marshal agent state: %w", err)
+		return fmt.Errorf("failed to marshal sensor state: %w", err)
 	}
 
 	if err := s.client.Set(ctx, key, string(data), platformSensorTTL); err != nil {
-		return fmt.Errorf("failed to store agent state: %w", err)
+		return fmt.Errorf("failed to store sensor state: %w", err)
 	}
 
 	return nil
@@ -380,12 +380,12 @@ func (s *SensorStateStore) GetPlatformSensorState(ctx context.Context, sensorID 
 		if errors.Is(err, ErrKeyNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get agent state: %w", err)
+		return nil, fmt.Errorf("failed to get sensor state: %w", err)
 	}
 
 	var state PlatformSensorState
 	if err := json.Unmarshal([]byte(data), &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal agent state: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal sensor state: %w", err)
 	}
 
 	return &state, nil
@@ -406,7 +406,7 @@ func (s *SensorStateStore) GetOnlinePlatformSensors(ctx context.Context) ([]stri
 	}).Result()
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get online agents: %w", err)
+		return nil, fmt.Errorf("failed to get online sensors: %w", err)
 	}
 
 	return members, nil
@@ -420,7 +420,7 @@ func (s *SensorStateStore) GetOnlinePlatformSensorCount(ctx context.Context) (in
 
 	count, err := s.client.client.ZCard(ctx, platformSensorOnlineKey).Result()
 	if err != nil {
-		return 0, fmt.Errorf("failed to count online agents: %w", err)
+		return 0, fmt.Errorf("failed to count online sensors: %w", err)
 	}
 
 	return count, nil
@@ -575,7 +575,7 @@ func (s *SensorStateStore) IncrementQueueStat(ctx context.Context, field string,
 // CleanupStaleSensors removes stale sensor data from Redis.
 func (s *SensorStateStore) CleanupStaleSensors(ctx context.Context, threshold time.Duration) (int, error) {
 	// Get all sensor heartbeat keys
-	pattern := "agent:heartbeat:*"
+	pattern := "sensor:heartbeat:*"
 	keys, err := s.client.Scan(ctx, pattern, 100)
 	if err != nil {
 		return 0, fmt.Errorf("failed to scan heartbeat keys: %w", err)
