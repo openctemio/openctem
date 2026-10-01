@@ -32,6 +32,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/openctemio/api/internal/metrics"
 	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
 
@@ -324,3 +325,58 @@ func V2Throttle(perTenant, perSensor *TelemetryRateLimiter, concurrency *TenantC
 		})
 	}
 }
+
+// V2Observe records every answered v2 request in ingest_v2_requests_total:
+// route (from routeName, a closed set), outcome (accepted for 202, ok for
+// other 2xx, refused otherwise) and the problem type the response carried.
+// It wraps the whole group, so refusals of the authenticator and the edge
+// chain are counted too. No label ever holds a sensor-supplied string.
+func V2Observe(routeName func(*http.Request) string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rec := &v2Recorder{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rec, r)
+			outcome := "refused"
+			switch {
+			case rec.status == http.StatusAccepted:
+				outcome = "accepted"
+			case rec.status >= 200 && rec.status < 300:
+				outcome = "ok"
+			}
+			problem := string(rec.problem)
+			if problem == "" {
+				problem = "none"
+			}
+			method := r.Method
+			switch method {
+			case http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete:
+			default:
+				method = "other"
+			}
+			metrics.IngestV2RequestsTotal.WithLabelValues(routeName(r), method, outcome, problem).Inc()
+		})
+	}
+}
+
+// v2Recorder captures the status and the problem type of a v2 response.
+type v2Recorder struct {
+	http.ResponseWriter
+	status  int
+	problem protov2.ProblemType
+	wrote   bool
+}
+
+func (r *v2Recorder) WriteHeader(code int) {
+	if !r.wrote {
+		r.status, r.wrote = code, true
+	}
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *v2Recorder) Write(b []byte) (int, error) {
+	r.wrote = true
+	return r.ResponseWriter.Write(b)
+}
+
+// RecordProblem implements protov2.ProblemRecorder.
+func (r *v2Recorder) RecordProblem(t protov2.ProblemType) { r.problem = t }

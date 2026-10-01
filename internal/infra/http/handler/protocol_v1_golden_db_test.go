@@ -99,6 +99,9 @@ func newV1Harness(t *testing.T) *v1Harness {
 	// heartbeat is still byte-identical with it on.
 	ih.SetDoorbell(app.NewDoorbell(postgres.NewCommandRepository(db),
 		app.DefaultDoorbellConfig().Normalized(5*time.Minute), log))
+	// So is the protocol v2 advertisement (RFC-026): flow.golden proves a v1
+	// sensor that does not ask for it sees nothing new.
+	ih.SetV2Advertised(true)
 	ch := NewCommandHandler(cmdSvc, v, log)
 	sh := NewScanSessionHandler(sessionSvc, v, log)
 

@@ -1,7 +1,10 @@
 package routes
 
 import (
+	"net/http"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -62,5 +65,27 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, te
 		r.PUT("/commands/{command_id}/results/{report_id}", h.PutReport, content...)
 		r.PUT("/commands/{command_id}/results/{report_id}/segments/{seq}", h.PutSegment, content...)
 		r.POST("/commands/{command_id}/results/{report_id}/commit", h.Commit, commit...)
-	}, h.Authenticate)
+	}, middleware.V2Observe(v2RouteName), h.Authenticate)
+}
+
+// v2RouteNames maps the matched route pattern to the metric label.
+var v2RouteNames = map[string]string{
+	protov2.PathPrefix + "/hello":                                                    "hello",
+	protov2.PathPrefix + "/results/{report_id}":                                      "report",
+	protov2.PathPrefix + "/results/{report_id}/segments/{seq}":                       "segment",
+	protov2.PathPrefix + "/results/{report_id}/commit":                               "commit",
+	protov2.PathPrefix + "/commands/{command_id}/results/{report_id}":                "report",
+	protov2.PathPrefix + "/commands/{command_id}/results/{report_id}/segments/{seq}": "segment",
+	protov2.PathPrefix + "/commands/{command_id}/results/{report_id}/commit":         "commit",
+}
+
+// v2RouteName is the closed-set route label of a v2 request ("other" for no
+// match). Read after the request was routed, when chi knows the pattern.
+func v2RouteName(r *http.Request) string {
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if name, ok := v2RouteNames[rc.RoutePattern()]; ok {
+			return name
+		}
+	}
+	return "other"
 }

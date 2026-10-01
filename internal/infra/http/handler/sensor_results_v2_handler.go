@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/logger"
 	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
@@ -29,22 +30,11 @@ type SensorResultsV2Handler struct {
 	receiver *ingest.V2Receiver
 	sensors  *app.SensorService
 	logger   *logger.Logger
-	// observe is called once per answered request with the problem type ("" on
-	// success); the metrics wiring sets it. Never nil.
-	observe func(route string, problem protov2.ProblemType)
 }
 
 // NewSensorResultsV2Handler builds the handler.
 func NewSensorResultsV2Handler(receiver *ingest.V2Receiver, sensors *app.SensorService, log *logger.Logger) *SensorResultsV2Handler {
-	return &SensorResultsV2Handler{receiver: receiver, sensors: sensors, logger: log.With("handler", "sensor-results-v2"),
-		observe: func(string, protov2.ProblemType) {}}
-}
-
-// SetObserver installs the per-request outcome hook (metrics).
-func (h *SensorResultsV2Handler) SetObserver(fn func(route string, problem protov2.ProblemType)) {
-	if fn != nil {
-		h.observe = fn
-	}
+	return &SensorResultsV2Handler{receiver: receiver, sensors: sensors, logger: log.With("handler", "sensor-results-v2")}
 }
 
 // Limits are the limits the receiver enforces, for the edge chain.
@@ -125,7 +115,6 @@ func (h *SensorResultsV2Handler) PutSegment(w http.ResponseWriter, r *http.Reque
 func (h *SensorResultsV2Handler) put(w http.ResponseWriter, r *http.Request, route string, seq int, whole bool) {
 	t, ok := h.target(w, r)
 	if !ok {
-		h.observe(route, protov2.ProblemInvalidID)
 		return
 	}
 	body := middleware.V2BodyFromContext(r.Context())
@@ -135,12 +124,14 @@ func (h *SensorResultsV2Handler) put(w http.ResponseWriter, r *http.Request, rou
 		h.fail(w, route, errors.New("no verified body"))
 		return
 	}
+	metrics.IngestV2Bytes.WithLabelValues("encoded").Observe(float64(len(body.Encoded)))
+	metrics.IngestV2Bytes.WithLabelValues("decoded").Observe(float64(len(body.Decoded)))
 	res, err := h.receiver.Put(r.Context(), t, seq, whole, ingest.V2Body{Decoded: body.Decoded, Digest: body.Digest})
 	if err != nil {
 		h.fail(w, route, err)
 		return
 	}
-	h.writeStatus(w, route, res)
+	h.writeStatus(w, res)
 }
 
 // Commit handles POST /results/{report_id}/commit and the command-bound form.
@@ -148,7 +139,6 @@ func (h *SensorResultsV2Handler) Commit(w http.ResponseWriter, r *http.Request) 
 	const route = "commit"
 	t, ok := h.target(w, r)
 	if !ok {
-		h.observe(route, protov2.ProblemInvalidID)
 		return
 	}
 	var req protov2.CommitRequest
@@ -162,7 +152,7 @@ func (h *SensorResultsV2Handler) Commit(w http.ResponseWriter, r *http.Request) 
 		h.fail(w, route, err)
 		return
 	}
-	h.writeStatus(w, route, res)
+	h.writeStatus(w, res)
 }
 
 // Status handles GET /results/{report_id}.
@@ -170,7 +160,6 @@ func (h *SensorResultsV2Handler) Status(w http.ResponseWriter, r *http.Request) 
 	const route = "status"
 	t, ok := h.target(w, r)
 	if !ok {
-		h.observe(route, protov2.ProblemInvalidID)
 		return
 	}
 	st, err := h.receiver.Status(r.Context(), t)
@@ -182,7 +171,6 @@ func (h *SensorResultsV2Handler) Status(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set(protov2.HeaderRetryAfter, protov2.StatusRetryAfterSeconds)
 	}
 	h.writeJSON(w, http.StatusOK, st)
-	h.observe(route, "")
 }
 
 // Abandon handles DELETE /results/{report_id}.
@@ -190,7 +178,6 @@ func (h *SensorResultsV2Handler) Abandon(w http.ResponseWriter, r *http.Request)
 	const route = "abandon"
 	t, ok := h.target(w, r)
 	if !ok {
-		h.observe(route, protov2.ProblemInvalidID)
 		return
 	}
 	if err := h.receiver.Abandon(r.Context(), t); err != nil {
@@ -199,16 +186,14 @@ func (h *SensorResultsV2Handler) Abandon(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set(protov2.HeaderProtocol, strconv.Itoa(protov2.ProtocolVersion))
 	w.WriteHeader(http.StatusNoContent)
-	h.observe(route, "")
 }
 
 // Hello handles GET /hello: protocol level, features and limits (RFC-023 C3).
 func (h *SensorResultsV2Handler) Hello(w http.ResponseWriter, _ *http.Request) {
 	h.writeJSON(w, http.StatusOK, protov2.NewHello(h.receiver.Limits()))
-	h.observe("hello", "")
 }
 
-func (h *SensorResultsV2Handler) writeStatus(w http.ResponseWriter, route string, res *ingest.PutResult) {
+func (h *SensorResultsV2Handler) writeStatus(w http.ResponseWriter, res *ingest.PutResult) {
 	w.Header().Set("Location", protov2.ReportLocation(res.Status.ReportID))
 	code := http.StatusOK
 	if res.Created {
@@ -218,7 +203,6 @@ func (h *SensorResultsV2Handler) writeStatus(w http.ResponseWriter, route string
 		w.Header().Set(protov2.HeaderRetryAfter, protov2.StatusRetryAfterSeconds)
 	}
 	h.writeJSON(w, code, res.Status)
-	h.observe(route, "")
 }
 
 func (h *SensorResultsV2Handler) writeJSON(w http.ResponseWriter, code int, v any) {
@@ -238,12 +222,10 @@ func (h *SensorResultsV2Handler) fail(w http.ResponseWriter, route string, err e
 			p.WithLimit(h.limitFor(re.Problem))
 		}
 		p.Write(w)
-		h.observe(route, re.Problem)
 		return
 	}
 	h.logger.Error("v2 results request failed", "route", route, "error", sanitizeLogField(err.Error()))
 	protov2.NewProblem(protov2.ProblemInternal).Write(w)
-	h.observe(route, protov2.ProblemInternal)
 }
 
 func (h *SensorResultsV2Handler) limitFor(p protov2.ProblemType) int64 {

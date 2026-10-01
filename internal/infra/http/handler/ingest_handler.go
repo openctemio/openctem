@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
+	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 	"github.com/openctemio/ctis"
 )
 
@@ -69,7 +71,15 @@ type IngestHandler struct {
 	// doorbell computes the heartbeat hints (RFC-023 §9.2a). Nil keeps the
 	// plain v1 heartbeat response.
 	doorbell *app.Doorbell
+
+	// v2Advertised: protocol v2 results are served (RFC-026), so a heartbeat
+	// from a sensor that announced the results-v2 feature is answered with
+	// X-OpenCTEM-Protocol: 2. Nobody else sees the header.
+	v2Advertised bool
 }
+
+// SetV2Advertised turns on the protocol v2 advertisement on the heartbeat.
+func (h *IngestHandler) SetV2Advertised(on bool) { h.v2Advertised = on }
 
 // SetDoorbell wires the heartbeat doorbell. Optional; without it the
 // heartbeat answers exactly as protocol v1 did before the doorbell.
@@ -709,6 +719,11 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Discovery of v2 results (RFC-026 WP-A7, RFC-023 C3): only for a sensor
+	// that asked, so a deployed v1 sensor's response is unchanged.
+	if h.v2Advertised && protov2.HasFeature(r.Header.Values(legacyv1.HeaderSensorFeatures), protov2.FeatureResultsV2) {
+		w.Header().Set(protov2.HeaderProtocolAdvert, strconv.Itoa(protov2.ProtocolVersion))
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }

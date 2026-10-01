@@ -1,8 +1,10 @@
 # RFC-026 — Sensor results ingest (protocol v2)
 
-> Status: **Accepted; api iteration 1 in progress** (2026-10-01). The open
-> questions of §10 are decided in §10.1. The api work packages WP-A1…A7 land
-> as separate PRs; sdk-go (WP-S1…S3) and sensor (WP-G1) follow.
+> Status: **Accepted; api iteration 1 implemented** (2026-10-01). The open
+> questions of §10 are decided in §10.1; what shipped is in §7.6. The api
+> serves v2 results (WP-A1…A7: api#635, #636, #638, #639, #640, #642 and the
+> WP-A7 PR). sdk-go (WP-S1…S3), sensor (WP-G1) and the import API (WP-A8)
+> follow. Operator view: `docs/architecture/sensors.md`.
 > Scope: api + sdk-go + sensor (the `agent` repo), with a later import API
 > in api + ui.
 > Builds on: [RFC-023](RFC-023-scan-zones-and-scanners.md) (sensors, protocol
@@ -653,6 +655,23 @@ for import converters; v2 runtime telemetry and validation evidence; the
 `/check` and `/baseline-diff` queries on v2; protobuf encoding; multi-kind
 envelopes; resumable byte uploads; retiring any v1 route.
 
+### 7.6 What iteration 1 shipped (api)
+
+| WP | Where | Notes |
+|---|---|---|
+| A1 | `pkg/sensorproto/v2` | Paths, media type, codings, Content-Digest parser, the closed problem table, status, limits, hello; golden files. |
+| A2 | `internal/infra/http/middleware/ingest_v2.go` | The §3.3 edge chain; its own bounded gzip/zstd decoder (the v1 `decompress.go` is untouched). `V2Observe` records the request metrics for every answer, including edge refusals. |
+| A3 | `internal/app/ingest/strictjson.go` | I-JSON pre-pass + one `DisallowUnknownFields` decode; `FuzzStrictCTIS` nightly (`.github/workflows/fuzz.yml`); `TestCTISSchemaParity` found 32 differences between the ctis v1.1.0 structs and `schemas/v1`, recorded as reviewed exceptions (the schema-only ones are refused by the strict decoder until ctis is fixed). |
+| A4 | migration 000237, `pkg/domain/ingestreport`, `postgres/ingest_report_repository.go` | Per-segment outcomes stored under their number (a retried segment is not counted twice); `ClaimFinalize` runs the commit steps exactly once. |
+| A5 | `routes/sensor_v2.go`, `handler/sensor_results_v2_handler.go`, `ingest/v2_receiver.go`, migration 000239, `api/openapi/sensor-protocol-v2.yaml` | Every client-visible row of §3.8 is reached in `routes/sensor_v2_routes_db_test.go`; 503 `unavailable` has no producer yet. |
+| A6 | `ingest/v2.go`, `ingest/v2_jobs.go` | `Options` on the existing pipeline (all off for v1), item outcomes, `CommitV2Report` with the blinding guard, `tests/integration/ingest_v2_test.go`. |
+| A7 | `handler/ingest_handler.go` (heartbeat), `internal/metrics` | Discovery header, metrics, default on. |
+
+Not built: the fleet-by-protocol view of the Sensors page (the per-route v1
+counter is a Prometheus metric without a tenant label; per-tenant usage can
+be read from `ingest_reports` for v2), zone quarantine (§5.2, counted as 0),
+the command-target fallback asset (§10.1), D21 key scopes, signing.
+
 ## 8. Migration and compatibility
 
 ### 8.1 v1
@@ -750,9 +769,17 @@ inconsistent):
   `report-expired` (409: a segment or commit for an expired report). All are
   in the closed table of `pkg/sensorproto/v2`.
 - **Key scopes (D21) do not exist yet.** Every sensor key implicitly holds
-  `results`; the `scope-denied` answer is used for a platform sensor on the
-  unsolicited form. Sensor role and trust tier are not modelled either; the
+  `results`. Sensor role and trust tier are not modelled either; the
   provenance stamps the legacy sensor `type` until RFC-023 adds them.
+- **Platform sensors are refused on v2** (`403 scope-denied`, both forms).
+  `sensors.tenant_id` is NOT NULL in this schema and the platform-job tables
+  are not part of the open-source API, so there is no tenant-less sensor to
+  bind to a command's tenant. `ingest_reports` therefore keys the sensor with
+  the composite `(tenant_id, sensor_id)`, the same-tenant rule of RFC-023
+  Phase 1.
+- **Per-report totals are reserved at accept** (migration 000239), so the
+  100,000 assets / findings per report limit of §3.6 holds across parallel
+  segments.
 - **Commit digests are sha-256.** The server stores the sha-256 of every
   segment's received bytes whatever algorithm the sensor declared, and a
   commit lists those canonical sha-256 members.

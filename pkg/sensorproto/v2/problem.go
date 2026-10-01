@@ -188,9 +188,18 @@ func (p *Problem) WithErrors(errs []ItemError) *Problem {
 	return p
 }
 
+// ProblemRecorder is implemented by a response writer that wants to know
+// which problem type was written (the metrics wrapper of the v2 routes).
+type ProblemRecorder interface {
+	RecordProblem(ProblemType)
+}
+
 // Write sends the problem with the headers its type requires: the protocol
 // header always, Accept / Accept-Encoding on a 415, Retry-After on a 429/503.
 func (p *Problem) Write(w http.ResponseWriter) {
+	if rec, ok := w.(ProblemRecorder); ok {
+		rec.RecordProblem(p.ptype)
+	}
 	h := w.Header()
 	h.Set("Content-Type", MediaTypeProblem)
 	h.Set(HeaderProtocol, strconv.Itoa(ProtocolVersion))

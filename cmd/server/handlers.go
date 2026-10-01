@@ -126,6 +126,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
 	ingestHandler.SetDoorbell(app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log))
+	// Protocol v2 results discovery on the v1 heartbeat (RFC-026 WP-A7).
+	ingestHandler.SetV2Advertised(cfg.Ingest.V2Results)
 	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
 		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
 		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)

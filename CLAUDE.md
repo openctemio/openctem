@@ -563,6 +563,9 @@ tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`
 ```
 pkg/domain/sensor/                 # entity, API keys, errors, repository interfaces
 pkg/sensorproto/legacyv1/          # protocol v1 + /api/v1/agents redirect + renamed env vars
+pkg/sensorproto/v2/                # protocol v2 results wire (RFC-026): media type, problems, status, hello
+internal/infra/http/routes/sensor_v2.go  # /api/v2/sensor (own sensor-key authenticator + edge chain)
+internal/app/ingest/v2*.go         # v2 accept (receiver), segment semantics, commit + blinding guard, jobs
 internal/app/sensor/               # service, selector, config templates
 internal/infra/postgres/           # sensor_repository, sensor_apikey_repository, sensor_upgrade_check
 internal/infra/controller/         # sensor_health

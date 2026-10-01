@@ -50,8 +50,6 @@ func TestSensorResultsV2_ScopeDenied(t *testing.T) {
 // error text.
 func TestSensorResultsV2_InternalErrorIsGeneric(t *testing.T) {
 	h := NewSensorResultsV2Handler(ingest.NewV2Receiver(nil, nil, nil, nil, protov2.DefaultLimits(), 0, nil), nil, logger.NewNop())
-	var seen protov2.ProblemType
-	h.SetObserver(func(_ string, p protov2.ProblemType) { seen = p })
 	rec := httptest.NewRecorder()
 	h.fail(rec, "put_report", errors.New("pq: secret table detail\nforged log line"))
 	if rec.Code != http.StatusInternalServerError || v2ProblemOf(t, rec) != protov2.ProblemInternal.URI() {
@@ -61,8 +59,5 @@ func TestSensorResultsV2_InternalErrorIsGeneric(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &p)
 	if !p.Retryable || p.Detail != protov2.NewProblem(protov2.ProblemInternal).Detail {
 		t.Fatalf("problem %+v", p)
-	}
-	if seen != protov2.ProblemInternal {
-		t.Fatalf("observer saw %q", seen)
 	}
 }
