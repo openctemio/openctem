@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -45,6 +46,10 @@ func newTestIdP(t *testing.T) *testIdP {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ecPoint, err := ecKey.PublicKey.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	p := &testIdP{key: key, ecKey: ecKey}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
@@ -68,8 +73,8 @@ func newTestIdP(t *testing.T) *testIdP {
 			},
 			{
 				"kty": "EC", "kid": "ec1", "crv": "P-256", "use": "sig",
-				"x": base64.RawURLEncoding.EncodeToString(ecKey.X.FillBytes(make([]byte, 32))),
-				"y": base64.RawURLEncoding.EncodeToString(ecKey.Y.FillBytes(make([]byte, 32))),
+				"x": base64.RawURLEncoding.EncodeToString(ecPoint[1:33]),
+				"y": base64.RawURLEncoding.EncodeToString(ecPoint[33:]),
 			},
 		}})
 	})
@@ -373,5 +378,72 @@ func TestAuthorizationURL(t *testing.T) {
 		if q.Get(k) != want {
 			t.Fatalf("%s = %q, want %q", k, q.Get(k), want)
 		}
+	}
+}
+
+func TestECKeyParsing(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+	point, err := key.PublicKey.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, y := point[1:33], point[33:]
+
+	pk, err := ecKey("P-256", enc(x), enc(y))
+	if err != nil {
+		t.Fatalf("valid key: %v", err)
+	}
+	if got, _ := pk.Bytes(); !bytes.Equal(got, point) {
+		t.Fatal("parsed key differs")
+	}
+	if _, err := ecKey("P-256", enc([]byte{1}), enc([]byte{1})); err == nil {
+		t.Fatal("a point off the curve must be refused")
+	}
+	if _, err := ecKey("P-256", enc(append([]byte{0}, x...)), enc(y)); err == nil {
+		t.Fatal("an over-long coordinate must be refused")
+	}
+	if _, err := ecKey("P-384", enc(x), enc(y)); err == nil {
+		t.Fatal("only P-256 is accepted")
+	}
+	// Coordinates shorter than 32 bytes are left-padded, not rejected.
+	padded, err := ecCoordinate(enc([]byte{7}))
+	if err != nil || len(padded) != 32 || padded[31] != 7 || padded[0] != 0 {
+		t.Fatalf("padding: %v %v", padded, err)
+	}
+}
+
+// Every request goes through the URL guard: discovery (TestDiscoverRefusals),
+// the token endpoint and the JWKS.
+func TestURLGuardOnEveryFetch(t *testing.T) {
+	p := newTestIdP(t)
+	var checked []string
+	guard := func(raw string) error {
+		checked = append(checked, raw)
+		if strings.HasSuffix(raw, "/token") || strings.HasSuffix(raw, "/jwks") {
+			return errBlocked
+		}
+		return nil
+	}
+	c := NewClient(p.srv.Client(), guard)
+	ctx := context.Background()
+
+	if _, err := c.Exchange(ctx, ExchangeRequest{
+		TokenEndpoint: p.srv.URL + "/token", AuthMethod: AuthMethodClientSecretBasic,
+		ClientID: "client-1", ClientSecret: "s", Code: "good-code", RedirectURI: "https://x", CodeVerifier: "v",
+	}); err == nil {
+		t.Fatal("token endpoint must be guarded")
+	}
+	if p.lastForm != nil {
+		t.Fatal("a blocked token endpoint must not be called")
+	}
+	if _, err := c.VerifyIDToken(ctx, p.sign(t, p.baseClaims()), p.expect()); err == nil {
+		t.Fatal("JWKS fetch must be guarded")
+	}
+	if len(checked) != 2 {
+		t.Fatalf("expected the guard to see both URLs, saw %v", checked)
 	}
 }

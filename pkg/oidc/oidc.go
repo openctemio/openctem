@@ -463,19 +463,36 @@ func ecKey(crv, xStr, yStr string) (*ecdsa.PublicKey, error) {
 	if crv != "P-256" {
 		return nil, errors.New("unsupported curve")
 	}
-	x, err := base64.RawURLEncoding.DecodeString(xStr)
+	x, err := ecCoordinate(xStr)
 	if err != nil {
 		return nil, err
 	}
-	y, err := base64.RawURLEncoding.DecodeString(yStr)
+	y, err := ecCoordinate(yStr)
 	if err != nil {
 		return nil, err
 	}
-	pk := &ecdsa.PublicKey{Curve: elliptic.P256(), X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}
-	if !pk.Curve.IsOnCurve(pk.X, pk.Y) { //nolint:staticcheck // validating untrusted JWK coordinates
-		return nil, errors.New("point not on curve")
+	// SEC 1 uncompressed point; the parser rejects points not on the curve.
+	b := make([]byte, 0, 1+2*p256CoordinateSize)
+	b = append(b, 4)
+	b = append(b, x...)
+	b = append(b, y...)
+	return ecdsa.ParseUncompressedPublicKey(elliptic.P256(), b)
+}
+
+const p256CoordinateSize = 32
+
+// ecCoordinate decodes a JWK P-256 coordinate and left-pads it to 32 bytes.
+func ecCoordinate(raw string) ([]byte, error) {
+	v, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, err
 	}
-	return pk, nil
+	if len(v) == 0 || len(v) > p256CoordinateSize {
+		return nil, errors.New("invalid P-256 coordinate length")
+	}
+	out := make([]byte, p256CoordinateSize)
+	copy(out[p256CoordinateSize-len(v):], v)
+	return out, nil
 }
 
 func (c *Client) get(ctx context.Context, rawURL string) ([]byte, error) {
