@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"crypto/md5" //nolint:gosec // G501: MD5 used for ETag generation, not cryptographic security
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -126,7 +126,9 @@ func (h *PermissionHandler) GetMyPermissions(w http.ResponseWriter, r *http.Requ
 }
 
 // generateETag creates an ETag from permissions and version.
-// Format: "v{version}-{md5_hash_of_sorted_permissions}"
+// Format: "v{version}-{first 8 bytes of sha256(sorted permissions)}". The
+// ETag is opaque to clients (the UI keeps it in memory and echoes it in
+// If-None-Match) and never persisted, so the hash can change freely.
 func generateETag(permissions []string, version int) string {
 	// Create a deterministic string from sorted permissions
 	// Pre-allocate estimated capacity for efficiency
@@ -138,7 +140,6 @@ func generateETag(permissions []string, version int) string {
 	}
 	data = append(data, strconv.Itoa(version)...)
 
-	// Generate MD5 hash (sufficient for ETag, not security critical)
-	hash := md5.Sum(data) //nolint:gosec // G401: MD5 used for ETag generation, not cryptographic security
+	hash := sha256.Sum256(data)
 	return fmt.Sprintf(`"v%d-%s"`, version, hex.EncodeToString(hash[:8]))
 }
