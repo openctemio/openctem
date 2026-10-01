@@ -410,8 +410,7 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
 	if err != nil {
-		h.logger.Error("CTIS ingestion failed", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.writeIngestError(w, "CTIS ingestion failed", err)
 		return
 	}
 
@@ -470,8 +469,7 @@ func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
 
 	output, err := h.ingestService.IngestSARIF(r.Context(), agt, body)
 	if err != nil {
-		h.logger.Error("SARIF ingestion failed", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.writeIngestError(w, "SARIF ingestion failed", err)
 		return
 	}
 
@@ -538,8 +536,7 @@ func (h *IngestHandler) IngestReconReport(w http.ResponseWriter, r *http.Request
 
 	output, err := h.ingestService.IngestRecon(r.Context(), agt, reconInput)
 	if err != nil {
-		h.logger.Error("recon ingestion failed", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.writeIngestError(w, "recon ingestion failed", err)
 		return
 	}
 
@@ -912,12 +909,10 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
 	if err != nil {
-		h.logger.Error("chunk ingestion failed",
-			"error", err,
-			"report_id", req.ReportID,
+		h.writeIngestError(w, "chunk ingestion failed", err,
+			"report_id", sanitizeLogField(req.ReportID),
 			"chunk_index", req.ChunkIndex,
 		)
-		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
 
@@ -955,6 +950,35 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+// writeIngestError answers an ingest failure. A payload the sensor got wrong
+// (not parseable, over the report limits) is a 4xx: a 500 would log an error
+// for every bad push and make the sensor's retry queue re-send a request that
+// can never succeed. Anything else is a server fault.
+//
+// Parser errors can quote fragments of the sensor's payload, so the error is
+// stripped of line breaks and capped before it reaches the log or the
+// response: a sensor must not be able to forge log lines. Callers pass attrs
+// already sanitized (sanitizeLogField) for any sensor-supplied string.
+func (h *IngestHandler) writeIngestError(w http.ResponseWriter, msg string, err error, attrs ...any) {
+	errText := sanitizeLogField(err.Error())
+	logAttrs := make([]any, 0, len(attrs)+2)
+	logAttrs = append(logAttrs, "error", errText)
+	logAttrs = append(logAttrs, attrs...)
+
+	var de *shared.DomainError
+	switch {
+	case errors.As(err, &de) && de.Code == ingest.CodePayloadTooLarge:
+		h.logger.Warn(msg, logAttrs...)
+		apierror.New(http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", de.Message).WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		h.logger.Warn(msg, logAttrs...)
+		apierror.BadRequest("Invalid report: " + errText).WriteJSON(w)
+	default:
+		h.logger.Error(msg, logAttrs...)
+		apierror.InternalError(err).WriteJSON(w)
+	}
+}
 
 // extractAPIKey extracts the API key from the request.
 // Supports: Authorization: Bearer <key> or X-API-Key: <key>
@@ -1139,8 +1163,7 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
 	if err != nil {
-		h.logger.Error("scan ingestion failed", "error", err, "scanner_type", scannerType)
-		apierror.InternalError(err).WriteJSON(w)
+		h.writeIngestError(w, "scan ingestion failed", err, "scanner_type", sanitizeLogField(scannerType))
 		return
 	}
 
