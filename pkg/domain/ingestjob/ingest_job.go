@@ -7,6 +7,7 @@ package ingestjob
 import (
 	"context"
 	"crypto/sha256"
+	"strconv"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -59,7 +60,50 @@ type Job struct {
 	availableAt time.Time
 	createdAt   time.Time
 	updatedAt   time.Time
+
+	// v2 is set for protocol v2 results jobs (RFC-026); nil for v1.
+	v2 *V2Segment
 }
+
+// ProtocolV2 is the ingest_jobs.protocol value of a v2 results job.
+const ProtocolV2 = 2
+
+// V2Segment ties a job to a v2 results report (RFC-026). A job with a nil Seq
+// is the report's commit step; any other job carries one segment.
+type V2Segment struct {
+	// ReportRef is the ingest_reports primary key.
+	ReportRef shared.ID
+	// Seq is the segment number, nil for the commit step.
+	Seq *int
+	// ContentDigest is the canonical sha-256 Content-Digest of the bytes the
+	// sensor sent (empty for the commit step).
+	ContentDigest string
+	MediaType     string
+}
+
+// IsCommit reports whether the job is the report's commit step.
+func (s *V2Segment) IsCommit() bool { return s != nil && s.Seq == nil }
+
+// NewV2Job builds a pending protocol v2 job: one segment (payload = the
+// decoded, validated CTIS document) or, with seg.Seq nil, the commit step
+// (empty payload). reportUUID is the sensor-chosen report id; the job's
+// report_id column gets "<uuid>/<seq>" or "<uuid>/commit", so the v1
+// idempotency index can never match two different segments.
+func NewV2Job(tenantID shared.ID, sensorID *shared.ID, reportUUID string, seg V2Segment, payload []byte) *Job {
+	suffix := "commit"
+	if seg.Seq != nil {
+		suffix = strconv.Itoa(*seg.Seq)
+	}
+	j := NewJob(tenantID, sensorID, reportUUID+"/"+suffix, "", payload)
+	j.v2 = &seg
+	return j
+}
+
+// V2 returns the v2 report binding, or nil for a v1 job.
+func (j *Job) V2() *V2Segment { return j.v2 }
+
+// SetV2 attaches the v2 binding when rehydrating a job (repository use).
+func (j *Job) SetV2(seg *V2Segment) { j.v2 = seg }
 
 // NewJob builds a pending job for the given decompressed payload, computing its
 // content hash for idempotency. sensorID may be nil for non-sensor sources.
@@ -179,4 +223,23 @@ type Repository interface {
 	// ReleaseStale resets jobs stuck in processing (worker crash) back to
 	// pending when their lock is older than olderThan. Returns the count reset.
 	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error)
+}
+
+// V2Repository is the protocol v2 side of the ingest queue (RFC-026). It is
+// kept apart from Repository so v1 fakes need not implement it.
+type V2Repository interface {
+	// EnqueueV2 inserts a v2 segment or commit job. When the report already
+	// has a job for that segment (or its commit), nothing is inserted and the
+	// existing job is returned with created=false.
+	EnqueueV2(ctx context.Context, job *Job) (stored *Job, created bool, err error)
+	// GetV2Segment returns the job of segment seq of a report.
+	GetV2Segment(ctx context.Context, reportRef shared.ID, seq int) (*Job, error)
+	// V2SegmentDigests returns the stored digest of every segment of a report.
+	V2SegmentDigests(ctx context.Context, reportRef shared.ID) (map[int]string, error)
+	// RequeueDeadV2 returns a report's dead jobs to pending with a fresh
+	// retry budget, for a sensor that re-sends a failed report.
+	RequeueDeadV2(ctx context.Context, reportRef shared.ID) (int, error)
+	// ClearV2Payloads drops the stored payloads of a finished report's
+	// segments: the digests stay for replay checks, the bytes are not needed.
+	ClearV2Payloads(ctx context.Context, reportRef shared.ID) error
 }
