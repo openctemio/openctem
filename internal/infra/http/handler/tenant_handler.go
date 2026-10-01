@@ -992,8 +992,15 @@ func (h *TenantHandler) canGrantRoles(w http.ResponseWriter, r *http.Request, ro
 	if middleware.IsAdmin(r.Context()) || h.roleService == nil {
 		return true
 	}
+	// Resolve roles in the URL-path tenant (the one being administered), not the
+	// JWT-claim tenant — these handlers all act on GetTeamID.
+	teamID := middleware.GetTeamID(r.Context())
+	if teamID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return false
+	}
 	for _, rid := range roleIDs {
-		role, rErr := h.roleService.GetRole(r.Context(), middleware.MustGetTenantID(r.Context()), rid)
+		role, rErr := h.roleService.GetRole(r.Context(), teamID.String(), rid)
 		if rErr != nil {
 			h.handleServiceError(w, rErr)
 			return false
@@ -1166,13 +1173,24 @@ func (h *TenantHandler) ReissueSetupLink(w http.ResponseWriter, r *http.Request)
 
 // DeleteInvitation handles DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
 func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request) {
+	// The tenant MUST come from the URL path (GetTeamID), the same tenant
+	// RequireTeamAdmin/RequireMembership authorized. Using the JWT-claim tenant
+	// (MustGetTenantID) here was a confused-deputy IDOR: a user who is admin of
+	// org B but only holds a token scoped to org A could delete org A's
+	// invitation by POSTing to /tenants/B/... — the gate checked B, the
+	// operation ran against A.
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
 	invitationID := r.PathValue("invitationId")
 	if invitationID == "" {
 		apierror.BadRequest("Invitation ID is required").WriteJSON(w)
 		return
 	}
 
-	if err := h.service.DeleteInvitation(r.Context(), middleware.MustGetTenantID(r.Context()), invitationID); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1191,7 +1209,14 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 // or has expired, 404 if the invitation doesn't exist or belongs to a
 // different tenant.
 func (h *TenantHandler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
+	// Tenant from the URL path (GetTeamID), the same tenant RequireTeamAdmin
+	// authorized — not the JWT-claim tenant (confused-deputy IDOR; see
+	// DeleteInvitation).
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
 	invitationID := r.PathValue("invitationId")
 	if invitationID == "" {
 		apierror.BadRequest("Invitation ID is required").WriteJSON(w)
@@ -1199,7 +1224,7 @@ func (h *TenantHandler) ResendInvitation(w http.ResponseWriter, r *http.Request)
 	}
 
 	actx := h.buildAuditContext(r)
-	if err := h.service.ResendInvitation(r.Context(), tenantID, invitationID, actx); err != nil {
+	if err := h.service.ResendInvitation(r.Context(), tenantID.String(), invitationID, actx); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
