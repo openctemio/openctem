@@ -2,6 +2,11 @@
 package templatesource
 
 import (
+	"fmt"
+	"net/url"
+	"path"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
@@ -65,10 +70,92 @@ func (c *GitSourceConfig) Validate() error {
 	if c.URL == "" {
 		return shared.NewDomainError("VALIDATION", "git url is required", shared.ErrValidation)
 	}
+	if _, err := GitURLHost(c.URL); err != nil {
+		return shared.NewDomainError("VALIDATION", err.Error(), shared.ErrValidation)
+	}
 	if c.Branch == "" {
 		return shared.NewDomainError("VALIDATION", "git branch is required", shared.ErrValidation)
 	}
+	if strings.HasPrefix(c.Branch, "-") || strings.ContainsAny(c.Branch, " \t\n\r\x00\\:~^?*[") || strings.Contains(c.Branch, "..") {
+		return shared.NewDomainError("VALIDATION", "git branch is not a valid branch name", shared.ErrValidation)
+	}
+	clean, err := CleanRepoPath(c.Path)
+	if err != nil {
+		return shared.NewDomainError("VALIDATION", err.Error(), shared.ErrValidation)
+	}
+	c.Path = clean
 	return nil
+}
+
+// maxRepoPathLen bounds a repository sub-path.
+const maxRepoPathLen = 512
+
+// CleanRepoPath normalizes a path inside a repository ("templates/nuclei/",
+// "./x") to its clean slash-separated form, "" for the repository root. It
+// refuses anything that could name a location outside the repository: an
+// absolute path, any ".." segment, a backslash or a NUL byte. The fetcher
+// also confines the resolved path at read time (symlinks), so this is the
+// first of two checks, not the only one.
+func CleanRepoPath(p string) (string, error) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", nil
+	}
+	if len(p) > maxRepoPathLen {
+		return "", fmt.Errorf("repository path is too long")
+	}
+	if strings.ContainsAny(p, "\\\x00") {
+		return "", fmt.Errorf("repository path must use forward slashes")
+	}
+	if path.IsAbs(p) {
+		return "", fmt.Errorf("repository path must be relative to the repository root")
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return "", fmt.Errorf("repository path must not contain '..'")
+		}
+	}
+	clean := path.Clean(p)
+	if clean == "." {
+		return "", nil
+	}
+	return clean, nil
+}
+
+// scpLikeGitURL matches the scp-style ssh form "user@host:path".
+var scpLikeGitURL = regexp.MustCompile(`^[A-Za-z0-9._-]+@([A-Za-z0-9.-]+):\S+$`)
+
+// GitURLHost validates a template-source repository URL and returns its
+// host. Only remote transports are accepted: https, http, ssh and the
+// scp-style "git@host:org/repo.git". file://, bare local paths (both served
+// in-process by go-git from the API server's disk) and git:// (an unguarded
+// raw TCP connection) are refused.
+func GitURLHost(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("git url is required")
+	}
+	if m := scpLikeGitURL.FindStringSubmatch(raw); m != nil {
+		host := m[1]
+		if strings.HasPrefix(host, "-") {
+			return "", fmt.Errorf("git url host is invalid")
+		}
+		return host, nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("git url is invalid")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https", "http", "ssh":
+	default:
+		return "", fmt.Errorf("git url must use https, http or ssh")
+	}
+	host := u.Hostname()
+	if host == "" || strings.HasPrefix(host, "-") {
+		return "", fmt.Errorf("git url must name a host")
+	}
+	return host, nil
 }
 
 // S3SourceConfig holds configuration for S3/MinIO bucket sources.
@@ -82,13 +169,66 @@ type S3SourceConfig struct {
 	ExternalID string `json:"external_id,omitempty"` // For STS
 }
 
+// S3 authentication types. Both use credentials the tenant stored in the
+// secret store; the server's own (ambient) AWS identity is never used for a
+// tenant-configured source.
+const (
+	S3AuthKeys    = "keys"     // tenant access key + secret key
+	S3AuthSTSRole = "sts_role" // assume RoleArn using the tenant's keys
+)
+
+var (
+	s3RegionPattern = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+	s3BucketPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
+)
+
 // Validate validates the S3 source configuration.
 func (c *S3SourceConfig) Validate() error {
 	if c.Bucket == "" {
 		return shared.NewDomainError("VALIDATION", "s3 bucket is required", shared.ErrValidation)
 	}
+	if !s3BucketPattern.MatchString(c.Bucket) {
+		return shared.NewDomainError("VALIDATION", "s3 bucket name is invalid", shared.ErrValidation)
+	}
 	if c.Region == "" {
 		return shared.NewDomainError("VALIDATION", "s3 region is required", shared.ErrValidation)
+	}
+	if !s3RegionPattern.MatchString(c.Region) {
+		return shared.NewDomainError("VALIDATION", "s3 region is invalid", shared.ErrValidation)
+	}
+	switch c.AuthType {
+	case S3AuthKeys:
+	case S3AuthSTSRole:
+		if c.RoleArn == "" {
+			return shared.NewDomainError("VALIDATION", "s3 role_arn is required for sts_role", shared.ErrValidation)
+		}
+	default:
+		return shared.NewDomainError("VALIDATION", "s3 auth_type must be 'keys' or 'sts_role'; the server's own AWS credentials are never used for a tenant source", shared.ErrValidation)
+	}
+	if c.Endpoint != "" {
+		if err := ValidateEndpointURL(c.Endpoint); err != nil {
+			return shared.NewDomainError("VALIDATION", "s3 endpoint: "+err.Error(), shared.ErrValidation)
+		}
+	}
+	return nil
+}
+
+// ValidateEndpointURL checks the shape of a custom S3-compatible endpoint: an
+// absolute http(s) URL with a host and no credentials, query or fragment.
+// Where it resolves to is checked at connect time by the SSRF guard.
+func ValidateEndpointURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid URL")
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("must be an http or https URL")
+	}
+	if u.Hostname() == "" {
+		return fmt.Errorf("must name a host")
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("must not contain credentials, a query or a fragment")
 	}
 	return nil
 }
@@ -354,6 +494,9 @@ func (s *TemplateSource) Validate() error {
 	case SourceTypeS3:
 		if s.S3Config == nil {
 			return shared.NewDomainError("VALIDATION", "s3 config is required for s3 source", shared.ErrValidation)
+		}
+		if s.CredentialID == nil {
+			return shared.NewDomainError("VALIDATION", "s3 source requires a credential from the secret store", shared.ErrValidation)
 		}
 		return s.S3Config.Validate()
 	case SourceTypeHTTP:

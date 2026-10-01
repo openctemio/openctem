@@ -18,8 +18,14 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 
+	"github.com/openctemio/api/pkg/domain/templatesource"
 	"github.com/openctemio/api/pkg/httpsec"
 )
+
+// allowLocalRepos lets tests clone from a local path. Production never sets
+// it: go-git serves file:// URLs and bare paths in-process, which would let a
+// tenant clone any repository on the API server's own disk.
+var allowLocalRepos = false
 
 const defaultBranch = "main"
 
@@ -130,7 +136,10 @@ func (f *GitFetcher) Fetch(ctx context.Context, opts FetchOptions) (*FetchResult
 	}
 
 	// Collect files
-	basePath := filepath.Join(f.tempDir, f.config.Path)
+	basePath, err := f.contentRoot()
+	if err != nil {
+		return nil, err
+	}
 	files := make(map[string][]byte)
 	var totalSize int64
 
@@ -143,6 +152,12 @@ func (f *GitFetcher) Fetch(ctx context.Context, opts FetchOptions) (*FetchResult
 			if info.Name() == ".git" {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		// Only regular files are templates. Walk reports entries with
+		// Lstat, so a committed symlink shows up here as a symlink; reading
+		// it would follow it to wherever it points on the server.
+		if !info.Mode().IsRegular() {
 			return nil
 		}
 
@@ -268,28 +283,13 @@ func (f *GitFetcher) ReadFile(ctx context.Context, path string) (io.ReadCloser, 
 	configPath := f.config.Path
 	f.mu.Unlock()
 
-	// Security: Prevent path traversal attacks
-	// Clean the path and ensure it doesn't escape the base directory
-	cleanPath := filepath.Clean(path)
-	if strings.HasPrefix(cleanPath, "..") || filepath.IsAbs(cleanPath) {
-		return nil, fmt.Errorf("invalid path: path traversal not allowed")
-	}
-
-	basePath := filepath.Join(tempDir, configPath)
-	fullPath := filepath.Join(basePath, cleanPath)
-
-	// Double-check the resolved path is within the base directory
-	// This handles edge cases like symlinks
-	absBase, err := filepath.Abs(basePath)
+	basePath, err := contentRootOf(tempDir, configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve base path: %w", err)
+		return nil, err
 	}
-	absPath, err := filepath.Abs(fullPath)
+	fullPath, err := confinedRegularFile(basePath, path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve path: %w", err)
-	}
-	if !strings.HasPrefix(absPath, absBase+string(filepath.Separator)) && absPath != absBase {
-		return nil, fmt.Errorf("invalid path: path traversal not allowed")
+		return nil, err
 	}
 
 	file, err := os.Open(fullPath)
@@ -308,11 +308,15 @@ func (f *GitFetcher) ListFiles(ctx context.Context, extensions []string) ([]stri
 		f.mu.Unlock()
 		return nil, fmt.Errorf("repository not cloned")
 	}
-	basePath := filepath.Join(f.tempDir, f.config.Path)
+	tempDir, configPath := f.tempDir, f.config.Path
 	f.mu.Unlock()
+	basePath, err := contentRootOf(tempDir, configPath)
+	if err != nil {
+		return nil, err
+	}
 	var files []string
 
-	err := filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -321,6 +325,9 @@ func (f *GitFetcher) ListFiles(ctx context.Context, extensions []string) ([]stri
 				return filepath.SkipDir
 			}
 			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return nil // symlinks and special files are never templates
 		}
 
 		if len(extensions) > 0 {
@@ -344,14 +351,8 @@ func (f *GitFetcher) ListFiles(ctx context.Context, extensions []string) ([]stri
 }
 
 func (f *GitFetcher) cloneRepo(ctx context.Context) (*git.Repository, error) {
-	// SSRF guard for http(s) template sources: resolve DNS and reject hosts
-	// mapping to internal / metadata ranges before go-git dials. ssh:// and
-	// file:// URLs are handled (and rejected where unsafe) upstream, so only
-	// validate the http(s) schemes ValidateURL understands.
-	if u := f.config.URL; strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
-		if _, err := httpsec.ValidateURL(u); err != nil {
-			return nil, fmt.Errorf("git clone blocked: %w", err)
-		}
+	if err := checkCloneURL(ctx, f.config.URL); err != nil {
+		return nil, fmt.Errorf("git clone blocked: %w", err)
 	}
 
 	branch := f.config.Branch
@@ -401,4 +402,85 @@ func (f *GitFetcher) pullRepo(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// checkCloneURL refuses repository URLs the server must not clone: anything
+// but https, http and ssh (file://, a bare local path and git:// would read
+// the server's own disk or open an unguarded TCP connection), and any host
+// that resolves into a blocked range. http(s) is additionally pinned at dial
+// time by the SSRF-guarded transport installed in init. ssh is checked here
+// only: go-git's ssh transport dials on its own, so a rebinding DNS answer
+// between this check and the dial is not covered for ssh.
+func checkCloneURL(ctx context.Context, rawURL string) error {
+	if allowLocalRepos {
+		return nil
+	}
+	host, err := templatesource.GitURLHost(rawURL)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
+		_, err = httpsec.ValidateURL(rawURL)
+		return err
+	}
+	return httpsec.ValidateHost(ctx, host)
+}
+
+// contentRoot returns the directory templates are read from: the clone
+// directory joined with the configured sub-path, with symlinks resolved and
+// confirmed to still be inside the clone.
+func (f *GitFetcher) contentRoot() (string, error) {
+	return contentRootOf(f.tempDir, f.config.Path)
+}
+
+func contentRootOf(cloneDir, subPath string) (string, error) {
+	rel, err := templatesource.CleanRepoPath(subPath)
+	if err != nil {
+		return "", err
+	}
+	root, err := filepath.EvalSymlinks(cloneDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve clone directory: %w", err)
+	}
+	base, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return "", fmt.Errorf("repository path %q not found", rel)
+	}
+	if !isWithin(root, base) {
+		return "", fmt.Errorf("repository path %q resolves outside the repository", rel)
+	}
+	return base, nil
+}
+
+// confinedRegularFile resolves name inside root and returns its path only if
+// it is a regular file that is still inside root once every symlink on the
+// way (including parent directories) is resolved.
+func confinedRegularFile(root, name string) (string, error) {
+	rel, err := templatesource.CleanRepoPath(name)
+	if err != nil || rel == "" {
+		return "", fmt.Errorf("invalid path: path traversal not allowed")
+	}
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	info, err := os.Lstat(full)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("invalid path: not a regular file")
+	}
+	resolved, err := filepath.EvalSymlinks(full)
+	if err != nil || !isWithin(root, resolved) {
+		return "", fmt.Errorf("invalid path: path traversal not allowed")
+	}
+	return resolved, nil
+}
+
+// isWithin reports whether path is root or below it. Both must be cleaned,
+// symlink-resolved absolute paths.
+func isWithin(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
 }
