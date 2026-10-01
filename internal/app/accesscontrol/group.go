@@ -20,6 +20,12 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// teamsSettingsURL is the UI page that in-app notifications about team
+// membership link to. The UI moved Teams from /settings/access-control/groups
+// to /settings/teams (Settings IA) and 308s the old path, so notifications
+// stored before this change still resolve.
+const teamsSettingsURL = "/settings/teams"
+
 // GroupService handles group-related business operations.
 type GroupService struct {
 	repo                groupdom.Repository
@@ -524,7 +530,7 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 			Severity:         notification.SeverityInfo,
 			ResourceType:     "group",
 			ResourceID:       &groupID,
-			URL:              "/settings/access-control/groups",
+			URL:              teamsSettingsURL,
 		}
 		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
 			notifParams.ActorID = &actorID
@@ -601,7 +607,7 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMe
 			Severity:         notification.SeverityInfo,
 			ResourceType:     "group",
 			ResourceID:       &groupID,
-			URL:              "/settings/access-control/groups",
+			URL:              teamsSettingsURL,
 		}
 		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
 			notifParams.ActorID = &actorID
@@ -684,7 +690,7 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 			Severity:         notification.SeverityMedium,
 			ResourceType:     "group",
 			ResourceID:       &gid,
-			URL:              "/settings/access-control/groups",
+			URL:              teamsSettingsURL,
 		}
 		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
 			notifParams.ActorID = &actorID

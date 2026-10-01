@@ -211,7 +211,7 @@ func (c *SensorHealthController) notifyOffline(ctx context.Context, a *sensor.Se
 		Body: fmt.Sprintf("Sensor '%s' has not sent a heartbeat for more than %s (last seen: %s). "+
 			"Scans routed to it will not run until it reconnects.", a.Name, c.config.StaleTimeout, lastSeen),
 		Severity: sensorOfflineSeverity,
-		URL:      "/agents",
+		URL:      "/sensors",
 		Metadata: metadata,
 	})
 	if err != nil {
