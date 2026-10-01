@@ -131,6 +131,9 @@ func (r *SimulationRepository) Create(ctx context.Context, sim *simulation.Simul
 		sim.CreatedAt(), sim.UpdatedAt(),
 	)
 	if err != nil {
+		if verr := invalidInput(err); verr != nil {
+			return verr
+		}
 		return fmt.Errorf("failed to create simulation: %w", err)
 	}
 	return nil
@@ -174,6 +177,9 @@ func (r *SimulationRepository) Update(ctx context.Context, sim *simulation.Simul
 		tagsArr, sim.UpdatedAt(),
 	)
 	if err != nil {
+		if verr := invalidInput(err); verr != nil {
+			return verr
+		}
 		return fmt.Errorf("failed to update simulation: %w", err)
 	}
 	return nil

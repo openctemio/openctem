@@ -114,6 +114,9 @@ func (r *ThreatActorRepository) Create(ctx context.Context, actor *threatactor.T
 		actor.CreatedAt(), actor.UpdatedAt(),
 	)
 	if err != nil {
+		if verr := invalidInput(err); verr != nil {
+			return verr
+		}
 		return fmt.Errorf("failed to create threat actor: %w", err)
 	}
 	return nil
@@ -155,6 +158,9 @@ func (r *ThreatActorRepository) Update(ctx context.Context, actor *threatactor.T
 		actor.UpdatedAt(),
 	)
 	if err != nil {
+		if verr := invalidInput(err); verr != nil {
+			return verr
+		}
 		return fmt.Errorf("failed to update threat actor: %w", err)
 	}
 	return nil

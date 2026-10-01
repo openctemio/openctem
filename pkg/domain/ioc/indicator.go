@@ -58,6 +58,21 @@ const (
 	SourceManual      Source = "manual"
 )
 
+// IsValid reports whether s is one of the sources the iocs.source CHECK
+// constraint accepts.
+func (s Source) IsValid() bool {
+	switch s {
+	case SourceScanFinding, SourceThreatFeed, SourceManual:
+		return true
+	}
+	return false
+}
+
+// ErrInvalidSource is returned by NewIndicator for a source outside the
+// Source constants; the database would otherwise reject the row with a CHECK
+// violation that surfaced as a 500.
+var ErrInvalidSource = errors.New("ioc: source must be scan_finding, threat_feed or manual")
+
 // ErrInvalidType is returned by NewIndicator when the type isn't
 // one of the supported Type constants.
 var ErrInvalidType = errors.New("ioc: invalid type")
@@ -160,6 +175,9 @@ type Indicator struct {
 func NewIndicator(tenantID shared.ID, t Type, value string, src Source) (*Indicator, error) {
 	if !t.IsValid() {
 		return nil, ErrInvalidType
+	}
+	if !src.IsValid() {
+		return nil, ErrInvalidSource
 	}
 	norm := Normalize(t, value)
 	if norm == "" {

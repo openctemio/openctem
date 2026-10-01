@@ -195,6 +195,9 @@ func (r *ScopeScheduleRepository) Create(ctx context.Context, schedule *scope.Sc
 		if isUniqueViolation(err) {
 			return scope.ErrScheduleAlreadyExists
 		}
+		if verr := invalidInput(err); verr != nil {
+			return verr
+		}
 		return fmt.Errorf("failed to create scan schedule: %w", err)
 	}
 
@@ -281,6 +284,9 @@ func (r *ScopeScheduleRepository) Update(ctx context.Context, schedule *scope.Sc
 		schedule.TenantID().String(),
 	)
 	if err != nil {
+		if verr := invalidInput(err); verr != nil {
+			return verr
+		}
 		return fmt.Errorf("failed to update scan schedule: %w", err)
 	}
 

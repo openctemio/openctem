@@ -251,6 +251,14 @@ func (h *BusinessServiceHandler) LinkAsset(w http.ResponseWriter, r *http.Reques
 		apierror.BadRequest("asset_id is required").WriteJSON(w)
 		return
 	}
+	// Mirrors the business_service_assets.dependency_type CHECK; empty means
+	// the column default (runs_on).
+	switch req.DependencyType {
+	case "", "runs_on", "depends_on", "stores_data_in", "authenticates_via", "monitors":
+	default:
+		apierror.BadRequest("dependency_type must be one of: runs_on, depends_on, stores_data_in, authenticates_via, monitors").WriteJSON(w)
+		return
+	}
 
 	// Verify service belongs to tenant.
 	var serviceExists bool

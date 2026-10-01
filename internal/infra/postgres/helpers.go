@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -124,6 +125,30 @@ func isForeignKeyViolation(err error) bool {
 		return pqErr.Code == "23503"
 	}
 	return false
+}
+
+// invalidInput reports a database rejection of caller-supplied values as
+// shared.ErrValidation, so the handler above answers 400 instead of 500:
+//
+//	22001 string_data_right_truncation — a value longer than its column
+//	23514 check_violation              — a value outside the column's allowed set
+//	23503 foreign_key_violation        — a reference to a row that does not exist
+//
+// It returns nil for every other error, which the caller wraps as before.
+func invalidInput(err error) error {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) {
+		return nil
+	}
+	switch pqErr.Code {
+	case "22001":
+		return fmt.Errorf("%w: a field is longer than its maximum length", shared.ErrValidation)
+	case "23514":
+		return fmt.Errorf("%w: a field has a value that is not allowed", shared.ErrValidation)
+	case "23503":
+		return fmt.Errorf("%w: a referenced record does not exist", shared.ErrValidation)
+	}
+	return nil
 }
 
 // parseIP parses an IP address string into net.IP.

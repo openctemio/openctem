@@ -228,6 +228,14 @@ func (h *PriorityRuleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
+	// Same rule as Create: priority_class is varchar(2) holding P0-P3, and an
+	// unchecked value reached the database as a 500.
+	if req.PriorityClass != nil {
+		if _, err := vulnerability.ParsePriorityClass(*req.PriorityClass); err != nil {
+			apierror.BadRequest("priority_class must be P0, P1, P2, or P3").WriteJSON(w)
+			return
+		}
+	}
 
 	result, err := h.db.ExecContext(r.Context(), `
 		UPDATE priority_override_rules SET
