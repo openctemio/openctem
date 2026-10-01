@@ -75,7 +75,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 
 	// Validate and sanitize targets if provided (SECURITY: SSRF protection)
-	validatedTargets, err := s.validateScanTargets(input)
+	validatedTargets, err := s.validateScanTargets(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +209,10 @@ func (s *Service) validateScanSecurityInputs(ctx context.Context, tenantID share
 }
 
 // validateScanTargets validates and sanitizes scan targets with SSRF protection.
-func (s *Service) validateScanTargets(input CreateScanInput) ([]string, error) {
+//
+// Private addresses are refused, except where the tenant has a scan zone
+// covering them (RFC-023 D6): those are scanned only by that zone's sensors.
+func (s *Service) validateScanTargets(ctx context.Context, input CreateScanInput) ([]string, error) {
 	if len(input.Targets) == 0 {
 		return nil, nil
 	}
@@ -220,6 +223,14 @@ func (s *Service) validateScanTargets(input CreateScanInput) ([]string, error) {
 		validator.WithMaxTargets(1000),
 	)
 	result := targetValidator.ValidateTargets(input.Targets)
+
+	var admitted []string
+	if result.HasErrors && len(result.BlockedIPs) > 0 {
+		var err error
+		if admitted, err = s.admitZonedPrivateTargets(ctx, input.TenantID, result); err != nil {
+			return nil, err
+		}
+	}
 
 	if result.HasErrors {
 		if len(result.BlockedIPs) > 0 {
@@ -235,7 +246,7 @@ func (s *Service) validateScanTargets(input CreateScanInput) ([]string, error) {
 		return nil, fmt.Errorf("%w: invalid targets provided", shared.ErrValidation)
 	}
 
-	validated := result.GetValidTargetStrings()
+	validated := append(result.GetValidTargetStrings(), admitted...)
 	if len(validated) == 0 {
 		return nil, fmt.Errorf("%w: no valid targets provided", shared.ErrValidation)
 	}

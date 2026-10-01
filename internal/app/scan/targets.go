@@ -32,6 +32,10 @@ func scannerAcceptsTargetList(scanner string) bool {
 	return listTargetScanners[strings.ToLower(strings.TrimSpace(scanner))]
 }
 
+// singleTargetWarningPrefix starts the warning for a single-target scanner in
+// a run without zones; a zoned run creates one job per target instead.
+const singleTargetWarningPrefix = "scanner "
+
 // resolvedTargets is what a scan run actually dispatches.
 type resolvedTargets struct {
 	Targets  []string
@@ -98,7 +102,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	}
 	if len(out.Targets) > 1 && !scannerAcceptsTargetList(sc.ScannerName) {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
-			"scanner %q takes one target per job: only %q is scanned in this run, %d other target(s) are not",
+			singleTargetWarningPrefix+"%q takes one target per job: only %q is scanned in this run, %d other target(s) are not",
 			sc.ScannerName, out.Targets[0], len(out.Targets)-1))
 	}
 	return out, nil

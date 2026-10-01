@@ -182,6 +182,12 @@ const (
 	CommandsRead   Permission = "sensors:commands:read"
 	CommandsWrite  Permission = "sensors:commands:write"
 	CommandsDelete Permission = "sensors:commands:delete"
+
+	// Scan zone permissions (sensors:zones:*, RFC-023 D16). Write covers
+	// creating/editing zones and assigning sensors to them.
+	ScanZonesRead   Permission = "sensors:zones:read"
+	ScanZonesWrite  Permission = "sensors:zones:write"
+	ScanZonesDelete Permission = "sensors:zones:delete"
 )
 
 // =============================================================================
@@ -446,6 +452,7 @@ func AllPermissions() []Permission {
 		// Sensors module
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
+		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
 
 		// Team module
 		TeamRead, TeamUpdate, TeamDelete,

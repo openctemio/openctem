@@ -6004,6 +6004,19 @@ definitions:
     - scan_type
     - schedule_type
     type: object
+  internal_infra_http_handler.CreateScanZoneRequest:
+    properties:
+      description:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      ranges:
+        items:
+          type: string
+        type: array
+    type: object
   internal_infra_http_handler.CreateScannerTemplateRequest:
     properties:
       content:
@@ -9145,6 +9158,23 @@ definitions:
     - new_password
     - token
     type: object
+  internal_infra_http_handler.RunDispatchResponse:
+    properties:
+      excluded_targets:
+        type: integer
+      resolved_targets:
+        type: integer
+      uncovered_targets:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunUncoveredTarget'
+        type: array
+      warnings:
+        items:
+          type: string
+        type: array
+      zone_routing:
+        $ref: '#/definitions/internal_infra_http_handler.RunZoneRouting'
+    type: object
   internal_infra_http_handler.RunResponse:
     properties:
       asset_id:
@@ -9155,6 +9185,8 @@ definitions:
         type: integer
       created_at:
         type: string
+      dispatch:
+        $ref: '#/definitions/internal_infra_http_handler.RunDispatchResponse'
       error_message:
         type: string
       failed_steps:
@@ -9191,6 +9223,50 @@ definitions:
         type: string
       triggered_by:
         type: string
+    type: object
+  internal_infra_http_handler.RunUncoveredTarget:
+    properties:
+      reason:
+        type: string
+      target:
+        type: string
+    type: object
+  internal_infra_http_handler.RunZoneRoute:
+    properties:
+      jobs:
+        type: integer
+      queued_jobs:
+        description: waiting for a healthy sensor of the zone
+        type: integer
+      sensor_ids:
+        description: sensors the jobs were pinned to
+        items:
+          type: string
+        type: array
+      targets:
+        type: integer
+      zone_id:
+        type: string
+      zone_name:
+        type: string
+    type: object
+  internal_infra_http_handler.RunZoneRouting:
+    properties:
+      jobs:
+        type: integer
+      targets_per_job:
+        type: integer
+      uncovered_targets:
+        type: integer
+      unzoned_targets:
+        type: integer
+      zone_id:
+        description: 'workflow runs: the one zone the run is bound to'
+        type: string
+      zones:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunZoneRoute'
+        type: array
     type: object
   internal_infra_http_handler.SCMExtensionResponse:
     properties:
@@ -9581,6 +9657,89 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  internal_infra_http_handler.ScanZoneCoverageResponse:
+    properties:
+      has_default_zone:
+        type: boolean
+      in_zones:
+        type: integer
+      inventory_addresses:
+        type: integer
+      outside_private:
+        type: integer
+      outside_public:
+        type: integer
+      warnings:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanZoneCoverageWarning'
+        type: array
+      zones:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanZoneCoverageZone'
+        type: array
+    type: object
+  internal_infra_http_handler.ScanZoneCoverageWarning:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+      zone_id:
+        type: string
+    type: object
+  internal_infra_http_handler.ScanZoneCoverageZone:
+    properties:
+      addresses:
+        type: integer
+      assigned_sensors:
+        type: integer
+      has_private_range:
+        type: boolean
+      healthy_sensors:
+        type: integer
+      is_default:
+        type: boolean
+      name:
+        type: string
+      zone_id:
+        type: string
+    type: object
+  internal_infra_http_handler.ScanZoneListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanZoneResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.ScanZoneResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      ranges:
+        items:
+          type: string
+        type: array
+      sensor_ids:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
     type: object
   internal_infra_http_handler.ScannerTemplateResponse:
     properties:
@@ -11065,6 +11224,19 @@ definitions:
         type: string
     required:
     - status
+    type: object
+  internal_infra_http_handler.UpdateScanZoneRequest:
+    properties:
+      description:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      ranges:
+        items:
+          type: string
+        type: array
     type: object
   internal_infra_http_handler.UpdateScannerTemplateRequest:
     properties:
@@ -21579,6 +21751,286 @@ paths:
       summary: Get scan session statistics
       tags:
       - Scan Sessions
+  /scan-zones:
+    get:
+      description: Every scan zone of the tenant with its ranges and assigned sensors
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanZoneListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List scan zones
+      tags:
+      - Scan Zones
+    post:
+      consumes:
+      - application/json
+      description: 'Ranges are validated and normalized: no overlap with the built-in
+        deny list (loopback, link-local/metadata, multicast, unspecified), IPv4 no
+        wider than /8, IPv6 no wider than /32, at most 256 ranges. Only the default
+        zone may have no ranges.'
+      parameters:
+      - description: Scan zone
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateScanZoneRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanZoneResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: name taken, or a default zone already exists
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create scan zone
+      tags:
+      - Scan Zones
+  /scan-zones/{id}:
+    delete:
+      description: Refused with 409 while jobs routed to the zone are queued or running.
+      parameters:
+      - description: Scan zone ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete scan zone
+      tags:
+      - Scan Zones
+    get:
+      parameters:
+      - description: Scan zone ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanZoneResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get scan zone
+      tags:
+      - Scan Zones
+    patch:
+      consumes:
+      - application/json
+      description: Omitted fields are unchanged. New ranges apply to the next scan
+        trigger; jobs already routed keep their zone.
+      parameters:
+      - description: Scan zone ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateScanZoneRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanZoneResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update scan zone
+      tags:
+      - Scan Zones
+  /scan-zones/{id}/sensors/{sensorId}:
+    delete:
+      description: Jobs of the zone still queued for that sensor go back to the zone's
+        pool.
+      parameters:
+      - description: Scan zone ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Sensor ID
+        in: path
+        name: sensorId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove a sensor from a scan zone
+      tags:
+      - Scan Zones
+    put:
+      description: Idempotent. The sensor must belong to the same tenant; platform
+        sensors cannot be assigned.
+      parameters:
+      - description: Scan zone ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Sensor ID
+        in: path
+        name: sensorId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanZoneResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Assign a sensor to a scan zone
+      tags:
+      - Scan Zones
+  /scan-zones/coverage:
+    get:
+      description: How inventory IP addresses fall into zones (outside_private are
+        skipped by scans), per-zone sensor health, and warnings such as private ranges
+        without a healthy sensor.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanZoneCoverageResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Scan zone coverage
+      tags:
+      - Scan Zones
   /scanner-templates:
     get:
       consumes:

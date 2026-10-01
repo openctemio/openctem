@@ -101,6 +101,9 @@ type Repositories struct {
 	// Scan coverage rotation (RFC-007)
 	ScanCoverage *postgres.ScanCoverageRepository
 
+	// Scan zones (RFC-023)
+	ScanZone *postgres.ScanZoneRepository
+
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
 	ScanSession      *postgres.ScanSessionRepository
@@ -304,6 +307,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Scan coverage rotation (RFC-007)
 		ScanCoverage: postgres.NewScanCoverageRepository(db),
+
+		// Scan zones (RFC-023)
+		ScanZone: postgres.NewScanZoneRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),

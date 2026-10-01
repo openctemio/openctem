@@ -198,6 +198,44 @@ type RunResponse struct {
 	ErrorMessage      string                         `json:"error_message,omitempty"`
 	CreatedAt         string                         `json:"created_at"`
 	FilteringResult   *FilteringResultResponse       `json:"filtering_result,omitempty"`
+	Dispatch          *RunDispatchResponse           `json:"dispatch,omitempty"`
+}
+
+// RunDispatchResponse is what a scan run dispatched: targets resolved and
+// excluded by scope, every target not scanned and why, and the scan-zone
+// routing (RFC-023). Absent for runs that recorded none of it.
+type RunDispatchResponse struct {
+	ResolvedTargets  int                  `json:"resolved_targets"`
+	ExcludedTargets  int                  `json:"excluded_targets"`
+	Warnings         []string             `json:"warnings,omitempty"`
+	UncoveredTargets []RunUncoveredTarget `json:"uncovered_targets,omitempty"`
+	ZoneRouting      *RunZoneRouting      `json:"zone_routing,omitempty"`
+}
+
+// RunUncoveredTarget is a target the run did not scan.
+type RunUncoveredTarget struct {
+	Target string `json:"target"`
+	Reason string `json:"reason"`
+}
+
+// RunZoneRouting summarizes how a run's targets were routed to scan zones.
+type RunZoneRouting struct {
+	Jobs             int            `json:"jobs"`
+	TargetsPerJob    int            `json:"targets_per_job"`
+	UnzonedTargets   int            `json:"unzoned_targets"`
+	UncoveredTargets int            `json:"uncovered_targets"`
+	ZoneID           string         `json:"zone_id,omitempty"` // workflow runs: the one zone the run is bound to
+	Zones            []RunZoneRoute `json:"zones,omitempty"`
+}
+
+// RunZoneRoute is one zone's share of a run.
+type RunZoneRoute struct {
+	ZoneID     string   `json:"zone_id"`
+	ZoneName   string   `json:"zone_name"`
+	Targets    int      `json:"targets"`
+	Jobs       int      `json:"jobs"`
+	QueuedJobs int      `json:"queued_jobs"` // waiting for a healthy sensor of the zone
+	SensorIDs  []string `json:"sensor_ids"`  // sensors the jobs were pinned to
 }
 
 // FilteringResultResponse represents smart filtering result in API response.
@@ -1041,9 +1079,47 @@ func toRunResponse(r *pipeline.Run) *RunResponse {
 		if filteringResult, ok := r.Context["filtering_result"]; ok {
 			resp.FilteringResult = toFilteringResultResponse(filteringResult)
 		}
+		resp.Dispatch = toRunDispatchResponse(r.Context)
 	}
 
 	return resp
+}
+
+// toRunDispatchResponse reads the dispatch report the scan trigger stores in
+// the run context. Values round-trip through JSON so the same code reads a
+// freshly built context and one loaded from the database.
+func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
+	keys := []string{"resolved_target_count", "excluded_target_count", "dispatch_warnings", "uncovered_targets", "zone_routing"}
+	present := map[string]any{}
+	for _, k := range keys {
+		if v, ok := runContext[k]; ok && v != nil {
+			present[k] = v
+		}
+	}
+	if len(present) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(present)
+	if err != nil {
+		return nil
+	}
+	var in struct {
+		Resolved  int                  `json:"resolved_target_count"`
+		Excluded  int                  `json:"excluded_target_count"`
+		Warnings  []string             `json:"dispatch_warnings"`
+		Uncovered []RunUncoveredTarget `json:"uncovered_targets"`
+		Routing   *RunZoneRouting      `json:"zone_routing"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil
+	}
+	return &RunDispatchResponse{
+		ResolvedTargets:  in.Resolved,
+		ExcludedTargets:  in.Excluded,
+		Warnings:         in.Warnings,
+		UncoveredTargets: in.Uncovered,
+		ZoneRouting:      in.Routing,
+	}
 }
 
 // toFilteringResultResponse converts filtering result from context to response type.

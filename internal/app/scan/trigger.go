@@ -164,8 +164,19 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
-	if len(resolved.Targets) > 0 {
-		runContext["targets"] = resolved.Targets
+	targets := resolved.Targets
+	zones, err := s.loadZones(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if len(zones) > 0 {
+		// A workflow stays inside one zone; see routeWorkflowTargets.
+		if targets, err = s.routeWorkflowTargets(ctx, sc, zones, targets, runContext); err != nil {
+			return nil, err
+		}
+	}
+	if len(targets) > 0 {
+		runContext["targets"] = targets
 	}
 
 	// Create pipeline run
@@ -252,6 +263,23 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 		return nil, err
 	}
 
+	// Scan zones (RFC-023): once the tenant has zones, a network scanner's
+	// targets are routed to the narrowest zone, batched, and pinned to a
+	// healthy sensor of that zone. Without zones nothing below changes.
+	zones, err := s.loadZones(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	var plan *zonePlan
+	if len(zones) > 0 && s.toolReachesNetwork(ctx, sc.ScannerName) {
+		if plan, err = s.planZoneDispatch(ctx, sc, zones, resolved.Targets); err != nil {
+			return nil, err
+		}
+		if err := recordZonePlan(sc, plan, runContext); err != nil {
+			return nil, err
+		}
+	}
+
 	// Use the system quick scan template for tracking
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
 
@@ -279,8 +307,13 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	// the scanner had reported a real, specific error.
 	stepRun := s.createSingleScanStepRun(ctx, run)
 
-	// Create command for the scanner
-	if err := s.createScannerCommand(ctx, sc, run, stepRun, resolved.Targets); err != nil {
+	// Create the command(s) for the scanner
+	if plan != nil {
+		err = s.createZoneCommands(ctx, sc, run, stepRun, plan)
+	} else {
+		err = s.createScannerCommand(ctx, sc, run, stepRun, resolved.Targets)
+	}
+	if err != nil {
 		run.Fail("Failed to create command: " + err.Error())
 		_ = s.runRepo.Update(ctx, run)
 		return nil, fmt.Errorf("failed to create scanner command: %w", err)
@@ -367,6 +400,9 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 	if err != nil {
 		return fmt.Errorf("failed to create command: %w", err)
 	}
+	if zoneID := pipeline.ScanZoneFromContext(run.Context); zoneID != nil {
+		cmd.SetScanZone(*zoneID) // only the zone's sensors may claim it
+	}
 
 	if err := s.commandRepo.Create(ctx, cmd); err != nil {
 		return fmt.Errorf("failed to create command: %w", err)
@@ -405,46 +441,8 @@ type EmbeddedTemplate struct {
 // (`pipeline_run_id`, `step_key`, `step_run_id`); `run_id` is kept because the
 // sensor SDK reads it.
 func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, targets []string) error {
-	payloadMap := map[string]any{
-		"run_id":                            run.ID.String(),
-		"scan_id":                           sc.ID.String(),
-		"scanner_name":                      sc.ScannerName,
-		"scanner_config":                    sc.ScannerConfig,
-		"asset_group_id":                    sc.AssetGroupID.String(),
-		"targets_per_job":                   sc.TargetsPerJob,
-		"routing_tags":                      sc.Tags,
-		"tenant_runner_only":                sc.RunOnTenantRunner,
-		legacyv1.PayloadKeySensorPreference: string(sc.SensorPreference),
-		"context":                           run.Context,
-		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
-		// single `target`, not `scanner_name`/`scanner_config` — send both sets
-		// so the command dispatches correctly (contract drift previously left
-		// the sensor with an empty scanner: "scanner not found").
-		"scanner": sc.ScannerName,
-		"config":  sc.ScannerConfig,
-	}
-	// The command handler reads `pipeline_run_id` + `step_key` to route a
-	// finished command back into the pipeline; a payload carrying only `run_id`
-	// is silently treated as "not a pipeline command" and the run is never
-	// advanced, completed, or failed.
-	if stepRun != nil {
-		payloadMap[pipeline.PayloadKeyPipelineRunID] = run.ID.String()
-		payloadMap[pipeline.PayloadKeyStepKey] = stepRun.StepKey
-		payloadMap[pipeline.PayloadKeyStepRunID] = stepRun.ID.String()
-	}
-	applyTargetsToPayload(payloadMap, sc.ScannerName, targets)
-
-	// Embed custom templates if configured
-	if templates, err := s.resolveCustomTemplates(ctx, sc); err != nil {
-		s.logger.Warn("failed to resolve custom templates, proceeding without them",
-			"error", err, "scan_id", sc.ID.String())
-	} else if len(templates) > 0 {
-		payloadMap["custom_templates"] = templates
-		s.logger.Info("embedded custom templates in scan command",
-			"scan_id", sc.ID.String(),
-			"template_count", len(templates))
-	}
-
+	templates := s.customTemplatesForScan(ctx, sc)
+	payloadMap := s.scannerPayload(sc, run, stepRun, sc.ScannerConfig, run.Context, targets, templates)
 	payload, _ := json.Marshal(payloadMap)
 
 	cmd, err := command.NewCommand(sc.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
@@ -483,6 +481,63 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	}
 
 	return nil
+}
+
+// scannerPayload builds the protocol-v1 payload of a single-scanner command.
+func (s *Service) scannerPayload(
+	sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun,
+	scannerConfig map[string]any, runContext map[string]any,
+	targets []string, templates []EmbeddedTemplate,
+) map[string]any {
+	payloadMap := map[string]any{
+		"run_id":                            run.ID.String(),
+		"scan_id":                           sc.ID.String(),
+		"scanner_name":                      sc.ScannerName,
+		"scanner_config":                    scannerConfig,
+		"asset_group_id":                    sc.AssetGroupID.String(),
+		"targets_per_job":                   sc.TargetsPerJob,
+		"routing_tags":                      sc.Tags,
+		"tenant_runner_only":                sc.RunOnTenantRunner,
+		legacyv1.PayloadKeySensorPreference: string(sc.SensorPreference),
+		"context":                           runContext,
+		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
+		// single `target`, not `scanner_name`/`scanner_config` — send both sets
+		// so the command dispatches correctly (contract drift previously left
+		// the sensor with an empty scanner: "scanner not found").
+		"scanner": sc.ScannerName,
+		"config":  scannerConfig,
+	}
+	// The command handler reads `pipeline_run_id` + `step_key` to route a
+	// finished command back into the pipeline; a payload carrying only `run_id`
+	// is silently treated as "not a pipeline command" and the run is never
+	// advanced, completed, or failed.
+	if stepRun != nil {
+		payloadMap[pipeline.PayloadKeyPipelineRunID] = run.ID.String()
+		payloadMap[pipeline.PayloadKeyStepKey] = stepRun.StepKey
+		payloadMap[pipeline.PayloadKeyStepRunID] = stepRun.ID.String()
+	}
+	applyTargetsToPayload(payloadMap, sc.ScannerName, targets)
+	if len(templates) > 0 {
+		payloadMap["custom_templates"] = templates
+	}
+	return payloadMap
+}
+
+// customTemplatesForScan resolves the scan's custom templates once per run.
+// A failure is logged and the scan proceeds without them.
+func (s *Service) customTemplatesForScan(ctx context.Context, sc *scan.Scan) []EmbeddedTemplate {
+	templates, err := s.resolveCustomTemplates(ctx, sc)
+	if err != nil {
+		s.logger.Warn("failed to resolve custom templates, proceeding without them",
+			"error", err, "scan_id", sc.ID.String())
+		return nil
+	}
+	if len(templates) > 0 {
+		s.logger.Info("embedded custom templates in scan command",
+			"scan_id", sc.ID.String(),
+			"template_count", len(templates))
+	}
+	return templates
 }
 
 // resolveCustomTemplates resolves custom templates from scanner_config.

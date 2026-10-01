@@ -69,6 +69,7 @@ type Handlers struct {
 	SCIMAuth         Middleware                       // SCIM bearer-token auth middleware (nil if SCIM disabled)
 	ModuleGate       *middleware.ModuleGate           // per-tenant module route gating (nil-safe: fail-open)
 	Sensor           *handler.SensorHandler           // nil if not initialized (no database)
+	ScanZone         *handler.ScanZoneHandler         // nil if not initialized (no database)
 	Pipeline         *handler.PipelineHandler         // nil if not initialized (no database)
 	ScanProfile      *handler.ScanProfileHandler      // nil if not initialized (no database)
 	Tool             *handler.ToolHandler             // nil if not initialized (no database)
@@ -239,12 +240,12 @@ func Register(
 	// Optional Redis-backed membership reader. When non-nil it is
 	// used by RequireMembership and RequireActiveMembershipFromJWT
 	// instead of querying the database directly. nil falls back to
-	// tenantRepo (the legacy behaviour).
+	// tenantRepo (the legacy behavior).
 	membershipReader middleware.MembershipReader,
 	// Permission sync services. When both are non-nil, EnrichPermissions is
 	// mounted on every token-tenant chain so revoked permissions / demoted
 	// admins are enforced within the token lifetime (real-time sync). nil
-	// disables it (legacy embedded-JWT-permission behaviour).
+	// disables it (legacy embedded-JWT-permission behavior).
 	permCache *app.PermissionCacheService,
 	permVersion *app.PermissionVersionService,
 ) {
@@ -626,6 +627,11 @@ func Register(
 		registerSensorManagementRoutes(router, h.Sensor, nil, authMiddleware, userSync)
 	}
 
+	// Scan zone routes (tenant from JWT token)
+	if h.ScanZone != nil {
+		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
+	}
+
 	// Initialize trigger rate limiter for pipeline/scan trigger endpoints
 	// This prevents abuse and ensures fair resource usage across tenants
 	var triggerRateLimiter *middleware.TriggerRateLimiter
@@ -850,7 +856,7 @@ var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // se
 
 // permissionSyncMiddleware enriches each token-tenant request with fresh
 // permissions from Redis and rejects confirmed-stale state-mutating requests.
-// Set once during Register; nil leaves the legacy embedded-JWT behaviour.
+// Set once during Register; nil leaves the legacy embedded-JWT behavior.
 var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
 // ssoEnforcementMiddleware re-applies the per-tenant SSO-enforcement decision on

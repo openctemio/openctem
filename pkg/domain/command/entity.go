@@ -117,6 +117,11 @@ type Command struct {
 	// Pipeline tracking
 	StepRunID *shared.ID // Reference to pipeline step run (for progression tracking)
 
+	// ScanZoneID is the scan zone the command was routed to (RFC-023). When
+	// set, only a sensor assigned to that zone may poll or claim it, even after
+	// the reaper unpins it. Never sent on the protocol-v1 wire.
+	ScanZoneID *shared.ID
+
 	// ==========================================================================
 	// Platform Job Fields (v3.2)
 	// ==========================================================================
@@ -196,6 +201,11 @@ func NewCommand(tenantID shared.ID, cmdType CommandType, priority CommandPriorit
 // SetSensorID sets the target sensor ID.
 func (c *Command) SetSensorID(sensorID shared.ID) {
 	c.SensorID = &sensorID
+}
+
+// SetScanZone stamps the scan zone the command was routed to.
+func (c *Command) SetScanZone(zoneID shared.ID) {
+	c.ScanZoneID = &zoneID
 }
 
 // SetStepRunID sets the pipeline step run ID for tracking.
