@@ -1785,6 +1785,18 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		normalizeHostIPProperties(props, getAssetName(ctisAsset))
 	}
 
+	// The asset is keyed by its name, so when a scanner sends a hostname as
+	// the name and the address as the value (sdk-go's Vuls adapter does), the
+	// address was dropped and a renamed host could never be matched by IP.
+	// Keep it in ip_addresses, the array IP correlation searches.
+	if ctisAsset.Type == ctis.AssetTypeHost || ctisAsset.Type == ctis.AssetTypeIPAddress {
+		if v := strings.TrimSpace(ctisAsset.Value); v != "" && v != getAssetName(ctisAsset) {
+			if ip := net.ParseIP(v); ip != nil {
+				addIPAddress(props, ip.String())
+			}
+		}
+	}
+
 	// Validate properties based on asset type
 	if errs := p.propsValidator.ValidateProperties(string(ctisAsset.Type), props); errs != nil {
 		p.logger.Warn("properties validation errors",
@@ -1854,6 +1866,13 @@ func normalizeHostIPProperties(props map[string]any, assetName string) {
 		}
 	}
 
+	// From ip_address as a plain string (sdk-go's Nessus / Tenable parser).
+	// The key is left in place; only the index array gains the address, so IP
+	// correlation can find this host after it is renamed.
+	if ip, ok := props["ip_address"].(string); ok && net.ParseIP(ip) != nil {
+		ipSet[ip] = true
+	}
+
 	// From ip_address technical data (structured object)
 	if ipAddr, ok := props["ip_address"].(map[string]any); ok {
 		if addr, ok := ipAddr["address"].(string); ok && addr != "" {
@@ -1880,6 +1899,28 @@ func normalizeHostIPProperties(props map[string]any, assetName string) {
 		}
 		props["ip_addresses"] = ips
 	}
+}
+
+// addIPAddress adds ip to props["ip_addresses"], keeping the array free of
+// duplicates whichever slice type it currently holds.
+func addIPAddress(props map[string]any, ip string) {
+	var ips []string
+	switch v := props["ip_addresses"].(type) {
+	case []string:
+		ips = append(ips, v...)
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				ips = append(ips, s)
+			}
+		}
+	}
+	for _, existing := range ips {
+		if existing == ip {
+			return
+		}
+	}
+	props["ip_addresses"] = append(ips, ip)
 }
 
 // looksLikeIPv4 returns true if s matches basic IPv4 pattern.

@@ -2,6 +2,8 @@ package ingest
 
 import (
 	"testing"
+
+	"github.com/openctemio/api/pkg/domain/asset"
 )
 
 func TestExtractAllIPs(t *testing.T) {
@@ -86,6 +88,14 @@ func TestExtractAllIPs(t *testing.T) {
 			},
 			wantCount: 2,
 		},
+		{
+			// sdk-go's Nessus/Tenable parser sends the address as a string.
+			name:       "IP in properties.ip_address as a string",
+			assetName:  "web-01.corp.example",
+			properties: map[string]any{"ip_address": "10.0.0.9"},
+			wantCount:  1,
+			wantIPs:    []string{"10.0.0.9"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -152,6 +162,47 @@ func TestLooksLikeIP(t *testing.T) {
 			got := looksLikeIP(tt.input)
 			if got != tt.want {
 				t.Errorf("looksLikeIP(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShouldAdoptName(t *testing.T) {
+	mk := func(name string, aliases ...string) *asset.Asset {
+		a, err := asset.NewAsset(name, asset.AssetTypeHost, asset.CriticalityMedium)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(aliases) > 0 {
+			a.SetProperties(map[string]any{"aliases": aliases})
+		}
+		return a
+	}
+	tests := []struct {
+		name        string
+		existing    *asset.Asset
+		incoming    string
+		unambiguous bool
+		want        bool
+	}{
+		{"IP to hostname", mk("10.0.0.1"), "web-01", true, true},
+		{"short to FQDN", mk("web-01"), "web-01.corp.example", true, true},
+		{"upgrade even when ambiguous", mk("10.0.0.1"), "web-01.corp.example", false, true},
+		{"renamed host, same quality", mk("x-host"), "y-host", true, true},
+		{"renamed FQDN, same quality", mk("x.corp.example"), "y.corp.example", true, true},
+		{"same quality but ambiguous IP match", mk("x-host"), "y-host", false, false},
+		{"former name does not flip it back", mk("y-host", "x-host"), "x-host", true, false},
+		{"FQDN to short name", mk("web-01.corp.example"), "web-02", true, false},
+		{"hostname to IP", mk("web-01"), "10.0.0.1", true, false},
+		{"IP to another IP", mk("10.0.0.1"), "10.0.0.2", true, false},
+		{"same name", mk("web-01"), "web-01", true, false},
+		{"empty", mk("web-01"), "", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldAdoptName(tt.existing, tt.incoming, tt.unambiguous); got != tt.want {
+				t.Errorf("shouldAdoptName(%q -> %q, unambiguous=%v) = %v, want %v",
+					tt.existing.Name(), tt.incoming, tt.unambiguous, got, tt.want)
 			}
 		})
 	}
