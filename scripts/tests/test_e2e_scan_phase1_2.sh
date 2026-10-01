@@ -97,6 +97,11 @@ do_request() {
     for header in "$@"; do
         curl_args+=(-H "$header")
     done
+    # CSRF double-submit: echo the csrf_token cookie on state-changing requests.
+    case "$method" in POST|PUT|PATCH|DELETE)
+        local csrf; csrf=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$cookie_jar" 2>/dev/null)
+        [ -n "$csrf" ] && curl_args+=(-H "X-CSRF-Token: $csrf") ;;
+    esac
 
     if [ -n "$data" ]; then
         curl_args+=(-d "$data")
