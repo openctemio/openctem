@@ -8,7 +8,6 @@ import (
 	"path"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -23,22 +22,34 @@ type S3Storage struct {
 	bucket string
 }
 
-// NewS3Storage creates an S3 storage provider.
-// For MinIO: set endpoint to MinIO URL (e.g., "http://minio:9000").
+// NewS3Storage creates an S3 storage provider for a tenant-configured bucket.
+// For MinIO: set endpoint to MinIO URL (e.g., "https://minio.corp:9000").
 // For AWS S3: leave endpoint empty (uses default AWS endpoint).
+//
+// The tenant's keys are required and nothing is loaded from the server's
+// environment (no default credential chain, profiles or AWS_ENDPOINT_URL);
+// the endpoint is checked by the SSRF guard and every request is dialed
+// through it.
 func NewS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Storage, error) {
 	if bucket == "" {
 		return nil, fmt.Errorf("S3 bucket name is required")
 	}
-
-	opts := []func(*config.LoadOptions) error{
-		config.WithRegion(region),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+	if accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("S3 storage requires the tenant's access key and secret key")
+	}
+	if endpoint != "" {
+		if err := checkS3Endpoint(endpoint); err != nil {
+			return nil, fmt.Errorf("S3 endpoint blocked: %w", err)
+		}
+	}
+	if region == "" {
+		region = "us-east-1"
 	}
 
-	cfg, err := config.LoadDefaultConfig(context.Background(), opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load S3 config: %w", err)
+	cfg := aws.Config{
+		Region:      region,
+		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+		HTTPClient:  s3HTTPClient(),
 	}
 
 	clientOpts := []func(*s3.Options){}

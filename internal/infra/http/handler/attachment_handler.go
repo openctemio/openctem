@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -35,8 +37,8 @@ type FindingCampaignAccessChecker interface {
 // AttachmentHandler handles file upload/download/delete HTTP endpoints.
 type AttachmentHandler struct {
 	service         *app.AttachmentService
-	accessChecker   FindingCampaignAccessChecker     // optional; when nil, no campaign check
-	storageResolver *app.SettingsStorageResolver      // optional; for storage config CRUD
+	accessChecker   FindingCampaignAccessChecker // optional; when nil, no campaign check
+	storageResolver *app.SettingsStorageResolver // optional; for storage config CRUD
 	logger          *logger.Logger
 }
 
@@ -475,16 +477,14 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Validate provider
-	switch req.Provider {
-	case "local", "s3", "minio":
-		// OK
-	default:
-		apierror.BadRequest("Provider must be 'local', 's3', or 'minio'").WriteJSON(w)
+	existing, err := h.storageResolver.GetTenantStorageConfig(r.Context(), tenantID)
+	if err != nil {
+		h.logger.Error("failed to get storage config", "error", err)
+		apierror.InternalServerError("Failed to save storage config").WriteJSON(w)
 		return
 	}
 
-	cfg := attachment.StorageConfig{
+	cfg, err := tenantStorageConfigFromRequest(attachment.StorageConfig{
 		Provider:  req.Provider,
 		Bucket:    req.Bucket,
 		Region:    req.Region,
@@ -492,6 +492,10 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 		BasePath:  req.BasePath,
 		AccessKey: req.AccessKey,
 		SecretKey: req.SecretKey,
+	}, existing)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
 	}
 
 	if err := h.storageResolver.SaveTenantStorageConfig(r.Context(), tenantID, cfg); err != nil {
@@ -500,6 +504,32 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "provider": req.Provider})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "provider": cfg.Provider})
 }
 
+// tenantStorageConfigFromRequest turns a tenant admin's storage settings into
+// the config to persist. The tenant chooses the operator's storage ("local")
+// or its own S3/MinIO bucket; it can never choose a location on the API
+// server (base_path), and a custom endpoint must pass the SSRF guard. Blank
+// keys on an edit of the same cloud provider keep the stored keys, since the
+// settings page never echoes them back.
+func tenantStorageConfigFromRequest(req attachment.StorageConfig, existing *attachment.StorageConfig) (attachment.StorageConfig, error) {
+	if req.Provider == attachment.ProviderLocal {
+		if req.BasePath != "" {
+			return attachment.StorageConfig{}, req.ValidateTenantChoice()
+		}
+		return attachment.StorageConfig{Provider: attachment.ProviderLocal}, nil
+	}
+	if existing != nil && existing.Provider == req.Provider && req.AccessKey == "" && req.SecretKey == "" {
+		req.AccessKey, req.SecretKey = existing.AccessKey, existing.SecretKey
+	}
+	if err := req.ValidateTenantChoice(); err != nil {
+		return attachment.StorageConfig{}, err
+	}
+	if req.Endpoint != "" {
+		if _, err := httpsec.ValidateURL(req.Endpoint); err != nil {
+			return attachment.StorageConfig{}, fmt.Errorf("endpoint is not allowed: it does not resolve, or resolves to an address this server may not contact")
+		}
+	}
+	return req, nil
+}
