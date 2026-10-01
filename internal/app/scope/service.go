@@ -5,6 +5,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -1129,14 +1132,39 @@ func (s *Service) isAssetInScope(assetValues []string, targets []*scopedom.Targe
 
 // isAssetExcluded checks if any asset value matches any exclusion.
 func (s *Service) isAssetExcluded(assetValues []string, exclusions []*scopedom.Exclusion) bool {
-	for _, av := range assetValues {
-		for _, exclusion := range exclusions {
-			if scopedom.MatchesExclusionPattern(exclusion.ExclusionType(), exclusion.Pattern(), av) {
-				return true
+	for _, raw := range assetValues {
+		for _, av := range exclusionMatchForms(raw) {
+			for _, exclusion := range exclusions {
+				if scopedom.MatchesExclusionPattern(exclusion.ExclusionType(), exclusion.Pattern(), av) {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+// exclusionMatchForms returns the value itself plus the host it names when it
+// is a URL ("https://host:8443/path") or a host:port. An exclusion names a
+// host; without this a scan target written as a URL or with a port slipped past
+// a domain/IP/CIDR exclusion of that same host. Matching more forms can only
+// exclude more, never less (fail closed).
+func exclusionMatchForms(value string) []string {
+	v := strings.TrimSpace(value)
+	forms := []string{v}
+	host := ""
+	if strings.Contains(v, "://") {
+		if u, err := url.Parse(v); err == nil {
+			host = u.Hostname()
+		}
+	} else if h, _, err := net.SplitHostPort(v); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host != "" && !strings.EqualFold(host, v) {
+		forms = append(forms, strings.ToLower(host))
+	}
+	return forms
 }
 
 // ExclusionCandidate is a minimal asset projection used to test scope
