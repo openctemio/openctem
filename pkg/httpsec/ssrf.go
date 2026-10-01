@@ -50,7 +50,9 @@ var hardBlockedIPRanges = []string{
 	"240.0.0.0/4",        // Reserved
 	"255.255.255.255/32", // Broadcast
 	"::1/128",            // IPv6 loopback
+	"::/128",             // IPv6 unspecified
 	"fe80::/10",          // IPv6 link-local
+	"ff00::/8",           // IPv6 multicast
 }
 
 // privateIPRanges lists CIDRs that are blocked BY DEFAULT but can

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/apikey"
 
 	"github.com/go-chi/chi/v5"
@@ -100,6 +101,12 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		RateLimit:     req.RateLimit,
 		ExpiresInDays: req.ExpiresInDays,
 		CreatedBy:     userID,
+		// A key may only carry scopes its creator holds (owner/admin bypass
+		// via the same HasPermission check the route gates use).
+		CallerHolds: func(scope string) bool {
+			return middleware.HasPermission(r.Context(), scope)
+		},
+		AuditContext: apiKeyAuditContext(r, tenantID),
 	}
 
 	result, err := h.service.Create(r.Context(), input)
@@ -178,9 +185,10 @@ func (h *APIKeyHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	input := apikey.RevokeInput{
-		ID:        id,
-		TenantID:  tenantID,
-		RevokedBy: userID,
+		ID:           id,
+		TenantID:     tenantID,
+		RevokedBy:    userID,
+		AuditContext: apiKeyAuditContext(r, tenantID),
 	}
 
 	key, err := h.service.Revoke(r.Context(), input)
@@ -198,7 +206,7 @@ func (h *APIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	if err := h.service.Delete(r.Context(), id, tenantID); err != nil {
+	if err := h.service.Delete(r.Context(), id, tenantID, apiKeyAuditContext(r, tenantID)); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -207,6 +215,18 @@ func (h *APIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Helpers ---
+
+// apiKeyAuditContext attributes an API-key lifecycle event to the caller.
+func apiKeyAuditContext(r *http.Request, tenantID string) *app.AuditContext {
+	return &app.AuditContext{
+		TenantID:   tenantID,
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: middleware.GetUsername(r.Context()),
+		ActorIP:    middleware.ClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  middleware.GetRequestID(r.Context()),
+	}
+}
 
 func toAPIKeyResponse(k *apikeydom.APIKey) APIKeyResponse {
 	resp := APIKeyResponse{
@@ -262,6 +282,8 @@ func (h *APIKeyHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.NotFound("API key").WriteJSON(w)
 	case errors.Is(err, apikeydom.ErrAPIKeyNameExists):
 		apierror.Conflict("API key name already exists").WriteJSON(w)
+	case errors.Is(err, apikey.ErrScopeNotHeld):
+		apierror.Forbidden("Cannot grant a scope you do not hold").WriteJSON(w)
 	case shared.IsValidation(err):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:

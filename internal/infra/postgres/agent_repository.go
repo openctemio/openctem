@@ -325,6 +325,72 @@ func (r *AgentRepository) UpdateKeyExpiry(ctx context.Context, id shared.ID, exp
 	return err
 }
 
+// UpdateHeartbeat writes only the heartbeat-owned columns. Unlike Update it
+// never rewrites status / api_key_hash / key_expires_at, and the
+// status = 'active' guard makes it a no-op for an agent an admin revoked or
+// disabled after the heartbeat's read — so a heartbeat can never undo a revoke
+// or a key regeneration.
+func (r *AgentRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb agent.HeartbeatUpdate) (bool, error) {
+	var tenantID sql.NullString
+	if hb.TenantID != nil {
+		tenantID = sql.NullString{String: hb.TenantID.String(), Valid: true}
+	}
+
+	query := `
+		UPDATE agents
+		SET version = COALESCE(NULLIF($3, ''), version),
+		    hostname = COALESCE(NULLIF($4, ''), hostname),
+		    region = COALESCE(NULLIF($5, ''), region),
+		    cpu_percent = $6, memory_percent = $7,
+		    disk_read_mbps = $8, disk_write_mbps = $9,
+		    network_rx_mbps = $10, network_tx_mbps = $11,
+		    load_score = $12,
+		    metrics_updated_at = NOW(),
+		    last_seen_at = NOW(),
+		    health = 'online',
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id IS NOT DISTINCT FROM $2::uuid
+		  AND status = 'active'
+	`
+	result, err := r.db.ExecContext(ctx, query,
+		id.String(), tenantID,
+		hb.Version, hb.Hostname, hb.Region,
+		hb.CPUPercent, hb.MemoryPercent,
+		hb.DiskReadMBPS, hb.DiskWriteMBPS,
+		hb.NetworkRxMBPS, hb.NetworkTxMBPS,
+		hb.LoadScore,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to update agent heartbeat: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return n > 0, nil
+}
+
+// UpdateAPIKey writes only the inline API-key columns. With requireActive the
+// write is guarded by status = 'active' so a self-renewal racing an admin
+// revoke cannot install a fresh key on a revoked agent.
+func (r *AgentRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	query := `
+		UPDATE agents
+		SET api_key_hash = $2,
+		    api_key_prefix = $3,
+		    key_expires_at = $4,
+		    updated_at = NOW()
+		WHERE id = $1
+	`
+	if requireActive {
+		query += " AND status = 'active'"
+	}
+	result, err := r.db.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt))
+	if err != nil {
+		return false, fmt.Errorf("failed to update agent api key: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return n > 0, nil
+}
+
 // IncrementStats increments agent statistics.
 func (r *AgentRepository) IncrementStats(ctx context.Context, id shared.ID, findings, scans, errors int64) error {
 	query := `

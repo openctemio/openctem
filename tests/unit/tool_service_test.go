@@ -539,6 +539,12 @@ func (m *toolSvcMockAgentRepo) Update(_ context.Context, _ *agent.Agent) error {
 func (m *toolSvcMockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
 	return nil
 }
+func (m *toolSvcMockAgentRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ agent.HeartbeatUpdate) (bool, error) {
+	return true, nil
+}
+func (m *toolSvcMockAgentRepo) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
+	return true, nil
+}
 func (m *toolSvcMockAgentRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *toolSvcMockAgentRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil

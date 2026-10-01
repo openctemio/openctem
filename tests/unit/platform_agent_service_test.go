@@ -125,6 +125,41 @@ func (m *mockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.
 	return nil
 }
 
+func (m *mockAgentRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb agent.HeartbeatUpdate) (bool, error) {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	a, ok := m.agents[id]
+	if !ok || a.Status != agent.AgentStatusActive {
+		return false, nil
+	}
+	if hb.Version != "" {
+		a.Version = hb.Version
+	}
+	if hb.Hostname != "" {
+		a.Hostname = hb.Hostname
+	}
+	a.CPUPercent = hb.CPUPercent
+	a.MemoryPercent = hb.MemoryPercent
+	a.LoadScore = hb.LoadScore
+	a.UpdateLastSeen()
+	return true, nil
+}
+
+func (m *mockAgentRepo) UpdateAPIKey(_ context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	a, ok := m.agents[id]
+	if !ok || (requireActive && a.Status != agent.AgentStatusActive) {
+		return false, nil
+	}
+	a.SetAPIKeyWithExpiry(hash, prefix, expiresAt)
+	return true, nil
+}
+
 func (m *mockAgentRepo) Delete(_ context.Context, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr

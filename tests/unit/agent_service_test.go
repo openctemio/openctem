@@ -60,6 +60,8 @@ type agentSvcMockRepo struct {
 	listCalls             int
 	updateCalls           int
 	updateKeyExpiryCalls  int
+	updateHeartbeatCalls  int
+	updateAPIKeyCalls     int
 	deleteCalls           int
 	updateLastSeenCalls   int
 	incrementStatsCalls   int
@@ -206,6 +208,58 @@ func (m *agentSvcMockRepo) UpdateKeyExpiry(_ context.Context, id shared.ID, expi
 	}
 	a.KeyExpiresAt = expiresAt
 	return nil
+}
+
+func (m *agentSvcMockRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb agent.HeartbeatUpdate) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateHeartbeatCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	a, ok := m.agents[id.String()]
+	if !ok || a.Status != agent.AgentStatusActive { // status='active' guard
+		return false, nil
+	}
+	if hb.TenantID != nil && (a.TenantID == nil || *a.TenantID != *hb.TenantID) {
+		return false, nil // tenant guard
+	}
+	if hb.Version != "" {
+		a.Version = hb.Version
+	}
+	if hb.Hostname != "" {
+		a.Hostname = hb.Hostname
+	}
+	if hb.Region != "" {
+		a.Region = hb.Region
+	}
+	a.CPUPercent = hb.CPUPercent
+	a.MemoryPercent = hb.MemoryPercent
+	a.DiskReadMBPS = hb.DiskReadMBPS
+	a.DiskWriteMBPS = hb.DiskWriteMBPS
+	a.NetworkRxMBPS = hb.NetworkRxMBPS
+	a.NetworkTxMBPS = hb.NetworkTxMBPS
+	a.LoadScore = hb.LoadScore
+	now := time.Now()
+	a.MetricsUpdatedAt = &now
+	a.LastSeenAt = &now
+	a.Health = agent.AgentHealthOnline
+	return true, nil
+}
+
+func (m *agentSvcMockRepo) UpdateAPIKey(_ context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateAPIKeyCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	a, ok := m.agents[id.String()]
+	if !ok || (requireActive && a.Status != agent.AgentStatusActive) {
+		return false, nil
+	}
+	a.SetAPIKeyWithExpiry(hash, prefix, expiresAt)
+	return true, nil
 }
 
 func (m *agentSvcMockRepo) Delete(_ context.Context, id shared.ID) error {

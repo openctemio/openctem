@@ -883,8 +883,22 @@ func (h *CommandHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.NotFound("Command").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		// Lost claim race / command already finished: a state conflict the
+		// agent should treat as "not mine any more", not a server fault.
+		apierror.Conflict(conflictMessage(err)).WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// conflictMessage returns the domain error's own message when it carries one,
+// otherwise a generic conflict message.
+func conflictMessage(err error) string {
+	var de *shared.DomainError
+	if errors.As(err, &de) && de.Message != "" {
+		return de.Message
+	}
+	return "Command state conflict"
 }

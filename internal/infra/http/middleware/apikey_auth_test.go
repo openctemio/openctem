@@ -119,3 +119,43 @@ func TestAPIKeyAuth_InvalidKeyIs401(t *testing.T) {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
 }
+
+// The key's stored rate_limit (requests/hour) is enforced per key.
+func TestAPIKeyAuth_EnforcesPerKeyRateLimit(t *testing.T) {
+	key := newTestKey(shared.NewID(), []string{"mcp:read"})
+	key.SetRateLimit(3)
+	fa := &fakeAuthenticator{key: key}
+	h := APIKeyAuth(fa, logger.NewNop())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	codes := make([]int, 0, 5)
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", nil)
+		req.Header.Set("Authorization", "Bearer oct_secret123")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		codes = append(codes, rec.Code)
+	}
+	for i, c := range codes {
+		want := http.StatusOK
+		if i >= 3 {
+			want = http.StatusTooManyRequests
+		}
+		if c != want {
+			t.Fatalf("request %d: got %d want %d (all: %v)", i, c, want, codes)
+		}
+	}
+
+	// A different key has its own budget.
+	other := newTestKey(shared.NewID(), nil)
+	other.SetRateLimit(3)
+	fa.key = other
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", nil)
+	req.Header.Set("Authorization", "Bearer oct_other")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("other key throttled: %d", rec.Code)
+	}
+}

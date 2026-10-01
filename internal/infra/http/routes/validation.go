@@ -27,11 +27,14 @@ func registerValidationRoutes(
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Agent ingest — API-key auth + ingest body limit.
+	// Agent ingest — API-key auth. A single evidence record is small; it keeps
+	// the global default body limit (10MB). It used to declare the 50MB ingest
+	// limit, which was inert while route limits nested under the global one;
+	// now that a route-level BodyLimit really overrides the global limit, the
+	// tighter default is kept deliberately instead of silently widening it.
 	if h != nil && ingestHandler != nil {
-		bodyLimit := middleware.BodyLimit(middleware.IngestMaxBodySize)
 		router.Group("/api/v1/validation", func(r Router) {
-			r.POST("/evidence", h.IngestEvidence, bodyLimit)
+			r.POST("/evidence", h.IngestEvidence)
 		}, ingestHandler.AuthenticateSource)
 	}
 

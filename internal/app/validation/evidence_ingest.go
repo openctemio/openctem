@@ -60,27 +60,18 @@ func validOutcome(o Outcome) bool {
 // finding. The evidence is the source of truth and is always recorded first; if
 // the finding cannot legally transition from its current state (e.g. already
 // closed) that is logged but NOT fatal — the recorded evidence still surfaces.
+//
+// Callers must only use Ingest for evidence that is AUTHORIZED to move the
+// finding (a server-issued validate command, or an agent proving it holds the
+// validate command assigned to it for this finding). Unsolicited evidence goes
+// through IngestAdvisory.
 func (s *EvidenceIngestService) Ingest(
 	ctx context.Context,
 	tenantID, findingID shared.ID,
 	simRunID *shared.ID,
 	ev Evidence,
 ) (IngestResult, error) {
-	if tenantID.IsZero() || findingID.IsZero() {
-		return IngestResult{}, fmt.Errorf("%w: tenant and finding ids are required", shared.ErrValidation)
-	}
-	if !validOutcome(ev.Outcome) {
-		return IngestResult{}, fmt.Errorf("%w: %q", ErrInvalidOutcome, ev.Outcome)
-	}
-
-	// Tenant guard: the finding must exist within the submitting agent's tenant.
-	// Without this, a compromised agent could record evidence against another
-	// tenant's finding id (the FK to findings(id) alone would not catch it).
-	if _, err := s.finding.Get(ctx, tenantID, findingID); err != nil {
-		return IngestResult{}, fmt.Errorf("finding lookup: %w", err)
-	}
-
-	stored, err := s.store.Record(ctx, tenantID, findingID, simRunID, ev)
+	stored, err := s.record(ctx, tenantID, findingID, simRunID, ev)
 	if err != nil {
 		return IngestResult{}, err
 	}
@@ -93,6 +84,48 @@ func (s *EvidenceIngestService) Ingest(
 		return IngestResult{Stored: stored, StatusChanged: false}, nil
 	}
 	return IngestResult{Stored: stored, StatusChanged: res.Stood, Downgraded: res.Downgraded}, nil
+}
+
+// IngestAdvisory records the evidence (same validation, tenant guard and
+// redaction as Ingest) WITHOUT applying its outcome to the finding. Used for
+// evidence an agent submits outside an assigned validate command: it stays
+// visible on the finding for a human to weigh, but an arbitrary agent key in
+// the tenant can no longer resolve / downgrade / reopen any finding by id.
+func (s *EvidenceIngestService) IngestAdvisory(
+	ctx context.Context,
+	tenantID, findingID shared.ID,
+	simRunID *shared.ID,
+	ev Evidence,
+) (IngestResult, error) {
+	stored, err := s.record(ctx, tenantID, findingID, simRunID, ev)
+	if err != nil {
+		return IngestResult{}, err
+	}
+	return IngestResult{Stored: stored}, nil
+}
+
+// record validates and persists the evidence after the tenant guard.
+func (s *EvidenceIngestService) record(
+	ctx context.Context,
+	tenantID, findingID shared.ID,
+	simRunID *shared.ID,
+	ev Evidence,
+) (StoredEvidence, error) {
+	if tenantID.IsZero() || findingID.IsZero() {
+		return StoredEvidence{}, fmt.Errorf("%w: tenant and finding ids are required", shared.ErrValidation)
+	}
+	if !validOutcome(ev.Outcome) {
+		return StoredEvidence{}, fmt.Errorf("%w: %q", ErrInvalidOutcome, ev.Outcome)
+	}
+
+	// Tenant guard: the finding must exist within the submitting agent's tenant.
+	// Without this, a compromised agent could record evidence against another
+	// tenant's finding id (the FK to findings(id) alone would not catch it).
+	if _, err := s.finding.Get(ctx, tenantID, findingID); err != nil {
+		return StoredEvidence{}, fmt.Errorf("finding lookup: %w", err)
+	}
+
+	return s.store.Record(ctx, tenantID, findingID, simRunID, ev)
 }
 
 // ListForFinding returns the evidence recorded for a finding (UI detail page).

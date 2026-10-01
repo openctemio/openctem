@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -350,7 +351,8 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 	// 3. Tool name available for scoping
 	//
 	// This follows GitHub/GitLab best practices where default branch is source of truth.
-	if input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != "" {
+	if input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != "" &&
+		s.agentMayAutoResolveTool(ctx, agt, report.Tool.Name) {
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 
@@ -645,6 +647,67 @@ func partitionByBaseline(fingerprints, openOnBase []string) (newFps, preExisting
 // =============================================================================
 // Validation Methods
 // =============================================================================
+
+// reservedAutoResolveTools are tool names stamped on findings that do NOT come
+// from an agent-run scanner (platform imports, pentest / manual entry). An
+// agent-pushed report claiming one of these names must never drive
+// auto-resolve: the "not seen in this scan" sweep would close another source's
+// findings. Compared case-insensitively.
+var reservedAutoResolveTools = map[string]struct{}{
+	"defectdojo":     {}, // DefectDojo platform import
+	"pentest":        {},
+	"pentest-manual": {}, // pentest campaign findings
+	"manual":         {},
+	"burp_suite":     {}, // Burp XML import (pentest)
+	"csv_import":     {}, // CSV finding import (pentest)
+}
+
+// agentMayAutoResolveTool decides whether a report attributed to toolName may
+// auto-resolve stale findings of that tool. Auto-resolve is keyed on the
+// agent-SUPPLIED tool name, so without this any agent key in the tenant could
+// close another tool's findings by claiming its name in a "full" scan.
+//
+//   - Server-side ingests (synthetic agent, zero ID: tenant uploads, platform
+//     imports) are trusted — the server chose the tool name.
+//   - Reserved non-scanner tool names are never auto-resolved by an agent.
+//   - An agent that declares its tools may only auto-resolve those tools.
+//   - A legacy agent that declares no tools keeps the previous behavior
+//     (backward compatibility with old SDKs / unconfigured agents), with a
+//     warning so operators can see which agents should declare their tools.
+func (s *Service) agentMayAutoResolveTool(ctx context.Context, agt *agent.Agent, toolName string) bool {
+	if agt == nil || agt.ID.IsZero() {
+		return true
+	}
+	if _, reserved := reservedAutoResolveTools[strings.ToLower(strings.TrimSpace(toolName))]; reserved {
+		s.logger.Warn("auto-resolve skipped: tool name is reserved for non-agent sources",
+			"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
+		return false
+	}
+
+	tools := agt.Tools
+	// The async ingest worker rebuilds a minimal agent from the job (ID +
+	// tenant only); load the declared tools from the agent row in that case.
+	if len(tools) == 0 && s.agentRepo != nil {
+		if stored, err := s.agentRepo.GetByID(ctx, agt.ID); err == nil && stored != nil {
+			tools = stored.Tools
+		}
+	}
+
+	if len(tools) == 0 {
+		s.logger.Warn("auto-resolve allowed for legacy agent with no declared tools; declare the agent's tools to scope auto-resolve",
+			"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
+		return true
+	}
+	for _, t := range tools {
+		if strings.EqualFold(strings.TrimSpace(t), strings.TrimSpace(toolName)) {
+			return true
+		}
+	}
+	s.logger.Warn("auto-resolve skipped: reported tool is not among the agent's declared tools",
+		"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName),
+		"declared_tools", sanitizeIngestLogField(strings.Join(tools, ",")))
+	return false
+}
 
 // validateAgent checks if the agent is valid for ingestion.
 func (s *Service) validateAgent(agt *agent.Agent) error {

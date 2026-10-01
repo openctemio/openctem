@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	commanddom "github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -36,8 +37,19 @@ type CoverageReader interface {
 type ValidationHandler struct {
 	ingest   *validation.EvidenceIngestService
 	coverage CoverageReader
+	commands ValidationCommandLookup
 	logger   *logger.Logger
 }
+
+// ValidationCommandLookup resolves the validate command an agent cites as its
+// authority to submit evidence. Implemented by *postgres.CommandRepository.
+type ValidationCommandLookup interface {
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*commanddom.Command, error)
+}
+
+// SetCommandLookup wires the command store used to authorize evidence that
+// cites a command_id. When unset, every direct submission is advisory-only.
+func (h *ValidationHandler) SetCommandLookup(c ValidationCommandLookup) { h.commands = c }
 
 // NewValidationHandler creates the handler.
 func NewValidationHandler(ingest *validation.EvidenceIngestService, log *logger.Logger) *ValidationHandler {
@@ -61,7 +73,12 @@ type evidenceTargetIn struct {
 
 // evidenceRequest is the agent-submitted validation result.
 type evidenceRequest struct {
-	FindingID       string           `json:"finding_id"`
+	FindingID string `json:"finding_id"`
+	// CommandID is the validate command (assigned to the submitting agent, not
+	// yet finished, for this finding) that authorizes the evidence to change
+	// the finding's status. Optional: without it the evidence is recorded as
+	// advisory only (no status change).
+	CommandID       string           `json:"command_id,omitempty"`
 	SimulationRunID string           `json:"simulation_run_id,omitempty"`
 	ExecutorKind    string           `json:"executor_kind"`
 	Technique       string           `json:"technique,omitempty"`
@@ -154,7 +171,28 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 		RawMeta:      req.RawMeta,
 	}
 
-	result, err := h.ingest.Ingest(r.Context(), tenantID, findingID, simRunID, ev)
+	// Authorization: only evidence backed by the validate command assigned to
+	// THIS agent for THIS finding may move the finding's status. Previously any
+	// agent key in the tenant could resolve / downgrade / reopen any finding by
+	// posting an outcome for its id.
+	authorized := false
+	if req.CommandID != "" {
+		cmd, ok := h.authorizeEvidenceCommand(r.Context(), w, agt.ID, tenantID, findingID, req.CommandID)
+		if !ok {
+			return
+		}
+		authorized = true
+		ev.CorrelationID = cmd.ID
+	}
+
+	var result validation.IngestResult
+	if authorized {
+		result, err = h.ingest.Ingest(r.Context(), tenantID, findingID, simRunID, ev)
+	} else {
+		h.logger.Info("validation evidence recorded as advisory (no assigned validate command cited)",
+			"agent_id", agt.ID.String(), "finding_id", findingID.String())
+		result, err = h.ingest.IngestAdvisory(r.Context(), tenantID, findingID, simRunID, ev)
+	}
 	if err != nil {
 		h.writeIngestError(w, err)
 		return
@@ -169,6 +207,56 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 		StatusChanged: result.StatusChanged,
 		Downgraded:    result.Downgraded,
 	})
+}
+
+// authorizeEvidenceCommand checks that commandID names a validate command in
+// the agent's tenant, assigned to this agent, still in flight, whose payload
+// targets findingID. Writes the error response and returns false otherwise.
+// Every rejection is the same generic 403 (no command-state enumeration).
+func (h *ValidationHandler) authorizeEvidenceCommand(
+	ctx context.Context, w http.ResponseWriter,
+	agentID, tenantID, findingID shared.ID, commandID string,
+) (*commanddom.Command, bool) {
+	cid, err := shared.IDFromString(commandID)
+	if err != nil {
+		apierror.BadRequest("command_id must be a valid id").WriteJSON(w)
+		return nil, false
+	}
+	deny := func(reason string) (*commanddom.Command, bool) {
+		h.logger.Warn("validation evidence rejected: command does not authorize it",
+			"agent_id", agentID.String(), "command_id", sanitizeLogField(commandID),
+			"finding_id", findingID.String(), "reason", reason)
+		apierror.Forbidden("command does not authorize evidence for this finding").WriteJSON(w)
+		return nil, false
+	}
+	if h.commands == nil {
+		return deny("command lookup not configured")
+	}
+	cmd, err := h.commands.GetByTenantAndID(ctx, tenantID, cid)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return deny("not found")
+		}
+		h.logger.Error("validation evidence: command lookup failed", "error", err)
+		apierror.InternalServerError("failed to record validation evidence").WriteJSON(w)
+		return nil, false
+	}
+	if cmd.Type != commanddom.CommandTypeValidate {
+		return deny("not a validate command")
+	}
+	if cmd.AgentID == nil || *cmd.AgentID != agentID {
+		return deny("not assigned to this agent")
+	}
+	switch cmd.Status {
+	case commanddom.CommandStatusPending, commanddom.CommandStatusAcknowledged, commanddom.CommandStatusRunning:
+	default:
+		return deny("command already finished")
+	}
+	var payload validation.ValidateCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.FindingID != findingID.String() {
+		return deny("command targets a different finding")
+	}
+	return cmd, true
 }
 
 func (h *ValidationHandler) writeIngestError(w http.ResponseWriter, err error) {

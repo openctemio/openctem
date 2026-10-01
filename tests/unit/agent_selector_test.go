@@ -64,6 +64,12 @@ func (m *agentSelMockAgentRepo) Update(_ context.Context, _ *agent.Agent) error 
 func (m *agentSelMockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
 	return nil
 }
+func (m *agentSelMockAgentRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ agent.HeartbeatUpdate) (bool, error) {
+	return true, nil
+}
+func (m *agentSelMockAgentRepo) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
+	return true, nil
+}
 func (m *agentSelMockAgentRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *agentSelMockAgentRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil

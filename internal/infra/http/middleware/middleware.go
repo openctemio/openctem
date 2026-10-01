@@ -27,7 +27,10 @@ func RequestID() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestID := r.Header.Get("X-Request-ID")
-			if requestID == "" {
+			if !isValidRequestID(requestID) {
+				// Absent, oversized or carrying anything outside the safe
+				// charset: never echo it (response-header / log injection,
+				// unbounded log fields) — mint our own instead.
 				requestID = uuid.New().String()
 			}
 
@@ -37,6 +40,28 @@ func RequestID() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// maxRequestIDLen bounds a client-supplied X-Request-ID.
+const maxRequestIDLen = 64
+
+// isValidRequestID accepts only ^[A-Za-z0-9._-]{1,64}$ — enough for UUIDs,
+// ULIDs and typical proxy/trace ids, nothing that can break a header or a
+// log line.
+func isValidRequestID(id string) bool {
+	if id == "" || len(id) > maxRequestIDLen {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // GetRequestID extracts the request ID from context.
