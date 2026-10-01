@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -164,13 +165,65 @@ func insertedAssets(candidates []*asset.Asset, persistedIDs map[string]shared.ID
 	out := make([]*asset.Asset, 0, len(candidates))
 	for _, a := range candidates {
 		if persistedIDs != nil {
-			if pid, ok := persistedIDs[a.Name()]; ok && !pid.Equals(a.ID()) {
+			pid, ok := persistedIDs[a.Name()]
+			if !ok {
+				continue // refused by the database: never stored
+			}
+			if !pid.Equals(a.ID()) {
 				continue // lost a concurrent-create race: the row already existed
 			}
 		}
 		out = append(out, a)
 	}
 	return out
+}
+
+// dropRefusedAssets removes from assetMap and existingMap every new asset the
+// upsert did not store (absent from persistedIDs) and adds an error for each.
+// A nil persistedIDs means the repository did not say, and nothing is dropped.
+func dropRefusedAssets(newAssets []*asset.Asset, persistedIDs map[string]shared.ID,
+	assetMap map[string]shared.ID, existingMap map[string]*asset.Asset, output *Output) {
+	if persistedIDs == nil {
+		return
+	}
+	for _, a := range newAssets {
+		if _, ok := persistedIDs[a.Name()]; ok {
+			continue
+		}
+		for ctisID, id := range assetMap {
+			if id.Equals(a.ID()) {
+				delete(assetMap, ctisID)
+				addError(output, fmt.Sprintf("asset %s (%s): refused by the database", ctisID, shortName(a.Name())))
+			}
+		}
+		if existingMap[a.Name()] == a {
+			delete(existingMap, a.Name())
+		}
+	}
+}
+
+// unmapAssets removes every assetMap entry that points at one of assets.
+func unmapAssets(assets []*asset.Asset, assetMap map[string]shared.ID) {
+	ids := make(map[shared.ID]bool, len(assets))
+	for _, a := range assets {
+		ids[a.ID()] = true
+	}
+	for ctisID, id := range assetMap {
+		if ids[id] {
+			delete(assetMap, ctisID)
+		}
+	}
+}
+
+// shortName keeps an asset name readable in an error message: a refused name
+// can be arbitrarily long.
+func shortName(name string) string {
+	const maxRunes = 80
+	if utf8.RuneCountInString(name) <= maxRunes {
+		return name
+	}
+	r := []rune(name)
+	return string(r[:maxRunes]) + "…"
 }
 
 // mergeTrackingExposure merges a re-observed CTIS asset into the existing one
@@ -430,7 +483,7 @@ func (p *AssetProcessor) processBatch(
 		createNew := func() {
 			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
 			if createErr != nil {
-				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, normalizedName, createErr))
+				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, shortName(normalizedName), createErr))
 				return
 			}
 			newAssets = append(newAssets, newAsset)
@@ -575,10 +628,19 @@ func (p *AssetProcessor) processBatch(
 		allAssets = append(allAssets, updateAssets...)
 		created, updated, persistedIDs, err := p.repo.UpsertBatch(ctx, allAssets)
 		if err != nil {
+			// None of the new assets was stored: do not hand out their local
+			// ids, or findings are linked to rows that do not exist and v2
+			// reports the assets as accepted.
+			unmapAssets(newAssets, assetMap)
 			return assetMap, fmt.Errorf("failed to batch upsert assets: %w", err)
 		}
 		output.AssetsCreated = created
 		output.AssetsUpdated = updated
+
+		// A new asset the database refused (the repository skips just that
+		// row) was never stored: unmap it so its findings are not linked to
+		// a row that does not exist, and report it as this asset's error.
+		dropRefusedAssets(newAssets, persistedIDs, assetMap, existingMap, output)
 
 		// Reconcile assetMap to the ids the DB actually persisted. ON CONFLICT
 		// (tenant_id, name) keeps the pre-existing row's id, so an asset we created
@@ -615,9 +677,13 @@ func (p *AssetProcessor) processBatch(
 
 		// The database keeps the existing row's id on a (tenant_id, name)
 		// conflict, so map each asset to the id that was persisted.
+		// A new asset the database refused has no id at all.
 		finalID := func(a *asset.Asset) shared.ID {
 			if pid, ok := persistedIDs[a.Name()]; ok {
 				return pid
+			}
+			if persistedIDs != nil && isNew[a.ID().String()] {
+				return shared.ID{}
 			}
 			return a.ID()
 		}
@@ -1590,17 +1656,10 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		return nil, fmt.Errorf("asset name/value is required")
 	}
 
-	// Validate name length - log if truncated
-	const maxNameLength = 1024
-	if len(name) > maxNameLength {
-		p.logger.Warn("asset name truncated",
-			"original_length", len(name),
-			"max_length", maxNameLength,
-			"asset_id", ctisAsset.ID,
-		)
-		name = name[:maxNameLength]
-	}
-
+	// NewAsset refuses a name longer than asset.MaxNameLength (after
+	// normalization); the caller reports that as an error of this one asset.
+	// It used to truncate at 1024 bytes, which still overflowed
+	// assets.name varchar(255) and failed the whole report's upsert.
 	newAsset, err := asset.NewAsset(name, coreType, criticality)
 	if err != nil {
 		return nil, err

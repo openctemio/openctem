@@ -570,6 +570,9 @@ func (p *AssetProcessor) flushIdentity(ctx context.Context, b *batchIdentity, fi
 		owner := map[asset.IdentifierKey]*asset.Asset{}
 		for _, w := range b.writes {
 			w.id.AssetID = finalID(w.a)
+			if w.id.AssetID.IsZero() {
+				continue // the asset was refused and never stored
+			}
 			ids = append(ids, w.id)
 			if w.id.Kind.IsStrong() {
 				owner[w.id.Key()] = w.a

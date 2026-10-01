@@ -5,7 +5,9 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
+	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
@@ -157,8 +159,10 @@ func createCompositeFingerprint(assetID, baseFingerprint string) string {
 // Security: Input Sanitization
 // =============================================================================
 
-// MaxAssetNameLength is the maximum allowed length for auto-created asset names.
-const MaxAssetNameLength = 500
+// MaxAssetNameLength is the maximum length, in characters, of auto-created
+// asset names: what assets.name can hold (asset.MaxNameLength). It was 500,
+// so a longer derived name still failed the upsert.
+const MaxAssetNameLength = asset.MaxNameLength
 
 // dangerousCharsPattern matches potentially dangerous characters for asset names.
 // Prevents injection attacks (SQL, XSS, path traversal).
@@ -206,8 +210,10 @@ func sanitizeAssetName(name string) string {
 	name = strings.TrimSpace(name)
 
 	// Step 6: Enforce length limit
-	if len(name) > MaxAssetNameLength {
-		name = name[:MaxAssetNameLength]
+	// Cut on a character boundary: slicing bytes could split a multi-byte
+	// character and leave invalid UTF-8, which Postgres refuses.
+	if utf8.RuneCountInString(name) > MaxAssetNameLength {
+		name = string([]rune(name)[:MaxAssetNameLength])
 	}
 
 	return name

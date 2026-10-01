@@ -3,6 +3,7 @@ package asset
 import (
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -91,12 +92,31 @@ type Asset struct {
 	manualStatusOverride bool
 }
 
+// MaxNameLength is the longest asset name, in characters, that can be stored:
+// assets.name is varchar(255), the same limit the API and UI enforce. It
+// applies to the normalized name, which is what is stored.
+const MaxNameLength = 255
+
+// validateName checks a normalized name against what assets.name can hold.
+// A longer name is refused rather than truncated: the name is the asset's
+// identity (unique per tenant), so a truncated name could merge two different
+// assets and attach findings to the wrong one.
+func validateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: name is required", shared.ErrValidation)
+	}
+	if n := utf8.RuneCountInString(name); n > MaxNameLength {
+		return fmt.Errorf("%w: name is %d characters, the maximum is %d", shared.ErrValidation, n, MaxNameLength)
+	}
+	return nil
+}
+
 // NewAsset creates a new Asset entity.
 func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset, error) {
 	// Normalize name to canonical form (RFC-001: Asset Identity Resolution)
 	name = NormalizeName(name, assetType, "")
-	if name == "" {
-		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
+	if err := validateName(name); err != nil {
+		return nil, err
 	}
 	if !assetType.IsValid() {
 		return nil, fmt.Errorf("%w: invalid asset type", shared.ErrValidation)
@@ -361,8 +381,8 @@ func (a *Asset) UpdatedAt() time.Time {
 // Stores the old name as an alias for search compatibility.
 func (a *Asset) UpdateName(name string) error {
 	name = NormalizeName(name, a.assetType, a.SubType())
-	if name == "" {
-		return fmt.Errorf("%w: name is required", shared.ErrValidation)
+	if err := validateName(name); err != nil {
+		return err
 	}
 	if name == a.name {
 		return nil // No change
