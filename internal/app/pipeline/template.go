@@ -342,9 +342,32 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 	return t, nil
 }
 
+// errSystemTemplateReadOnly refuses a tenant change to a system template.
+func errSystemTemplateReadOnly() error {
+	return shared.NewDomainError("FORBIDDEN",
+		"System templates cannot be modified directly. Please clone it first using 'Use Template' button.",
+		shared.ErrForbidden)
+}
+
+// getWritableTemplate returns a template the tenant may change: its own.
+// GetTemplate also resolves the shared system templates (so every tenant can
+// read and clone them); those are refused here. Deleting the Quick Scan
+// template or editing its steps used to change it for every tenant, and a
+// delete cascaded to every tenant's runs of it.
+func (s *Service) getWritableTemplate(ctx context.Context, tenantID, templateID string) (*pipeline.Template, error) {
+	t, err := s.GetTemplate(ctx, tenantID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	if t.IsSystemTemplate {
+		return nil, errSystemTemplateReadOnly()
+	}
+	return t, nil
+}
+
 // DeleteTemplate deletes a template.
 func (s *Service) DeleteTemplate(ctx context.Context, tenantID, templateID string) error {
-	t, err := s.GetTemplate(ctx, tenantID, templateID)
+	t, err := s.getWritableTemplate(ctx, tenantID, templateID)
 	if err != nil {
 		return err
 	}

@@ -10071,6 +10071,11 @@ definitions:
           $ref: '#/definitions/github_com_openctemio_api_internal_app.SessionInfo'
         type: array
     type: object
+  internal_infra_http_handler.SetSyncEnabledRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
   internal_infra_http_handler.SetTagsRequest:
     properties:
       tags:
@@ -10201,6 +10206,23 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  internal_infra_http_handler.SyncStatusResponse:
+    properties:
+      enabled:
+        type: boolean
+      last_error:
+        type: string
+      last_sync_at:
+        type: string
+      last_sync_status:
+        type: string
+      next_sync_at:
+        type: string
+      records_synced:
+        type: integer
+      source:
+        type: string
     type: object
   internal_infra_http_handler.TargetMappingTypesResponse:
     properties:
@@ -10658,6 +10680,12 @@ definitions:
       context:
         additionalProperties: {}
         type: object
+    type: object
+  internal_infra_http_handler.TriggerSyncRequest:
+    properties:
+      source:
+        description: empty or "all" for all sources
+        type: string
     type: object
   internal_infra_http_handler.UnreadCountResponse:
     properties:
@@ -12536,6 +12564,84 @@ paths:
       summary: Create a user in an organization (platform admin)
       tags:
       - Admin Organizations
+  /admin/threat-intel/sync:
+    get:
+      description: Status of the platform-wide EPSS and CISA KEV feed syncs.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Threat-intelligence feed sync status (platform admin)
+      tags:
+      - Admin Threat Intelligence
+    post:
+      consumes:
+      - application/json
+      description: Syncs the platform-wide EPSS and/or CISA KEV feed now. ops_admin
+        or super_admin; audited.
+      parameters:
+      - description: Feed (epss, kev, all); empty = all
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.TriggerSyncRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Run a threat-intelligence feed sync (platform admin)
+      tags:
+      - Admin Threat Intelligence
+  /admin/threat-intel/sync/{source}:
+    patch:
+      consumes:
+      - application/json
+      description: Turns the platform-wide sync of one feed on or off for every organization.
+        ops_admin or super_admin; audited.
+      parameters:
+      - description: Feed (epss, kev)
+        in: path
+        name: source
+        required: true
+        type: string
+      - description: Enabled
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SetSyncEnabledRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SyncStatusResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Enable or disable a threat-intelligence feed sync (platform admin)
+      tags:
+      - Admin Threat Intelligence
   /admin/users/{id}/break-glass-test:
     post:
       description: 'Super admin only, and not the break-glass account itself: records
@@ -26814,6 +26920,41 @@ paths:
       summary: Issue a new set-password link for a pending account
       tags:
       - Tenants
+  /threat-intel/sync:
+    post:
+      description: Always 403. The EPSS and CISA KEV feed syncs are shared by every
+        organization; a platform administrator runs or toggles them from the admin
+        console.
+      produces:
+      - application/json
+      responses:
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Change the threat-intelligence feed sync (not allowed)
+      tags:
+      - Threat Intelligence
+  /threat-intel/sync/{source}:
+    patch:
+      description: Always 403. The EPSS and CISA KEV feed syncs are shared by every
+        organization; a platform administrator runs or toggles them from the admin
+        console.
+      parameters:
+      - description: Feed (epss, kev)
+        in: path
+        name: source
+        type: string
+      produces:
+      - application/json
+      responses:
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Change the threat-intelligence feed sync (not allowed)
+      tags:
+      - Threat Intelligence
   /tools:
     get:
       consumes:

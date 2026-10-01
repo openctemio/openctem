@@ -453,7 +453,7 @@ func (m *mockStepRepo) DeleteByPipelineIDInTx(_ context.Context, _ *sql.Tx, _ sh
 	return nil
 }
 func (m *mockStepRepo) Reorder(_ context.Context, _ shared.ID, _ map[string]int) error { return nil }
-func (m *mockStepRepo) FindPipelineIDsByToolName(_ context.Context, _ string) ([]shared.ID, error) {
+func (m *mockStepRepo) FindPipelineIDsByToolName(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
 	return nil, nil
 }
 

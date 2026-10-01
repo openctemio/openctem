@@ -36,8 +36,8 @@ type AddStepInput struct {
 
 // AddStep adds a step to a template.
 func (s *Service) AddStep(ctx context.Context, input AddStepInput) (*pipeline.Step, error) {
-	// Verify template exists and belongs to tenant
-	t, err := s.GetTemplate(ctx, input.TenantID, input.TemplateID)
+	// Verify template exists, belongs to tenant and is not a system template
+	t, err := s.getWritableTemplate(ctx, input.TenantID, input.TemplateID)
 	if err != nil {
 		return nil, err
 	}
@@ -310,13 +310,13 @@ func (s *Service) ValidateToolReferences(ctx context.Context, template *pipeline
 // DeactivatePipelinesByTool deactivates all active pipelines that use a specific tool.
 // This is called when a tool is deactivated or deleted to ensure data consistency.
 // Returns the count of deactivated pipelines and list of affected pipeline IDs.
-func (s *Service) DeactivatePipelinesByTool(ctx context.Context, toolName string) (int, []shared.ID, error) {
+func (s *Service) DeactivatePipelinesByTool(ctx context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error) {
 	if toolName == "" {
 		return 0, nil, nil
 	}
 
-	// Find all active pipelines using this tool
-	pipelineIDs, err := s.stepRepo.FindPipelineIDsByToolName(ctx, toolName)
+	// Find the tenant's active pipelines using this tool
+	pipelineIDs, err := s.stepRepo.FindPipelineIDsByToolName(ctx, tenantID, toolName)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to find pipelines by tool: %w", err)
 	}
@@ -378,11 +378,11 @@ func (s *Service) DeactivatePipelinesByTool(ctx context.Context, toolName string
 
 // GetPipelinesUsingTool returns all active pipeline IDs that use a specific tool.
 // This can be used to check if a tool can be safely deleted.
-func (s *Service) GetPipelinesUsingTool(ctx context.Context, toolName string) ([]shared.ID, error) {
+func (s *Service) GetPipelinesUsingTool(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error) {
 	if toolName == "" {
 		return nil, nil
 	}
-	return s.stepRepo.FindPipelineIDsByToolName(ctx, toolName)
+	return s.stepRepo.FindPipelineIDsByToolName(ctx, tenantID, toolName)
 }
 
 // GetSteps retrieves all steps for a template.
@@ -420,6 +420,9 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 		if step.PipelineID != tid {
 			return nil, shared.ErrNotFound
 		}
+	}
+	if _, err := s.getWritableTemplate(ctx, input.TenantID, step.PipelineID.String()); err != nil {
+		return nil, err
 	}
 
 	// Security validation: validate tool, capabilities, and config
@@ -515,7 +518,7 @@ func (s *Service) DeleteStep(ctx context.Context, tenantID, stepID string) error
 	// caller's tenant owns, a caller could pass an owned template plus a step ID
 	// from another tenant's template and delete it (cross-tenant IDOR). Mirrors
 	// the guard in UpdateStep.
-	if _, err := s.GetTemplate(ctx, tenantID, step.PipelineID.String()); err != nil {
+	if _, err := s.getWritableTemplate(ctx, tenantID, step.PipelineID.String()); err != nil {
 		return err
 	}
 
@@ -543,9 +546,8 @@ func (s *Service) DeleteStepsByPipelineID(ctx context.Context, tenantID, pipelin
 		return fmt.Errorf("%w: invalid pipeline id", shared.ErrValidation)
 	}
 
-	// Verify pipeline belongs to tenant
-	_, err = s.GetTemplate(ctx, tenantID, pipelineID)
-	if err != nil {
+	// Verify pipeline belongs to tenant and is not a system template
+	if _, err := s.getWritableTemplate(ctx, tenantID, pipelineID); err != nil {
 		return err
 	}
 

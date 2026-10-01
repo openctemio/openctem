@@ -681,22 +681,24 @@ type toolSvcMockPipelineDeactivator struct {
 	deactivatedCount int
 	deactivatedIDs   []shared.ID
 	err              error
-	calledWith       string // tracks the tool name passed to DeactivatePipelinesByTool
+	calledWith       string    // tracks the tool name passed to DeactivatePipelinesByTool
+	calledForTenant  shared.ID // tracks the tenant passed to DeactivatePipelinesByTool
 }
 
 func newToolSvcMockPipelineDeactivator() *toolSvcMockPipelineDeactivator {
 	return &toolSvcMockPipelineDeactivator{}
 }
 
-func (m *toolSvcMockPipelineDeactivator) DeactivatePipelinesByTool(_ context.Context, toolName string) (int, []shared.ID, error) {
+func (m *toolSvcMockPipelineDeactivator) DeactivatePipelinesByTool(_ context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error) {
 	m.calledWith = toolName
+	m.calledForTenant = tenantID
 	if m.err != nil {
 		return 0, nil, m.err
 	}
 	return m.deactivatedCount, m.deactivatedIDs, nil
 }
 
-func (m *toolSvcMockPipelineDeactivator) GetPipelinesUsingTool(_ context.Context, _ string) ([]shared.ID, error) {
+func (m *toolSvcMockPipelineDeactivator) GetPipelinesUsingTool(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
 	return m.deactivatedIDs, m.err
 }
 
@@ -1269,6 +1271,12 @@ func TestToolService_DeleteTool_CascadeDeactivation(t *testing.T) {
 
 	if deactivator.calledWith != "custom-scanner" {
 		t.Errorf("expected deactivator called with custom-scanner, got %s", deactivator.calledWith)
+	}
+	// Only the tool's own tenant's pipelines may be deactivated: tool names
+	// are unique per tenant, so a tenant's custom "nuclei" used to switch
+	// off every other tenant's nuclei pipelines.
+	if deactivator.calledForTenant != tenantID {
+		t.Errorf("deactivation must be scoped to the tool's tenant %s, got %s", tenantID, deactivator.calledForTenant)
 	}
 }
 

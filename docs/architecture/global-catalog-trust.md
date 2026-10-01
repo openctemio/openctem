@@ -82,6 +82,29 @@ come from the catalog. The first reporter can choose them for a CVE or
 component nobody had seen, but they no longer change any number, filter, sort
 order or flag a tenant acts on.
 
+## Other platform-wide data tenants must not change
+
+A sweep of every tenant-reachable write route for rows shared by all tenants
+(tables without `tenant_id`, and system rows of tables with a nullable one)
+found these, now closed:
+
+| Data | Was | Now |
+|---|---|---|
+| Threat-intel feed sync (`threat_intel_sync_status`, `epss_scores`, `kev_catalog`) | `POST /threat-intel/sync` and `PATCH /threat-intel/sync/{source}` let any organization's admin run the sync or switch EPSS/KEV off for everyone | 403 for tenants; the platform administrator uses `GET/POST /api/v1/admin/threat-intel/sync` and `PATCH /api/v1/admin/threat-intel/sync/{source}` (ops_admin+, audited `threat_intel.sync` / `threat_intel.sync_toggle`) |
+| System pipeline templates (`pipeline_templates.is_system_template`, e.g. Quick Scan) | readable by every tenant (so it can clone them), but `DELETE /pipelines/{id}` and the step add/update/delete routes did not check `is_system_template`: a tenant could edit the Quick Scan step or delete the template, cascading to every tenant's runs of it | 403 (`getWritableTemplate`); clone it to change it |
+| Other tenants' pipelines on tool deactivation | deactivating or deleting a tenant's custom tool deactivated every active pipeline, in any tenant, with a step using a tool of that name (names are unique per tenant, so a custom tool named `nuclei` hit everyone) | only the tool's own tenant's pipelines (`FindPipelineIDsByToolName` is tenant-scoped) |
+
+Left as is, by decision: `pentest_finding_templates.usage_count` is bumped
+when any tenant uses a system template. It is a shared popularity counter, not
+something another tenant relies on; no content of the template changes.
+
+Guarded already (checked, unchanged): the CVE catalog (above), components and
+licenses (insert-only), platform tools/categories/capabilities, system roles
+and permission sets, system pentest templates, scan profiles, the settings
+row of the caller's own tenant, and catalogs with no tenant write route at all
+(asset types, finding sources, compliance frameworks, modules, permissions,
+event types, CTEM ids; target mappings are admin-only).
+
 ## Migration 000233
 
 Data already written by tenants is corrected once:

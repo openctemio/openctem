@@ -18,10 +18,10 @@ import (
 type PipelineDeactivator interface {
 	// DeactivatePipelinesByTool deactivates all active pipelines using the specified tool.
 	// Returns the count of deactivated pipelines and their IDs.
-	DeactivatePipelinesByTool(ctx context.Context, toolName string) (int, []shared.ID, error)
+	DeactivatePipelinesByTool(ctx context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error)
 
 	// GetPipelinesUsingTool returns all active pipeline IDs that use a specific tool.
-	GetPipelinesUsingTool(ctx context.Context, toolName string) ([]shared.ID, error)
+	GetPipelinesUsingTool(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error)
 }
 
 // Service handles tool registry business operations.
@@ -338,7 +338,7 @@ func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error
 
 	// Cascade deactivate pipelines using this tool before deletion
 	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, t.Name)
+		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines before tool deletion",
 				"tool_id", toolID,
@@ -405,7 +405,7 @@ func (s *Service) DeactivateTool(ctx context.Context, tenantID, toolID string) (
 
 	// Cascade deactivate pipelines using this tool
 	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, t.Name)
+		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines for tool",
 				"tool_id", toolID,
@@ -771,7 +771,7 @@ func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string)
 
 	// Cascade deactivate pipelines using this tool before deletion
 	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, t.Name)
+		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines before custom tool deletion",
 				"tenant_id", tenantID,
@@ -841,7 +841,7 @@ func (s *Service) DeactivateCustomTool(ctx context.Context, tenantID, toolID str
 
 	// Cascade deactivate pipelines using this tool
 	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, t.Name)
+		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines for custom tool",
 				"tenant_id", tenantID,

@@ -90,7 +90,7 @@ type StepRepository interface {
 
 	// FindPipelineIDsByToolName finds all active pipeline IDs that use a specific tool.
 	// Used for cascade deactivation when a tool is deactivated or deleted.
-	FindPipelineIDsByToolName(ctx context.Context, toolName string) ([]shared.ID, error)
+	FindPipelineIDsByToolName(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error)
 }
 
 // RunFilter represents filter options for listing runs.
