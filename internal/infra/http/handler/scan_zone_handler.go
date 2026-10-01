@@ -352,7 +352,7 @@ func (h *ScanZoneHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(cleanErrorMessage(err, "Invalid scan zone")).WriteJSON(w)
 	default:
-		h.logger.Error("scan zone service error", "error", err)
+		h.logger.Error("scan zone service error", "error", sanitizeLogField(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }
