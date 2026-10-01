@@ -140,6 +140,9 @@ func effectiveAccess(t *testing.T, db *sql.DB) map[string]string {
 		}
 		out[who] = perms
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("effective access: %v", err)
+	}
 	return out
 }
 
@@ -191,6 +194,27 @@ func TestSensorRenameUpgrade(t *testing.T) {
 		if it.Leftover() {
 			t.Errorf("upgrade check reports a leftover: %s (%d)", it.What, it.Count)
 		}
+	}
+
+	// The check notices pre-rename data written after the upgrade (e.g. by an
+	// old binary that was not stopped).
+	if _, err := db.Exec(`INSERT INTO pipeline_templates (tenant_id, name, settings)
+		VALUES ('11111111-0000-0000-0000-000000000001', 'stale', '{"agent_preference":"auto"}')`); err != nil {
+		t.Fatal(err)
+	}
+	items, err = postgres.CheckSensorRename(ctx, db, false)
+	if err != nil {
+		t.Fatalf("upgrade check: %v", err)
+	}
+	flagged := false
+	for _, it := range items {
+		flagged = flagged || (it.Leftover() && strings.Contains(it.What, "pipeline"))
+	}
+	if !flagged {
+		t.Error("upgrade check did not report a pipeline template still using agent_preference")
+	}
+	if _, err := db.Exec(`DELETE FROM pipeline_templates WHERE name = 'stale'`); err != nil {
+		t.Fatal(err)
 	}
 
 	// 4. Down restores the old vocabulary with the same access; up again.

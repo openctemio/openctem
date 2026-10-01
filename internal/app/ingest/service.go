@@ -240,7 +240,7 @@ func (s *Service) SetAssetExposureProjector(p AssetExposureProjector) {
 // Ingest processes a CTIS report from a sensor.
 // This is the main entry point for all ingestion.
 //
-//nolint:cyclop // Ingestion dispatches to multiple processors with validation
+//nolint:cyclop,gocognit // Ingestion dispatches to multiple processors with validation
 func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (*Output, error) {
 	// Validate sensor context
 	if err := s.validateSensor(agt); err != nil {

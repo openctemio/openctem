@@ -164,7 +164,7 @@ func (h *v1Harness) do(method, path string, body any, auth bool) (string, []byte
 		b, _ := json.Marshal(body)
 		rdr = bytes.NewReader(b)
 	}
-	req, _ := http.NewRequest(method, h.srv.URL+path, rdr)
+	req, _ := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, rdr)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
