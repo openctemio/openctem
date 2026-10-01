@@ -69,7 +69,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	sensorAvail := s.sensorSelector.CheckSensorAvailability(ctx, sc.TenantID, toolToCheck, sc.RunOnTenantRunner)
 	if !sensorAvail.Available {
 		return nil, shared.NewDomainError(
-			"NO_AGENT_AVAILABLE",
+			"NO_SENSOR_AVAILABLE",
 			sensorAvail.Message,
 			shared.ErrValidation,
 		)

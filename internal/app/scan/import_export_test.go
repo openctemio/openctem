@@ -674,3 +674,14 @@ func TestExportImport_JSONRoundTrip(t *testing.T) {
 	assert.NotEmpty(t, exported.ExportedAt)
 	assert.Equal(t, "1.0", exported.Version)
 }
+
+// An export written before the agent → sensor rename keeps its selection mode.
+func TestDecodeScanConfigExport_ReadsPreRenameKey(t *testing.T) {
+	old, err := decodeScanConfigExport([]byte(`{"name":"n","scan_type":"single","agent_preference":"tenant"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "tenant", old.SensorPreference)
+
+	cur, err := decodeScanConfigExport([]byte(`{"name":"n","scan_type":"single","sensor_preference":"platform","agent_preference":"tenant"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "platform", cur.SensorPreference, "the current key wins when both are present")
+}

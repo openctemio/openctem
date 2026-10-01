@@ -717,7 +717,7 @@ func (s *Service) validateSensor(agt *sensor.Sensor) error {
 	}
 
 	if agt.TenantID == nil {
-		return shared.NewDomainError("INVALID_AGENT", "sensor has no tenant context: platform sensors require job assignment", nil)
+		return shared.NewDomainError(legacyv1.CodeNoTenantContext, "sensor has no tenant context: platform sensors require job assignment", nil)
 	}
 
 	// Check sensor status

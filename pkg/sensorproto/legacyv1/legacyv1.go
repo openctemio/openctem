@@ -197,3 +197,12 @@ func NewScanSession(s *scansession.ScanSession) ScanSession {
 	}
 	return out
 }
+
+// CodeNoTenantContext is the error code a v1 ingest call from a sensor without
+// tenant context (a platform sensor) gets back.
+const CodeNoTenantContext = "INVALID_AGENT"
+
+// ScanExportKeySensorPreference is the key scan-config export files written
+// before the rename use for the sensor selection mode; ImportConfig still
+// reads it so an old export does not silently fall back to "auto".
+const ScanExportKeySensorPreference = "agent_preference"

@@ -233,7 +233,7 @@ fi
 # -----------------------------------------------------------------------------
 log_step 10 "List Agents"
 
-AGENTS_RESPONSE=$(curl -s -X GET "${API_URL}/api/v1/agents" \
+AGENTS_RESPONSE=$(curl -s -X GET "${API_URL}/api/v1/sensors" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}")
 
 log_info "Agents: $(echo "$AGENTS_RESPONSE" | jq -c '. | {total: (.total // (.items | length) // 0)} // .error // .')"

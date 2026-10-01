@@ -11,6 +11,7 @@ import (
 	"time"
 
 	sensordom "github.com/openctemio/api/pkg/domain/sensor"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // Environment constants
@@ -20,6 +21,10 @@ const (
 
 // Config holds all application configuration.
 type Config struct {
+	// Deprecations are startup warnings about configuration given under a
+	// pre-sensor name (see legacyv1.RenamedEnv). The server logs each one.
+	Deprecations []string
+
 	App          AppConfig
 	Server       ServerConfig
 	GRPC         GRPCConfig
@@ -690,7 +695,13 @@ func (c *AITriageConfig) IsConfigured() bool {
 
 // Load loads configuration from environment variables.
 func Load() (*Config, error) {
+	deprecations, err := resolveRenamedEnv(os.LookupEnv, os.Setenv)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
+		Deprecations: deprecations,
 		App: AppConfig{
 			Name:  getEnv("APP_NAME", "openctem"),
 			Env:   getEnv("APP_ENV", "development"),
@@ -698,9 +709,9 @@ func Load() (*Config, error) {
 			URL:   getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
-			TemplatesDir: getEnv("AGENT_CONFIG_TEMPLATES_DIR", "configs/sensor-templates"),
-			PublicAPIURL: getEnv("AGENT_PUBLIC_API_URL", ""),
-			KeyTTL:       getEnvDuration("AGENT_KEY_TTL", 0),
+			TemplatesDir: getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
+			PublicAPIURL: getEnv("SENSOR_PUBLIC_API_URL", ""),
+			KeyTTL:       getEnvDuration("SENSOR_KEY_TTL", 0),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),
@@ -877,13 +888,13 @@ func Load() (*Config, error) {
 			CertMonitorFeedBaseURL: getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:    getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
-				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
-				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
-				MemoryWeight:             getEnvFloat("AGENT_LB_MEMORY_WEIGHT", sensordom.DefaultMemoryWeight),
-				DiskIOWeight:             getEnvFloat("AGENT_LB_DISK_IO_WEIGHT", sensordom.DefaultDiskIOWeight),
-				NetworkWeight:            getEnvFloat("AGENT_LB_NETWORK_WEIGHT", sensordom.DefaultNetworkWeight),
-				MaxDiskThroughputMBPS:    getEnvFloat("AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", sensordom.DefaultMaxDiskThroughputMBPS),
-				MaxNetworkThroughputMBPS: getEnvFloat("AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", sensordom.DefaultMaxNetworkThroughputMBPS),
+				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
+				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
+				MemoryWeight:             getEnvFloat("SENSOR_LB_MEMORY_WEIGHT", sensordom.DefaultMemoryWeight),
+				DiskIOWeight:             getEnvFloat("SENSOR_LB_DISK_IO_WEIGHT", sensordom.DefaultDiskIOWeight),
+				NetworkWeight:            getEnvFloat("SENSOR_LB_NETWORK_WEIGHT", sensordom.DefaultNetworkWeight),
+				MaxDiskThroughputMBPS:    getEnvFloat("SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS", sensordom.DefaultMaxDiskThroughputMBPS),
+				MaxNetworkThroughputMBPS: getEnvFloat("SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS", sensordom.DefaultMaxNetworkThroughputMBPS),
 			},
 		},
 		Encryption: EncryptionConfig{
@@ -1407,6 +1418,50 @@ func (c *Config) IsProduction() bool {
 }
 
 // Helper functions
+
+// resolveRenamedEnv lets the pre-sensor environment variable names keep
+// working: when only the old name is set its value is copied to the new name
+// (and a deprecation warning returned); when both are set to different values
+// startup fails with a message naming both, rather than silently picking one.
+func resolveRenamedEnv(lookup func(string) (string, bool), set func(string, string) error) ([]string, error) {
+	var warnings []string
+	for _, r := range legacyv1.RenamedEnv {
+		oldVal, hasOld := lookup(r.Old)
+		if !hasOld {
+			continue
+		}
+		newVal, hasNew := lookup(r.New)
+		switch {
+		case !hasNew:
+			if err := set(r.New, oldVal); err != nil {
+				return nil, fmt.Errorf("apply %s from deprecated %s: %w", r.New, r.Old, err)
+			}
+			warnings = append(warnings, fmt.Sprintf("%s is deprecated; rename it to %s (value applied)", r.Old, r.New))
+		case newVal != oldVal:
+			return nil, fmt.Errorf("both %s and its deprecated name %s are set, to different values; remove %s", r.New, r.Old, r.Old)
+		default:
+			warnings = append(warnings, fmt.Sprintf("%s is deprecated and duplicates %s; remove it", r.Old, r.New))
+		}
+	}
+
+	// The default template directory moved; keep an installation's custom
+	// templates mounted at the old default path working.
+	if _, explicit := lookup("SENSOR_CONFIG_TEMPLATES_DIR"); !explicit {
+		if !dirExists(legacyv1.ConfigTemplatesDir) && dirExists(legacyv1.LegacyConfigTemplatesDir) {
+			if err := set("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.LegacyConfigTemplatesDir); err != nil {
+				return nil, err
+			}
+			warnings = append(warnings, fmt.Sprintf("sensor config templates loaded from the deprecated directory %s; move them to %s",
+				legacyv1.LegacyConfigTemplatesDir, legacyv1.ConfigTemplatesDir))
+		}
+	}
+	return warnings, nil
+}
+
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
+}
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

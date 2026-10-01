@@ -75,6 +75,9 @@ func run() int {
 
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
+	for _, d := range cfg.Deprecations {
+		log.Warn("deprecated configuration", "detail", d)
+	}
 
 	// ==========================================================================
 	// Infrastructure

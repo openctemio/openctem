@@ -348,7 +348,7 @@ func (a Action) IsValid() bool {
 
 // Category returns the category of the action (e.g., "user", "tenant").
 func (a Action) Category() string {
-	switch a {
+	switch a.Canonical() {
 	case ActionUserCreated, ActionUserUpdated, ActionUserDeleted,
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout:

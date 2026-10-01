@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// A scheduled scan that can never start — NO_AGENT_AVAILABLE, which recurred
+// A scheduled scan that can never start — NO_SENSOR_AVAILABLE, which recurred
 // silently for three nights on the live demo deployment — was
 // indistinguishable from one that simply had not run yet: the scheduler
 // advanced next_run_at (correctly, to avoid re-trigger storms) but recorded

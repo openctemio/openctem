@@ -335,7 +335,7 @@ print_header "Section 5: Create Agent"
 if ! check_critical "Create Agent"; then :; else
 
 print_test "Create scanner agent"
-do_request "POST" "/api/v1/agents" "{
+do_request "POST" "/api/v1/sensors" "{
     \"name\": \"e2e-test-runner-${TIMESTAMP}\",
     \"type\": \"runner\",
     \"description\": \"E2E test agent created at ${TIMESTAMP}\",
@@ -343,12 +343,12 @@ do_request "POST" "/api/v1/agents" "{
     \"execution_mode\": \"standalone\",
     \"max_concurrent_jobs\": 5
 }" "Authorization: Bearer $ACCESS_TOKEN"
-print_info "Endpoint: POST /api/v1/agents"
+print_info "Endpoint: POST /api/v1/sensors"
 print_info "Status: $HTTP_CODE"
 print_info "Response: $(echo "$BODY" | head -c 500)"
 
 if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
-    AGENT_ID=$(extract_json "$BODY" '.agent.id')
+    AGENT_ID=$(extract_json "$BODY" '.sensor.id')
     API_KEY=$(extract_json "$BODY" '.api_key')
     AGENT_NAME=$(extract_json "$BODY" '.agent.name')
 

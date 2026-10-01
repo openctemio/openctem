@@ -217,7 +217,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 		)
 		// Record the failure in the scan's own state. next_run_at was already
 		// advanced above (to avoid re-trigger storms), so without this a scan
-		// that can never start — e.g. NO_AGENT_AVAILABLE, which recurred silently
+		// that can never start — e.g. NO_SENSOR_AVAILABLE, which recurred silently
 		// for three nights on the demo deployment — looks identical to one that
 		// simply has not run yet: next run scheduled, last run blank. Best-effort;
 		// a failure to record must not mask the original trigger error.
