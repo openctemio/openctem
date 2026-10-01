@@ -168,6 +168,7 @@ func LoggerWithConfig(log *logger.Logger, cfg LoggerConfig) func(http.Handler) h
 				"duration", duration,
 				"request_id", GetRequestID(r.Context()),
 				"remote_addr", r.RemoteAddr,
+				"user_agent", logUserAgent(r.UserAgent()),
 			}
 
 			switch {
@@ -182,6 +183,22 @@ func LoggerWithConfig(log *logger.Logger, cfg LoggerConfig) func(http.Handler) h
 			}
 		})
 	}
+}
+
+// maxLoggedUserAgent bounds the User-Agent written to the request log.
+const maxLoggedUserAgent = 200
+
+// logUserAgent returns the client's User-Agent for the request log, so
+// operators can tell clients apart (an agent-era sensor sends "sdk/1.0", a
+// current one "openctemio-sensor/<v> openctem-sdk-go/<v>"). It is client
+// input: line breaks are removed and the length is bounded.
+func logUserAgent(ua string) string {
+	ua = strings.ReplaceAll(ua, "\n", "")
+	ua = strings.ReplaceAll(ua, "\r", "")
+	if len(ua) > maxLoggedUserAgent {
+		ua = ua[:maxLoggedUserAgent]
+	}
+	return ua
 }
 
 // Recovery recovers from panics and returns a 500 error.
