@@ -118,6 +118,15 @@ func (rl *TelemetryRateLimiter) bucket(tenantID string) *rate.Limiter {
 	return b.limiter
 }
 
+// Allow reports whether key may make one more request now, consuming a token.
+// A nil or disabled (rate 0) limiter allows everything.
+func (rl *TelemetryRateLimiter) Allow(key string) bool {
+	if rl == nil || rl.rate <= 0 {
+		return true
+	}
+	return rl.bucket(key).Allow()
+}
+
 // MiddlewareKeyed is Middleware with a caller-supplied bucket key (e.g. the
 // authenticated sensor ID instead of the tenant), for endpoints whose budget is
 // per-principal rather than per-tenant. An empty key passes through; a zero
