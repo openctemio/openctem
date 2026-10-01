@@ -2,6 +2,7 @@
 
 > RFC: [RFC-023](../rfcs/RFC-023-scan-zones-and-scanners.md) §4 (D18) and §9.5.
 > Contract of the rename: [RFC-023-sensor-rename-contract.md](../rfcs/RFC-023-sensor-rename-contract.md).
+> Routing of scanners by network: [scan-zones.md](scan-zones.md).
 
 ## Glossary
 

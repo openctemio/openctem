@@ -332,6 +332,7 @@ Hexagonal / Ports & Adapters
 - [Clean Architecture Details](clean-arch.md)
 - [Notification System](notification-system.md)
 - [Scan Orchestration](scan-orchestration.md)
+- [Scan Zones](scan-zones.md)
 - [CTEM-ID Catalog](ctem-id-catalog.md)
 - [Certificate-Transparency Monitoring](certificate-transparency-monitoring.md)
 - [Criticality Propagation](criticality-propagation.md)
