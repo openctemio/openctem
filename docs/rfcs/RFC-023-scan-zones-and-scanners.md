@@ -1,7 +1,7 @@
 # RFC-023 — Scan zones and the Scanners resource
 
 > Status: **Proposed** (2026-10-01). §9.5 complete rename — **API step
-> implemented** (migration 000229, branch `refactor/sensor-rename`; contract:
+> implemented** (api#563, migration 000229; contract:
 > [RFC-023-sensor-rename-contract.md](RFC-023-sensor-rename-contract.md)).
 > SDK, sensor binary, Helm and UI steps pending.
 > Scope: api + agent + ui (+ sdk-go for job verification).
