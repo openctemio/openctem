@@ -65,6 +65,8 @@ type Report struct {
 	ImplicitCommit   bool
 	SegmentCount     *int
 	SegmentsReceived int
+	AssetsReceived   int
+	FindingsReceived int
 	CommittedAt      *time.Time
 
 	Outcomes        map[int]SegmentOutcome
@@ -172,9 +174,19 @@ type Repository interface {
 	// CountOpen counts a sensor's uncommitted, unexpired reports.
 	CountOpen(ctx context.Context, sensorID shared.ID, now time.Time) (int, error)
 
-	// RecordSegmentReceived counts a newly stored segment and pushes the
-	// expiry out to expiresAt.
-	RecordSegmentReceived(ctx context.Context, id shared.ID, expiresAt time.Time) error
+	// ReserveSegment counts a segment about to be queued, with its item
+	// counts, and pushes the expiry out to expiresAt. It refuses (false) when
+	// the report's totals would pass maxAssets or maxFindings; the check and
+	// the increment are one statement, so parallel segments cannot overshoot.
+	ReserveSegment(ctx context.Context, id shared.ID, assets, findings, maxAssets, maxFindings int, expiresAt time.Time) (bool, error)
+
+	// ReleaseSegment undoes ReserveSegment for a segment that was not queued
+	// after all (a concurrent request stored the same segment first).
+	ReleaseSegment(ctx context.Context, id shared.ID, assets, findings int) error
+
+	// Abandon marks an uncommitted report expired at the sensor's request.
+	// False when it is committed or no longer receiving.
+	Abandon(ctx context.Context, id shared.ID) (bool, error)
 
 	// Commit closes the report with segmentCount segments. False when it was
 	// already committed or is no longer receiving.

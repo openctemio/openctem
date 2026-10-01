@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
 
 // ddTenantSyncerAdapter adapts *defectdojo.SyncService (which returns a
@@ -600,9 +601,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// worker reconciles to zero. Bounded batch/per-tick caps are the
 	// backpressure that protects the DB pool under heavy ingest.
 	if svc.Ingest != nil && repos.IngestJob != nil {
+		jobs := ingest.NewJobProcessor(svc.Ingest)
+		// Protocol v2 results jobs (RFC-026) run on the same queue whatever
+		// INGEST_MODE is, whenever v2 results are enabled.
+		if cfg.Ingest.V2Results && repos.IngestReport != nil {
+			jobs.SetV2(ingest.NewV2JobProcessor(svc.Ingest, repos.IngestReport, repos.IngestJob,
+				protov2.DefaultLimits(), ingest.BlindingGuard{
+					Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
+				}, log))
+		}
 		w.ControllerManager.Register(controller.NewIngestWorkerController(
 			repos.IngestJob,
-			ingest.NewJobProcessor(svc.Ingest),
+			jobs,
 			&controller.IngestWorkerControllerConfig{
 				Interval:     2 * time.Second,
 				BatchSize:    5,

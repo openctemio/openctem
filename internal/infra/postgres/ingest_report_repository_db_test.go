@@ -43,6 +43,9 @@ func ingestReportFixture(t *testing.T) (*sql.DB, shared.ID, shared.ID) {
 		t.Fatalf("insert sensor: %v", err)
 	}
 	t.Cleanup(func() {
+		// Reports first (their jobs cascade), so no queue row outlives the
+		// test even if the tenant delete fails.
+		_, _ = db.ExecContext(context.Background(), "DELETE FROM ingest_reports WHERE tenant_id = $1", tenantID.String())
 		_, _ = db.ExecContext(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID.String())
 	})
 	return db, tenantID, sensorID
@@ -77,10 +80,18 @@ func TestIngestReportRepository_Lifecycle(t *testing.T) {
 	if _, err := repo.Get(ctx, shared.NewID(), sensorID, reportID); !errors.Is(err, ingestreport.ErrNotFound) {
 		t.Fatalf("cross-tenant get: %v", err)
 	}
-	// A report of this tenant's sensor cannot be filed under another tenant.
-	_, otherTenant, _ := ingestReportFixture(t)
-	if err := repo.Create(ctx, newTestReport(otherTenant, sensorID, reportID, now)); err == nil {
-		t.Fatal("composite FK let a sensor report under another tenant")
+	// A report of this tenant's sensor cannot be filed under another tenant:
+	// the sensor key is the composite (tenant_id, sensor_id). Checked in the
+	// catalog rather than by provoking a violation, so the run leaves no
+	// errors in the server log.
+	var fkCols string
+	if err := db.QueryRowContext(ctx, `
+		SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+		FROM pg_constraint c
+		CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+		JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+		WHERE c.conname = 'fk_ingest_reports_sensor' AND c.contype = 'f'`).Scan(&fkCols); err != nil || fkCols != "tenant_id,sensor_id" {
+		t.Fatalf("composite same-tenant FK: %q %v", fkCols, err)
 	}
 
 	if n, err := repo.CountOpen(ctx, sensorID, now); err != nil || n != 1 {
@@ -93,14 +104,29 @@ func TestIngestReportRepository_Lifecycle(t *testing.T) {
 		job := ingestjob.NewV2Job(tenantID, &sensorID, reportID, ingestjob.V2Segment{
 			ReportRef: rep.ID, Seq: &s, ContentDigest: "sha-256=:seg" + string(rune('0'+s)) + ":", MediaType: protov2.MediaTypeCTIS,
 		}, []byte(`{"version":"1.0"}`))
+		job.DelayUntil(now.Add(24 * time.Hour)) // never claimable by a parallel test
 		stored, created, err := jobs.EnqueueV2(ctx, job)
 		if err != nil || !created || stored.V2() == nil || *stored.V2().Seq != s {
 			t.Fatalf("enqueue segment %d: %v %v", s, created, err)
 		}
-		if err := repo.RecordSegmentReceived(ctx, rep.ID, now.Add(2*time.Hour)); err != nil {
-			t.Fatal(err)
+		if ok, err := repo.ReserveSegment(ctx, rep.ID, 1, 10, 100, 25, now.Add(2*time.Hour)); err != nil || !ok {
+			t.Fatalf("reserve %d: %v %v", s, ok, err)
 		}
 	}
+	// A third segment would pass the report's finding limit (25).
+	if ok, _ := repo.ReserveSegment(ctx, rep.ID, 1, 10, 100, 25, now.Add(2*time.Hour)); ok {
+		t.Fatal("reserved past the per-report finding limit")
+	}
+	if got, _ := repo.GetByID(ctx, rep.ID); got.SegmentsReceived != 2 || got.FindingsReceived != 20 || got.AssetsReceived != 2 {
+		t.Fatalf("received %d/%d/%d", got.SegmentsReceived, got.AssetsReceived, got.FindingsReceived)
+	}
+	if err := repo.ReleaseSegment(ctx, rep.ID, 1, 10); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := repo.ReserveSegment(ctx, rep.ID, 1, 10, 100, 25, now.Add(2*time.Hour)); !ok {
+		t.Fatal("release did not free the reservation")
+	}
+
 	// Replay of segment 0: the existing job comes back.
 	zero := 0
 	again, created, err := jobs.EnqueueV2(ctx, ingestjob.NewV2Job(tenantID, &sensorID, reportID,
@@ -191,6 +217,17 @@ func TestIngestReportRepository_ExpireAndReopen(t *testing.T) {
 	}
 	if ok, _ := repo.Commit(ctx, stale.ID, 1, false, now); ok {
 		t.Fatal("committed an expired report")
+	}
+
+	abandoned := newTestReport(tenantID, sensorID, "0192a3b4-2222-7e8f-9a0b-1c2d3e4f5a6b", now)
+	if err := repo.Create(ctx, abandoned); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := repo.Abandon(ctx, abandoned.ID); err != nil || !ok {
+		t.Fatalf("abandon: %v %v", ok, err)
+	}
+	if ok, _ := repo.Abandon(ctx, abandoned.ID); ok {
+		t.Fatal("abandoned twice")
 	}
 
 	failed := newTestReport(tenantID, sensorID, "0192a3b4-1111-7e8f-9a0b-1c2d3e4f5a6b", now)

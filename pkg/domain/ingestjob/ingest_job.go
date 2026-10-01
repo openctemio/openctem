@@ -102,6 +102,9 @@ func NewV2Job(tenantID shared.ID, sensorID *shared.ID, reportUUID string, seg V2
 	return j
 }
 
+// DelayUntil makes a not-yet-stored job unclaimable before t.
+func (j *Job) DelayUntil(t time.Time) { j.availableAt = t }
+
 // V2 returns the v2 report binding, or nil for a v1 job.
 func (j *Job) V2() *V2Segment { return j.v2 }
 

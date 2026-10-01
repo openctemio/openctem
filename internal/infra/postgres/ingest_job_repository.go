@@ -473,3 +473,17 @@ func (r *IngestJobRepository) ClearV2Payloads(ctx context.Context, reportRef sha
 	}
 	return nil
 }
+
+// GetV2Commit returns the commit job of a report.
+func (r *IngestJobRepository) GetV2Commit(ctx context.Context, reportRef shared.ID) (*ingestjob.Job, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+ingestJobColumns+`
+		FROM ingest_jobs WHERE ingest_report_id = $1 AND segment_seq IS NULL`, reportRef.String())
+	job, err := scanIngestJobRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get v2 commit job: %w", err)
+	}
+	return job, nil
+}

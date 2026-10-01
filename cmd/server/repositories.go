@@ -97,6 +97,8 @@ type Repositories struct {
 	SensorAPIKey *postgres.SensorAPIKeyRepository
 	Command      *postgres.CommandRepository
 	IngestJob    *postgres.IngestJobRepository
+	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
+	IngestReport *postgres.IngestReportRepository
 
 	// Scan coverage rotation (RFC-007)
 	ScanCoverage *postgres.ScanCoverageRepository
@@ -304,6 +306,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		SensorAPIKey: postgres.NewSensorAPIKeyRepository(db),
 		Command:      postgres.NewCommandRepository(db),
 		IngestJob:    postgres.NewIngestJobRepository(db),
+		IngestReport: postgres.NewIngestReportRepository(db),
 
 		// Scan coverage rotation (RFC-007)
 		ScanCoverage: postgres.NewScanCoverageRepository(db),
