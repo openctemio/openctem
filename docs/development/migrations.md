@@ -291,16 +291,17 @@ make docker-psql
 SELECT * FROM schema_migrations;
 ```
 
-### Test User Credentials
+### Test User Accounts
 
-When using `seed_test.sql`, all users have:
-- **Password**: `Password123`
-- **Hash**: `$2a$12$lAqs23AmzWlMNDCUaUuuceAWEw/EzF25N/oLnSfa1gUldIRllsqHG`
+The seed files do not create users or passwords. Create a local account with
+`bootstrap-tenant`, which makes the first user and their organization:
 
-Test accounts:
-- `admin@openctem.io` - Admin user
-- `nguyen.an@techviet.vn` - Regular user
-- (see `seed_test.sql` for full list)
+```bash
+GOWORK=off go run ./cmd/bootstrap-tenant -db "$DATABASE_URL" \
+  -email you@example.com -password '<a local password>' -team "Dev" -slug dev
+```
+
+Never commit password hashes to docs or seeds, even for test accounts.
 
 ## CI/CD Integration
 
