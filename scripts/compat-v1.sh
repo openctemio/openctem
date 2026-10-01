@@ -56,21 +56,21 @@ TENANT_ID=$(call POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$
 [ -n "$TENANT_ID" ] || fail "tenant $SLUG not in login response"
 ACCESS_TOKEN=$(call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}" | jq -r '.access_token')
 
-created=$(call POST /api/v1/agents \
+created=$(call POST /api/v1/sensors \
 	'{"name":"compat-v1","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}')
-AGENT_ID=$(jq -r '.agent.id' <<<"$created")
+SENSOR_ID=$(jq -r '.sensor.id' <<<"$created")
 API_KEY=$(jq -r '.api_key' <<<"$created")
-[ -n "$API_KEY" ] && [ "$API_KEY" != null ] || fail "agent created without an API key"
+[ -n "$API_KEY" ] && [ "$API_KEY" != null ] || fail "sensor created without an API key"
 
-COMMAND_ID=$(call POST /api/v1/commands "{\"agent_id\":\"$AGENT_ID\",\"type\":\"health_check\"}" | jq -r '.id')
+COMMAND_ID=$(call POST /api/v1/commands "{\"sensor_id\":\"$SENSOR_ID\",\"type\":\"health_check\"}" | jq -r '.id')
 [ -n "$COMMAND_ID" ] && [ "$COMMAND_ID" != null ] || fail "command not created"
-echo "tenant=$TENANT_ID sensor=$AGENT_ID command=$COMMAND_ID"
+echo "tenant=$TENANT_ID sensor=$SENSOR_ID command=$COMMAND_ID"
 
 echo "== protocol v1, driven by the last released sdk-go"
 # The SDK's API client refuses loopback by default; the API under test runs on it.
 (cd "$HARNESS_DIR" && GOWORK=off \
 	OPENCTEM_SDK_HTTPSEC_ALLOW_LOOPBACK=1 \
-	COMPAT_API_URL="$API" COMPAT_AGENT_ID="$AGENT_ID" COMPAT_API_KEY="$API_KEY" \
+	COMPAT_API_URL="$API" COMPAT_AGENT_ID="$SENSOR_ID" COMPAT_API_KEY="$API_KEY" \
 	COMPAT_COMMAND_ID="$COMMAND_ID" go run .)
 
 echo "== the platform recorded the outcome"
@@ -78,7 +78,7 @@ status=$(call GET "/api/v1/commands/$COMMAND_ID" | jq -r '.status')
 [ "$status" = completed ] || fail "command status is '$status', want completed"
 echo "[PASS] command recorded as completed"
 
-health=$(call GET "/api/v1/agents/$AGENT_ID" | jq -r '.health')
+health=$(call GET "/api/v1/sensors/$SENSOR_ID" | jq -r '.health')
 [ "$health" = online ] || fail "sensor health is '$health', want online"
 echo "[PASS] sensor shown online"
 
