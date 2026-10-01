@@ -80,8 +80,9 @@ Findings/Assets → Import → Nessus results        🔜 (button)
 ```
 
 Each upload = one **batch/session**: assets + vulnerability findings are ingested,
-and stale Tenable findings on the uploaded hosts are auto-resolved **scoped to
-that batch only**.
+and the report is shaped for auto-resolve scoped to that batch. Host findings
+are **not** auto-resolved today (they carry no branch, and auto-resolve only
+matches default-branch repository findings); see `scan-coverage.md`.
 
 ### B2. Runner-mediated (polling) — the default model  🔜
 
@@ -160,7 +161,7 @@ Only for deployments that accept api↔Tenable.
 ```
 operator/cron ──► POST /assets/import/nessus-findings (JWT, tenant from token)
    └─ nessus.Convert(.nessus) → *ctis.Report (tool=tenable, session=upload id)
-        └─ ingest pipeline → assets + findings + batch-scoped auto-resolve
+        └─ ingest pipeline → assets + findings (batch-scoped auto-resolve: not effective for hosts, see scan-coverage.md)
 ```
 
 ### Shared ingest core (all three paths)
@@ -193,7 +194,8 @@ operator/cron ──► POST /assets/import/nessus-findings (JWT, tenant from to
 | Capability | Status |
 |------------|--------|
 | `.nessus → CTIS` converter (cve_ids/vpr/network/evidence) | ✅ |
-| Manual `.nessus` ingest endpoint (batch-scoped auto-resolve) | ✅ (API; UI button 🔜) |
+| Manual `.nessus` ingest endpoint | ✅ (API; UI button 🔜) |
+| Batch-scoped auto-resolve of host findings | ❌ never effective (host findings have no branch); product decision open, see `scan-coverage.md` |
 | Tenable integration config (engine/mode) + agent-mode no-creds security (create+update) | ✅ |
 | License-aware batch planner (headroom + selection) | ✅ (core; scheduler 🔜) |
 | Tenable connect dialog (engine/mode, hide creds in agent) | 🔜 (api ready) |

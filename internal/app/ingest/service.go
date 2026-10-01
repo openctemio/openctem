@@ -352,8 +352,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// 3. Tool name available for scoping
 	//
 	// This follows GitHub/GitLab best practices where default branch is source of truth.
-	if input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != "" &&
-		s.sensorMayAutoResolveTool(ctx, agt, report.Tool.Name) {
+	autoResolveEligible := input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != ""
+	if autoResolveEligible && s.sensorMayAutoResolveTool(ctx, agt, report.Tool.Name) {
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 
@@ -396,31 +396,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			}
 		}
 	} else if s.findingRepo != nil && report.Tool != nil {
-		// Log why auto-resolve was skipped
-		branchInfo := input.GetBranchInfo()
-		switch {
-		case branchInfo == nil:
-			s.logger.Debug("auto-resolve skipped: no branch info provided")
-		case !branchInfo.IsDefaultBranch:
-			s.logger.Debug("auto-resolve skipped: not default branch",
-				"branch", branchInfo.Name,
-			)
-		case report.Metadata.ID == "":
-			// Without a scan identity we cannot tell which findings belong to
-			// THIS scan, so the "not seen in this scan" staleness test would
-			// match (and resolve) the tenant's entire existing finding set.
-			s.logger.Warn("auto-resolve skipped: report metadata.id is empty",
-				"tool_name", report.Tool.Name,
-			)
-		default:
-			coverageType := input.CoverageType
-			if coverageType == "" && report.Metadata.CoverageType != "" {
-				coverageType = CoverageType(report.Metadata.CoverageType)
-			}
-			s.logger.Debug("auto-resolve skipped: coverage type not full",
-				"coverage_type", coverageType,
-			)
-		}
+		s.logAutoResolveSkipped(input, report, autoResolveEligible)
 	}
 
 	// Step 3b: Per-branch occurrence auto-resolve (branch-aware occurrence model).
@@ -529,6 +505,40 @@ func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID,
 
 	if err := s.assetExposureProjector.ProjectAssets(ctx, tenantID, assets); err != nil {
 		s.logger.Warn("asset exposure projection failed", "error", err)
+	}
+}
+
+// logAutoResolveSkipped says why a report did not auto-resolve stale findings.
+// toolGateBlocked means every report-level condition held and only the
+// sensor/tool gate (sensorMayAutoResolveTool) refused; that gate already logged
+// its reason, so nothing more is said here. Before, that case fell through to
+// "coverage type not full", which was false for a full default-branch scan.
+func (s *Service) logAutoResolveSkipped(input Input, report *ctis.Report, toolGateBlocked bool) {
+	branchInfo := input.GetBranchInfo()
+	switch {
+	case toolGateBlocked:
+		return
+	case branchInfo == nil:
+		s.logger.Debug("auto-resolve skipped: no branch info provided")
+	case !branchInfo.IsDefaultBranch:
+		s.logger.Debug("auto-resolve skipped: not default branch",
+			"branch", sanitizeIngestLogField(branchInfo.Name),
+		)
+	case report.Metadata.ID == "":
+		// Without a scan identity we cannot tell which findings belong to
+		// THIS scan, so the "not seen in this scan" staleness test would
+		// match (and resolve) the tenant's entire existing finding set.
+		s.logger.Warn("auto-resolve skipped: report metadata.id is empty",
+			"tool_name", sanitizeIngestLogField(report.Tool.Name),
+		)
+	default:
+		coverageType := input.CoverageType
+		if coverageType == "" && report.Metadata.CoverageType != "" {
+			coverageType = CoverageType(report.Metadata.CoverageType)
+		}
+		s.logger.Debug("auto-resolve skipped: coverage type not full",
+			"coverage_type", sanitizeIngestLogField(string(coverageType)),
+		)
 	}
 }
 

@@ -1678,6 +1678,51 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	return nil
 }
 
+// BackfillFindingBranches gives existing findings the branch a scan saw them
+// on. Findings are matched by (tenant_id, fingerprint) and the branch must
+// belong to the finding's own repository asset. Two cases are updated:
+//
+//   - the finding has no branch (first ingested without branch info, or
+//     before branch tracking worked): it takes the scanned branch;
+//   - the scanned branch is the repository's default branch (as recorded in
+//     the database, never as claimed by the report) and the finding sits on
+//     another branch: it moves to the default branch.
+//
+// Default-branch auto-resolve joins findings to the default branch, so without
+// this a finding that first appeared without a branch, or on a feature branch,
+// could never be auto-resolved however many default-branch scans followed.
+// A feature-branch scan never moves a finding that already has a branch.
+func (r *FindingRepository) BackfillFindingBranches(ctx context.Context, tenantID shared.ID, items []vulnerability.BranchOccurrenceUpsert) (int64, error) {
+	if len(items) == 0 {
+		return 0, nil
+	}
+
+	fingerprints := make([]string, len(items))
+	branchIDs := make([]string, len(items))
+	for i, it := range items {
+		fingerprints[i] = it.Fingerprint
+		branchIDs[i] = it.BranchID.String()
+	}
+
+	const query = `
+		UPDATE findings f
+		SET branch_id = b.id, updated_at = NOW()
+		FROM unnest($2::text[], $3::uuid[]) AS inp(fingerprint, branch_id)
+		JOIN repository_branches b ON b.id = inp.branch_id
+		WHERE f.tenant_id = $1
+			AND f.fingerprint = inp.fingerprint
+			AND b.repository_id = f.asset_id
+			AND (f.branch_id IS NULL OR (b.is_default AND f.branch_id <> b.id))
+	`
+
+	res, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(fingerprints), pq.Array(branchIDs))
+	if err != nil {
+		return 0, fmt.Errorf("failed to backfill finding branches: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // AutoResolveStaleBranchOccurrences marks open occurrences on a branch as
 // auto_fixed when the current full scan (scanID, scoped to toolName via the
 // parent finding) no longer reported them. "Not reported" is detected by the

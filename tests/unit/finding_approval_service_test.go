@@ -1211,6 +1211,10 @@ func (m *mockFindingRepository) UpsertBranchOccurrences(_ context.Context, _ sha
 	return nil
 }
 
+func (m *mockFindingRepository) BackfillFindingBranches(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockFindingRepository) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
 	return 0, nil
 }

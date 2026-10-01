@@ -603,6 +603,15 @@ func (p *FindingProcessor) ProcessBatch(
 		})
 	}
 	if len(occurrences) > 0 {
+		// Give existing findings the branch this scan saw them on. A finding
+		// first ingested without branch info (or first seen on a feature
+		// branch) otherwise never sits on the default branch, and
+		// default-branch auto-resolve can never close it.
+		if n, err := p.repo.BackfillFindingBranches(ctx, tenantID, occurrences); err != nil {
+			p.logger.Warn("failed to backfill finding branches", "error", err, "count", len(occurrences))
+		} else if n > 0 {
+			p.logger.Info("backfilled finding branches", "count", n)
+		}
 		if err := p.repo.UpsertBranchOccurrences(ctx, tenantID, occurrences); err != nil {
 			p.logger.Warn("failed to record branch occurrences", "error", err, "count", len(occurrences))
 		}
