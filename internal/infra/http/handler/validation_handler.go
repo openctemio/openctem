@@ -224,7 +224,7 @@ func (h *ValidationHandler) authorizeEvidenceCommand(
 	}
 	deny := func(reason string) (*commanddom.Command, bool) {
 		h.logger.Warn("validation evidence rejected: command does not authorize it",
-			"agent_id", agentID.String(), "command_id", commandID,
+			"agent_id", agentID.String(), "command_id", sanitizeLogField(commandID),
 			"finding_id", findingID.String(), "reason", reason)
 		apierror.Forbidden("command does not authorize evidence for this finding").WriteJSON(w)
 		return nil, false

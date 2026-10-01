@@ -680,7 +680,7 @@ func (s *Service) agentMayAutoResolveTool(ctx context.Context, agt *agent.Agent,
 	}
 	if _, reserved := reservedAutoResolveTools[strings.ToLower(strings.TrimSpace(toolName))]; reserved {
 		s.logger.Warn("auto-resolve skipped: tool name is reserved for non-agent sources",
-			"agent_id", agt.ID.String(), "tool_name", toolName)
+			"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
 		return false
 	}
 
@@ -695,7 +695,7 @@ func (s *Service) agentMayAutoResolveTool(ctx context.Context, agt *agent.Agent,
 
 	if len(tools) == 0 {
 		s.logger.Warn("auto-resolve allowed for legacy agent with no declared tools; declare the agent's tools to scope auto-resolve",
-			"agent_id", agt.ID.String(), "tool_name", toolName)
+			"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
 		return true
 	}
 	for _, t := range tools {
@@ -704,7 +704,8 @@ func (s *Service) agentMayAutoResolveTool(ctx context.Context, agt *agent.Agent,
 		}
 	}
 	s.logger.Warn("auto-resolve skipped: reported tool is not among the agent's declared tools",
-		"agent_id", agt.ID.String(), "tool_name", toolName, "declared_tools", tools)
+		"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName),
+		"declared_tools", sanitizeIngestLogField(strings.Join(tools, ",")))
 	return false
 }
 

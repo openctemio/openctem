@@ -1125,7 +1125,8 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// The adapter error can quote parser internals and fragments of the
 		// submitted payload; keep it server-side and return a generic message.
-		h.logger.Warn("scanner adapter conversion failed", "error", err, "scanner_type", scannerType)
+		h.logger.Warn("scanner adapter conversion failed",
+			"error", sanitizeLogField(err.Error()), "scanner_type", sanitizeLogField(scannerType))
 		apierror.BadRequest("Failed to convert scanner output").WriteJSON(w)
 		return
 	}

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -133,7 +134,8 @@ func (rl *TelemetryRateLimiter) MiddlewareKeyed(keyFn func(*http.Request) string
 				return
 			}
 			if !rl.bucket(key).Allow() {
-				rl.log.Warn("keyed rate limit exceeded", "key", key, "path", r.URL.Path)
+				rl.log.Warn("keyed rate limit exceeded",
+					"key", logSafe(key), "path", logSafe(r.URL.Path))
 				apierror.TooManyRequests(message).WriteJSON(w)
 				return
 			}
@@ -173,4 +175,10 @@ func (rl *TelemetryRateLimiter) Middleware() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// logSafe strips CR/LF so a request-derived value cannot forge log lines.
+func logSafe(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	return strings.ReplaceAll(s, "\r", " ")
 }
