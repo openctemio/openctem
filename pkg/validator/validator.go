@@ -373,9 +373,9 @@ func formatErrorMessage(e validator.FieldError) string {
 	case "required":
 		return "is required"
 	case "min":
-		return fmt.Sprintf("must be at least %s characters", e.Param())
+		return fmt.Sprintf("must be at least %s%s", e.Param(), sizeUnit(e))
 	case "max":
-		return fmt.Sprintf("must be at most %s characters", e.Param())
+		return fmt.Sprintf("must be at most %s%s", e.Param(), sizeUnit(e))
 	case "email":
 		return "must be a valid email address"
 	case "url":
@@ -426,6 +426,20 @@ func formatErrorMessage(e validator.FieldError) string {
 		return "must be a valid slug (lowercase letters, numbers, hyphens only)"
 	default:
 		return fmt.Sprintf("failed on '%s' validation", e.Tag())
+	}
+}
+
+// sizeUnit names what min/max measure for the failing field: characters for a
+// string, items for a slice or map, nothing for a number ("timeout_seconds
+// must be at least 30", not "at least 30 characters").
+func sizeUnit(e validator.FieldError) string {
+	switch e.Kind() {
+	case reflect.String:
+		return " characters"
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return " items"
+	default:
+		return ""
 	}
 }
 
