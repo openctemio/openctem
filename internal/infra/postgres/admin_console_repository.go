@@ -27,16 +27,14 @@ var _ admin.ConsoleRepository = (*AdminConsoleRepository)(nil)
 // GetCredentials returns the admin's console credentials.
 func (r *AdminConsoleRepository) GetCredentials(ctx context.Context, adminID shared.ID) (*admin.Credentials, error) {
 	const q = `
-		SELECT admin_id, COALESCE(password_hash, ''), COALESCE(mfa_secret_encrypted, ''),
-		       mfa_enabled, mfa_last_step, password_changed_at
+		SELECT admin_id, COALESCE(mfa_secret_encrypted, ''), mfa_enabled, mfa_last_step
 		FROM admin_credentials WHERE admin_id = $1`
 	var (
-		c         admin.Credentials
-		id        string
-		changedAt sql.NullTime
+		c  admin.Credentials
+		id string
 	)
 	err := r.db.QueryRowContext(ctx, q, adminID.String()).Scan(
-		&id, &c.PasswordHash, &c.MFASecretEncrypted, &c.MFAEnabled, &c.MFALastStep, &changedAt,
+		&id, &c.MFASecretEncrypted, &c.MFAEnabled, &c.MFALastStep,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, admin.ErrCredentialsNotFound
@@ -49,10 +47,6 @@ func (r *AdminConsoleRepository) GetCredentials(ctx context.Context, adminID sha
 		return nil, fmt.Errorf("get admin credentials: %w", err)
 	}
 	c.AdminID = parsed
-	if changedAt.Valid {
-		t := changedAt.Time
-		c.PasswordChangedAt = &t
-	}
 	return &c, nil
 }
 
@@ -60,18 +54,15 @@ func (r *AdminConsoleRepository) GetCredentials(ctx context.Context, adminID sha
 func (r *AdminConsoleRepository) SaveCredentials(ctx context.Context, c *admin.Credentials) error {
 	const q = `
 		INSERT INTO admin_credentials
-		    (admin_id, password_hash, mfa_secret_encrypted, mfa_enabled, mfa_last_step, password_changed_at, updated_at)
-		VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), $4, $5, $6, NOW())
+		    (admin_id, mfa_secret_encrypted, mfa_enabled, mfa_last_step, updated_at)
+		VALUES ($1, NULLIF($2, ''), $3, $4, NOW())
 		ON CONFLICT (admin_id) DO UPDATE SET
-		    password_hash = EXCLUDED.password_hash,
 		    mfa_secret_encrypted = EXCLUDED.mfa_secret_encrypted,
 		    mfa_enabled = EXCLUDED.mfa_enabled,
 		    mfa_last_step = EXCLUDED.mfa_last_step,
-		    password_changed_at = EXCLUDED.password_changed_at,
 		    updated_at = NOW()`
 	_, err := r.db.ExecContext(ctx, q,
-		c.AdminID.String(), c.PasswordHash, c.MFASecretEncrypted, c.MFAEnabled, c.MFALastStep,
-		nullTime(c.PasswordChangedAt),
+		c.AdminID.String(), c.MFASecretEncrypted, c.MFAEnabled, c.MFALastStep,
 	)
 	if err != nil {
 		return fmt.Errorf("save admin credentials: %w", err)
@@ -79,7 +70,7 @@ func (r *AdminConsoleRepository) SaveCredentials(ctx context.Context, c *admin.C
 	return nil
 }
 
-// DeleteCredentials removes the admin's password and MFA.
+// DeleteCredentials removes the admin's second factor.
 func (r *AdminConsoleRepository) DeleteCredentials(ctx context.Context, adminID shared.ID) error {
 	if _, err := r.db.ExecContext(ctx, `DELETE FROM admin_credentials WHERE admin_id = $1`, adminID.String()); err != nil {
 		return fmt.Errorf("delete admin credentials: %w", err)

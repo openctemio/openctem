@@ -3,6 +3,7 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
@@ -764,6 +765,120 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		return ErrSSORequired
 	}
 	return nil
+}
+
+// ProvisionedAccount is a user account prepared for a platform administrator.
+type ProvisionedAccount struct {
+	User *userdom.User
+	// TemporaryPassword is set only when the account was created here; it is
+	// shown once to the administrator who created it.
+	TemporaryPassword string
+}
+
+// ProvisionLocalAccount returns the user with this email, creating a local
+// account with a random temporary password (email marked verified) when none
+// exists. Used when a super admin makes someone a platform administrator
+// (RFC-022 rev. 2): administrators sign in on the normal /login page, so they
+// need a user account. Independent of AUTH_ALLOW_REGISTRATION, since this is
+// an administrator action, not self-registration.
+func (s *AuthService) ProvisionLocalAccount(ctx context.Context, email, name string) (*ProvisionedAccount, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	existing, err := s.userRepo.GetByEmail(ctx, email)
+	if err == nil && existing != nil {
+		return &ProvisionedAccount{User: existing}, nil
+	}
+	if err != nil && !shared.IsNotFound(err) {
+		return nil, fmt.Errorf("look up user: %w", err)
+	}
+
+	temp, err := temporaryPassword()
+	if err != nil {
+		return nil, err
+	}
+	hash, err := s.passwordHasher.Hash(temp)
+	if err != nil {
+		return nil, fmt.Errorf("hash temporary password: %w", err)
+	}
+	if strings.TrimSpace(name) == "" {
+		name = email
+	}
+	u, err := userdom.NewLocalUser(email, name, hash)
+	if err != nil {
+		return nil, err
+	}
+	u.VerifyEmail()
+	if err := s.userRepo.Create(ctx, u); err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+	return &ProvisionedAccount{User: u, TemporaryPassword: temp}, nil
+}
+
+// temporaryPassword returns 20 random characters that satisfy any password
+// policy the platform supports (upper, lower, digit and a symbol).
+func temporaryPassword() (string, error) {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate temporary password: %w", err)
+	}
+	out := make([]byte, len(buf))
+	for i, b := range buf {
+		out[i] = alphabet[int(b)%len(alphabet)]
+	}
+	return "Oc" + string(out) + "7!", nil
+}
+
+// RefreshSessionIdentity is the signed-in user behind a refresh token and how
+// that session was authenticated.
+type RefreshSessionIdentity struct {
+	User       *userdom.User
+	AuthMethod sessiondom.AuthMethod
+	SessionID  shared.ID
+}
+
+// IdentifyRefreshSession validates a refresh token the same way ExchangeToken
+// does (signature, stored and unused, family replay detection, active session)
+// and returns who is signed in, without issuing or rotating any token. The
+// platform admin console uses it to start its own session from the normal
+// /login sign-in (RFC-022 rev. 2).
+func (s *AuthService) IdentifyRefreshSession(ctx context.Context, refreshToken string) (*RefreshSessionIdentity, error) {
+	claims, err := s.tokenGenerator.ValidateRefreshToken(refreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+	storedToken, err := s.refreshTokenRepo.GetByTokenHash(ctx, sessiondom.HashToken(refreshToken))
+	if err != nil {
+		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
+			return nil, sessiondom.ErrRefreshTokenNotFound
+		}
+		return nil, fmt.Errorf("failed to get refresh token: %w", err)
+	}
+	if storedToken.IsUsed() {
+		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
+		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
+			s.logger.Error("failed to revoke token family", "error", err)
+		}
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+	if !storedToken.IsValid() {
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+	sess, err := s.sessionRepo.GetByID(ctx, storedToken.SessionID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+	if !sess.IsActive() {
+		return nil, sessiondom.ErrSessionExpired
+	}
+	userID, err := shared.IDFromString(claims.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id in token: %w", err)
+	}
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	return &RefreshSessionIdentity{User: u, AuthMethod: sess.AuthMethod(), SessionID: sess.ID()}, nil
 }
 
 // ExchangeToken exchanges a global refresh token for a tenant-scoped access token.

@@ -42,51 +42,26 @@ Security: outbound calls use `httpsec.SafeHTTPClient` (refuses loopback/RFC1918/
 link-local), Entra/Graph hosts are fixed strings, an email is required, and the
 email domain is checked against the provider's allow-list.
 
-## Who may configure SSO (application administrator only)
+## Who may configure SSO (platform administrator only)
 
-Configuring a tenant's SSO is an **application-administrator** operation, not a
-tenant one — modeled on Tenable Security Center, where SAML lives under
-system-level *Configuration*, not in an organization user's settings. A tenant
-owner/admin can **no longer** set up SSO for their own tenant.
+Configuring an organization's SSO is a **platform-administrator** operation, not
+a tenant one, modeled on Tenable Security Center, where SAML lives under
+system-level *Configuration* rather than in an organization user's settings. An
+organization owner or admin cannot set up SSO for their own organization.
 
-The application administrator is designated **out-of-band** via the
-`PLATFORM_ADMIN_EMAILS` env var (comma-separated email allow-list). `UnifiedAuth`
-stamps an `is_platform_admin` flag onto the request context when the
-authenticated caller's email is in that list, for both local and OIDC auth
-(`middleware.IsPlatformAdmin`). Because the list is only read from the
-environment and never from any tenant API, there is **no self-escalation path** —
-no tenant admin can grant themselves this tier. (Under OIDC, a Keycloak
-`platform_admin`/`system_admin` realm role also satisfies the check.)
-
-All of the following config routes are guarded by `RequirePlatformAdmin` (they
-stay on the JWT-tenant chain, so each resolves against the caller's tenant):
-
-| Routes | Purpose |
-|--------|---------|
-| `/api/v1/settings/saml` (GET/PUT/DELETE) | Per-tenant SAML config |
-| `/api/v1/settings/identity-providers` (CRUD) | OIDC identity providers (Entra/Okta/Google) |
-| `/api/v1/settings/verified-domains` (CRUD + verify) | DNS-verified domains gating JIT provisioning |
-
-The **login** flow (`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is
-unchanged and remains public — this restriction is about *setup*, not sign-in.
-
-> ⚠️ **Fail-closed / deploy note.** If `PLATFORM_ADMIN_EMAILS` is empty, **no
-> local-auth user can configure SSO for any tenant** — every setup route returns
-> 403. Set it to at least one operator email (e.g. `PLATFORM_ADMIN_EMAILS=ops@yourco.com`)
-> before enabling SSO, or you will lock yourself out of setup. Existing SSO
-> *logins* keep working regardless.
-
-The UI reads `is_platform_admin` from `GET /api/v1/users/me` and hides the SSO
-setup surface from everyone else.
+A platform administrator is a normal user account that belongs to no
+organization and is linked to an `admin_users` row (RFC-022). They sign in on
+the same `/login` page with their password, then open the admin console with a
+TOTP code. The console refuses a session created by SSO/SAML, so an
+organization's identity provider can never authenticate an administrator.
 
 ### Per-organization SSO in the admin console (RFC-022 Phase 2)
 
 The platform admin console configures SSO **per organization** under
 `/api/v1/admin/tenants/{tenantId}/sso/*` (SAML, identity providers, verified
-domains, enforcement). It uses the admin identity (API key or console session),
-not a tenant user carrying the `PLATFORM_ADMIN_EMAILS` flag. Once the console
-UI ships (Phase 3), the tenant-context `/api/v1/settings/{saml,identity-providers,verified-domains}`
-routes and the flag are retired.
+domains, enforcement), authenticated as the admin identity (console session or
+API key). The former tenant-context `/api/v1/settings/{saml,identity-providers,verified-domains}`
+routes and the `PLATFORM_ADMIN_EMAILS` flag were removed.
 
 **SSO enforcement** (`sso_enforced`) moved with it. The organization owner can
 still see it in `GET /tenants/{t}/settings` but can no longer change it: the

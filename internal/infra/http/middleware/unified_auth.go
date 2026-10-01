@@ -25,26 +25,12 @@ const (
 	LocalClaimsKey       logger.ContextKey = "local_claims"
 	TenantMembershipsKey logger.ContextKey = "tenant_memberships"
 	AccessibleTenantsKey logger.ContextKey = "accessible_tenants"
-	// IsPlatformAdminKey marks the authenticated principal as an application
-	// (platform) administrator. It is stamped by UnifiedAuth when the caller's
-	// email is in the PLATFORM_ADMIN_EMAILS allow-list, independent of the
-	// tenant-level role. See IsPlatformAdmin.
-	IsPlatformAdminKey logger.ContextKey = "is_platform_admin"
 )
 
 // AuthProvider values for context.
 const (
 	AuthProviderLocal = "local"
 	AuthProviderOIDC  = "oidc"
-)
-
-// Platform-level role strings recognised by IsPlatformAdmin. These
-// come from the IdP (Keycloak RealmAccess) or local auth. Kept here
-// instead of inline string literals so a rename in the IdP contract
-// only touches one place.
-const (
-	RolePlatformAdmin = "platform_admin"
-	RoleSystemAdmin   = "system_admin"
 )
 
 // UnifiedAuthConfig holds configuration for unified auth middleware.
@@ -55,15 +41,6 @@ type UnifiedAuthConfig struct {
 	Logger                *logger.Logger
 	SessionTimeoutMinutes int // Session timeout in minutes (0 = disabled)
 
-	// PlatformAdminEmails is the set of email addresses (lower-cased) that are
-	// application (platform) administrators — the operators allowed to manage
-	// tenant SSO/SAML/identity-provider/verified-domain configuration, modeled
-	// on Tenable Security Center's system-level administrator. Designated
-	// out-of-band via the PLATFORM_ADMIN_EMAILS env var (not settable through
-	// any tenant API), so there is no self-escalation path. Empty = nobody is a
-	// platform admin (SSO config is then reachable only via a Keycloak
-	// platform_admin realm role, if OIDC is in use).
-	PlatformAdminEmails map[string]bool
 }
 
 // DefaultAccessTokenCookieName is the default cookie name for access tokens.
@@ -152,17 +129,6 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 				if isSessionExpired(ctx, cfg.SessionTimeoutMinutes) {
 					apierror.Unauthorized("Session has expired").WriteJSON(w)
 					return
-				}
-			}
-
-			// Mark application (platform) administrators. Designated out-of-band
-			// via PLATFORM_ADMIN_EMAILS, so it applies to both local and OIDC
-			// auth and cannot be granted through any tenant API. This is the
-			// tier allowed to manage tenant SSO/SAML/identity-provider config.
-			if len(cfg.PlatformAdminEmails) > 0 {
-				email := strings.ToLower(strings.TrimSpace(GetEmail(ctx)))
-				if email != "" && cfg.PlatformAdminEmails[email] {
-					ctx = context.WithValue(ctx, IsPlatformAdminKey, true)
 				}
 			}
 
@@ -516,58 +482,6 @@ func RequireOwner() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !IsOwner(r.Context()) {
 				apierror.Forbidden("Owner access required").WriteJSON(w)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-// IsPlatformAdmin checks if the user has platform admin privileges.
-// Platform admins can manage platform-wide resources like platform agents.
-// This is typically granted to OpenCTEM staff or system administrators.
-//
-// Platform admin is determined by:
-// 1. Having "platform_admin" role in RealmAccess (for OIDC/Keycloak)
-// 2. Being the system admin (for local auth - checks specific user IDs or emails)
-func IsPlatformAdmin(ctx context.Context) bool {
-	// Stamped by UnifiedAuth from the PLATFORM_ADMIN_EMAILS allow-list. This is
-	// the path that works for local auth (and OIDC), independent of realm roles.
-	if isAdmin, ok := ctx.Value(IsPlatformAdminKey).(bool); ok && isAdmin {
-		return true
-	}
-
-	claims := GetClaims(ctx)
-	if claims == nil {
-		return false
-	}
-
-	// Check for platform_admin role in Keycloak realm access
-	for _, role := range claims.RealmAccess.Roles {
-		if role == RolePlatformAdmin || role == RoleSystemAdmin {
-			return true
-		}
-	}
-
-	// For local auth, check if user email is in allowed platform admins list
-	// This can be configured via environment variable PLATFORM_ADMIN_EMAILS
-	// For now, we check the role from context (set by local auth)
-	role := GetRole(ctx)
-	if role == RolePlatformAdmin || role == RoleSystemAdmin {
-		return true
-	}
-
-	return false
-}
-
-// RequirePlatformAdmin creates a middleware that requires platform admin access.
-// Platform admins can manage OpenCTEM's shared infrastructure like platform agents.
-// This is for OpenCTEM operators, not regular tenant admins.
-func RequirePlatformAdmin() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !IsPlatformAdmin(r.Context()) {
-				apierror.Forbidden("Platform admin access required").WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)

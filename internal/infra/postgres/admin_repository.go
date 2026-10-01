@@ -980,3 +980,43 @@ func (r *AuditLogRepository) CountOlderThan(ctx context.Context, olderThan time.
 }
 
 // Note: nullInt is defined in command_repository.go (same package)
+
+// GetByUserID returns the administrator linked to a users row.
+func (r *AdminRepository) GetByUserID(ctx context.Context, userID shared.ID) (*admin.AdminUser, error) {
+	row := r.db.QueryRowContext(ctx, r.selectQuery()+" WHERE user_id = $1", userID.String())
+	return r.scanAdmin(row)
+}
+
+// LinkUser links an administrator to a users row, refusing users that belong
+// to an organization. The membership check and the update run in one
+// statement; the tenant_members trigger (migration 000226) blocks the reverse
+// order, so the two rules cannot race into an administrator with members.
+func (r *AdminRepository) LinkUser(ctx context.Context, adminID, userID shared.ID) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE admin_users SET user_id = $2, updated_at = NOW()
+		WHERE id = $1
+		  AND NOT EXISTS (SELECT 1 FROM tenant_members WHERE user_id = $2)`,
+		adminID.String(), userID.String())
+	if err != nil {
+		if isUniqueViolation(err) {
+			return admin.ErrUserAlreadyAdmin
+		}
+		return fmt.Errorf("link admin user: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("link admin user: %w", err)
+	}
+	if n == 1 {
+		return nil
+	}
+	// Nothing updated: either the admin does not exist or the user has members.
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM admin_users WHERE id = $1)`, adminID.String()).Scan(&exists); err != nil {
+		return fmt.Errorf("link admin user: %w", err)
+	}
+	if !exists {
+		return admin.ErrAdminNotFound
+	}
+	return admin.ErrUserHasMemberships
+}

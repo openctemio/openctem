@@ -3433,13 +3433,6 @@ definitions:
     - owner_email
     - slug
     type: object
-  internal_infra_http_handler.AdminLoginRequest:
-    properties:
-      email:
-        type: string
-      password:
-        type: string
-    type: object
   internal_infra_http_handler.AdminLoginResponse:
     properties:
       otpauth_uri:
@@ -3496,11 +3489,20 @@ definitions:
       verified_domains:
         type: integer
     type: object
-  internal_infra_http_handler.AdminPasswordRequest:
+  internal_infra_http_handler.AdminProvisionRequest:
     properties:
-      current_password:
+      email:
         type: string
-      new_password:
+      name:
+        type: string
+      role:
+        type: string
+    type: object
+  internal_infra_http_handler.AdminProvisionResponse:
+    properties:
+      admin:
+        $ref: '#/definitions/internal_infra_http_handler.ValidateResponse'
+      temporary_password:
         type: string
     type: object
   internal_infra_http_handler.AdminSSOEnforcementRequest:
@@ -8169,6 +8171,12 @@ definitions:
     properties:
       expires_in:
         type: integer
+      platform_admin:
+        description: |-
+          PlatformAdmin is true when the account is a platform administrator
+          (RFC-022). Such an account belongs to no organization; the client sends
+          it to the admin console rather than organization onboarding.
+        type: boolean
       refresh_token:
         description: Also set in httpOnly cookie
         type: string
@@ -10871,10 +10879,9 @@ definitions:
         type: string
       is_platform_admin:
         description: |-
-          IsPlatformAdmin marks the caller as an application (platform) administrator
-          (PLATFORM_ADMIN_EMAILS allow-list). The UI uses it to show/hide the SSO
-          setup surface, which only platform admins may configure. Set on the
-          /users/me response only (context-derived), not in every toUserResponse.
+          IsPlatformAdmin marks an account linked to an active platform
+          administrator (RFC-022). The UI uses it to offer the admin console. Set
+          on the /users/me response only, not in every toUserResponse.
         type: boolean
       last_login_at:
         type: string
@@ -11035,6 +11042,40 @@ info:
   title: OpenCTEM API
   version: "1.0"
 paths:
+  /admin/administrators:
+    post:
+      consumes:
+      - application/json
+      description: Links the user account with this email (it must not belong to any
+        organization), or creates a local account and returns its temporary password
+        once. The administrator signs in on the normal /login page.
+      parameters:
+      - description: Administrator
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AdminProvisionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminProvisionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: Already an administrator, or the account belongs to an organization
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Make someone a platform administrator
+      tags:
+      - Admin Users
   /admin/audit-logs:
     get:
       consumes:
@@ -11161,41 +11202,10 @@ paths:
       summary: Get audit log statistics
       tags:
       - Admin Audit Logs
-  /admin/auth/login:
-    post:
-      consumes:
-      - application/json
-      description: First step of platform admin console login (RFC-022). Sets a short-lived
-        admin_mfa cookie; the response says whether to enter a TOTP code or enroll
-        an authenticator first. Every failure is the same generic 401.
-      parameters:
-      - description: Credentials
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.AdminLoginRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AdminLoginResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "401":
-          description: Invalid email or password
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      summary: Admin console login (password step)
-      tags:
-      - Admin Auth
   /admin/auth/logout:
     post:
-      description: Ends the caller's console session and clears the admin cookies.
+      description: Ends the caller's console session and the /login session it was
+        opened from (refresh-token cookie), and clears the admin cookies.
       responses:
         "204":
           description: No Content
@@ -11234,34 +11244,28 @@ paths:
       summary: Admin console login (TOTP step)
       tags:
       - Admin Auth
-  /admin/auth/password:
+  /admin/auth/session:
     post:
-      consumes:
+      description: Starts a console session for the user signed in on the normal /login
+        page (refresh-token cookie). Only a password sign-in by a user linked to an
+        active platform administrator qualifies; the response says whether to enter
+        a TOTP code or enroll an authenticator first.
+      produces:
       - application/json
-      description: Sets or changes the caller's console password. With an API key
-        the current password is not required (bootstrap path); with a console session
-        it is, and every session of the admin is ended.
-      parameters:
-      - description: Passwords
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.AdminPasswordRequest'
       responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
+        "200":
+          description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+            $ref: '#/definitions/internal_infra_http_handler.AdminLoginResponse'
         "401":
-          description: Unauthorized
+          description: Not signed in
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Set own admin console password
+        "403":
+          description: Not a platform administrator, or not a password sign-in
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Open the platform admin console (after /login)
       tags:
       - Admin Auth
   /admin/tenants:
@@ -11639,9 +11643,9 @@ paths:
       - Admin Organization SSO
   /admin/users/{id}/reset-credentials:
     post:
-      description: Super admin only. Removes the target admin's password and MFA and
-        ends their sessions (lost authenticator). The target sets a new password with
-        their API key and re-enrolls on next login.
+      description: Super admin only. Removes the target administrator's TOTP second
+        factor and ends their console sessions (lost authenticator); they enroll again
+        the next time they open the console.
       parameters:
       - description: Admin user ID
         in: path
@@ -11665,7 +11669,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Reset another admin's console credentials
+      summary: Reset another administrator's two-step verification
       tags:
       - Admin Users
   /agent/commands:

@@ -25,21 +25,24 @@ const (
 
 // AdminConsoleHandler serves platform admin console login (RFC-022).
 type AdminConsoleHandler struct {
-	svc          *adminconsole.Service
-	cookieSecure bool
-	logger       *logger.Logger
+	svc                *adminconsole.Service
+	cookieSecure       bool
+	refreshTokenCookie string
+	logger             *logger.Logger
 }
 
 // NewAdminConsoleHandler creates the handler. cookieSecure mirrors
 // AUTH_COOKIE_SECURE (true in production, behind HTTPS).
-func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, log *logger.Logger) *AdminConsoleHandler {
-	return &AdminConsoleHandler{svc: svc, cookieSecure: cookieSecure, logger: log.With("handler", "admin_console")}
-}
-
-// AdminLoginRequest is the password step.
-type AdminLoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+// refreshTokenCookie is the name of the normal sign-in refresh-token cookie
+// (AUTH_REFRESH_TOKEN_COOKIE_NAME): the console session starts from it.
+func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, refreshTokenCookie string, log *logger.Logger) *AdminConsoleHandler {
+	if refreshTokenCookie == "" {
+		refreshTokenCookie = "refresh_token"
+	}
+	return &AdminConsoleHandler{
+		svc: svc, cookieSecure: cookieSecure, refreshTokenCookie: refreshTokenCookie,
+		logger: log.With("handler", "admin_console"),
+	}
 }
 
 // AdminLoginResponse tells the client which second step follows.
@@ -54,10 +57,18 @@ type AdminMFARequest struct {
 	Code string `json:"code"`
 }
 
-// AdminPasswordRequest sets or changes the caller's own console password.
-type AdminPasswordRequest struct {
-	CurrentPassword string `json:"current_password"`
-	NewPassword     string `json:"new_password"`
+// AdminProvisionRequest makes someone a platform administrator.
+type AdminProvisionRequest struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
+}
+
+// AdminProvisionResponse returns the new administrator; temporary_password is
+// set only when a user account had to be created, and is shown once.
+type AdminProvisionResponse struct {
+	Admin             ValidateResponse `json:"admin"`
+	TemporaryPassword string           `json:"temporary_password,omitempty"`
 }
 
 func clientInfo(r *http.Request) adminconsole.ClientInfo {
@@ -85,35 +96,88 @@ func (h *AdminConsoleHandler) clearCookie(w http.ResponseWriter, name, path stri
 	h.setCookie(w, name, "", path, -1, httpOnly)
 }
 
-// Login handles POST /api/v1/admin/auth/login (password step).
-// @Summary Admin console login (password step)
-// @Description First step of platform admin console login (RFC-022). Sets a short-lived admin_mfa cookie; the response says whether to enter a TOTP code or enroll an authenticator first. Every failure is the same generic 401.
+// StartSession handles POST /api/v1/admin/auth/session. The caller has
+// already signed in on the normal /login page; their refresh-token cookie
+// identifies them. It answers which TOTP step follows and sets the pending
+// admin_mfa cookie.
+// @Summary Open the platform admin console (after /login)
+// @Description Starts a console session for the user signed in on the normal /login page (refresh-token cookie). Only a password sign-in by a user linked to an active platform administrator qualifies; the response says whether to enter a TOTP code or enroll an authenticator first.
 // @Tags Admin Auth
-// @Accept json
 // @Produce json
-// @Param request body AdminLoginRequest true "Credentials"
 // @Success 200 {object} AdminLoginResponse
-// @Failure 400 {object} apierror.Error "Bad Request"
-// @Failure 401 {object} apierror.Error "Invalid email or password"
-// @Router /admin/auth/login [post]
-func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
-	var req AdminLoginRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || req.Email == "" || req.Password == "" {
-		apierror.BadRequest("email and password are required").WriteJSON(w)
-		return
+// @Failure 401 {object} apierror.Error "Not signed in"
+// @Failure 403 {object} apierror.Error "Not a platform administrator, or not a password sign-in"
+// @Router /admin/auth/session [post]
+func (h *AdminConsoleHandler) StartSession(w http.ResponseWriter, r *http.Request) {
+	refresh := ""
+	if c, err := r.Cookie(h.refreshTokenCookie); err == nil {
+		refresh = c.Value
 	}
-	res, err := h.svc.Login(r.Context(), req.Email, req.Password, clientInfo(r))
+	res, err := h.svc.Start(r.Context(), refresh, clientInfo(r))
 	if err != nil {
-		if errors.Is(err, admin.ErrInvalidCredentials) {
-			apierror.Unauthorized("Invalid email or password").WriteJSON(w)
-			return
+		switch {
+		case errors.Is(err, admin.ErrNotSignedIn):
+			apierror.Unauthorized("Sign in first").WriteJSON(w)
+		case errors.Is(err, admin.ErrPasswordSignInRequired):
+			apierror.Forbidden("Platform administrators sign in with their password, not single sign-on").WriteJSON(w)
+		case errors.Is(err, admin.ErrNotPlatformAdmin):
+			apierror.Forbidden("This account is not a platform administrator").WriteJSON(w)
+		default:
+			h.logger.Error("admin console start", "error", err)
+			apierror.InternalError(err).WriteJSON(w)
 		}
-		h.logger.Error("admin console login", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
 	h.setCookie(w, middleware.AdminMFACookie, res.PendingToken, adminAuthPath, int(admin.PendingMFATTL.Seconds()), true)
 	writeJSON(w, http.StatusOK, AdminLoginResponse{Status: string(res.Status), OTPAuthURI: res.OTPAuthURI, Secret: res.Secret})
+}
+
+// Provision handles POST /api/v1/admin/administrators (super admin).
+// @Summary Make someone a platform administrator
+// @Description Links the user account with this email (it must not belong to any organization), or creates a local account and returns its temporary password once. The administrator signs in on the normal /login page.
+// @Tags Admin Users
+// @Accept json
+// @Produce json
+// @Param request body AdminProvisionRequest true "Administrator"
+// @Success 201 {object} AdminProvisionResponse
+// @Failure 400 {object} apierror.Error "Bad Request"
+// @Failure 409 {object} apierror.Error "Already an administrator, or the account belongs to an organization"
+// @Security BearerAuth
+// @Router /admin/administrators [post]
+func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.MustGetAdminUser(r.Context())
+	var req AdminProvisionRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	role := admin.AdminRole(req.Role)
+	if req.Role == "" {
+		role = admin.AdminRoleReadonly
+	}
+	if !role.IsValid() {
+		apierror.BadRequest("role must be super_admin, ops_admin or readonly").WriteJSON(w)
+		return
+	}
+	a, temp, err := h.svc.ProvisionAdmin(r.Context(), actor, req.Email, req.Name, role, clientInfo(r))
+	if err != nil {
+		switch {
+		case errors.Is(err, admin.ErrAdminAlreadyExists), errors.Is(err, admin.ErrUserAlreadyAdmin):
+			apierror.Conflict("This person is already a platform administrator").WriteJSON(w)
+		case errors.Is(err, admin.ErrUserHasMemberships):
+			apierror.Conflict("This account belongs to an organization. Platform administrators cannot; use a separate account.").WriteJSON(w)
+		case shared.IsValidation(err):
+			apierror.BadRequest(sanitizeLogField(err.Error())).WriteJSON(w)
+		default:
+			h.logger.Error("provision administrator", "error", sanitizeLogField(err.Error()))
+			apierror.InternalError(err).WriteJSON(w)
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, AdminProvisionResponse{
+		Admin:             ValidateResponse{ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role())},
+		TemporaryPassword: temp,
+	})
 }
 
 // VerifyMFA handles POST /api/v1/admin/auth/mfa (TOTP step). On success it
@@ -164,15 +228,20 @@ func (h *AdminConsoleHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) 
 
 // Logout handles POST /api/v1/admin/auth/logout.
 // @Summary Admin console logout
-// @Description Ends the caller's console session and clears the admin cookies.
+// @Description Ends the caller's console session and the /login session it was opened from (refresh-token cookie), and clears the admin cookies.
 // @Tags Admin Auth
 // @Success 204 "No Content"
 // @Router /admin/auth/logout [post]
 func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	session, refresh := "", ""
 	if c, err := r.Cookie(middleware.AdminSessionCookie); err == nil {
-		if err := h.svc.Logout(r.Context(), c.Value, clientInfo(r)); err != nil {
-			h.logger.Warn("admin console logout", "error", err)
-		}
+		session = c.Value
+	}
+	if c, err := r.Cookie(h.refreshTokenCookie); err == nil {
+		refresh = c.Value
+	}
+	if err := h.svc.Logout(r.Context(), session, refresh, clientInfo(r)); err != nil {
+		h.logger.Warn("admin console logout", "error", err)
 	}
 	h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)
 	h.clearCookie(w, middleware.AdminCSRFCookie, "/", false)
@@ -180,51 +249,11 @@ func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// SetPassword handles POST /api/v1/admin/auth/password for the caller's own
-// password. With an API key the current password is not required (bootstrap
-// path); with a console session it is.
-// @Summary Set own admin console password
-// @Description Sets or changes the caller's console password. With an API key the current password is not required (bootstrap path); with a console session it is, and every session of the admin is ended.
-// @Tags Admin Auth
-// @Accept json
-// @Param request body AdminPasswordRequest true "Passwords"
-// @Success 204 "No Content"
-// @Failure 400 {object} apierror.Error "Bad Request"
-// @Failure 401 {object} apierror.Error "Unauthorized"
-// @Security BearerAuth
-// @Router /admin/auth/password [post]
-func (h *AdminConsoleHandler) SetPassword(w http.ResponseWriter, r *http.Request) {
-	a := middleware.MustGetAdminUser(r.Context())
-	var req AdminPasswordRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
-		return
-	}
-	requireCurrent := middleware.GetAdminAuthMethod(r.Context()) != middleware.AdminAuthMethodAPIKey
-	err := h.svc.SetPassword(r.Context(), a, req.CurrentPassword, req.NewPassword, requireCurrent, clientInfo(r))
-	switch {
-	case err == nil:
-		if requireCurrent {
-			// The password change ended every session, including this one.
-			h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)
-			h.clearCookie(w, middleware.AdminCSRFCookie, "/", false)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	case errors.Is(err, admin.ErrWeakPassword):
-		apierror.BadRequest(err.Error()).WriteJSON(w)
-	case errors.Is(err, admin.ErrCurrentPassword):
-		apierror.Unauthorized("Current password is incorrect").WriteJSON(w)
-	default:
-		h.logger.Error("admin console set password", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-	}
-}
-
 // ResetCredentials handles POST /api/v1/admin/users/{id}/reset-credentials
-// (super admin): removes another admin's password and MFA and ends their
-// sessions, for a lost authenticator.
-// @Summary Reset another admin's console credentials
-// @Description Super admin only. Removes the target admin's password and MFA and ends their sessions (lost authenticator). The target sets a new password with their API key and re-enrolls on next login.
+// (super admin): removes another administrator's second factor and ends their
+// console sessions, for a lost authenticator.
+// @Summary Reset another administrator's two-step verification
+// @Description Super admin only. Removes the target administrator's TOTP second factor and ends their console sessions (lost authenticator); they enroll again the next time they open the console.
 // @Tags Admin Users
 // @Param id path string true "Admin user ID"
 // @Success 204 "No Content"

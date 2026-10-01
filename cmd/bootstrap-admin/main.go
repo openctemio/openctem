@@ -1,10 +1,21 @@
-// Package main provides a CLI tool to create the first admin user.
+// Package main provides a CLI tool to create the first platform administrator.
 // This is used during initial deployment to bootstrap the admin system.
+//
+// A platform administrator (RFC-022) is a normal sign-in account (users table)
+// that belongs to no organization, linked to an admin_users row that holds the
+// role, the authenticator and the API key. The administrator signs in on the
+// normal /login page and opens the admin console with a TOTP code. This tool
+// creates both and links them; when no account exists for the email it creates
+// one with a temporary password, printed once.
 //
 // Usage:
 //
 //	# Generate a new admin with random API key
 //	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com
+//
+//	# Link an existing administrator (created before sign-in accounts were
+//	# linked) to a sign-in account, keeping its role, key and authenticator
+//	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -link
 //
 //	# Use a specific API key (e.g., from environment)
 //	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -api-key=$BOOTSTRAP_ADMIN_KEY
@@ -28,6 +39,8 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/openctemio/api/pkg/password"
 )
 
 func main() {
@@ -36,8 +49,9 @@ func main() {
 	email := flag.String("email", "", "Admin email (or set ADMIN_EMAIL env)")
 	name := flag.String("name", "", "Admin name (defaults to email prefix)")
 	apiKey := flag.String("api-key", "", "API key to use (or set BOOTSTRAP_ADMIN_KEY env, generates random if not set)")
-	role := flag.String("role", "super_admin", "Admin role: super_admin, ops_admin, viewer")
+	role := flag.String("role", "super_admin", "Admin role: super_admin, ops_admin, readonly")
 	force := flag.Bool("force", false, "Overwrite existing admin with same email")
+	linkOnly := flag.Bool("link", false, "Only link the existing admin with this email to a sign-in account (keeps role, API key and authenticator)")
 	flag.Parse()
 
 	// Get values from env if not provided
@@ -84,8 +98,11 @@ func main() {
 	}
 
 	adminRole := *role
-	if adminRole != "super_admin" && adminRole != "ops_admin" && adminRole != "viewer" {
-		fatal("Invalid role. Must be one of: super_admin, ops_admin, viewer")
+	if adminRole == "viewer" { // accepted for older scripts; the role is readonly
+		adminRole = "readonly"
+	}
+	if adminRole != "super_admin" && adminRole != "ops_admin" && adminRole != "readonly" {
+		fatal("Invalid role. Must be one of: super_admin, ops_admin, readonly")
 	}
 
 	// Set admin name (default to email prefix if not provided)
@@ -126,6 +143,33 @@ func main() {
 	}
 	if !tableExists {
 		fatal("admin_users table does not exist. Run migrations first.")
+	}
+	var linkable bool
+	if err := db.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'admin_users' AND column_name = 'user_id')
+	`).Scan(&linkable); err != nil {
+		fatal("Error checking schema: %v", err)
+	}
+	if !linkable {
+		fatal("admin_users.user_id is missing. Run migrations first (000226).")
+	}
+
+	if *linkOnly {
+		var adminID string
+		if err := db.QueryRowContext(ctx, `SELECT id FROM admin_users WHERE email = $1`, adminEmail).Scan(&adminID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				fatal("No admin with email %s. Run without -link to create one.", adminEmail)
+			}
+			fatal("Error looking up admin: %v", err)
+		}
+		temp := linkAccount(ctx, db, adminID, adminEmail, adminName)
+		fmt.Println()
+		fmt.Println("=== Administrator linked to a sign-in account ===")
+		fmt.Printf("  Admin ID: %s\n", adminID)
+		fmt.Printf("  Email:    %s\n", adminEmail)
+		printSignIn(adminEmail, temp)
+		return
 	}
 
 	// Check if admin with this email already exists
@@ -170,6 +214,7 @@ func main() {
 	if err != nil {
 		fatal("Error creating admin: %v", err)
 	}
+	temp := linkAccount(ctx, db, adminID, adminEmail, adminName)
 
 	// Print success message
 	fmt.Println()
@@ -193,11 +238,73 @@ func main() {
 	fmt.Println("Test the connection:")
 	fmt.Println("  openctem-admin cluster-info")
 	fmt.Println()
-	fmt.Println("Admin console login (browser, RFC-022): set a password with this key,")
-	fmt.Println("then sign in at <ui-url>/admin/login and enroll an authenticator app:")
-	fmt.Println("  curl -X POST https://your-api-url/api/v1/admin/auth/password \\")
-	fmt.Println("    -H 'X-Admin-API-Key: " + "<key above>" + "' -H 'Content-Type: application/json' \\")
-	fmt.Println("    -d '{\"new_password\":\"<at least 12 characters>\"}'")
+	printSignIn(adminEmail, temp)
+}
+
+// linkAccount links the admin to the users-table account with its email,
+// creating a local account with a temporary password when none exists (the
+// password is returned; empty when an existing account was linked). An
+// account that belongs to an organization is refused: administrators belong
+// to none, so they need a separate account.
+func linkAccount(ctx context.Context, db *sql.DB, adminID, email, name string) string {
+	email = strings.ToLower(strings.TrimSpace(email))
+	var userID, temp string
+	err := db.QueryRowContext(ctx, `SELECT id FROM users WHERE lower(email) = $1`, email).Scan(&userID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		temp = temporaryPassword()
+		hash, herr := password.New().Hash(temp)
+		if herr != nil {
+			fatal("Error hashing password: %v", herr)
+		}
+		userID = uuid.New().String()
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO users (id, email, name, password_hash, auth_provider, status, email_verified, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, 'local', 'active', true, NOW(), NOW())
+		`, userID, email, name, hash); err != nil {
+			fatal("Error creating sign-in account: %v", err)
+		}
+	case err != nil:
+		fatal("Error looking up sign-in account: %v", err)
+	default:
+		var orgs int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tenant_members WHERE user_id = $1`, userID).Scan(&orgs); err != nil {
+			fatal("Error checking memberships: %v", err)
+		}
+		if orgs > 0 {
+			fatal("The account %s belongs to %d organization(s). A platform administrator belongs to none; use a separate email.", email, orgs)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE admin_users SET user_id = $2, updated_at = NOW() WHERE id = $1`, adminID, userID); err != nil {
+		fatal("Error linking the account: %v", err)
+	}
+	return temp
+}
+
+func printSignIn(email, temp string) {
+	fmt.Println()
+	fmt.Println("Admin console (browser): sign in at <ui-url>/login, then open the console")
+	fmt.Println("and enroll an authenticator app on first use.")
+	fmt.Printf("  Email:    %s\n", email)
+	if temp != "" {
+		fmt.Printf("  Password: %s   (temporary, shown once; change it after signing in)\n", temp)
+	} else {
+		fmt.Println("  Password: the existing account's password")
+	}
+}
+
+// temporaryPassword returns a random password meeting the default policy.
+func temporaryPassword() string {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		fatal("Error generating password: %v", err)
+	}
+	out := make([]byte, len(buf))
+	for i, b := range buf {
+		out[i] = alphabet[int(b)%len(alphabet)]
+	}
+	return "Oc" + string(out) + "7!"
 }
 
 // extractPrefix extracts the lookup prefix from an API key.

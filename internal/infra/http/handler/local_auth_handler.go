@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/password"
@@ -28,6 +29,7 @@ type LocalAuthHandler struct {
 	// returns an opaque ticket instead of a JWT, eliminating query-string
 	// replay risk.
 	wsTicketService *app.WSTicketService
+	platformAdmin   PlatformAdminChecker
 	authConfig      config.AuthConfig
 	cookieConfig    CookieConfig
 	csrfConfig      middleware.CSRFConfig
@@ -40,6 +42,7 @@ func NewLocalAuthHandler(
 	authService *app.AuthService,
 	sessionService *app.SessionService,
 	emailService *app.EmailService,
+	platformAdmin PlatformAdminChecker,
 	authConfig config.AuthConfig,
 	log *logger.Logger,
 ) *LocalAuthHandler {
@@ -47,6 +50,7 @@ func NewLocalAuthHandler(
 		authService:    authService,
 		sessionService: sessionService,
 		emailService:   emailService,
+		platformAdmin:  platformAdmin,
 		authConfig:     authConfig,
 		cookieConfig:   NewCookieConfig(authConfig),
 		csrfConfig:     middleware.NewCSRFConfig(authConfig, log),
@@ -202,6 +206,10 @@ type LoginResponse struct {
 	// user to /onboarding/create-team. Suspended tenants are NOT
 	// accessible — the user cannot pick one and exchange a token.
 	SuspendedTenants []TenantInfo `json:"suspended_tenants,omitempty"`
+	// PlatformAdmin is true when the account is a platform administrator
+	// (RFC-022). Such an account belongs to no organization; the client sends
+	// it to the admin console rather than organization onboarding.
+	PlatformAdmin bool `json:"platform_admin,omitempty"`
 }
 
 // UserInfo contains basic user information.
@@ -306,6 +314,9 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		},
 		Tenants:          tenants,
 		SuspendedTenants: suspendedTenants,
+	}
+	if h.platformAdmin != nil {
+		resp.PlatformAdmin = h.platformAdmin.IsPlatformAdmin(r.Context(), result.User.ID())
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1131,6 +1142,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Forbidden("Registration is disabled").WriteJSON(w)
 	case errors.Is(err, app.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
+	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):
+		apierror.Conflict("Platform administrators cannot belong to an organization. Use the admin console, or a separate account.").WriteJSON(w)
 	case errors.Is(err, app.ErrEmailAlreadyExists):
 		apierror.Conflict("Email already exists").WriteJSON(w)
 	case errors.Is(err, app.ErrInvalidResetToken):

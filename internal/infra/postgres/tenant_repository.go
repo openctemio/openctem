@@ -211,6 +211,9 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 		m.JoinedAt(),
 	)
 	if err != nil {
+		if isCheckViolation(err) {
+			return tenant.ErrPlatformAdminMembership
+		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
 
@@ -284,6 +287,9 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 		m.ID().String(), m.UserID().String(), m.TenantID().String(),
 		m.Role().String(), invitedBy, m.JoinedAt(),
 	); err != nil {
+		if isCheckViolation(err) {
+			return tenant.ErrPlatformAdminMembership
+		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
 
@@ -1276,6 +1282,9 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			m.JoinedAt(),
 		)
 		if err != nil {
+			if isCheckViolation(err) {
+				return tenant.ErrPlatformAdminMembership
+			}
 			return fmt.Errorf("failed to create membership: %w", err)
 		}
 

@@ -354,14 +354,6 @@ type AuthConfig struct {
 	// (CORS allowed origins + OAuth frontend callback) so the shipped UI keeps
 	// working; an empty list at request time fails closed (rejects every URI).
 	AllowedRedirectURIs []string
-
-	// PlatformAdminEmails is the allow-list of application (platform) admin
-	// email addresses (PLATFORM_ADMIN_EMAILS, csv). These operators — modeled
-	// on Tenable Security Center's system-level administrator — are the only
-	// principals allowed to manage tenant SSO/SAML/identity-provider config.
-	// Designated out-of-band here (never through a tenant API) so there is no
-	// self-escalation path. Empty = no local platform admins.
-	PlatformAdminEmails []string
 }
 
 // EntraSSOConfig holds the platform-wide (env-based) Microsoft Entra ID SSO
@@ -813,7 +805,6 @@ func Load() (*Config, error) {
 			},
 			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
 			TenantCreationMode:  getEnv("TENANT_CREATION_MODE", TenantCreationSelfService),
-			PlatformAdminEmails: getEnvSlice("PLATFORM_ADMIN_EMAILS", nil),
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),

@@ -57,9 +57,6 @@ DELETE /api/v1/remediation/campaigns/{}
 DELETE /api/v1/reports/schedules/{}
 DELETE /api/v1/roles/{}
 DELETE /api/v1/scim-tokens/{}
-DELETE /api/v1/settings/identity-providers/{}
-DELETE /api/v1/settings/saml
-DELETE /api/v1/settings/verified-domains/{}
 DELETE /api/v1/simulations/{}
 DELETE /api/v1/suppressions/{}
 DELETE /api/v1/tenants/{}
@@ -206,10 +203,6 @@ GET /api/v1/roles/{}/members
 GET /api/v1/scans/overview-stats
 GET /api/v1/scim-tokens
 GET /api/v1/scim-tokens/group-mappings
-GET /api/v1/settings/identity-providers
-GET /api/v1/settings/identity-providers/{}
-GET /api/v1/settings/saml
-GET /api/v1/settings/verified-domains
 GET /api/v1/simulations
 GET /api/v1/simulations/{}
 GET /api/v1/simulations/{}/runs
@@ -395,9 +388,6 @@ POST /api/v1/roles
 POST /api/v1/roles/{}/members/bulk
 POST /api/v1/scans/quick
 POST /api/v1/scim-tokens
-POST /api/v1/settings/identity-providers
-POST /api/v1/settings/verified-domains
-POST /api/v1/settings/verified-domains/{}/verify
 POST /api/v1/simulations
 POST /api/v1/simulations/{}/run
 POST /api/v1/suppressions
@@ -455,8 +445,6 @@ PUT /api/v1/priority-rules/{}
 PUT /api/v1/relationships/{}
 PUT /api/v1/roles/{}
 PUT /api/v1/scim-tokens/group-mappings
-PUT /api/v1/settings/identity-providers/{}
-PUT /api/v1/settings/saml
 PUT /api/v1/simulations/{}
 PUT /api/v1/suppressions/{}
 PUT /api/v1/tenants/{}/settings/asset-lifecycle

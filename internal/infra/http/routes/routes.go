@@ -5,7 +5,6 @@ package routes
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
@@ -250,18 +249,6 @@ func Register(
 	if membershipReader == nil {
 		membershipReader = tenantRepo
 	}
-	// Normalize the platform-admin email allow-list once (lower-cased) so the
-	// per-request check in UnifiedAuth is a plain map lookup.
-	var platformAdminEmails map[string]bool
-	if len(cfg.Auth.PlatformAdminEmails) > 0 {
-		platformAdminEmails = make(map[string]bool, len(cfg.Auth.PlatformAdminEmails))
-		for _, e := range cfg.Auth.PlatformAdminEmails {
-			if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
-				platformAdminEmails[e] = true
-			}
-		}
-	}
-
 	// Create unified auth middleware based on provider
 	unifiedAuthCfg := middleware.UnifiedAuthConfig{
 		Provider:              authCfg.Provider,
@@ -269,7 +256,6 @@ func Register(
 		OIDCValidator:         authCfg.OIDCValidator,
 		Logger:                log,
 		SessionTimeoutMinutes: cfg.Server.SessionTimeoutMinutes,
-		PlatformAdminEmails:   platformAdminEmails,
 	}
 	authMiddleware := middleware.UnifiedAuth(unifiedAuthCfg)
 
@@ -778,21 +764,6 @@ func Register(
 	// Platform Stats routes (tenant-scoped platform agent statistics)
 	if h.PlatformStats != nil {
 		registerPlatformStatsRoutes(router, h.PlatformStats, authMiddleware, userSync)
-	}
-
-	// SSO Identity Provider admin routes (tenant from JWT token)
-	if h.SSO != nil {
-		registerSSOAdminRoutes(router, h.SSO, authMiddleware, userSync)
-	}
-
-	// SAML SP config admin routes (RFC-009 9d, tenant from JWT token)
-	if h.SAML != nil {
-		registerSAMLAdminRoutes(router, h.SAML, authMiddleware, userSync)
-	}
-
-	// Verified-domain admin routes (SSO P1, tenant from JWT token)
-	if h.VerifiedDomain != nil {
-		registerVerifiedDomainRoutes(router, h.VerifiedDomain, authMiddleware, userSync)
 	}
 
 	// ==========================================================================

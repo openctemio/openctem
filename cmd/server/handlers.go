@@ -95,9 +95,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	repos := deps.Repos
 	svc := deps.Services
 
-	// Platform admin console login (RFC-022): password + TOTP sessions, accepted
-	// by the admin auth middleware alongside API keys.
-	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor, log)
+	// Platform admin console (RFC-022): the administrator signs in on the normal
+	// /login with their users-table account, then the console adds a TOTP step
+	// and its own session, accepted by the admin auth middleware alongside API keys.
+	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor,
+		adminAccountDirectory{auth: svc.Auth}, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
@@ -201,7 +203,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Core
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
-		User:   handler.NewUserHandler(svc.User, svc.Tenant, v, log),
+		User:   handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log),
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
@@ -354,7 +356,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Admin Auth (API Key authentication for Admin UI)
 		AdminAuth:           handler.NewAdminAuthHandler(log),
 		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log),
-		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log),
+		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(repos.Admin, log).WithSessions(adminConsoleSvc),
 
 		// Admin Audit middleware (audit logging for admin operations)
@@ -446,6 +448,7 @@ func frontendOrigin(callbackURL string) string {
 func InitLocalAuthHandler(
 	handlers *routes.Handlers,
 	svc *Services,
+	repos *Repositories,
 	cfg *config.Config,
 	log *logger.Logger,
 ) {
@@ -454,6 +457,7 @@ func InitLocalAuthHandler(
 			svc.Auth,
 			svc.Session,
 			svc.Email,
+			platformAdminChecker{admins: repos.Admin},
 			cfg.Auth,
 			log,
 		)
