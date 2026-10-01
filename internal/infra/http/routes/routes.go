@@ -294,22 +294,22 @@ func Register(
 		activeMembershipFromJWTMiddleware = middleware.RequireActiveMembershipFromJWT(membershipReader)
 	}
 
-	// CSRF (double-submit cookie) for state-changing JWT-cookie routes.
-	// We mount CSRFOptional, not the strict variant, for a safe rollout:
+	// CSRF (double-submit cookie). Two layers:
 	//
-	//   - clients authenticating with a session cookie MUST send
-	//     X-CSRF-Token on POST/PUT/PATCH/DELETE once the login endpoint
-	//     has set the csrf_token cookie;
-	//   - clients that authenticate without a cookie (bearer-token,
-	//     API-key, integration tests, future SDK callers) pass through
-	//     unchanged, because the cookie is absent.
+	//   - UnifiedAuth (authMiddleware) rejects a state-changing request
+	//     authenticated by the auth_token cookie unless it carries a
+	//     matching csrf_token cookie + X-CSRF-Token header. That covers
+	//     every user-authenticated route, including the groups mounted
+	//     without the tenant chain (/users/me, /tenants/{tenant}, ...).
+	//   - CSRFOptional, on the tenant chains below, additionally validates
+	//     the pair whenever a csrf_token cookie is sent, and fails closed
+	//     for cookie-authenticated requests.
 	//
-	// This is the minimum viable wiring for the CSRF middleware that
-	// the auth handler has been generating tokens for since before this
-	// change — without the wiring, those tokens did nothing. API-key
-	// authenticated routes (/api/v1/agent/*) and HMAC-verified inbound
-	// webhooks are NOT affected because they do not use
-	// buildTokenTenantMiddlewares.
+	// Clients that authenticate with a header (Bearer JWT, oct_ API keys,
+	// sensor keys) are not ambient-credential requests — a cross-site page
+	// cannot set Authorization — and pass without a CSRF token. Sensor
+	// (/api/v1/agent/*) and HMAC-verified webhook routes do not use these
+	// chains at all.
 	csrfProtectionMiddleware = middleware.CSRFOptional(middleware.NewCSRFConfig(cfg.Auth, log))
 
 	// Real-time permission sync. When the permission cache + version services
@@ -832,10 +832,10 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 }
 
 // csrfProtectionMiddleware is the CSRF double-submit-cookie middleware,
-// appended to every JWT-cookie tenant route chain via
-// buildTokenTenantMiddlewares. Using CSRFOptional keeps API-key /
-// bearer-token clients (no cookie) unaffected; cookie-bound clients
-// must send X-CSRF-Token.
+// appended to every tenant route chain via buildTokenTenantMiddlewares.
+// CSRFOptional keeps header-authenticated clients (Bearer JWT, API keys)
+// unaffected; cookie-authenticated requests must send X-CSRF-Token (also
+// enforced, for every route, by UnifiedAuth).
 var csrfProtectionMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
 // readRateLimitMiddleware is the per-user read endpoint rate limiter,
