@@ -1175,7 +1175,9 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case errors.Is(err, app.ErrInvalidVerificationToken):
 		apierror.BadRequest("Invalid or expired verification token").WriteJSON(w)
 	case errors.Is(err, app.ErrPasswordMismatch):
-		apierror.Unauthorized("Current password is incorrect").WriteJSON(w)
+		// 400, not 401: the caller IS authenticated. Clients treat a 401 as an
+		// expired session and sign the user out, which is wrong for a typo.
+		apierror.BadRequest("Current password is incorrect").WriteJSON(w)
 	case errors.Is(err, app.ErrSessionLimitReached):
 		apierror.Forbidden("Maximum number of active sessions reached").WriteJSON(w)
 	case errors.Is(err, app.ErrTenantAccessDenied):

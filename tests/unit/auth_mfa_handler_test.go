@@ -203,3 +203,36 @@ func TestLocalAuthHandler_MalformedRefreshTokenIs401(t *testing.T) {
 		}
 	}
 }
+
+// A wrong code or password on the signed-in /users/me endpoints must be a 400:
+// the UI treats any 401 as an expired session and signs the user out.
+func TestMFAHandler_SelfServiceErrorsAreNot401(t *testing.T) {
+	h := newMFAHarness(t)
+	uid := h.seedUser(t, "self@example.com")
+	lh := newMFAHandler(h)
+	authed := func(fn http.HandlerFunc, body any) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(b))
+		req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uid.String()))
+		rec := httptest.NewRecorder()
+		fn(rec, req)
+		return rec
+	}
+
+	if rec := authed(lh.SetupMFA, map[string]string{}); rec.Code != http.StatusOK {
+		t.Fatalf("setup: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := authed(lh.EnableMFA, map[string]string{"code": "000000"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("enable with wrong code: %d, want 400", rec.Code)
+	}
+	secret, _ := h.enroll(t, uid)
+	if rec := authed(lh.DisableMFA, map[string]string{"password": "wrong", "code": currentCode(t, secret)}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("disable with wrong password: %d, want 400", rec.Code)
+	}
+	if rec := authed(lh.RegenerateRecoveryCodes, map[string]string{"code": wrongCode(currentCode(t, secret))}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("regenerate with wrong code: %d, want 400", rec.Code)
+	}
+	if rec := authed(lh.ChangePassword, map[string]string{"current_password": "wrong", "new_password": "AnotherPassword1"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("change password with wrong current password: %d, want 400", rec.Code)
+	}
+}
