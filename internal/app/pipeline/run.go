@@ -482,6 +482,16 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 		return err
 	}
 
+	// A run that already reached a terminal state (canceled by the user, reaped
+	// as a timeout, failed) stays there. Without this a sensor that kept
+	// working after a cancel flipped the canceled run to "completed" and the
+	// scan counted it as a successful run.
+	if run.IsComplete() {
+		s.logger.Info("ignoring step result for a run that already finished",
+			"run_id", runID, "step_key", stepKey, "run_status", string(run.Status))
+		return nil
+	}
+
 	// Update step run status
 	stepRun := run.GetStepRun(stepKey)
 
@@ -599,6 +609,17 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 		return err
 	}
 
+	// A run that already reached a terminal state (canceled by the user, reaped
+	// as a timeout, failed) stays there. Without this a sensor that kept
+	// working after a cancel flipped the canceled run to "completed" and the
+	// scan counted it as a successful run. Checked before the batch logic so a
+	// late batch result cannot settle a finished run either.
+	if run.IsComplete() {
+		s.logger.Info("ignoring step result for a run that already finished",
+			"run_id", runID, "step_key", stepKey, "run_status", string(run.Status))
+		return nil
+	}
+
 	stepRun := run.GetStepRun(stepKey)
 	allowRetry := true
 	if b := s.checkStepBatches(ctx, run, stepRun); b.batched {
@@ -667,6 +688,7 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 		if err := s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusFailed, "Pipeline failed: "+errorMessage); err != nil {
 			s.logger.Error("failed to update run status to failed (fail_fast)", "run_id", run.ID.String(), "error", err)
 		}
+		s.recordScanRun(ctx, run, "failed")
 		return nil
 	}
 
@@ -678,6 +700,7 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 		if err := s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusFailed, "Pipeline completed with failures"); err != nil {
 			s.logger.Error("failed to update run status to failed (complete)", "run_id", run.ID.String(), "error", err)
 		}
+		s.recordScanRun(ctx, run, "failed")
 		return nil
 	}
 
@@ -955,6 +978,7 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return err
 	}
+	s.recordScanRun(ctx, run, string(pipeline.RunStatusCanceled))
 
 	// Cancel all in-flight commands belonging to this run so sensors stop work.
 	if s.commandRepo != nil {
