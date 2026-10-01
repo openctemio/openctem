@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/api/pkg/logger"
@@ -463,100 +464,16 @@ func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, c)
 }
 
-// computeValidationCoverage counts, for findings that reached a
-// terminal state (resolved | verified | accepted | false_positive)
-// within the cycle window, how many have a validation evidence
-// record attached.
-//
-// Evidence is a validation_evidence row for the finding (RFC-011:
-// pentest, scripted and sensor evidence all land there), the same
-// definition the cycle's validation_coverage metric uses. This used to
-// join pentest_findings.finding_id, a column that does not exist, so the
-// query always failed and the close-time SLO gate was never enforced.
-//
-// An empty cycle window (NULL start/end) means "everything to date" —
-// the query uses IS NULL guards so the cycle's intent survives even
-// when dates were never set.
+// computeValidationCoverage is the cycle window's validation coverage: the
+// shared query (postgres.ValidationCoverageByPriority, also used by the
+// tenant-wide Validation overview) over the cycle's dates. Evidence is a
+// validation_evidence row for the finding. An empty window means everything
+// to date.
 func (h *CTEMCycleHandler) computeValidationCoverage(
 	ctx context.Context,
 	tenantID, startDate, endDate string,
 ) (app.ValidationCoverage, error) {
-	var c app.ValidationCoverage
-	// Build date-window clause tolerating empty strings.
-	windowSQL := ""
-	args := []any{tenantID}
-	argN := 2
-	if startDate != "" {
-		windowSQL += " AND f.updated_at >= $" + itoa(argN)
-		args = append(args, startDate)
-		argN++
-	}
-	if endDate != "" {
-		windowSQL += " AND f.updated_at < ($" + itoa(argN) + "::date + INTERVAL '1 day')"
-		args = append(args, endDate)
-	}
-	q := `
-		SELECT
-		  COALESCE(f.priority_class, '') AS pc,
-		  COUNT(*) AS total,
-		  COUNT(*) FILTER (
-		    WHERE EXISTS (
-		      SELECT 1 FROM validation_evidence v
-		       WHERE v.tenant_id = f.tenant_id AND v.finding_id = f.id
-		    )
-		  ) AS with_ev
-		FROM findings f
-		WHERE f.tenant_id = $1
-		  AND f.status IN ('resolved','verified','accepted','false_positive')` + windowSQL + `
-		GROUP BY COALESCE(f.priority_class, '')
-	`
-	rows, err := h.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return c, err
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var pc string
-		var total, withEv int
-		if err := rows.Scan(&pc, &total, &withEv); err != nil {
-			return c, err
-		}
-		switch pc {
-		case "P0":
-			c.P0Total, c.P0WithEvidence = total, withEv
-		case "P1":
-			c.P1Total, c.P1WithEvidence = total, withEv
-		case "P2":
-			c.P2Total, c.P2WithEvidence = total, withEv
-		case "P3":
-			c.P3Total, c.P3WithEvidence = total, withEv
-		}
-	}
-	return c, rows.Err()
-}
-
-// itoa is a tiny, allocation-free int→string for building SQL
-// placeholders ($2, $3, ...). Avoids pulling in strconv just for this.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
+	return postgres.ValidationCoverageByPriority(ctx, h.db, tenantID, startDate, endDate)
 }
 
 // GetScope retrieves the scope snapshot for a cycle.

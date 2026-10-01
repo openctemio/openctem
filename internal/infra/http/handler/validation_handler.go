@@ -24,6 +24,16 @@ type CoverageReader interface {
 	CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error)
 	// DowngradeStats returns (downgraded, validated) for the downgrade % metric.
 	DowngradeStats(ctx context.Context, tenantID shared.ID) (downgraded, validated int, err error)
+	// CoverageByPriority is the CTEM-cycle definition of validation coverage
+	// (closed findings per priority class with validation evidence), tenant-wide.
+	CoverageByPriority(ctx context.Context, tenantID string) (validation.ValidationCoverage, error)
+}
+
+// priorityCoverageOut is one priority class of the tenant-wide coverage.
+type priorityCoverageOut struct {
+	Priority  string `json:"priority"`
+	Total     int    `json:"total"`
+	Validated int    `json:"validated"`
 }
 
 // ValidationHandler exposes CTEM Stage-4 validation evidence:
@@ -410,13 +420,35 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 		downgraded, dgValidated = 0, 0
 	}
 
+	// Priority-class coverage: the same definition as the CTEM cycle's close
+	// gate (closed P0..P3 findings with validation evidence), over all time.
+	// The Validation overview headlines P0+P1. Like the downgrade stats, a
+	// failure degrades to empty rather than failing the by-severity KPI.
+	byPriority := []priorityCoverageOut{}
+	p0p1Total, p0p1Validated := 0, 0
+	if pc, perr := h.coverage.CoverageByPriority(r.Context(), tenantID.String()); perr != nil {
+		h.logger.Error("validation coverage by priority query failed", "error", perr)
+	} else {
+		byPriority = []priorityCoverageOut{
+			{Priority: "P0", Total: pc.P0Total, Validated: pc.P0WithEvidence},
+			{Priority: "P1", Total: pc.P1Total, Validated: pc.P1WithEvidence},
+			{Priority: "P2", Total: pc.P2Total, Validated: pc.P2WithEvidence},
+			{Priority: "P3", Total: pc.P3Total, Validated: pc.P3WithEvidence},
+		}
+		p0p1Total = pc.P0Total + pc.P1Total
+		p0p1Validated = pc.P0WithEvidence + pc.P1WithEvidence
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"by_severity": out,
-		"total":       total,
-		"validated":   validated,
-		"overall_pct": overall,
+		"by_priority":     byPriority,
+		"p0_p1_total":     p0p1Total,
+		"p0_p1_validated": p0p1Validated,
+		"by_severity":     out,
+		"total":           total,
+		"validated":       validated,
+		"overall_pct":     overall,
 		// Downgrade outcome metric: of the findings validated, the share a
 		// re-check downgraded (validated_fixed). downgrade_validated is the
 		// metric's own denominator (distinct findings with any evidence).
