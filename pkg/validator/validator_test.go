@@ -813,3 +813,29 @@ func TestValidate_FieldIsTheJSONName(t *testing.T) {
 		}
 	}
 }
+
+// min/max on a number described the bound in characters:
+// "timeout_seconds: must be at least 30 characters" (POST /scans).
+func TestValidate_MinMaxUnitFollowsTheFieldKind(t *testing.T) {
+	v := New()
+	type req struct {
+		Timeout int      `json:"timeout_seconds" validate:"min=30"`
+		Name    string   `json:"name" validate:"max=2"`
+		Tags    []string `json:"tags" validate:"max=1"`
+	}
+	err := v.Validate(req{Timeout: 1, Name: "abc", Tags: []string{"a", "b"}})
+	errs, ok := err.(ValidationErrors)
+	if !ok {
+		t.Fatalf("got %T %v", err, err)
+	}
+	want := map[string]string{
+		"timeout_seconds": "must be at least 30",
+		"name":            "must be at most 2 characters",
+		"tags":            "must be at most 1 items",
+	}
+	for _, e := range errs {
+		if w, ok := want[e.Field]; ok && e.Message != w {
+			t.Errorf("%s: got %q, want %q", e.Field, e.Message, w)
+		}
+	}
+}
