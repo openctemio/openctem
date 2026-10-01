@@ -337,6 +337,15 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		tenantID = sql.NullString{String: hb.TenantID.String(), Valid: true}
 	}
 
+	var outbox sql.NullString
+	if hb.Outbox != nil {
+		raw, err := json.Marshal(hb.Outbox)
+		if err != nil {
+			return false, fmt.Errorf("failed to marshal outbox stats: %w", err)
+		}
+		outbox = sql.NullString{String: string(raw), Valid: true}
+	}
+
 	query := `
 		UPDATE sensors
 		SET version = COALESCE(NULLIF($3, ''), version),
@@ -347,6 +356,10 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    network_rx_mbps = $10, network_tx_mbps = $11,
 		    load_score = $12,
 		    ip_address = COALESCE($13::inet, ip_address),
+		    -- Outbox snapshot: a heartbeat without one ($14 NULL) leaves the
+		    -- stored snapshot and its timestamp as they are.
+		    outbox_stats = COALESCE($14::jsonb, outbox_stats),
+		    outbox_reported_at = CASE WHEN $14::jsonb IS NULL THEN outbox_reported_at ELSE NOW() END,
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -363,6 +376,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		hb.NetworkRxMBPS, hb.NetworkTxMBPS,
 		hb.LoadScore,
 		heartbeatIP(hb.IPAddress),
+		outbox,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -646,7 +660,8 @@ func (r *SensorRepository) selectQuery() string {
 		       load_score, metrics_updated_at,
 		       last_seen_at, last_offline_at, last_error_at,
 		       total_findings, total_scans, error_count,
-		       created_at, updated_at, key_expires_at
+		       created_at, updated_at, key_expires_at,
+		       outbox_stats, outbox_reported_at
 		FROM sensors
 	`
 }
@@ -715,7 +730,22 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 	return strings.Join(conditions, " AND "), args
 }
 
+// sensorRowScanner is satisfied by *sql.Row and *sql.Rows.
+type sensorRowScanner interface {
+	Scan(dest ...any) error
+}
+
 func (r *SensorRepository) scanSensor(row *sql.Row) (*sensor.Sensor, error) {
+	return r.scanSensorRow(row)
+}
+
+func (r *SensorRepository) scanSensorFromRows(rows *sql.Rows) (*sensor.Sensor, error) {
+	return r.scanSensorRow(rows)
+}
+
+// scanSensorRow reads one row of selectQuery. sql.ErrNoRows maps to
+// shared.ErrNotFound (only a *sql.Row can return it).
+func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, error) {
 	a := &sensor.Sensor{}
 	var (
 		id               string
@@ -747,6 +777,8 @@ func (r *SensorRepository) scanSensor(row *sql.Row) (*sensor.Sensor, error) {
 		lastOfflineAt    sql.NullTime
 		lastErrorAt      sql.NullTime
 		keyExpiresAt     sql.NullTime
+		outboxStats      []byte
+		outboxReportedAt sql.NullTime
 	)
 
 	err := row.Scan(
@@ -791,6 +823,8 @@ func (r *SensorRepository) scanSensor(row *sql.Row) (*sensor.Sensor, error) {
 		&a.CreatedAt,
 		&a.UpdatedAt,
 		&keyExpiresAt,
+		&outboxStats,
+		&outboxReportedAt,
 	)
 
 	if err != nil {
@@ -864,169 +898,16 @@ func (r *SensorRepository) scanSensor(row *sql.Row) (*sensor.Sensor, error) {
 		a.KeyExpiresAt = &keyExpiresAt.Time
 	}
 
-	if len(metadata) > 0 {
-		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal sensor metadata (id=%s): %v", a.ID, err)
+	if len(outboxStats) > 0 {
+		var ob sensor.OutboxStats
+		if err := json.Unmarshal(outboxStats, &ob); err != nil {
+			log.Printf("[DEBUG] failed to unmarshal sensor outbox stats (id=%s): %v", a.ID, err)
+		} else {
+			if outboxReportedAt.Valid {
+				ob.ReportedAt = outboxReportedAt.Time
+			}
+			a.Outbox = &ob
 		}
-	}
-	if len(labels) > 0 {
-		if err := json.Unmarshal(labels, &a.Labels); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal sensor labels (id=%s): %v", a.ID, err)
-		}
-	}
-	if len(config) > 0 {
-		if err := json.Unmarshal(config, &a.Config); err != nil {
-			log.Printf("[DEBUG] failed to unmarshal sensor config (id=%s): %v", a.ID, err)
-		}
-	}
-
-	return a, nil
-}
-
-func (r *SensorRepository) scanSensorFromRows(rows *sql.Rows) (*sensor.Sensor, error) {
-	a := &sensor.Sensor{}
-	var (
-		id               string
-		tenantID         sql.NullString // Nullable for platform sensors
-		sensorType       string
-		executionMode    string
-		status           string
-		health           string
-		capabilities     pq.StringArray
-		tools            pq.StringArray
-		metadata         []byte
-		labels           []byte
-		config           []byte
-		description      sql.NullString
-		statusMessage    sql.NullString
-		isPlatformSensor sql.NullBool
-		tier             sql.NullString
-		version          sql.NullString
-		hostname         sql.NullString
-		ipAddress        sql.NullString
-		region           sql.NullString
-		diskReadMBPS     sql.NullFloat64
-		diskWriteMBPS    sql.NullFloat64
-		networkRxMBPS    sql.NullFloat64
-		networkTxMBPS    sql.NullFloat64
-		loadScore        sql.NullFloat64
-		metricsUpdatedAt sql.NullTime
-		lastSeenAt       sql.NullTime
-		lastOfflineAt    sql.NullTime
-		lastErrorAt      sql.NullTime
-		keyExpiresAt     sql.NullTime
-	)
-
-	err := rows.Scan(
-		&id,
-		&tenantID,
-		&a.Name,
-		&sensorType,
-		&description,
-		&capabilities,
-		&tools,
-		&executionMode,
-		&status,
-		&health,
-		&statusMessage,
-		&isPlatformSensor,
-		&tier,
-		&a.APIKeyHash,
-		&a.APIKeyPrefix,
-		&metadata,
-		&labels,
-		&config,
-		&version,
-		&hostname,
-		&ipAddress,
-		&a.CPUPercent,
-		&a.MemoryPercent,
-		&a.MaxConcurrentJobs,
-		&a.CurrentJobs,
-		&region,
-		&diskReadMBPS,
-		&diskWriteMBPS,
-		&networkRxMBPS,
-		&networkTxMBPS,
-		&loadScore,
-		&metricsUpdatedAt,
-		&lastSeenAt,
-		&lastOfflineAt,
-		&lastErrorAt,
-		&a.TotalFindings,
-		&a.TotalScans,
-		&a.ErrorCount,
-		&a.CreatedAt,
-		&a.UpdatedAt,
-		&keyExpiresAt,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan sensor: %w", err)
-	}
-
-	a.ID, _ = shared.IDFromString(id)
-	if tenantID.Valid {
-		tid, _ := shared.IDFromString(tenantID.String)
-		a.TenantID = &tid
-	}
-	a.Type = sensor.SensorType(sensorType)
-	a.ExecutionMode = sensor.ExecutionMode(executionMode)
-	a.Status = sensor.SensorStatus(status)
-	a.Health = sensor.SensorHealth(health)
-	a.Capabilities = capabilities
-	a.Tools = tools
-
-	if description.Valid {
-		a.Description = description.String
-	}
-	if statusMessage.Valid {
-		a.StatusMessage = statusMessage.String
-	}
-	if isPlatformSensor.Valid {
-		a.IsPlatformSensor = isPlatformSensor.Bool
-	}
-	if version.Valid {
-		a.Version = version.String
-	}
-	if hostname.Valid {
-		a.Hostname = hostname.String
-	}
-	if ipAddress.Valid {
-		a.IPAddress = parseIP(ipAddress.String)
-	}
-	if region.Valid {
-		a.Region = region.String
-	}
-	if diskReadMBPS.Valid {
-		a.DiskReadMBPS = diskReadMBPS.Float64
-	}
-	if diskWriteMBPS.Valid {
-		a.DiskWriteMBPS = diskWriteMBPS.Float64
-	}
-	if networkRxMBPS.Valid {
-		a.NetworkRxMBPS = networkRxMBPS.Float64
-	}
-	if networkTxMBPS.Valid {
-		a.NetworkTxMBPS = networkTxMBPS.Float64
-	}
-	if loadScore.Valid {
-		a.LoadScore = loadScore.Float64
-	}
-	if metricsUpdatedAt.Valid {
-		a.MetricsUpdatedAt = &metricsUpdatedAt.Time
-	}
-	if lastSeenAt.Valid {
-		a.LastSeenAt = &lastSeenAt.Time
-	}
-	if lastOfflineAt.Valid {
-		a.LastOfflineAt = &lastOfflineAt.Time
-	}
-	if lastErrorAt.Valid {
-		a.LastErrorAt = &lastErrorAt.Time
-	}
-	if keyExpiresAt.Valid {
-		a.KeyExpiresAt = &keyExpiresAt.Time
 	}
 
 	if len(metadata) > 0 {

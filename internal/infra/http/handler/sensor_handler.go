@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -92,6 +93,25 @@ type SensorResponse struct {
 	ErrorCount    int64   `json:"error_count"`
 	CreatedAt     string  `json:"created_at"`
 	UpdatedAt     string  `json:"updated_at"`
+	// Outbox is the last outbox state the sensor reported on its heartbeat;
+	// null when it never reported one (an SDK without a durable outbox).
+	Outbox *SensorOutboxResponse `json:"outbox"`
+	// OutboxWarning is true when the last snapshot shows lost or stuck
+	// results: dead_letter_count > 0, evicted_count > 0, or
+	// oldest_age_seconds > 3600. False when there is no snapshot.
+	OutboxWarning bool `json:"outbox_warning"`
+}
+
+// SensorOutboxResponse is a sensor's last reported outbox state. Values are
+// reported by the sensor (clamped on ingest); reported_at is the server time
+// the snapshot was stored, so an old reported_at means a stale snapshot.
+type SensorOutboxResponse struct {
+	PendingCount     int64  `json:"pending_count"`
+	PendingBytes     int64  `json:"pending_bytes"`
+	OldestAgeSeconds int64  `json:"oldest_age_seconds"`
+	DeadLetterCount  int64  `json:"dead_letter_count"`
+	EvictedCount     int64  `json:"evicted_count"`
+	ReportedAt       string `json:"reported_at"`
 }
 
 // CreateSensorResponse includes the API key (only shown once).
@@ -567,6 +587,18 @@ func toSensorResponse(a *sensor.Sensor) *SensorResponse {
 	if a.LastSeenAt != nil {
 		ts := a.LastSeenAt.Format("2006-01-02T15:04:05Z07:00")
 		resp.LastSeenAt = &ts
+	}
+
+	if ob := a.Outbox; ob != nil {
+		resp.Outbox = &SensorOutboxResponse{
+			PendingCount:     ob.PendingCount,
+			PendingBytes:     ob.PendingBytes,
+			OldestAgeSeconds: ob.OldestAgeSeconds,
+			DeadLetterCount:  ob.DeadLetterCount,
+			EvictedCount:     ob.EvictedCount,
+			ReportedAt:       ob.ReportedAt.UTC().Format(time.RFC3339),
+		}
+		resp.OutboxWarning = ob.Warning()
 	}
 
 	return resp

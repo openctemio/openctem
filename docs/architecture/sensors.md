@@ -166,6 +166,67 @@ Code: `internal/app/sensor/doorbell.go` (hints, intervals, config version),
 `Heartbeat`), `pkg/domain/sensor/doorbell.go` (the `Action` enum). The wire is
 pinned by `testdata/protocol_v1/doorbell.golden`.
 
+## Outbox state on the heartbeat
+
+A sensor built on an SDK with a durable outbox (results written to disk first,
+delivered when the platform accepts them) reports the state of that queue on
+the v1 heartbeat request, as an optional `outbox` object:
+
+```json
+"outbox": {
+  "pending_count": 3,
+  "pending_bytes": 123456,
+  "oldest_age_seconds": 600,
+  "dead_letter_count": 1,
+  "evicted_count": 0
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `pending_count` | Items waiting to be delivered. |
+| `pending_bytes` | Bytes on disk of those items. |
+| `oldest_age_seconds` | Age of the oldest pending item, 0 when the outbox is empty. |
+| `dead_letter_count` | Items the platform refused for good, kept in the sensor's dead-letter folder. |
+| `evicted_count` | Items dropped by the outbox size/age cap since the sensor process started. |
+
+The heartbeat request is decoded leniently, so older servers ignore the field
+and older sensors simply do not send it. The heartbeat **response** does not
+change: it stays the frozen v1 bytes.
+
+**Stored.** The latest snapshot per sensor is kept in `sensors.outbox_stats`
+(JSONB) with `sensors.outbox_reported_at` (server time, migration 000240).
+Values are clamped on ingest (negative ⇒ 0; counts ≤ 10,000,000, bytes ≤ 2^50,
+age ≤ 10 years). It is display data from an untrusted process: nothing
+schedules, authorizes or bills on it. A disabled sensor's heartbeat writes
+nothing, outbox included.
+
+**A heartbeat without `outbox` leaves the stored snapshot untouched.** An SDK
+without an outbox never sends the field, so its sensors show `outbox: null`. A
+sensor downgraded to such an SDK keeps its last snapshot; `reported_at` shows
+how old it is. An empty object (`"outbox": {}`) is a real report of an empty
+outbox and replaces the snapshot.
+
+**Shown.** `GET /api/v1/sensors` and `GET /api/v1/sensors/{id}` return
+
+```json
+"outbox": {"pending_count": 3, "pending_bytes": 123456, "oldest_age_seconds": 600,
+           "dead_letter_count": 1, "evicted_count": 0, "reported_at": "2026-10-01T16:09:10Z"},
+"outbox_warning": true
+```
+
+`outbox` is `null` when the sensor never reported one. `outbox_warning` is
+true when results were lost or refused (`dead_letter_count > 0` or
+`evicted_count > 0`) or delivery is stuck (`oldest_age_seconds > 3600`); false
+when there is no snapshot. A sensor that is `online` with `outbox_warning` is
+heartbeating but not getting its results through: check its log, the
+dead-letter folder and the ingest errors for its tenant.
+
+Code: `pkg/domain/sensor/outbox.go` (`OutboxStats`, `Clamp`, `Warning`),
+`internal/infra/http/handler/ingest_handler.go` (`HeartbeatOutbox`),
+`internal/infra/postgres/sensor_repository.go` (`UpdateHeartbeat`),
+`internal/infra/http/handler/sensor_handler.go` (`SensorOutboxResponse`).
+
 ## Protocol v2 results ingest
 
 [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (decisions in its §10.1).
