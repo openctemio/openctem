@@ -138,6 +138,10 @@ func registerCredentialRoutes(
 		// Get single credential by ID
 		r.GET("/{id}", h.GetByID, middleware.Require(permission.CredentialsRead))
 
+		// Reveal the plaintext secret. Read returns only a mask and a
+		// fingerprint; this needs its own permission and is audited.
+		r.POST("/{id}/reveal", h.RevealSecret, middleware.Require(permission.CredentialsReveal))
+
 		// Get related credentials (same identity)
 		r.GET("/{id}/related", h.GetRelatedCredentials, middleware.Require(permission.CredentialsRead))
 

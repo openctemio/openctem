@@ -22,6 +22,29 @@ The Credential Import API allows you to:
 | POST | `/api/v1/credentials/import` | Import credentials (JSON) | credentials:write |
 | POST | `/api/v1/credentials/import/csv` | Import credentials (CSV) | credentials:write |
 | GET | `/api/v1/credentials/import/template` | Download CSV template | credentials:read |
+| POST | `/api/v1/credentials/{id}/reveal` | Return the plaintext secret (audited) | credentials:reveal |
+
+### The secret value is write-only
+
+`secret_value` is accepted on import but never returned by a read. Every read
+(`GET /credentials`, `/credentials/{id}`, `/identities/...`, and the generic
+`/exposures` endpoints) returns instead:
+
+| Field | Meaning |
+|-------|---------|
+| `has_secret` | A secret was stored for this credential |
+| `secret_masked` | `********`; long API keys and tokens keep a 4-character vendor prefix (`AKIA********`) |
+| `secret_fingerprint` | HMAC-SHA256 of the secret keyed from `APP_ENCRYPTION_KEY` (32 hex chars). Equal fingerprints mean the same secret leaked twice; it cannot be brute-forced offline without the key |
+
+`POST /api/v1/credentials/{id}/reveal` returns `{"id": "...", "secret_value": "..."}`
+with `Cache-Control: no-store`. It needs `findings:credentials:reveal` (owner and
+admin by default; grant it to a custom role deliberately) and writes a
+`credential.revealed` audit event before answering. If the audit event cannot
+be written the call returns 503 and no secret.
+
+At rest the secret is encrypted with AES-256-GCM under `APP_ENCRYPTION_KEY`
+(`details.secret_value_enc`). Rows stored before this change are sealed by the
+server on start (idempotent), or offline with `go run ./cmd/encrypt-credentials`.
 
 ### Agent Routes (API Key Authentication)
 

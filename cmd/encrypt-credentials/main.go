@@ -21,7 +21,9 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/pkg/crypto"
+	"github.com/openctemio/api/pkg/domain/credential"
 )
 
 func main() {
@@ -96,16 +98,43 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Leaked-credential secrets (exposure_events.details). The server also
+	// runs this on start; the fingerprint key material must be the same
+	// APP_ENCRYPTION_KEY string the server uses.
+	leakedCount, err := encryptLeakedCredentialSecrets(ctx, db, cipher, keyStr, *dryRun)
+	if err != nil {
+		fmt.Printf("Error encrypting leaked credential secrets: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Print summary
 	fmt.Println("\n=== Summary ===")
 	fmt.Printf("Integrations encrypted: %d\n", integrationsCount)
 	fmt.Printf("SCM Connections encrypted: %d\n", scmCount)
+	fmt.Printf("Leaked credential secrets encrypted: %d\n", leakedCount)
 
 	if *dryRun {
 		fmt.Println("\nDry run complete. Run without -dry-run to apply changes.")
 	} else {
 		fmt.Println("\nEncryption complete!")
 	}
+}
+
+func encryptLeakedCredentialSecrets(ctx context.Context, db *sql.DB, cipher *crypto.Cipher, keyStr string, dryRun bool) (int, error) {
+	fmt.Println("Processing leaked credential secrets (exposure_events)...")
+	if dryRun {
+		var n int
+		err := db.QueryRowContext(ctx, `
+			SELECT count(*) FROM exposure_events
+			WHERE COALESCE(details->>'secret_value', '') <> ''
+			   OR details->>'secret_enc_scheme' = 'none'`).Scan(&n)
+		if err != nil {
+			return 0, fmt.Errorf("count plaintext secrets: %w", err)
+		}
+		fmt.Printf("  %d leaked credential secrets would be encrypted\n", n)
+		return n, nil
+	}
+	return postgres.BackfillLeakedCredentialSecrets(ctx, db, credential.NewSecretProtector(cipher, []byte(keyStr)))
 }
 
 func createCipher(keyStr, format string) (*crypto.Cipher, error) {

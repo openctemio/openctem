@@ -233,9 +233,10 @@ func (c *CredentialImport) ToDetails() map[string]any {
 	details["credential_type"] = c.CredentialType.String()
 	details["classification"] = c.GetClassification().String()
 
-	// Secret value (stored for later retrieval - should be encrypted at storage layer)
+	// Secret value. This is plaintext only until SecretProtector.Seal runs,
+	// which every write path does before the event is persisted.
 	if c.SecretValue != "" {
-		details["secret_value"] = c.SecretValue
+		details[DetailSecretValue] = c.SecretValue
 	}
 
 	// Source info

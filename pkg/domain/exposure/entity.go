@@ -367,6 +367,16 @@ func (e *ExposureEvent) SetDetail(key string, value any) {
 	e.updatedAt = time.Now().UTC()
 }
 
+// RemoveDetail deletes a detail by key.
+func (e *ExposureEvent) RemoveDetail(key string) {
+	if _, ok := e.details[key]; !ok {
+		return
+	}
+	delete(e.details, key)
+	e.fingerprint = e.generateFingerprint()
+	e.updatedAt = time.Now().UTC()
+}
+
 // GetDetail gets a detail value by key.
 func (e *ExposureEvent) GetDetail(key string) (any, bool) {
 	v, ok := e.details[key]
