@@ -80,7 +80,7 @@ func (r *ScanSessionRepository) Create(ctx context.Context, s *scansession.ScanS
 		sensorID,
 		s.ScannerName,
 		s.ScannerVersion,
-		s.ScannerType,
+		nullableString(s.ScannerType),
 		s.AssetType,
 		s.AssetValue,
 		assetID,

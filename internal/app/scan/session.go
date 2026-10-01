@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/scansession"
@@ -66,6 +67,11 @@ func (s *ScanSessionService) RegisterScan(ctx context.Context, agt *sensor.Senso
 
 	session.SetSensor(agt.ID)
 	session.SetScannerInfo(input.ScannerVersion, input.ScannerType)
+	if _, known := scansession.NormalizeScannerType(input.ScannerType); !known {
+		// Kept as a classification gap, not a failure: the scan still runs.
+		s.logger.Warn("unknown scanner_type dropped from scan session",
+			"sensor_id", agt.ID.String(), "scanner_type", strings.ReplaceAll(strings.ReplaceAll(input.ScannerType, "\n", " "), "\r", " "))
+	}
 	session.SetGitContext(input.CommitSha, input.Branch, "")
 
 	// Start the scan immediately
