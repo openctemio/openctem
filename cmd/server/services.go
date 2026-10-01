@@ -1222,7 +1222,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Operator-tunable load-balancing weights (AGENT_LB_*). Applied to the
 	// load_score recomputed on every heartbeat.
 	s.Sensor.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
-	s.Command = command.NewService(repos.Command, log)
+	s.Command = command.NewService(repos.Command, log, command.WithSensorLookup(repos.Sensor))
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)
