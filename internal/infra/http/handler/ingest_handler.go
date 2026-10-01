@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -910,9 +911,7 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
 	if err != nil {
 		h.writeIngestError(w, "chunk ingestion failed", err,
-			"report_id", sanitizeLogField(req.ReportID),
-			"chunk_index", req.ChunkIndex,
-		)
+			fmt.Sprintf("report_id=%s chunk_index=%d", req.ReportID, req.ChunkIndex))
 		return
 	}
 
@@ -958,13 +957,15 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 //
 // Parser errors can quote fragments of the sensor's payload, so the error is
 // stripped of line breaks and capped before it reaches the log or the
-// response: a sensor must not be able to forge log lines. Callers pass attrs
-// already sanitized (sanitizeLogField) for any sensor-supplied string.
-func (h *IngestHandler) writeIngestError(w http.ResponseWriter, msg string, err error, attrs ...any) {
+// response: a sensor must not be able to forge log lines. logContext (e.g.
+// "report_id=… chunk_index=…") is sanitized here, right before the log, for
+// the same reason.
+func (h *IngestHandler) writeIngestError(w http.ResponseWriter, msg string, err error, logContext ...string) {
 	errText := sanitizeLogField(err.Error())
-	logAttrs := make([]any, 0, len(attrs)+2)
-	logAttrs = append(logAttrs, "error", errText)
-	logAttrs = append(logAttrs, attrs...)
+	logAttrs := []any{"error", errText}
+	if len(logContext) > 0 {
+		logAttrs = append(logAttrs, "context", sanitizeLogField(strings.Join(logContext, " ")))
+	}
 
 	var de *shared.DomainError
 	switch {
@@ -1163,7 +1164,7 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
 	if err != nil {
-		h.writeIngestError(w, "scan ingestion failed", err, "scanner_type", sanitizeLogField(scannerType))
+		h.writeIngestError(w, "scan ingestion failed", err, "scanner_type="+scannerType)
 		return
 	}
 

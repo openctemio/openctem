@@ -20,7 +20,7 @@ func TestWriteIngestError_SanitizesSensorControlledText(t *testing.T) {
 	err := fmt.Errorf("%w: %s", shared.ErrValidation, forged)
 
 	rec := httptest.NewRecorder()
-	h.writeIngestError(rec, "SARIF ingestion failed", err, "scanner_type", "semgrep\nlevel=ERROR")
+	h.writeIngestError(rec, "SARIF ingestion failed", err, "scanner_type=semgrep\nlevel=ERROR")
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
