@@ -332,18 +332,6 @@ func (r *resolvedProvider) isDomainAllowed(emailDomain string) bool {
 	return false
 }
 
-// isDomainAllowedForProvisioning is the STRICT gate for creating a NEW tenant
-// membership (JIT). Unlike isDomainAllowed (empty allow-list = allow any), an
-// empty/nil allow-list here means NO auto-provisioning at all (fail-closed) —
-// so a provider that never configured AllowedDomains cannot silently grant
-// membership to any authenticated identity.
-func (r *resolvedProvider) isDomainAllowedForProvisioning(emailDomain string) bool {
-	if len(r.allowedDomains) == 0 {
-		return false
-	}
-	return r.isDomainAllowed(emailDomain)
-}
-
 // resolveProvider returns the effective SSO config for a tenant+provider. A
 // tenant's own active provider always wins; when the tenant has none, it falls
 // back to the platform-wide env config (currently Entra ID only). Returns

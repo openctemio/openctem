@@ -192,7 +192,7 @@ func TestCreateUser_NoSMTP_ReturnsOneTimeTokenHashedAtRest(t *testing.T) {
 	if got := u.PasswordResetToken(); got == nil || *got != crypto.HashToken(res.SetupToken) || *got == res.SetupToken {
 		t.Fatal("only the token hash may be stored")
 	}
-	if exp := u.PasswordResetExpiresAt(); exp == nil || exp.Sub(time.Now()) > AccountSetupTTL+time.Minute || exp.Before(time.Now().Add(AccountSetupTTL-time.Minute)) {
+	if exp := u.PasswordResetExpiresAt(); exp == nil || time.Until(*exp) > AccountSetupTTL+time.Minute || exp.Before(time.Now().Add(AccountSetupTTL-time.Minute)) {
 		t.Fatalf("setup link must expire after %s", AccountSetupTTL)
 	}
 	m := tr.memberships[u.ID().String()]

@@ -111,7 +111,7 @@ func mockOkta(t *testing.T, email string) *httptest.Server {
 	return srv
 }
 
-func runOktaCallback(t *testing.T, email string, verified map[string]bool, autoProvision bool) (*SSOCallbackResult, error, *cbUserRepo, *cbMembers) {
+func runOktaCallback(t *testing.T, email string, verified map[string]bool, autoProvision bool) (*SSOCallbackResult, *cbUserRepo, *cbMembers, error) {
 	t.Helper()
 	idpSrv := mockOkta(t, email)
 	tn, _ := tenantdom.NewTenant("Acme", "acme", shared.NewID().String())
@@ -151,11 +151,11 @@ func runOktaCallback(t *testing.T, email string, verified map[string]bool, autoP
 		Provider: string(identityproviderdom.ProviderOkta), Code: "the-code", State: auth.State,
 		RedirectURI: "https://app.example.com/auth/sso/callback",
 	})
-	return res, err, users, members
+	return res, users, members, err
 }
 
 func TestOIDCCallback_JIT_VerifiedDomainAdmittedAsViewer(t *testing.T) {
-	res, err, users, members := runOktaCallback(t, "new@corp.com", map[string]bool{"corp.com": true}, true)
+	res, users, members, err := runOktaCallback(t, "new@corp.com", map[string]bool{"corp.com": true}, true)
 	if err != nil {
 		t.Fatalf("verified-domain JIT must be admitted (registration off), got %v", err)
 	}
@@ -172,7 +172,7 @@ func TestOIDCCallback_JIT_VerifiedDomainAdmittedAsViewer(t *testing.T) {
 }
 
 func TestOIDCCallback_JIT_UnverifiedDomainRefusedNothingCreated(t *testing.T) {
-	_, err, users, members := runOktaCallback(t, "new@other.com", map[string]bool{"corp.com": true}, true)
+	_, users, members, err := runOktaCallback(t, "new@other.com", map[string]bool{"corp.com": true}, true)
 	if !errors.Is(err, ErrSSONotAMember) {
 		t.Fatalf("unverified domain must be refused, got %v", err)
 	}
@@ -182,7 +182,7 @@ func TestOIDCCallback_JIT_UnverifiedDomainRefusedNothingCreated(t *testing.T) {
 }
 
 func TestOIDCCallback_JIT_AutoProvisionOffRefused(t *testing.T) {
-	_, err, users, _ := runOktaCallback(t, "new@corp.com", map[string]bool{"corp.com": true}, false)
+	_, users, _, err := runOktaCallback(t, "new@corp.com", map[string]bool{"corp.com": true}, false)
 	if !errors.Is(err, ErrSSONotAMember) {
 		t.Fatalf("auto-provision off must refuse a new person, got %v", err)
 	}
