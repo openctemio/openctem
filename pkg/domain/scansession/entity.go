@@ -145,10 +145,11 @@ func (s *ScanSession) SetSensor(sensorID shared.ID) {
 	s.UpdatedAt = time.Now()
 }
 
-// SetScannerInfo sets scanner version and type.
+// SetScannerInfo sets scanner version and type. The type is normalized; an
+// unknown type is dropped (see NormalizeScannerType).
 func (s *ScanSession) SetScannerInfo(version, scannerType string) {
 	s.ScannerVersion = version
-	s.ScannerType = scannerType
+	s.ScannerType, _ = NormalizeScannerType(scannerType)
 	s.UpdatedAt = time.Now()
 }
 
