@@ -14,6 +14,14 @@ permissions:
   security-events: write
   actions: read
 
+# A newer push to the same PR or branch cancels the older run: force-pushed
+# and rebased branches otherwise queue every superseded commit and starve the
+# organisation's concurrent-job limit. Tags (releases) and the scheduled scan
+# are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   # ============================================
   # CodeQL Analysis - GitHub's native SAST
@@ -95,26 +103,65 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
   # ============================================
-  # Secret Scanning with Gitleaks (Optional)
+  # Semgrep - open-source SAST rules (OSS CLI, no account or token)
   # ============================================
-  # Requires GITLEAKS_LICENSE secret for organizations
-  # Enable by setting repository variable ENABLE_GITLEAKS=true
-  # Note: Trivy also scans for secrets as a backup
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.178.0
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run Semgrep
+        # Findings go to code scanning; the PR check there gates new alerts.
+        run: >-
+          semgrep scan --metrics=off --sarif --output semgrep.sarif
+          --config p/golang --config p/secrets --config p/dockerfile
+          --exclude 'vendor' --exclude '*_test.go'
+
+      - name: Upload Semgrep results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  # ============================================
+  # Gitleaks - secrets in the code and git history (OSS CLI, no licence)
+  # ============================================
   gitleaks:
     name: Secret Scanning
     runs-on: ubuntu-latest
-    if: ${{ vars.ENABLE_GITLEAKS == 'true' }}
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      - name: Install Gitleaks (pinned, checksum-verified)
+        run: |
+          curl -sSfL -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        # --redact keeps secret values out of the report and the Security tab.
+        run: >-
+          ./gitleaks git --redact --no-banner --exit-code 0
+          --report-format sarif --report-path gitleaks.sarif .
+
+      - name: Upload Gitleaks results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
 
   # ============================================
   # Snyk Security Scan (Optional - requires SNYK_TOKEN)
