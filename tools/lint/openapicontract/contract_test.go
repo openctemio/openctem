@@ -197,3 +197,40 @@ func TestEveryRouteIsDocumentedOrBaselined(t *testing.T) {
 			len(stale), strings.Join(stale, "\n  "))
 	}
 }
+
+// TestSensorProtocolV2Documented keeps the hand-maintained OpenAPI 3.1
+// document of sensor protocol v2 (RFC-026) and the registered /api/v2/sensor
+// routes in step, both ways. The generated swagger.yaml cannot hold them: it
+// is Swagger 2.0 with basePath /api/v1.
+func TestSensorProtocolV2Documented(t *testing.T) {
+	_, routesDir, _, _ := paths(t)
+	specPath := filepath.Join(repoRoot(t), "api", "openapi", "sensor-protocol-v2.yaml")
+
+	spec, err := openapicontract.SpecOps(specPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", specPath, err)
+	}
+	routes, err := openapicontract.Routes(routesDir)
+	if err != nil {
+		t.Fatalf("reading routes: %v", err)
+	}
+	registered := map[openapicontract.Op]bool{}
+	for op := range routes {
+		if strings.HasPrefix(op.Path, "/api/v2/sensor/") {
+			registered[op] = true
+		}
+	}
+	if len(registered) == 0 {
+		t.Fatal("no /api/v2/sensor route found; the route walk no longer resolves protov2.PathPrefix")
+	}
+	for op := range registered {
+		if !spec[op] {
+			t.Errorf("registered but not in sensor-protocol-v2.yaml: %s", op)
+		}
+	}
+	for op := range spec {
+		if !registered[op] {
+			t.Errorf("in sensor-protocol-v2.yaml but not registered: %s", op)
+		}
+	}
+}

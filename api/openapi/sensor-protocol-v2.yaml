@@ -1,0 +1,278 @@
+openapi: 3.1.0
+info:
+  title: OpenCTEM sensor protocol v2 — results
+  version: "2"
+  description: |
+    Sensor protocol v2 results ingest (RFC-026,
+    docs/rfcs/RFC-026-sensor-results-ingest.md). Hand-maintained: the
+    generated swagger.yaml is Swagger 2.0 with basePath /api/v1 and cannot
+    describe /api/v2. tools/lint/openapicontract fails when this document and
+    the registered /api/v2/sensor routes disagree.
+
+    Sensors send CTIS only, chosen by Content-Type
+    (application/vnd.openctem.ctis.v1+json). Every PUT needs Content-Length
+    and Content-Digest (RFC 9530, over the bytes as sent, i.e. compressed when
+    Content-Encoding is gzip or zstd). The report id is a lower-case UUID the
+    sensor chooses; it is the idempotency key. Errors are RFC 9457 problems.
+    Only sensor keys authenticate here; user tokens, cookies and oct_ keys get
+    401. Every response carries OpenCTEM-Protocol: 2. Mounted only when
+    SENSOR_PROTOCOL_V2_RESULTS is on.
+servers:
+  - url: /
+security:
+  - sensorKey: []
+paths:
+  /api/v2/sensor/hello:
+    get:
+      summary: Protocol level, features and limits
+      operationId: sensorV2Hello
+      responses:
+        "200":
+          description: What this server speaks.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hello" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/results/{report_id}:
+    parameters:
+      - $ref: "#/components/parameters/ReportID"
+    put:
+      summary: A whole report in one request (one segment + implicit commit)
+      operationId: sensorV2PutReport
+      parameters: &putHeaders
+        - $ref: "#/components/parameters/ContentDigest"
+        - $ref: "#/components/parameters/ContentEncoding"
+      requestBody: &ctisBody
+        required: true
+        content:
+          application/vnd.openctem.ctis.v1+json:
+            schema:
+              description: A complete CTIS v1 report (schemas/ctis/v1/report.json). tool is required; metadata.id is empty or the report id.
+              type: object
+      responses: &putResponses
+        "200": { $ref: "#/components/responses/StatusReplay" }
+        "202": { $ref: "#/components/responses/StatusAccepted" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "411": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "415": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "500": { $ref: "#/components/responses/Problem" }
+    get:
+      summary: Status resource of a report
+      operationId: sensorV2Status
+      responses:
+        "200":
+          description: Current status. Retry-After is set while the state is not final.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      summary: Abandon an uncommitted segmented report
+      operationId: sensorV2Abandon
+      description: The report becomes expired. Its upserts stay; it never auto-resolves.
+      responses:
+        "204": { description: Abandoned. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/results/{report_id}/segments/{seq}:
+    parameters:
+      - $ref: "#/components/parameters/ReportID"
+      - $ref: "#/components/parameters/Seq"
+    put:
+      summary: One segment of a segmented report
+      description: Every segment is a complete CTIS document with the same tool and metadata and the assets its findings reference.
+      operationId: sensorV2PutSegment
+      parameters: *putHeaders
+      requestBody: *ctisBody
+      responses: *putResponses
+  /api/v2/sensor/results/{report_id}/commit:
+    parameters:
+      - $ref: "#/components/parameters/ReportID"
+    post:
+      summary: Close a segmented report
+      operationId: sensorV2Commit
+      requestBody: &commitBody
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommitRequest" }
+      responses: &commitResponses
+        "200": { $ref: "#/components/responses/StatusReplay" }
+        "202": { $ref: "#/components/responses/StatusAccepted" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/commands/{command_id}/results/{report_id}:
+    parameters:
+      - $ref: "#/components/parameters/CommandID"
+      - $ref: "#/components/parameters/ReportID"
+    put:
+      summary: A whole report bound to a command this sensor claimed
+      operationId: sensorV2PutCommandReport
+      parameters: *putHeaders
+      requestBody: *ctisBody
+      responses: *putResponses
+  /api/v2/sensor/commands/{command_id}/results/{report_id}/segments/{seq}:
+    parameters:
+      - $ref: "#/components/parameters/CommandID"
+      - $ref: "#/components/parameters/ReportID"
+      - $ref: "#/components/parameters/Seq"
+    put:
+      summary: One segment of a command-bound report
+      operationId: sensorV2PutCommandSegment
+      parameters: *putHeaders
+      requestBody: *ctisBody
+      responses: *putResponses
+  /api/v2/sensor/commands/{command_id}/results/{report_id}/commit:
+    parameters:
+      - $ref: "#/components/parameters/CommandID"
+      - $ref: "#/components/parameters/ReportID"
+    post:
+      summary: Close a command-bound segmented report
+      operationId: sensorV2CommitCommand
+      requestBody: *commitBody
+      responses: *commitResponses
+components:
+  securitySchemes:
+    sensorKey:
+      type: http
+      scheme: bearer
+      description: The sensor API key (rda_…), as in protocol v1. X-API-Key is accepted too.
+  parameters:
+    ReportID:
+      name: report_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+    CommandID:
+      name: command_id
+      in: path
+      required: true
+      description: A command assigned to and claimed by this sensor, open or finished less than 15 minutes ago. Anything else is 404.
+      schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+    Seq:
+      name: seq
+      in: path
+      required: true
+      schema: { type: integer, minimum: 0, maximum: 255 }
+    ContentDigest:
+      name: Content-Digest
+      in: header
+      required: true
+      schema: { type: string, example: "sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:" }
+    ContentEncoding:
+      name: Content-Encoding
+      in: header
+      required: false
+      schema: { type: string, enum: [gzip, zstd] }
+  responses:
+    StatusAccepted:
+      description: Stored and queued. Location names the status resource; Retry-After advises the poll delay.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Status" }
+    StatusReplay:
+      description: An identical replay; nothing new was stored.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Status" }
+    Problem:
+      description: RFC 9457 problem. The type URI is https://openctem.io/problems/ingest/<name>.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    ItemError:
+      type: object
+      required: [pointer, code, detail]
+      properties:
+        segment: { type: integer }
+        pointer: { type: string, description: RFC 6901 pointer built from indices and field names only. }
+        code: { type: string }
+        detail: { type: string, description: A fixed template; never quotes the sensor's bytes. }
+    Problem:
+      type: object
+      required: [type, title, status, detail, retryable]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        errors: { type: array, items: { $ref: "#/components/schemas/ItemError" } }
+        limit: { type: integer, description: The limit a 413 exceeded. }
+        retryable: { type: boolean }
+    Counts:
+      type: object
+      properties:
+        assets: { type: integer }
+        findings: { type: integer }
+    Status:
+      type: object
+      required: [report_id, state, segments, accepted, rejected, quarantined, auto_resolved, errors, errors_truncated, received_at, updated_at]
+      properties:
+        report_id: { type: string }
+        command_id: { type: string }
+        state: { type: string, enum: [receiving, queued, processing, completed, failed, expired] }
+        segments:
+          type: object
+          properties:
+            received: { type: integer }
+            expected: { type: integer }
+        accepted: { $ref: "#/components/schemas/Counts" }
+        rejected: { $ref: "#/components/schemas/Counts" }
+        quarantined: { $ref: "#/components/schemas/Counts" }
+        auto_resolved: { type: integer }
+        auto_resolve: { type: string, enum: [applied, held, skipped] }
+        errors: { type: array, items: { $ref: "#/components/schemas/ItemError" } }
+        errors_truncated: { type: boolean }
+        received_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CommitRequest:
+      type: object
+      required: [segment_count, segment_digests]
+      additionalProperties: false
+      properties:
+        segment_count: { type: integer, minimum: 1, maximum: 256 }
+        segment_digests:
+          type: array
+          description: The sha-256 Content-Digest member of each segment, in segment order.
+          items: { type: string }
+    Limits:
+      type: object
+      properties:
+        max_content_bytes: { type: integer }
+        max_decompressed_bytes: { type: integer }
+        max_compression_ratio: { type: number }
+        max_zstd_window_bytes: { type: integer }
+        max_json_depth: { type: integer }
+        max_findings_per_segment: { type: integer }
+        max_assets_per_segment: { type: integer }
+        max_segments_per_report: { type: integer }
+        max_findings_per_report: { type: integer }
+        max_assets_per_report: { type: integer }
+        max_open_reports_per_sensor: { type: integer }
+        max_segments_in_flight: { type: integer }
+        max_item_errors: { type: integer }
+        uncommitted_ttl_seconds: { type: integer }
+    Hello:
+      type: object
+      properties:
+        protocol: { type: integer, const: 2 }
+        features: { type: array, items: { type: string } }
+        media_types: { type: array, items: { type: string } }
+        encodings: { type: array, items: { type: string } }
+        digests: { type: array, items: { type: string } }
+        limits: { $ref: "#/components/schemas/Limits" }

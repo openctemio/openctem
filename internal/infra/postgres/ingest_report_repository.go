@@ -30,7 +30,7 @@ var _ ingestreport.Repository = (*IngestReportRepository)(nil)
 const ingestReportColumns = `
 	id, tenant_id, sensor_id, report_id, command_id, scan_zone_id, state,
 	media_type, sensor_type, user_agent, header_digest, header, tool_name,
-	implicit_commit, segment_count, segments_received, committed_at,
+	implicit_commit, segment_count, segments_received, assets_received, findings_received, committed_at,
 	segment_outcomes, touched_asset_ids, auto_resolved, auto_resolve,
 	expires_at, received_at, updated_at`
 
@@ -89,17 +89,50 @@ func (r *IngestReportRepository) CountOpen(ctx context.Context, sensorID shared.
 	return n, nil
 }
 
-// RecordSegmentReceived counts a newly stored segment and extends the expiry.
-func (r *IngestReportRepository) RecordSegmentReceived(ctx context.Context, id shared.ID, expiresAt time.Time) error {
-	_, err := r.db.ExecContext(ctx, `
+// ReserveSegment counts a segment and its items, refusing past the limits.
+func (r *IngestReportRepository) ReserveSegment(ctx context.Context, id shared.ID, assets, findings, maxAssets, maxFindings int, expiresAt time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE ingest_reports
 		SET segments_received = segments_received + 1,
-			expires_at = GREATEST(expires_at, $2), updated_at = NOW()
-		WHERE id = $1`, id.String(), expiresAt)
+			assets_received = assets_received + $2,
+			findings_received = findings_received + $3,
+			expires_at = GREATEST(expires_at, $6), updated_at = NOW()
+		WHERE id = $1
+		  AND assets_received + $2 <= $4
+		  AND findings_received + $3 <= $5`,
+		id.String(), assets, findings, maxAssets, maxFindings, expiresAt)
 	if err != nil {
-		return fmt.Errorf("record ingest report segment: %w", err)
+		return false, fmt.Errorf("reserve ingest report segment: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+// ReleaseSegment undoes a reservation.
+func (r *IngestReportRepository) ReleaseSegment(ctx context.Context, id shared.ID, assets, findings int) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE ingest_reports
+		SET segments_received = GREATEST(segments_received - 1, 0),
+			assets_received = GREATEST(assets_received - $2, 0),
+			findings_received = GREATEST(findings_received - $3, 0),
+			updated_at = NOW()
+		WHERE id = $1`, id.String(), assets, findings)
+	if err != nil {
+		return fmt.Errorf("release ingest report segment: %w", err)
 	}
 	return nil
+}
+
+// Abandon marks an uncommitted, receiving report expired.
+func (r *IngestReportRepository) Abandon(ctx context.Context, id shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE ingest_reports SET state = 'expired', updated_at = NOW()
+		WHERE id = $1 AND state = 'receiving' AND committed_at IS NULL`, id.String())
+	if err != nil {
+		return false, fmt.Errorf("abandon ingest report: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
 // Commit closes a receiving report.
@@ -228,7 +261,7 @@ func scanIngestReport(row rowScanner) (*ingestreport.Report, error) {
 	err := row.Scan(
 		&id, &tenant, &sensor, &reportID, &commandID, &zoneID, &state,
 		&rep.MediaType, &rep.SensorType, &rep.UserAgent, &rep.HeaderDigest, &header, &rep.ToolName,
-		&rep.ImplicitCommit, &segmentCount, &rep.SegmentsReceived, &committedAt,
+		&rep.ImplicitCommit, &segmentCount, &rep.SegmentsReceived, &rep.AssetsReceived, &rep.FindingsReceived, &committedAt,
 		&outcomes, pq.Array(&touched), &rep.AutoResolved, &autoResolve,
 		&rep.ExpiresAt, &rep.ReceivedAt, &rep.UpdatedAt,
 	)

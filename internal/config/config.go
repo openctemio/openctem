@@ -114,6 +114,17 @@ type IngestConfig struct {
 	// MaxPendingPerTenant bounds a tenant's queue depth; further submissions get
 	// 429 + Retry-After. 0 disables the check.
 	MaxPendingPerTenant int
+
+	// V2Results mounts sensor protocol v2 results (RFC-026) at
+	// /api/v2/sensor and processes its jobs. SENSOR_PROTOCOL_V2_RESULTS.
+	V2Results bool
+	// V2BlindingRatio and V2BlindingMinFindings are the blinding guard of a
+	// v2 commit: an auto-resolve that would close more than MinFindings and
+	// more than Ratio of the open findings of that tool on the report's
+	// assets is held for review. SENSOR_V2_BLINDING_RATIO (0.5),
+	// SENSOR_V2_BLINDING_MIN_FINDINGS (100).
+	V2BlindingRatio       float64
+	V2BlindingMinFindings int
 }
 
 // AsyncEnabled reports whether async ingest mode is on.
@@ -941,6 +952,9 @@ func Load() (*Config, error) {
 		Ingest: IngestConfig{
 			Mode:                getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant: getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
+			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", false),
+			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
+			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
 		},
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.

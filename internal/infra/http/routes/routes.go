@@ -62,25 +62,28 @@ type Handlers struct {
 	Command          *handler.CommandHandler          // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
 	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
-	IOC              *handler.IOCHandler              // nil if not initialized - IOC catalogue (feeds B6 correlator)
-	Validation       *handler.ValidationHandler       // nil if not initialized - CTEM Stage-4 validation evidence
-	SCIM             *handler.SCIMHandler             // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
-	SCIMToken        *handler.SCIMTokenHandler        // nil if not initialized - SCIM token admin
-	SCIMAuth         Middleware                       // SCIM bearer-token auth middleware (nil if SCIM disabled)
-	ModuleGate       *middleware.ModuleGate           // per-tenant module route gating (nil-safe: fail-open)
-	Sensor           *handler.SensorHandler           // nil if not initialized (no database)
-	ScanZone         *handler.ScanZoneHandler         // nil if not initialized (no database)
-	Pipeline         *handler.PipelineHandler         // nil if not initialized (no database)
-	ScanProfile      *handler.ScanProfileHandler      // nil if not initialized (no database)
-	Tool             *handler.ToolHandler             // nil if not initialized (no database)
-	ToolCategory     *handler.ToolCategoryHandler     // nil if not initialized (no database)
-	Capability       *handler.CapabilityHandler       // nil if not initialized (no database)
-	Scan             *handler.ScanHandler             // nil if not initialized (no database)
-	CI               *handler.CIHandler               // nil if not initialized (no database) - CI/CD snippet generator
-	ScanSession      *handler.ScanSessionHandler      // nil if not initialized (no database)
-	ScannerTemplate  *handler.ScannerTemplateHandler  // nil if not initialized (no database)
-	TemplateSource   *handler.TemplateSourceHandler   // nil if not initialized (no database)
-	SecretStore      *handler.SecretStoreHandler      // nil if not initialized (no database)
+	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
+	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
+	SensorResultsV2 *handler.SensorResultsV2Handler
+	IOC             *handler.IOCHandler             // nil if not initialized - IOC catalog (feeds B6 correlator)
+	Validation      *handler.ValidationHandler      // nil if not initialized - CTEM Stage-4 validation evidence
+	SCIM            *handler.SCIMHandler            // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
+	SCIMToken       *handler.SCIMTokenHandler       // nil if not initialized - SCIM token admin
+	SCIMAuth        Middleware                      // SCIM bearer-token auth middleware (nil if SCIM disabled)
+	ModuleGate      *middleware.ModuleGate          // per-tenant module route gating (nil-safe: fail-open)
+	Sensor          *handler.SensorHandler          // nil if not initialized (no database)
+	ScanZone        *handler.ScanZoneHandler        // nil if not initialized (no database)
+	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
+	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
+	Tool            *handler.ToolHandler            // nil if not initialized (no database)
+	ToolCategory    *handler.ToolCategoryHandler    // nil if not initialized (no database)
+	Capability      *handler.CapabilityHandler      // nil if not initialized (no database)
+	Scan            *handler.ScanHandler            // nil if not initialized (no database)
+	CI              *handler.CIHandler              // nil if not initialized (no database) - CI/CD snippet generator
+	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
+	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
+	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
+	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
@@ -620,6 +623,12 @@ func Register(
 	// Ingest/Sensor routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
 		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter, ingestRateLimiter, log)
+	}
+
+	// Sensor protocol v2 results (RFC-026): its own route group and
+	// authenticator, only when enabled.
+	if h.SensorResultsV2 != nil {
+		registerSensorV2Routes(router, h.SensorResultsV2, ingestRateLimiter, log)
 	}
 
 	// Sensor management routes (tenant from JWT token)

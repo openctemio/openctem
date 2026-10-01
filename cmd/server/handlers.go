@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
+	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -18,6 +19,7 @@ import (
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/logger"
+	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 	"github.com/openctemio/api/pkg/validator"
 )
 
@@ -269,6 +271,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Sensor:           newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		Ingest:           ingestHandler,
+		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, log),
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
 		Validation:       validationHandler,
@@ -569,4 +572,17 @@ func heartbeatDoorbellConfig(cfg *config.Config) app.DoorbellConfig {
 		c.KeyRenewBefore = sc.KeyTTL / 2
 	}
 	return c.Normalized(cfg.Worker.HeartbeatTimeout)
+}
+
+// newSensorResultsV2Handler builds the protocol v2 results handler (RFC-026),
+// or returns nil — /api/v2/sensor is then not mounted — while
+// SENSOR_PROTOCOL_V2_RESULTS is off.
+func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SensorResultsV2Handler {
+	if !cfg.Ingest.V2Results || repos.IngestJob == nil || repos.IngestReport == nil || svc.Sensor == nil {
+		return nil
+	}
+	receiver := ingest.NewV2Receiver(repos.IngestReport, repos.IngestJob, repos.IngestJob, repos.Command,
+		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
+	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
+	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
 }

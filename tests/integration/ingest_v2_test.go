@@ -64,6 +64,9 @@ func (r *v2Rig) newTenant(tools ...string) v2Tenant {
 		r.t.Fatalf("seed tenant: %v", err)
 	}
 	r.t.Cleanup(func() {
+		// Reports first (their jobs cascade), so no queue row outlives the
+		// test even if the tenant delete fails.
+		_, _ = r.db.ExecContext(context.Background(), `DELETE FROM ingest_reports WHERE tenant_id = $1`, tn.tenant.String())
 		_, _ = r.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tn.tenant.String())
 	})
 	if _, err := r.db.ExecContext(ctx, `INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status, type, tools)
@@ -131,11 +134,15 @@ func (r *v2Rig) put(tn v2Tenant, rep *ingestreport.Report, seq int, seg *ctis.Re
 	s := seq
 	job := ingestjob.NewV2Job(tn.tenant, &tn.sensor, rep.ReportID, ingestjob.V2Segment{
 		ReportRef: rep.ID, Seq: &s, ContentDigest: fmt.Sprintf("sha-256=:%d:", seq), MediaType: protov2.MediaTypeCTIS}, payload)
+	// Never claimable: a parallel package's ClaimBatch must not see it; the
+	// test runs the processor on it directly.
+	job.DelayUntil(time.Now().Add(24 * time.Hour))
 	if _, _, err := r.jobs.EnqueueV2(context.Background(), job); err != nil {
 		r.t.Fatalf("enqueue: %v", err)
 	}
-	if err := r.reports.RecordSegmentReceived(context.Background(), rep.ID, time.Now().Add(time.Hour)); err != nil {
-		r.t.Fatal(err)
+	if ok, err := r.reports.ReserveSegment(context.Background(), rep.ID, len(seg.Assets), len(seg.Findings),
+		protov2.DefaultMaxAssetsPerReport, protov2.DefaultMaxFindingsPerReport, time.Now().Add(time.Hour)); err != nil || !ok {
+		r.t.Fatalf("reserve: %v %v", ok, err)
 	}
 }
 
@@ -160,8 +167,9 @@ func (r *v2Rig) commit(tn v2Tenant, rep *ingestreport.Report, n int) bool {
 	if !ok {
 		return false
 	}
-	job, _, err := r.jobs.EnqueueV2(ctx, ingestjob.NewV2Job(tn.tenant, &tn.sensor, rep.ReportID,
-		ingestjob.V2Segment{ReportRef: rep.ID}, nil))
+	commitJob := ingestjob.NewV2Job(tn.tenant, &tn.sensor, rep.ReportID, ingestjob.V2Segment{ReportRef: rep.ID}, nil)
+	commitJob.DelayUntil(time.Now().Add(24 * time.Hour))
+	job, _, err := r.jobs.EnqueueV2(ctx, commitJob)
 	if err != nil {
 		r.t.Fatal(err)
 	}

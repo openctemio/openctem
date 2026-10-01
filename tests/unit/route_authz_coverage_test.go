@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
+	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
 
 // Fail-closed by construction: every HTTP route must EITHER carry a permission
@@ -52,6 +53,7 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/notifications", "tenant+user-scoped in handler"},
 	{"/api/v1/invitations/", "invitation token IS the authorization"},
 	{"/api/v1/agent/", "sensor protocol v1: sensor API-key auth (AuthenticateSource); tenant from key"},
+	{"/api/v2/sensor", "sensor protocol v2 (RFC-026): only the sensor authenticator (SensorResultsV2Handler.Authenticate); tenant from the key, user JWT/cookie/oct_ refused"},
 	{"/api/v1/agents", "deprecated management path: 308 redirect to /api/v1/sensors, whose routes are permission-gated"},
 	{"/api/v1/platform/", "platform sensor API-key / self-scoped stats"},
 	{"/api/v1/admin", "platform-admin realm: AdminAuthMiddleware (X-Admin-API-Key or console session cookie, RFC-022) + RequireRole; /admin/auth/login|mfa|logout are the public console login steps (rate-limited); not tenant-permission-gated"},
@@ -71,7 +73,7 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 }
 
 // routePathArg resolves a route path argument: a string literal, or one of the
-// legacyv1 path constants the frozen sensor protocol v1 mounts are named by.
+// legacyv1 / protov2 path constants the sensor protocol mounts are named by.
 func routePathArg(e ast.Expr) (string, bool) {
 	switch v := e.(type) {
 	case *ast.BasicLit:
@@ -83,6 +85,10 @@ func routePathArg(e ast.Expr) (string, bool) {
 	case *ast.SelectorExpr:
 		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "legacyv1" {
 			p, ok := legacyv1.Paths[v.Sel.Name]
+			return p, ok
+		}
+		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "protov2" {
+			p, ok := protov2.Paths[v.Sel.Name]
 			return p, ok
 		}
 	}
