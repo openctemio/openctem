@@ -65,6 +65,10 @@ func (m *credImportMockExposureRepo) Create(_ context.Context, event *exposure.E
 	if m.createErr != nil {
 		return m.createErr
 	}
+	// Mirror the database's unique (tenant_id, fingerprint).
+	if prev, ok := m.fingerprintMap[event.Fingerprint()]; ok && prev.TenantID() == event.TenantID() {
+		return exposure.NewExposureEventExistsError(event.Fingerprint())
+	}
 	m.events[event.ID().String()] = event
 	m.fingerprintMap[event.Fingerprint()] = event
 	tid := event.TenantID().String()
@@ -113,6 +117,12 @@ func (m *credImportMockExposureRepo) Update(_ context.Context, event *exposure.E
 		return m.updateErr
 	}
 	m.events[event.ID().String()] = event
+	for fp, e := range m.fingerprintMap {
+		if e.ID() == event.ID() && fp != event.Fingerprint() {
+			delete(m.fingerprintMap, fp)
+		}
+	}
+	m.fingerprintMap[event.Fingerprint()] = event
 	return nil
 }
 

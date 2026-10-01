@@ -213,6 +213,16 @@ func (e *ExposureEvent) Details() map[string]any {
 	return result
 }
 
+// UseFingerprint replaces the generated deduplication fingerprint with a
+// caller-computed one, for event types whose identity the generic fields do
+// not capture (a leaked credential is identified by its breach, repository
+// or paste as well). Empty values are ignored.
+func (e *ExposureEvent) UseFingerprint(fp string) {
+	if fp != "" {
+		e.fingerprint = fp
+	}
+}
+
 // Fingerprint returns the deduplication fingerprint.
 func (e *ExposureEvent) Fingerprint() string {
 	return e.fingerprint
