@@ -262,6 +262,7 @@ const (
 	StateChangeOwnerChanged            StateChangeType = "owner_changed"             // Owner changed
 	StateChangeComplianceChanged       StateChangeType = "compliance_changed"        // Compliance scope changed
 	StateChangeClassificationChanged   StateChangeType = "classification_changed"    // Data classification changed
+	StateChangeRenamed                 StateChangeType = "renamed"                   // Display name changed (field "name")
 )
 
 // AllStateChangeTypes returns all valid state change types.
@@ -277,6 +278,7 @@ func AllStateChangeTypes() []StateChangeType {
 		StateChangeOwnerChanged,
 		StateChangeComplianceChanged,
 		StateChangeClassificationChanged,
+		StateChangeRenamed,
 	}
 }
 
@@ -306,6 +308,7 @@ func (t StateChangeType) Description() string {
 		StateChangeOwnerChanged:            "Owner changed",
 		StateChangeComplianceChanged:       "Compliance scope changed",
 		StateChangeClassificationChanged:   "Data classification changed",
+		StateChangeRenamed:                 "Asset renamed",
 	}
 	if desc, ok := descriptions[t]; ok {
 		return desc

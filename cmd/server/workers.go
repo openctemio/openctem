@@ -334,6 +334,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Asset identity model: derive identifiers for assets that predate it and
+	// queue suspected duplicates for review (never merges).
+	w.ControllerManager.Register(controller.NewAssetIdentityBackfillController(
+		ingest.NewIdentityBackfill(repos.AssetIdentityBackfill, repos.AssetIdentifier, repos.AssetDedup,
+			log.With("controller", "asset-identity-backfill")),
+	))
+
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(
 		repos.AccessControl,
 		svc.ScopeRule,

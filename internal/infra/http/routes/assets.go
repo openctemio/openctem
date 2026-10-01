@@ -512,6 +512,20 @@ func registerAssetStateHistoryRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerAssetIdentifierRoutes registers the asset identifiers endpoint
+// (asset identity model).
+func registerAssetIdentifierRoutes(
+	router Router,
+	h *handler.AssetIdentifierHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/assets/{id}/identifiers", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
 // registerAssetImportRoutes registers bulk asset import endpoints.
 func registerAssetImportRoutes(
 	router Router,

@@ -1,6 +1,6 @@
 # Asset Identity Resolution & Deduplication
 
-> **Status**: Production-ready | **Origin**: RFC-001 (completed 2026-04-15)
+> **Status**: Production-ready | **Origin**: RFC-001 (completed 2026-04-15); identity model RFC-028 (2026-10-01)
 
 ## Overview
 
@@ -11,32 +11,88 @@ Multi-layer deduplication system that ensures the same real-world entity maps to
 ## Architecture
 
 ```
-Incoming Asset
+Incoming asset (protocol v1 or v2, AssetProcessor.processBatch)
     │
     ▼
-┌──────────────────────┐
-│ Layer 1: Normalize    │  Deterministic, idempotent
-│ (16 asset types)      │  dns lowercase, IP canonical, repo format, URL strip
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│ Layer 2: Name Match   │  Existing behavior — ON CONFLICT (tenant_id, name)
-│ (GetByNames batch)    │
-└──────────┬───────────┘
-           │ no match?
-           ▼
-┌──────────────────────┐
-│ Layer 3: Correlate    │  IP, external_id, fingerprint, repo suffix
-│ (per asset type)      │
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│ Layer 4: Upsert       │  ON CONFLICT merge properties, tags
-│ (unchanged)           │
-└──────────────────────┘
+Normalize name (Layer 1)
+    │
+    ▼
+1. Strong identifiers, strongest first, with the conflict veto
+   host ID > cloud ID > BIOS UUID > serial > MAC   (repositories: SCM repo ID)
+    │ none
+    ▼
+2. Exact name (assets.name)
+    │ none
+    ▼
+3. Hostname / FQDN seen on exactly one asset in the last 7 days
+    │ none
+    ▼
+4. IP seen on exactly one asset in the last 7 days (hosts)
+   Other types: repository suffix, external ID, certificate fingerprint
+    │ none
+    ▼
+5. New asset
+    │
+    ▼
+Upsert assets → record identifiers, renames (state history), duplicate reviews
 ```
+
+Nothing in this path merges two existing assets. Conflicts go to the dedup
+review queue for an operator. Design and decisions: `docs/rfcs/RFC-028-asset-identity-model.md`.
+
+## Identifiers
+
+Table `asset_identifiers` (tenant_id, asset_id, kind, value, source,
+first_seen, last_seen). Strong kinds are unique per tenant; FQDN, hostname and
+IP are not.
+
+| Kind | Strong | Vetoes a match | Read from |
+|---|---|---|---|
+| `host_id` | yes | yes | CTIS `identifiers.machine_id`; properties `host_id`, `machine_id`, `sensor_host_id`, `machine_guid` |
+| `cloud_id` | yes | yes | `identifiers.cloud_resource_id`; `technical.cloud.arn`/`resource_id`; properties `cloud_resource_id`, `instance_id`, `cloud_instance_id`, `vm_id`, `arn` |
+| `bios_uuid` | yes | yes | `identifiers.bios_uuid`; properties `bios_uuid`, `system_uuid`, `smbios_uuid` |
+| `serial_number` | yes | yes | `identifiers.serial_number`; properties `serial_number`, `hardware_serial` |
+| `mac` | yes | no (hosts have several) | `identifiers.mac_addresses`; properties `mac_address` (the Nessus parser), `mac_addresses`, `mac` |
+| `scm_repo_id` | yes | yes | `identifiers.scm_repo_id`; properties `scm_repo_id`, `repo_id`, `repository_id`, `project_id`; `asset_repositories.repo_id` |
+| `fqdn`, `hostname` | no | — | asset name; properties `hostname`, `fqdn`, `netbios_name` |
+| `ip` | no | — | every IP shape listed under Renames, plus an IP `value` |
+
+Hardware kinds are read only for host, ip_address, network and endpoint
+assets. Domains, subdomains and certificates stay keyed by name.
+
+Normalization (`pkg/domain/asset/identifier.go`) drops values that do not
+identify one machine: multicast, locally administered and all-zero MACs, the
+shared MACs of VRRP/HSRP/GLBP and of common VPN and dial-up adapters, and
+vendor placeholder UUIDs and serials. SCM IDs are stored as `<host>:<id>`.
+
+**Veto.** A candidate found by a strong identifier is skipped when it holds a
+different value of a single-valued kind ranked above the one that matched,
+and the incoming asset carries that kind. For the name, hostname and IP steps
+every single-valued strong kind counts.
+
+**Reviews** (`asset_dedup_review.reason`):
+
+| Reason | Raised by | When |
+|---|---|---|
+| `shared_ip` | ingest | an IP matched several assets (none of them is used) |
+| `identifier_conflict` | ingest | strong identifiers point at different assets, or the incoming name belongs to another asset, or a strong identifier is held by another asset |
+| `shared_identifier` | backfill | two assets carry one strong identifier |
+| `renamed_host` | backfill | one Nessus/Tenable/Vuls source reported one IP under two host names |
+
+`evidence` holds what the assets share. A pair an operator rejected is not
+raised again.
+
+**API**: `GET /api/v1/assets/{id}/identifiers` (`assets:read`).
+
+## Backfill
+
+The `asset-identity-backfill` controller (start, then hourly) derives
+identifiers for every tenant not yet done at the current version
+(`asset_identity_backfill`), with the same extraction ingest uses, the
+repository ID, and former names (`properties.aliases`, recorded with the
+asset's creation time so they are not recent evidence). It queues
+`shared_identifier` and `renamed_host` reviews and never merges. Bump
+`ingest.IdentityBackfillVersion` to run it again for every tenant.
 
 ## Layer 1: Name Normalization
 
@@ -58,19 +114,20 @@ Applied in `NewAsset()` constructor — single chokepoint, every entry point cov
 
 **Key files**: `pkg/domain/asset/normalize.go`, `normalize_test.go` (158 test cases)
 
-## Layer 3: Correlation
+## Correlation (legacy identifiers)
 
-When name match fails, correlator checks alternative identifiers:
+When neither an identifier nor the name matches, the correlator checks:
 
 | Asset Type | Correlation Method | Query |
 |---|---|---|
-| host, ip_address | IP addresses array | `FindByIPs()` — GIN index on `properties->'ip_addresses'` |
+| host, ip_address | IP addresses array, filtered by per-IP `last_seen` | `FindByIPs()` — GIN index on `properties->'ip_addresses'` |
 | repository | Integration URL prefix + suffix match | `FindRepositoryByFullName()` |
 | cloud_account, IAM | external_id | `FindByExternalID()` |
 | certificate | fingerprint property | `FindByPropertyValue("fingerprint", ...)` |
 
 **Safeguards**:
-- **IP trust window**: an IP match counts only if the existing asset was seen within the last N days (configurable per tenant, default 7). Outside the window the incoming host is not merged or renamed.
+- **IP trust window**: an IP match counts only if that IP was seen on the asset within the last N days (configurable per tenant, default 7; per-IP `last_seen` from `asset_identifiers`, else the asset's `last_seen`). Outside the window the incoming host is not merged or renamed.
+- **Unambiguous**: an IP that matches several assets matches none of them; they get a `shared_ip` review.
 - **DoS protection**: Skip correlation if asset has > N IPs (configurable, default 20)
 - **Type guard**: Only correlate same asset type (host ↔ host, not host ↔ domain)
 
@@ -78,7 +135,7 @@ When name match fails, correlator checks alternative identifiers:
 
 ## Renames
 
-A host matched by IP takes the name the scanner reports when:
+A host matched by an identifier, a hostname or an IP takes the name the scanner reports when:
 
 | Incoming vs current name | Renamed? |
 |---|---|
@@ -99,11 +156,15 @@ IP correlation reads addresses from `ip`, `ip_address` (a string or an object
 with `address`), `ip_addresses`, and from the CTIS `value` when the asset is
 named by hostname and its value is an IP address (the Vuls adapter does this).
 
-Renames rely on an IP match, so a host whose IP is reused by another machine
-within the IP trust window (7 days by default; it was 30 before 2026-10-01)
-can be renamed wrongly. Hosts with stable
-identifiers (MAC address, sensor host ID, cloud instance ID) are not matched
-on those identifiers yet.
+A rename by IP alone can still be wrong when another machine took the IP
+within the 7-day window and neither reports a strong identifier. A host that
+reports one is matched on it first, and a conflicting single-valued identifier
+vetoes the IP match.
+
+Every rename writes a `renamed` row to `asset_state_history` (`field=name`,
+old and new value, reason `matched by <kind>`); manual renames through the
+asset API do too. A rename onto a name another asset holds is not done; it
+raises an `identifier_conflict` review instead.
 
 ## Aliases
 
@@ -141,7 +202,7 @@ GET  /api/v1/assets/dedup/merge-log             — audit trail
 A merge moves every row that references the merged assets to the kept asset, then deletes the merged assets. The full list is in `internal/infra/postgres/asset_merge_plan.go`:
 
 - Plain moves: findings, exposures, suppression rules, SLA policies, scan sessions, pipeline runs, exposure events, runtime telemetry, attack-path nodes, threat-model threats.
-- Moves that drop a merged row when the kept asset already has the same unique key: services, components, owners, business units and services, asset groups, compensating controls, sources, scan coverage, and the derived `user_accessible_assets`.
+- Moves that drop a merged row when the kept asset already has the same unique key: services, components, owners, business units and services, asset groups, compensating controls, sources, scan coverage, asset identifiers, and the derived `user_accessible_assets`.
 - Relationships and relationship suggestions. Edges that would become loops are dropped.
 - Child assets are re-parented to the kept asset, and pentest campaign asset lists are rewritten.
 - Repository data: the kept asset gets a copy of the merged repository row when it has none. Branches move to it. A branch whose name the kept repository already has hands its findings, branch occurrences and components to that branch first.
@@ -165,7 +226,7 @@ Shared normalization library: `sdk-go/pkg/ctis/normalize.go`
 
 ## Database
 
-**Migrations**: `000138_asset_identity_resolution` (merge_log, dedup_review, alias index), `000139_normalize_existing_assets` (normalize + detect duplicates)
+**Migrations**: `000138_asset_identity_resolution` (merge_log, dedup_review, alias index), `000139_normalize_existing_assets` (normalize + detect duplicates), `000243_asset_identifiers` (identifiers, review reason/evidence, `renamed` history, backfill state)
 
 **Indexes used**:
 - `idx_assets_props_aliases` — GIN on `properties->'aliases'`

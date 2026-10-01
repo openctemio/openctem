@@ -29,14 +29,17 @@ type DedupReviewEnqueuer interface {
 
 // AssetProcessor handles batch asset processing.
 type AssetProcessor struct {
-	repo           asset.Repository
-	repoExtRepo    asset.RepositoryExtensionRepository
-	relRepo        asset.RelationshipRepository
-	stateHistory   asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
-	correlator     *AssetCorrelator             // RFC-001: IP-based correlation (nil = disabled)
-	dedupEnqueuer  DedupReviewEnqueuer          // RFC-001: enqueue multi-match dupes for review (nil = disabled)
-	propsValidator *validator.PropertiesValidator
-	logger         *logger.Logger
+	repo          asset.Repository
+	repoExtRepo   asset.RepositoryExtensionRepository
+	relRepo       asset.RelationshipRepository
+	stateHistory  asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
+	correlator    *AssetCorrelator             // RFC-001: IP-based correlation (nil = disabled)
+	dedupEnqueuer DedupReviewEnqueuer          // RFC-001: enqueue multi-match dupes for review (nil = disabled)
+	// Asset identity model: identifier matching (nil = name and IP only).
+	identityStore    IdentityStore
+	identityReviewer IdentityReviewer
+	propsValidator   *validator.PropertiesValidator
+	logger           *logger.Logger
 
 	// assetsDiscoveredCallback receives the assets THIS ingest actually
 	// inserted (nil = disabled). It drives the `asset_discovered` workflow
@@ -370,6 +373,22 @@ func (p *AssetProcessor) processBatch(
 	// announces an exposure that was not saved.
 	var exposedPersisted []*asset.Asset
 
+	cfg := p.defaultCorrelationConfig()
+	if tenantCfg != nil {
+		cfg = *tenantCfg
+	}
+	// Identifier matching (nil when no identity store is wired or the lookup
+	// failed: name and IP matching only, as before).
+	idx := p.prepareIdentity(ctx, tenantID, report, cfg)
+	source := ""
+	if report.Tool != nil {
+		source = report.Tool.Name
+	}
+	allKinds := len(asset.AllIdentifierKinds())
+	isNew := map[string]bool{}
+	queued := map[string]bool{}
+	var renames []pendingRename
+
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
 		name := getAssetName(ctisAsset)
@@ -385,63 +404,130 @@ func (p *AssetProcessor) processBatch(
 			continue
 		}
 
-		if existing, ok := existingMap[normalizedName]; ok {
-			// Name match → merge (existing behavior)
+		// mergeInto folds this report asset into an existing one.
+		mergeInto := func(existing *asset.Asset) {
 			exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
-			updateAssets = append(updateAssets, existing)
-			assetMap[ctisAsset.ID] = existing.ID()
-		} else if p.correlator != nil && (coreType == asset.AssetTypeHost || coreType == asset.AssetTypeIPAddress) {
-			// No name match for host/ip → try IP correlation (RFC-001 Phase 2)
-			props := p.buildPropertiesFromCTIS(ctisAsset)
-			var corrArgs []CorrelationConfig
-			if tenantCfg != nil {
-				corrArgs = append(corrArgs, *tenantCfg)
+			if id := existing.ID().String(); !isNew[id] && !queued[id] {
+				updateAssets = append(updateAssets, existing)
+				queued[id] = true
 			}
-			result, corrErr := p.correlator.CorrelateHost(ctx, tenantID, normalizedName, props, corrArgs...)
+			assetMap[ctisAsset.ID] = existing.ID()
+			if idx != nil {
+				idx.attach(i, existing, coreType, normalizedName, source)
+			}
+		}
+		// rename gives a matched asset the name the report uses now.
+		rename := func(existing *asset.Asset, via string) {
+			oldName := existing.Name()
+			if err := existing.UpdateName(normalizedName); err != nil || existing.Name() == oldName {
+				return
+			}
+			renames = append(renames, pendingRename{a: existing, old: oldName, new: existing.Name(), via: via})
+			p.logger.Info("asset renamed by identity match",
+				"id", existing.ID().String(), "old_name", oldName, "new_name", existing.Name(), "matched_by", via)
+		}
+		// createNew inserts this report asset as a new asset.
+		createNew := func() {
+			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
+			if createErr != nil {
+				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, normalizedName, createErr))
+				return
+			}
+			newAssets = append(newAssets, newAsset)
+			assetMap[ctisAsset.ID] = newAsset.ID()
+			existingMap[normalizedName] = newAsset
+			isNew[newAsset.ID().String()] = true
+			if idx != nil {
+				idx.attach(i, newAsset, coreType, normalizedName, source)
+			}
+		}
+
+		nameMatch, hasNameMatch := existingMap[normalizedName]
+
+		// 1. Strong identifiers, strongest first, with the conflict veto.
+		if idx != nil {
+			if m, conflicts := idx.resolveStrong(i, coreType); m != nil {
+				existing := m.a
+				for _, c := range conflicts {
+					idx.review(existing, c.a, asset.DuplicateReasonIdentifierConflict,
+						map[string]any{"kind": string(c.kind), "value": c.value}, normalizedName, coreType)
+				}
+				nameTaken := hasNameMatch && !nameMatch.ID().Equals(existing.ID())
+				if nameTaken && !idx.vetoed(nameMatch, idx.incoming[i], allKinds) {
+					// The name belongs to another asset with no conflicting
+					// identifier: likely the same machine recorded twice.
+					idx.review(existing, nameMatch, asset.DuplicateReasonIdentifierConflict,
+						map[string]any{"kind": string(m.kind), "value": m.value, "name": normalizedName}, normalizedName, coreType)
+				}
+				mergeInto(existing)
+				if !nameTaken && shouldAdoptName(existing, normalizedName, true) {
+					rename(existing, string(m.kind))
+				}
+				if !nameTaken {
+					existingMap[normalizedName] = existing
+				}
+				continue
+			}
+		}
+
+		// 2. Exact name.
+		if hasNameMatch {
+			if idx != nil {
+				if k, vetoed := idx.vetoKind(nameMatch, idx.incoming[i], allKinds); vetoed {
+					// Names are unique per tenant, so the report still lands on
+					// this asset; its conflicting identifier is not recorded.
+					p.logger.Warn("asset name matches an asset with a different identifier",
+						"name", normalizedName, "asset_id", nameMatch.ID().String(), "kind", string(k))
+				}
+			}
+			mergeInto(nameMatch)
+			continue
+		}
+
+		// 3. A hostname or FQDN the asset was recently seen with.
+		if idx != nil {
+			if existing := idx.resolveAlias(i, coreType, normalizedName); existing != nil {
+				mergeInto(existing)
+				if shouldAdoptName(existing, normalizedName, true) {
+					rename(existing, "hostname")
+				}
+				existingMap[normalizedName] = existing
+				continue
+			}
+		}
+
+		switch {
+		case p.correlator != nil && hostFamily(coreType):
+			// 4. An unambiguous IP seen within the trust window.
+			props := p.buildPropertiesFromCTIS(ctisAsset)
+			var recency IPRecency
+			if idx != nil {
+				recency = idx.ipRecency(i)
+			}
+			result, corrErr := p.correlator.CorrelateHostRecent(ctx, tenantID, normalizedName, props, cfg, recency)
 			if corrErr != nil {
 				p.logger.Warn("IP correlation failed, creating new asset",
 					"name", normalizedName, "error", corrErr)
 			}
-
-			if result != nil && result.Matched != nil {
-				// IP match found → merge into existing
+			if result != nil && len(result.Ambiguous) > 1 {
+				// Several assets share the IP: no match, and a review for
+				// the operator (RFC-001).
+				p.enqueueDedupReview(ctx, tenantID, normalizedName, string(coreType), result.Ambiguous[0], result.Ambiguous[1:])
+			}
+			if result != nil && result.Matched != nil &&
+				(idx == nil || !idx.vetoed(result.Matched, idx.incoming[i], allKinds)) {
 				existing := result.Matched
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
-				updateAssets = append(updateAssets, existing)
-				assetMap[ctisAsset.ID] = existing.ID()
-
+				mergeInto(existing)
 				if result.ShouldRename {
-					oldName := existing.Name() // capture before UpdateName overwrites it
-					if err := existing.UpdateName(result.NewName); err == nil {
-						p.logger.Info("asset renamed via IP correlation",
-							"id", existing.ID().String(),
-							"old_name", oldName,
-							"new_name", result.NewName,
-							"correlation_type", result.CorrelationType,
-						)
-					}
+					rename(existing, result.CorrelationType)
 				}
-
 				// Cache for later assets in same batch
 				existingMap[normalizedName] = existing
-
-				// Multiple existing assets matched the same identity →
-				// enqueue an admin review to consolidate them (RFC-001).
-				if len(result.MergeTargets) > 0 {
-					p.enqueueDedupReview(ctx, tenantID, normalizedName, string(coreType), existing, result.MergeTargets)
-				}
-			} else {
-				// No correlation → create new
-				newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
-				if createErr != nil {
-					addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, normalizedName, createErr))
-					continue
-				}
-				newAssets = append(newAssets, newAsset)
-				assetMap[ctisAsset.ID] = newAsset.ID()
-				existingMap[normalizedName] = newAsset
+				continue
 			}
-		} else if p.correlator != nil {
+			createNew()
+
+		case p.correlator != nil:
 			// Extended correlation for other asset types (RFC-001 Phase 3)
 			var result *CorrelationResult
 			var corrErr error
@@ -470,31 +556,15 @@ func (p *AssetProcessor) processBatch(
 			}
 
 			if result != nil && result.Matched != nil {
-				existing := result.Matched
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
-				updateAssets = append(updateAssets, existing)
-				assetMap[ctisAsset.ID] = existing.ID()
-				existingMap[normalizedName] = existing
+				mergeInto(result.Matched)
+				existingMap[normalizedName] = result.Matched
 			} else {
-				newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
-				if createErr != nil {
-					addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, normalizedName, createErr))
-					continue
-				}
-				newAssets = append(newAssets, newAsset)
-				assetMap[ctisAsset.ID] = newAsset.ID()
-				existingMap[normalizedName] = newAsset
+				createNew()
 			}
-		} else {
+
+		default:
 			// Correlator disabled → create new
-			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
-			if createErr != nil {
-				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, normalizedName, createErr))
-				continue
-			}
-			newAssets = append(newAssets, newAsset)
-			assetMap[ctisAsset.ID] = newAsset.ID()
-			existingMap[normalizedName] = newAsset
+			createNew()
 		}
 	}
 
@@ -542,6 +612,17 @@ func (p *AssetProcessor) processBatch(
 		// never fails ingestion.
 		p.recordDiscoveryHistory(ctx, tenantID, inserted, recoveredIDs)
 		p.recordExposureHistory(ctx, tenantID, exposureChanges)
+
+		// The database keeps the existing row's id on a (tenant_id, name)
+		// conflict, so map each asset to the id that was persisted.
+		finalID := func(a *asset.Asset) shared.ID {
+			if pid, ok := persistedIDs[a.Name()]; ok {
+				return pid
+			}
+			return a.ID()
+		}
+		p.recordRenames(ctx, tenantID, renames, finalID)
+		p.flushIdentity(ctx, idx, finalID)
 		discovered = append(discovered, inserted...)
 		exposedPersisted = becameExposed
 	}
@@ -619,6 +700,15 @@ func (p *AssetProcessor) ensureRepositoryExtension(ctx context.Context, domainAs
 	// Check if extension already exists
 	existing, err := p.repoExtRepo.GetByAssetID(ctx, domainAsset.ID())
 	if err == nil && existing != nil {
+		// A repository renamed on its SCM host (matched by its SCM ID) keeps
+		// its extension; point full name and web URL at the new name.
+		if existing.FullName() != "" && existing.FullName() != domainAsset.Name() && hasAlias(domainAsset, existing.FullName()) {
+			existing.SetFullName(domainAsset.Name())
+			if webURL := deriveWebURLFromAssetName(domainAsset.Name()); webURL != "" {
+				existing.SetWebURL(webURL)
+			}
+			return p.repoExtRepo.Update(ctx, existing)
+		}
 		// Extension exists, update web_url if empty
 		if existing.WebURL() == "" {
 			webURL := deriveWebURLFromAssetName(assetName)

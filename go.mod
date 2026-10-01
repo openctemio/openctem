@@ -112,7 +112,7 @@ require (
 require (
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
-	github.com/openctemio/ctis v1.1.0
+	github.com/openctemio/ctis v1.1.1-0.20261001161156-470964f7a070
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/tools v0.50.0
 )
