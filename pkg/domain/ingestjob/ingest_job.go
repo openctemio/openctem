@@ -94,6 +94,9 @@ func NewV2Job(tenantID shared.ID, sensorID *shared.ID, reportUUID string, seg V2
 	if seg.Seq != nil {
 		suffix = strconv.Itoa(*seg.Seq)
 	}
+	if payload == nil {
+		payload = []byte{} // the commit step carries no payload; the column is NOT NULL
+	}
 	j := NewJob(tenantID, sensorID, reportUUID+"/"+suffix, "", payload)
 	j.v2 = &seg
 	return j
@@ -241,5 +244,6 @@ type V2Repository interface {
 	RequeueDeadV2(ctx context.Context, reportRef shared.ID) (int, error)
 	// ClearV2Payloads drops the stored payloads of a finished report's
 	// segments: the digests stay for replay checks, the bytes are not needed.
+	// The processor never re-runs a segment of a completed report.
 	ClearV2Payloads(ctx context.Context, reportRef shared.ID) error
 }

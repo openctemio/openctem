@@ -177,8 +177,6 @@ func (p *FindingProcessor) SetExposureBridge(bridge ExposureBridge) {
 }
 
 // ProcessBatch processes all findings using batch operations.
-//
-//nolint:gocognit,nestif,cyclop // Batch ingestion inherently requires complex control flow
 func (p *FindingProcessor) ProcessBatch(
 	ctx context.Context,
 	agt *sensor.Sensor,
@@ -188,6 +186,25 @@ func (p *FindingProcessor) ProcessBatch(
 	tenantRules branch.BranchTypeRules,
 	output *Output,
 	cveMap map[string]shared.ID,
+) error {
+	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false)
+}
+
+// processBatch is ProcessBatch; strictAssets (protocol v2,
+// Options.RequireAssetForFindings) attaches a finding only to the asset its
+// asset_ref resolves to, never to the report's single asset as a fallback.
+//
+//nolint:gocognit,nestif,cyclop,funlen // Batch ingestion inherently requires complex control flow
+func (p *FindingProcessor) processBatch(
+	ctx context.Context,
+	agt *sensor.Sensor,
+	tenantID shared.ID,
+	report *ctis.Report,
+	assetMap map[string]shared.ID,
+	tenantRules branch.BranchTypeRules,
+	output *Output,
+	cveMap map[string]shared.ID,
+	strictAssets bool,
 ) error {
 	if len(report.Findings) == 0 {
 		return nil
@@ -227,7 +244,7 @@ func (p *FindingProcessor) ProcessBatch(
 
 	// Get default asset if available (single asset report)
 	var defaultAssetID shared.ID
-	if len(assetMap) == 1 {
+	if len(assetMap) == 1 && !strictAssets {
 		for _, id := range assetMap {
 			defaultAssetID = id
 			break

@@ -4103,3 +4103,34 @@ func buildBatchEnrichQuery(rowCount int) string {
 
 	return sb.String()
 }
+
+// CountAutoResolveCandidates counts, for the blinding guard of protocol v2
+// (RFC-026 §5.4), the open findings of toolName on assetIDs that a
+// default-branch auto-resolve would consider (open) and of those the ones
+// not seen in currentScanID that it would resolve (stale). The predicate is
+// AutoResolveStaleByAssets' without a branch filter, so the guard sees what
+// the resolve would do.
+func (r *FindingRepository) CountAutoResolveCandidates(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, toolName, currentScanID string) (stale, open int, err error) {
+	if currentScanID == "" || len(assetIDs) == 0 {
+		return 0, 0, nil
+	}
+	ids := make([]string, len(assetIDs))
+	for i, a := range assetIDs {
+		ids[i] = a.String()
+	}
+	err = r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FILTER (WHERE f.scan_id != $4), COUNT(*)
+		FROM findings f
+		JOIN repository_branches rb ON rb.id = f.branch_id
+		WHERE f.tenant_id = $1
+			AND f.asset_id = ANY($2)
+			AND f.tool_name = $3
+			AND rb.is_default = true
+			AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+			AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')`,
+		tenantID.String(), pq.Array(ids), toolName, currentScanID).Scan(&stale, &open)
+	if err != nil {
+		return 0, 0, fmt.Errorf("count auto-resolve candidates: %w", err)
+	}
+	return stale, open, nil
+}

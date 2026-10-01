@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/openctemio/ctis"
@@ -64,6 +65,19 @@ type ingester interface {
 // through the normal ingest pipeline. Used by the async worker (RFC-005).
 type JobProcessor struct {
 	service ingester
+	// v2 processes protocol v2 results jobs (RFC-026). Nil when v2 results
+	// are disabled; a v2 job then fails and is retried until it is enabled.
+	v2 *V2JobProcessor
+}
+
+// SetV2 enables processing of protocol v2 results jobs.
+func (p *JobProcessor) SetV2(v2 *V2JobProcessor) { p.v2 = v2 }
+
+// Housekeep runs the periodic v2 report expiry. No-op without v2.
+func (p *JobProcessor) Housekeep(ctx context.Context) {
+	if p.v2 != nil {
+		p.v2.Housekeep(ctx)
+	}
 }
 
 // NewJobProcessor wires a processor over the ingest service.
@@ -76,6 +90,12 @@ func NewJobProcessor(service *Service) *JobProcessor {
 // job was accepted, so no re-auth/DB fetch is needed). Returns the marshaled
 // counts to store on the completed job.
 func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte, error) {
+	if job.V2() != nil {
+		if p.v2 == nil {
+			return nil, errors.New("protocol v2 results job, but v2 results are disabled")
+		}
+		return p.v2.Process(ctx, job)
+	}
 	report, err := ParseReport(job.Payload())
 	if err != nil {
 		return nil, err

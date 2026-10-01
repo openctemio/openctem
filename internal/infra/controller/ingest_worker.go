@@ -103,6 +103,12 @@ func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 		c.logger.Info("ingest: reclaimed stale jobs", "count", released)
 	}
 
+	// Periodic processor housekeeping (protocol v2: expire uncommitted
+	// reports past their window, RFC-026 §3.5).
+	if hk, ok := c.processor.(interface{ Housekeep(context.Context) }); ok {
+		hk.Housekeep(ctx)
+	}
+
 	// Refresh the queue-depth gauge (key backpressure signal).
 	if depth, err := c.queue.CountPending(ctx); err == nil {
 		metrics.IngestQueueDepth.Set(float64(depth))

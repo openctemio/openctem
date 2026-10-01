@@ -460,11 +460,14 @@ func (r *IngestJobRepository) RequeueDeadV2(ctx context.Context, reportRef share
 	return int(n), nil
 }
 
-// ClearV2Payloads empties the payload of a finished report's completed jobs.
+// ClearV2Payloads empties the segment payloads of a finished report. Every
+// segment has an outcome by then; a segment job the worker still holds (the
+// one that finalized) is not re-run, because the processor skips segments of
+// a completed report.
 func (r *IngestJobRepository) ClearV2Payloads(ctx context.Context, reportRef shared.ID) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE ingest_jobs SET payload = ''::bytea, updated_at = NOW()
-		WHERE ingest_report_id = $1 AND status = 'completed' AND octet_length(payload) > 0`, reportRef.String())
+		WHERE ingest_report_id = $1 AND segment_seq IS NOT NULL AND octet_length(payload) > 0`, reportRef.String())
 	if err != nil {
 		return fmt.Errorf("clear v2 payloads: %w", err)
 	}
