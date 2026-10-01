@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -116,6 +117,18 @@ func (r *provUserRepo) Delete(_ context.Context, id shared.ID) error {
 type provRoles struct {
 	granted map[string][]string // user id -> roles
 	err     error
+	foreign map[string]bool // role ids that belong to another tenant
+	checked int
+}
+
+func (g *provRoles) ValidateRolesForTenant(_ context.Context, _ string, roleIDs []string) error {
+	g.checked++
+	for _, id := range roleIDs {
+		if g.foreign[id] {
+			return fmt.Errorf("%w: role %s is not available in this organization", shared.ErrValidation, id)
+		}
+	}
+	return nil
 }
 
 func (g *provRoles) GrantExactRoles(_ context.Context, _, userID string, roleIDs []string, _ string, _ auditapp.AuditContext) error {
@@ -283,6 +296,28 @@ func TestCreateUser_OwnerRoleRefused(t *testing.T) {
 	}
 	if len(ur.byEmail) != 0 {
 		t.Fatal("no account may be created")
+	}
+}
+
+// A role of another tenant is refused before any account is created; it used
+// to be caught only by the grant, after the account and membership existed.
+func TestCreateUser_ForeignRoleRefusedBeforeAccountCreated(t *testing.T) {
+	svc, tr, ur, roles, _ := provFixture(t)
+	foreign := shared.NewID().String()
+	roles.foreign = map[string]bool{foreign: true}
+
+	_, err := svc.CreateUser(context.Background(), CreateUserInput{
+		TenantID: tr.tenant.ID().String(), Email: "x@corp.com", RoleIDs: []string{foreign},
+	}, auditapp.AuditContext{})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("another tenant's role must be refused, got %v", err)
+	}
+	if roles.checked != 1 {
+		t.Fatalf("role tenancy must be checked once, got %d", roles.checked)
+	}
+	if len(ur.byEmail) != 0 || len(ur.deleted) != 0 || len(tr.memberships) != 0 {
+		t.Fatalf("no account or membership may be created (users=%d deleted=%d memberships=%d)",
+			len(ur.byEmail), len(ur.deleted), len(tr.memberships))
 	}
 }
 
