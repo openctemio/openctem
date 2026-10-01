@@ -237,6 +237,18 @@ func csrfDoubleSubmitFailure(r *http.Request) string {
 	return ""
 }
 
+// CheckDoubleSubmit validates the double-submit pair on r for a handler that
+// authenticates the request itself from an ambient cookie (e.g. the
+// refresh_token cookie on the auth routes). It writes the 403 and returns
+// false when the pair is missing or does not match.
+func CheckDoubleSubmit(w http.ResponseWriter, r *http.Request, log *logger.Logger) bool {
+	if reason := csrfDoubleSubmitFailure(r); reason != "" {
+		rejectCSRF(w, r, log, reason)
+		return false
+	}
+	return true
+}
+
 // rejectCSRF writes the 403 for a failed double-submit check and counts it.
 func rejectCSRF(w http.ResponseWriter, r *http.Request, log *logger.Logger, reason string) {
 	metrics.CSRFRejectionsTotal.WithLabelValues(reason, r.Method).Inc()

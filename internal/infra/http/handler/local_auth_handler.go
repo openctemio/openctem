@@ -387,6 +387,30 @@ func (h *LocalAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// refreshTokenFrom returns the refresh token that authenticates a
+// refresh-token route (/auth/token, /auth/refresh, /auth/create-first-team,
+// /invitations/{token}/accept-with-refresh). A token sent in the body is a
+// deliberate, non-ambient credential (server-to-server callers such as the
+// UI's Next routes use it) and needs nothing else. A token taken from the
+// refresh_token cookie is ambient - the browser attaches it to any request -
+// so it is accepted only with the double-submit CSRF pair (csrf_token cookie
+// + X-CSRF-Token header), like every other cookie-authenticated write. On a
+// failed check it writes the 403 and returns ok=false. An empty token with
+// ok=true means the request carried none.
+func (h *LocalAuthHandler) refreshTokenFrom(w http.ResponseWriter, r *http.Request, bodyToken string) (string, bool) {
+	if bodyToken != "" {
+		return bodyToken, true
+	}
+	cookieToken := GetRefreshTokenFromCookie(r, h.cookieConfig)
+	if cookieToken == "" {
+		return "", true
+	}
+	if !middleware.CheckDoubleSubmit(w, r, h.logger) {
+		return "", false
+	}
+	return cookieToken, true
+}
+
 // ExchangeTokenRequest is the request body for token exchange.
 // refresh_token can be omitted if sent via httpOnly cookie.
 type ExchangeTokenRequest struct {
@@ -427,10 +451,9 @@ func (h *LocalAuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Get refresh token from cookie if not in body (httpOnly cookie takes precedence)
-	refreshToken := GetRefreshTokenFromCookie(r, h.cookieConfig)
-	if refreshToken == "" {
-		refreshToken = req.RefreshToken
+	refreshToken, ok := h.refreshTokenFrom(w, r, req.RefreshToken)
+	if !ok {
+		return
 	}
 	if refreshToken == "" {
 		apierror.BadRequest("refresh_token is required (in body or cookie)").WriteJSON(w)
@@ -514,10 +537,9 @@ func (h *LocalAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get refresh token from cookie if not in body (httpOnly cookie takes precedence)
-	refreshToken := GetRefreshTokenFromCookie(r, h.cookieConfig)
-	if refreshToken == "" {
-		refreshToken = req.RefreshToken
+	refreshToken, ok := h.refreshTokenFrom(w, r, req.RefreshToken)
+	if !ok {
+		return
 	}
 	if refreshToken == "" {
 		apierror.BadRequest("refresh_token is required (in body or cookie)").WriteJSON(w)
@@ -573,6 +595,9 @@ func (h *LocalAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 type CreateFirstTeamRequest struct {
 	TeamName string `json:"team_name" validate:"required,min=2,max=100"`
 	TeamSlug string `json:"team_slug" validate:"required,min=3,max=50"`
+	// RefreshToken authenticates the call when sent server-to-server; a
+	// browser uses the refresh_token cookie plus the CSRF pair instead.
+	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
 // CreateFirstTeamResponse is the response body for creating first team.
@@ -603,10 +628,12 @@ func (h *LocalAuthHandler) CreateFirstTeam(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get refresh token from cookie (httpOnly cookie)
-	refreshToken := GetRefreshTokenFromCookie(r, h.cookieConfig)
+	refreshToken, ok := h.refreshTokenFrom(w, r, req.RefreshToken)
+	if !ok {
+		return
+	}
 	if refreshToken == "" {
-		apierror.Unauthorized("refresh_token is required (in cookie)").WriteJSON(w)
+		apierror.Unauthorized("refresh_token is required (in body or cookie)").WriteJSON(w)
 		return
 	}
 
@@ -689,10 +716,19 @@ func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r 
 		return
 	}
 
-	// Get refresh token from cookie (httpOnly cookie)
-	refreshToken := GetRefreshTokenFromCookie(r, h.cookieConfig)
+	// Optional body: {"refresh_token": "..."} for server-to-server callers.
+	var body struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	}
+	refreshToken, ok := h.refreshTokenFrom(w, r, body.RefreshToken)
+	if !ok {
+		return
+	}
 	if refreshToken == "" {
-		apierror.Unauthorized("refresh_token is required (in cookie)").WriteJSON(w)
+		apierror.Unauthorized("refresh_token is required (in body or cookie)").WriteJSON(w)
 		return
 	}
 
