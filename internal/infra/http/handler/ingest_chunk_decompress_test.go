@@ -79,8 +79,11 @@ func TestDecompressChunkRejectsBombs(t *testing.T) {
 			if !errors.Is(err, errChunkTooLarge) {
 				t.Fatalf("got err=%v (len %d), want errChunkTooLarge", err, len(out))
 			}
-			// Bounded by the cap plus decoder buffers, never the 512 MiB payload.
-			if grew := after.TotalAlloc - before.TotalAlloc; grew > 3*maxChunkDecompressed {
+			// TotalAlloc is process-wide: tests running in parallel, -race and
+			// coverage add noise (CI measured ~320 MiB for the fixed code). The
+			// old DecodeAll path allocated ~2.7 GiB for this bomb, so 1 GiB
+			// still separates a bounded decoder from a regression by far.
+			if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<30 {
 				t.Fatalf("decompression allocated %d MiB", grew>>20)
 			}
 		})
