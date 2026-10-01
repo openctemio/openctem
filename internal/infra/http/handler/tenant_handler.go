@@ -245,6 +245,12 @@ func toMemberResponse(m *tenant.Membership) MemberResponse {
 	}
 }
 
+// canSeeInvitationTokens reports whether a team role may read invitation
+// tokens (the same roles that may create invitations).
+func canSeeInvitationTokens(role tenant.Role) bool {
+	return role == tenant.RoleOwner || role == tenant.RoleAdmin
+}
+
 func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationResponse {
 	roleIDs := inv.RoleIDs()
 	if roleIDs == nil {
@@ -879,10 +885,14 @@ func (h *TenantHandler) ListInvitations(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// The token is the invitation's credential: whoever holds it can accept
+	// (as the invited email, with the invited role). Only owners/admins, who
+	// can create invitations anyway, get it, to copy an invite link when no
+	// email is sent. The list itself stays readable by any member.
+	includeToken := canSeeInvitationTokens(middleware.GetTeamRole(r.Context()))
 	response := make([]InvitationResponse, len(invitations))
 	for i, inv := range invitations {
-		// Include token for admins to copy invitation link
-		response[i] = toInvitationResponse(inv, true)
+		response[i] = toInvitationResponse(inv, includeToken)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
