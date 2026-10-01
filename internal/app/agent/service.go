@@ -323,26 +323,29 @@ type AgentHeartbeatData struct {
 }
 
 // UpdateHeartbeat updates agent metrics from heartbeat.
+//
+// The agent row is read only to (a) detect an offline -> online transition for
+// the connect audit event and (b) compute the load score from the stored
+// capacity. The write itself is a targeted UPDATE of the heartbeat-owned
+// columns guarded by status = 'active' (repo.UpdateHeartbeat) — never a
+// full-row rewrite. A full-row Update here used to write back the status and
+// API-key hash read at the start of the request, so a heartbeat landing just
+// after an admin revoke or key regeneration silently undid it.
 func (s *AgentService) UpdateHeartbeat(ctx context.Context, agentID shared.ID, data AgentHeartbeatData) error {
 	a, err := s.repo.GetByID(ctx, agentID)
 	if err != nil {
 		return err
 	}
 
-	// Capture health BEFORE UpdateLastSeen() flips it to online, so we can
-	// detect an offline/unknown/error -> online TRANSITION (a connect event)
-	// and audit it once, instead of logging on every steady-state heartbeat.
+	// Capture health BEFORE the heartbeat flips it to online, so we can detect
+	// an offline/unknown/error -> online TRANSITION (a connect event) and audit
+	// it once, instead of logging on every steady-state heartbeat.
 	prevHealth := a.Health
 
-	// Update runtime info
-	if data.Version != "" || data.Hostname != "" {
-		a.UpdateRuntimeInfo(data.Version, data.Hostname, nil)
-	}
-
-	// Update metrics and recompute the persisted load score with this
-	// deployment's configured weights. UpdateMetrics alone left load_score
-	// and metrics_updated_at untouched, so the column never reflected reality.
-	a.UpdateExtendedMetricsWithWeights(agentdom.ExtendedMetrics{
+	// Recompute the load score on a private copy (the repo may hand back a
+	// shared/cached pointer) with this deployment's configured weights.
+	snapshot := *a
+	snapshot.UpdateExtendedMetricsWithWeights(agentdom.ExtendedMetrics{
 		CPUPercent:    data.CPUPercent,
 		MemoryPercent: data.MemoryPercent,
 		DiskReadMBPS:  data.DiskReadMBPS,
@@ -353,11 +356,28 @@ func (s *AgentService) UpdateHeartbeat(ctx context.Context, agentID shared.ID, d
 		Region:        data.Region,
 	}, s.lbWeights)
 
-	// Update last seen and health
-	a.UpdateLastSeen()
-
-	if err := s.repo.Update(ctx, a); err != nil {
+	updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, agentdom.HeartbeatUpdate{
+		TenantID:      a.TenantID,
+		Version:       data.Version,
+		Hostname:      data.Hostname,
+		Region:        data.Region,
+		CPUPercent:    data.CPUPercent,
+		MemoryPercent: data.MemoryPercent,
+		DiskReadMBPS:  data.DiskReadMBPS,
+		DiskWriteMBPS: data.DiskWriteMBPS,
+		NetworkRxMBPS: data.NetworkRxMBPS,
+		NetworkTxMBPS: data.NetworkTxMBPS,
+		LoadScore:     snapshot.LoadScore,
+	})
+	if err != nil {
 		return err
+	}
+	if !updated {
+		// The agent was disabled/revoked (or deleted) between authentication
+		// and this write. The guarded UPDATE left it untouched — which is the
+		// point — and there is no connect event to record.
+		s.logger.Debug("heartbeat ignored for non-active agent", "agent_id", a.ID.String())
+		return nil
 	}
 
 	// Record a connect event only on an offline/unknown/error -> online
@@ -410,6 +430,12 @@ func (s *AgentService) DeleteAgent(ctx context.Context, tenantID, agentID string
 }
 
 // RegenerateAPIKey generates a new API key for an agent.
+//
+// This is the admin "hard rotation": the new inline key replaces the old one
+// AND every key row in the multi-key store (agent_api_keys — keys the agent
+// minted for itself through overlapping self-renewal) is revoked. Without the
+// second step a renewed key survived the regeneration, so an operator rotating
+// a leaked credential left the attacker's renewed copy working.
 func (s *AgentService) RegenerateAPIKey(ctx context.Context, tenantID, agentID string, auditCtx *auditapp.AuditContext) (string, error) {
 	a, err := s.GetAgent(ctx, tenantID, agentID)
 	if err != nil {
@@ -421,9 +447,19 @@ func (s *AgentService) RegenerateAPIKey(ctx context.Context, tenantID, agentID s
 		return "", fmt.Errorf("failed to generate API key: %w", err)
 	}
 
-	a.SetAPIKey(hash, prefix)
-	if err := s.repo.Update(ctx, a); err != nil {
+	// Targeted write of the key columns only (admin-regenerated keys never
+	// expire). No status guard: an admin may rotate a disabled agent's key.
+	updated, err := s.repo.UpdateAPIKey(ctx, a.ID, hash, prefix, nil, false)
+	if err != nil {
 		return "", err
+	}
+	if !updated {
+		return "", shared.ErrNotFound
+	}
+	a.SetAPIKey(hash, prefix)
+
+	if err := s.revokeAllKeyRows(ctx, a.ID, "regenerated"); err != nil {
+		return "", fmt.Errorf("revoke renewed keys: %w", err)
 	}
 
 	// Audit logging
@@ -432,6 +468,27 @@ func (s *AgentService) RegenerateAPIKey(ctx context.Context, tenantID, agentID s
 	}
 
 	return apiKey, nil
+}
+
+// revokeAllKeyRows revokes every still-active agent_api_keys row for the
+// agent. No-op when the multi-key store is not wired.
+func (s *AgentService) revokeAllKeyRows(ctx context.Context, agentID shared.ID, reason string) error {
+	if s.apiKeyRepo == nil {
+		return nil
+	}
+	keys, err := s.apiKeyRepo.GetByAgentID(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	for _, k := range keys {
+		if !k.IsActive {
+			continue
+		}
+		if err := s.apiKeyRepo.Revoke(ctx, k.ID, reason); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RenewAPIKey lets an already-authenticated agent rotate its own credential.
@@ -488,17 +545,37 @@ func (s *AgentService) RenewAPIKey(ctx context.Context, a *agentdom.Agent) (stri
 		}
 		s.logger.Info("agent renewed its API key (overlap)",
 			"agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformAgent, "expires_at", expiresAt)
+		s.auditKeyRenewed(ctx, fresh, expiresAt, true)
 		return apiKey, expiresAt, nil
 	}
 
-	fresh.SetAPIKeyWithExpiry(hash, prefix, expiresAt)
-	if err := s.repo.Update(ctx, fresh); err != nil {
+	// Targeted, status-guarded write of the key columns only: a full-row
+	// Update would also write back the status read above and could revive an
+	// agent an admin revoked in the meantime.
+	updated, err := s.repo.UpdateAPIKey(ctx, fresh.ID, hash, prefix, expiresAt, true)
+	if err != nil {
 		return "", nil, err
+	}
+	if !updated {
+		return "", nil, shared.NewDomainError("FORBIDDEN", "agent is not active", shared.ErrForbidden)
 	}
 
 	s.logger.Info("agent renewed its API key",
 		"agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformAgent, "expires_at", expiresAt)
+	s.auditKeyRenewed(ctx, fresh, expiresAt, false)
 	return apiKey, expiresAt, nil
+}
+
+// auditKeyRenewed records an agent self-renewal in the tenant audit log.
+// Platform agents (no tenant) have no tenant log to write to.
+func (s *AgentService) auditKeyRenewed(ctx context.Context, a *agentdom.Agent, expiresAt *time.Time, overlap bool) {
+	if s.auditService == nil || a.TenantID == nil {
+		return
+	}
+	_ = s.auditService.LogAgentKeyRenewed(ctx, auditapp.AuditContext{
+		TenantID:   a.TenantID.String(),
+		ActorEmail: agentAuditSystemActor,
+	}, a.ID.String(), a.Name, expiresAt, overlap)
 }
 
 // overlapGrace is how long the superseded static (inline) key stays valid after

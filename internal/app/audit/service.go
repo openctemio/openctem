@@ -914,6 +914,50 @@ func (s *AuditService) LogAgentKeyRegenerated(ctx context.Context, actx AuditCon
 	return s.LogEvent(ctx, actx, event)
 }
 
+// LogAgentKeyRenewed logs an agent rotating its own API key (POST /agent/renew).
+// overlap is true when the renewed key was issued as an additional key row so
+// the superseded key keeps working until its own expiry (rotation overlap).
+func (s *AuditService) LogAgentKeyRenewed(ctx context.Context, actx AuditContext, agentID, agentName string, expiresAt *time.Time, overlap bool) error {
+	event := NewSuccessEvent(auditdom.ActionAgentKeyRenewed, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithSeverity(auditdom.SeverityMedium).
+		WithMessage(fmt.Sprintf("Agent '%s' renewed its API key", agentName)).
+		WithMetadata("overlap", overlap)
+	if expiresAt != nil {
+		event = event.WithMetadata("expires_at", expiresAt.UTC().Format(time.RFC3339))
+	}
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAPIKeyCreated logs the creation of a tenant `oct_` API key. Only the
+// non-secret prefix and the granted scopes are recorded — never the key.
+func (s *AuditService) LogAPIKeyCreated(ctx context.Context, actx AuditContext, keyID, keyName, prefix string, scopes []string) error {
+	event := NewSuccessEvent(auditdom.ActionAPIKeyCreated, auditdom.ResourceTypeAPIKey, keyID).
+		WithResourceName(keyName).
+		WithSeverity(auditdom.SeverityMedium).
+		WithMessage(fmt.Sprintf("API key '%s' created", keyName)).
+		WithMetadata("key_prefix", prefix).
+		WithMetadata("scopes", scopes)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAPIKeyRevoked logs the revocation of a tenant `oct_` API key.
+func (s *AuditService) LogAPIKeyRevoked(ctx context.Context, actx AuditContext, keyID, keyName string) error {
+	event := NewSuccessEvent(auditdom.ActionAPIKeyRevoked, auditdom.ResourceTypeAPIKey, keyID).
+		WithResourceName(keyName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("API key '%s' revoked", keyName))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAPIKeyDeleted logs the deletion of a tenant `oct_` API key.
+func (s *AuditService) LogAPIKeyDeleted(ctx context.Context, actx AuditContext, keyID string) error {
+	event := NewSuccessEvent(auditdom.ActionAPIKeyDeleted, auditdom.ResourceTypeAPIKey, keyID).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage("API key deleted")
+	return s.LogEvent(ctx, actx, event)
+}
+
 // LogAgentConnected logs when an agent first connects (comes online).
 func (s *AuditService) LogAgentConnected(ctx context.Context, actx AuditContext, agentID, agentName, ipAddress string) error {
 	event := NewSuccessEvent(auditdom.ActionAgentConnected, auditdom.ResourceTypeAgent, agentID).

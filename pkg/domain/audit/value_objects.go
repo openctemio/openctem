@@ -127,6 +127,15 @@ const (
 	ActionAgentKeyRegenerated Action = "agent.key_regenerated"
 	ActionAgentConnected      Action = "agent.connected"
 	ActionAgentDisconnected   Action = "agent.disconnected"
+	// ActionAgentKeyRenewed records an agent rotating its OWN credential via
+	// POST /agent/renew (self-service, kubelet-style), as opposed to the admin
+	// hard rotation recorded by ActionAgentKeyRegenerated.
+	ActionAgentKeyRenewed Action = "agent.key_renewed"
+
+	// API key (oct_) actions — tenant-scoped programmatic credentials.
+	ActionAPIKeyCreated Action = "api_key.created"
+	ActionAPIKeyRevoked Action = "api_key.revoked"
+	ActionAPIKeyDeleted Action = "api_key.deleted"
 
 	// Credential (Secret Store) actions
 	ActionCredentialCreated  Action = "credential.created"
@@ -289,7 +298,8 @@ func (a Action) IsValid() bool {
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionAgentCreated, ActionAgentUpdated, ActionAgentDeleted,
 		ActionAgentActivated, ActionAgentDeactivated, ActionAgentRevoked,
-		ActionAgentKeyRegenerated, ActionAgentConnected, ActionAgentDisconnected,
+		ActionAgentKeyRegenerated, ActionAgentConnected, ActionAgentDisconnected, ActionAgentKeyRenewed,
+		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
 		ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
@@ -364,8 +374,10 @@ func (a Action) Category() string {
 		return "data"
 	case ActionAgentCreated, ActionAgentUpdated, ActionAgentDeleted,
 		ActionAgentActivated, ActionAgentDeactivated, ActionAgentRevoked,
-		ActionAgentKeyRegenerated, ActionAgentConnected, ActionAgentDisconnected:
+		ActionAgentKeyRegenerated, ActionAgentConnected, ActionAgentDisconnected, ActionAgentKeyRenewed:
 		return "agent"
+	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
+		return "api_key"
 	case ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted:
 		return "capability"
 	case ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet:
@@ -427,6 +439,7 @@ const (
 	ResourceTypeAITriage         ResourceType = "ai_triage"
 	ResourceTypeMCPTool          ResourceType = "mcp_tool"
 	ResourceTypeMCPPrompt        ResourceType = "mcp_prompt"
+	ResourceTypeAPIKey           ResourceType = "api_key"
 )
 
 // String returns the string representation of the resource type.
@@ -446,7 +459,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
-		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt:
+		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey:
 		return true
 	}
 	return false
@@ -514,6 +527,7 @@ func SeverityForAction(a Action) Severity {
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionAgentDeactivated, ActionAgentKeyRegenerated,
+		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted,
 		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled:
@@ -530,7 +544,8 @@ func SeverityForAction(a Action) Severity {
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,
 		ActionRepositoryDeleted, ActionDataExported,
-		ActionAgentCreated, ActionAgentActivated,
+		ActionAgentCreated, ActionAgentActivated, ActionAgentKeyRenewed,
+		ActionAPIKeyCreated,
 		ActionRoleCreated, ActionRoleUpdated,
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
 		ActionScanConfigCreated, ActionScanConfigTriggered,

@@ -22,6 +22,23 @@ type Filter struct {
 	HasCapacity   *bool // Filter by agents that have job capacity
 }
 
+// HeartbeatUpdate is the set of columns a heartbeat is allowed to write.
+// Empty Version/Hostname/Region leave the stored value unchanged.
+type HeartbeatUpdate struct {
+	// TenantID scopes the write; nil for platform agents (tenant_id IS NULL).
+	TenantID      *shared.ID
+	Version       string
+	Hostname      string
+	Region        string
+	CPUPercent    float64
+	MemoryPercent float64
+	DiskReadMBPS  float64
+	DiskWriteMBPS float64
+	NetworkRxMBPS float64
+	NetworkTxMBPS float64
+	LoadScore     float64
+}
+
 // Repository defines the interface for agent persistence.
 type Repository interface {
 	// Create creates a new agent.
@@ -62,6 +79,21 @@ type Repository interface {
 	// status = 'active' so it cannot revive a concurrently-revoked agent.
 	// A nil expiresAt clears the expiry (never expires).
 	UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error
+
+	// UpdateHeartbeat persists ONLY the liveness/metric columns an agent
+	// heartbeat owns (version, hostname, metrics, load score, last_seen_at,
+	// health). It never touches admin-controlled columns (status, API key,
+	// name, capabilities...). The write is guarded by id + tenant +
+	// status = 'active', so a heartbeat racing an admin revoke/disable can
+	// neither revive the agent nor overwrite its rotated key. Returns false
+	// (no error) when no active row matched.
+	UpdateHeartbeat(ctx context.Context, id shared.ID, hb HeartbeatUpdate) (bool, error)
+
+	// UpdateAPIKey writes ONLY the inline API-key columns (hash, prefix,
+	// expiry). With requireActive the write is additionally guarded by
+	// status = 'active' (agent self-renewal), so it cannot race an admin
+	// revoke. Returns false (no error) when no row matched.
+	UpdateAPIKey(ctx context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error)
 
 	// Delete deletes an agent.
 	Delete(ctx context.Context, id shared.ID) error
