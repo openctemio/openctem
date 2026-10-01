@@ -414,13 +414,42 @@ func (h *ScanZoneHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan zone").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists), errors.Is(err, shared.ErrConflict):
-		apierror.Conflict(cleanErrorMessage(err, "Scan zone conflict")).WriteJSON(w)
+		apierror.New(http.StatusConflict, scanZoneErrorCode(err, apierror.CodeConflict),
+			cleanErrorMessage(err, "Scan zone conflict")).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
-		apierror.BadRequest(cleanErrorMessage(err, "Invalid scan zone")).WriteJSON(w)
+		apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
+			cleanErrorMessage(err, "Invalid scan zone")).WriteJSON(w)
 	default:
 		h.logger.Error("scan zone service error", "error", sanitizeLogField(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// scanZoneErrorCodes are the domain error codes the scan-zone contract
+// (docs/architecture/scan-zones.md) promises in the error body's `code`, so a
+// client can tell a duplicate name from a second default zone, or explain why
+// a trigger was refused. Other domain codes keep the generic HTTP code.
+var scanZoneErrorCodes = map[string]bool{
+	"ZONE_NAME_TAKEN":         true,
+	"DEFAULT_ZONE_EXISTS":     true,
+	"ZONE_IN_USE":             true,
+	"TOO_MANY_ZONES":          true,
+	"SCAN_ZONE_NOT_FOUND":     true,
+	"NO_ZONE_COVERAGE":        true,
+	"ZONE_SPLIT_REQUIRED":     true,
+	"TOO_MANY_JOBS":           true,
+	"NO_TARGETS":              true,
+	"ALL_TARGETS_EXCLUDED":    true,
+	"PLATFORM_SENSOR_REFUSED": true,
+}
+
+// scanZoneErrorCode returns the contract code carried by err, or fallback.
+func scanZoneErrorCode(err error, fallback apierror.Code) apierror.Code {
+	var de *shared.DomainError
+	if errors.As(err, &de) && scanZoneErrorCodes[de.Code] {
+		return apierror.Code(de.Code)
+	}
+	return fallback
 }
 
 func writeScanZoneJSON(w http.ResponseWriter, status int, v any) {

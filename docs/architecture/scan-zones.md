@@ -149,7 +149,7 @@ Phase 2 (D21).
 ## Coverage view (V3)
 
 `GET /api/v1/scan-zones/coverage` counts the tenant's inventory addresses
-(assets of type `ip_address`, `host`, `server` whose name is one IP address):
+(assets of type `ip_address` or `host` whose name is one IP address):
 inside a zone range, public outside every range, private outside every range
 (scans skip these). Per zone: assigned and healthy sensors, addresses inside.
 Warnings: `no_sensors_assigned`, `private_ranges_without_healthy_sensor`,
@@ -231,6 +231,11 @@ Scans: `POST /api/v1/scans` and `PUT /api/v1/scans/{id}` accept
 `scan_zone_id` (`""`/omitted on create = Automatic; on update omitted =
 unchanged, `""` = Automatic); the scan response carries `scan_zone_id`
 (`null` = Automatic). A zone that is not the tenant's is a `400`.
+
+The domain codes named below (`ZONE_NAME_TAKEN`, `DEFAULT_ZONE_EXISTS`,
+`ZONE_IN_USE`, `TOO_MANY_ZONES`, and the trigger refusals) are returned in the
+error body's `code`; other errors keep the generic code (`BAD_REQUEST`,
+`NOT_FOUND`, `CONFLICT`).
 
 Status codes to handle: `400` invalid range or name (message says which range
 and why), `404` zone or sensor not in this tenant, `409` duplicate name

@@ -1272,7 +1272,10 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict(cleanErrorMessage(err, "Scan already exists")).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
-		apierror.BadRequest(cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
+		// Trigger refusals (NO_ZONE_COVERAGE, ZONE_SPLIT_REQUIRED, ...) keep
+		// their code so the client can explain them.
+		apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
+			cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
