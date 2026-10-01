@@ -541,7 +541,8 @@ func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData
 	// Convert SARIF to CTIS using SDK
 	report, err := ctis.FromSARIF(sarifData, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse SARIF: %w", err)
+		// The sensor sent something that is not SARIF: a client error.
+		return nil, fmt.Errorf("%w: failed to parse SARIF: %v", shared.ErrValidation, err) //nolint:errorlint // the parse error is detail, the class is validation
 	}
 
 	// Use the unified ingestion pipeline
@@ -559,7 +560,7 @@ func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInpu
 	opts.DiscoverySource = legacyv1.DiscoverySourceSensor
 	report, err := ctis.ConvertReconToCTIS(reconInput, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert recon data: %w", err)
+		return nil, fmt.Errorf("%w: failed to convert recon data: %v", shared.ErrValidation, err) //nolint:errorlint // the conversion error is detail, the class is validation
 	}
 
 	// Use the unified ingestion pipeline

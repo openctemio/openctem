@@ -21,15 +21,18 @@ func NewValidator() *Validator {
 	}
 }
 
+// CodePayloadTooLarge is the domain error code of a report over the limits.
+const CodePayloadTooLarge = "PAYLOAD_TOO_LARGE"
+
 // ValidateReport validates a CTIS report.
 func (v *Validator) ValidateReport(report *ctis.Report) error {
 	if len(report.Assets) > MaxAssetsPerReport {
-		return shared.NewDomainError("PAYLOAD_TOO_LARGE",
+		return shared.NewDomainError(CodePayloadTooLarge,
 			fmt.Sprintf("report contains %d assets, maximum is %d", len(report.Assets), MaxAssetsPerReport), nil)
 	}
 
 	if len(report.Findings) > MaxFindingsPerReport {
-		return shared.NewDomainError("PAYLOAD_TOO_LARGE",
+		return shared.NewDomainError(CodePayloadTooLarge,
 			fmt.Sprintf("report contains %d findings, maximum is %d", len(report.Findings), MaxFindingsPerReport), nil)
 	}
 
