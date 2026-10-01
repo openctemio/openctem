@@ -168,6 +168,10 @@ func main() {
 	}
 	fmt.Printf("sensorrename: %d edits in %d files\n", total, len(files))
 	if *dry {
+		for _, f := range files {
+			rel, _ := filepath.Rel(root, f)
+			fmt.Printf("  %s (%d)\n", rel, len(edits[f]))
+		}
 		return
 	}
 
@@ -280,12 +284,28 @@ func (c *collector) file(fset *token.FileSet, f *ast.File) {
 		}
 	}
 	for _, cg := range f.Comments {
+		if keepGroup(cg) {
+			continue
+		}
 		for _, cm := range cg.List {
 			if nt := rewriteComment(cm.Text); nt != cm.Text {
 				c.add(fset, cm.Pos(), len(cm.Text), nt)
 			}
 		}
 	}
+}
+
+// keepDirective marks a comment group whose old-vocabulary wording is
+// intentional (for example a sentence about the rename itself).
+const keepDirective = "//sensorrename:keep"
+
+func keepGroup(cg *ast.CommentGroup) bool {
+	for _, c := range cg.List {
+		if strings.HasPrefix(c.Text, keepDirective) {
+			return true
+		}
+	}
+	return false
 }
 
 // ours reports whether obj is declared in this module (so renaming it is
@@ -328,6 +348,15 @@ var protectRes = []*regexp.Regexp{
 	regexp.MustCompile(`ai_triage\.agent`),
 	regexp.MustCompile(`\bAIModeAgent\b|\bModuleAITriageAgent\b`),
 	regexp.MustCompile(`(?i)\bbyok(/|, )agent\b|self-hosted agent mode`),
+	// After the rename, comments that name the old vocabulary do so on
+	// purpose: the rename itself, quoted stored values and id families, and
+	// the deprecated management path. Re-running the tool must keep them.
+	regexp.MustCompile(`\bagent ?(→|->) ?sensor\b`),
+	regexp.MustCompile("[\"'`]agents?[A-Za-z0-9_.:*-]*[\"'`]"),
+	regexp.MustCompile(`\bagents?[.:_]\*`),
+	regexp.MustCompile(`/api/v1/agents\b[A-Za-z0-9_{}./*-]*`),
+	regexp.MustCompile(`(@Router\s+)/agents\b[A-Za-z0-9_{}./-]*`),
+	regexp.MustCompile(`\bfrom /agents\b|\bEvery /agents\b`),
 }
 
 // articleRe fixes "an agent" → "an sensor" into "a sensor".
@@ -418,15 +447,16 @@ func movePaths(root string) error {
 	return nil
 }
 
-// skipFile excludes the rename tooling and the vocabulary guard: both name
-// the old vocabulary on purpose.
+// skipFile excludes the rename tooling, the vocabulary guard and the legacy
+// protocol v1 package: all three name the old vocabulary on purpose.
 func skipFile(root, file string) bool {
 	rel, err := filepath.Rel(root, file)
-	if err != nil {
-		return true
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return true // outside the module, e.g. a generated test main in the build cache
 	}
 	rel = filepath.ToSlash(rel)
-	return strings.HasPrefix(rel, "scripts/rename/") || strings.HasPrefix(rel, "tools/lint/sensorvocab/")
+	return strings.HasPrefix(rel, "scripts/rename/") || strings.HasPrefix(rel, "tools/lint/sensorvocab/") ||
+		strings.HasPrefix(rel, "pkg/sensorproto/legacyv1/")
 }
 
 // shouldMove limits path renames to code and config the API owns. Migrations

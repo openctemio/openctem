@@ -186,6 +186,8 @@ func registerSensorRoutes(
 // registerSensorManagementRoutes registers sensor management endpoints.
 // Sensors are the scanners, agents and collectors that run on the customer
 // side and authenticate to the platform with their own key (RFC-023 D18).
+//
+//sensorrename:keep ("agents" here is the endpoint role)
 func registerSensorManagementRoutes(
 	router Router,
 	h *handler.SensorHandler,
