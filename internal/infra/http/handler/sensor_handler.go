@@ -136,6 +136,7 @@ func (h *SensorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Tools:             req.Tools,
 		ExecutionMode:     req.ExecutionMode,
 		MaxConcurrentJobs: req.MaxConcurrentJobs,
+		AuditContext:      h.buildAuditContext(r),
 	}
 
 	output, err := h.service.CreateSensor(r.Context(), input)
@@ -345,6 +346,7 @@ func (h *SensorHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Tools:             req.Tools,
 		Status:            req.Status,
 		MaxConcurrentJobs: req.MaxConcurrentJobs,
+		AuditContext:      h.buildAuditContext(r),
 	}
 
 	a, err := h.service.UpdateSensor(r.Context(), input)
@@ -608,18 +610,14 @@ func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
 
 // buildAuditContext extracts audit context information from the HTTP request.
 func (h *SensorHandler) buildAuditContext(r *http.Request) *app.AuditContext {
-	// Extract client IP from headers or remote address
-	clientIP := r.RemoteAddr
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		clientIP = xff
-	} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		clientIP = xri
-	}
+	// Forwarding headers count only from a trusted proxy (S-4); a client
+	// must not be able to write any IP it likes into the audit log.
+	clientIP := getClientIP(r)
 
 	return &app.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
 		ActorID:    middleware.GetUserID(r.Context()),
-		ActorEmail: middleware.GetUsername(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    clientIP,
 		UserAgent:  r.UserAgent(),
 		RequestID:  r.Header.Get("X-Request-ID"),
