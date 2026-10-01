@@ -41,6 +41,10 @@ const (
 	ActionCredentialsReset = "console.credentials_reset"
 )
 
+// StatusSignedIn is the IdP callback outcome when the IdP's MFA was trusted
+// and a verified session was issued directly.
+const StatusSignedIn LoginStatus = "signed_in"
+
 // Issuer is the account label shown in authenticator apps.
 const Issuer = "OpenCTEM Admin"
 
@@ -82,6 +86,12 @@ type Service struct {
 	log       *logger.Logger
 	accounts  AccountDirectory
 	now       func() time.Time
+
+	// Platform identity provider (RFC-022 revision 4); nil when not wired.
+	idps admin.PlatformIdPRepository
+	oidc OIDCProvider
+	// notifier tells the other administrators about a break-glass sign-in.
+	notifier BreakGlassNotifier
 }
 
 // SignedInUser is the user behind a normal (/login) sign-in session.
@@ -193,7 +203,35 @@ func (s *Service) Start(ctx context.Context, refreshToken string, client ClientI
 		s.record(ctx, a, ActionLoginFailed, client, "inactive or locked")
 		return nil, admin.ErrNotPlatformAdmin
 	}
+	if err := s.checkPasswordPathAllowed(ctx, a); err != nil {
+		if errors.Is(err, admin.ErrIdPSignInRequired) {
+			s.record(ctx, a, ActionLoginFailed, client, "identity provider sign-in required")
+		}
+		return nil, err
+	}
+	return s.beginSecondFactor(ctx, a, admin.AuthMethodPassword, client)
+}
 
+// checkPasswordPathAllowed refuses the local password path for a
+// non-break-glass administrator while "require IdP" is in force.
+func (s *Service) checkPasswordPathAllowed(ctx context.Context, a *admin.AdminUser) error {
+	if a.IsBreakGlass() {
+		return nil
+	}
+	p, err := s.platformIdP(ctx)
+	if err != nil {
+		return fmt.Errorf("read sign-in policy: %w", err)
+	}
+	if p.Enforced() {
+		return admin.ErrIdPSignInRequired
+	}
+	return nil
+}
+
+// beginSecondFactor issues a pending session for the TOTP step and, on first
+// use, a fresh TOTP secret to enroll. authMethod records how the first factor
+// was proven and carries over to the verified session.
+func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, authMethod string, client ClientInfo) (*LoginResult, error) {
 	creds, err := s.console.GetCredentials(ctx, a.ID())
 	if err != nil && !errors.Is(err, admin.ErrCredentialsNotFound) {
 		return nil, fmt.Errorf("start console session: %w", err)
@@ -202,7 +240,7 @@ func (s *Service) Start(ctx context.Context, refreshToken string, client ClientI
 		creds = &admin.Credentials{AdminID: a.ID()}
 	}
 
-	pending, err := s.newSession(ctx, a.ID(), false, admin.PendingMFATTL, client)
+	pending, err := s.newSession(ctx, a.ID(), false, admin.PendingMFATTL, authMethod, client)
 	if err != nil {
 		return nil, err
 	}
@@ -258,6 +296,14 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 		_ = s.console.DeleteSession(ctx, sess.ID)
 		return "", nil, admin.ErrInvalidMFACode
 	}
+	authMethod := sessionAuthMethod(sess)
+	if authMethod == admin.AuthMethodPassword {
+		// "require IdP" may have been turned on after the password step.
+		if err := s.checkPasswordPathAllowed(ctx, a); err != nil {
+			_ = s.console.DeleteSession(ctx, sess.ID)
+			return "", nil, err
+		}
+	}
 	creds, err := s.console.GetCredentials(ctx, a.ID())
 	if err != nil || creds.MFASecretEncrypted == "" {
 		return "", nil, admin.ErrInvalidMFACode
@@ -296,46 +342,74 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 	}
 
 	_ = s.console.DeleteSession(ctx, sess.ID)
-	token, err := s.newSession(ctx, a.ID(), true, admin.SessionTTL, client)
+	token, err := s.openVerifiedSession(ctx, a, authMethod, client, "")
 	if err != nil {
 		return "", nil, err
+	}
+	return token, a, nil
+}
+
+// openVerifiedSession issues a verified console session and records the
+// sign-in. A break-glass sign-in is alerted every time.
+func (s *Service) openVerifiedSession(ctx context.Context, a *admin.AdminUser, authMethod string, client ClientInfo, note string) (string, error) {
+	token, err := s.newSession(ctx, a.ID(), true, admin.SessionTTL, authMethod, client)
+	if err != nil {
+		return "", err
 	}
 	if err := s.admins.RecordUsage(ctx, a.ID(), client.IP); err != nil {
 		s.log.Warn("record admin console usage", "error", err)
 	}
-	s.record(ctx, a, ActionLogin, client, "")
-	return token, a, nil
+	s.recordNote(ctx, a, ActionLogin, client, note)
+	if a.IsBreakGlass() {
+		s.alertBreakGlass(ctx, a, client)
+	}
+	return token, nil
+}
+
+func sessionAuthMethod(sess *admin.Session) string {
+	if sess.AuthMethod == admin.AuthMethodIdP {
+		return admin.AuthMethodIdP
+	}
+	return admin.AuthMethodPassword
 }
 
 // Authenticate resolves a verified session token to its admin. It is what the
 // admin auth middleware calls for cookie-authenticated requests.
 func (s *Service) Authenticate(ctx context.Context, token string) (*admin.AdminUser, error) {
+	a, _, err := s.AuthenticateSession(ctx, token)
+	return a, err
+}
+
+// AuthenticateSession is Authenticate that also returns the session (how it
+// was authenticated), for the password-change gate.
+func (s *Service) AuthenticateSession(ctx context.Context, token string) (*admin.AdminUser, *admin.Session, error) {
 	if token == "" {
-		return nil, admin.ErrSessionNotFound
+		return nil, nil, admin.ErrSessionNotFound
 	}
 	sess, err := s.console.GetSessionByTokenHash(ctx, hashToken(token))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	now := s.now()
 	if !sess.Usable(now) {
 		_ = s.console.DeleteSession(ctx, sess.ID)
-		return nil, admin.ErrSessionNotFound
+		return nil, nil, admin.ErrSessionNotFound
 	}
 	a, err := s.admins.GetByID(ctx, sess.AdminID)
 	if err != nil {
-		return nil, admin.ErrSessionNotFound
+		return nil, nil, admin.ErrSessionNotFound
 	}
 	if !a.IsActive() || a.IsLocked() || !s.accountActive(ctx, a) {
 		_ = s.console.DeleteSessionsForAdmin(ctx, a.ID())
-		return nil, admin.ErrSessionNotFound
+		return nil, nil, admin.ErrSessionNotFound
 	}
 	if now.Sub(sess.LastSeenAt) >= touchInterval {
 		if err := s.console.TouchSession(ctx, sess.ID, now); err != nil {
 			s.log.Warn("touch admin session", "error", err)
 		}
 	}
-	return a, nil
+	sess.AuthMethod = sessionAuthMethod(sess)
+	return a, sess, nil
 }
 
 // accountActive reports whether the administrator's linked account can still
@@ -364,6 +438,11 @@ func (s *Service) ChangePassword(ctx context.Context, a *admin.AdminUser, curren
 	}
 	if err := s.accounts.ChangePassword(ctx, *a.UserID(), current, next); err != nil {
 		return err
+	}
+	if a.PasswordChangeRequired() {
+		if err := s.admins.SetPasswordChangeRequired(ctx, a.ID(), false); err != nil {
+			s.log.Warn("clear temporary-password marker", "error", err)
+		}
 	}
 	if err := s.console.DeleteSessionsForAdmin(ctx, a.ID()); err != nil {
 		s.log.Warn("end console sessions after password change", "error", err)
@@ -407,6 +486,25 @@ func (s *Service) Logout(ctx context.Context, token, refreshToken string, client
 // administrator then signs in on the normal /login page and enrolls TOTP when
 // opening the console.
 func (s *Service) ProvisionAdmin(ctx context.Context, actor *admin.AdminUser, email, name string, role admin.AdminRole, client ClientInfo) (*admin.AdminUser, string, error) {
+	return s.Provision(ctx, actor, ProvisionInput{Email: email, Name: name, Role: role}, client)
+}
+
+// ProvisionInput describes a new administrator.
+type ProvisionInput struct {
+	Email string
+	Name  string
+	Role  admin.AdminRole
+	// BreakGlass makes a local emergency-access administrator (super_admin only).
+	BreakGlass bool
+}
+
+// Provision is ProvisionAdmin with options. The account gets a temporary
+// password, so the administrator must change it after the first sign-in.
+func (s *Service) Provision(ctx context.Context, actor *admin.AdminUser, in ProvisionInput, client ClientInfo) (*admin.AdminUser, string, error) {
+	email, name, role := in.Email, in.Name, in.Role
+	if in.BreakGlass && role != admin.AdminRoleSuperAdmin {
+		return nil, "", shared.NewDomainError("VALIDATION", "a break-glass administrator must be a super admin", shared.ErrValidation)
+	}
 	if _, err := s.admins.GetByEmail(ctx, email); err == nil {
 		return nil, "", admin.ErrAdminAlreadyExists
 	}
@@ -418,6 +516,12 @@ func (s *Service) ProvisionAdmin(ctx context.Context, actor *admin.AdminUser, em
 	a, err := admin.NewAdminUser(email, name, role, creatorID)
 	if err != nil {
 		return nil, "", err
+	}
+	a.RequirePasswordChange()
+	if in.BreakGlass {
+		if err := a.SetBreakGlass(true); err != nil {
+			return nil, "", err
+		}
 	}
 	userID, temp, err := s.accounts.CreateAccount(ctx, a.Email(), a.Name())
 	if err != nil {
@@ -434,10 +538,13 @@ func (s *Service) ProvisionAdmin(ctx context.Context, actor *admin.AdminUser, em
 		return nil, "", err
 	}
 	if s.audit != nil && actor != nil {
-		entry := admin.NewAuditLogBuilder(actor, ActionAdminProvisioned).
+		b := admin.NewAuditLogBuilder(actor, ActionAdminProvisioned).
 			Resource("admin_user", ptr(a.ID()), a.Email()).
-			Context(client.IP, client.UserAgent).
-			Build()
+			Context(client.IP, client.UserAgent)
+		if a.IsBreakGlass() {
+			b = b.High().Request("", "", map[string]interface{}{"break_glass": true})
+		}
+		entry := b.Build()
 		if err := s.audit.Create(ctx, entry); err != nil {
 			s.log.Warn("audit admin provisioning", "error", err)
 		}
@@ -477,7 +584,7 @@ func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
 	return s.console.DeleteExpiredSessions(ctx, s.now())
 }
 
-func (s *Service) newSession(ctx context.Context, adminID shared.ID, verified bool, ttl time.Duration, client ClientInfo) (string, error) {
+func (s *Service) newSession(ctx context.Context, adminID shared.ID, verified bool, ttl time.Duration, authMethod string, client ClientInfo) (string, error) {
 	token, hash, err := newToken()
 	if err != nil {
 		return "", err
@@ -493,6 +600,7 @@ func (s *Service) newSession(ctx context.Context, adminID shared.ID, verified bo
 		LastSeenAt:  now,
 		IP:          client.IP,
 		UserAgent:   truncate(client.UserAgent, 512),
+		AuthMethod:  authMethod,
 	})
 	if err != nil {
 		return "", err
@@ -523,7 +631,27 @@ func (s *Service) record(ctx context.Context, a *admin.AdminUser, action string,
 	if reason != "" {
 		b = b.Error(reason)
 	}
-	if err := s.audit.Create(ctx, b.Build()); err != nil {
+	s.writeAudit(ctx, action, b.Build())
+}
+
+// recordNote audits a successful event with an optional note (e.g. how the
+// second factor was satisfied).
+func (s *Service) recordNote(ctx context.Context, a *admin.AdminUser, action string, client ClientInfo, note string) {
+	if s.audit == nil {
+		return
+	}
+	b := admin.NewAuditLogBuilder(a, action).Context(client.IP, client.UserAgent)
+	if note != "" {
+		b = b.Request("", "", map[string]interface{}{"note": note})
+	}
+	s.writeAudit(ctx, action, b.Build())
+}
+
+func (s *Service) writeAudit(ctx context.Context, action string, entry *admin.AuditLog) {
+	if s.audit == nil {
+		return
+	}
+	if err := s.audit.Create(ctx, entry); err != nil {
 		s.log.Warn("audit admin console event", "action", action, "error", err)
 	}
 }

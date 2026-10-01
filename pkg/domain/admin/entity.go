@@ -113,7 +113,31 @@ type AdminUser struct {
 	createdAt time.Time
 	createdBy *shared.ID
 	updatedAt time.Time
+
+	signIn SignInState
 }
+
+// SignInState is how an administrator may sign in (RFC-022 revision 4).
+type SignInState struct {
+	// BreakGlass marks a local emergency-access administrator: never bound to
+	// the platform IdP, exempt from "require IdP", every sign-in alerted.
+	BreakGlass bool
+	// BreakGlassTestedAt is when another super admin last confirmed a
+	// break-glass sign-in as a test.
+	BreakGlassTestedAt *time.Time
+	// PasswordChangeRequired is set while the account still has the temporary
+	// password it was provisioned with.
+	PasswordChangeRequired bool
+	// IdPIssuer and IdPSubject bind the administrator to one platform-IdP
+	// identity; both empty when unbound.
+	IdPIssuer  string
+	IdPSubject string
+	IdPBoundAt *time.Time
+}
+
+// BreakGlassTestInterval is how often a break-glass account should be tested
+// (Microsoft's emergency-access guidance: at least every 90 days).
+const BreakGlassTestInterval = 90 * 24 * time.Hour
 
 // NewAdminUser creates a new AdminUser entity.
 func NewAdminUser(email, name string, role AdminRole, createdBy *shared.ID) (*AdminUser, error) {
@@ -187,6 +211,49 @@ func Reconstitute(
 		createdBy:         createdBy,
 		updatedAt:         updatedAt,
 	}
+}
+
+// WithSignInState sets the sign-in state loaded from the database and returns
+// the administrator (used by repositories after Reconstitute).
+func (a *AdminUser) WithSignInState(s SignInState) *AdminUser {
+	a.signIn = s
+	return a
+}
+
+// SignInState returns how the administrator may sign in.
+func (a *AdminUser) SignInState() SignInState { return a.signIn }
+
+// IsBreakGlass reports whether this is a local emergency-access administrator.
+func (a *AdminUser) IsBreakGlass() bool { return a.signIn.BreakGlass }
+
+// PasswordChangeRequired reports whether the account still has its temporary password.
+func (a *AdminUser) PasswordChangeRequired() bool { return a.signIn.PasswordChangeRequired }
+
+// IdPBound reports whether the administrator is bound to a platform-IdP identity.
+func (a *AdminUser) IdPBound() bool { return a.signIn.IdPSubject != "" }
+
+// SetBreakGlass marks or unmarks the administrator as break-glass. A bound
+// administrator cannot be break-glass (it would depend on the IdP).
+func (a *AdminUser) SetBreakGlass(on bool) error {
+	if on && a.IdPBound() {
+		return ErrBreakGlassBound
+	}
+	a.signIn.BreakGlass = on
+	a.updatedAt = time.Now()
+	return nil
+}
+
+// RequirePasswordChange marks the account as holding a temporary password.
+func (a *AdminUser) RequirePasswordChange() { a.signIn.PasswordChangeRequired = true }
+
+// BreakGlassTestOverdue reports whether a break-glass account has not been
+// tested within BreakGlassTestInterval.
+func (a *AdminUser) BreakGlassTestOverdue(now time.Time) bool {
+	if !a.signIn.BreakGlass {
+		return false
+	}
+	t := a.signIn.BreakGlassTestedAt
+	return t == nil || now.Sub(*t) > BreakGlassTestInterval
 }
 
 // =============================================================================

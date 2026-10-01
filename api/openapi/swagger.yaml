@@ -3459,6 +3459,36 @@ definitions:
     - owner_email
     - slug
     type: object
+  internal_infra_http_handler.AdminIdPCallbackRequest:
+    properties:
+      code:
+        type: string
+      state:
+        type: string
+    type: object
+  internal_infra_http_handler.AdminIdPCallbackResponse:
+    properties:
+      admin:
+        $ref: '#/definitions/internal_infra_http_handler.ValidateResponse'
+      otpauth_uri:
+        type: string
+      secret:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_infra_http_handler.AdminIdPInfoResponse:
+    properties:
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+    type: object
+  internal_infra_http_handler.AdminIdPStartResponse:
+    properties:
+      authorization_url:
+        type: string
+    type: object
   internal_infra_http_handler.AdminLoginResponse:
     properties:
       otpauth_uri:
@@ -3517,6 +3547,10 @@ definitions:
     type: object
   internal_infra_http_handler.AdminProvisionRequest:
     properties:
+      break_glass:
+        description: BreakGlass makes a local emergency-access administrator (super_admin
+          only).
+        type: boolean
       email:
         type: string
       name:
@@ -3529,6 +3563,41 @@ definitions:
       admin:
         $ref: '#/definitions/internal_infra_http_handler.ValidateResponse'
       temporary_password:
+        type: string
+    type: object
+  internal_infra_http_handler.AdminResponse:
+    properties:
+      break_glass_test_overdue:
+        type: boolean
+      break_glass_tested_at:
+        type: string
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      idp_bound:
+        type: boolean
+      idp_bound_at:
+        type: string
+      is_active:
+        type: boolean
+      is_break_glass:
+        description: Break-glass (emergency access) and platform IdP state (RFC-022
+          rev. 4).
+        type: boolean
+      last_used_at:
+        type: string
+      last_used_ip:
+        type: string
+      name:
+        type: string
+      password_change_required:
+        type: boolean
+      role:
+        type: string
+      updated_at:
         type: string
     type: object
   internal_infra_http_handler.AdminSSOEnforcementRequest:
@@ -8582,6 +8651,76 @@ definitions:
       version:
         type: integer
     type: object
+  internal_infra_http_handler.PlatformIdPRequest:
+    properties:
+      client_id:
+        type: string
+      client_secret:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      issuer:
+        type: string
+      redirect_uri:
+        type: string
+      require_idp:
+        type: boolean
+      scopes:
+        items:
+          type: string
+        type: array
+      trusted_acr_values:
+        items:
+          type: string
+        type: array
+      trusted_amr_values:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.PlatformIdPResponse:
+    properties:
+      authorization_endpoint:
+        type: string
+      client_id:
+        type: string
+      configured:
+        type: boolean
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      has_client_secret:
+        type: boolean
+      issuer:
+        type: string
+      jwks_uri:
+        type: string
+      redirect_uri:
+        type: string
+      require_idp:
+        type: boolean
+      scopes:
+        items:
+          type: string
+        type: array
+      token_endpoint:
+        type: string
+      token_endpoint_auth_method:
+        type: string
+      trusted_acr_values:
+        items:
+          type: string
+        type: array
+      trusted_amr_values:
+        items:
+          type: string
+        type: array
+      updated_at:
+        type: string
+    type: object
   internal_infra_http_handler.PortCountResponse:
     properties:
       count:
@@ -10993,12 +11132,23 @@ definitions:
     type: object
   internal_infra_http_handler.ValidateResponse:
     properties:
+      auth_method:
+        description: 'AuthMethod is how this console session was opened: password
+          or idp.'
+        type: string
       email:
         type: string
       id:
         type: string
+      is_break_glass:
+        description: IsBreakGlass marks an emergency-access administrator.
+        type: boolean
       name:
         type: string
+      password_change_required:
+        description: 'PasswordChangeRequired: the session may only change the temporary
+          password.'
+        type: boolean
       role:
         type: string
     type: object
@@ -11311,6 +11461,73 @@ paths:
       summary: Get audit log statistics
       tags:
       - Admin Audit Logs
+  /admin/auth/idp:
+    get:
+      description: Whether the console sign-in page offers the platform identity provider,
+        and its display name. Nothing else about the configuration is public.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminIdPInfoResponse'
+      summary: Administrators' identity provider (sign-in page)
+      tags:
+      - Admin Auth
+  /admin/auth/idp/callback:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges the authorization code, verifies the id_token and matches
+        it to an existing administrator (no administrator is created). Unless the
+        IdP's MFA is trusted by configuration, the console TOTP step follows (POST
+        /admin/auth/mfa). Any failure returns the same generic error; the reason is
+        in the admin audit log.
+      parameters:
+      - description: Code and state from the IdP redirect
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AdminIdPCallbackRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminIdPCallbackResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: Single sign-on failed
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Finish an identity-provider sign-in to the admin console
+      tags:
+      - Admin Auth
+  /admin/auth/idp/start:
+    post:
+      description: Begins an OIDC authorization-code sign-in with PKCE and a nonce.
+        Returns the URL to send the browser to and sets the HttpOnly admin_idp cookie
+        that the callback must present.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminIdPStartResponse'
+        "404":
+          description: No identity provider is enabled for administrators
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Start an identity-provider sign-in to the admin console
+      tags:
+      - Admin Auth
   /admin/auth/logout:
     post:
       description: Ends the caller's console session and the /login session it was
@@ -11405,6 +11622,72 @@ paths:
       summary: Open the platform admin console (after /login)
       tags:
       - Admin Auth
+  /admin/platform-idp:
+    delete:
+      description: Removes the configuration (and "require IdP" with it). Administrators
+        sign in with their password again. Audited.
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not configured
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove the administrators' identity provider
+      tags:
+      - Admin Platform IdP
+    get:
+      description: The platform-level OIDC provider administrators may sign in with.
+        The client secret is never returned (has_client_secret only).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.PlatformIdPResponse'
+      security:
+      - BearerAuth: []
+      summary: Get the administrators' identity provider
+      tags:
+      - Admin Platform IdP
+    put:
+      consumes:
+      - application/json
+      description: Creates or updates the platform-level OIDC provider. The issuer's
+        discovery document is fetched (https only, SSRF-guarded) and must report the
+        same issuer. The client secret is stored encrypted; leave it empty to keep
+        the stored one. Changing the issuer removes every administrator's IdP binding.
+        require_idp needs an active break-glass super admin. Audited.
+      parameters:
+      - description: Configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.PlatformIdPRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.PlatformIdPResponse'
+        "400":
+          description: Invalid configuration or discovery failed
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: require_idp without a break-glass super admin
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Configure the administrators' identity provider
+      tags:
+      - Admin Platform IdP
   /admin/tenants:
     get:
       description: Cross-tenant list of organizations with size and SSO posture. Newest
@@ -11778,6 +12061,58 @@ paths:
       summary: Verify an organization's domain via DNS
       tags:
       - Admin Organization SSO
+  /admin/users/{id}/break-glass-test:
+    post:
+      description: 'Super admin only, and not the break-glass account itself: records
+        the account''s last sign-in as its periodic test.'
+      parameters:
+      - description: Admin user ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminResponse'
+        "400":
+          description: Not break-glass, never signed in, or your own account
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Confirm a break-glass sign-in was a test
+      tags:
+      - Admin Users
+  /admin/users/{id}/idp-binding:
+    delete:
+      description: Super admin only. The administrator is bound again, by verified
+        email, on their next IdP sign-in. Ends their console sessions. Audited.
+      parameters:
+      - description: Admin user ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove an administrator's identity-provider binding
+      tags:
+      - Admin Users
   /admin/users/{id}/reset-credentials:
     post:
       description: Super admin only. Removes the target administrator's TOTP second

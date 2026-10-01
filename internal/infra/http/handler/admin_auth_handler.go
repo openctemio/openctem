@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/pkg/domain/admin"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -28,6 +29,12 @@ type ValidateResponse struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
 	Role  string `json:"role"`
+	// AuthMethod is how this console session was opened: password or idp.
+	AuthMethod string `json:"auth_method,omitempty"`
+	// IsBreakGlass marks an emergency-access administrator.
+	IsBreakGlass bool `json:"is_break_glass"`
+	// PasswordChangeRequired: the session may only change the temporary password.
+	PasswordChangeRequired bool `json:"password_change_required"`
 }
 
 // Validate validates the admin API key and returns admin info.
@@ -45,10 +52,15 @@ func (h *AdminAuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 		"role", adminUser.Role())
 
 	response := ValidateResponse{
-		ID:    adminUser.ID().String(),
-		Email: adminUser.Email(),
-		Name:  adminUser.Name(),
-		Role:  string(adminUser.Role()),
+		ID:           adminUser.ID().String(),
+		Email:        adminUser.Email(),
+		Name:         adminUser.Name(),
+		Role:         string(adminUser.Role()),
+		IsBreakGlass: adminUser.IsBreakGlass(),
+	}
+	if sess := middleware.GetAdminSession(r.Context()); sess != nil {
+		response.AuthMethod = sess.AuthMethod
+		response.PasswordChangeRequired = adminUser.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
 	}
 
 	w.Header().Set("Content-Type", "application/json")
