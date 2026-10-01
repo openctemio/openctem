@@ -96,7 +96,10 @@ check. Every `/admin/*` route and role guard works from a browser unchanged.
 (super admin, audited) links the account with that email, or creates a local
 account and returns its temporary password once. `bootstrap-admin` does the same
 for the first administrator, and `bootstrap-admin -link` links an administrator
-created before revision 2 (keeping its role and authenticator). A
+created before revision 2 (keeping its role and authenticator, and reactivating
+it: migration 000227 deactivated every administrator without an account, which
+is every v0.8 administrator). Without `-link`, such an administrator is refused
+with a pointer to `-link` rather than reported as existing. A
 `super_admin` can reset another administrator's second factor
 (`POST /admin/users/{id}/reset-credentials`, audited); the password is the
 account's and is reset through the normal forgot-password flow.

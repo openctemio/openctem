@@ -161,10 +161,19 @@ func ensureAdmin(ctx context.Context, db *sql.DB, s adminSpec, force bool, out i
 		label = "Break-glass administrator"
 	}
 	var existingID string
-	var existingBreakGlass bool
-	err := db.QueryRowContext(ctx, `SELECT id, is_break_glass FROM admin_users WHERE lower(email) = $1`, s.Email).
-		Scan(&existingID, &existingBreakGlass)
+	var existingBreakGlass, existingLinked bool
+	err := db.QueryRowContext(ctx, `
+		SELECT id, is_break_glass, user_id IS NOT NULL FROM admin_users WHERE lower(email) = $1`, s.Email).
+		Scan(&existingID, &existingBreakGlass, &existingLinked)
 	switch {
+	case err == nil && !force && !existingLinked:
+		// An administrator from before sign-in accounts (v0.8 and older: an API
+		// key only). Migration 000227 revoked its key and deactivated it, so
+		// reporting it as existing would leave the operator with no usable
+		// administrator and no hint why.
+		return fmt.Errorf("%s %s exists from before v0.9.0 with no sign-in account; migration 000227 revoked its API key "+
+			"and deactivated it. Run bootstrap-admin -email=%s -link to give it a sign-in account and reactivate it, "+
+			"or -force to replace it", strings.ToLower(label[:1])+label[1:], s.Email, s.Email)
 	case err == nil && !force:
 		fmt.Fprintf(out, "%s %s already exists (ID: %s), left unchanged.\n", label, s.Email, existingID)
 		if s.BreakGlass && !existingBreakGlass {
@@ -223,14 +232,22 @@ func ensureAdmin(ctx context.Context, db *sql.DB, s adminSpec, force bool, out i
 	return nil
 }
 
-// link links an administrator created before revision 2 to a new sign-in account.
+// link links an administrator created before revision 2 (every v0.8 and older
+// administrator: an API key only) to a new sign-in account, and reactivates it:
+// migration 000227 deactivated such rows when admin API keys were removed.
 func link(ctx context.Context, db *sql.DB, o Options, out io.Writer) error {
 	var adminID string
-	if err := db.QueryRowContext(ctx, `SELECT id FROM admin_users WHERE lower(email) = $1`, o.Email).Scan(&adminID); err != nil {
+	var linked, active bool
+	if err := db.QueryRowContext(ctx, `
+		SELECT id, user_id IS NOT NULL, is_active FROM admin_users WHERE lower(email) = $1`, o.Email).
+		Scan(&adminID, &linked, &active); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("no admin with email %s. Run without -link to create one", o.Email)
 		}
 		return fmt.Errorf("looking up admin: %w", err)
+	}
+	if linked {
+		return fmt.Errorf("admin %s already has a sign-in account; nothing to link", o.Email)
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -242,7 +259,9 @@ func link(ctx context.Context, db *sql.DB, o Options, out io.Writer) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE admin_users SET user_id = $2, password_change_required = TRUE, updated_at = NOW() WHERE id = $1`,
+		UPDATE admin_users
+		   SET user_id = $2, password_change_required = TRUE, is_active = TRUE, updated_at = NOW()
+		 WHERE id = $1`,
 		adminID, userID); err != nil {
 		return fmt.Errorf("linking the account: %w", err)
 	}
@@ -253,6 +272,11 @@ func link(ctx context.Context, db *sql.DB, o Options, out io.Writer) error {
 	fmt.Fprintln(out, "=== Administrator linked to a sign-in account ===")
 	fmt.Fprintf(out, "  Admin ID: %s\n", adminID)
 	fmt.Fprintf(out, "  Email:    %s\n", o.Email)
+	if !active {
+		// Migration 000227 deactivated every administrator without a sign-in
+		// account; linking is the operator's explicit request to use it again.
+		fmt.Fprintln(out, "  Status:   reactivated (it had been deactivated when admin API keys were removed)")
+	}
 	fmt.Fprintf(out, "  Password: %s   (temporary, shown once; must be changed at first sign-in)\n", temp)
 	return nil
 }

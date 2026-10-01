@@ -313,3 +313,64 @@ func TestBootstrapAdminCreatesPrimaryAndBreakGlass(t *testing.T) {
 		t.Fatalf("second run must skip both:\n%s", out.String())
 	}
 }
+
+// TestBootstrapAdminLegacyAdministrator covers an administrator created before
+// v0.9.0 (an API key only). Migration 000227 revoked its key and deactivated
+// it. Re-running bootstrap-admin with its email must not report it as existing
+// (it cannot sign in), and -link must give it an account AND reactivate it;
+// otherwise the operator who upgraded from v0.8 is left with no administrator.
+func TestBootstrapAdminLegacyAdministrator(t *testing.T) {
+	db := openBreakGlassDB(t)
+	ctx := context.Background()
+	if err := adminbootstrap.CheckSchema(ctx, db.DB); err != nil {
+		t.Skipf("schema not migrated: %v", err)
+	}
+	email := "legacy-" + uuid.NewString()[:8] + "@example.com"
+	// The state 000227 leaves a v0.8 administrator in.
+	if _, err := db.Exec(`INSERT INTO admin_users (id, email, name, role, is_active, api_key_hash, api_key_prefix, created_at, updated_at)
+		VALUES ($1, $2, 'legacy', 'super_admin', FALSE, '!revoked', 'revoked-x', NOW(), NOW())`, uuid.NewString(), email); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM users WHERE email = $1`, email) })
+
+	o := adminbootstrap.Options{Email: email, NoBackup: true}
+	if err := o.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := adminbootstrap.Run(ctx, db.DB, o, &out)
+	if err == nil || !strings.Contains(err.Error(), "-link") {
+		t.Fatalf("a legacy administrator must be refused with a pointer to -link, got err=%v out=%s", err, out.String())
+	}
+
+	link := adminbootstrap.Options{Email: email, LinkOnly: true}
+	if err := link.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := adminbootstrap.Run(ctx, db.DB, link, &out); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	var active, linked, pwChange bool
+	if err := db.QueryRow(`SELECT is_active, user_id IS NOT NULL, password_change_required FROM admin_users WHERE email = $1`, email).
+		Scan(&active, &linked, &pwChange); err != nil {
+		t.Fatal(err)
+	}
+	if !active || !linked || !pwChange {
+		t.Fatalf("after -link: active=%v linked=%v password_change_required=%v\n%s", active, linked, pwChange, out.String())
+	}
+	if !strings.Contains(out.String(), "reactivated") || !strings.Contains(out.String(), "Password:") {
+		t.Fatalf("-link output must show the reactivation and the temporary password:\n%s", out.String())
+	}
+
+	// A second -link must not create another account.
+	out.Reset()
+	if err := adminbootstrap.Run(ctx, db.DB, link, &out); err == nil {
+		t.Fatalf("second -link must be refused, got:\n%s", out.String())
+	}
+	// And a plain run now reports it as existing.
+	out.Reset()
+	if err := adminbootstrap.Run(ctx, db.DB, o, &out); err != nil || !strings.Contains(out.String(), "already exists") {
+		t.Fatalf("plain run after -link: err=%v\n%s", err, out.String())
+	}
+}
