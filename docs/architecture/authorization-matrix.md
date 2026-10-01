@@ -258,7 +258,7 @@ Authorization is enforced at the **route layer** in
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
-| `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (rate-limited; state bound to the `admin_idp` cookie, single use) |
+| `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (token-exchange rate limit, 20/min; state bound to the `admin_idp` cookie, single use) |
 | `POST /api/v1/admin/administrators` | **super_admin** (audited; `break_glass` audited high) |
 | `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** (audited; not self) |
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |

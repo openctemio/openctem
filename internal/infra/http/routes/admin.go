@@ -75,10 +75,17 @@ func registerAdminRoutes(
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, loginRL)
 				r.POST("/logout", h.AdminConsole.Logout)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
-				// Platform identity provider sign-in (RFC-022 revision 4).
+				// Platform identity provider sign-in (RFC-022 revision 4). Not a
+				// credential-guessing surface (the IdP authenticates, the state is
+				// single use), so it uses the token-exchange bucket (20/min) rather
+				// than the 5/min login bucket: behind the UI proxy every
+				// administrator shares one client IP, and one IdP sign-in is
+				// start + callback + the TOTP step. The TOTP step (/mfa) stays on
+				// the login bucket.
+				idpRL := consoleRL.TokenExchangeMiddleware()
 				r.GET("/idp", h.AdminConsole.IdPInfo)
-				r.POST("/idp/start", h.AdminConsole.IdPStart, loginRL)
-				r.POST("/idp/callback", h.AdminConsole.IdPCallback, loginRL)
+				r.POST("/idp/start", h.AdminConsole.IdPStart, idpRL)
+				r.POST("/idp/callback", h.AdminConsole.IdPCallback, idpRL)
 			}
 		})
 	}

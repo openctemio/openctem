@@ -252,6 +252,12 @@ local administrator for when SSO is unavailable.
   break-glass ones, and turning it on ends existing password sessions of
   non-break-glass administrators. The `/login` account itself is untouched,
   since it belongs to no organization and can open nothing without the console.
+- **Rate limits.** `/idp/start` and `/idp/callback` use the auth limiter's
+  token-exchange bucket (20/min per client IP); the TOTP step (`/mfa`) keeps
+  the 5/min login bucket. Behind the UI's admin proxy every administrator
+  reaches the API from the proxy's address, and one IdP sign-in makes three
+  or four console auth calls, so the login bucket alone would let a single
+  sign-in exhaust it for everyone.
 - **Audit.** `console.idp_login` / `console.idp_login_failed` /
   `console.idp_bound` rows, with the reason server-side only. The client gets
   one generic "single sign-on failed" message.
