@@ -860,65 +860,19 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decompress data based on compression algorithm. Every branch
-	// caps the decompressed output at maxChunkDecompressed so a
-	// highly-compressible payload (a gzip/zstd bomb) cannot expand to
-	// GBs of memory. 64 MiB is more than any legitimate ingest chunk.
-	const maxChunkDecompressed = 64 << 20 // 64 MiB
-
-	var decompressedData []byte
-	switch strings.ToLower(req.Compression) {
-	case "zstd", "":
-		// Default to ZSTD (most common)
-		decoder, err := zstd.NewReader(nil)
-		if err != nil {
-			h.logger.Error("failed to create zstd decoder", "error", err)
-			apierror.InternalError(err).WriteJSON(w)
+	decompressedData, err := decompressChunk(req.Compression, compressedData)
+	if err != nil {
+		if errors.Is(err, errUnsupportedChunkCompression) {
+			apierror.BadRequest("Unsupported compression algorithm: " + sanitizeLogField(req.Compression)).WriteJSON(w)
 			return
 		}
-		defer decoder.Close()
-		// DecodeAll allocates to the reported size; zstd's own size
-		// field can lie, so we pre-check the reported size when
-		// available AND verify post-decode.
-		decompressedData, err = decoder.DecodeAll(compressedData, nil)
-		if err != nil {
-			h.logger.Debug("failed to decompress zstd data", "error", err)
-			apierror.BadRequest("Failed to decompress chunk data").WriteJSON(w)
-			return
-		}
-		if len(decompressedData) > maxChunkDecompressed {
-			h.logger.Warn("zstd chunk exceeds decompression cap",
-				"bytes", len(decompressedData), "cap", maxChunkDecompressed)
+		if errors.Is(err, errChunkTooLarge) {
+			h.logger.Warn("chunk exceeds decompression cap", "cap", maxChunkDecompressed)
 			apierror.BadRequest("Chunk exceeds decompression size limit").WriteJSON(w)
 			return
 		}
-	case "gzip":
-		reader, err := gzip.NewReader(bytes.NewReader(compressedData))
-		if err != nil {
-			h.logger.Debug("failed to create gzip reader", "error", err)
-			apierror.BadRequest("Failed to decompress gzip data").WriteJSON(w)
-			return
-		}
-		defer reader.Close()
-		// LimitReader + one extra byte: if the extra byte reads we
-		// know the input exceeded the cap and reject.
-		limited := io.LimitReader(reader, maxChunkDecompressed+1)
-		decompressedData, err = io.ReadAll(limited)
-		if err != nil {
-			h.logger.Debug("failed to read gzip data", "error", err)
-			apierror.BadRequest("Failed to decompress gzip data").WriteJSON(w)
-			return
-		}
-		if len(decompressedData) > maxChunkDecompressed {
-			h.logger.Warn("gzip chunk exceeds decompression cap",
-				"bytes", len(decompressedData), "cap", maxChunkDecompressed)
-			apierror.BadRequest("Chunk exceeds decompression size limit").WriteJSON(w)
-			return
-		}
-	case "none":
-		decompressedData = compressedData
-	default:
-		apierror.BadRequest("Unsupported compression algorithm: " + req.Compression).WriteJSON(w)
+		h.logger.Debug("failed to decompress chunk", "error", err)
+		apierror.BadRequest("Failed to decompress chunk data").WriteJSON(w)
 		return
 	}
 
@@ -1336,4 +1290,56 @@ func (h *IngestHandler) GetIngestJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// maxChunkDecompressed caps a chunk's decompressed size. 64 MiB is more than
+// any legitimate ingest chunk.
+const maxChunkDecompressed = 64 << 20
+
+var (
+	errChunkTooLarge               = errors.New("chunk exceeds decompression size limit")
+	errUnsupportedChunkCompression = errors.New("unsupported chunk compression")
+)
+
+// decompressChunk expands an ingest chunk with a hard cap on the output, so a
+// highly compressible payload (a zstd or gzip "bomb") cannot expand to
+// gigabytes in memory. Every codec is read as a stream through a LimitReader
+// and the decoder's own memory is bounded too: zstd's DecodeAll would allocate
+// the full frame (a 16 KB frame expands to 512 MiB) before any size check.
+func decompressChunk(compression string, data []byte) ([]byte, error) {
+	var r io.Reader
+	switch strings.ToLower(compression) {
+	case "zstd", "":
+		dec, err := zstd.NewReader(bytes.NewReader(data),
+			zstd.WithDecoderMaxMemory(maxChunkDecompressed),
+			zstd.WithDecoderMaxWindow(maxChunkDecompressed),
+			zstd.WithDecoderConcurrency(1))
+		if err != nil {
+			return nil, err
+		}
+		defer dec.Close()
+		r = dec
+	case "gzip":
+		gz, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		defer gz.Close()
+		r = gz
+	case "none":
+		if len(data) > maxChunkDecompressed {
+			return nil, errChunkTooLarge
+		}
+		return data, nil
+	default:
+		return nil, errUnsupportedChunkCompression
+	}
+	out, err := io.ReadAll(io.LimitReader(r, maxChunkDecompressed+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > maxChunkDecompressed {
+		return nil, errChunkTooLarge
+	}
+	return out, nil
 }
