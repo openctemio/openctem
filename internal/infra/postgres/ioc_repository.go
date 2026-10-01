@@ -240,7 +240,7 @@ func (r *IOCRepository) ListMatchesByTenant(ctx context.Context, tenantID shared
 		SELECT m.id, m.tenant_id, m.ioc_id, m.telemetry_event_id,
 		       m.finding_id, m.reopened, m.matched_at,
 		       COALESCE(f.title, ''),
-		       COALESCE(i.type, ''), COALESCE(i.value, '')
+		       COALESCE(i.ioc_type, ''), COALESCE(i.value, '')
 		FROM ioc_matches m
 		LEFT JOIN findings f
 		       ON f.id = m.finding_id AND f.tenant_id = m.tenant_id
