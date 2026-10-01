@@ -37,7 +37,7 @@ var permSeedMigrations = []string{
 // a mapping table whose rows are ('old', 'new', ...). The renames are applied,
 // in order, on top of the seeded ids.
 var permRenameMigrations = []string{
-	"000229_rename_agent_to_sensor.up.sql", // agents:* → sensors:* (RFC-023 §9.5)
+	"000230_rename_agent_to_sensor.up.sql", // agents:* → sensors:* (RFC-023 §9.5)
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)

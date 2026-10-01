@@ -529,7 +529,7 @@ POST /api/v1/invitations/{token}/accept-with-refresh
 | AI agent | AI-triage mode `agent` (`AIModeAgent`, module `ai_triage.agent`) — an LLM agent, not a sensor. |
 | Protocol v1 | What deployed sensors speak: `/api/v1/agent/*`, `agent_id` in responses. Frozen; lives only in `pkg/sensorproto/legacyv1`. |
 
-The rename is complete (RFC-023 §9.5, migration 000229): packages, types,
+The rename is complete (RFC-023 §9.5, migration 000230): packages, types,
 tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`
 (`/api/v1/agents` → 308), audit ids `sensor.*`, log field `sensor_id`, env
 `SENSOR_*` (old `AGENT_*` still read with a warning).

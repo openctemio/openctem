@@ -62,7 +62,7 @@ both spellings as one family: `audit.Action.Canonical`,
 
 ## Upgrading an installation
 
-Migration 000229 converts the schema and every stored value (see the contract,
+Migration 000230 converts the schema and every stored value (see the contract,
 §8). `server -sensor-upgrade-check` confirms nothing is left; the API also
 logs a warning at startup when it finds leftovers. Branches written before
 the rename catch up with `scripts/rename/sensor-rename.sh` (type-aware rename

@@ -1,4 +1,4 @@
--- Migration 000229 (down): restore the agent vocabulary.
+-- Migration 000230 (down): restore the agent vocabulary.
 --
 -- Exact inverse of the up migration, idempotent in the same way. Rows written
 -- after the upgrade with the new values (sensor.* audit events, sensors:*

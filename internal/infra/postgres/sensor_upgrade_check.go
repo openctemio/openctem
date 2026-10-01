@@ -7,7 +7,7 @@ import (
 )
 
 // UpgradeCheckItem is one probe of the post-upgrade check for the
-// agent → sensor rename (RFC-023 §9.5, migration 000229).
+// agent → sensor rename (RFC-023 §9.5, migration 000230).
 type UpgradeCheckItem struct {
 	Area   string // "schema" or "data"
 	What   string

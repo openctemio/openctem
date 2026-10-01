@@ -55,7 +55,7 @@ var (
 	routeSort   = flag.String("route-sort", "path", "Sort routes by: path, method, handler")
 
 	sensorUpgradeCheck = flag.Bool("sensor-upgrade-check", false,
-		"Report data and schema still carrying the pre-sensor 'agent' vocabulary after migration 000229, then exit (0 = clean, 1 = leftovers)")
+		"Report data and schema still carrying the pre-sensor 'agent' vocabulary after migration 000230, then exit (0 = clean, 1 = leftovers)")
 )
 
 func main() {

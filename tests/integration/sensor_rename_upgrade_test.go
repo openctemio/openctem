@@ -1,10 +1,10 @@
 package integration
 
-// Upgrade test for the agent → sensor rename (RFC-023 §9.5, migration 000229).
+// Upgrade test for the agent → sensor rename (RFC-023 §9.5, migration 000230).
 //
 // An existing installation upgrades through its normal `migrate up`. This test
 // builds a database the way such an installation looks — every migration
-// before 000229 plus representative data written in the old vocabulary
+// before 000230 plus representative data written in the old vocabulary
 // (testdata/sensor_rename_seed.sql) — and then applies the rest of the
 // migrations in one go, as an install that skipped several releases would.
 // It asserts the converted values, that every role, group, permission set and
@@ -31,7 +31,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-const sensorRenameVersion = "000229"
+const sensorRenameVersion = "000230"
 
 type migrationFile struct{ version, up, down string }
 
@@ -176,7 +176,7 @@ func TestSensorRenameUpgrade(t *testing.T) {
 	before := effectiveAccess(t, db)
 	assetsUpdatedAt := queryString(t, db, `SELECT updated_at::text FROM assets WHERE id = '11111111-0000-0000-0000-00000000000f'`)
 
-	// 2. Upgrade: everything from 000229 on, in one go.
+	// 2. Upgrade: everything from 000230 on, in one go.
 	for _, m := range pending {
 		execFile(t, db, m.up)
 	}

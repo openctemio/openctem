@@ -38,7 +38,7 @@ func runSensorUpgradeCheck(ctx context.Context, db *sql.DB, w io.Writer) int {
 	}
 	if leftovers > 0 {
 		_, _ = fmt.Fprintf(w, "\n%d check(s) found pre-sensor vocabulary the upgrade should have converted. "+
-			"Run migrations up to 000229 (migrate ... up) and re-run this check.\n", leftovers)
+			"Run migrations up to 000230 (migrate ... up) and re-run this check.\n", leftovers)
 		return 1
 	}
 	_, _ = fmt.Fprintln(w, "\nUpgrade complete: no pre-sensor vocabulary left outside the kept history.")

@@ -1,4 +1,4 @@
--- Migration 000229: rename the agent vocabulary to sensor (RFC-023 §9.5)
+-- Migration 000230: rename the agent vocabulary to sensor (RFC-023 §9.5)
 --
 -- One coordinated rename of the schema and of the stored values that carry
 -- the old vocabulary, so an existing installation upgrades through its normal
