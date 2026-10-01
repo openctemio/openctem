@@ -247,6 +247,8 @@ func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	middleware.SetAuditResource(ctx, mapping.ID, mapping.TargetType+" -> "+string(mapping.AssetType))
+
 	h.logger.Info("target mapping created",
 		"mapping_id", mapping.ID.String(),
 		"target_type", mapping.TargetType,
