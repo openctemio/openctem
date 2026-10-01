@@ -4,6 +4,7 @@ package validator
 import (
 	stderrors "errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -55,6 +56,18 @@ func (v ValidationErrors) Error() string {
 // New creates a new Validator with custom validators registered.
 func New() *Validator {
 	v := validator.New(validator.WithRequiredStructEnabled())
+
+	// Report fields by the json name the client sent. Snake-casing the Go name
+	// instead splits acronyms (CWEID -> "c_w_e_i_d", AssetID -> "asset_i_d"),
+	// so clients could not match an error to the field they submitted. Fields
+	// without a json tag keep the Go name (snake-cased below).
+	v.RegisterTagNameFunc(func(f reflect.StructField) string {
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if name == "-" {
+			return ""
+		}
+		return name
+	})
 
 	// Register custom validators for asset domain
 	_ = v.RegisterValidation("asset_type", validateAssetType)

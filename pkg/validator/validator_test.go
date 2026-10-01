@@ -785,3 +785,31 @@ func TestToSnakeCase(t *testing.T) {
 		})
 	}
 }
+
+// Validation errors name the field the client sent — its json name. Deriving
+// it from the Go field name split every capital of an acronym: CWEID became
+// "c_w_e_i_d" and AssetID "asset_i_d", so a client could not match the error
+// to the field it submitted (the v0.9.0 API crawl saw "c_w_e_i_d: must be at
+// most 20 characters" from PUT /pentest/findings/{id}).
+func TestValidate_FieldIsTheJSONName(t *testing.T) {
+	v := New()
+	type req struct {
+		CWEID   string `json:"cwe_id" validate:"max=2"`
+		AssetID string `json:"asset_id,omitempty" validate:"required"`
+		NoTag   string `validate:"required"`
+	}
+	err := v.Validate(req{CWEID: "CWE-79"})
+	errs, ok := err.(ValidationErrors)
+	if !ok {
+		t.Fatalf("got %T %v, want ValidationErrors", err, err)
+	}
+	got := map[string]bool{}
+	for _, e := range errs {
+		got[e.Field] = true
+	}
+	for _, want := range []string{"cwe_id", "asset_id", "no_tag"} {
+		if !got[want] {
+			t.Errorf("missing field %q in %v", want, errs)
+		}
+	}
+}
