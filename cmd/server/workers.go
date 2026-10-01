@@ -212,7 +212,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	})
 
 	// Register controllers
-	w.ControllerManager.Register(controller.NewSensorHealthController(
+	sensorHealth := controller.NewSensorHealthController(
 		repos.Sensor,
 		svc.Audit,
 		&controller.SensorHealthControllerConfig{
@@ -220,7 +220,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			StaleTimeout: 90 * time.Second,
 			Logger:       log.With("controller", "sensor-health"),
 		},
-	))
+	)
+	// sensor.offline was a subscribable event type that nothing emitted; the
+	// controller is the one place that sees the online -> offline transition.
+	if svc.Outbox != nil {
+		sensorHealth.SetNotifier(svc.Outbox)
+	}
+	w.ControllerManager.Register(sensorHealth)
 
 	w.ControllerManager.Register(controller.NewJobRecoveryController(
 		repos.Command,

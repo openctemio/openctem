@@ -101,6 +101,8 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		// Fixed label set by the asset-discovery notifier (attack-surface
 		// growth, not a finding).
 		EventTypeNewAsset: true,
+		// Fixed label set by the sensor-health controller.
+		EventTypeSensorOffline: true,
 	}
 
 	// Severity describes a finding/exposure, so the operator's filter is real.

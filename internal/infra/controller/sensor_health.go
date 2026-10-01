@@ -2,9 +2,13 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	auditapp "github.com/openctemio/api/internal/app/audit"
+	"github.com/openctemio/api/internal/app/outbox"
+	"github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -29,12 +33,25 @@ type SensorHealthControllerConfig struct {
 	Logger *logger.Logger
 }
 
+// SensorOfflineNotifier is the slice of the notification outbox the controller
+// needs to announce a sensor going offline.
+type SensorOfflineNotifier interface {
+	Enqueue(ctx context.Context, params outbox.EnqueueParams) error
+}
+
+// sensorOfflineSeverity is the outbox severity of a sensor.offline event. It
+// matches the event_types catalog default and clears the default
+// critical+high integration filter: a scanner that stopped reporting means
+// scans silently stop running.
+const sensorOfflineSeverity = "high"
+
 // SensorHealthController periodically checks sensor health and marks stale sensors as offline.
 // This is a K8s-style controller that reconciles the desired state (sensors with recent
 // heartbeats are online, sensors without recent heartbeats are offline) with the actual state.
 type SensorHealthController struct {
 	sensorRepo   sensor.Repository
 	auditService *auditapp.AuditService
+	notifier     SensorOfflineNotifier
 	config       *SensorHealthControllerConfig
 	logger       *logger.Logger
 }
@@ -68,6 +85,12 @@ func NewSensorHealthController(
 		config:       config,
 		logger:       config.Logger,
 	}
+}
+
+// SetNotifier wires the notification outbox. Optional: without it the
+// controller still marks sensors offline and writes the audit event.
+func (c *SensorHealthController) SetNotifier(n SensorOfflineNotifier) {
+	c.notifier = n
 }
 
 // Name returns the controller name.
@@ -106,29 +129,32 @@ func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
 				"sensor_id", sensorID,
 				"stale_timeout", c.config.StaleTimeout,
 			)
-			c.auditDisconnect(ctx, sensorID)
+			c.onOffline(ctx, sensorID)
 		}
 	}
 
 	return len(offlineSensorIDs), nil
 }
 
-// auditDisconnect records a sensor.disconnected event for a single sensor that
-// this tick transitioned to offline. MarkStaleSensorsOffline only returns sensors
-// whose health WAS online (its WHERE clause), so this is a genuine online->offline
-// transition — repeated reconciles never re-emit for an already-offline sensor.
+// onOffline records a sensor.disconnected audit event and enqueues a
+// sensor.offline notification for a single sensor that this tick transitioned
+// to offline. MarkStaleSensorsOffline only returns sensors whose health WAS
+// online (its WHERE clause), so this is a genuine online->offline transition —
+// repeated reconciles never re-emit for an already-offline sensor, and a sensor
+// that comes back and drops again is a new episode that notifies again.
 //
-// Tenant sensors only: platform sensors (TenantID == nil) are shared infrastructure
-// with no owning tenant to scope the audit log to. Best-effort — a failure to
-// resolve or log must not abort the reconcile.
-func (c *SensorHealthController) auditDisconnect(ctx context.Context, sensorID shared.ID) {
-	if c.auditService == nil {
+// Tenant sensors only: platform sensors (TenantID == nil) are shared
+// infrastructure with no owning tenant to scope the audit log or the
+// notification to. Best-effort — a failure to resolve, log or enqueue must not
+// abort the reconcile.
+func (c *SensorHealthController) onOffline(ctx context.Context, sensorID shared.ID) {
+	if c.auditService == nil && c.notifier == nil {
 		return
 	}
 
 	a, err := c.sensorRepo.GetByID(ctx, sensorID)
 	if err != nil {
-		c.logger.Warn("could not load sensor for disconnect audit",
+		c.logger.Warn("could not load sensor that went offline",
 			"controller", "sensor-health",
 			"sensor_id", sensorID,
 			"error", err,
@@ -136,11 +162,63 @@ func (c *SensorHealthController) auditDisconnect(ctx context.Context, sensorID s
 		return
 	}
 	if a.TenantID == nil {
-		return // platform sensor — no tenant to scope the audit event to
+		return // platform sensor — no tenant to scope the events to
 	}
 
-	_ = c.auditService.LogSensorDisconnected(ctx, auditapp.AuditContext{
-		TenantID:   a.TenantID.String(),
-		ActorEmail: sensorAuditSystemActor,
-	}, a.ID.String(), a.Name)
+	if c.auditService != nil {
+		_ = c.auditService.LogSensorDisconnected(ctx, auditapp.AuditContext{
+			TenantID:   a.TenantID.String(),
+			ActorEmail: sensorAuditSystemActor,
+		}, a.ID.String(), a.Name)
+	}
+
+	if c.notifier != nil {
+		c.notifyOffline(ctx, a)
+	}
+}
+
+// notifyOffline enqueues the sensor.offline notification through the outbox,
+// so delivery to the tenant's channels gets the outbox's retries.
+func (c *SensorHealthController) notifyOffline(ctx context.Context, a *sensor.Sensor) {
+	aggregateID, err := uuid.Parse(a.ID.String())
+	if err != nil {
+		return
+	}
+
+	lastSeen := "never"
+	metadata := map[string]any{
+		"sensor_id":     a.ID.String(),
+		"sensor_name":   a.Name,
+		"stale_timeout": c.config.StaleTimeout.String(),
+	}
+	if a.LastSeenAt != nil {
+		lastSeen = a.LastSeenAt.UTC().Format(time.RFC3339)
+		metadata["last_seen_at"] = lastSeen
+	}
+	if a.Hostname != "" {
+		metadata["hostname"] = a.Hostname
+	}
+	if a.IPAddress != nil {
+		metadata["ip_address"] = a.IPAddress.String()
+	}
+
+	err = c.notifier.Enqueue(ctx, outbox.EnqueueParams{
+		TenantID:      *a.TenantID,
+		EventType:     string(integration.EventTypeSensorOffline),
+		AggregateType: "sensor",
+		AggregateID:   &aggregateID,
+		Title:         fmt.Sprintf("Sensor offline: %s", a.Name),
+		Body: fmt.Sprintf("Sensor '%s' has not sent a heartbeat for more than %s (last seen: %s). "+
+			"Scans routed to it will not run until it reconnects.", a.Name, c.config.StaleTimeout, lastSeen),
+		Severity: sensorOfflineSeverity,
+		URL:      "/agents",
+		Metadata: metadata,
+	})
+	if err != nil {
+		c.logger.Warn("failed to enqueue sensor.offline notification",
+			"controller", "sensor-health",
+			"sensor_id", a.ID,
+			"error", err,
+		)
+	}
 }

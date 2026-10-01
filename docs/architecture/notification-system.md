@@ -378,6 +378,24 @@ const (
 
 Integrations can filter which event types they receive.
 
+The registry clients render is `integration.AllEventTypes()` (served by
+`GET /api/v1/me/event-types`). A channel's severity filter applies only to
+events whose severity describes a finding; `integration.SeverityFilterApplies`
+lists the exempt ones (approval events, `new_asset`, `sensor.offline`), whose
+severity is a constant chosen by the emitter. The outbox honours that list when
+it matches an entry to a channel.
+
+### Sensor events
+
+| Event | Emitted by | When |
+|---|---|---|
+| `sensor.offline` | `SensorHealthController` (`internal/infra/controller/sensor_health.go`) | A tenant sensor's health goes `online` -> `offline` (no heartbeat for 90s). Once per transition: a sensor that stays offline is not re-announced on later ticks; one that reconnects and drops again is a new event. Severity `high`. Opt-in (not in the defaults). |
+
+The same transition writes the `sensor.disconnected` audit event. Platform
+sensors (no tenant) produce neither. `sensor.error` exists in the `event_types`
+catalog but has no emitter: nothing in the platform sets a sensor's health to
+`error`, so there is no transition to announce.
+
 ## Wiring in Main
 
 ```go

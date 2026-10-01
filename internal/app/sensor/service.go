@@ -315,8 +315,14 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 
 // SensorHeartbeatData represents the data received from sensor heartbeat.
 type SensorHeartbeatData struct {
-	Version       string
-	Hostname      string
+	Version  string
+	Hostname string
+	// IPAddress is the address the heartbeat came from, resolved by the HTTP
+	// layer with the trusted-proxy rule. Never taken from the request body:
+	// the sensor is untrusted. An empty or unparseable value keeps the
+	// previously stored address.
+	IPAddress string
+
 	CPUPercent    float64
 	MemoryPercent float64
 	CurrentJobs   int
@@ -372,10 +378,13 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Region:        data.Region,
 	}, s.lbWeights)
 
+	clientIP := net.ParseIP(data.IPAddress)
+
 	updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, sensordom.HeartbeatUpdate{
 		TenantID:      a.TenantID,
 		Version:       data.Version,
 		Hostname:      data.Hostname,
+		IPAddress:     clientIP,
 		Region:        data.Region,
 		CPUPercent:    data.CPUPercent,
 		MemoryPercent: data.MemoryPercent,
@@ -400,8 +409,11 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	// transition. Tenant sensors only: platform sensors (TenantID == nil) are
 	// shared infrastructure with no owning tenant to scope the audit log to.
 	if s.auditService != nil && prevHealth != sensordom.SensorHealthOnline && a.TenantID != nil {
-		ip := ""
-		if a.IPAddress != nil {
+		ip := "an unknown address"
+		switch {
+		case clientIP != nil:
+			ip = clientIP.String()
+		case a.IPAddress != nil:
 			ip = a.IPAddress.String()
 		}
 		_ = s.auditService.LogSensorConnected(ctx, auditapp.AuditContext{

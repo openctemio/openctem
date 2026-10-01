@@ -119,6 +119,7 @@ func TestGetTenantEventTypes_MatchesTheDomainRegistry(t *testing.T) {
 		integrationdom.ModuleAssets,
 		integrationdom.ModuleScans,
 		integrationdom.ModuleFindings,
+		integrationdom.ModuleSensors,
 	)
 
 	rec := httptest.NewRecorder()

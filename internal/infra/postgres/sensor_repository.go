@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"strings"
 	"time"
 
@@ -345,6 +346,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    disk_read_mbps = $8, disk_write_mbps = $9,
 		    network_rx_mbps = $10, network_tx_mbps = $11,
 		    load_score = $12,
+		    ip_address = COALESCE($13::inet, ip_address),
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -360,6 +362,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		hb.DiskReadMBPS, hb.DiskWriteMBPS,
 		hb.NetworkRxMBPS, hb.NetworkTxMBPS,
 		hb.LoadScore,
+		heartbeatIP(hb.IPAddress),
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -620,6 +623,15 @@ func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.
 	}
 
 	return rowsAffected, nil
+}
+
+// heartbeatIP is the inet parameter for a heartbeat's client address: NULL
+// (keep the stored value) when the address is unknown.
+func heartbeatIP(ip net.IP) sql.NullString {
+	if ip == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: ip.String(), Valid: true}
 }
 
 func (r *SensorRepository) selectQuery() string {
