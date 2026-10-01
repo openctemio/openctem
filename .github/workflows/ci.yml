@@ -317,9 +317,7 @@ jobs:
       REDIS_PORT: 6379
       SERVER_PORT: 8080
       AUTH_PROVIDER: local
-      AUTH_JWT_SECRET: compat-v1-ci-jwt-secret-not-used-anywhere-else-0123456789
       AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
-      APP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -329,6 +327,12 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+
+      # Fresh per run: no secret, not even a throwaway one, lives in the repo.
+      - name: Generate secrets
+        run: |
+          echo "AUTH_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "APP_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
