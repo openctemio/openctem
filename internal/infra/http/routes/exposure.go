@@ -75,11 +75,11 @@ func registerThreatIntelRoutes(
 		// Sync status and management (admin operations)
 		r.GET("/sync", h.GetSyncStatuses, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/sync/{source}", h.GetSyncStatus, middleware.Require(permission.VulnerabilitiesRead))
-		// Sync mutations carry the tenant overlay (active-membership etc.) so a
-		// suspended admin can't keep triggering syncs with a stale JWT.
+		// The feed syncs are platform-wide: an organization may neither run
+		// nor toggle them (403). Operators use /api/v1/admin/threat-intel.
 		tiSyncWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
-		r.POST("/sync", h.TriggerSync, tiSyncWriteMW...)
-		r.PATCH("/sync/{source}", h.SetSyncEnabled, tiSyncWriteMW...)
+		r.POST("/sync", h.RefusePlatformFeedWrite, tiSyncWriteMW...)
+		r.PATCH("/sync/{source}", h.RefusePlatformFeedWrite, tiSyncWriteMW...)
 
 		// CVE enrichment (combine EPSS + KEV data)
 		r.GET("/enrich/{cveId}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))

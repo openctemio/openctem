@@ -26,6 +26,7 @@ import (
 //	/admin/administrators     —                 super_admin (audited)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
+//	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
@@ -206,6 +207,23 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminAudit.List)
 			r.GET("/stats", h.AdminAudit.GetStats)
 			r.GET("/{id}", h.AdminAudit.Get)
+		}, adminMiddlewares...)
+	}
+
+	// Threat-intelligence feeds (EPSS, CISA KEV): platform-wide, so only the
+	// platform administrator runs or toggles their sync. Reads: any admin.
+	// Writes: ops_admin+, audited.
+	if h.ThreatIntel != nil {
+		router.Group("/api/v1/admin/threat-intel", func(r Router) {
+			r.GET("/sync", h.ThreatIntel.GetSyncStatuses)
+			feedWrite := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+			syncMW, toggleMW := cloneMW(feedWrite), cloneMW(feedWrite)
+			if h.AdminAuditMiddleware != nil {
+				syncMW = append(syncMW, h.AdminAuditMiddleware.AuditLog("threat_intel.sync", "threat_intel_feed", ""))
+				toggleMW = append(toggleMW, h.AdminAuditMiddleware.AuditLog("threat_intel.sync_toggle", "threat_intel_feed", ""))
+			}
+			r.POST("/sync", h.ThreatIntel.TriggerSync, syncMW...)
+			r.PATCH("/sync/{source}", h.ThreatIntel.SetSyncEnabled, toggleMW...)
 		}, adminMiddlewares...)
 	}
 

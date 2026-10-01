@@ -38,7 +38,14 @@ func NewThreatIntelHandler(
 }
 
 // GetSyncStatuses returns all sync statuses.
-// GET /api/v1/threat-intel/sync
+// GET /api/v1/threat-intel/sync (any tenant user), GET /api/v1/admin/threat-intel/sync
+// @Summary      Threat-intelligence feed sync status (platform admin)
+// @Description  Status of the platform-wide EPSS and CISA KEV feed syncs.
+// @Tags         Admin Threat Intelligence
+// @Produce      json
+// @Success      200  {object}  map[string]any
+// @Security     BearerAuth
+// @Router       /admin/threat-intel/sync [get]
 func (h *ThreatIntelHandler) GetSyncStatuses(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -76,7 +83,17 @@ func (h *ThreatIntelHandler) GetSyncStatus(w http.ResponseWriter, r *http.Reques
 }
 
 // TriggerSync triggers a sync for a specific source or all sources.
-// POST /api/v1/threat-intel/sync
+// POST /api/v1/admin/threat-intel/sync
+// @Summary      Run a threat-intelligence feed sync (platform admin)
+// @Description  Syncs the platform-wide EPSS and/or CISA KEV feed now. ops_admin or super_admin; audited.
+// @Tags         Admin Threat Intelligence
+// @Accept       json
+// @Produce      json
+// @Param        request  body      TriggerSyncRequest  false  "Feed (epss, kev, all); empty = all"
+// @Success      200  {object}  map[string]any
+// @Failure      400  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /admin/threat-intel/sync [post]
 func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -136,7 +153,18 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 }
 
 // SetSyncEnabled enables or disables sync for a source.
-// PATCH /api/v1/threat-intel/sync/{source}
+// PATCH /api/v1/admin/threat-intel/sync/{source}
+// @Summary      Enable or disable a threat-intelligence feed sync (platform admin)
+// @Description  Turns the platform-wide sync of one feed on or off for every organization. ops_admin or super_admin; audited.
+// @Tags         Admin Threat Intelligence
+// @Accept       json
+// @Produce      json
+// @Param        source   path      string                 true  "Feed (epss, kev)"
+// @Param        request  body      SetSyncEnabledRequest  true  "Enabled"
+// @Success      200  {object}  SyncStatusResponse
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /admin/threat-intel/sync/{source} [patch]
 func (h *ThreatIntelHandler) SetSyncEnabled(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	source := chi.URLParam(r, "source")
@@ -166,6 +194,24 @@ func (h *ThreatIntelHandler) SetSyncEnabled(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status))
+}
+
+// RefusePlatformFeedWrite answers the tenant-facing feed sync controls. The
+// EPSS and CISA KEV syncs serve every organization, so one organization may
+// neither switch them off nor run them; the operator controls are under
+// /api/v1/admin/threat-intel. See docs/architecture/global-catalog-trust.md.
+//
+// @Summary      Change the threat-intelligence feed sync (not allowed)
+// @Description  Always 403. The EPSS and CISA KEV feed syncs are shared by every organization; a platform administrator runs or toggles them from the admin console.
+// @Tags         Threat Intelligence
+// @Produce      json
+// @Param        source  path  string  false  "Feed (epss, kev)"
+// @Failure      403  {object}  apierror.Error
+// @Router       /threat-intel/sync [post]
+// @Router       /threat-intel/sync/{source} [patch]
+func (h *ThreatIntelHandler) RefusePlatformFeedWrite(w http.ResponseWriter, _ *http.Request) {
+	apierror.Forbidden("The EPSS and CISA KEV feed syncs are shared by every organization and cannot be " +
+		"changed by one; a platform administrator manages them").WriteJSON(w)
 }
 
 // EnrichCVE enriches a single CVE with threat intel data.

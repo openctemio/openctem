@@ -276,7 +276,6 @@ PATCH /api/v1/tenants/{}/settings/modules
 PATCH /api/v1/tenants/{}/settings/pentest
 PATCH /api/v1/tenants/{}/settings/risk-scoring
 PATCH /api/v1/tenants/{}/settings/security
-PATCH /api/v1/threat-intel/sync/{}
 POST /api/v1/admin/target-mappings
 POST /api/v1/agent/credentials/ingest
 POST /api/v1/agent/ingest
@@ -407,7 +406,6 @@ POST /api/v1/tenants/{}/settings/risk-scoring/preview
 POST /api/v1/tenants/{}/settings/risk-scoring/recalculate
 POST /api/v1/threat-actors
 POST /api/v1/threat-intel/enrich
-POST /api/v1/threat-intel/sync
 POST /api/v1/threat-models/generate
 POST /api/v1/users/{}/roles
 POST /api/v1/validation/evidence

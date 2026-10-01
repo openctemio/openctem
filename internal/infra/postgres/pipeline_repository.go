@@ -1009,19 +1009,23 @@ func (r *PipelineStepRepository) Reorder(ctx context.Context, pipelineID shared.
 	return nil
 }
 
-// FindPipelineIDsByToolName finds all active pipeline IDs that use a specific tool.
-// Used for cascade deactivation when a tool is deactivated or deleted.
-func (r *PipelineStepRepository) FindPipelineIDsByToolName(ctx context.Context, toolName string) ([]shared.ID, error) {
+// FindPipelineIDsByToolName finds the tenant's active pipeline IDs that use a
+// specific tool. Used for cascade deactivation when one of the tenant's tools
+// is deactivated or deleted. Tenant-scoped: tool names are unique only per
+// tenant, so without the filter a tenant's custom tool named like a platform
+// tool deactivated every other tenant's pipelines using that name.
+func (r *PipelineStepRepository) FindPipelineIDsByToolName(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error) {
 	query := `
 		SELECT DISTINCT pt.id
 		FROM pipeline_templates pt
 		JOIN pipeline_steps ps ON ps.pipeline_id = pt.id
 		WHERE ps.tool = $1
+		  AND pt.tenant_id = $2
 		  AND pt.is_active = true
 		  AND pt.is_system_template = false
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, toolName)
+	rows, err := r.db.QueryContext(ctx, query, toolName, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to find pipelines by tool: %w", err)
 	}
