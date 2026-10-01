@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/openctemio/api/pkg/domain/shared"
 	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -566,7 +567,19 @@ func (h *HTTPRequestHandler) validateURL(urlStr string) error {
 }
 
 // isBlockedIP checks if an IP is in the blocked CIDR ranges.
+//
+// SEC-WF14: the local blockedCIDRs list historically missed several
+// never-routable ranges (0.0.0.0/8, ::/128, 100.64.0.0/10 CGNAT,
+// multicast/reserved/broadcast), so http://0.0.0.0:<port>/ and
+// http://[::]:<port>/ bypassed the guard and reached loopback-bound
+// services on the API host. We now defer to the canonical httpsec guard
+// as the authoritative blocklist and keep the local list as an additive
+// override (SetBlockedCIDRs is test-only). httpsec is the single source
+// of truth for SSRF-blocked ranges across the codebase.
 func (h *HTTPRequestHandler) isBlockedIP(ip net.IP) bool {
+	if httpsec.IsIPBlocked(ip) {
+		return true
+	}
 	for _, cidr := range h.blockedCIDRs {
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {
