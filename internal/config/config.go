@@ -358,7 +358,7 @@ type AuthConfig struct {
 	PasswordResetDuration     time.Duration // Password reset token lifetime (default: 1h)
 
 	// Cookie settings for tokens (security best practice)
-	CookieSecure           bool   // Use Secure flag (HTTPS only) - should be true in production
+	CookieSecure           bool   // Secure flag (HTTPS only); defaults true unless APP_ENV=development, required in production
 	CookieDomain           string // Cookie domain (empty = current host)
 	CookieSameSite         string // SameSite policy: "strict", "lax", or "none"
 	AccessTokenCookieName  string // Cookie name for access token (default: "auth_token")
@@ -828,7 +828,7 @@ func Load() (*Config, error) {
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
-			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", false),                   // Set true in production
+			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(getEnv("APP_ENV", "development"))),
 			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),                          // Empty = current host
 			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"),                     // "strict", "lax", or "none"
 			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
@@ -1315,6 +1315,12 @@ func (c *Config) validateProduction() error {
 
 // validateProductionAuth validates auth configuration for production.
 func (c *Config) validateProductionAuth() error {
+	// Every auth provider sets session cookies (local login, SSO/SAML
+	// callbacks, the admin console, the CSRF double-submit cookie), so the
+	// Secure flag is required in production regardless of provider.
+	if !c.Auth.CookieSecure {
+		return fmt.Errorf("AUTH_COOKIE_SECURE must be true in production (HTTPS required)")
+	}
 	if c.Auth.Provider.SupportsLocal() {
 		// Ensure strong JWT secret in production
 		if len(c.Auth.JWTSecret) < 64 {
@@ -1327,10 +1333,6 @@ func (c *Config) validateProductionAuth() error {
 		// Ensure email verification is required
 		if !c.Auth.RequireEmailVerification {
 			return fmt.Errorf("AUTH_REQUIRE_EMAIL_VERIFICATION must be true in production")
-		}
-		// Ensure secure cookie settings in production
-		if !c.Auth.CookieSecure {
-			return fmt.Errorf("AUTH_COOKIE_SECURE must be true in production (HTTPS required)")
 		}
 		// Validate SameSite policy
 		switch c.Auth.CookieSameSite {
@@ -1449,6 +1451,16 @@ func (c *Config) IsProduction() bool {
 }
 
 // Helper functions
+
+// defaultCookieSecure is the AUTH_COOKIE_SECURE default: cookies carry the
+// Secure flag everywhere except APP_ENV=development, where the stack is
+// usually served over plain http://localhost. Any other environment
+// (production, staging, ...) is assumed to sit behind HTTPS; an operator
+// who really serves it over http must opt out with AUTH_COOKIE_SECURE=false
+// (and production refuses to start with that, see validateProductionAuth).
+func defaultCookieSecure(appEnv string) bool {
+	return appEnv != "development"
+}
 
 // resolveRenamedEnv lets the pre-sensor environment variable names keep
 // working: when only the old name is set its value is copied to the new name

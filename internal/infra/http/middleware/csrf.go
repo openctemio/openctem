@@ -75,7 +75,13 @@ func GenerateCSRFToken() (string, error) {
 }
 
 // SetCSRFTokenCookie sets the CSRF token in a JavaScript-readable cookie.
-// This is NOT httpOnly so that frontend JavaScript can read and send it in headers.
+//
+// The cookie is deliberately NOT HttpOnly: this is the double-submit pattern,
+// where the frontend reads the cookie and echoes it in the X-CSRF-Token
+// header. The token is a random nonce, not a credential — on its own it
+// authenticates nothing. Secure follows AUTH_COOKIE_SECURE (true by default
+// outside APP_ENV=development, required in production) and SameSite follows
+// AUTH_COOKIE_SAMESITE (lax by default).
 func SetCSRFTokenCookie(w http.ResponseWriter, token string, cfg CSRFConfig) {
 	cookie := &http.Cookie{
 		Name:     CSRFTokenCookieName,
