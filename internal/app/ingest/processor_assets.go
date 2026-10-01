@@ -1797,18 +1797,20 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset)
 // and network properties. Assets that are internet-facing by nature (DNS/web)
 // or that carry a public (non-RFC1918) IP are `public`; everything else is left
 // `unknown` (conservative — internal hosts on private IPs stay non-reachable).
+//
+// The IPs come from every shape ingest stores them in (ExtractAllIPs): host
+// normalisation (normalizeHostIPProperties) moves the legacy `ip` string into
+// `ip_addresses` and deletes `ip`, so reading `ip` alone never saw a host's IP.
 func inferAssetExposure(a *asset.Asset) asset.Exposure {
 	switch a.Type() {
 	case asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeCertificate,
 		asset.AssetTypeWebsite, asset.AssetTypeAPI:
 		return asset.ExposurePublic
-	case asset.AssetTypeIPAddress:
-		if isPublicIP(a.Name()) {
+	}
+	for _, ip := range ExtractAllIPs(a.Properties(), a.Name()) {
+		if isPublicIP(ip) {
 			return asset.ExposurePublic
 		}
-	}
-	if ip, ok := a.Properties()["ip"].(string); ok && isPublicIP(ip) {
-		return asset.ExposurePublic
 	}
 	return asset.ExposureUnknown
 }

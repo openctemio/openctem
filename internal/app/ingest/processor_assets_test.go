@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/api/pkg/domain/asset"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/ctis"
 	"github.com/stretchr/testify/assert"
@@ -360,13 +361,13 @@ func TestFindCommonPathPrefix(t *testing.T) {
 }
 
 func TestInferAssetExposure(t *testing.T) {
-	mk := func(name string, typ asset.AssetType, ip string) *asset.Asset {
+	mk := func(name string, typ asset.AssetType, props map[string]any) *asset.Asset {
 		a, err := asset.NewAsset(name, typ, asset.CriticalityMedium)
 		if err != nil {
 			t.Fatalf("NewAsset: %v", err)
 		}
-		if ip != "" {
-			a.SetProperties(map[string]any{"ip": ip})
+		if props != nil {
+			a.SetProperties(props)
 		}
 		return a
 	}
@@ -375,13 +376,19 @@ func TestInferAssetExposure(t *testing.T) {
 		a    *asset.Asset
 		want asset.Exposure
 	}{
-		{"domain is internet-facing", mk("example.com", asset.AssetTypeDomain, ""), asset.ExposurePublic},
-		{"website is internet-facing", mk("https://app.example.com", asset.AssetTypeWebsite, ""), asset.ExposurePublic},
-		{"host with public IP", mk("web-1", asset.AssetTypeHost, "8.8.8.8"), asset.ExposurePublic},
-		{"host with private IP stays unknown", mk("db-1", asset.AssetTypeHost, "10.0.0.5"), asset.ExposureUnknown},
-		{"host with no IP stays unknown", mk("worker-1", asset.AssetTypeHost, ""), asset.ExposureUnknown},
-		{"ip_address (public) via name", mk("203.0.113.9", asset.AssetTypeIPAddress, ""), asset.ExposurePublic},
-		{"ip_address (private) via name", mk("192.168.1.10", asset.AssetTypeIPAddress, ""), asset.ExposureUnknown},
+		{"domain is internet-facing", mk("example.com", asset.AssetTypeDomain, nil), asset.ExposurePublic},
+		{"website is internet-facing", mk("https://app.example.com", asset.AssetTypeWebsite, nil), asset.ExposurePublic},
+		{"legacy ip string (public)", mk("web-1", asset.AssetTypeHost, map[string]any{"ip": "8.8.8.8"}), asset.ExposurePublic},
+		{"legacy ip string (private)", mk("db-1", asset.AssetTypeHost, map[string]any{"ip": "10.0.0.5"}), asset.ExposureUnknown},
+		// The shapes normalised host properties really have: []string right
+		// after ingest, []any once read back from JSONB.
+		{"ip_addresses []string (public)", mk("web-2", asset.AssetTypeHost, map[string]any{"ip_addresses": []string{"10.0.0.7", "8.8.4.4"}}), asset.ExposurePublic},
+		{"ip_addresses []any (public)", mk("web-3", asset.AssetTypeHost, map[string]any{"ip_addresses": []any{"1.1.1.1"}}), asset.ExposurePublic},
+		{"ip_addresses (private only)", mk("db-2", asset.AssetTypeHost, map[string]any{"ip_addresses": []any{"10.0.0.5", "192.168.1.4"}}), asset.ExposureUnknown},
+		{"ip_address.address (public)", mk("web-4", asset.AssetTypeHost, map[string]any{"ip_address": map[string]any{"address": "9.9.9.9"}}), asset.ExposurePublic},
+		{"host with no IP stays unknown", mk("worker-1", asset.AssetTypeHost, nil), asset.ExposureUnknown},
+		{"ip_address (public) via name", mk("203.0.113.9", asset.AssetTypeIPAddress, nil), asset.ExposurePublic},
+		{"ip_address (private) via name", mk("192.168.1.10", asset.AssetTypeIPAddress, nil), asset.ExposureUnknown},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -426,4 +433,36 @@ func TestBuildPropertiesFromCTIS_KeepsAddressForCorrelation(t *testing.T) {
 		props := p.buildPropertiesFromCTIS(&ctis.Asset{Type: ctis.AssetTypeIPAddress, Value: "10.0.0.12", Name: "10.0.0.12"})
 		assert.NotContains(t, props, "ip_addresses")
 	})
+}
+
+// TestCreateAssetFromCTIS_HostExposure goes through the real ingest mapping:
+// host normalisation moves properties.ip into ip_addresses and deletes ip,
+// which is why exposure inference never fired for hosts before.
+func TestCreateAssetFromCTIS_HostExposure(t *testing.T) {
+	p := NewAssetProcessor(nil, logger.NewNop())
+	tenantID := shared.NewID()
+	cases := []struct {
+		name string
+		in   ctis.Asset
+		want asset.Exposure
+	}{
+		{"public IP in properties.ip", ctis.Asset{Type: ctis.AssetTypeHost, Value: "web-1.corp", Properties: ctis.Properties{"ip": "8.8.8.8"}}, asset.ExposurePublic},
+		{"private IP in properties.ip", ctis.Asset{Type: ctis.AssetTypeHost, Value: "db-1.corp", Properties: ctis.Properties{"ip": "10.0.0.5"}}, asset.ExposureUnknown},
+		{"public IP in properties.ip_addresses", ctis.Asset{Type: ctis.AssetTypeHost, Value: "web-2.corp", Properties: ctis.Properties{"ip_addresses": []any{"10.1.1.1", "1.1.1.1"}}}, asset.ExposurePublic},
+		{"private IPs in properties.ip_addresses", ctis.Asset{Type: ctis.AssetTypeHost, Value: "db-2.corp", Properties: ctis.Properties{"ip_addresses": []any{"172.16.3.4"}}}, asset.ExposureUnknown},
+		{"public IP as an ip_address string (nessus)", ctis.Asset{Type: ctis.AssetTypeHost, Value: "web-3.corp", Properties: ctis.Properties{"ip_address": "9.9.9.9"}}, asset.ExposurePublic},
+		{"private IP as an ip_address string (nessus)", ctis.Asset{Type: ctis.AssetTypeHost, Value: "db-3.corp", Properties: ctis.Properties{"ip_address": "10.9.9.9"}}, asset.ExposureUnknown},
+		{"host named by its public IP", ctis.Asset{Type: ctis.AssetTypeHost, Value: "8.8.4.4"}, asset.ExposurePublic},
+		{"host named by its private IP", ctis.Asset{Type: ctis.AssetTypeHost, Value: "192.168.10.20"}, asset.ExposureUnknown},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := c.in
+			a, err := p.createAssetFromCTIS(tenantID, &in, nil)
+			require.NoError(t, err)
+			_, hasLegacy := a.Properties()["ip"]
+			assert.False(t, hasLegacy, "host normalisation should have removed properties.ip")
+			assert.Equal(t, c.want, a.Exposure())
+		})
+	}
 }
