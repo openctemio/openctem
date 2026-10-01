@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/pkg/crypto"
 	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
 	"github.com/openctemio/api/pkg/domain/permission"
@@ -38,8 +39,16 @@ type Service struct {
 	repo       apikeydom.Repository
 	pepper     string
 	membership MembershipChecker // nil → no member-lifecycle gate (tests only)
+	audit      *auditapp.AuditService
 	logger     *logger.Logger
 }
+
+// ErrScopeNotHeld is returned (wrapped with shared.ErrForbidden) when a key is
+// requested with a scope its creator does not hold.
+var ErrScopeNotHeld = errors.New("scope not held by caller")
+
+// SetAuditService wires audit logging for key create / revoke / delete.
+func (s *Service) SetAuditService(a *auditapp.AuditService) { s.audit = a }
 
 // MembershipChecker reports whether a user still has an ACTIVE membership in a
 // tenant. Injected so a suspended or removed member's `oct_` key stops
@@ -74,6 +83,16 @@ type CreateInput struct {
 	RateLimit     int      `json:"rate_limit"`
 	ExpiresInDays int      `json:"expires_in_days"`
 	CreatedBy     string   `json:"created_by" validate:"omitempty,uuid"`
+
+	// CallerHolds reports whether the creating principal itself holds a
+	// permission (owner/admin bypass included — the same check the route
+	// gates use). When set, every requested scope must be held by the caller:
+	// a key can never carry more authority than the person minting it. nil
+	// skips the check (internal/system callers only).
+	CallerHolds func(scope string) bool `json:"-"`
+
+	// AuditContext, when set, records an api_key.created audit event.
+	AuditContext *auditapp.AuditContext `json:"-"`
 }
 
 // CreateResult holds the created key and its plaintext (shown only once).
@@ -126,6 +145,13 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 			if _, ok := permission.ParsePermission(scope); !ok {
 				return nil, fmt.Errorf("%w: unknown scope %q", shared.ErrValidation, scope)
 			}
+			// Privilege-escalation guard: a member with api-keys:write could
+			// otherwise mint a key carrying permissions they do not have
+			// (e.g. team:admin-level scopes) and act beyond their own role.
+			if input.CallerHolds != nil && !input.CallerHolds(scope) {
+				return nil, fmt.Errorf("%w: %w: scope %q is not held by the caller",
+					shared.ErrForbidden, ErrScopeNotHeld, scope)
+			}
 		}
 		key.SetScopes(input.Scopes)
 	}
@@ -163,6 +189,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 		"name", key.Name(),
 		"prefix", prefix,
 	)
+	if s.audit != nil && input.AuditContext != nil {
+		_ = s.audit.LogAPIKeyCreated(ctx, *input.AuditContext, key.ID().String(), key.Name(), prefix, key.Scopes())
+	}
 
 	return &CreateResult{
 		Key:       key,
@@ -273,6 +302,9 @@ type RevokeInput struct {
 	ID        string `json:"id" validate:"required,uuid"`
 	TenantID  string `json:"tenant_id" validate:"required,uuid"`
 	RevokedBy string `json:"revoked_by" validate:"required,uuid"`
+
+	// AuditContext, when set, records an api_key.revoked audit event.
+	AuditContext *auditapp.AuditContext `json:"-"`
 }
 
 // Revoke revokes an API key.
@@ -310,12 +342,16 @@ func (s *Service) Revoke(ctx context.Context, input RevokeInput) (*apikeydom.API
 		"id", key.ID().String(),
 		"name", key.Name(),
 	)
+	if s.audit != nil && input.AuditContext != nil {
+		_ = s.audit.LogAPIKeyRevoked(ctx, *input.AuditContext, key.ID().String(), key.Name())
+	}
 
 	return key, nil
 }
 
-// Delete deletes an API key. Tenant isolation enforced at DB level.
-func (s *Service) Delete(ctx context.Context, id, tenantIDStr string) error {
+// Delete deletes an API key. Tenant isolation enforced at DB level. A non-nil
+// auditCtx records an api_key.deleted audit event.
+func (s *Service) Delete(ctx context.Context, id, tenantIDStr string, auditCtx ...*auditapp.AuditContext) error {
 	keyID, err := shared.IDFromString(id)
 	if err != nil {
 		return fmt.Errorf("%w: invalid ID", shared.ErrValidation)
@@ -332,5 +368,8 @@ func (s *Service) Delete(ctx context.Context, id, tenantIDStr string) error {
 	}
 
 	s.logger.Info("api key deleted", "id", id)
+	if s.audit != nil && len(auditCtx) > 0 && auditCtx[0] != nil {
+		_ = s.audit.LogAPIKeyDeleted(ctx, *auditCtx[0], keyID.String())
+	}
 	return nil
 }

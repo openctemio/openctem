@@ -1120,6 +1120,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Gate user-scoped keys on active membership so member offboarding revokes
 	// them immediately (the key's own status can't reflect member lifecycle).
 	s.APIKey.SetMembershipChecker(apikeyMembershipAdapter{tenants: repos.Tenant})
+	// Audit oct_ key create / revoke / delete.
+	s.APIKey.SetAuditService(s.Audit)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
