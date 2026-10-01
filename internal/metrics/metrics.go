@@ -304,6 +304,63 @@ var (
 		},
 	)
 
+	// Sensor protocol v2 results (RFC-026). Every label comes from a closed
+	// set (route names, problem types, fixed outcomes), never from a tool
+	// name, an id or any other sensor-supplied string.
+
+	// IngestV2RequestsTotal counts answered v2 requests by route, method,
+	// outcome (accepted, ok, refused) and problem type ("none" on success).
+	IngestV2RequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ingest_v2_requests_total",
+			Help: "Sensor protocol v2 results requests, by route, method, outcome and problem type",
+		},
+		[]string{"route", "method", "outcome", "problem"},
+	)
+
+	// IngestV2Bytes is the size of accepted v2 request content, as sent
+	// (encoded) and after the content coding was removed (decoded).
+	IngestV2Bytes = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "ingest_v2_bytes",
+			Help:    "Sensor protocol v2 results content size in bytes, by stage (encoded, decoded)",
+			Buckets: prometheus.ExponentialBuckets(1024, 4, 10), // 1 KiB .. 256 MiB
+		},
+		[]string{"stage"},
+	)
+
+	// IngestV2ItemsTotal counts processed v2 items by kind (asset, finding)
+	// and result (accepted, rejected, quarantined).
+	IngestV2ItemsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ingest_v2_items_total",
+			Help: "Sensor protocol v2 results items processed, by kind and result",
+		},
+		[]string{"kind", "result"},
+	)
+
+	// IngestV2ReportsTotal counts v2 reports reaching a final state, with the
+	// commit's auto-resolve outcome (applied, held, skipped; "none" for
+	// expired and failed reports).
+	IngestV2ReportsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ingest_v2_reports_total",
+			Help: "Sensor protocol v2 results reports reaching a final state, by state and auto-resolve outcome",
+		},
+		[]string{"state", "auto_resolve"},
+	)
+
+	// IngestV1RequestsTotal counts protocol v1 ingest requests per route, to
+	// measure who still uses which v1 route before any is retired
+	// (RFC-026 §8.3).
+	IngestV1RequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ingest_v1_requests_total",
+			Help: "Sensor protocol v1 ingest requests, by route",
+		},
+		[]string{"route"},
+	)
+
 	// IngestQueueDepth is the number of not-yet-terminal (pending+processing)
 	// jobs, refreshed each worker cycle. The key backpressure signal.
 	IngestQueueDepth = promauto.NewGauge(

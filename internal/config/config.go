@@ -116,7 +116,8 @@ type IngestConfig struct {
 	MaxPendingPerTenant int
 
 	// V2Results mounts sensor protocol v2 results (RFC-026) at
-	// /api/v2/sensor and processes its jobs. SENSOR_PROTOCOL_V2_RESULTS.
+	// /api/v2/sensor, processes its jobs and advertises it to v1 sensors that
+	// ask. SENSOR_PROTOCOL_V2_RESULTS (default true; false unmounts it).
 	V2Results bool
 	// V2BlindingRatio and V2BlindingMinFindings are the blinding guard of a
 	// v2 commit: an auto-resolve that would close more than MinFindings and
@@ -952,7 +953,7 @@ func Load() (*Config, error) {
 		Ingest: IngestConfig{
 			Mode:                getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant: getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
-			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", false),
+			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
 		},

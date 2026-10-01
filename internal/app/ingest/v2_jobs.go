@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/domain/ingestjob"
 	"github.com/openctemio/api/pkg/domain/ingestreport"
 	"github.com/openctemio/api/pkg/logger"
@@ -85,7 +86,9 @@ func (p *V2JobProcessor) failOnLastAttempt(ctx context.Context, job *ingestjob.J
 	}
 	if err := p.reports.MarkFailed(ctx, rep.ID); err != nil {
 		p.logger.Error("v2: failed to mark report failed", "report_ref", rep.ID.String(), "error", err)
+		return
 	}
+	metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateFailed), "none").Inc()
 }
 
 func (p *V2JobProcessor) provenance(rep *ingestreport.Report, seq int, job *ingestjob.Job) Provenance {
@@ -118,6 +121,7 @@ func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.R
 	if err := p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, res.Outcome, res.Touched); err != nil {
 		return ingestreport.SegmentOutcome{}, err
 	}
+	observeItems(res.Outcome)
 	return res.Outcome, nil
 }
 
@@ -140,6 +144,7 @@ func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report)
 	if err := p.reports.Finish(ctx, claimed.ID, protov2.StateCompleted, res.AutoResolved, res.AutoResolve); err != nil {
 		return fmt.Errorf("v2: finish report: %w", err)
 	}
+	metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateCompleted), res.AutoResolve).Inc()
 	if err := p.jobs.ClearV2Payloads(ctx, claimed.ID); err != nil {
 		p.logger.Warn("v2: could not clear segment payloads", "report_ref", claimed.ID.String(), "error", err)
 	}
@@ -157,6 +162,24 @@ func (p *V2JobProcessor) Housekeep(ctx context.Context) {
 		return
 	}
 	if n > 0 {
+		metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateExpired), "none").Add(float64(n))
 		p.logger.Info("v2: expired uncommitted reports", "count", n)
+	}
+}
+
+// observeItems counts a segment's items in ingest_v2_items_total.
+func observeItems(o ingestreport.SegmentOutcome) {
+	for _, c := range []struct {
+		kind, result string
+		n            int
+	}{
+		{"asset", "accepted", o.AcceptedAssets}, {"asset", "rejected", o.RejectedAssets},
+		{"asset", "quarantined", o.QuarantinedAssets},
+		{"finding", "accepted", o.AcceptedFindings}, {"finding", "rejected", o.RejectedFindings},
+		{"finding", "quarantined", o.QuarantinedFindings},
+	} {
+		if c.n > 0 {
+			metrics.IngestV2ItemsTotal.WithLabelValues(c.kind, c.result).Add(float64(c.n))
+		}
 	}
 }

@@ -873,6 +873,29 @@ Recognised `event_type` values: `process_start`, `process_stop`,
 `network_connect`, `file_write`, `file_delete`, `dns_query`, `auth_attempt`,
 `kernel_module_load`, `other` (see migration 000155).
 
+### Sensor Results, Protocol v2 (Sensor API Key Auth)
+
+[RFC-026](../rfcs/RFC-026-sensor-results-ingest.md). Base path `/api/v2/sensor`
+(not `/api/v1`). Contract: [`api/openapi/sensor-protocol-v2.yaml`](../../api/openapi/sensor-protocol-v2.yaml);
+behaviour: [`docs/architecture/sensors.md`](../architecture/sensors.md#protocol-v2-results-ingest).
+Only a sensor key authenticates here. Every `PUT` needs
+`Content-Type: application/vnd.openctem.ctis.v1+json`, `Content-Length` and
+`Content-Digest` (RFC 9530, over the bytes as sent); `Content-Encoding` may be
+`gzip` or `zstd`. Errors are RFC 9457 `application/problem+json` with
+`type: https://openctem.io/problems/ingest/<name>`.
+
+| Method | Endpoint | Description | Permission |
+|--------|----------|-------------|------------|
+| GET | `/hello` | Protocol, features and limits | Sensor API key |
+| PUT | `/results/{report_id}` | Whole CTIS report (one segment, implicit commit). `202` + `Location` + status; identical replay `200`; other bytes `409` | Sensor API key |
+| PUT | `/results/{report_id}/segments/{seq}` | One self-describing segment of a large report | Sensor API key |
+| POST | `/results/{report_id}/commit` | `{"segment_count":n,"segment_digests":[…]}`; only a committed report auto-resolves | Sensor API key |
+| GET | `/results/{report_id}` | Status: state, accepted/rejected counts, item errors, auto-resolve outcome | Sensor API key |
+| DELETE | `/results/{report_id}` | Abandon an uncommitted report | Sensor API key |
+| PUT/POST | `/commands/{command_id}/results/…` | Same three writes, bound to a command the sensor claimed | Sensor API key |
+
+Raw SARIF or scanner files are not accepted here; the SDK converts them to CTIS.
+
 ### IOC Catalogue (Tenant-scoped)
 
 Indicators (IP, domain, URL, file hash, process name, user agent) are matched

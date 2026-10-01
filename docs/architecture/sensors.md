@@ -1,4 +1,4 @@
-# Sensors: vocabulary, code layout and protocol v1
+# Sensors: vocabulary, code layout and protocols v1 and v2
 
 > RFC: [RFC-023](../rfcs/RFC-023-scan-zones-and-scanners.md) §4 (D18) and §9.5.
 > Contract of the rename: [RFC-023-sensor-rename-contract.md](../rfcs/RFC-023-sensor-rename-contract.md).
@@ -31,6 +31,7 @@ log fields (`sensor_id`), metrics and API environment variables (`SENSOR_*`).
 | HTTP | `internal/infra/http/handler/sensor_handler.go` (management), `ingest_handler.go` / `command_handler.go` / `scansession_handler.go` (protocol v1) |
 | Health | `internal/infra/controller/sensor_health.go`, `internal/infra/jobs/sensor_health_checker.go`, `internal/infra/redis/sensor_state.go` |
 | Legacy vocabulary | `pkg/sensorproto/legacyv1` |
+| Protocol v2 results | `pkg/sensorproto/v2` (wire), `internal/infra/http/middleware/ingest_v2.go` (edge), `internal/infra/http/handler/sensor_results_v2_handler.go`, `internal/infra/http/routes/sensor_v2.go`, `internal/app/ingest/v2*.go`, `strictjson.go`, `pkg/domain/ingestreport` |
 
 ## Protocol v1 and the legacy package
 
@@ -153,15 +154,131 @@ Code: `internal/app/sensor/doorbell.go` (hints, intervals, config version),
 `Heartbeat`), `pkg/domain/sensor/doorbell.go` (the `Action` enum). The wire is
 pinned by `testdata/protocol_v1/doorbell.golden`.
 
-## Protocol v2 results ingest (proposed)
+## Protocol v2 results ingest
 
-[RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) defines how sensors push
-results in protocol v2: CTIS only, declared by
-`Content-Type: application/vnd.openctem.ctis.v1+json`, sent as
-`PUT /api/v2/sensor/results/{report_id}` (self-describing segments plus a
-commit for large reports), with a mandatory `Content-Digest`, `202` + a status
-resource, and provenance stamped by the server. Raw SARIF and other files go
-to a separate user-authenticated import API. v1 ingest above is unchanged.
+[RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (decisions in its §10.1).
+Sensors push results as CTIS only, declared by
+`Content-Type: application/vnd.openctem.ctis.v1+json`, to a resource they
+name. v1 ingest above is unchanged and still served. The wire vocabulary
+lives in `pkg/sensorproto/v2` (golden files pin it); the contract is
+`api/openapi/sensor-protocol-v2.yaml`.
+
+### Routes
+
+Mounted under `/api/v2/sensor` when `SENSOR_PROTOCOL_V2_RESULTS` is on (the
+default). The group has its own authenticator: a sensor key in
+`Authorization: Bearer` or `X-API-Key`. User JWTs, the session cookie and
+`oct_` keys get `401`, sensor keys get `401` on every user route, and a
+disabled sensor is refused on every v2 route.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /hello` | Protocol, features, media types, encodings, digests and the limits the SDK sizes segments from. |
+| `PUT /results/{report_id}` | A whole report: segment 0 plus an implicit commit. |
+| `PUT /results/{report_id}/segments/{seq}` | One segment, `seq` 0–255, any order. |
+| `POST /results/{report_id}/commit` | `{"segment_count":n,"segment_digests":["sha-256=:…:",…]}`. |
+| `GET /results/{report_id}` | The status resource. |
+| `DELETE /results/{report_id}` | Abandon an uncommitted report (it becomes `expired`). |
+| `PUT/POST /commands/{command_id}/results/…` | The same, bound to a command this sensor claimed (open, or finished under 15 minutes ago). Its tool is the only tool the report may name. |
+
+`report_id` is a lower-case UUID the sensor chooses, unique per sensor. The
+URL is the idempotency key and the content digest its fingerprint: the same
+bytes again answer `200`, different bytes `409 report-conflict`.
+
+### Edge chain (before any handler)
+
+`middleware/ingest_v2.go`, in this order: per-tenant rate (the ingest
+budget shared with v1), per-sensor rate and per-tenant in-flight cap (`429`);
+`Content-Type` (`415` + `Accept`); `Content-Encoding` gzip/zstd, one coding
+(`415` + `Accept-Encoding`); `Content-Length` required and at most 16 MiB
+(`411`/`413`, before any byte is read); `Content-Digest` (RFC 9530, sha-256 or
+sha-512, over the bytes **as sent**) present (`400 digest-required`) and
+equal (`400 digest-mismatch`); then decoding with an output cap of
+min(64 MiB, 100 × encoded size), an 8 MiB zstd window and decoder
+concurrency 1 (`413 decompressed-too-large`). The handler reads only the
+verified, bounded body. Then the strict decoder
+(`internal/app/ingest/strictjson.go`): I-JSON (no duplicate member names,
+valid UTF-8, no lone surrogates, depth ≤ 64, nothing after the value) and no
+unknown fields (`422`), and the v2 report rules: body major version equals
+the media type's, `tool.name` present, `metadata.id` empty or the report id,
+≤ 10,000 findings and assets per segment.
+
+The digest without a signature detects corruption and buggy proxies; it is
+not authentication (anyone holding the key can compute it). RFC 9421
+signing is iteration 2.
+
+### Accept decisions
+
+`internal/app/ingest/v2_receiver.go`: command binding, replay versus
+conflict, every segment carries the same tool and metadata
+(`409 segment-header-mismatch`), the same binding (`409 binding-mismatch`),
+the report's tool is one the sensor declared (`422 tool-not-permitted`; a
+sensor with no declared tools may report none, reserved names such as
+`pentest` never), at most 8 open reports per sensor
+(`429 too-many-open-reports`), the tenant's queue depth
+(`INGEST_MAX_PENDING_PER_TENANT`, `429 queue-full`), and at most 100,000
+assets and findings per report, reserved in one conditional `UPDATE` so
+parallel segments cannot overshoot (`413 report-too-large`). The commit
+must list exactly the received segments with their digests
+(`409 segment-set-mismatch`). Stored: one `ingest_reports` row per report
+with the server-stamped provenance (tenant from the key, sensor, command,
+zone from the command, protocol, media type, user agent, receive time), and
+one RFC-005 `ingest_jobs` row per segment plus one for the commit.
+
+### Processing
+
+The ingest worker runs v2 jobs whatever `INGEST_MODE` is
+(`internal/app/ingest/v2_jobs.go`, `v2.go`). Each segment runs through the
+v1 pipeline with the v2 options:
+
+- **No fallback asset.** A finding binds to the asset its `asset_ref` names
+  in its own segment, or to the segment's only asset when it names none.
+  Anything else is rejected as an item (`asset_unresolved`, with a JSON
+  pointer); no asset is made up from metadata.
+- **No global catalog writes.** Findings link to CVE catalog rows that
+  exist; the sensor's CVE text stays on the tenant's finding. The catalog is
+  written by trusted feeds only.
+- **Auto-resolve only on commit.** Once every segment of a committed report
+  has an outcome, exactly one job claims the finalization: auto-resolve over
+  the union of assets the report touched (full coverage, default branch, a
+  tool the sensor declares), the branch-occurrence sweep and the finding
+  counts. The **blinding guard** holds an auto-resolve that would close more
+  than `SENSOR_V2_BLINDING_MIN_FINDINGS` (100) and more than
+  `SENSOR_V2_BLINDING_RATIO` (50 %) of the open findings of that tool on
+  those assets; the status then says `auto_resolve: held`.
+- An uncommitted report expires 60 minutes after its last segment; its
+  upserts stay and it never resolves anything. A segment's outcome is stored
+  under its number, so a retried segment is never counted twice. Payloads
+  are dropped once the report completes.
+
+The status resource (`GET /results/{id}`) reports `receiving`, `queued`,
+`processing`, `completed`, `failed` or `expired`, accepted/rejected counts,
+up to 100 item errors (fixed details, never sensor bytes) and the
+auto-resolve outcome. A partially accepted report is `completed`; the sensor
+must not resend it. A `failed` report may be sent again under the same id.
+
+### Discovery from v1
+
+A v1 sensor that sends `X-OpenCTEM-Sensor-Features: results-v2` on its
+heartbeat gets `X-OpenCTEM-Protocol: 2` back while v2 is on. Nobody else
+sees the header and the body is unchanged (`flow.golden` runs with it on).
+v2 responses carry `OpenCTEM-Protocol: 2`.
+
+### Configuration and metrics
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `SENSOR_PROTOCOL_V2_RESULTS` | `true` | Mount `/api/v2/sensor`, process v2 jobs, advertise on the heartbeat. `false` unmounts it; v2 jobs already queued wait until it is on again. |
+| `SENSOR_V2_BLINDING_RATIO` | `0.5` | Blinding guard ratio. |
+| `SENSOR_V2_BLINDING_MIN_FINDINGS` | `100` | Blinding guard floor. |
+| `INGEST_MAX_PENDING_PER_TENANT` | `100` | Shared with v1: queue depth per tenant. |
+
+Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239
+(per-report item totals). Metrics: `ingest_v2_requests_total{route,method,outcome,problem}`,
+`ingest_v2_bytes{stage=encoded|decoded}`, `ingest_v2_items_total{kind,result}`,
+`ingest_v2_reports_total{state,auto_resolve}` and
+`ingest_v1_requests_total{route}` (who still uses which v1 ingest route,
+RFC-026 §8.3). Every label comes from a closed set.
 
 ## History written in the old vocabulary
 

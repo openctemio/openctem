@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/logger"
 	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
@@ -348,5 +350,27 @@ func TestV2Throttle(t *testing.T) {
 	unlimited.ServeHTTP(rec, req("t3", ""))
 	if rec.Code != 204 {
 		t.Fatalf("after release: %d", rec.Code)
+	}
+}
+
+// V2Observe counts refusals of the edge chain with their problem type, and
+// successes as accepted/ok, under a closed-set route label.
+func TestV2Observe(t *testing.T) {
+	route := func(*http.Request) string { return "segment" }
+	h := V2Observe(route)(edge(protov2.DefaultLimits()))
+	counter := func(outcome, problem string) float64 {
+		return testutil.ToFloat64(metrics.IngestV2RequestsTotal.WithLabelValues("segment", "PUT", outcome, problem))
+	}
+	refusedBefore := counter("refused", "unsupported-media-type")
+	acceptedBefore := counter("accepted", "none")
+
+	h.ServeHTTP(httptest.NewRecorder(), v2Request([]byte("{}"), func(r *http.Request) { r.Header.Set("Content-Type", "application/json") }))
+	h.ServeHTTP(httptest.NewRecorder(), v2Request([]byte("{}"), nil)) // the test terminal answers 202
+
+	if got := counter("refused", "unsupported-media-type") - refusedBefore; got != 1 {
+		t.Fatalf("refused counted %v", got)
+	}
+	if got := counter("accepted", "none") - acceptedBefore; got != 1 {
+		t.Fatalf("accepted counted %v", got)
 	}
 }

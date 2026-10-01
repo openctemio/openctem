@@ -6,6 +6,7 @@ import (
 
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
@@ -65,6 +66,16 @@ func ingestMiddlewareChain(
 		chain = append(chain, concurrency.Middleware())
 	}
 	return append(chain, bodyLimit, decompress)
+}
+
+// countV1Ingest counts one protocol v1 ingest route. route is a fixed name.
+func countV1Ingest(route string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			metrics.IngestV1RequestsTotal.WithLabelValues(route).Inc()
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // registerSensorRoutes registers sensor API endpoints.
@@ -139,14 +150,17 @@ func registerSensorRoutes(
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
 		// Ingest endpoints use a 50MB body limit (vs 10MB default) for large scan reports
-		r.POST("/ingest", ingestHandler.IngestCTIS, ingestMW...) // Primary CTIS ingest endpoint
-		r.POST("/ingest/check", ingestHandler.CheckFingerprints, ingestMW...)
-		r.POST("/ingest/baseline-diff", ingestHandler.BaselineDiff, ingestMW...) // RFC-008 Phase 3: PR new-vs-target
-		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, ingestMW...)
-		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, ingestMW...)
-		r.POST("/ingest/recon", ingestHandler.IngestReconReport, ingestMW...)
-		r.POST("/ingest/scan", ingestHandler.IngestScan, ingestMW...)
-		r.POST("/ingest/chunk", ingestHandler.IngestChunk, ingestMW...)
+		// Each v1 ingest route is counted (ingest_v1_requests_total{route}) so
+		// it can be retired on evidence (RFC-026 §8.3). Counting adds no byte.
+		v1 := func(route string) []Middleware { return append([]Middleware{countV1Ingest(route)}, ingestMW...) }
+		r.POST("/ingest", ingestHandler.IngestCTIS, v1("ingest")...) // Primary CTIS ingest endpoint
+		r.POST("/ingest/check", ingestHandler.CheckFingerprints, v1("ingest_check")...)
+		r.POST("/ingest/baseline-diff", ingestHandler.BaselineDiff, v1("ingest_baseline_diff")...) // RFC-008 Phase 3: PR new-vs-target
+		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, v1("ingest_sarif")...)
+		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, v1("ingest_ctis")...)
+		r.POST("/ingest/recon", ingestHandler.IngestReconReport, v1("ingest_recon")...)
+		r.POST("/ingest/scan", ingestHandler.IngestScan, v1("ingest_scan")...)
+		r.POST("/ingest/chunk", ingestHandler.IngestChunk, v1("ingest_chunk")...)
 		r.GET("/ingest/scanners", ingestHandler.ListScanners)
 
 		// Async ingest job status poll (RFC-005). No-op store returns 404 when
