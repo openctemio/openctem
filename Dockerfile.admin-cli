@@ -1,6 +1,8 @@
 # =============================================================================
-# Admin CLI Dockerfile
-# Builds openctem-admin and bootstrap-admin CLI tools
+# Admin tools Dockerfile
+# Builds bootstrap-admin, which creates the first platform administrator.
+# (The openctem-admin API-key CLI was removed: administrators have no API
+# keys and work in the admin console.)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -32,13 +34,6 @@ ARG VERSION=dev
 # Disable workspace mode (GOWORK=off) to build standalone
 ENV GOWORK=off
 
-# Build openctem-admin CLI
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath \
-    -ldflags="-s -w -X main.Version=${VERSION}" \
-    -o /out/openctem-admin \
-    ./cmd/openctem-admin
-
 # Build bootstrap-admin CLI
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
@@ -51,12 +46,11 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 # -----------------------------------------------------------------------------
 FROM gcr.io/distroless/static-debian12:nonroot AS production
 
-LABEL org.opencontainers.image.title="OpenCTEM Admin CLI"
-LABEL org.opencontainers.image.description="kubectl-style CLI for OpenCTEM platform administration"
+LABEL org.opencontainers.image.title="OpenCTEM bootstrap-admin"
+LABEL org.opencontainers.image.description="Creates the first OpenCTEM platform administrator"
 LABEL org.opencontainers.image.source="https://github.com/openctemio/api"
 
 # Copy binaries
-COPY --from=builder /out/openctem-admin /usr/local/bin/openctem-admin
 COPY --from=builder /out/bootstrap-admin /usr/local/bin/bootstrap-admin
 
 # Copy timezone data and CA certs
@@ -69,6 +63,5 @@ USER 65532:65532
 # CLI tools are short-lived, disable HEALTHCHECK
 HEALTHCHECK NONE
 
-# Default to openctem-admin
-ENTRYPOINT ["/usr/local/bin/openctem-admin"]
+ENTRYPOINT ["/usr/local/bin/bootstrap-admin"]
 CMD ["--help"]

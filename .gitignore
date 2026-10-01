@@ -76,7 +76,6 @@ cmd/server/server
 /chainaudit
 /encrypt-credentials
 /gen-relationships
-/openctem-admin
 /seed
 
 vendor

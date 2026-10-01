@@ -279,8 +279,6 @@ PATCH /api/v1/tenants/{}/settings/risk-scoring
 PATCH /api/v1/tenants/{}/settings/security
 PATCH /api/v1/threat-intel/sync/{}
 POST /api/v1/admin/target-mappings
-POST /api/v1/admin/users
-POST /api/v1/admin/users/{}/rotate-key
 POST /api/v1/agent/credentials/ingest
 POST /api/v1/agent/ingest
 POST /api/v1/agent/ingest/scan

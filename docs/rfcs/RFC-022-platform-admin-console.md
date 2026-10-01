@@ -3,6 +3,8 @@
 > Status: **Accepted** (2026-09-30) — Phases 1-3 implemented (api#547, api#548, ui#505).
 > **Revision 2** (2026-09-30): the administrator is a user account signing in on
 > the normal `/login` (see [Revision 2](#revision-2-administrators-are-user-accounts)).
+> **Revision 3** (2026-10-01): administrators have no API keys (see
+> [Revision 3](#revision-3-no-admin-api-keys)).
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*, modeled on Tenable Security Center,
 > where the system administrator is an account with a system-level role and a
@@ -32,7 +34,7 @@
 |---|----------|-----|
 | D1 | **Identity = a `users` account linked to `admin_users`** (rev. 2; originally `admin_users` alone). The account belongs to no organization (enforced in the database); `admin_users` holds the role (`super_admin` > `ops_admin` > `readonly`), the second factor, lockout and the admin audit trail. | Tenable SC: one account table, one login page, the Administrator role is system-level and belongs to no organization. Keeping the account out of every organization is what separates the tiers, not a second account table. `PLATFORM_ADMIN_EMAILS` is removed. |
 | D2 | **Same backend.** Extend `/api/v1/admin/*`; no second service. | Admin operations (create org, assign bundles, configure SSO) need the same tenant/module/SSO services. A second service would duplicate logic or call back into the api. |
-| D3 | **Console = password sign-in on `/login` + mandatory TOTP**, server-side console sessions. SSO/SAML sign-ins cannot open it. API keys stay for CLI/automation. | Admin sessions must be revocable (server-side), short-lived, and MFA-protected. No organization's IdP may authenticate a platform administrator. |
+| D3 | **Console = password sign-in on `/login` + mandatory TOTP**, server-side console sessions. SSO/SAML sign-ins cannot open it. No admin API keys (rev. 3). | Admin sessions must be revocable (server-side), short-lived, and MFA-protected. No organization's IdP may authenticate a platform administrator. |
 | D4 | **TOTP implemented in-house** (RFC 6238: HMAC-SHA1, 6 digits, 30 s, ±1 step), verified against the RFC test vectors. | No OTP library is in `go.mod`; ~50 lines is easier to audit than a new dependency on the admin auth path. Reusable later for tenant-user 2FA, which is also missing (the UI calls `/users/me/2fa`, which has no backend). |
 | D5 | **Same Next.js app, separate shell** (own route group, layout, login, sidebar; shared `SidebarBrand`). | Tenable does the same: one application, a different menu per account type. Can be split into its own deployable later because the route group is independent. `/admin` + `/api/v1/admin` can be IP-restricted at the ingress. |
 | D6 | **SCIM stays a tenant-admin feature** (api#546). | The tenant's own IT connects their IdP. |
@@ -46,8 +48,8 @@
 columns (`admin_credentials.password_hash`, `password_changed_at`) are no longer
 used and are dropped in a later release (expand-contract):
 
-- `admin_users.user_id` (unique, FK `users`, cascade). Rows without it are
-  API-key identities for the CLI and automation.
+- `admin_users.user_id` (unique, FK `users`, cascade). Rows without it were
+  API-key identities; migration 000227 deactivated them (rev. 3).
 - A trigger on `tenant_members` rejects a membership for a linked account
   (SQLSTATE 23514, surfaced as 409 "platform administrators cannot be members of
   an organization"); linking an account that has memberships is refused.
@@ -82,8 +84,8 @@ the account's own lockout and password policy). Login and `GET /users/me` report
    also signs out of `/login`).
 
 **Authentication middleware**: `AdminAuthMiddleware.Authenticate` accepts
-either the API key (unchanged) or a verified, unexpired `admin_session`
-cookie. The `/login` session alone authenticates nothing under `/api/v1/admin`.
+only a verified, unexpired `admin_session` cookie (rev. 3 removed admin API
+keys). The `/login` session alone authenticates nothing under `/api/v1/admin`.
 Cookie-authenticated state-changing requests must pass the double-submit CSRF
 check. Every `/admin/*` route and role guard works from a browser unchanged.
 
@@ -91,7 +93,7 @@ check. Every `/admin/*` route and role guard works from a browser unchanged.
 (super admin, audited) links the account with that email, or creates a local
 account and returns its temporary password once. `bootstrap-admin` does the same
 for the first administrator, and `bootstrap-admin -link` links an administrator
-created before revision 2 (keeping its role, API key and authenticator). A
+created before revision 2 (keeping its role and authenticator). A
 `super_admin` can reset another administrator's second factor
 (`POST /admin/users/{id}/reset-credentials`, audited); the password is the
 account's and is reset through the normal forgot-password flow.
@@ -115,6 +117,24 @@ guarantee that an administrator account is in no organization, TOTP before the
 console, and no IdP path to the console. The console password, `/admin/auth/login`,
 `/admin/auth/password`, `PLATFORM_ADMIN_EMAILS` and the tenant-context
 `/api/v1/settings/{saml,identity-providers,verified-domains}` routes are removed.
+
+## Revision 3: no admin API keys
+
+Revision 2 still let every administrator row carry an API key (`X-Admin-API-Key`
+or Bearer) with the same power as the console, no TOTP and no expiry, and it
+generated and discarded one for every human administrator. With administrators
+signing in as people, the key was only a second, weaker way in. Revision 3
+removes it:
+
+- `AdminAuthMiddleware` accepts only a verified console session.
+- Removed: `POST /admin/users` (create by key), `POST /admin/users/{id}/rotate-key`,
+  the `openctem-admin` CLI (its admin, audit-log and target-mapping commands
+  are in the console), and the key fields on `AdminUser`.
+- Migration 000227 revokes every key, deactivates rows with no linked account,
+  and makes the key columns nullable; a later release drops them.
+- `bootstrap-admin` creates only a person: the admin row and its sign-in
+  account (temporary password printed once). It ships in the API image and the
+  `admin-cli` image.
 
 ## Later phases
 

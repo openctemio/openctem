@@ -226,14 +226,15 @@ These routes require the tenant ID in the URL path and use database-based member
 ### Platform Admin Routes (`/api/v1/admin/*`)
 
 Platform admin routes are for OpenCTEM operators, NOT tenant users. They
-authenticate with either an **API key** (`X-Admin-API-Key` header or
-`Authorization: Bearer`, for CLI/automation) or a **console session** (RFC-022:
-password + mandatory TOTP, server-side session in the `admin_session` cookie,
+authenticate **only** with a **console session** (RFC-022: `/login` password
+sign-in + mandatory TOTP, server-side session in the `admin_session` cookie,
 scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
-`admin_csrf` double-submit check). Both resolve to the same `admin_users` row
-and carry a platform role: `super_admin` > `ops_admin` > `readonly`. The tenant
-JWT never authenticates these routes, and the admin session never reaches tenant
-routes.
+`admin_csrf` double-submit check). There are **no admin API keys**: an
+`X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
+so every admin action has passed TOTP. The session resolves to an
+`admin_users` row with a platform role: `super_admin` > `ops_admin` >
+`readonly`. The tenant JWT never authenticates these routes, and the admin
+session never reaches tenant routes.
 
 Authorization is enforced at the **route layer** in
 `internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
@@ -242,22 +243,20 @@ Authorization is enforced at the **route layer** in
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
-| `POST /api/v1/admin/auth/login`, `/mfa` | public (rate-limited console login steps) |
-| `POST /api/v1/admin/auth/logout` | public (ends the caller's own session) |
-| `POST /api/v1/admin/auth/password` | any admin, own password (API key: no current password needed) |
+| `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
+| `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
+| `POST /api/v1/admin/administrators` | **super_admin** (audited) |
 | `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** (audited; not self) |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
-| `POST /api/v1/admin/users` | **super_admin** (audited) |
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** (audited) |
 | `DELETE /api/v1/admin/users/{id}` | **super_admin** (audited) |
-| `POST /api/v1/admin/users/{id}/rotate-key` | **super_admin** (audited) |
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
 
 > The admin roster (`/admin/users`) is super_admin-only for reads as well as
-> writes: it exposes admin emails, key prefixes, and last-used IPs, so listing
+> writes: it exposes admin emails and last-used IPs, so listing
 > it is itself a privileged operation.
 
 ### SSO / identity-federation setup (platform administrator)
@@ -287,19 +286,20 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   cannot open the console, so no organization's IdP can authenticate an
   administrator.
 - **TOTP always.** The `/login` session alone reaches nothing under
-  `/api/v1/admin/*`; only a verified console session (or an admin API key) does.
+  `/api/v1/admin/*`; only a verified console session does (there are no
+  admin API keys).
 - Provisioning is `POST /api/v1/admin/administrators` (super admin), or
-  `bootstrap-admin` for the first one. `admin_users` rows without a `user_id`
-  are API-key identities for the CLI and automation.
+  `bootstrap-admin` for the first one. Rows without a `user_id` (former
+  API-key identities) were deactivated by migration 000227.
 
 ### Organizations — platform admin cross-tenant (RFC-022 Phase 2)
 
-Under the admin realm (API key or console session), never tenant-permission
+Under the admin realm (console session), never tenant-permission
 gated. Organization-scoped SSO routes reuse the tenant SSO handlers through
 `AdminTenantScope`, which checks the organization exists, sets it as the request
-tenant, and **clears the user id** (the principal is the admin identity, which
-for API-key admins has no `users` row, and those handlers write `created_by`
-columns that reference `users(id)`). Writes are
+tenant, and **clears the user id** (the principal is the admin identity, not an
+organization member, and those handlers write `created_by` columns that
+reference `users(id)`). Writes are
 recorded in `admin_audit_logs`, and in the organization's own audit log with
 `actor_email = platform-admin:<email>` and `actor_id` NULL.
 

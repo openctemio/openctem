@@ -35,10 +35,6 @@ type Repository interface {
 	// GetByEmail retrieves an admin user by email.
 	GetByEmail(ctx context.Context, email string) (*AdminUser, error)
 
-	// GetByAPIKeyPrefix retrieves an admin user by API key prefix.
-	// Used as the first step in API key authentication (fast lookup).
-	GetByAPIKeyPrefix(ctx context.Context, prefix string) (*AdminUser, error)
-
 	// List lists admin users with filters and pagination.
 	List(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*AdminUser], error)
 
@@ -49,19 +45,10 @@ type Repository interface {
 	Delete(ctx context.Context, id shared.ID) error
 
 	// ==========================================================================
-	// Authentication
+	// Console usage
 	// ==========================================================================
 
-	// AuthenticateByAPIKey authenticates an admin user by raw API key.
-	// This is the complete authentication flow:
-	// 1. Extract prefix from raw key
-	// 2. Look up admin by prefix (fast indexed lookup)
-	// 3. Verify full hash (constant-time comparison)
-	// 4. Check if admin is active
-	// Returns the admin user if authentication succeeds.
-	AuthenticateByAPIKey(ctx context.Context, rawKey string) (*AdminUser, error)
-
-	// RecordUsage records API key usage (IP and timestamp).
+	// RecordUsage records when and from where the administrator last opened the console.
 	RecordUsage(ctx context.Context, id shared.ID, ip string) error
 
 	// ==========================================================================
@@ -69,8 +56,8 @@ type Repository interface {
 	// ==========================================================================
 
 	// GetByUserID returns the administrator linked to a users row, or
-	// ErrAdminNotFound. A linked administrator signs in on the normal /login
-	// page with that user account; unlinked rows are API-key identities.
+	// ErrAdminNotFound. The administrator signs in on the normal /login page
+	// with that user account.
 	GetByUserID(ctx context.Context, userID shared.ID) (*AdminUser, error)
 
 	// LinkUser links an administrator to a users row. Returns

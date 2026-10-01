@@ -13,7 +13,7 @@
 # Environment variables:
 #   DB_URL       - Database connection string (default: postgres://openctem:openctem@localhost:5432/openctem?sslmode=disable)
 #   ADMIN_EMAIL  - Admin email (default: admin@localhost)
-#   ADMIN_ROLE   - Admin role: super_admin, ops_admin, viewer (default: super_admin)
+#   ADMIN_ROLE   - Admin role: super_admin, ops_admin, readonly (default: super_admin)
 #   ADMIN_NAME   - Admin name (default: derived from email)
 #
 # =============================================================================
@@ -90,19 +90,11 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}Next steps:${NC}"
 echo ""
-echo "1. Save the API key shown above (it won't be shown again)"
+echo "1. Save the temporary password shown above (it won't be shown again)."
+echo "   (No password is shown when an account with that email already existed.)"
 echo ""
-echo "2. To use with Admin UI:"
-echo "   - Open http://localhost:3001"
-echo "   - Enter the API key in the login form"
+echo "2. Open the UI, sign in on /login with that email and password, then"
+echo "   open the admin console and set up two-step verification (TOTP)."
 echo ""
-echo "3. To use with curl:"
-echo "   export ADMIN_API_KEY='oc-admin-...'"
-echo "   curl -H 'X-Admin-API-Key: \$ADMIN_API_KEY' \\"
-echo "     http://localhost:8080/api/v1/admin/auth/validate"
-echo ""
-echo "4. To use with Admin CLI:"
-echo "   export OPENCTEM_API_URL=http://localhost:8080"
-echo "   export OPENCTEM_API_KEY='oc-admin-...'"
-echo "   openctem-admin get agents"
+echo "Administrators have no API keys: every admin action goes through the console."
 echo ""

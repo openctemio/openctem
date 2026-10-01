@@ -1,5 +1,6 @@
 // Package middleware provides HTTP middleware for the API server.
-// This file implements admin API key authentication middleware.
+// This file implements platform administrator authentication: a verified
+// console session (RFC-022). Administrators have no API keys.
 package middleware
 
 import (
@@ -21,11 +22,8 @@ const (
 	AdminAuthMethodKey logger.ContextKey = "admin_auth_method"
 )
 
-// How an admin request was authenticated.
-const (
-	AdminAuthMethodAPIKey  = "api_key"
-	AdminAuthMethodSession = "session"
-)
+// AdminAuthMethodSession is the only way an admin request is authenticated.
+const AdminAuthMethodSession = "session"
 
 // Console (RFC-022) cookie names. The session cookie is scoped to the admin API
 // path so it is never sent to tenant routes. The CSRF cookie is separate from
@@ -41,26 +39,15 @@ type AdminSessionAuthenticator interface {
 	Authenticate(ctx context.Context, token string) (*admin.AdminUser, error)
 }
 
-// AdminAPIKeyHeader is the header name for admin API key authentication.
-const AdminAPIKeyHeader = "X-Admin-API-Key"
-
 // AdminAuthMiddleware provides authentication for admin API endpoints.
 type AdminAuthMiddleware struct {
-	adminRepo admin.Repository
-	sessions  AdminSessionAuthenticator
-	logger    *logger.Logger
+	sessions AdminSessionAuthenticator
+	logger   *logger.Logger
 }
 
-// WithSessions enables console session (cookie) authentication alongside API
-// keys. Without it only API keys are accepted.
-func (m *AdminAuthMiddleware) WithSessions(s AdminSessionAuthenticator) *AdminAuthMiddleware {
-	m.sessions = s
-	return m
-}
-
-// authenticateSession handles a request without an API key. It accepts a
-// verified console session cookie and, for state-changing methods, requires the
-// double-submit CSRF header to match the admin CSRF cookie.
+// authenticateSession accepts a verified console session cookie and, for
+// state-changing methods, requires the double-submit CSRF header to match the
+// admin CSRF cookie.
 func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.AdminUser, bool) {
 	if m.sessions == nil {
 		return nil, false
@@ -87,75 +74,26 @@ func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.Admin
 	return a, true
 }
 
-// NewAdminAuthMiddleware creates a new AdminAuthMiddleware.
-func NewAdminAuthMiddleware(adminRepo admin.Repository, log *logger.Logger) *AdminAuthMiddleware {
+// NewAdminAuthMiddleware creates the admin authentication middleware over the
+// console session service.
+func NewAdminAuthMiddleware(sessions AdminSessionAuthenticator, log *logger.Logger) *AdminAuthMiddleware {
 	return &AdminAuthMiddleware{
-		adminRepo: adminRepo,
-		logger:    log.With("middleware", "admin_auth"),
+		sessions: sessions,
+		logger:   log.With("middleware", "admin_auth"),
 	}
 }
 
-// Authenticate validates the admin API key and adds admin info to context.
-// Use this middleware for all admin endpoints.
+// Authenticate requires a verified console session and adds the admin to the
+// request context. An X-Admin-API-Key or Bearer header is not accepted.
 func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract API key from header
-		apiKey := r.Header.Get(AdminAPIKeyHeader)
-		if apiKey == "" {
-			// Also check Authorization header with Bearer scheme
-			authHeader := r.Header.Get("Authorization")
-			if strings.HasPrefix(authHeader, "Bearer ") {
-				apiKey = strings.TrimPrefix(authHeader, "Bearer ")
-			}
-		}
-
-		if apiKey == "" {
-			// No key: try a console session (browser).
-			if adminUser, ok := m.authenticateSession(r); ok {
-				next.ServeHTTP(w, r.WithContext(withAdmin(r.Context(), adminUser, AdminAuthMethodSession)))
-				return
-			}
-			m.logger.Debug("admin auth: missing API key or session")
+		adminUser, ok := m.authenticateSession(r)
+		if !ok {
+			m.logger.Debug("admin auth: no valid console session")
 			apierror.Unauthorized("admin authentication required").WriteJSON(w)
 			return
 		}
-
-		// Authenticate
-		adminUser, err := m.adminRepo.AuthenticateByAPIKey(r.Context(), apiKey)
-		if err != nil {
-			if admin.IsAuthError(err) {
-				m.logger.Debug("admin auth: invalid API key",
-					"prefix", admin.ExtractAPIKeyPrefix(apiKey),
-					"error", err)
-				apierror.Unauthorized("invalid admin API key").WriteJSON(w)
-				return
-			}
-			m.logger.Error("admin auth: authentication error", "error", err)
-			apierror.InternalError(err).WriteJSON(w)
-			return
-		}
-
-		// Record usage (async - don't block request). Bounded with a timeout so a
-		// slow/hung DB can't pile up unbounded goroutines under a burst of admin
-		// requests (the same failure mode that previously OOM'd the audit writer).
-		ip := extractIP(r)
-		adminID := adminUser.ID()
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
-			defer cancel()
-			if err := m.adminRepo.RecordUsage(ctx, adminID, ip); err != nil {
-				m.logger.Error("failed to record admin API key usage", "error", err)
-			}
-		}()
-
-		ctx := withAdmin(r.Context(), adminUser, AdminAuthMethodAPIKey)
-
-		m.logger.Debug("admin auth: authenticated",
-			"admin_id", adminUser.ID().String(),
-			"email", adminUser.Email(),
-			"role", adminUser.Role())
-
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r.WithContext(withAdmin(r.Context(), adminUser, AdminAuthMethodSession)))
 	})
 }
 
@@ -307,7 +245,7 @@ func withAdmin(ctx context.Context, a *admin.AdminUser, method string) context.C
 	return context.WithValue(ctx, logger.ContextKeyUserID, a.ID().String())
 }
 
-// GetAdminAuthMethod returns AdminAuthMethodAPIKey or AdminAuthMethodSession.
+// GetAdminAuthMethod returns how the request was authenticated (AdminAuthMethodSession).
 func GetAdminAuthMethod(ctx context.Context) string {
 	if v, ok := ctx.Value(AdminAuthMethodKey).(string); ok {
 		return v

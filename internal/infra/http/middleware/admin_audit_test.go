@@ -63,70 +63,23 @@ func waitForAudit(t *testing.T, ch chan *admin.AuditLog) *admin.AuditLog {
 	}
 }
 
-// TestAuditAdminCreate proves an admin-user create request writes an audit row
-// with the admin.create action.
-func TestAuditAdminCreate(t *testing.T) {
-	auditRepo := newFakeAuditRepo()
-	am := middleware.NewAuditMiddleware(auditRepo, logger.NewNop())
-
-	adminRepo := newFakeAdminRepo()
-	adminRepo.add("key-super", admin.AdminRoleSuperAdmin)
-	auth := middleware.NewAdminAuthMiddleware(adminRepo, logger.NewNop())
-
-	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusCreated) })
-	h := auth.Authenticate(am.AuditAdminCreate()(stub))
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/", http.NoBody)
-	req.Header.Set(middleware.AdminAPIKeyHeader, "key-super")
-	h.ServeHTTP(httptest.NewRecorder(), req)
-
-	log := waitForAudit(t, auditRepo.created)
-	if log.Action != admin.AuditActionAdminCreate {
-		t.Errorf("audit action: got %q, want %q", log.Action, admin.AuditActionAdminCreate)
-	}
-}
-
 // TestAuditAdminDelete proves an admin-user delete request writes an audit row
 // with the admin.delete action.
 func TestAuditAdminDelete(t *testing.T) {
 	auditRepo := newFakeAuditRepo()
 	am := middleware.NewAuditMiddleware(auditRepo, logger.NewNop())
 
-	adminRepo := newFakeAdminRepo()
-	adminRepo.add("key-super", admin.AdminRoleSuperAdmin)
-	auth := middleware.NewAdminAuthMiddleware(adminRepo, logger.NewNop())
+	sessions := newFakeSessions()
+	sessions.add("key-super", admin.AdminRoleSuperAdmin)
+	auth := middleware.NewAdminAuthMiddleware(sessions, logger.NewNop())
 
 	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	h := auth.Authenticate(am.AuditAdminDelete()(stub))
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/"+shared.NewID().String(), http.NoBody)
-	req.Header.Set(middleware.AdminAPIKeyHeader, "key-super")
-	h.ServeHTTP(httptest.NewRecorder(), req)
+	h.ServeHTTP(httptest.NewRecorder(), adminRequest(http.MethodDelete, "/api/v1/admin/users/"+shared.NewID().String(), "key-super"))
 
 	log := waitForAudit(t, auditRepo.created)
 	if log.Action != admin.AuditActionAdminDelete {
 		t.Errorf("audit action: got %q, want %q", log.Action, admin.AuditActionAdminDelete)
-	}
-}
-
-// TestAuditAdminRotateKey proves the new rotate-key audit factory writes a row
-// with the admin.rotate_key action.
-func TestAuditAdminRotateKey(t *testing.T) {
-	auditRepo := newFakeAuditRepo()
-	am := middleware.NewAuditMiddleware(auditRepo, logger.NewNop())
-	adminRepo := newFakeAdminRepo()
-	adminRepo.add("key-super", admin.AdminRoleSuperAdmin)
-	auth := middleware.NewAdminAuthMiddleware(adminRepo, logger.NewNop())
-
-	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	handler := auth.Authenticate(am.AuditAdminRotateKey()(stub))
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/"+shared.NewID().String()+"/rotate-key", http.NoBody)
-	req.Header.Set(middleware.AdminAPIKeyHeader, "key-super")
-	handler.ServeHTTP(httptest.NewRecorder(), req)
-
-	log := waitForAudit(t, auditRepo.created)
-	if log.Action != admin.AuditActionAdminRotateKey {
-		t.Errorf("audit action: got %q, want %q", log.Action, admin.AuditActionAdminRotateKey)
 	}
 }

@@ -58,27 +58,9 @@ type AdminListResponse struct {
 	TotalPages int             `json:"total_pages"`
 }
 
-// AdminCreateResponse includes the API key (only shown on creation).
-type AdminCreateResponse struct {
-	Admin  AdminResponse `json:"admin"`
-	APIKey string        `json:"api_key"`
-}
-
-// AdminRotateKeyResponse includes the new API key.
-type AdminRotateKeyResponse struct {
-	APIKey string `json:"api_key"`
-}
-
 // =============================================================================
 // Request Types
 // =============================================================================
-
-// CreateAdminRequest represents the request to create an admin.
-type CreateAdminRequest struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
-	Role  string `json:"role"`
-}
 
 // UpdateAdminRequest represents the request to update an admin.
 type UpdateAdminRequest struct {
@@ -171,84 +153,6 @@ func (h *AdminUserHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toAdminResponse(adminUser))
-}
-
-// Create creates a new admin user.
-// POST /api/v1/admin/admins
-func (h *AdminUserHandler) Create(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	// Get current admin (for created_by). super_admin is guaranteed by the
-	// route-layer RequireRole(super_admin) gate on /api/v1/admin/users.
-	currentAdmin := middleware.MustGetAdminUser(ctx)
-
-	var req CreateAdminRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
-		return
-	}
-
-	// Validate request
-	if req.Email == "" {
-		apierror.BadRequest("email is required").WriteJSON(w)
-		return
-	}
-	if req.Role == "" {
-		req.Role = string(admin.RoleViewer)
-	}
-
-	// Check if email already exists
-	existing, err := h.repo.GetByEmail(ctx, req.Email)
-	if err == nil && existing != nil {
-		apierror.Conflict("admin with this email already exists").WriteJSON(w)
-		return
-	}
-
-	// Create admin user
-	name := req.Name
-	if name == "" {
-		// Derive name from email
-		name = admin.DeriveNameFromEmail(req.Email)
-	}
-
-	createdByID := currentAdmin.ID()
-	adminUser, rawKey, err := admin.NewAdminUser(
-		req.Email,
-		name,
-		admin.AdminRole(req.Role),
-		&createdByID,
-	)
-	if err != nil {
-		h.logger.Error("failed to create admin entity", "error", err)
-		apierror.BadRequest(err.Error()).WriteJSON(w)
-		return
-	}
-
-	// Save to database
-	if err := h.repo.Create(ctx, adminUser); err != nil {
-		if admin.IsAdminAlreadyExists(err) {
-			apierror.Conflict("admin already exists").WriteJSON(w)
-			return
-		}
-		h.logger.Error("failed to save admin", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	h.logger.Info("admin created",
-		"admin_id", adminUser.ID().String(),
-		"email", adminUser.Email(),
-		"role", adminUser.Role(),
-		"created_by", currentAdmin.Email())
-
-	response := AdminCreateResponse{
-		Admin:  toAdminResponse(adminUser),
-		APIKey: rawKey,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(response)
 }
 
 // Update updates an admin user.
@@ -367,58 +271,6 @@ func (h *AdminUserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		"deleted_by", currentAdmin.Email())
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// RotateKey rotates an admin's API key.
-// POST /api/v1/admin/admins/{id}/rotate-key
-func (h *AdminUserHandler) RotateKey(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	idStr := chi.URLParam(r, "id")
-	currentAdmin := middleware.MustGetAdminUser(ctx)
-
-	id, err := shared.IDFromString(idStr)
-	if err != nil {
-		apierror.BadRequest("invalid admin id").WriteJSON(w)
-		return
-	}
-
-	adminUser, err := h.repo.GetByID(ctx, id)
-	if err != nil {
-		if admin.IsAdminNotFound(err) {
-			apierror.NotFound("Admin").WriteJSON(w)
-			return
-		}
-		h.logger.Error("failed to get admin", "error", err, "id", idStr)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	// Rotate the API key - generates new key internally. Role gating
-	// (super_admin only) is enforced at the route layer.
-	newKey, err := adminUser.RotateAPIKey()
-	if err != nil {
-		h.logger.Error("failed to rotate API key", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	// Save changes
-	if err := h.repo.Update(ctx, adminUser); err != nil {
-		h.logger.Error("failed to save admin after key rotation", "error", err, "id", idStr)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	h.logger.Info("admin API key rotated",
-		"admin_id", adminUser.ID().String(),
-		"rotated_by", currentAdmin.Email())
-
-	response := AdminRotateKeyResponse{
-		APIKey: newKey,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(response)
 }
 
 // =============================================================================

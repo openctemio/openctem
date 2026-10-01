@@ -209,11 +209,6 @@ func (w *auditResponseWriter) Unwrap() http.ResponseWriter {
 
 // Common audit middleware factories for typical admin operations.
 
-// AuditAdminCreate returns middleware for admin user creation.
-func (m *AuditMiddleware) AuditAdminCreate() func(http.Handler) http.Handler {
-	return m.AuditLog(admin.AuditActionAdminCreate, admin.ResourceTypeAdmin, "")
-}
-
 // AuditAdminUpdate returns middleware for admin user updates.
 func (m *AuditMiddleware) AuditAdminUpdate() func(http.Handler) http.Handler {
 	return m.AuditLog(admin.AuditActionAdminUpdate, admin.ResourceTypeAdmin, "id")
@@ -222,11 +217,6 @@ func (m *AuditMiddleware) AuditAdminUpdate() func(http.Handler) http.Handler {
 // AuditAdminDelete returns middleware for admin user deletion.
 func (m *AuditMiddleware) AuditAdminDelete() func(http.Handler) http.Handler {
 	return m.AuditLog(admin.AuditActionAdminDelete, admin.ResourceTypeAdmin, "id")
-}
-
-// AuditAdminRotateKey returns middleware for admin API key rotation.
-func (m *AuditMiddleware) AuditAdminRotateKey() func(http.Handler) http.Handler {
-	return m.AuditLog(admin.AuditActionAdminRotateKey, admin.ResourceTypeAdmin, "id")
 }
 
 // AuditAgentCreate returns middleware for platform agent creation.
