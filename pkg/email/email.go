@@ -223,11 +223,7 @@ func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) 
 
 	// Start TLS if configured
 	if s.config.TLS {
-		tlsConfig := &tls.Config{
-			ServerName:         s.config.Host,
-			InsecureSkipVerify: s.config.SkipVerify,
-		}
-		if err := client.StartTLS(tlsConfig); err != nil {
+		if err := client.StartTLS(TLSConfig(s.config.Host, s.config.SkipVerify)); err != nil {
 			return fmt.Errorf("failed to start TLS: %w", err)
 		}
 	}
@@ -374,4 +370,17 @@ func (s *LoggingSender) SendTemplate(ctx context.Context, to string, template Te
 		)
 	}
 	return err
+}
+
+// TLSConfig is the client TLS configuration for SMTP (implicit TLS and
+// STARTTLS). TLS 1.2 is the floor: every SMTP relay still in service supports
+// it, and anything older (SSLv3/TLS 1.0/1.1) is deprecated by RFC 8996.
+// skipVerify is the operator's explicit SMTP_SKIP_VERIFY escape hatch for
+// self-signed relays; it does not lower the protocol floor.
+func TLSConfig(host string, skipVerify bool) *tls.Config {
+	return &tls.Config{
+		ServerName:         host,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: skipVerify, //nolint:gosec // G402: explicit operator opt-in for self-signed relays
+	}
 }
