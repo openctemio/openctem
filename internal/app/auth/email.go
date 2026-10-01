@@ -71,7 +71,7 @@ func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) 
 
 	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
 	if err != nil {
-		s.logger.Debug("no tenant SMTP config, using system default", "tenant_id", tenantID)
+		s.logger.Debug("no tenant SMTP config, using system default", "tenant_id", logSafe(tenantID))
 		return s.sender
 	}
 	if cfg == nil {
@@ -110,7 +110,7 @@ func (s *EmailService) HasTenantSMTP(ctx context.Context, tenantID string) bool 
 func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, userName, token string, expiresIn time.Duration) error {
 	if !s.IsConfigured() {
 		s.logger.Warn("email service not configured, skipping verification email",
-			"email", userEmail,
+			"email", logSafe(userEmail),
 		)
 		return nil
 	}
@@ -127,14 +127,14 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateVerifyEmail, data); err != nil {
 		s.logger.Error("failed to send verification email",
-			"email", userEmail,
+			"email", logSafe(userEmail),
 			"error", err,
 		)
 		return fmt.Errorf("failed to send verification email: %w", err)
 	}
 
 	s.logger.Info("verification email sent",
-		"email", userEmail,
+		"email", logSafe(userEmail),
 	)
 	return nil
 }
@@ -143,7 +143,7 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, userName, token string, expiresIn time.Duration, ipAddress string) error {
 	if !s.IsConfigured() {
 		s.logger.Warn("email service not configured, skipping password reset email",
-			"email", userEmail,
+			"email", logSafe(userEmail),
 		)
 		return nil
 	}
@@ -162,14 +162,14 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordReset, data); err != nil {
 		s.logger.Error("failed to send password reset email",
-			"email", userEmail,
+			"email", logSafe(userEmail),
 			"error", err,
 		)
 		return fmt.Errorf("failed to send password reset email: %w", err)
 	}
 
 	s.logger.Info("password reset email sent",
-		"email", userEmail,
+		"email", logSafe(userEmail),
 	)
 	return nil
 }
@@ -178,7 +178,7 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, userName, ipAddress string) error {
 	if !s.IsConfigured() {
 		s.logger.Warn("email service not configured, skipping password changed email",
-			"email", userEmail,
+			"email", logSafe(userEmail),
 		)
 		return nil
 	}
@@ -196,14 +196,14 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordChanged, data); err != nil {
 		s.logger.Error("failed to send password changed email",
-			"email", userEmail,
+			"email", logSafe(userEmail),
 			"error", err,
 		)
 		return fmt.Errorf("failed to send password changed email: %w", err)
 	}
 
 	s.logger.Info("password changed email sent",
-		"email", userEmail,
+		"email", logSafe(userEmail),
 	)
 	return nil
 }
@@ -212,7 +212,7 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName string) error {
 	if !s.IsConfigured() {
 		s.logger.Warn("email service not configured, skipping welcome email",
-			"email", userEmail,
+			"email", logSafe(userEmail),
 		)
 		return nil
 	}
@@ -230,14 +230,14 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateWelcome, data); err != nil {
 		s.logger.Error("failed to send welcome email",
-			"email", userEmail,
+			"email", logSafe(userEmail),
 			"error", err,
 		)
 		return fmt.Errorf("failed to send welcome email: %w", err)
 	}
 
 	s.logger.Info("welcome email sent",
-		"email", userEmail,
+		"email", logSafe(userEmail),
 	)
 	return nil
 }
@@ -257,7 +257,7 @@ func (s *EmailService) SendMemberSuspendedEmail(
 	}
 	if sender == nil || !sender.IsConfigured() {
 		s.logger.Warn("email service not configured, skipping member suspended email",
-			"email", recipientEmail, "tenant_id", tenantID)
+			"email", logSafe(recipientEmail), "tenant_id", logSafe(tenantID))
 		return nil
 	}
 
@@ -271,12 +271,12 @@ func (s *EmailService) SendMemberSuspendedEmail(
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateMemberSuspended, data); err != nil {
 		s.logger.Error("failed to send member suspended email",
-			"email", recipientEmail, "error", err)
+			"email", logSafe(recipientEmail), "error", err)
 		return fmt.Errorf("failed to send member suspended email: %w", err)
 	}
 
 	s.logger.Info("member suspended email sent",
-		"email", recipientEmail, "team", teamName)
+		"email", logSafe(recipientEmail), "team", logSafe(teamName))
 	return nil
 }
 
@@ -293,7 +293,7 @@ func (s *EmailService) SendMemberReactivatedEmail(
 	}
 	if sender == nil || !sender.IsConfigured() {
 		s.logger.Warn("email service not configured, skipping member reactivated email",
-			"email", recipientEmail, "tenant_id", tenantID)
+			"email", logSafe(recipientEmail), "tenant_id", logSafe(tenantID))
 		return nil
 	}
 
@@ -307,12 +307,12 @@ func (s *EmailService) SendMemberReactivatedEmail(
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateMemberReactivated, data); err != nil {
 		s.logger.Error("failed to send member reactivated email",
-			"email", recipientEmail, "error", err)
+			"email", logSafe(recipientEmail), "error", err)
 		return fmt.Errorf("failed to send member reactivated email: %w", err)
 	}
 
 	s.logger.Info("member reactivated email sent",
-		"email", recipientEmail, "team", teamName)
+		"email", logSafe(recipientEmail), "team", logSafe(teamName))
 	return nil
 }
 
@@ -346,7 +346,7 @@ func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, reci
 	}
 	// tenantID reaches here from the request path; strip line breaks before
 	// logging it (CWE-117).
-	logTenant := strings.ReplaceAll(strings.ReplaceAll(tenantID, "\n", ""), "\r", "")
+	logTenant := logSafe(tenantID)
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateAccountSetup, data); err != nil {
 		s.logger.Error("failed to send account setup email", "tenant_id", logTenant)
 		return fmt.Errorf("failed to send account setup email: %w", err)
@@ -366,7 +366,7 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 
 	if sender == nil || !sender.IsConfigured() {
 		s.logger.Warn("email service not configured, skipping team invitation email",
-			"email", recipientEmail,
+			"email", logSafe(recipientEmail),
 		)
 		return nil
 	}
@@ -383,14 +383,14 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateTeamInvitation, data); err != nil {
 		s.logger.Error("failed to send team invitation email",
-			"email", recipientEmail,
+			"email", logSafe(recipientEmail),
 			"error", err,
 		)
 		return fmt.Errorf("failed to send team invitation email: %w", err)
 	}
 
 	s.logger.Info("team invitation email sent",
-		"email", recipientEmail,
+		"email", logSafe(recipientEmail),
 		"team", teamName,
 		"tenant_smtp", len(tenantID) > 0 && tenantID[0] != "",
 	)
@@ -471,4 +471,11 @@ func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userNa
 			s.logger.Error("failed to send security notice email", "error", err)
 		}
 	}()
+}
+
+// logSafe strips line breaks from a caller-supplied value before it is
+// logged, so it cannot forge log entries (CWE-117). strings.ReplaceAll on
+// \n and \r is the sanitizer CodeQL recognizes.
+func logSafe(v string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(v, "\n", ""), "\r", "")
 }
