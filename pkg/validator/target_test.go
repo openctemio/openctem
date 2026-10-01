@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -507,5 +508,67 @@ func TestContainsDangerousChars(t *testing.T) {
 				t.Errorf("containsDangerousChars(%q) = %v, want %v", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+// IPv6 in the forms scanners take: bare, [addr]:port and URLs with a
+// bracketed host. Public addresses pass; the SSRF rules still apply to
+// private, loopback and link-local ones in every form.
+func TestValidateSingleTarget_IPv6Forms(t *testing.T) {
+	v := NewTargetValidator()
+	cases := []struct {
+		target   string
+		wantOK   bool
+		wantType TargetType
+		wantErr  string
+	}{
+		{"2606:4700:4700::1111", true, TargetTypeIPv6, ""},
+		{"[2606:4700:4700::1111]:443", true, TargetTypeIPv6, ""},
+		{"https://[2606:4700:4700::1111]/", true, TargetTypeURL, ""},
+		{"https://[2606:4700:4700::1111]:8443/login", true, TargetTypeURL, ""},
+		{"[fd00::1]:22", false, "", "internal IP"},
+		{"https://[fd00::1]/", false, "", "internal IP"},
+		{"[::1]:80", false, "", "localhost"},
+		{"http://[::1]/", false, "", "localhost"},
+		{"[fe80::1]:22", false, "", "internal IP"},
+		// Brackets are accepted only around an IPv6 address.
+		{"[example.com]:443", false, "", ""},
+		{"[2606:4700:4700::1111];id", false, "", ""},
+		{"https://[2606:4700:4700::1111]/a[b]", false, "", ""},
+		{"[2606:4700:4700::1111]", false, "", ""},
+	}
+	for _, tc := range cases {
+		got := v.ValidateSingleTarget(tc.target)
+		if got.IsValid != tc.wantOK {
+			t.Errorf("%q: IsValid = %v (error %q), want %v", tc.target, got.IsValid, got.Error, tc.wantOK)
+			continue
+		}
+		if tc.wantType != "" && got.Type != tc.wantType {
+			t.Errorf("%q: type = %s, want %s", tc.target, got.Type, tc.wantType)
+		}
+		if tc.wantErr != "" && !strings.Contains(got.Error, tc.wantErr) {
+			t.Errorf("%q: error = %q, want it to mention %q", tc.target, got.Error, tc.wantErr)
+		}
+	}
+}
+
+// An IPv6 range is bounded like an IPv4 one. The host count used to overflow
+// (1<<64 is 0 in Go), so ::/0 and 2000::/3 passed as "0 hosts".
+func TestValidateSingleTarget_IPv6CIDRSize(t *testing.T) {
+	v := NewTargetValidator()
+	for target, wantOK := range map[string]bool{
+		"2606:4700::/112": true,
+		"2606:4700::/111": false,
+		"2606:4700::/64":  false,
+		"2000::/3":        false,
+		"::/0":            false,
+		"fd00::/112":      false,
+		"10.0.0.0/16":     false,
+		"8.8.0.0/16":      true,
+		"8.0.0.0/15":      false,
+	} {
+		if got := v.ValidateSingleTarget(target); got.IsValid != wantOK {
+			t.Errorf("%q: IsValid = %v (error %q), want %v", target, got.IsValid, got.Error, wantOK)
+		}
 	}
 }
