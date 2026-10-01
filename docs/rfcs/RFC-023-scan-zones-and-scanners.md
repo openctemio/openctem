@@ -132,7 +132,7 @@ CISA Secure by Design.
 | P6 | **Signing keys rotate without re-enrolling the fleet** (avoids Elastic Fleet's forced re-enrolment): an offline **root key** signs a published key set of online job-signing keys with expiries (TUF-style roles); the sensor pins the root public key at enrollment and refreshes the key set on heartbeat. |
 | P7 | **Content and updates are signed too:** scan templates and checks (code-type templates must be signed), tool bundles and sensor self-updates are delivered with TUF metadata (expiry, rollback and freeze protection). |
 | P8 | **Supply chain for every release** of the SDK, the agent and the images: keyless **Sigstore cosign** signatures, **SLSA Build L3** provenance, a CycloneDX **SBOM**, `-trimpath` reproducible builds, `govulncheck` + `gosec` + lint gates; installers verify signatures before running anything. |
-| P9 | **Push integrity:** the signed request covers the body digest; each report carries an `Idempotency-Key` (retries never duplicate); strict schema validation with size, depth and decompression limits; per-sensor quotas and rate limits; provenance stamped **by the server**; anomalous pushes (volume spikes, out-of-zone or out-of-job assets) are quarantined for review instead of merged. |
+| P9 | **Push integrity:** the signed request covers the body digest; each report carries an `Idempotency-Key` (retries never duplicate); strict schema validation with size, depth and decompression limits; per-sensor quotas and rate limits; provenance stamped **by the server**; anomalous pushes (volume spikes, out-of-zone or out-of-job assets) are quarantined for review instead of merged. The results contract is [RFC-026](RFC-026-sensor-results-ingest.md): CTIS only, `PUT /api/v2/sensor/results/{report_id}` (the sensor-chosen id in the URL replaces the `Idempotency-Key` header), self-describing segments + commit, `Content-Digest` mandatory from the first v2 release. |
 | P10 | **Transport:** TLS 1.3 preferred with 1.2 as the floor, and the hybrid post-quantum key exchange (X25519MLKEM768) that Go's `crypto/tls` already negotiates by default; operator-supplied CA bundle pinning (no hard-coded leaf pins, which break inspecting proxies); `InsecureSkipVerify` impossible without an explicit dev flag; redirects never carry credentials across origins or downgrade to HTTP; HTTPS long-poll kept (proxy- and firewall-friendly), with HTTP/2. |
 | P11 | **Crypto agility:** every envelope and key carries an algorithm id, so signatures can move to post-quantum ML-DSA later without a protocol break. |
 | P12 | **Tamper-evident audit** of enrollment, approval, key rotation and revocation, job signing, credential release and quarantine, in the hash-chained audit log (whose current chain-break bug is fixed first). |
@@ -185,6 +185,8 @@ tenant-scoped.
    IP outside the allow-list or in the built-in deny list, pins the IP, runs the
    typed tool (layer 3), and reports per-target skips.
 5. **Results**: ingest as today; results stamped with zone (and network, Phase 4).
+   In protocol v2, results bound to a command carry it in the URL, so the zone
+   is stamped per record ([RFC-026](RFC-026-sensor-results-ingest.md) §5).
 
 ## 7. UI (tenant admin)
 
