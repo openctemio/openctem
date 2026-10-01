@@ -39,6 +39,7 @@ type CreateScanInput struct {
 	TenantRunner     bool           `json:"run_on_tenant_runner"`
 	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
 	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`                              // Optional scan profile (tool configs, quality gates)
+	ScanZoneID       string         `json:"scan_zone_id" validate:"omitempty,uuid"`                            // Optional: pin targets to one scan zone ("" = Automatic)
 	TimeoutSeconds   int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max execution time (default 3600, min 30, max 86400)
 	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
@@ -122,6 +123,13 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if input.SensorPreference != "" {
 		sc.SetSensorPreference(scan.SensorPreference(input.SensorPreference))
 	}
+
+	// Scan zone picker: "" = Automatic routing.
+	zoneID, err := s.resolveSelectedZone(ctx, tenantID, input.ScanZoneID)
+	if err != nil {
+		return nil, err
+	}
+	sc.SetScanZone(zoneID)
 
 	// Set timeout (defaults to DefaultScanTimeoutSeconds if 0)
 	sc.SetTimeoutSeconds(input.TimeoutSeconds)
@@ -607,6 +615,9 @@ type UpdateScanInput struct {
 	//   pointer to "" = unlink profile
 	//   pointer to id = link to profile
 	ProfileID *string `json:"profile_id" validate:"omitempty"`
+	// ScanZoneID: nil = leave unchanged, pointer to "" = Automatic routing,
+	// pointer to id = pin the scan's targets to that zone.
+	ScanZoneID *string `json:"scan_zone_id" validate:"omitempty"`
 	// TimeoutSeconds: nil = leave unchanged, otherwise min=30 max=86400
 	TimeoutSeconds *int `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
 	// Retry config: nil = leave unchanged
@@ -686,6 +697,15 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	// Update sensor preference if provided
 	if input.SensorPreference != "" {
 		sc.SetSensorPreference(scan.SensorPreference(input.SensorPreference))
+	}
+
+	// Update the scan zone picker if provided (sentinel: empty = Automatic)
+	if input.ScanZoneID != nil {
+		zoneID, err := s.resolveSelectedZone(ctx, sc.TenantID, *input.ScanZoneID)
+		if err != nil {
+			return nil, err
+		}
+		sc.SetScanZone(zoneID)
 	}
 
 	// Update timeout if provided (validation enforces min=30, max=86400)

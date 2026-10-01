@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/api/pkg/domain/command"
@@ -58,6 +59,7 @@ type zonePlan struct {
 	Uncovered []scanzone.Uncovered
 	Warnings  []string
 	Summary   map[string]any
+	Routing   *scanzone.Plan // where each target went
 }
 
 // zoneRouted reports the zone routing for this run's tenant: the zones, or
@@ -98,16 +100,52 @@ func (s *Service) toolReachesNetwork(ctx context.Context, name string) bool {
 	return false
 }
 
+// selectedZone returns the zone a scan is pinned to (the zone picker), or nil
+// for Automatic routing. A scan pinned to a zone that no longer exists fails
+// closed: it is never quietly routed automatically instead.
+func selectedZone(sc *scan.Scan, zones []*scanzone.Zone) (*scanzone.Zone, error) {
+	if sc.ScanZoneID == nil || sc.ScanZoneID.IsZero() {
+		return nil, nil
+	}
+	for _, z := range zones {
+		if z.ID == *sc.ScanZoneID {
+			return z, nil
+		}
+	}
+	return nil, shared.NewDomainError("SCAN_ZONE_NOT_FOUND", fmt.Sprintf(
+		"Scan %q is pinned to a scan zone that no longer exists; pick another zone or Automatic routing.",
+		sc.Name), shared.ErrValidation)
+}
+
+// routeForScan routes a scan's targets: to the narrowest zone (Automatic), or
+// only into the scan's selected zone, whose ranges are always enforced.
+func (s *Service) routeForScan(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string) (*scanzone.Plan, error) {
+	sel, err := selectedZone(sc, zones)
+	if err != nil {
+		return nil, err
+	}
+	if sel != nil {
+		return scanzone.NewRouter([]*scanzone.Zone{sel}, s.zoneResolver).Plan(ctx, targets).RestrictTo(sel), nil
+	}
+	return scanzone.NewRouter(zones, s.zoneResolver).Plan(ctx, targets), nil
+}
+
 // planZoneDispatch routes targets to zones, batches them, and picks the least
 // busy healthy sensor of each zone for each batch.
 func (s *Service) planZoneDispatch(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string) (*zonePlan, error) {
-	routing := scanzone.NewRouter(zones, s.zoneResolver).Plan(ctx, targets)
-	plan := &zonePlan{Uncovered: routing.Uncovered}
-
-	batchSize := sc.TargetsPerJob
-	if batchSize < 1 || !scannerAcceptsTargetList(sc.ScannerName) {
-		batchSize = 1 // a scanner that reads one target gets one target per job
+	routing, err := s.routeForScan(ctx, sc, zones, targets)
+	if err != nil {
+		return nil, err
 	}
+	return s.planZoneBatches(ctx, sc, routing)
+}
+
+// planZoneBatches batches a routing plan and pins each batch to the least busy
+// healthy sensor of its zone. It reads sensor load and writes nothing.
+func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *scanzone.Plan) (*zonePlan, error) {
+	plan := &zonePlan{Uncovered: slices.Clone(routing.Uncovered), Routing: routing}
+
+	batchSize := zoneBatchSize(sc)
 
 	sensors, err := s.zones.RoutableSensors(ctx, sc.TenantID, routing.ZoneOrder, sc.ScannerName)
 	if err != nil {
@@ -170,13 +208,7 @@ func (s *Service) planZoneDispatch(ctx context.Context, sc *scan.Scan, zones []*
 			sc.Name, len(plan.Batches), maxZoneJobsPerRun), shared.ErrValidation)
 	}
 
-	for i, u := range plan.Uncovered {
-		if i == maxListedUncovered {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("... and %d more target(s) not scanned", len(plan.Uncovered)-i))
-			break
-		}
-		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s not scanned: %s", u.Target, u.Reason))
-	}
+	plan.Warnings = append(plan.Warnings, uncoveredWarnings(plan.Uncovered)...)
 	plan.Summary = map[string]any{
 		"zones":             zoneSummaries,
 		"unzoned_targets":   len(routing.Unzoned),
@@ -184,7 +216,32 @@ func (s *Service) planZoneDispatch(ctx context.Context, sc *scan.Scan, zones []*
 		"jobs":              len(plan.Batches),
 		"targets_per_job":   batchSize,
 	}
+	if sc.ScanZoneID != nil {
+		plan.Summary["selected_zone_id"] = sc.ScanZoneID.String()
+	}
 	return plan, nil
+}
+
+// zoneBatchSize is how many targets go in one command of a zoned run.
+func zoneBatchSize(sc *scan.Scan) int {
+	if sc.TargetsPerJob < 1 || !scannerAcceptsTargetList(sc.ScannerName) {
+		return 1 // a scanner that reads one target gets one target per job
+	}
+	return sc.TargetsPerJob
+}
+
+// uncoveredWarnings lists every target that is not scanned, with its reason
+// (bounded; the rest are counted).
+func uncoveredWarnings(uncovered []scanzone.Uncovered) []string {
+	out := make([]string, 0, min(len(uncovered), maxListedUncovered+1))
+	for i, u := range uncovered {
+		if i == maxListedUncovered {
+			out = append(out, fmt.Sprintf("... and %d more target(s) not scanned", len(uncovered)-i))
+			break
+		}
+		out = append(out, fmt.Sprintf("%s not scanned: %s", u.Target, u.Reason))
+	}
+	return out
 }
 
 // recordZonePlan writes the routing outcome into the run context: warnings
@@ -349,19 +406,39 @@ func appendUnique(xs []string, x string) []string {
 // unzoned public targets); the run is stamped with that zone and every step
 // command stays inside it.
 func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string, runContext map[string]any) ([]string, error) {
-	routing := scanzone.NewRouter(zones, s.zoneResolver).Plan(ctx, targets)
-	plan := &zonePlan{Uncovered: routing.Uncovered}
+	routing, err := s.routeForScan(ctx, sc, zones, targets)
+	if err != nil {
+		return nil, err
+	}
+	plan, kept, err := planWorkflowZone(sc, routing)
+	if err != nil {
+		return nil, err
+	}
+	if zid, ok := plan.Summary["zone_id"].(string); ok {
+		runContext[pipeline.RunContextKeyScanZoneID] = zid
+	}
+	if err := recordZonePlan(sc, plan, runContext); err != nil {
+		return nil, err
+	}
+	return kept, nil
+}
+
+// planWorkflowZone decides the one zone of a workflow run from its routing.
+// It returns ZONE_SPLIT_REQUIRED when the targets span zones.
+func planWorkflowZone(sc *scan.Scan, routing *scanzone.Plan) (*zonePlan, []string, error) {
+	plan := &zonePlan{Uncovered: slices.Clone(routing.Uncovered), Routing: routing}
 	var kept []string
+	var zoneID string
 	switch {
 	case len(routing.ZoneOrder) > 1 || (len(routing.ZoneOrder) == 1 && len(routing.Unzoned) > 0):
-		names := make([]string, 0, len(routing.ZoneOrder))
+		names := make([]string, 0, len(routing.ZoneOrder)+1)
 		for _, id := range routing.ZoneOrder {
 			names = append(names, routing.Zones[id].Name)
 		}
 		if len(routing.Unzoned) > 0 {
 			names = append(names, "(no zone)")
 		}
-		return nil, shared.NewDomainError("ZONE_SPLIT_REQUIRED", fmt.Sprintf(
+		return nil, nil, shared.NewDomainError("ZONE_SPLIT_REQUIRED", fmt.Sprintf(
 			"Workflow scan %q has targets in several scan zones (%s); a workflow runs in one zone, so split it into one scan per zone.",
 			sc.Name, strings.Join(names, ", ")), shared.ErrValidation)
 	case len(routing.ZoneOrder) == 1:
@@ -373,7 +450,7 @@ func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones
 			}
 			kept = nil
 		} else {
-			runContext[pipeline.RunContextKeyScanZoneID] = z.ID.String()
+			zoneID = z.ID.String()
 			plan.Batches = []zoneBatch{{Zone: z, Targets: kept}}
 		}
 	default:
@@ -382,24 +459,18 @@ func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones
 			plan.Batches = []zoneBatch{{Targets: kept}}
 		}
 	}
-	for i, u := range plan.Uncovered {
-		if i == maxListedUncovered {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("... and %d more target(s) not scanned", len(plan.Uncovered)-i))
-			break
-		}
-		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s not scanned: %s", u.Target, u.Reason))
-	}
+	plan.Warnings = uncoveredWarnings(plan.Uncovered)
 	plan.Summary = map[string]any{
 		"unzoned_targets":   len(routing.Unzoned),
 		"uncovered_targets": len(plan.Uncovered),
 	}
-	if zid, ok := runContext[pipeline.RunContextKeyScanZoneID].(string); ok {
-		plan.Summary["zone_id"] = zid
+	if zoneID != "" {
+		plan.Summary["zone_id"] = zoneID
 	}
-	if err := recordZonePlan(sc, plan, runContext); err != nil {
-		return nil, err
+	if sc.ScanZoneID != nil {
+		plan.Summary["selected_zone_id"] = sc.ScanZoneID.String()
 	}
-	return kept, nil
+	return plan, kept, nil
 }
 
 // admitZonedPrivateTargets moves the private targets a scan zone of the

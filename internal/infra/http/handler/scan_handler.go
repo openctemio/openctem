@@ -50,50 +50,54 @@ func NewScanHandler(service *scansvc.Service, userRepo user.Repository, coverage
 // CreateScanRequest represents the request body for creating a scan.
 // Either asset_group_id OR asset_group_ids OR targets must be provided (can have all).
 type CreateScanRequest struct {
-	Name                string         `json:"name" validate:"required,min=1,max=200"`
-	Description         string         `json:"description" validate:"max=1000"`
-	AssetGroupID        string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
-	AssetGroupIDs       []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets             []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
-	ScanType            string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	PipelineID          string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName         string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig       map[string]any `json:"scanner_config"`
-	TargetsPerJob       int            `json:"targets_per_job"`
-	ScheduleType        string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron        string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay         *int           `json:"schedule_day"`
-	ScheduleTime        *string        `json:"schedule_time"`
-	Timezone            string         `json:"timezone" validate:"max=50"`
-	Tags                []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner        bool           `json:"run_on_tenant_runner"`
-	SensorPreference    string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID           string         `json:"profile_id" validate:"omitempty,uuid"`
-	TimeoutSeconds      int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
-	MaxRetries          int            `json:"max_retries" validate:"omitempty,min=0,max=10"`
-	RetryBackoffSeconds int            `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	Name             string         `json:"name" validate:"required,min=1,max=200"`
+	Description      string         `json:"description" validate:"max=1000"`
+	AssetGroupID     string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
+	AssetGroupIDs    []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets          []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	ScanType         string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName      string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig    map[string]any `json:"scanner_config"`
+	TargetsPerJob    int            `json:"targets_per_job"`
+	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
+	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
+	ScheduleDay      *int           `json:"schedule_day"`
+	ScheduleTime     *string        `json:"schedule_time"`
+	Timezone         string         `json:"timezone" validate:"max=50"`
+	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     bool           `json:"run_on_tenant_runner"`
+	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`
+	// ScanZoneID pins every target to one scan zone; empty = Automatic routing.
+	ScanZoneID          string `json:"scan_zone_id" validate:"omitempty,uuid"`
+	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
+	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
+	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
 type UpdateScanRequest struct {
-	Name                string         `json:"name" validate:"omitempty,min=1,max=200"`
-	Description         string         `json:"description" validate:"max=1000"`
-	PipelineID          string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName         string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig       map[string]any `json:"scanner_config"`
-	TargetsPerJob       *int           `json:"targets_per_job"`
-	ScheduleType        string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron        string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay         *int           `json:"schedule_day"`
-	ScheduleTime        *string        `json:"schedule_time"`
-	Timezone            string         `json:"timezone" validate:"max=50"`
-	Tags                []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner        *bool          `json:"run_on_tenant_runner"`
-	SensorPreference    string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID           *string        `json:"profile_id" validate:"omitempty"`
-	TimeoutSeconds      *int           `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
-	MaxRetries          *int           `json:"max_retries" validate:"omitempty,min=0,max=10"`
-	RetryBackoffSeconds *int           `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	Name             string         `json:"name" validate:"omitempty,min=1,max=200"`
+	Description      string         `json:"description" validate:"max=1000"`
+	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName      string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig    map[string]any `json:"scanner_config"`
+	TargetsPerJob    *int           `json:"targets_per_job"`
+	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
+	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
+	ScheduleDay      *int           `json:"schedule_day"`
+	ScheduleTime     *string        `json:"schedule_time"`
+	Timezone         string         `json:"timezone" validate:"max=50"`
+	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     *bool          `json:"run_on_tenant_runner"`
+	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        *string        `json:"profile_id" validate:"omitempty"`
+	// ScanZoneID: omitted = unchanged, "" = Automatic routing, id = pin to that zone.
+	ScanZoneID          *string `json:"scan_zone_id" validate:"omitempty"`
+	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
+	MaxRetries          *int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
+	RetryBackoffSeconds *int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
 }
 
 // TriggerScanRequest represents the request body for triggering a scan.
@@ -183,6 +187,7 @@ type ScanDetailResponse struct {
 	RunOnTenantRunner   bool           `json:"run_on_tenant_runner"`
 	SensorPreference    string         `json:"sensor_preference"`
 	ProfileID           *string        `json:"profile_id,omitempty"`
+	ScanZoneID          *string        `json:"scan_zone_id"` // null = Automatic routing
 	TimeoutSeconds      int            `json:"timeout_seconds"`
 	MaxRetries          int            `json:"max_retries"`
 	RetryBackoffSeconds int            `json:"retry_backoff_seconds"`
@@ -301,6 +306,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		TenantRunner:        req.TenantRunner,
 		SensorPreference:    req.SensorPreference,
 		ProfileID:           req.ProfileID,
+		ScanZoneID:          req.ScanZoneID,
 		TimeoutSeconds:      req.TimeoutSeconds,
 		MaxRetries:          req.MaxRetries,
 		RetryBackoffSeconds: req.RetryBackoffSeconds,
@@ -505,6 +511,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TenantRunner:        req.TenantRunner,
 		SensorPreference:    req.SensorPreference,
 		ProfileID:           req.ProfileID,
+		ScanZoneID:          req.ScanZoneID,
 		TimeoutSeconds:      req.TimeoutSeconds,
 		MaxRetries:          req.MaxRetries,
 		RetryBackoffSeconds: req.RetryBackoffSeconds,
@@ -1181,6 +1188,10 @@ func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse 
 		resp.PipelineID = &pid
 	}
 
+	if s.ScanZoneID != nil {
+		zid := s.ScanZoneID.String()
+		resp.ScanZoneID = &zid
+	}
 	if s.ProfileID != nil {
 		pid := s.ProfileID.String()
 		resp.ProfileID = &pid

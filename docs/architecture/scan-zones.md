@@ -14,6 +14,7 @@ before.
 |---|---|
 | `scan_zones` | `tenant_id`, `name` (unique per tenant, case-insensitive), `description`, `is_default` (at most one per tenant), `ranges cidr[]`, `created_by`, timestamps. Only the default zone may have no ranges. |
 | `scan_zone_sensors` | `(tenant_id, zone_id, sensor_id)`. Composite foreign keys to `scan_zones (tenant_id, id)` and `sensors (tenant_id, id)`: a zone and a sensor of different tenants cannot be linked, whatever the caller does. The insert additionally refuses platform sensors. |
+| `scans.scan_zone_id` (migration 000236) | The zone picker: the zone a scan pins its targets to; NULL = Automatic. No foreign key: a scan whose zone is gone fails its trigger (`SCAN_ZONE_NOT_FOUND`) rather than falling back to automatic routing; deleting a zone that scans pin is refused (409 `ZONE_IN_USE`). |
 | `commands.scan_zone_id` | The zone a command was routed to. No foreign key on purpose: a dangling id keeps the claim predicate failing closed. A zone with pending/acknowledged/running commands cannot be deleted (409). |
 | `sensors` constraint `uq_sensors_tenant_id_id` | Target of the composite key. |
 
@@ -94,6 +95,32 @@ or failed ("k of n scan batches failed: <first error>", no generic retry, since
 that would re-dispatch without zone routing). A step with one command keeps the
 original behaviour.
 
+### Zone picker (selected zone)
+
+A scan may pin its targets to one zone (`scan_zone_id`, "Automatic" when
+null). Its ranges are always enforced (RFC D5): routing uses a router over that
+zone alone, so a target it holds goes to it even when a narrower zone also holds
+the target, and every other target is uncovered with the reason
+`outside the selected scan zone "<name>"`; public targets too, unless the
+selected zone is the default zone. Deny-list and DNS failures keep their own
+reason. Workflow scans follow the same rule, so pinning a workflow to a zone is
+also how to run it on targets that would otherwise need `ZONE_SPLIT_REQUIRED`
+splitting. Non-network tools are not routed, so the picker does not apply to
+them. A pinned zone that no longer exists fails the trigger closed
+(`SCAN_ZONE_NOT_FOUND`); `dispatch.zone_routing.selected_zone_id` records the
+choice on the run.
+
+### Routing preview
+
+`POST /api/v1/scan-zones/preview` runs the trigger's own steps for a scan about
+to be created, read-only: creation's target validation (with zone admission of
+private targets), asset-group expansion, scope exclusions, the zone router
+(selected zone included), batching and least-busy sensor pinning, or the
+workflow single-zone rule. It creates no scan, run or command. Hostnames are
+resolved at preview time, as a trigger would, so the answer can change with DNS
+and sensor health. What a trigger would refuse is returned in `error` rather
+than as an HTTP error.
+
 ## Claim predicate (layer 2)
 
 `GetPendingForSensor` (poll) and `ClaimForSensor` (acknowledge) share
@@ -137,7 +164,6 @@ Warnings: `no_sensors_assigned`, `private_ranges_without_healthy_sensor`,
 
 ## Known limits (Phase 1)
 
-- No zone picker on a scan yet: routing is automatic.
 - Hostnames are resolved once, at trigger time, from the platform's DNS; the
   sensor resolves again when it scans (pinning is layer 3, Phase 3).
 - A range spanning two zones is not split; it is reported uncovered.
@@ -157,6 +183,7 @@ use the JWT tenant; errors use the standard `apierror` body
 | `GET /api/v1/scan-zones` | `sensors:zones:read` | — | `{"data": [Zone], "total": n}` |
 | `GET /api/v1/scan-zones/coverage` | `sensors:zones:read` | — | `Coverage` |
 | `GET /api/v1/scan-zones/{id}` | `sensors:zones:read` | — | `Zone` |
+| `POST /api/v1/scan-zones/preview` | `sensors:zones:read` | `{"targets"?: [string], "asset_group_ids"?: [uuid], "scan_type"?: "single"\|"workflow", "scanner_name"?, "targets_per_job"?, "scan_zone_id"?: uuid\|null}` | `Preview` |
 | `POST /api/v1/scan-zones` | `sensors:zones:write` | `{"name", "description"?, "is_default"?, "ranges": [string]}` | `201 Zone` |
 | `PATCH /api/v1/scan-zones/{id}` | `sensors:zones:write` | any of `name`, `description`, `is_default`, `ranges` | `Zone` |
 | `PUT /api/v1/scan-zones/{id}/sensors/{sensorId}` | `sensors:zones:write` | — | `Zone` (idempotent) |
@@ -178,10 +205,38 @@ Coverage = {
 }
 ```
 
+```
+Preview = {
+  "zones_enabled": bool, "routed": bool, "not_routed_reason"?,
+  "resolved_targets", "excluded_targets": int,
+  "excluded": [string],                                  // first 100
+  "targets": [{"target", "status": "zone"|"unzoned"|"uncovered",
+               "zone_id"?, "zone_name"?, "sensor_id"?,  // sensor its job is pinned to
+               "reason"?, "addresses"?: [string]}],      // first 500
+  "zones": [{"zone_id", "zone_name", "targets", "jobs", "queued_jobs", "sensor_ids"}],
+  "unzoned_targets", "uncovered_targets", "jobs", "targets_per_job": int,
+  "selected_zone_id"?, "warnings": [string],
+  "error"?: {"code", "message"}   // NO_TARGETS, ALL_TARGETS_EXCLUDED, NO_ZONE_COVERAGE,
+                                  // ZONE_SPLIT_REQUIRED, TOO_MANY_JOBS, INVALID_TARGET
+}
+```
+
+`status`: `zone` is routed into a zone (no `sensor_id` = no online sensor yet,
+the job waits in the zone); `unzoned` is dispatched as before zones (tenant
+without zones, no default zone, or a tool zones do not apply to); `uncovered` is
+not scanned, `reason` says why. The preview returns `404` for a `scan_zone_id`
+or asset group not in the tenant.
+
+Scans: `POST /api/v1/scans` and `PUT /api/v1/scans/{id}` accept
+`scan_zone_id` (`""`/omitted on create = Automatic; on update omitted =
+unchanged, `""` = Automatic); the scan response carries `scan_zone_id`
+(`null` = Automatic). A zone that is not the tenant's is a `400`.
+
 Status codes to handle: `400` invalid range or name (message says which range
 and why), `404` zone or sensor not in this tenant, `409` duplicate name
 (`ZONE_NAME_TAKEN`), second default zone (`DEFAULT_ZONE_EXISTS`), or deleting a
-zone with queued/running jobs (`ZONE_IN_USE`).
+zone with queued/running jobs or that scans pin (`ZONE_IN_USE`; the message
+says which).
 
 Scan runs: `GET /api/v1/pipeline-runs/{id}` now returns a `dispatch` object
 when the trigger recorded one:
@@ -194,6 +249,7 @@ when the trigger recorded one:
   "zone_routing": {
     "jobs", "targets_per_job", "unzoned_targets", "uncovered_targets",
     "zone_id"?,                                          // workflow runs
+    "selected_zone_id"?,                                 // the scan's zone picker
     "zones": [{"zone_id", "zone_name", "targets", "jobs", "queued_jobs", "sensor_ids"}]
   },
   "sensor_routing": "tenant" | "platform"               // single-scanner runs
@@ -211,7 +267,7 @@ internal target, a zoned target, or a tenant without platform access refuses
 the trigger (`PLATFORM_SENSOR_REFUSED`). In `auto` mode a failed sensor lookup
 keeps the job on tenant sensors and adds a warning.
 
-Trigger errors the New-scan screen should explain: `NO_ZONE_COVERAGE`,
+Trigger errors the New-scan screen should explain: `SCAN_ZONE_NOT_FOUND`, `NO_ZONE_COVERAGE`,
 `ZONE_SPLIT_REQUIRED`, `TOO_MANY_JOBS`, `NO_TARGETS` (the scan resolves to no
 target: empty asset groups and no direct targets), `ALL_TARGETS_EXCLUDED`,
 `PLATFORM_SENSOR_REFUSED` (all `400`). No run or command is created. Scan creation with a private

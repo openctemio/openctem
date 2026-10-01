@@ -117,6 +117,18 @@ func (r *ScanZoneRepository) Delete(ctx context.Context, tenantID, id shared.ID)
 		return scanzone.ErrZoneInUse
 	}
 
+	// Scans that pin their targets to this zone would fail closed on their
+	// next trigger; refuse instead, so the admin moves them first.
+	var pinned int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scans WHERE tenant_id = $1 AND scan_zone_id = $2`,
+		tenantID.String(), id.String()).Scan(&pinned); err != nil {
+		return fmt.Errorf("check scans using scan zone: %w", err)
+	}
+	if pinned > 0 {
+		return scanzone.ErrZoneSelectedByScans(pinned)
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM scan_zones WHERE tenant_id = $1 AND id = $2`,
 		tenantID.String(), id.String()); err != nil {

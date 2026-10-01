@@ -70,6 +70,9 @@ type Route struct {
 	Unzoned bool
 	Reason  string
 	Addrs   []netip.Addr // what a hostname resolved to
+	// OutsideZones is set when the target is uncovered only because no
+	// zone range holds it (as opposed to the deny list or failed DNS).
+	OutsideZones bool
 }
 
 // Uncovered is a target that will not be scanned, with the reason.
@@ -85,6 +88,7 @@ type Plan struct {
 	ZoneOrder []shared.ID // zones in first-seen target order
 	Unzoned   []string
 	Uncovered []Uncovered
+	Routes    []Route // one per input target, in input order
 }
 
 // Plan routes every target. Hostnames are resolved concurrently; the result
@@ -109,7 +113,11 @@ func (r *Router) Plan(ctx context.Context, targets []string) *Plan {
 	}
 	wg.Wait()
 
-	p := &Plan{ByZone: map[shared.ID][]string{}, Zones: map[shared.ID]*Zone{}}
+	return buildPlan(routes)
+}
+
+func buildPlan(routes []Route) *Plan {
+	p := &Plan{ByZone: map[shared.ID][]string{}, Zones: map[shared.ID]*Zone{}, Routes: routes}
 	for _, rt := range routes {
 		switch {
 		case rt.Zone != nil:
@@ -162,6 +170,7 @@ func (r *Router) routePrefix(rt *Route, p netip.Prefix) {
 		return
 	}
 	if prefixIsPrivate(p) {
+		rt.OutsideZones = true
 		if p.Bits() < p.Addr().BitLen() && r.partlyCovered(p) {
 			rt.Reason = fmt.Sprintf("range %s is only partly inside a zone; split it so each part lies in one zone", p)
 			return
@@ -199,6 +208,7 @@ func (r *Router) routeAddrs(rt *Route, addrs []netip.Addr) {
 	case best != nil:
 		rt.Zone = best
 	case private.IsValid():
+		rt.OutsideZones = true
 		rt.Reason = fmt.Sprintf("resolves to %s, a private address outside every scan zone", private)
 	case denied.IsValid() && len(addrs) == 1:
 		rt.Reason = fmt.Sprintf("resolves to %s, which is in the built-in deny list", denied)
@@ -215,6 +225,28 @@ func (r *Router) routePublic(rt *Route) {
 		return
 	}
 	rt.Unzoned = true
+}
+
+// RestrictTo turns a plan made by a router over only the selected zone into
+// the plan of a scan that pins its targets to that zone (RFC-023 D5: a
+// selected zone's ranges are always enforced). Targets the zone does not hold
+// are uncovered, including public targets when the zone is not the default
+// zone; deny-list and DNS failures keep their own reason.
+func (p *Plan) RestrictTo(selected *Zone) *Plan {
+	routes := slices.Clone(p.Routes)
+	reason := fmt.Sprintf("outside the selected scan zone %q", selected.Name)
+	for i := range routes {
+		rt := &routes[i]
+		switch {
+		case rt.Zone != nil && rt.Zone.ID != selected.ID:
+			rt.Zone, rt.Reason = nil, reason
+		case rt.Unzoned:
+			rt.Unzoned, rt.Reason = false, reason
+		case rt.Zone == nil && rt.OutsideZones:
+			rt.Reason = reason
+		}
+	}
+	return buildPlan(routes)
 }
 
 // narrowest returns the zone with the narrowest range holding all of p.
