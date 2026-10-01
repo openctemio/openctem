@@ -1204,10 +1204,41 @@ func (r *FindingRepository) ListByComponentID(ctx context.Context, tenantID, com
 	return r.List(ctx, filter, opts, page)
 }
 
+// Tenant CVE views read the tenant's own observation first and the shared
+// catalog second (docs/architecture/global-catalog-trust.md). The catalog's
+// descriptive fields come from whichever tenant first reported a CVE, so they
+// must not decide what another tenant's view shows or filters:
+//   - severity is the worst severity among this tenant's findings for the CVE;
+//   - CVSS and EPSS prefer this tenant's findings (EPSS on findings comes from
+//     the EPSS feed), then the catalog;
+//   - KEV is the finding's feed-derived is_in_kev or the catalog's KEV
+//     columns, which only the KEV feed writes;
+//   - exploit availability is the catalog flag (KEV feed) or this tenant's
+//     own scanner verdict kept on its findings.
+const (
+	tenantCVEAggColumns = `
+				MIN(CASE f.severity
+					WHEN 'critical' THEN 1
+					WHEN 'high'     THEN 2
+					WHEN 'medium'   THEN 3
+					WHEN 'low'      THEN 4
+					WHEN 'info'     THEN 5
+					ELSE 6 END)                         AS sev_rank,
+				MAX(f.cvss_score)                      AS t_cvss,
+				MAX(f.epss_score)                      AS t_epss,
+				BOOL_OR(COALESCE(f.is_in_kev, false))  AS t_kev,
+				BOOL_OR(f.metadata->>'` + vulnerability.FindingMetaScannerExploitAvailable + `' = 'true') AS t_exploit`
+	tenantCVESeverity = `(ARRAY['critical','high','medium','low','info','unknown']::text[])[agg.sev_rank]`
+	tenantCVECVSS     = `COALESCE(agg.t_cvss, v.cvss_score)`
+	tenantCVEEPSS     = `COALESCE(agg.t_epss, v.epss_score)`
+	tenantCVEKEV      = `(agg.t_kev OR v.cisa_kev_date_added IS NOT NULL)`
+	tenantCVEExploit  = `(COALESCE(v.exploit_available, false) OR COALESCE(agg.t_exploit, false))`
+)
+
 // ListActiveCVEsByTenant returns the distinct CVEs currently impacting assets in
 // the given tenant. Aggregates findings GROUP BY vulnerability_id and joins the
-// global vulnerabilities table for CVE metadata. Sort: severity → KEV → EPSS →
-// affected_assets desc.
+// global vulnerabilities table for CVE identity and trusted threat intel.
+// Sort: severity → KEV → EPSS → affected_assets desc.
 func (r *FindingRepository) ListActiveCVEsByTenant(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -1216,7 +1247,7 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 ) (pagination.Result[vulnerability.ActiveCVE], error) {
 	empty := pagination.NewResult([]vulnerability.ActiveCVE{}, 0, page)
 
-	// Build dynamic WHERE for outer (vulnerabilities-level) filters
+	// Build dynamic WHERE for outer filters
 	var whereClauses []string
 	args := []any{tenantID.String()}
 	argN := 2
@@ -1233,23 +1264,23 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 			args = append(args, s)
 			argN++
 		}
-		whereClauses = append(whereClauses, fmt.Sprintf("v.severity IN (%s)", strings.Join(placeholders, ",")))
+		whereClauses = append(whereClauses, fmt.Sprintf(tenantCVESeverity+" IN (%s)", strings.Join(placeholders, ",")))
 	}
 	if filter.KEVOnly {
-		whereClauses = append(whereClauses, "v.cisa_kev_date_added IS NOT NULL")
+		whereClauses = append(whereClauses, tenantCVEKEV)
 	}
 	if filter.MinCVSS != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.cvss_score, 0) >= $%d", argN))
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE("+tenantCVECVSS+", 0) >= $%d", argN))
 		args = append(args, *filter.MinCVSS)
 		argN++
 	}
 	if filter.MinEPSS != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.epss_score, 0) >= $%d", argN))
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE("+tenantCVEEPSS+", 0) >= $%d", argN))
 		args = append(args, *filter.MinEPSS)
 		argN++
 	}
 	if filter.ExploitAvailable != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.exploit_available, false) = $%d", argN))
+		whereClauses = append(whereClauses, fmt.Sprintf(tenantCVEExploit+" = $%d", argN))
 		args = append(args, *filter.ExploitAvailable)
 		argN++
 	}
@@ -1261,7 +1292,7 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 
 	countQuery := `
 		WITH agg AS (
-			SELECT f.vulnerability_id
+			SELECT f.vulnerability_id,` + tenantCVEAggColumns + `
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
 			GROUP BY f.vulnerability_id
@@ -1290,17 +1321,17 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 					WHEN 'resolved'    THEN 6
 					ELSE 7 END) AS worst_status_rank,
 				MIN(f.first_detected_at) AS first_detected_at,
-				MAX(f.last_seen_at)      AS last_seen_at
+				MAX(f.last_seen_at)      AS last_seen_at,` + tenantCVEAggColumns + `
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
 			GROUP BY f.vulnerability_id
 		)
 		SELECT
-			v.id, v.cve_id, v.title, v.severity,
-			v.cvss_score, v.epss_score,
-			(v.cisa_kev_date_added IS NOT NULL) AS in_cisa_kev,
+			v.id, v.cve_id, v.title, ` + tenantCVESeverity + `,
+			` + tenantCVECVSS + `, ` + tenantCVEEPSS + `,
+			` + tenantCVEKEV + ` AS in_cisa_kev,
 			COALESCE(v.exploit_maturity, 'none') AS exploit_maturity,
-			COALESCE(v.exploit_available, false) AS exploit_available,
+			` + tenantCVEExploit + ` AS exploit_available,
 			COALESCE(v.fixed_versions, '{}'::text[]) AS fixed_versions,
 			v.published_at,
 			agg.affected_assets_count,
@@ -1312,16 +1343,9 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 		FROM agg
 		JOIN vulnerabilities v ON v.id = agg.vulnerability_id` + outerWhere + `
 		ORDER BY
-			CASE v.severity
-				WHEN 'critical' THEN 1
-				WHEN 'high'     THEN 2
-				WHEN 'medium'   THEN 3
-				WHEN 'low'      THEN 4
-				WHEN 'info'     THEN 5
-				ELSE 6
-			END,
-			(v.cisa_kev_date_added IS NOT NULL) DESC,
-			COALESCE(v.epss_score, 0) DESC,
+			agg.sev_rank,
+			` + tenantCVEKEV + ` DESC,
+			COALESCE(` + tenantCVEEPSS + `, 0) DESC,
 			agg.affected_assets_count DESC
 		LIMIT $` + fmt.Sprintf("%d", limitArg) + ` OFFSET $` + fmt.Sprintf("%d", offsetArg)
 
@@ -1395,19 +1419,20 @@ func (r *FindingRepository) GetActiveCVEStats(
 
 	query := `
 		WITH agg AS (
-			SELECT DISTINCT f.vulnerability_id
+			SELECT f.vulnerability_id,` + tenantCVEAggColumns + `
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
+			GROUP BY f.vulnerability_id
 		)
 		SELECT
 			COUNT(*) AS total,
-			COUNT(*) FILTER (WHERE v.severity = 'critical') AS crit,
-			COUNT(*) FILTER (WHERE v.severity = 'high')     AS high,
-			COUNT(*) FILTER (WHERE v.severity = 'medium')   AS med,
-			COUNT(*) FILTER (WHERE v.severity = 'low')      AS low,
-			COUNT(*) FILTER (WHERE v.severity = 'info')     AS info,
-			COUNT(*) FILTER (WHERE v.cisa_kev_date_added IS NOT NULL) AS kev,
-			COUNT(*) FILTER (WHERE COALESCE(v.exploit_available, false) = true) AS exploit
+			COUNT(*) FILTER (WHERE agg.sev_rank = 1) AS crit,
+			COUNT(*) FILTER (WHERE agg.sev_rank = 2) AS high,
+			COUNT(*) FILTER (WHERE agg.sev_rank = 3) AS med,
+			COUNT(*) FILTER (WHERE agg.sev_rank = 4) AS low,
+			COUNT(*) FILTER (WHERE agg.sev_rank = 5) AS info,
+			COUNT(*) FILTER (WHERE ` + tenantCVEKEV + `) AS kev,
+			COUNT(*) FILTER (WHERE ` + tenantCVEExploit + `) AS exploit
 		FROM agg
 		JOIN vulnerabilities v ON v.id = agg.vulnerability_id
 	`

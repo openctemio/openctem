@@ -29,6 +29,7 @@
 - [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
 - [Tenable — User & Data Flow](architecture/tenable-user-and-data-flow.md) - How operators interact with Tenable on the UI + end-to-end data flow (agent/direct/upload)
 - [Data Sources](architecture/data-sources.md) - Multi-source asset tracking, collectors, scanners
+- [Global Catalog Trust](architecture/global-catalog-trust.md) - Who may write the CVE, component and license catalogs every tenant shares: trusted feeds only, tenant input creates but never changes, tenant views read the tenant's own observation first
 - [Asset Schema](architecture/asset-schema.md) - Standard JSON schema for asset ingestion
 - [Asset Properties Schema](asset-properties-schema.md) - JSONB properties schema per asset type
 - [Database Notes](architecture/database-notes.md) - Important DB implementation details (finding_count, provider detection)

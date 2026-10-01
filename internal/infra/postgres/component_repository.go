@@ -37,7 +37,12 @@ func NewComponentRepository(db *DB) *ComponentRepository {
 	return &ComponentRepository{db: db}
 }
 
-// Upsert persists a global component.
+// Upsert records a component in the shared catalog and returns its id. The
+// catalog is shared by every tenant and the caller is a tenant's ingest or
+// SBOM import, so an existing row is never modified: the first report creates
+// it, and later reports only learn its id. A tenant's own data about the
+// component (licenses, path, dependency type) lives on its asset_components
+// rows. See docs/architecture/global-catalog-trust.md.
 func (r *ComponentRepository) Upsert(ctx context.Context, comp *component.Component) (shared.ID, error) {
 	metadata, err := json.Marshal(comp.Metadata())
 	if err != nil {
@@ -50,20 +55,11 @@ func (r *ComponentRepository) Upsert(ctx context.Context, comp *component.Compon
 			vulnerability_count, metadata, created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (purl) DO UPDATE SET
-			description = EXCLUDED.description,
-			homepage = EXCLUDED.homepage,
-			-- Note: vulnerability_count is NOT updated from sensor data.
-			-- It should only be updated by background jobs that count findings.
-			-- This prevents sensors from accidentally resetting the count to 0.
-			metadata = components.metadata || EXCLUDED.metadata,
-			updated_at = NOW()
-		RETURNING id, created_at, updated_at
+		ON CONFLICT (purl) DO NOTHING
+		RETURNING id
 	`
 
 	var idStr string
-	var createdAt, updatedAt time.Time
-
 	err = r.db.QueryRowContext(ctx, query,
 		comp.ID().String(),
 		comp.PURL(),
@@ -76,8 +72,11 @@ func (r *ComponentRepository) Upsert(ctx context.Context, comp *component.Compon
 		metadata,
 		comp.CreatedAt(),
 		comp.UpdatedAt(),
-	).Scan(&idStr, &createdAt, &updatedAt)
-
+	).Scan(&idStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Already in the catalog: DO NOTHING returns no row.
+		err = r.db.QueryRowContext(ctx, `SELECT id FROM components WHERE purl = $1`, comp.PURL()).Scan(&idStr)
+	}
 	if err != nil {
 		return shared.ID{}, fmt.Errorf("failed to upsert component: %w", err)
 	}
@@ -113,84 +112,60 @@ func (r *ComponentRepository) GetByID(ctx context.Context, id shared.ID) (*compo
 	return r.scanComponent(row)
 }
 
-// LinkLicenses links licenses to a component.
-// It upserts licenses into the licenses table and creates links in component_licenses.
-// Returns the count of successfully linked licenses.
-// Security: Validates license names and limits the number of licenses per component.
-func (r *ComponentRepository) LinkLicenses(ctx context.Context, componentID shared.ID, licenses []string) (int, error) {
+// EnsureLicenses validates license identifiers, adds the unknown ones to
+// the license dictionary (category and risk "unknown"; an existing entry is
+// never changed) and returns the valid ones, deduplicated, in input order.
+// Security: limits the count and validates each name (SPDX-like pattern).
+func (r *ComponentRepository) EnsureLicenses(ctx context.Context, licenses []string) ([]string, error) {
 	if len(licenses) == 0 {
-		return 0, nil
+		return nil, nil
 	}
-
-	// Security: Limit number of licenses to prevent DoS
 	if len(licenses) > MaxLicensesPerComponent {
-		return 0, fmt.Errorf("too many licenses: %d exceeds maximum of %d", len(licenses), MaxLicensesPerComponent)
+		return nil, fmt.Errorf("too many licenses: %d exceeds maximum of %d", len(licenses), MaxLicensesPerComponent)
 	}
 
-	linkedCount := 0
+	valid := make([]string, 0, len(licenses))
+	seen := make(map[string]bool, len(licenses))
 	for _, lic := range licenses {
 		lic = strings.TrimSpace(lic)
-		if lic == "" {
+		// Skip invalid names instead of failing the whole batch.
+		if lic == "" || seen[lic] || len(lic) > MaxLicenseNameLength || !validLicensePattern.MatchString(lic) {
 			continue
 		}
-
-		// Security: Validate license name length
-		if len(lic) > MaxLicenseNameLength {
-			// Skip invalid license instead of failing entire batch
-			continue
-		}
-
-		// Security: Validate license name format (SPDX-like identifiers)
-		if !validLicensePattern.MatchString(lic) {
-			// Skip invalid license instead of failing entire batch
-			continue
-		}
-
-		// Upsert license (use SPDX ID as both id and spdx_id for simplicity)
-		// In the future, we could normalize to proper SPDX identifiers
-		licenseQuery := `
+		seen[lic] = true
+		if _, err := r.db.ExecContext(ctx, `
 			INSERT INTO licenses (id, spdx_id, name, category, risk)
 			VALUES ($1, $1, $1, 'unknown', 'unknown')
-			ON CONFLICT (spdx_id) DO NOTHING
-		`
-		if _, err := r.db.ExecContext(ctx, licenseQuery, lic); err != nil {
-			return linkedCount, fmt.Errorf("failed to upsert license %s: %w", lic, err)
+			ON CONFLICT DO NOTHING`, lic); err != nil {
+			return valid, fmt.Errorf("failed to add license %s: %w", lic, err)
 		}
-
-		// Link component to license
-		linkQuery := `
-			INSERT INTO component_licenses (component_id, license_id)
-			VALUES ($1, $2)
-			ON CONFLICT (component_id, license_id) DO NOTHING
-		`
-		if _, err := r.db.ExecContext(ctx, linkQuery, componentID.String(), lic); err != nil {
-			return linkedCount, fmt.Errorf("failed to link license %s to component: %w", lic, err)
-		}
-		linkedCount++
+		valid = append(valid, lic)
 	}
-
-	return linkedCount, nil
+	return valid, nil
 }
 
 // LinkAsset creates a record in asset_components table.
 // Uses a subquery to pull name/version/ecosystem/purl from the global components table.
 func (r *ComponentRepository) LinkAsset(ctx context.Context, dep *component.AssetDependency) error {
+	// license is the tenant's own observation; a re-scan that declares no
+	// license keeps the one already recorded.
 	query := `
 		INSERT INTO asset_components (
 			id, tenant_id, asset_id, component_id, path,
 			name, version, ecosystem, purl,
 			dependency_type, manifest_file, parent_component_id, depth,
-			created_at, updated_at
+			created_at, updated_at, license
 		)
 		SELECT $1, $2, $3, $4, $5,
 			   c.name, c.version, c.ecosystem, c.purl,
 			   $6, $7, $8, $9,
-			   $10, $11
+			   $10, $11, $12
 		FROM components c WHERE c.id = $4
 		ON CONFLICT (asset_id, component_id, path) DO UPDATE SET
 			dependency_type = EXCLUDED.dependency_type,
 			parent_component_id = EXCLUDED.parent_component_id,
 			depth = EXCLUDED.depth,
+			license = COALESCE(EXCLUDED.license, asset_components.license),
 			updated_at = NOW()
 	`
 
@@ -214,6 +189,7 @@ func (r *ComponentRepository) LinkAsset(ctx context.Context, dep *component.Asse
 		dep.Depth(),
 		dep.CreatedAt(),
 		time.Now().UTC(),
+		nullString(truncateLicenseList(dep.License())),
 	)
 
 	if err != nil {
@@ -742,7 +718,7 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 		JOIN vulnerabilities v ON f.vulnerability_id = v.id
 		WHERE f.tenant_id = $1
 		  AND f.component_id IS NOT NULL
-		  AND v.cisa_kev_date_added IS NOT NULL
+		  AND (COALESCE(f.is_in_kev, false) OR v.cisa_kev_date_added IS NOT NULL)
 		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 	`
 	if err := r.db.QueryRowContext(ctx, kevQuery, tenantID.String()).Scan(&stats.CisaKevComponents); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -750,15 +726,15 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 		stats.CisaKevComponents = 0
 	}
 
-	// License risk breakdown from component_licenses → licenses
+	// License risk breakdown from the tenant's own license observations
+	// (asset_components.license) joined to the license dictionary.
 	licenseRiskQuery := `
 		SELECT
 			COALESCE(l.risk, 'unknown') as risk,
-			COUNT(DISTINCT c.id) as count
+			COUNT(DISTINCT ac.component_id) as count
 		FROM asset_components ac
-		JOIN components c ON ac.component_id = c.id
-		LEFT JOIN component_licenses cl ON c.id = cl.component_id
-		LEFT JOIN licenses l ON cl.license_id = l.id
+		LEFT JOIN LATERAL unnest(string_to_array(NULLIF(ac.license, ''), ',')) AS lic(name) ON true
+		LEFT JOIN licenses l ON l.id = btrim(lic.name)
 		WHERE ac.tenant_id = $1
 		GROUP BY l.risk
 	`
@@ -834,7 +810,7 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 			SELECT
 				f.component_id,
 				f.severity,
-				(v.cisa_kev_date_added IS NOT NULL) as in_kev
+				(COALESCE(f.is_in_kev, false) OR v.cisa_kev_date_added IS NOT NULL) as in_kev
 			FROM findings f
 			LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
 			WHERE f.tenant_id = $1
@@ -1054,16 +1030,16 @@ func (r *ComponentRepository) ListVulnerabilities(
 					WHEN 'resolved'    THEN 6
 					ELSE 7 END) AS worst_status_rank,
 				MIN(f.first_detected_at) AS first_detected_at,
-				MAX(f.last_seen_at)      AS last_seen_at
+				MAX(f.last_seen_at)      AS last_seen_at,` + tenantCVEAggColumns + `
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.component_id = $2 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
 			GROUP BY f.vulnerability_id
 		)
 		SELECT
-			v.id, v.cve_id, v.title, v.severity, v.cvss_score, v.epss_score,
-			(v.cisa_kev_date_added IS NOT NULL) AS in_cisa_kev,
+			v.id, v.cve_id, v.title, ` + tenantCVESeverity + `, ` + tenantCVECVSS + `, ` + tenantCVEEPSS + `,
+			` + tenantCVEKEV + ` AS in_cisa_kev,
 			COALESCE(v.exploit_maturity, 'none') AS exploit_maturity,
-			COALESCE(v.exploit_available, false) AS exploit_available,
+			` + tenantCVEExploit + ` AS exploit_available,
 			COALESCE(v.fixed_versions, '{}'::text[]) AS fixed_versions,
 			agg.affected_assets_count,
 			agg.open_finding_count,
@@ -1073,16 +1049,9 @@ func (r *ComponentRepository) ListVulnerabilities(
 		FROM agg
 		JOIN vulnerabilities v ON v.id = agg.vulnerability_id
 		ORDER BY
-			CASE v.severity
-				WHEN 'critical' THEN 1
-				WHEN 'high'     THEN 2
-				WHEN 'medium'   THEN 3
-				WHEN 'low'      THEN 4
-				WHEN 'info'     THEN 5
-				ELSE 6
-			END,
-			(v.cisa_kev_date_added IS NOT NULL) DESC,
-			COALESCE(v.cvss_score, 0) DESC,
+			agg.sev_rank,
+			` + tenantCVEKEV + ` DESC,
+			COALESCE(` + tenantCVECVSS + `, 0) DESC,
 			agg.affected_assets_count DESC
 		LIMIT $3 OFFSET $4
 	`
@@ -1135,8 +1104,10 @@ func (r *ComponentRepository) ListVulnerabilities(
 
 // GetLicenseStats returns license statistics for a tenant.
 func (r *ComponentRepository) GetLicenseStats(ctx context.Context, tenantID shared.ID) ([]component.LicenseStats, error) {
-	// Query to get license distribution for tenant's components
-	// Joins: asset_components -> components -> component_licenses -> licenses
+	// License distribution for the tenant's components, from the tenant's own
+	// license observations (asset_components.license). The shared
+	// component_licenses table is not read: tenants could write it, so one
+	// tenant's report could change another tenant's license report.
 	query := `
 		SELECT
 			l.spdx_id as license_id,
@@ -1144,11 +1115,10 @@ func (r *ComponentRepository) GetLicenseStats(ctx context.Context, tenantID shar
 			COALESCE(l.category, 'unknown') as category,
 			COALESCE(l.risk, 'unknown') as risk,
 			l.url,
-			COUNT(DISTINCT c.id) as count
+			COUNT(DISTINCT ac.component_id) as count
 		FROM asset_components ac
-		JOIN components c ON ac.component_id = c.id
-		JOIN component_licenses cl ON c.id = cl.component_id
-		JOIN licenses l ON cl.license_id = l.id
+		CROSS JOIN LATERAL unnest(string_to_array(NULLIF(ac.license, ''), ',')) AS lic(name)
+		JOIN licenses l ON l.id = btrim(lic.name)
 		WHERE ac.tenant_id = $1
 		GROUP BY l.spdx_id, l.name, l.category, l.risk, l.url
 		ORDER BY count DESC, l.spdx_id
@@ -1174,4 +1144,26 @@ func (r *ComponentRepository) GetLicenseStats(ctx context.Context, tenantID shar
 	}
 
 	return stats, nil
+}
+
+// maxLicenseListLength is the width of asset_components.license.
+const maxLicenseListLength = 255
+
+// truncateLicenseList keeps whole license ids that fit the column.
+func truncateLicenseList(list string) string {
+	if len(list) <= maxLicenseListLength {
+		return list
+	}
+	out := ""
+	for _, lic := range strings.Split(list, ", ") {
+		next := lic
+		if out != "" {
+			next = out + ", " + lic
+		}
+		if len(next) > maxLicenseListLength {
+			break
+		}
+		out = next
+	}
+	return out
 }

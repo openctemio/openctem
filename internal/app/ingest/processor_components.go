@@ -465,21 +465,8 @@ func (p *ComponentProcessor) createOrUpdateComponent(
 		return shared.ID{}, err
 	}
 
-	// Link licenses to component
-	if len(dep.Licenses) > 0 {
-		linked, err := p.repo.LinkLicenses(ctx, compID, dep.Licenses)
-		if err != nil {
-			p.logger.Warn("failed to link licenses",
-				"component_id", compID.String(),
-				"licenses", dep.Licenses,
-				"error", err,
-			)
-			output.Warnings = append(output.Warnings, fmt.Sprintf("license linking failed for %s: %v", dep.Name, err))
-			// Don't fail the whole process for license linking errors
-		} else {
-			output.LicensesLinked += linked
-		}
-	}
+	// Licenses are not attached to the shared component: they are this
+	// tenant's observation and go on its asset dependency (Pass 2).
 
 	// Track if created or updated
 	if comp.ID() == compID {
@@ -509,6 +496,24 @@ func (p *ComponentProcessor) linkDependencyToAssetWithoutParent(
 	assetDep, err := component.NewAssetDependency(tenantID, assetID, compID, dep.Path, depType)
 	if err != nil {
 		return shared.ID{}, 0, err
+	}
+
+	// Licenses the report declares are this tenant's observation: they are
+	// stored on its own asset_components row, never on the shared component.
+	if len(dep.Licenses) > 0 {
+		valid, err := p.repo.EnsureLicenses(ctx, dep.Licenses)
+		if err != nil {
+			p.logger.Warn("failed to record licenses",
+				"component_id", compID.String(),
+				"licenses", dep.Licenses,
+				"error", err,
+			)
+			output.Warnings = append(output.Warnings, fmt.Sprintf("license recording failed for %s: %v", dep.Name, err))
+		}
+		if len(valid) > 0 {
+			assetDep.SetLicense(strings.Join(valid, ", "))
+			output.LicensesLinked += len(valid)
+		}
 	}
 
 	// Set initial depth based on dependency type

@@ -55,6 +55,48 @@ func (r *ThreatIntelRepository) SyncStatus() threatintel.SyncStatusRepository {
 	return r.statusRepo
 }
 
+// catalogFromEPSS and catalogFromKEV make the shared vulnerabilities catalog
+// agree with the trusted feeds. Migration 000233 runs the same statements once
+// after clearing what tenant ingest had written there.
+const (
+	catalogFromEPSS = `
+		UPDATE vulnerabilities v
+		SET epss_score = e.epss_score, epss_percentile = e.percentile
+		FROM epss_scores e
+		WHERE e.cve_id = v.cve_id
+		  AND (v.epss_score IS DISTINCT FROM e.epss_score OR v.epss_percentile IS DISTINCT FROM e.percentile)`
+	catalogFromKEV = `
+		UPDATE vulnerabilities v
+		SET cisa_kev_date_added     = k.date_added::timestamptz,
+		    cisa_kev_due_date       = k.due_date::timestamptz,
+		    cisa_kev_ransomware_use = k.known_ransomware_campaign_use,
+		    cisa_kev_notes          = k.notes,
+		    exploit_available       = true
+		FROM kev_catalog k
+		WHERE k.cve_id = v.cve_id
+		  AND (v.cisa_kev_date_added IS DISTINCT FROM k.date_added::timestamptz
+		    OR v.cisa_kev_due_date IS DISTINCT FROM k.due_date::timestamptz
+		    OR v.cisa_kev_ransomware_use IS DISTINCT FROM k.known_ransomware_campaign_use
+		    OR v.cisa_kev_notes IS DISTINCT FROM k.notes
+		    OR NOT v.exploit_available)`
+)
+
+// PropagateToVulnerabilityCatalog copies the EPSS and KEV feeds onto the
+// shared vulnerabilities catalog. Only rows that differ are written.
+func (r *ThreatIntelRepository) PropagateToVulnerabilityCatalog(ctx context.Context) (int64, error) {
+	var total int64
+	for _, q := range []string{catalogFromEPSS, catalogFromKEV} {
+		res, err := r.db.ExecContext(ctx, q)
+		if err != nil {
+			return total, fmt.Errorf("propagate threat intel to catalog: %w", err)
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total, nil
+}
+
 // EnrichCVEs enriches multiple CVEs with threat intel data.
 func (r *ThreatIntelRepository) EnrichCVEs(ctx context.Context, cveIDs []string) (map[string]*threatintel.ThreatIntelEnrichment, error) {
 	if len(cveIDs) == 0 {

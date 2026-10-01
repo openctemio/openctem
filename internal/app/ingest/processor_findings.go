@@ -1036,6 +1036,13 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 			f.SetASVSLevel(&level)
 		}
 	}
+
+	// The scanner's exploit verdict is this tenant's observation: it is kept
+	// on the finding, never written to the shared CVE catalog, and the
+	// tenant's CVE views read it from here (global-catalog-trust.md).
+	if ctisFinding.Vulnerability.ExploitAvailable {
+		f.SetMetadata(vulnerability.FindingMetaScannerExploitAvailable, true)
+	}
 }
 
 // setFindingTypeAndSpecializedFields sets the finding type discriminator and specialized fields.

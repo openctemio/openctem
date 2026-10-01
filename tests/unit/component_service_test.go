@@ -32,8 +32,7 @@ type mockComponentRepo struct {
 	getByIDResult *component.Component
 	getByIDErr    error
 
-	linkLicensesLinked int
-	linkLicensesErr    error
+	linkLicensesErr error
 
 	linkAssetErr error
 
@@ -124,11 +123,11 @@ func (m *mockComponentRepo) GetByID(_ context.Context, id shared.ID) (*component
 	return c, nil
 }
 
-func (m *mockComponentRepo) LinkLicenses(_ context.Context, _ shared.ID, _ []string) (int, error) {
+func (m *mockComponentRepo) EnsureLicenses(_ context.Context, licenses []string) ([]string, error) {
 	if m.linkLicensesErr != nil {
-		return 0, m.linkLicensesErr
+		return nil, m.linkLicensesErr
 	}
-	return m.linkLicensesLinked, nil
+	return licenses, nil
 }
 
 func (m *mockComponentRepo) LinkAsset(_ context.Context, dep *component.AssetDependency) error {

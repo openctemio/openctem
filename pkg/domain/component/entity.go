@@ -149,6 +149,7 @@ type AssetDependency struct {
 	manifestFile      string
 	parentComponentID *shared.ID // For transitive deps: the parent that pulled this in
 	depth             int        // Dependency depth: 1 = direct, 2+ = transitive (for risk scoring)
+	license           string     // Licenses this tenant's report declared (", "-joined SPDX ids)
 	component         *Component // For retrieval/joining
 	createdAt         time.Time
 	updatedAt         time.Time
@@ -419,6 +420,16 @@ func (ad *AssetDependency) SetParentComponentID(parentID *shared.ID) error {
 	ad.parentComponentID = parentID
 	return nil
 }
+
+// SetLicense records the licenses the tenant's report declared for this
+// dependency. Licenses are a tenant observation: they are stored on the
+// tenant's asset_components row, never on the shared component.
+func (ad *AssetDependency) SetLicense(license string) {
+	ad.license = license
+}
+
+// License returns the licenses declared for this dependency.
+func (ad *AssetDependency) License() string { return ad.license }
 
 // SetDepth sets the dependency depth for risk scoring.
 func (ad *AssetDependency) SetDepth(depth int) {

@@ -15,8 +15,12 @@ type Repository interface {
 	GetByID(ctx context.Context, id shared.ID) (*Component, error)
 
 	// License Operations
-	// LinkLicenses links licenses to a component and returns the count of newly linked licenses.
-	LinkLicenses(ctx context.Context, componentID shared.ID, licenses []string) (linked int, err error)
+	// EnsureLicenses validates license identifiers, makes sure each exists in
+	// the license dictionary (an unknown one is added with category and risk
+	// "unknown"; an existing entry is never changed) and returns the valid
+	// ones. It does not attach licenses to anything: a tenant's licenses go on
+	// its own asset dependency (AssetDependency.SetLicense).
+	EnsureLicenses(ctx context.Context, licenses []string) ([]string, error)
 
 	// Asset Dependency Operations (Links)
 	LinkAsset(ctx context.Context, dep *AssetDependency) error
