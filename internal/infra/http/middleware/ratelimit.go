@@ -1,6 +1,11 @@
 package middleware
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -110,12 +115,18 @@ func (rl *RateLimiter) cleanupVisitors() {
 	}
 }
 
-// Middleware returns the rate limiting middleware.
+// Middleware returns the rate limiting middleware, keyed by client IP.
 func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
+	return rl.keyedMiddleware(getClientIP)
+}
+
+// keyedMiddleware rate limits by the bucket key returns. The client IP is
+// still what gets logged.
+func (rl *RateLimiter) keyedMiddleware(key func(*http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := getClientIP(r)
-			limiter := rl.getVisitor(ip)
+			limiter := rl.getVisitor(key(r))
 
 			// Get current tokens before Allow() consumes one
 			tokens := limiter.Tokens()
@@ -147,7 +158,7 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 
 				// Update remaining to 0 since we're rate limited
 				w.Header().Set("X-RateLimit-Remaining", "0")
-				w.Header().Set("Retry-After", "1")
+				w.Header().Set("Retry-After", strconv.Itoa(rl.retryAfterSeconds()))
 				apierror.RateLimitExceeded().WriteJSON(w)
 				return
 			}
@@ -155,6 +166,14 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// retryAfterSeconds is how long until one request is allowed again.
+func (rl *RateLimiter) retryAfterSeconds() int {
+	if rl.rate <= 0 {
+		return 1
+	}
+	return max(1, int(math.Ceil(1/float64(rl.rate))))
 }
 
 // RateLimitWithStop creates a rate limiting middleware and returns a stop function.
@@ -313,6 +332,8 @@ type AuthRateLimiter struct {
 	registerLimiter      *RateLimiter // Strict: 3 attempts per minute per IP
 	passwordLimiter      *RateLimiter // Very strict: 3 attempts per minute per IP
 	tokenExchangeLimiter *RateLimiter // Moderate: 20 per minute per IP (tenant switch)
+	mfaLimiter           *RateLimiter // Second login step: 10 per minute per challenge
+	mfaIPLimiter         *RateLimiter // Second login step: 30 per minute per IP
 	log                  *logger.Logger
 }
 
@@ -332,6 +353,14 @@ type AuthRateLimitConfig struct {
 	// and is used for tenant switching which may happen frequently.
 	// Default: 20
 	TokenExchangeRatePerMin int
+	// MFARatePerMin is the max second-factor attempts per minute per login
+	// challenge (mfa_token). Default: 10. Guessing is bounded anyway by the
+	// challenge's attempt cap (mfa.MaxChallengeAttempts) and the per-user
+	// lockout; this only stops hammering one challenge.
+	MFARatePerMin int
+	// MFAIPRatePerMin is the max second-factor attempts per minute per IP,
+	// across challenges. Default: 30.
+	MFAIPRatePerMin int
 	// CleanupInterval for visitor entries.
 	// Default: 1 minute
 	CleanupInterval time.Duration
@@ -344,6 +373,8 @@ func DefaultAuthRateLimitConfig() AuthRateLimitConfig {
 		RegisterRatePerMin:      3,
 		PasswordResetRatePerMin: 3,
 		TokenExchangeRatePerMin: 20,
+		MFARatePerMin:           10,
+		MFAIPRatePerMin:         30,
 		CleanupInterval:         time.Minute,
 	}
 }
@@ -364,6 +395,12 @@ func NewAuthRateLimiter(cfg AuthRateLimitConfig, log *logger.Logger) *AuthRateLi
 	}
 	if cfg.TokenExchangeRatePerMin == 0 {
 		cfg.TokenExchangeRatePerMin = 20
+	}
+	if cfg.MFARatePerMin == 0 {
+		cfg.MFARatePerMin = 10
+	}
+	if cfg.MFAIPRatePerMin == 0 {
+		cfg.MFAIPRatePerMin = 30
 	}
 
 	// Convert per-minute rates to per-second for rate.Limit
@@ -397,6 +434,18 @@ func NewAuthRateLimiter(cfg AuthRateLimitConfig, log *logger.Logger) *AuthRateLi
 			Burst:           cfg.TokenExchangeRatePerMin,
 			CleanupInterval: cfg.CleanupInterval,
 		}, log),
+		mfaLimiter: NewRateLimiter(&config.RateLimitConfig{
+			Enabled:         true,
+			RequestsPerSec:  float64(cfg.MFARatePerMin) / 60.0,
+			Burst:           cfg.MFARatePerMin,
+			CleanupInterval: cfg.CleanupInterval,
+		}, log),
+		mfaIPLimiter: NewRateLimiter(&config.RateLimitConfig{
+			Enabled:         true,
+			RequestsPerSec:  float64(cfg.MFAIPRatePerMin) / 60.0,
+			Burst:           cfg.MFAIPRatePerMin,
+			CleanupInterval: cfg.CleanupInterval,
+		}, log),
 		log: log,
 	}
 }
@@ -407,6 +456,8 @@ func (a *AuthRateLimiter) Stop() {
 	a.registerLimiter.Stop()
 	a.passwordLimiter.Stop()
 	a.tokenExchangeLimiter.Stop()
+	a.mfaLimiter.Stop()
+	a.mfaIPLimiter.Stop()
 }
 
 // LoginMiddleware returns middleware for login endpoints.
@@ -414,6 +465,43 @@ func (a *AuthRateLimiter) Stop() {
 func (a *AuthRateLimiter) LoginMiddleware() func(http.Handler) http.Handler {
 	return a.loginLimiter.Middleware()
 }
+
+// MFAMiddleware returns middleware for the second login step
+// (/auth/mfa/verify and required enrollment). It has its own buckets, so the
+// sign-ins that led to a challenge do not use up its attempts: per challenge
+// (the mfa_token in the JSON body, hashed) and a looser per-IP ceiling across
+// challenges. A request without a token is limited by IP only.
+func (a *AuthRateLimiter) MFAMiddleware() func(http.Handler) http.Handler {
+	perIP := a.mfaIPLimiter.keyedMiddleware(func(r *http.Request) string { return "mfa-ip:" + getClientIP(r) })
+	perChallenge := a.mfaLimiter.keyedMiddleware(mfaChallengeKey)
+	return func(next http.Handler) http.Handler {
+		return perIP(perChallenge(next))
+	}
+}
+
+// mfaChallengeKey keys a second-factor request by its challenge token. The
+// body is read (bounded) and restored for the handler; only a hash of the
+// token is kept as the bucket key.
+func mfaChallengeKey(r *http.Request) string {
+	if r.Body == nil {
+		return "mfa-ip:" + getClientIP(r)
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, mfaBodyLimit))
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	var v struct {
+		MFAToken string `json:"mfa_token"`
+	}
+	if err != nil || json.Unmarshal(body, &v) != nil || v.MFAToken == "" {
+		return "mfa-ip:" + getClientIP(r)
+	}
+	sum := sha256.Sum256([]byte(v.MFAToken))
+	return "mfa-challenge:" + hex.EncodeToString(sum[:16])
+}
+
+// mfaBodyLimit bounds the body read to find the challenge token. The second
+// login step's bodies are a few hundred bytes.
+const mfaBodyLimit = 4096
 
 // TokenExchangeMiddleware returns middleware for token exchange/refresh endpoints.
 // Uses a higher rate limit than login because token exchange requires a valid
