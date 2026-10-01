@@ -202,6 +202,15 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 		return nil, fmt.Errorf("failed to check slug existence: %w", err)
 	}
 
+	// The creator may not put more into a role than they hold themselves.
+	creator, err := s.loadGrantActor(ctx, tenantID, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	if err := creator.mayCarry(input.Permissions, input.HasFullDataAccess); err != nil {
+		return nil, err
+	}
+
 	// Validate permissions if provided
 	if len(input.Permissions) > 0 {
 		valid, invalidIDs, err := s.permissionRepo.ValidatePermissions(ctx, input.Permissions)
@@ -369,6 +378,19 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 	if input.HasFullDataAccess != nil {
 		changes.Set("has_full_data_access", hasFullDataAccess, *input.HasFullDataAccess)
 		hasFullDataAccess = *input.HasFullDataAccess
+	}
+
+	// The editor may not make a role carry more than they hold themselves.
+	newPerms := r.Permissions()
+	if input.Permissions != nil {
+		newPerms = input.Permissions
+	}
+	editor, err := s.loadGrantActor(ctx, *r.TenantID(), actx.ActorID)
+	if err != nil {
+		return nil, err
+	}
+	if err := editor.mayCarry(newPerms, hasFullDataAccess); err != nil {
+		return nil, err
 	}
 
 	if err := r.Update(name, description, hierarchyLevel, hasFullDataAccess); err != nil {
@@ -624,6 +646,17 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 		return err
 	}
 
+	actor, err := s.loadGrantActor(ctx, tid, assignedBy)
+	if err != nil {
+		return err
+	}
+	if err := actor.mayGrant(r); err != nil {
+		return err
+	}
+	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
+		return err
+	}
+
 	var assignedByID *roledom.ID
 	if assignedBy != "" {
 		id, err := roledom.ParseID(assignedBy)
@@ -678,6 +711,14 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 		roleName = r.Name()
 	}
 
+	actor, err := s.loadGrantActor(ctx, tid, actx.ActorID)
+	if err != nil {
+		return err
+	}
+	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, rid != roledom.OwnerRoleID); err != nil {
+		return err
+	}
+
 	if err := s.roleRepo.RemoveRole(ctx, tid, uid, rid); err != nil {
 		if errors.Is(err, roledom.ErrUserRoleNotFound) {
 			return fmt.Errorf("%w: user does not have this role", shared.ErrValidation)
@@ -726,8 +767,14 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		return err
 	}
 
+	actor, err := s.loadGrantActor(ctx, tid, assignedBy)
+	if err != nil {
+		return err
+	}
+
 	roleIDs := make([]roledom.ID, 0, len(input.RoleIDs))
 	roleNames := make([]string, 0, len(input.RoleIDs))
+	keepsOwner := false
 	for _, ridStr := range input.RoleIDs {
 		rid, err := roledom.ParseID(ridStr)
 		if err != nil {
@@ -744,9 +791,19 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		if r.TenantID() != nil && r.TenantID().String() != input.TenantID {
 			return fmt.Errorf("%w: role %s not available for this tenant", shared.ErrValidation, ridStr)
 		}
+		if err := actor.mayGrant(r); err != nil {
+			return err
+		}
+		if rid == roledom.OwnerRoleID {
+			keepsOwner = true
+		}
 
 		roleIDs = append(roleIDs, rid)
 		roleNames = append(roleNames, r.Name())
+	}
+
+	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, keepsOwner); err != nil {
+		return err
 	}
 
 	// Get current roles for audit
@@ -829,6 +886,14 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 		return nil, fmt.Errorf("%w: role not available for this tenant", shared.ErrValidation)
 	}
 
+	actor, err := s.loadGrantActor(ctx, tid, assignedBy)
+	if err != nil {
+		return nil, err
+	}
+	if err := actor.mayGrant(r); err != nil {
+		return nil, err
+	}
+
 	// Parse user IDs, skipping any that are not members of this tenant —
 	// assigning a role to a non-member would mint an orphan user_roles row.
 	userIDs := make([]roledom.ID, 0, len(input.UserIDs))
@@ -844,6 +909,9 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 				"tenant_id", input.TenantID, "user_id", uidStr, "error", err)
 			skipped++
 			continue
+		}
+		if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
+			return nil, err
 		}
 		userIDs = append(userIDs, uid)
 		assignedUserIDs = append(assignedUserIDs, uidStr)

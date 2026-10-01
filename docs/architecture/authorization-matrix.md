@@ -648,6 +648,18 @@ Tenable.sc's RBAC.
    active members with no role. It used to re-grant the label's system role
    hourly, which brought back roles administrators had removed.
 
+8. **Role grants are bounded by the granter's own grants** (`accesscontrol/grant_guard.go`).
+   Every path that changes a role set (assign, set, bulk assign, remove,
+   invitation/created-user grants) or what a custom role carries (create,
+   update) is checked in `RoleService` against the actor's roles in the
+   database: only an owner may grant the owner role; anyone else may grant only
+   roles whose permissions (and full data access) they hold, so nobody can raise
+   their own privileges; only an owner may change an owner's roles, and the
+   tenant's owner keeps the owner role. The handler-level check
+   (`assertCanGrantPermissions`) lets administrators through, so the service is
+   the enforcement point. SCIM mappings, SSO/SAML JIT and the membership-role
+   update can never produce `owner`.
+
 ### Known, deliberate gaps (do not "fix" without a decision)
 
 - **Two admin oracles.** Permission-based `IsAdmin` (from the token) and live-DB

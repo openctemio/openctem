@@ -33,6 +33,8 @@ func (m *mockMembershipReader) GetMembership(_ context.Context, userID, tenantID
 // =============================================================================
 
 type mockRoleRepo struct {
+	userRolesResult []*role.Role
+
 	// Storage
 	roles map[string]*role.Role
 
@@ -167,7 +169,17 @@ func (m *mockRoleRepo) GetUserRoles(_ context.Context, _ role.ID, _ role.ID) ([]
 	if m.getUserRolesErr != nil {
 		return nil, m.getUserRolesErr
 	}
+	if m.userRolesResult != nil {
+		return m.userRolesResult, nil
+	}
 	return []*role.Role{}, nil
+}
+
+// actAsOwner makes every user (the acting one included) hold the owner role,
+// for tests about something other than the grant ceiling.
+func (m *mockRoleRepo) actAsOwner() {
+	now := time.Now()
+	m.userRolesResult = []*role.Role{role.Reconstruct(role.OwnerRoleID, nil, "owner", "Owner", "", true, 0, true, nil, now, now, nil)}
 }
 
 func (m *mockRoleRepo) GetUsersRoles(_ context.Context, _ role.ID, _ []role.ID) (map[string][]*role.Role, error) {
@@ -345,6 +357,7 @@ func TestCreateRole_Success(t *testing.T) {
 		Permissions:    []string{"findings:read", "assets:read"},
 	}
 
+	repo.actAsOwner()
 	r, err := svc.CreateRole(context.Background(), input, role.NewID().String(), app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -389,7 +402,7 @@ func TestCreateRole_DuplicateSlug(t *testing.T) {
 }
 
 func TestCreateRole_InvalidPermissions(t *testing.T) {
-	svc, _, permRepo := newTestRoleService()
+	svc, repo, permRepo := newTestRoleService()
 	tenantID := role.NewID()
 
 	// Configure permission repo to reject permissions
@@ -403,6 +416,7 @@ func TestCreateRole_InvalidPermissions(t *testing.T) {
 		Permissions: []string{"bogus:perm"},
 	}
 
+	repo.actAsOwner()
 	_, err := svc.CreateRole(context.Background(), input, role.NewID().String(), app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid permissions")
@@ -907,6 +921,7 @@ func TestAssignRole_SystemRoleCanBeAssigned(t *testing.T) {
 		RoleID:   sysRole.ID().String(),
 	}
 
+	repo.actAsOwner()
 	err := svc.AssignRole(context.Background(), input, role.NewID().String(), app.AuditContext{})
 	if err != nil {
 		t.Fatalf("system roles should be assignable, got error: %v", err)
