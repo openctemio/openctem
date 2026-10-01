@@ -55,6 +55,10 @@ func (r *TargetMappingRepository) Create(ctx context.Context, m *tool.TargetAsse
 		createdBy,
 	)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("%w: target type %q is already mapped to asset type %q",
+				shared.ErrAlreadyExists, m.TargetType, m.AssetType)
+		}
 		return fmt.Errorf("failed to create target mapping: %w", err)
 	}
 

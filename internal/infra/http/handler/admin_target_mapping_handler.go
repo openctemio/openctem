@@ -4,6 +4,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,7 +12,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/admin"
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -23,12 +23,12 @@ import (
 
 // AdminTargetMappingHandler handles admin target mapping management endpoints.
 type AdminTargetMappingHandler struct {
-	repo   *postgres.TargetMappingRepository
+	repo   tool.TargetMappingRepository
 	logger *logger.Logger
 }
 
 // NewAdminTargetMappingHandler creates a new AdminTargetMappingHandler.
-func NewAdminTargetMappingHandler(repo *postgres.TargetMappingRepository, log *logger.Logger) *AdminTargetMappingHandler {
+func NewAdminTargetMappingHandler(repo tool.TargetMappingRepository, log *logger.Logger) *AdminTargetMappingHandler {
 	return &AdminTargetMappingHandler{
 		repo:   repo,
 		logger: log.With("handler", "admin_target_mapping"),
@@ -239,9 +239,17 @@ func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Reques
 	if req.Description != nil {
 		mapping.Description = *req.Description
 	}
+	if err := validateTargetMappingFields(mapping.Priority, mapping.Description); err != nil {
+		apierror.BadRequest(validationMessage(err)).WriteJSON(w)
+		return
+	}
 
 	// Save to database
 	if err := h.repo.Create(ctx, mapping); err != nil {
+		if errors.Is(err, shared.ErrAlreadyExists) {
+			apierror.Conflict("target type " + req.TargetType + " is already mapped to asset type " + req.AssetType).WriteJSON(w)
+			return
+		}
 		h.logger.Error("failed to create target mapping", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
@@ -292,6 +300,21 @@ func (h *AdminTargetMappingHandler) Update(w http.ResponseWriter, r *http.Reques
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
+	}
+
+	// Validate only what the request changes, so a stored value from before
+	// these bounds existed does not block an unrelated edit.
+	if req.IsPrimary == nil && req.Priority != nil {
+		if err := tool.ValidateMappingPriority(*req.Priority); err != nil {
+			apierror.BadRequest(validationMessage(err)).WriteJSON(w)
+			return
+		}
+	}
+	if req.Description != nil {
+		if err := tool.ValidateMappingDescription(*req.Description); err != nil {
+			apierror.BadRequest(validationMessage(err)).WriteJSON(w)
+			return
+		}
 	}
 
 	// Apply updates
@@ -411,6 +434,14 @@ func (h *AdminTargetMappingHandler) GetStats(w http.ResponseWriter, r *http.Requ
 // =============================================================================
 // Helpers
 // =============================================================================
+
+// validateTargetMappingFields checks the admin-editable fields of a new mapping.
+func validateTargetMappingFields(priority int, description string) error {
+	if err := tool.ValidateMappingPriority(priority); err != nil {
+		return err
+	}
+	return tool.ValidateMappingDescription(description)
+}
 
 func toTargetMappingResponse(m *tool.TargetAssetTypeMapping) TargetMappingResponse {
 	resp := TargetMappingResponse{
