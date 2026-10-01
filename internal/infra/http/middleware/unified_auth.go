@@ -55,7 +55,8 @@ type RevokedSessionChecker interface {
 // This should match the frontend's auth.cookieName configuration.
 const DefaultAccessTokenCookieName = "auth_token"
 
-// extractToken extracts the JWT token from the request.
+// extractTokenWithSource extracts the JWT token from the request and reports
+// whether it came from the auth_token cookie.
 // Priority: Authorization header > httpOnly cookie.
 //
 // SECURITY (S-5): The query-parameter fallback (`?token=`) was REMOVED from
@@ -70,13 +71,17 @@ const DefaultAccessTokenCookieName = "auth_token"
 // streaming endpoints to WebSocket (which DOES forward cookies during the
 // upgrade handshake). If SSE is ever reintroduced, add a dedicated extractor
 // next to its route — never reintroduce a query-param fallback here.
-func extractToken(r *http.Request) string {
+//
+// The source matters for CSRF: a cookie is attached by the browser to
+// requests the page did not write (an ambient credential), so a request it
+// authenticates needs CSRF protection; a header token does not.
+func extractTokenWithSource(r *http.Request) (string, bool) {
 	// 1. Try Authorization header first (standard API auth)
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") && parts[1] != "" {
-			return parts[1]
+			return parts[1], false
 		}
 	}
 
@@ -84,10 +89,10 @@ func extractToken(r *http.Request) string {
 	// Browser automatically sends cookies during WebSocket upgrade request,
 	// eliminating any need for frontend to expose token via query param.
 	if cookie, err := r.Cookie(DefaultAccessTokenCookieName); err == nil && cookie.Value != "" {
-		return cookie.Value
+		return cookie.Value, true
 	}
 
-	return ""
+	return "", false
 }
 
 // UnifiedAuth creates an authentication middleware that supports both local and OIDC authentication.
@@ -96,13 +101,13 @@ func extractToken(r *http.Request) string {
 // - "oidc": Only validates Keycloak/OIDC tokens
 // - "hybrid": Tries local first, then falls back to OIDC
 //
-// Token extraction order (see extractToken):
+// Token extraction order (see extractTokenWithSource):
 // 1. Authorization header (Bearer <token>)
 // 2. httpOnly cookie (auth_token) — used by WebSocket upgrade and cookie SPA
 func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tokenString := extractToken(r)
+			tokenString, fromCookie := extractTokenWithSource(r)
 			if tokenString == "" {
 				apierror.Unauthorized("Missing authorization token").WriteJSON(w)
 				return
@@ -152,6 +157,24 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 						return
 					}
 				}
+			}
+
+			// CSRF for cookie sessions, on every route behind this middleware.
+			// The auth_token cookie is ambient, so a state-changing request it
+			// authenticates must carry the double-submit token. This is
+			// enforced here, where the credential's source is known, rather
+			// than per route group: groups mounted without the tenant chain
+			// (/users/me, /tenants/{tenant}, global catalogs) had no CSRF
+			// check at all. Checked after the token so a bad session is still
+			// 401, not 403.
+			if fromCookie {
+				if !isSafeMethod(r.Method) {
+					if reason := csrfDoubleSubmitFailure(r); reason != "" {
+						rejectCSRF(w, r, cfg.Logger, reason)
+						return
+					}
+				}
+				ctx = withCookieAuth(ctx)
 			}
 
 			// Update the context logger with user_id and tenant_id
