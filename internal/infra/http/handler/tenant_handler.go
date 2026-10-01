@@ -128,6 +128,9 @@ type MemberWithUserResponse struct {
 	AvatarURL   string     `json:"avatar_url,omitempty"`
 	Status      string     `json:"status"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	// MFAStatus ("enabled" | "disabled" | "idp") is included only for owners
+	// and admins of the tenant.
+	MFAStatus string `json:"mfa_status,omitempty"`
 	// RBAC roles (included when ?include=roles)
 	RBACRoles []MemberRBACRoleResponse `json:"rbac_roles,omitempty"`
 }
@@ -609,6 +612,9 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		members := result.Members
 		total := result.Total
 
+		// Second-factor status is shown to the tenant's owners and admins only.
+		callerRole := middleware.GetTeamRole(r.Context())
+		showMFA := callerRole == tenant.RoleOwner || callerRole == tenant.RoleAdmin
 		response := make([]MemberWithUserResponse, len(members))
 		for i, m := range members {
 			var invitedBy string
@@ -626,6 +632,9 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				AvatarURL:   m.AvatarURL,
 				Status:      m.Status,
 				LastLoginAt: m.LastLoginAt,
+			}
+			if showMFA {
+				response[i].MFAStatus = m.MFAStatus
 			}
 		}
 

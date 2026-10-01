@@ -24,7 +24,22 @@ const (
 	TemplateMemberSuspended Template = "member_suspended"
 	// TemplateMemberReactivated notifies a user their tenant access was restored.
 	TemplateMemberReactivated Template = "member_reactivated"
+	// TemplateSecurityNotice tells a user about a security change to their
+	// own account (2FA turned off, a recovery code used).
+	TemplateSecurityNotice Template = "security_notice"
 )
+
+// SecurityNoticeData holds data for the account security notice.
+type SecurityNoticeData struct {
+	UserName   string
+	Email      string
+	Subject    string // also the heading
+	Message    string
+	OccurredAt string
+	IPAddress  string
+	AppName    string
+	SupportURL string
+}
 
 // VerifyEmailData holds data for the email verification template.
 type VerifyEmailData struct {
@@ -167,7 +182,59 @@ func (e *TemplateEngine) registerTemplates() {
 		subjectTmpl: template.Must(template.New("member_reactivated_subject").Parse("Your access to {{.TeamName}} has been restored")),
 		bodyTmpl:    template.Must(template.New("member_reactivated").Parse(memberReactivatedTemplate)),
 	}
+
+	// Account security notice
+	e.templates[TemplateSecurityNotice] = &templateDef{
+		subjectTmpl: template.Must(template.New("security_notice_subject").Parse("{{.Subject}}")),
+		bodyTmpl:    template.Must(template.New("security_notice").Parse(securityNoticeTemplate)),
+	}
 }
+
+const securityNoticeTemplate = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Subject}}</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
+        .warning { background: #fef2f2; border: 1px solid #ef4444; border-radius: 4px; padding: 12px; margin: 20px 0; }
+        .security-info { background: #f3f4f6; border-radius: 4px; padding: 12px; margin: 20px 0; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{.AppName}}</div>
+        </div>
+
+        <h2>{{.Subject}}</h2>
+
+        <p>Hi{{if .UserName}} {{.UserName}}{{end}},</p>
+
+        <p>{{.Message}}</p>
+
+        <div class="security-info">
+            {{if .OccurredAt}}Time: {{.OccurredAt}}<br>{{end}}
+            {{if .IPAddress}}IP Address: {{.IPAddress}}{{end}}
+        </div>
+
+        <div class="warning">
+            <strong>Wasn't you?</strong><br>
+            Change your password and sign out all other sessions from your account settings, then contact your administrator{{if .SupportURL}} or <a href="{{.SupportURL}}">support</a>{{end}}.
+        </div>
+
+        <div class="footer">
+            <p>This email was sent to {{.Email}}</p>
+            <p>&copy; {{.AppName}}. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>`
 
 // Email Templates (HTML)
 

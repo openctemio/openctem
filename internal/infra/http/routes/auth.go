@@ -56,6 +56,16 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			loginHandler := ChainFunc(h.LocalAuth.Login, loginRL)
 			r.POST("/login", loginHandler.ServeHTTP)
 
+			// Second login step (2FA). Authorized only by the short-lived
+			// challenge token a password login returns; same strict limit as
+			// login since each call can try a code.
+			mfaVerifyHandler := ChainFunc(h.LocalAuth.VerifyMFA, loginRL)
+			r.POST("/mfa/verify", mfaVerifyHandler.ServeHTTP)
+			mfaEnrollStartHandler := ChainFunc(h.LocalAuth.StartMFAEnrollment, loginRL)
+			r.POST("/mfa/enroll/start", mfaEnrollStartHandler.ServeHTTP)
+			mfaEnrollConfirmHandler := ChainFunc(h.LocalAuth.ConfirmMFAEnrollment, loginRL)
+			r.POST("/mfa/enroll/confirm", mfaEnrollConfirmHandler.ServeHTTP)
+
 			// Token operations - separate rate limit (20/min)
 			// Token exchange requires valid refresh token, not brute-forceable
 			// Used for tenant switching which may happen frequently
@@ -170,6 +180,24 @@ func registerUserRoutes(
 			r.GET("/me/sessions", localAuthHandler.ListSessions)
 			r.DELETE("/me/sessions", localAuthHandler.RevokeAllSessions)
 			r.DELETE("/me/sessions/{sessionId}", localAuthHandler.RevokeSession)
+
+			// Two-factor authentication for the signed-in user. Code-checking
+			// calls are rate limited like the login and password endpoints;
+			// mutating calls also carry the CSRF check.
+			mfaRL := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+			codeRL := mfaRL.LoginMiddleware()
+			sensitiveRL := mfaRL.PasswordMiddleware()
+			withCSRF := func(rl Middleware) []Middleware {
+				if csrfProtectionMiddleware != nil {
+					return []Middleware{csrfProtectionMiddleware, rl}
+				}
+				return []Middleware{rl}
+			}
+			r.GET("/me/2fa", localAuthHandler.GetMFAStatus)
+			r.POST("/me/2fa/setup", localAuthHandler.SetupMFA, withCSRF(codeRL)...)
+			r.POST("/me/2fa/enable", localAuthHandler.EnableMFA, withCSRF(codeRL)...)
+			r.POST("/me/2fa/disable", localAuthHandler.DisableMFA, withCSRF(sensitiveRL)...)
+			r.POST("/me/2fa/recovery-codes", localAuthHandler.RegenerateRecoveryCodes, withCSRF(sensitiveRL)...)
 		}
 	}, middlewares...)
 }

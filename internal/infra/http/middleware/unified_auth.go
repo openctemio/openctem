@@ -40,7 +40,15 @@ type UnifiedAuthConfig struct {
 	OIDCValidator         *keycloak.Validator
 	Logger                *logger.Logger
 	SessionTimeoutMinutes int // Session timeout in minutes (0 = disabled)
+	// RevokedSessions, when set, makes a signed-out session's access tokens
+	// stop working on the next request instead of when they expire. A lookup
+	// error fails open (logged): the token still expires on its own.
+	RevokedSessions RevokedSessionChecker
+}
 
+// RevokedSessionChecker answers whether a session id has been revoked.
+type RevokedSessionChecker interface {
+	IsSessionRevoked(ctx context.Context, sessionID string) (bool, error)
 }
 
 // DefaultAccessTokenCookieName is the default cookie name for access tokens.
@@ -129,6 +137,20 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 				if isSessionExpired(ctx, cfg.SessionTimeoutMinutes) {
 					apierror.Unauthorized("Session has expired").WriteJSON(w)
 					return
+				}
+			}
+
+			if cfg.RevokedSessions != nil {
+				if sid := GetSessionID(ctx); sid != "" {
+					revoked, rerr := cfg.RevokedSessions.IsSessionRevoked(ctx, sid)
+					if rerr != nil {
+						if cfg.Logger != nil {
+							cfg.Logger.Warn("session revocation check failed; allowing token until it expires", "error", rerr)
+						}
+					} else if revoked {
+						apierror.Unauthorized("Session has been revoked").WriteJSON(w)
+						return
+					}
 				}
 			}
 

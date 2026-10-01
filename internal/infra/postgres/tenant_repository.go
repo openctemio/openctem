@@ -681,6 +681,11 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
 			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at,
+			CASE
+				WHEN u.auth_provider <> 'local' THEN 'idp'
+				WHEN EXISTS (SELECT 1 FROM user_mfa f WHERE f.user_id = m.user_id AND f.enabled) THEN 'enabled'
+				ELSE 'disabled'
+			END as mfa_status,
 			COUNT(*) OVER() as total_count
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
@@ -726,13 +731,14 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			avatarURL                 sql.NullString
 			status                    string
 			lastLoginAt               sql.NullTime
+			mfaStatus                 string
 			totalCount                int
 		)
 
 		if err := rows.Scan(
 			&idStr, &userIDStr, &roleStr, &invitedByStr, &joinedAt,
 			&email, &name, &avatarURL, &status, &lastLoginAt,
-			&totalCount,
+			&mfaStatus, &totalCount,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan member: %w", err)
 		}
@@ -770,6 +776,7 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			AvatarURL:   avatarURL.String,
 			Status:      status,
 			LastLoginAt: lastLogin,
+			MFAStatus:   mfaStatus,
 		})
 	}
 

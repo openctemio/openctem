@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/openctemio/api/internal/app/accesscontrol"
+	"github.com/openctemio/api/pkg/domain/mfa"
 
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -20,6 +22,15 @@ type SessionService struct {
 	permCacheSvc   *accesscontrol.PermissionCacheService
 	permVersionSvc *accesscontrol.PermissionVersionService
 	tenantRepo     TenantMembershipProvider // For getting user's tenants
+
+	// revocations records revoked session ids so the auth middleware rejects
+	// their still-unexpired access tokens at once; revocationTTL must outlive
+	// an access token. nil = access tokens expire naturally.
+	revocations   SessionRevocationStore
+	revocationTTL time.Duration
+	// mfaChallenges, when set, has its expired login challenges removed by
+	// CleanupExpiredSessions.
+	mfaChallenges mfa.Repository
 }
 
 // TenantMembershipProvider provides tenant membership information.
@@ -51,6 +62,19 @@ func (s *SessionService) SetPermissionServices(
 	s.permCacheSvc = cacheSvc
 	s.permVersionSvc = versionSvc
 	s.tenantRepo = tenantRepo
+}
+
+// SetRevocationStore wires immediate access-token revocation. ttl must be at
+// least the access-token lifetime.
+func (s *SessionService) SetRevocationStore(store SessionRevocationStore, ttl time.Duration) {
+	s.revocations = store
+	s.revocationTTL = ttl
+}
+
+// SetMFAChallengeCleanup makes CleanupExpiredSessions also delete expired 2FA
+// login challenges.
+func (s *SessionService) SetMFAChallengeCleanup(repo mfa.Repository) {
+	s.mfaChallenges = repo
 }
 
 // invalidateUserPermissionsAllTenants clears permission cache for a user across all their tenants.
@@ -159,6 +183,8 @@ func (s *SessionService) RevokeSession(ctx context.Context, userID, sessionID st
 	if err := s.refreshTokenRepo.RevokeBySessionID(ctx, sid); err != nil {
 		s.logger.Error("failed to revoke refresh tokens", "error", err)
 	}
+	// Stop the session's access tokens now, not when they expire.
+	markSessionRevoked(ctx, s.revocations, s.revocationTTL, sid.String(), s.logger.Error)
 
 	// Invalidate permission cache for all tenants
 	s.invalidateUserPermissionsAllTenants(ctx, uid)
@@ -182,6 +208,13 @@ func (s *SessionService) RevokeAllSessions(ctx context.Context, userID, exceptSe
 		}
 	}
 
+	// List the sessions BEFORE revoking them: their ids are needed to revoke
+	// their refresh tokens and to stop their access tokens immediately.
+	sessions, listErr := s.sessionRepo.GetActiveByUserID(ctx, uid)
+	if listErr != nil {
+		s.logger.Error("failed to list sessions for revocation", "error", listErr)
+	}
+
 	if exceptSid.IsZero() {
 		if err := s.sessionRepo.RevokeAllByUserID(ctx, uid); err != nil {
 			return fmt.Errorf("failed to revoke sessions: %w", err)
@@ -196,18 +229,20 @@ func (s *SessionService) RevokeAllSessions(ctx context.Context, userID, exceptSe
 			return fmt.Errorf("failed to revoke sessions: %w", err)
 		}
 		// Revoke all refresh tokens except for the current session
-		sessions, err := s.sessionRepo.GetActiveByUserID(ctx, uid)
-		if err == nil {
-			for _, sess := range sessions {
-				if !sess.ID().Equals(exceptSid) {
-					if err := s.refreshTokenRepo.RevokeBySessionID(ctx, sess.ID()); err != nil {
-						s.logger.Error("failed to revoke refresh tokens for session", "error", err)
-					}
+		for _, sess := range sessions {
+			if !sess.ID().Equals(exceptSid) {
+				if err := s.refreshTokenRepo.RevokeBySessionID(ctx, sess.ID()); err != nil {
+					s.logger.Error("failed to revoke refresh tokens for session", "error", err)
 				}
 			}
 		}
 		// Note: When except session exists, user is keeping one active session
 		// so we don't invalidate cache (they're still logged in on that device)
+	}
+	for _, sess := range sessions {
+		if !sess.ID().Equals(exceptSid) {
+			markSessionRevoked(ctx, s.revocations, s.revocationTTL, sess.ID().String(), s.logger.Error)
+		}
 	}
 
 	s.logger.Info("all sessions revoked", "user_id", userID, "except", exceptSessionID)
@@ -266,6 +301,14 @@ func (s *SessionService) CleanupExpiredSessions(ctx context.Context) (int64, int
 	tokensDeleted, err := s.refreshTokenRepo.DeleteExpired(ctx)
 	if err != nil {
 		return sessionsDeleted, 0, fmt.Errorf("failed to delete expired tokens: %w", err)
+	}
+
+	if s.mfaChallenges != nil {
+		if n, err := s.mfaChallenges.DeleteExpiredChallenges(ctx); err != nil {
+			s.logger.Error("failed to delete expired 2FA challenges", "error", err)
+		} else if n > 0 {
+			s.logger.Info("cleaned up expired 2FA challenges", "deleted", n)
+		}
 	}
 
 	if sessionsDeleted > 0 || tokensDeleted > 0 {

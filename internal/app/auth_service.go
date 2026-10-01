@@ -60,6 +60,15 @@ type (
 	SSOProviderInfo                        = auth.SSOProviderInfo
 	SSOUserInfo                            = auth.SSOUserInfo
 	UpdateProviderInput                    = auth.UpdateProviderInput
+
+	// Two-factor authentication.
+	MFAChallengeInfo           = auth.MFAChallengeInfo
+	MFAStatus                  = auth.MFAStatus
+	MFASetup                   = auth.MFASetup
+	VerifyMFAInput             = auth.VerifyMFAInput
+	CompleteMFAEnrollmentInput = auth.CompleteMFAEnrollmentInput
+	SecurityNotifier           = auth.SecurityNotifier
+	SessionRevocationStore     = auth.SessionRevocationStore
 )
 
 var (
@@ -111,6 +120,14 @@ var (
 	ErrTenantAccessDenied              = auth.ErrTenantAccessDenied
 	ErrTenantRequired                  = auth.ErrTenantRequired
 	ErrSSORequired                     = auth.ErrSSORequired
+	ErrMFAChallengeInvalid             = auth.ErrMFAChallengeInvalid
+	ErrMFACodeInvalid                  = auth.ErrMFACodeInvalid
+	ErrMFANotEnabled                   = auth.ErrMFANotEnabled
+	ErrMFAAlreadyEnabled               = auth.ErrMFAAlreadyEnabled
+	ErrMFANoPendingSetup               = auth.ErrMFANoPendingSetup
+	ErrMFANotSupported                 = auth.ErrMFANotSupported
+	ErrMFAEnrollmentRequired           = auth.ErrMFAEnrollmentRequired
+	ErrMFAUnavailable                  = auth.ErrMFAUnavailable
 )
 
 // OAuth provider constants.

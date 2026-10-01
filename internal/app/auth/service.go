@@ -14,6 +14,8 @@ import (
 
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/pkg/crypto"
+	auditdom "github.com/openctemio/api/pkg/domain/audit"
+	"github.com/openctemio/api/pkg/domain/mfa"
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
@@ -94,6 +96,16 @@ type AuthService struct {
 	// the user's current permission version so the permission-sync middleware
 	// can reject stale tokens after a role revocation/demotion (AUTHZ-3).
 	permVersionSvc *accesscontrol.PermissionVersionService
+
+	// Two-factor authentication (see mfa.go). nil mfaRepo = 2FA off.
+	mfaRepo          mfa.Repository
+	mfaEncryptor     crypto.Encryptor
+	mfaIssuer        string
+	recoveryHasher   *password.Hasher
+	securityNotifier SecurityNotifier
+	// revocations records revoked session ids so their access tokens stop
+	// working immediately (nil = they expire naturally).
+	revocations SessionRevocationStore
 }
 
 // SMTPAvailabilityCheck reports whether outbound email is available, either via
@@ -493,6 +505,10 @@ type LoginResult struct {
 	// suspended" instead of bouncing the user to /onboarding/create-team
 	// when they have no active memberships.
 	SuspendedTenants []TenantMembershipInfo
+	// MFAChallenge is set (and every other field except User is empty) when
+	// the password was correct but a second step is required: no session or
+	// refresh token exists yet. See VerifyMFALogin and the enrollment steps.
+	MFAChallenge *MFAChallengeInfo
 }
 
 // Login authenticates a user and creates a session.
@@ -576,12 +592,31 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		}
 	}
 
+	// Second factor. When one is needed, no session exists until it is
+	// verified, and the failed-login counter is deliberately NOT reset here:
+	// it is reset only after the second step succeeds, so alternating a
+	// correct password with wrong codes still trips the account lockout.
+	challenge, err := s.loginMFAChallenge(ctx, u, input.IPAddress, input.UserAgent)
+	if err != nil {
+		return nil, err
+	}
+	if challenge != nil {
+		return &LoginResult{User: u, MFAChallenge: challenge}, nil
+	}
+
 	// Reset failed login attempts on successful login
 	u.RecordSuccessfulLogin()
 	if err := s.userRepo.Update(ctx, u); err != nil {
 		s.logger.Error("failed to reset failed login attempts", "error", err)
 	}
 
+	return s.completeLogin(ctx, u, input.IPAddress, input.UserAgent)
+}
+
+// completeLogin opens the session for an authenticated user (password, or
+// password plus second factor) and returns the global refresh token and the
+// user's memberships.
+func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddress, userAgent string) (*LoginResult, error) {
 	// Check session limit
 	activeCount, err := s.sessionRepo.CountActiveByUserID(ctx, u.ID())
 	if err != nil {
@@ -603,6 +638,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 				if err := s.refreshTokenRepo.RevokeBySessionID(ctx, oldestSession.ID()); err != nil {
 					s.logger.Error("failed to revoke refresh tokens for oldest session", "error", err)
 				}
+				markSessionRevoked(ctx, s.revocations, s.revocationTTL(), oldestSession.ID().String(), s.logger.Error)
 				s.logger.Info("auto-revoked oldest session due to session limit",
 					"user_id", u.ID().String(),
 					"revoked_session_id", oldestSession.ID().String(),
@@ -664,8 +700,8 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		sessionID,
 		u.ID(),
 		refreshTokenStr, // Use refresh token for session tracking
-		input.IPAddress,
-		input.UserAgent,
+		ipAddress,
+		userAgent,
 		s.config.SessionDuration,
 	)
 	if err != nil {
@@ -697,8 +733,8 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	actx := auditapp.AuditContext{
 		ActorID:    u.ID().String(),
 		ActorEmail: u.Email(),
-		ActorIP:    input.IPAddress,
-		UserAgent:  input.UserAgent,
+		ActorIP:    ipAddress,
+		UserAgent:  userAgent,
 		SessionID:  sess.ID().String(),
 	}
 	if err := s.auditService.LogUserLogin(ctx, actx, u.ID().String(), u.Email()); err != nil {
@@ -976,6 +1012,11 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
 		return nil, err
 	}
+	// Per-tenant 2FA requirement: a password session whose user has not
+	// enrolled cannot mint a token for a tenant that requires 2FA.
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
 
 	// Determine if user is admin (owner or admin role)
 	// Owner/Admin: isAdmin=true → bypass permission checks, no permissions in JWT
@@ -1087,6 +1128,7 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
 	if err := s.refreshTokenRepo.RevokeBySessionID(ctx, id); err != nil {
 		s.logger.Error("failed to revoke refresh tokens", "error", err)
 	}
+	markSessionRevoked(ctx, s.revocations, s.revocationTTL(), id.String(), s.logger.Error)
 
 	s.logger.Info("user logged out", "session_id", sessionID)
 
@@ -1215,6 +1257,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	// so toggling sso_enforced on takes effect the next time a password session
 	// refreshes its tenant-scoped token. Federated sessions and the owner pass.
 	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
+		return nil, err
+	}
+	// Per-tenant 2FA requirement: a password session whose user has not
+	// enrolled cannot mint a token for a tenant that requires 2FA.
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -1412,15 +1459,8 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 		return fmt.Errorf("failed to set password hash: %w", err)
 	}
 
-	// Revoke all sessions for security
-	if err := s.sessionRepo.RevokeAllByUserID(ctx, u.ID()); err != nil {
-		s.logger.Error("failed to revoke sessions after password reset", "error", err)
-	}
-
-	// Revoke all refresh tokens
-	if err := s.refreshTokenRepo.RevokeByUserID(ctx, u.ID()); err != nil {
-		s.logger.Error("failed to revoke refresh tokens after password reset", "error", err)
-	}
+	// Revoke all sessions (and their refresh tokens) for security
+	s.revokeUserSessions(ctx, u.ID(), shared.ID{})
 
 	if err := s.userRepo.Update(ctx, u); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -1434,6 +1474,11 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 type ChangePasswordInput struct {
 	CurrentPassword string `json:"current_password" validate:"required"`
 	NewPassword     string `json:"new_password" validate:"required,min=8,max=128"`
+	// CurrentSessionID, when set, is the session making the change: it stays
+	// signed in while every other session is revoked. Empty revokes all.
+	CurrentSessionID string `json:"-"`
+	IPAddress        string `json:"-"`
+	UserAgent        string `json:"-"`
 }
 
 // ChangePassword changes a user's password (requires authentication).
@@ -1482,17 +1527,24 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
-	// Security: revoke all existing sessions and refresh-token families so a
-	// password change (like a reset) invalidates any other/stolen sessions
-	// (AUTHZ-10). Mirrors ResetPassword's revocation behavior.
-	if err := s.sessionRepo.RevokeAllByUserID(ctx, u.ID()); err != nil {
-		s.logger.Error("failed to revoke sessions after password change", "error", err)
-	}
-	if err := s.refreshTokenRepo.RevokeByUserID(ctx, u.ID()); err != nil {
-		s.logger.Error("failed to revoke refresh tokens after password change", "error", err)
+	// Security: revoke every other session and its refresh tokens so a
+	// password change invalidates any other/stolen session (AUTHZ-10). The
+	// session making the change stays signed in; with no current session id
+	// everything is revoked, like ResetPassword.
+	except, _ := shared.IDFromString(input.CurrentSessionID)
+	s.revokeUserSessions(ctx, u.ID(), except)
+
+	s.audit(ctx, auditapp.AuditContext{
+		ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress,
+		UserAgent: input.UserAgent, SessionID: input.CurrentSessionID,
+	}, auditapp.NewSuccessEvent(auditdom.ActionAuthPasswordChanged, auditdom.ResourceTypeUser, u.ID().String()).
+		WithResourceName(u.Email()).
+		WithMessage("Password changed; other sessions signed out"))
+	if s.securityNotifier != nil {
+		s.securityNotifier.NotifyPasswordChanged(ctx, u.Email(), u.Name(), input.IPAddress)
 	}
 
-	s.logger.Info("password changed", "user_id", userID)
+	s.logger.Info("password changed", "user_id", u.ID().String())
 	return nil
 }
 

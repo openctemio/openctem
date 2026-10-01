@@ -111,6 +111,10 @@ type MemberWithUser struct {
 	AvatarURL   string
 	Status      string // active, pending, inactive
 	LastLoginAt *time.Time
+	// MFAStatus is the user's second-factor state: "enabled", "disabled", or
+	// "idp" for accounts that sign in through an identity provider (which
+	// owns the second factor). Filled by SearchMembersWithUserInfo only.
+	MFAStatus string
 }
 
 // MemberStats contains statistics about tenant members.

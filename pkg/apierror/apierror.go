@@ -30,6 +30,10 @@ const (
 	CodeServiceUnavailable  Code = "SERVICE_UNAVAILABLE"
 	CodeValidationFailed    Code = "VALIDATION_FAILED"
 	CodeRateLimitExceeded   Code = "RATE_LIMIT_EXCEEDED"
+	// CodeMFAEnrollmentRequired is a 403 from token exchange/refresh when the
+	// tenant requires two-factor authentication and the user has not set it
+	// up. The client signs the user in again, which leads to enrollment.
+	CodeMFAEnrollmentRequired Code = "MFA_ENROLLMENT_REQUIRED"
 )
 
 // Error represents a standardized API error.
