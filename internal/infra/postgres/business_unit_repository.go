@@ -110,12 +110,12 @@ func (r *BusinessUnitRepository) Update(ctx context.Context, bu *businessunit.Bu
 }
 
 func (r *BusinessUnitRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
-	_, err := r.db.ExecContext(ctx, "DELETE FROM business_units WHERE tenant_id = $1 AND id = $2",
+	res, err := r.db.ExecContext(ctx, "DELETE FROM business_units WHERE tenant_id = $1 AND id = $2",
 		tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete business unit: %w", err)
 	}
-	return nil
+	return deletedOne(res, "business unit")
 }
 
 func (r *BusinessUnitRepository) List(ctx context.Context, filter businessunit.Filter, page pagination.Pagination) (pagination.Result[*businessunit.BusinessUnit], error) {

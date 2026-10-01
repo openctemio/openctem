@@ -157,14 +157,14 @@ func (r *ControlTestRepository) Update(ctx context.Context, ct *simulation.Contr
 }
 
 func (r *ControlTestRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
-	_, err := r.db.ExecContext(ctx,
+	res, err := r.db.ExecContext(ctx,
 		"DELETE FROM control_tests WHERE tenant_id = $1 AND id = $2",
 		tenantID.String(), id.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete control test: %w", err)
 	}
-	return nil
+	return deletedOne(res, "control test")
 }
 
 func (r *ControlTestRepository) List(ctx context.Context, filter simulation.ControlTestFilter, page pagination.Pagination) (pagination.Result[*simulation.ControlTest], error) {
