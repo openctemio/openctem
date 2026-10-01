@@ -30,6 +30,9 @@ const (
 	CodeServiceUnavailable  Code = "SERVICE_UNAVAILABLE"
 	CodeValidationFailed    Code = "VALIDATION_FAILED"
 	CodeRateLimitExceeded   Code = "RATE_LIMIT_EXCEEDED"
+	// CodeUpstreamError is a 502: a service the request depends on (e.g. a
+	// template source's server) failed or refused it.
+	CodeUpstreamError Code = "UPSTREAM_ERROR"
 	// CodeMFAEnrollmentRequired is a 403 from token exchange/refresh when the
 	// tenant requires two-factor authentication and the user has not set it
 	// up. The client signs the user in again, which leads to enrollment.
@@ -243,6 +246,11 @@ func ServiceUnavailable(message string) *Error {
 // RateLimitExceeded creates a 429 Too Many Requests error.
 func RateLimitExceeded() *Error {
 	return New(http.StatusTooManyRequests, CodeRateLimitExceeded, "Rate limit exceeded")
+}
+
+// BadGateway creates a 502 error: an upstream the request depends on failed.
+func BadGateway(message string) *Error {
+	return New(http.StatusBadGateway, CodeUpstreamError, message)
 }
 
 // TooManyRequests creates a 429 error with a custom message.

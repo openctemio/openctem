@@ -14,6 +14,8 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	auditdom "github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/credential"
+	"github.com/openctemio/api/pkg/domain/exposure"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
 )
@@ -806,6 +808,24 @@ func (h *CredentialImportHandler) toImportRequest(req CredentialImportRequest) (
 }
 
 // handleValidationError handles validation errors.
+// writeStateChangeError maps a failed credential state change to its status:
+// 404 for an unknown credential (or one of another tenant), 400 for a
+// malformed id, 409 for a transition the credential's state does not allow.
+// Only an unexpected failure is logged as an error.
+func (h *CredentialImportHandler) writeStateChangeError(w http.ResponseWriter, verb, id string, err error) {
+	switch {
+	case exposure.IsExposureEventNotFound(err):
+		apierror.NotFound("Credential").WriteJSON(w)
+	case exposure.IsInvalidStateTransition(err):
+		apierror.Conflict("Cannot " + verb + " this credential in its current state").WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.SafeBadRequest(err).WriteJSON(w)
+	default:
+		h.logger.Error("credential state change failed", "action", verb, "error", err, "id", sanitizeLogField(id))
+		apierror.InternalServerError("Credential update failed").WriteJSON(w)
+	}
+}
+
 func (h *CredentialImportHandler) handleValidationError(w http.ResponseWriter, err error) {
 	var validationErrors validator.ValidationErrors
 	if errors.As(err, &validationErrors) {
@@ -906,8 +926,7 @@ func (h *CredentialImportHandler) Resolve(w http.ResponseWriter, r *http.Request
 
 	item, err := h.service.ResolveCredential(r.Context(), tenantID, id, userID, req.Notes)
 	if err != nil {
-		h.logger.Error("failed to resolve credential", "error", err, "id", id)
-		apierror.NotFound("credential not found").WriteJSON(w)
+		h.writeStateChangeError(w, "resolve", id, err)
 		return
 	}
 
@@ -946,8 +965,7 @@ func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request)
 
 	item, err := h.service.AcceptCredential(r.Context(), tenantID, id, userID, req.Notes)
 	if err != nil {
-		h.logger.Error("failed to accept credential", "error", err, "id", id)
-		apierror.NotFound("credential not found").WriteJSON(w)
+		h.writeStateChangeError(w, "accept", id, err)
 		return
 	}
 
@@ -986,8 +1004,7 @@ func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *ht
 
 	item, err := h.service.MarkCredentialFalsePositive(r.Context(), tenantID, id, userID, req.Notes)
 	if err != nil {
-		h.logger.Error("failed to mark credential as false positive", "error", err, "id", id)
-		apierror.NotFound("credential not found").WriteJSON(w)
+		h.writeStateChangeError(w, "mark as false positive", id, err)
 		return
 	}
 
@@ -1016,8 +1033,7 @@ func (h *CredentialImportHandler) Reactivate(w http.ResponseWriter, r *http.Requ
 
 	item, err := h.service.ReactivateCredential(r.Context(), tenantID, id)
 	if err != nil {
-		h.logger.Error("failed to reactivate credential", "error", err, "id", id)
-		apierror.NotFound("credential not found").WriteJSON(w)
+		h.writeStateChangeError(w, "reactivate", id, err)
 		return
 	}
 

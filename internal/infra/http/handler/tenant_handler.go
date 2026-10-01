@@ -441,6 +441,12 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleValidationError(w, err)
 		return
 	}
+	// An unknown preset used to be accepted and silently ignored (the
+	// organization got every module). Refuse it before anything is created.
+	if req.ModulePresetID != "" && moduleTypes.FindPreset(req.ModulePresetID) == nil {
+		apierror.BadRequest("Unknown module preset: " + req.ModulePresetID).WriteJSON(w)
+		return
+	}
 
 	input := app.CreateTenantInput{
 		Name:        req.Name,
@@ -690,29 +696,44 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data":  response,
-			"total": total,
+			"data":   response,
+			"total":  total,
+			"limit":  limit,
+			"offset": offset,
 		})
 		return
 	}
 
-	// Basic member list
-	members, err := h.service.ListMembers(r.Context(), tenantID.String())
+	// Basic member list. Paginated like the include=user path: it used to
+	// return every member of the organization in one response.
+	result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(),
+		tenant.MemberSearchFilters{Search: search, Limit: limit, Offset: offset})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-
-	response := make([]MemberResponse, len(members))
-	for i, m := range members {
-		response[i] = toMemberResponse(m)
+	response := make([]MemberResponse, len(result.Members))
+	for i, m := range result.Members {
+		var invitedBy string
+		if m.InvitedBy != nil {
+			invitedBy = m.InvitedBy.String()
+		}
+		response[i] = MemberResponse{
+			ID:        m.ID.String(),
+			UserID:    m.UserID.String(),
+			Role:      m.Role.String(),
+			InvitedBy: invitedBy,
+			JoinedAt:  m.JoinedAt,
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data":  response,
-		"total": len(response),
+		"data":   response,
+		"total":  result.Total,
+		"limit":  limit,
+		"offset": offset,
 	})
 }
 

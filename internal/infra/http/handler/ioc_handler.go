@@ -234,7 +234,7 @@ func (h *IOCHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ind, err := h.repo.GetByID(r.Context(), tenantID, id)
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
-			apierror.NotFound("indicator not found").WriteJSON(w)
+			apierror.NotFound("Indicator").WriteJSON(w)
 			return
 		}
 		h.logger.Error("get ioc failed",
@@ -282,7 +282,7 @@ func (h *IOCHandler) Matches(w http.ResponseWriter, r *http.Request) {
 	// only read matches for an indicator in their own tenant.
 	if _, err := h.repo.GetByID(r.Context(), tenantID, id); err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
-			apierror.NotFound("indicator not found").WriteJSON(w)
+			apierror.NotFound("Indicator").WriteJSON(w)
 			return
 		}
 		h.logger.Error("ioc matches: load indicator failed",
@@ -396,7 +396,7 @@ func (h *IOCHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.repo.Deactivate(r.Context(), tenantID, id); err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
-			apierror.NotFound("indicator not found").WriteJSON(w)
+			apierror.NotFound("Indicator").WriteJSON(w)
 			return
 		}
 		h.logger.Error("deactivate ioc failed",

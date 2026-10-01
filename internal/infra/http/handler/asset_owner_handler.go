@@ -111,9 +111,10 @@ func (h *AssetOwnerHandler) ListOwners(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parsedAssetID, err := shared.IDFromString(assetID)
-	if err != nil {
-		apierror.BadRequest("Invalid asset ID").WriteJSON(w)
+	// An asset of another tenant is a 404, like an unknown one (it used to
+	// answer an empty list).
+	parsedAssetID, ok := h.requireAssetInTenant(w, r, assetID)
+	if !ok {
 		return
 	}
 
