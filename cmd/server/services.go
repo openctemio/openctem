@@ -1243,8 +1243,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire IP correlation for host dedup (RFC-001)
 	// System defaults; per-tenant overrides come from tenant settings at ingest time
 	s.Ingest.SetCorrelator(ingest.NewAssetCorrelator(repos.Asset, log, ingest.CorrelationConfig{
-		StaleAssetDays: 30,
-		MaxIPsPerAsset: 20,
+		StaleAssetDays: ingest.DefaultIPTrustWindowDays,
+		MaxIPsPerAsset: ingest.DefaultMaxIPsPerAsset,
 	}))
 	// Enqueue an admin dedup review when correlation finds multiple existing
 	// assets sharing identity (RFC-001) — populates the previously-empty queue.

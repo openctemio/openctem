@@ -39,7 +39,7 @@ func newRenameFixture(t *testing.T, tag string) *renameFixture {
 	log := logger.NewNop()
 	repo := postgres.NewAssetRepository(&postgres.DB{DB: db})
 	proc := ingest.NewAssetProcessor(repo, log)
-	proc.SetCorrelator(ingest.NewAssetCorrelator(repo, log, ingest.CorrelationConfig{StaleAssetDays: 30, MaxIPsPerAsset: 20}))
+	proc.SetCorrelator(ingest.NewAssetCorrelator(repo, log, ingest.CorrelationConfig{StaleAssetDays: ingest.DefaultIPTrustWindowDays, MaxIPsPerAsset: ingest.DefaultMaxIPsPerAsset}))
 	return &renameFixture{db: db, tenant: tenant, proc: proc}
 }
 
