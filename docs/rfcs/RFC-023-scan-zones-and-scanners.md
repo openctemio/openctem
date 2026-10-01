@@ -175,7 +175,57 @@ tenant-scoped.
 
 Each phase is shippable alone; Phase 0 is independent and should land first.
 
-## 9. Security notes
+## 9. Renaming and compatibility plan
+
+Goal: move to the Sensors vocabulary **without breaking any sensor or SDK in
+the field**. Old SDK versions keep working unchanged; where a security feature
+needs a newer SDK it is opt-in per sensor, and the platform gives operators a
+lever to require it once they have upgraded.
+
+### 9.1 Two axes instead of one `type`
+
+Today `agents.type` mixes *what the sensor does* with *how it runs*
+(`runner` = CI one-shot, `worker` = server-controlled daemon, `collector`,
+`sensor` = "EASM sensor"; live also has legacy `scanner`). It is split into:
+
+- **role**: `scanner | agent | collector | monitor` (D18); a runtime may hold several.
+- **deployment**: `daemon` (long-running, pulls jobs) | `ephemeral` (CI / one-shot, push only).
+
+| Legacy `type` | role | deployment | Note |
+|---|---|---|---|
+| `worker` | scanner | daemon | today's in-network runtime |
+| `scanner` (legacy rows) | scanner | daemon | |
+| `sensor` (EASM) | scanner | daemon | internet vantage point; the word *sensor* becomes the umbrella term |
+| `collector` | collector | daemon | |
+| `runner` | scanner | ephemeral | scans code/images in CI; non-network tools, so no zone routing |
+
+`type` and `execution_mode` stay in the table and in the agent protocol; `role`
+and `deployment` are new columns backfilled from them. The API keeps accepting
+every legacy `type` value from old clients and maps it.
+
+### 9.2 Compatibility contract (protocol v1 is frozen)
+
+| # | Rule |
+|---|---|
+| C1 | Every sensor-facing endpoint, auth header, request and response shape of today is **protocol v1** and frozen: changes are additive only, no field becomes required, enum values are only added. |
+| C2 | The server accepts v1 payloads forever within a major version. New information (role, features, tool manifest, SDK/protocol version) is sent as **optional** fields on registration/heartbeat; provenance (sensor id, role, zone) is stamped **by the server**, never sent by the SDK. |
+| C3 | **New SDK → older server:** the CTIS ingest decoder rejects unknown fields (`ingest_handler.go:387`), so a newer SDK must not add fields to existing payloads blindly. The server advertises its protocol level on every sensor response (`X-OpenCTEM-Protocol`) and a `GET /api/v1/agent/hello`; the SDK sends v2-only data only when advertised and otherwise behaves exactly as v1. |
+| C4 | Management API (used by our UI): additive `role` / `deployment` fields; `type` stays in responses, marked deprecated. No URL renames; the rename is in the UI and docs. |
+| C5 | Go SDK source compatibility: no exported identifier is renamed or removed in a minor release. New names are **aliases** (`type SensorRuntime = Agent`, role constants); `// Deprecated:` only once the replacement is stable; semver minor bumps. |
+| C6 | Deployment compatibility: binary name, environment variables (`API_URL`, agent key, `BOOTSTRAP_TOKEN`, `AGENT_ALLOW_PRIVATE_TARGETS`), Helm values (`agent.*`) and image names are unchanged. |
+| C7 | Security features ride on top of v1: the job signature is an additive envelope a v1 SDK ignores; a sensor is switched to "signature required" only after it reports `signed_jobs`. A **minimum sensor protocol** setting (platform-wide, overridable per tenant; default v1) is the operator's upgrade lever: raising it stops new *jobs* to older scanners (collectors keep pushing, D24). The Sensors page shows the fleet by SDK/protocol version so upgrades can be planned. |
+| C8 | Proven in CI: a compatibility job runs the **previous released** agent/SDK against the new API (register, heartbeat, poll, claim, push CTIS, renew key), plus golden fixtures of recorded v1 payloads. |
+
+### 9.3 Rollout
+
+| Step | Change | Breaks anything? |
+|---|---|---|
+| R0 | UI and docs rename: *Settings → Sensors* (Scanners · Agents · Collectors · Scan zones · Networks); `/agents` redirects; role shown from the server-derived mapping. | No (UI only) |
+| R1 | API: `role` + `deployment` columns backfilled; optional heartbeat fields; protocol advertisement; fleet version inventory; management responses gain `role`. | No (additive) |
+| R2 | SDK minor release: aliases, role/feature/manifest reporting when the server advertises v2, signature verification when present. Our agent bumps to it. | No (opt-in) |
+| R3 | Security switches: per-sensor "signature required", tenant "require guarded scanners for private targets", platform minimum protocol. Defaults keep v1 working; operators raise them when their fleet is upgraded. | Only when an operator raises the minimum |
+
+## 10. Security notes
 
 - The strongest guarantee is layer 3 with an operator-set local allow-list: it
   holds even if the control plane is fully compromised. Layers 1–2 are routing
@@ -188,7 +238,7 @@ Each phase is shippable alone; Phase 0 is independent and should land first.
 - Everything here is tenant-scoped; a zone or scanner id from another tenant is
   rejected in SQL, not only in handlers.
 
-## 10. Open questions
+## 11. Open questions
 
 1. Should a public target in a tenant with zones but no internet-facing scanner
    fall back to platform scanners if the tenant opted in, or be skipped? (Proposal:
