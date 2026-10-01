@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/adminconsole"
@@ -45,12 +46,23 @@ func (d adminAccountDirectory) EndSignIn(ctx context.Context, refreshToken strin
 	return d.auth.Logout(ctx, id.SessionID.String())
 }
 
-func (d adminAccountDirectory) ProvisionAccount(ctx context.Context, email, name string) (shared.ID, string, error) {
-	acc, err := d.auth.ProvisionLocalAccount(ctx, email, name)
+func (d adminAccountDirectory) CreateAccount(ctx context.Context, email, name string) (shared.ID, string, error) {
+	acc, err := d.auth.CreateLocalAccount(ctx, email, name)
 	if err != nil {
+		if errors.Is(err, app.ErrEmailAlreadyExists) {
+			return shared.ID{}, "", admin.ErrEmailHasAccount
+		}
 		return shared.ID{}, "", err
 	}
 	return acc.User.ID(), acc.TemporaryPassword, nil
+}
+
+func (d adminAccountDirectory) AccountActive(ctx context.Context, userID shared.ID) (bool, error) {
+	return d.auth.AccountActive(ctx, userID)
+}
+
+func (d adminAccountDirectory) ChangePassword(ctx context.Context, userID shared.ID, current, next string) error {
+	return d.auth.ChangePassword(ctx, userID.String(), app.ChangePasswordInput{CurrentPassword: current, NewPassword: next})
 }
 
 // platformAdminChecker tells login and /users/me whether an account is linked

@@ -31,7 +31,7 @@ func NewAdminRepository(db *DB) *AdminRepository {
 func (r *AdminRepository) selectQuery() string {
 	return `
 		SELECT id, email, name,
-		       role, is_active, last_used_at, last_used_ip,
+		       role, is_active, user_id, last_used_at, last_used_ip,
 		       failed_login_count, locked_until, last_failed_login_at, last_failed_login_ip,
 		       created_at, created_by, updated_at
 		FROM admin_users
@@ -288,12 +288,26 @@ func (r *AdminRepository) buildWhereClause(filter admin.Filter) (string, []any) 
 }
 
 func (r *AdminRepository) scanAdmin(row *sql.Row) (*admin.AdminUser, error) {
+	a, err := scanAdminRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, admin.ErrAdminNotFound
+	}
+	return a, err
+}
+
+func (r *AdminRepository) scanAdminFromRows(rows *sql.Rows) (*admin.AdminUser, error) {
+	return scanAdminRow(rows)
+}
+
+// scanAdminRow scans one selectQuery row (from *sql.Row or *sql.Rows).
+func scanAdminRow(scanner interface{ Scan(dest ...any) error }) (*admin.AdminUser, error) {
 	var (
 		id                string
 		email             string
 		name              string
 		role              string
 		isActive          bool
+		userID            sql.NullString
 		lastUsedAt        sql.NullTime
 		lastUsedIP        sql.NullString
 		failedLoginCount  int
@@ -304,52 +318,35 @@ func (r *AdminRepository) scanAdmin(row *sql.Row) (*admin.AdminUser, error) {
 		createdBy         sql.NullString
 		updatedAt         time.Time
 	)
-
-	err := row.Scan(
-		&id,
-		&email,
-		&name,
-		&role,
-		&isActive,
-		&lastUsedAt,
-		&lastUsedIP,
-		&failedLoginCount,
-		&lockedUntil,
-		&lastFailedLoginAt,
-		&lastFailedLoginIP,
-		&createdAt,
-		&createdBy,
-		&updatedAt,
-	)
-
-	if err != nil {
+	if err := scanner.Scan(
+		&id, &email, &name, &role, &isActive, &userID,
+		&lastUsedAt, &lastUsedIP,
+		&failedLoginCount, &lockedUntil, &lastFailedLoginAt, &lastFailedLoginIP,
+		&createdAt, &createdBy, &updatedAt,
+	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, admin.ErrAdminNotFound
+			return nil, err
 		}
 		return nil, fmt.Errorf("failed to scan admin user: %w", err)
 	}
 
 	adminID, _ := shared.IDFromString(id)
-
-	var lastUsed *time.Time
-	if lastUsedAt.Valid {
-		lastUsed = &lastUsedAt.Time
+	optID := func(v sql.NullString) *shared.ID {
+		if !v.Valid {
+			return nil
+		}
+		parsed, err := shared.IDFromString(v.String)
+		if err != nil {
+			return nil
+		}
+		return &parsed
 	}
-
-	var locked *time.Time
-	if lockedUntil.Valid {
-		locked = &lockedUntil.Time
-	}
-
-	var lastFailed *time.Time
-	if lastFailedLoginAt.Valid {
-		lastFailed = &lastFailedLoginAt.Time
-	}
-
-	var createdByID *shared.ID
-	if createdBy.Valid {
-		cid, _ := shared.IDFromString(createdBy.String)
-		createdByID = &cid
+	optTime := func(v sql.NullTime) *time.Time {
+		if !v.Valid {
+			return nil
+		}
+		t := v.Time
+		return &t
 	}
 
 	return admin.Reconstitute(
@@ -358,94 +355,15 @@ func (r *AdminRepository) scanAdmin(row *sql.Row) (*admin.AdminUser, error) {
 		name,
 		admin.AdminRole(role),
 		isActive,
-		lastUsed,
+		optID(userID),
+		optTime(lastUsedAt),
 		lastUsedIP.String,
 		failedLoginCount,
-		locked,
-		lastFailed,
+		optTime(lockedUntil),
+		optTime(lastFailedLoginAt),
 		lastFailedLoginIP.String,
 		createdAt,
-		createdByID,
-		updatedAt,
-	), nil
-}
-
-func (r *AdminRepository) scanAdminFromRows(rows *sql.Rows) (*admin.AdminUser, error) {
-	var (
-		id                string
-		email             string
-		name              string
-		role              string
-		isActive          bool
-		lastUsedAt        sql.NullTime
-		lastUsedIP        sql.NullString
-		failedLoginCount  int
-		lockedUntil       sql.NullTime
-		lastFailedLoginAt sql.NullTime
-		lastFailedLoginIP sql.NullString
-		createdAt         time.Time
-		createdBy         sql.NullString
-		updatedAt         time.Time
-	)
-
-	err := rows.Scan(
-		&id,
-		&email,
-		&name,
-		&role,
-		&isActive,
-		&lastUsedAt,
-		&lastUsedIP,
-		&failedLoginCount,
-		&lockedUntil,
-		&lastFailedLoginAt,
-		&lastFailedLoginIP,
-		&createdAt,
-		&createdBy,
-		&updatedAt,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan admin user row: %w", err)
-	}
-
-	adminID, _ := shared.IDFromString(id)
-
-	var lastUsed *time.Time
-	if lastUsedAt.Valid {
-		lastUsed = &lastUsedAt.Time
-	}
-
-	var locked *time.Time
-	if lockedUntil.Valid {
-		locked = &lockedUntil.Time
-	}
-
-	var lastFailed *time.Time
-	if lastFailedLoginAt.Valid {
-		lastFailed = &lastFailedLoginAt.Time
-	}
-
-	var createdByID *shared.ID
-	if createdBy.Valid {
-		cid, _ := shared.IDFromString(createdBy.String)
-		createdByID = &cid
-	}
-
-	return admin.Reconstitute(
-		adminID,
-		email,
-		name,
-		admin.AdminRole(role),
-		isActive,
-		lastUsed,
-		lastUsedIP.String,
-		failedLoginCount,
-		locked,
-		lastFailed,
-		lastFailedLoginIP.String,
-		createdAt,
-		createdByID,
+		optID(createdBy),
 		updatedAt,
 	), nil
 }

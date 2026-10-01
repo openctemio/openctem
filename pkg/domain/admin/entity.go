@@ -100,6 +100,7 @@ type AdminUser struct {
 	name       string
 	role       AdminRole
 	isActive   bool
+	userID     *shared.ID // the linked users account the administrator signs in with
 	lastUsedAt *time.Time
 	lastUsedIP string
 
@@ -158,6 +159,7 @@ func Reconstitute(
 	email, name string,
 	role AdminRole,
 	isActive bool,
+	userID *shared.ID,
 	lastUsedAt *time.Time,
 	lastUsedIP string,
 	failedLoginCount int,
@@ -174,6 +176,7 @@ func Reconstitute(
 		name:              name,
 		role:              role,
 		isActive:          isActive,
+		userID:            userID,
 		lastUsedAt:        lastUsedAt,
 		lastUsedIP:        lastUsedIP,
 		failedLoginCount:  failedLoginCount,
@@ -204,6 +207,10 @@ func (a *AdminUser) Role() AdminRole { return a.role }
 
 // IsActive returns whether the admin user is active.
 func (a *AdminUser) IsActive() bool { return a.isActive }
+
+// UserID returns the linked users account, or nil for a row that was never
+// linked (such rows were deactivated by migration 000227).
+func (a *AdminUser) UserID() *shared.ID { return a.userID }
 
 // LastUsedAt returns when the administrator last opened the console.
 func (a *AdminUser) LastUsedAt() *time.Time { return a.lastUsedAt }

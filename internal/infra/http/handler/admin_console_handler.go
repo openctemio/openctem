@@ -7,12 +7,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/adminconsole"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/admin"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/password"
 )
 
 // Cookie paths: the pending-MFA cookie only reaches the auth endpoints, the
@@ -62,6 +64,12 @@ type AdminProvisionRequest struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
 	Role  string `json:"role"`
+}
+
+// AdminChangePasswordRequest changes the signed-in administrator's password.
+type AdminChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
 }
 
 // AdminProvisionResponse returns the new administrator; temporary_password is
@@ -164,6 +172,8 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 		switch {
 		case errors.Is(err, admin.ErrAdminAlreadyExists), errors.Is(err, admin.ErrUserAlreadyAdmin):
 			apierror.Conflict("This person is already a platform administrator").WriteJSON(w)
+		case errors.Is(err, admin.ErrEmailHasAccount):
+			apierror.Conflict("An account with this email already exists. Platform administrators get a new, dedicated account: use another email.").WriteJSON(w)
 		case errors.Is(err, admin.ErrUserHasMemberships):
 			apierror.Conflict("This account belongs to an organization. Platform administrators cannot; use a separate account.").WriteJSON(w)
 		case shared.IsValidation(err):
@@ -178,6 +188,43 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 		Admin:             ValidateResponse{ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role())},
 		TemporaryPassword: temp,
 	})
+}
+
+// ChangePassword handles POST /api/v1/admin/auth/password.
+// @Summary Change your own password
+// @Description Changes the signed-in administrator's password (their sign-in account's). Every /login and console session of the account ends, so the administrator signs in again.
+// @Tags Admin Auth
+// @Accept json
+// @Param request body AdminChangePasswordRequest true "Current and new password"
+// @Success 204 "No Content"
+// @Failure 400 {object} apierror.Error "Wrong current password, or the new one does not meet the policy"
+// @Failure 401 {object} apierror.Error "No console session"
+// @Router /admin/auth/password [post]
+func (h *AdminConsoleHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	a := middleware.MustGetAdminUser(r.Context())
+	var req AdminChangePasswordRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil ||
+		req.CurrentPassword == "" || req.NewPassword == "" {
+		apierror.BadRequest("current_password and new_password are required").WriteJSON(w)
+		return
+	}
+	if err := h.svc.ChangePassword(r.Context(), a, req.CurrentPassword, req.NewPassword, clientInfo(r)); err != nil {
+		switch {
+		case errors.Is(err, app.ErrPasswordMismatch):
+			apierror.BadRequest("Current password is incorrect").WriteJSON(w)
+		case errors.Is(err, password.ErrPasswordTooShort), errors.Is(err, password.ErrPasswordNoUppercase),
+			errors.Is(err, password.ErrPasswordNoLowercase), errors.Is(err, password.ErrPasswordNoNumber),
+			errors.Is(err, password.ErrPasswordNoSpecial):
+			apierror.BadRequest("The new password does not meet the password policy: " + sanitizeLogField(errors.Unwrap(err).Error())).WriteJSON(w)
+		default:
+			h.logger.Error("admin change password", "error", sanitizeLogField(err.Error()))
+			apierror.InternalError(err).WriteJSON(w)
+		}
+		return
+	}
+	h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)
+	h.clearCookie(w, middleware.AdminCSRFCookie, "/", false)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // VerifyMFA handles POST /api/v1/admin/auth/mfa (TOTP step). On success it

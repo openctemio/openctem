@@ -5,8 +5,9 @@
 // that belongs to no organization, linked to an admin_users row that holds the
 // role and the authenticator. The administrator signs in on the normal /login
 // page and opens the admin console with a TOTP code. Administrators have no API
-// keys. This tool creates both and links them; when no account exists for the
-// email it creates one with a temporary password, printed once.
+// keys. This tool creates both: a new admin row and a new sign-in account with
+// a temporary password, printed once. An email that already has an account is
+// refused (see resolveAccount).
 //
 // Usage:
 //
@@ -218,38 +219,32 @@ func main() {
 	printSignIn(adminEmail, temp)
 }
 
-// resolveAccount returns the users-table account with this email, creating a
-// local account with a temporary password when none exists (the password is
-// returned; empty when an existing account is used). An account that belongs
-// to an organization is refused: administrators belong to none, so they need
-// a separate account.
+// resolveAccount creates the administrator's sign-in account: a new local
+// account with a temporary password (returned, shown once). An email that
+// already has an account is refused, never reused: with self-registration
+// anyone could have registered it first and would then own the
+// administrator's password.
 func resolveAccount(ctx context.Context, db *sql.DB, email, name string) (userID, temp string) {
 	email = strings.ToLower(strings.TrimSpace(email))
-	err := db.QueryRowContext(ctx, `SELECT id FROM users WHERE lower(email) = $1`, email).Scan(&userID)
+	var existing string
+	err := db.QueryRowContext(ctx, `SELECT id FROM users WHERE lower(email) = $1`, email).Scan(&existing)
 	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		temp = temporaryPassword()
-		hash, herr := password.New().Hash(temp)
-		if herr != nil {
-			fatal("Error hashing password: %v", herr)
-		}
-		userID = uuid.New().String()
-		if _, err := db.ExecContext(ctx, `
-			INSERT INTO users (id, email, name, password_hash, auth_provider, status, email_verified, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, 'local', 'active', true, NOW(), NOW())
-		`, userID, email, name, hash); err != nil {
-			fatal("Error creating sign-in account: %v", err)
-		}
-	case err != nil:
+	case err == nil:
+		fatal("An account with email %s already exists. A platform administrator gets a new, dedicated account: use another email.", email)
+	case !errors.Is(err, sql.ErrNoRows):
 		fatal("Error looking up sign-in account: %v", err)
-	default:
-		var orgs int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tenant_members WHERE user_id = $1`, userID).Scan(&orgs); err != nil {
-			fatal("Error checking memberships: %v", err)
-		}
-		if orgs > 0 {
-			fatal("The account %s belongs to %d organization(s). A platform administrator belongs to none; use a separate email.", email, orgs)
-		}
+	}
+	temp = temporaryPassword()
+	hash, herr := password.New().Hash(temp)
+	if herr != nil {
+		fatal("Error hashing password: %v", herr)
+	}
+	userID = uuid.New().String()
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO users (id, email, name, password_hash, auth_provider, status, email_verified, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, 'local', 'active', true, NOW(), NOW())
+	`, userID, email, name, hash); err != nil {
+		fatal("Error creating sign-in account: %v", err)
 	}
 	return userID, temp
 }

@@ -775,19 +775,16 @@ type ProvisionedAccount struct {
 	TemporaryPassword string
 }
 
-// ProvisionLocalAccount returns the user with this email, creating a local
-// account with a random temporary password (email marked verified) when none
-// exists. Used when a super admin makes someone a platform administrator
-// (RFC-022 rev. 2): administrators sign in on the normal /login page, so they
-// need a user account. Independent of AUTH_ALLOW_REGISTRATION, since this is
-// an administrator action, not self-registration.
-func (s *AuthService) ProvisionLocalAccount(ctx context.Context, email, name string) (*ProvisionedAccount, error) {
+// CreateLocalAccount creates a verified local account with a temporary
+// password for a new platform administrator (RFC-022). It refuses an email
+// that already has an account (ErrEmailAlreadyExists): with self-registration
+// an attacker can pre-register an administrator's email, so linking an
+// existing account would hand them the administrator.
+func (s *AuthService) CreateLocalAccount(ctx context.Context, email, name string) (*ProvisionedAccount, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
-	existing, err := s.userRepo.GetByEmail(ctx, email)
-	if err == nil && existing != nil {
-		return &ProvisionedAccount{User: existing}, nil
-	}
-	if err != nil && !shared.IsNotFound(err) {
+	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
+		return nil, ErrEmailAlreadyExists
+	} else if !shared.IsNotFound(err) {
 		return nil, fmt.Errorf("look up user: %w", err)
 	}
 
@@ -811,6 +808,19 @@ func (s *AuthService) ProvisionLocalAccount(ctx context.Context, email, name str
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 	return &ProvisionedAccount{User: u, TemporaryPassword: temp}, nil
+}
+
+// AccountActive reports whether the user can still sign in (active and not
+// locked). The admin console checks it on every request.
+func (s *AuthService) AccountActive(ctx context.Context, userID shared.ID) (bool, error) {
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		if shared.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return u.CanLogin(), nil
 }
 
 // temporaryPassword returns 20 random characters that satisfy any password

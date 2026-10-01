@@ -235,9 +235,11 @@ func (f *fakeAudit) has(action string) bool {
 // fakeAccounts stands in for the auth service: refresh tokens name signed-in
 // users, and provisioning creates or reuses accounts by email.
 type fakeAccounts struct {
-	mu       sync.Mutex
-	sessions map[string]*SignedInUser // refresh token -> user
-	byEmail  map[string]shared.ID
+	mu        sync.Mutex
+	sessions  map[string]*SignedInUser // refresh token -> user
+	byEmail   map[string]shared.ID
+	suspended map[string]bool
+	passwords map[string]string // user id -> password
 }
 
 func (f *fakeAccounts) SignedInUser(_ context.Context, token string) (*SignedInUser, error) {
@@ -256,18 +258,36 @@ func (f *fakeAccounts) EndSignIn(_ context.Context, token string) error {
 	return nil
 }
 
-func (f *fakeAccounts) ProvisionAccount(_ context.Context, email, _ string) (shared.ID, string, error) {
+func (f *fakeAccounts) CreateAccount(_ context.Context, email, _ string) (shared.ID, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if id, ok := f.byEmail[strings.ToLower(email)]; ok {
-		return id, "", nil
+	if _, ok := f.byEmail[strings.ToLower(email)]; ok {
+		return shared.ID{}, "", admin.ErrEmailHasAccount
 	}
 	id := shared.NewID()
 	f.byEmail[strings.ToLower(email)] = id
 	return id, "Temp-Password-1!", nil
 }
 
+func (f *fakeAccounts) AccountActive(_ context.Context, userID shared.ID) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.suspended[userID.String()], nil
+}
+
+func (f *fakeAccounts) ChangePassword(_ context.Context, userID shared.ID, current, next string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.passwords[userID.String()] != current {
+		return errors.New("current password is incorrect")
+	}
+	f.passwords[userID.String()] = next
+	return nil
+}
+
 // ---- harness ---------------------------------------------------------------
+
+const password = "Current-Pass-123"
 
 // refresh is the admin's normal /login session (password sign-in).
 const refresh = "refresh-token-of-ops"
@@ -285,15 +305,14 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	a, err := admin.NewAdminUser("ops@acme.io", "Ops", admin.AdminRoleSuperAdmin, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	u := &SignedInUser{UserID: shared.NewID(), Email: "ops@acme.io", Name: "Ops", Active: true, PasswordSignIn: true}
+	now := time.Now()
+	a := admin.Reconstitute(shared.NewID(), "ops@acme.io", "Ops", admin.AdminRoleSuperAdmin, true,
+		&u.UserID, nil, "", 0, nil, nil, "", now, nil, now)
 	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	u := &SignedInUser{UserID: shared.NewID(), Email: "ops@acme.io", Name: "Ops", Active: true, PasswordSignIn: true}
 	h := &harness{
 		admins: &fakeAdmins{
 			byID:        map[string]*admin.AdminUser{a.ID().String(): a},
@@ -302,7 +321,12 @@ func newHarness(t *testing.T) *harness {
 		},
 		console:  newFakeConsole(),
 		audit:    &fakeAudit{},
-		accounts: &fakeAccounts{sessions: map[string]*SignedInUser{refresh: u}, byEmail: map[string]shared.ID{"ops@acme.io": u.UserID}},
+		accounts: &fakeAccounts{
+			sessions:  map[string]*SignedInUser{refresh: u},
+			byEmail:   map[string]shared.ID{"ops@acme.io": u.UserID},
+			suspended: map[string]bool{},
+			passwords: map[string]string{u.UserID.String(): password},
+		},
 		admin:    a,
 		user:     u,
 		clock:    time.Date(2026, 9, 30, 10, 0, 0, 0, time.UTC),
@@ -546,27 +570,18 @@ func TestProvisionAdmin(t *testing.T) {
 		}
 	})
 
-	t.Run("existing account is linked, no password issued", func(t *testing.T) {
+	// Pre-registration takeover: an attacker self-registers the email a super
+	// admin is about to provision. Linking that account would make the
+	// attacker, who owns its password, the administrator.
+	t.Run("an email that already has an account is refused and nothing is left behind", func(t *testing.T) {
 		h := newHarness(t)
-		uid := shared.NewID()
-		h.accounts.byEmail["existing@acme.io"] = uid
-		_, temp, err := h.svc.ProvisionAdmin(ctx, h.admin, "existing@acme.io", "Existing", admin.AdminRoleReadonly, client)
-		if err != nil || temp != "" {
-			t.Fatalf("temp=%q err=%v", temp, err)
-		}
-	})
-
-	t.Run("organization member is refused and nothing is left behind", func(t *testing.T) {
-		h := newHarness(t)
-		uid := shared.NewID()
-		h.accounts.byEmail["member@acme.io"] = uid
-		h.admins.memberUsers[uid.String()] = true
+		h.accounts.byEmail["victim@acme.io"] = shared.NewID() // registered by someone else
 		before := len(h.admins.byID)
-		if _, _, err := h.svc.ProvisionAdmin(ctx, h.admin, "member@acme.io", "M", admin.AdminRoleReadonly, client); !errors.Is(err, admin.ErrUserHasMemberships) {
-			t.Fatalf("got %v, want ErrUserHasMemberships", err)
+		if _, _, err := h.svc.ProvisionAdmin(ctx, h.admin, "victim@acme.io", "V", admin.AdminRoleSuperAdmin, client); !errors.Is(err, admin.ErrEmailHasAccount) {
+			t.Fatalf("got %v, want ErrEmailHasAccount", err)
 		}
 		if len(h.admins.byID) != before {
-			t.Fatal("unlinked administrator row was left behind")
+			t.Fatal("an administrator row was left behind")
 		}
 	})
 
@@ -576,4 +591,38 @@ func TestProvisionAdmin(t *testing.T) {
 			t.Fatalf("got %v, want ErrAdminAlreadyExists", err)
 		}
 	})
+}
+
+func TestSuspendedAccountEndsConsoleSession(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	_, token := h.enroll(t)
+	h.accounts.suspended[h.user.UserID.String()] = true
+	if _, err := h.svc.Authenticate(ctx, token); err == nil {
+		t.Fatal("a suspended account must lose console access immediately")
+	}
+	if h.console.sessionCount() != 0 {
+		t.Fatalf("sessions left: %d", h.console.sessionCount())
+	}
+}
+
+func TestChangePasswordEndsConsoleSessions(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	_, token := h.enroll(t)
+	if err := h.svc.ChangePassword(ctx, h.admin, "wrong", "Another-Long-Pass-1", client); err == nil {
+		t.Fatal("wrong current password must be refused")
+	}
+	if _, err := h.svc.Authenticate(ctx, token); err != nil {
+		t.Fatalf("a refused change must not end the session: %v", err)
+	}
+	if err := h.svc.ChangePassword(ctx, h.admin, password, "Another-Long-Pass-1", client); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Authenticate(ctx, token); err == nil {
+		t.Fatal("console sessions must end after a password change")
+	}
+	if !h.audit.has(ActionPasswordChanged) {
+		t.Fatal("password change must be audited")
+	}
 }

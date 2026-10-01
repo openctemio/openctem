@@ -107,8 +107,16 @@ func (s stubSignIn) SignedInUser(_ context.Context, token string) (*adminconsole
 
 func (s stubSignIn) EndSignIn(context.Context, string) error { return nil }
 
-func (s stubSignIn) ProvisionAccount(context.Context, string, string) (shared.ID, string, error) {
+func (s stubSignIn) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
 	return shared.ID{}, "", errors.New("not used")
+}
+
+func (s stubSignIn) AccountActive(_ context.Context, userID shared.ID) (bool, error) {
+	return userID == s.user.UserID, nil
+}
+
+func (s stubSignIn) ChangePassword(context.Context, shared.ID, string, string) error {
+	return errors.New("not used")
 }
 
 // createUser inserts a bare users row and removes it (and anything cascading

@@ -170,17 +170,24 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// Role gating is enforced at the route layer (super_admin only).
 
-	// Prevent self-deactivation
+	var req UpdateAdminRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	// No self-deactivation or self-role-change. Together with the ban on
+	// deleting yourself, the super admin making a change always remains an
+	// active super admin, so the platform can never be left without one.
 	if id == currentAdmin.ID() {
-		var req UpdateAdminRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
-			if req.IsActive != nil && !*req.IsActive {
-				apierror.BadRequest("cannot deactivate yourself").WriteJSON(w)
-				return
-			}
+		if req.IsActive != nil && !*req.IsActive {
+			apierror.BadRequest("cannot deactivate yourself").WriteJSON(w)
+			return
 		}
-		// Re-read body for actual processing
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if req.Role != nil && admin.AdminRole(*req.Role) != currentAdmin.Role() {
+			apierror.BadRequest("cannot change your own role").WriteJSON(w)
+			return
+		}
 	}
 
 	adminUser, err := h.repo.GetByID(ctx, id)
@@ -191,12 +198,6 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		h.logger.Error("failed to get admin", "error", err, "id", idStr)
 		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	var req UpdateAdminRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
 
