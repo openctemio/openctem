@@ -30,7 +30,7 @@ func NewAdminRepository(db *DB) *AdminRepository {
 
 func (r *AdminRepository) selectQuery() string {
 	return `
-		SELECT id, email, name, api_key_hash, api_key_prefix,
+		SELECT id, email, name,
 		       role, is_active, last_used_at, last_used_ip,
 		       failed_login_count, locked_until, last_failed_login_at, last_failed_login_ip,
 		       created_at, created_by, updated_at
@@ -42,18 +42,16 @@ func (r *AdminRepository) selectQuery() string {
 func (r *AdminRepository) Create(ctx context.Context, a *admin.AdminUser) error {
 	query := `
 		INSERT INTO admin_users (
-			id, email, name, api_key_hash, api_key_prefix,
+			id, email, name,
 			role, is_active, created_at, created_by, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
 		a.ID().String(),
 		a.Email(),
 		a.Name(),
-		a.APIKeyHash(),
-		a.APIKeyPrefix(),
 		string(a.Role()),
 		a.IsActive(),
 		a.CreatedAt(),
@@ -84,13 +82,6 @@ func (r *AdminRepository) GetByID(ctx context.Context, id shared.ID) (*admin.Adm
 func (r *AdminRepository) GetByEmail(ctx context.Context, email string) (*admin.AdminUser, error) {
 	query := r.selectQuery() + " WHERE LOWER(email) = LOWER($1)"
 	row := r.db.QueryRowContext(ctx, query, email)
-	return r.scanAdmin(row)
-}
-
-// GetByAPIKeyPrefix retrieves an admin user by API key prefix.
-func (r *AdminRepository) GetByAPIKeyPrefix(ctx context.Context, prefix string) (*admin.AdminUser, error) {
-	query := r.selectQuery() + " WHERE api_key_prefix = $1 AND is_active = TRUE"
-	row := r.db.QueryRowContext(ctx, query, prefix)
 	return r.scanAdmin(row)
 }
 
@@ -144,11 +135,11 @@ func (r *AdminRepository) List(ctx context.Context, filter admin.Filter, page pa
 func (r *AdminRepository) Update(ctx context.Context, a *admin.AdminUser) error {
 	query := `
 		UPDATE admin_users
-		SET email = $2, name = $3, api_key_hash = $4, api_key_prefix = $5,
-		    role = $6, is_active = $7, last_used_at = $8, last_used_ip = $9,
-		    failed_login_count = $10, locked_until = $11,
-		    last_failed_login_at = $12, last_failed_login_ip = $13,
-		    updated_at = $14
+		SET email = $2, name = $3,
+		    role = $4, is_active = $5, last_used_at = $6, last_used_ip = $7,
+		    failed_login_count = $8, locked_until = $9,
+		    last_failed_login_at = $10, last_failed_login_ip = $11,
+		    updated_at = $12
 		WHERE id = $1
 	`
 
@@ -156,8 +147,6 @@ func (r *AdminRepository) Update(ctx context.Context, a *admin.AdminUser) error 
 		a.ID().String(),
 		a.Email(),
 		a.Name(),
-		a.APIKeyHash(),
-		a.APIKeyPrefix(),
 		string(a.Role()),
 		a.IsActive(),
 		nullTime(a.LastUsedAt()),
@@ -202,79 +191,10 @@ func (r *AdminRepository) Delete(ctx context.Context, id shared.ID) error {
 }
 
 // =============================================================================
-// Authentication
+// Console usage
 // =============================================================================
 
-// ErrAccountLocked is returned when the admin account is locked due to too many failed login attempts.
-var ErrAccountLocked = errors.New("account is locked due to too many failed login attempts")
-
-// AuthenticateByAPIKey authenticates an admin user by raw API key.
-// Implements SEC-H01: Rate limiting via account lockout after failed attempts.
-func (r *AdminRepository) AuthenticateByAPIKey(ctx context.Context, rawKey string) (*admin.AdminUser, error) {
-	// Extract prefix for lookup
-	prefix := admin.ExtractAPIKeyPrefix(rawKey)
-	if prefix == "" {
-		return nil, admin.ErrInvalidAPIKey
-	}
-
-	// Look up admin by prefix (fast indexed lookup)
-	// Note: GetByAPIKeyPrefix only returns active admins, but we need to check
-	// locked status, so we use a modified query that includes locked accounts
-	a, err := r.getByAPIKeyPrefixIncludingLocked(ctx, prefix)
-	if err != nil {
-		if admin.IsAdminNotFound(err) {
-			return nil, admin.ErrInvalidAPIKey
-		}
-		return nil, err
-	}
-
-	// Check if account is locked before verifying password (prevents timing attacks)
-	if a.IsLocked() {
-		return nil, ErrAccountLocked
-	}
-
-	// Verify full hash using bcrypt (constant-time by design)
-	if !a.VerifyAPIKey(rawKey) {
-		// Record failed login attempt
-		a.RecordFailedLogin("")
-		// Update in database (async to not block response)
-		go func() {
-			// Use a new context since the original may be canceled
-			updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = r.Update(updateCtx, a)
-		}()
-		return nil, admin.ErrInvalidAPIKey
-	}
-
-	// Check if admin is active
-	if !a.IsActive() {
-		return nil, admin.ErrAdminInactive
-	}
-
-	// Reset failed login counter on successful auth
-	if a.FailedLoginCount() > 0 {
-		a.ResetFailedLogins()
-		// Update in database (async)
-		go func() {
-			updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = r.Update(updateCtx, a)
-		}()
-	}
-
-	return a, nil
-}
-
-// getByAPIKeyPrefixIncludingLocked retrieves an admin by API key prefix, including locked/inactive accounts.
-// This is needed for proper lockout handling during authentication.
-func (r *AdminRepository) getByAPIKeyPrefixIncludingLocked(ctx context.Context, prefix string) (*admin.AdminUser, error) {
-	query := r.selectQuery() + " WHERE api_key_prefix = $1"
-	row := r.db.QueryRowContext(ctx, query, prefix)
-	return r.scanAdmin(row)
-}
-
-// RecordUsage records API key usage (IP and timestamp).
+// RecordUsage records when and from where the administrator last opened the console.
 func (r *AdminRepository) RecordUsage(ctx context.Context, id shared.ID, ip string) error {
 	query := `
 		UPDATE admin_users
@@ -372,8 +292,6 @@ func (r *AdminRepository) scanAdmin(row *sql.Row) (*admin.AdminUser, error) {
 		id                string
 		email             string
 		name              string
-		apiKeyHash        string
-		apiKeyPrefix      string
 		role              string
 		isActive          bool
 		lastUsedAt        sql.NullTime
@@ -391,8 +309,6 @@ func (r *AdminRepository) scanAdmin(row *sql.Row) (*admin.AdminUser, error) {
 		&id,
 		&email,
 		&name,
-		&apiKeyHash,
-		&apiKeyPrefix,
 		&role,
 		&isActive,
 		&lastUsedAt,
@@ -440,8 +356,6 @@ func (r *AdminRepository) scanAdmin(row *sql.Row) (*admin.AdminUser, error) {
 		adminID,
 		email,
 		name,
-		apiKeyHash,
-		apiKeyPrefix,
 		admin.AdminRole(role),
 		isActive,
 		lastUsed,
@@ -461,8 +375,6 @@ func (r *AdminRepository) scanAdminFromRows(rows *sql.Rows) (*admin.AdminUser, e
 		id                string
 		email             string
 		name              string
-		apiKeyHash        string
-		apiKeyPrefix      string
 		role              string
 		isActive          bool
 		lastUsedAt        sql.NullTime
@@ -480,8 +392,6 @@ func (r *AdminRepository) scanAdminFromRows(rows *sql.Rows) (*admin.AdminUser, e
 		&id,
 		&email,
 		&name,
-		&apiKeyHash,
-		&apiKeyPrefix,
 		&role,
 		&isActive,
 		&lastUsedAt,
@@ -526,8 +436,6 @@ func (r *AdminRepository) scanAdminFromRows(rows *sql.Rows) (*admin.AdminUser, e
 		adminID,
 		email,
 		name,
-		apiKeyHash,
-		apiKeyPrefix,
 		admin.AdminRole(role),
 		isActive,
 		lastUsed,

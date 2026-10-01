@@ -66,7 +66,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 api/
 ├── cmd/
 │   ├── server/                # Main API server
-│   └── openctem-admin/        # Admin CLI tool
+│   └── bootstrap-admin/       # Creates the first platform administrator
 ├── internal/
 │   ├── app/                   # Application services (business logic, 40+ services)
 │   ├── config/                # Configuration loading
@@ -333,13 +333,18 @@ helm install openctem ../setup/kubernetes/helm/openctem \
   --set bootstrapAdmin.email=admin@example.com \
   --set ingress.hosts[0].host=openctem.yourdomain.com
 
-# 3. Get the admin API key (shown once — save it!)
+# 3. Get the administrator's temporary password (shown once), then sign in on
+#    /login and set up two-step verification when you open the admin console
 kubectl logs job/openctem-bootstrap-admin -n openctem
 ```
 
 ### Bootstrap Admin (First-time Setup)
 
-The first admin user must be created via CLI — there is no default account.
+The first platform administrator must be created with `bootstrap-admin` — there
+is no default account. It creates (or reuses) a sign-in account with that email,
+which must not belong to any organization, and prints a temporary password once.
+The administrator signs in on the normal `/login` page and opens the admin
+console with a TOTP code. Administrators have no API keys.
 
 **Docker Compose:**
 ```bash
@@ -372,9 +377,9 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
 | `-db` | `DATABASE_URL` or `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` | Database connection |
 | `-email` | `ADMIN_EMAIL` | Admin email (required) |
 | `-name` | `ADMIN_NAME` | Display name (defaults to email prefix) |
-| `-role` | — | `super_admin`, `ops_admin`, `viewer` |
-| `-api-key` | `BOOTSTRAP_ADMIN_KEY` | Use specific key (auto-generated if empty) |
+| `-role` | — | `super_admin`, `ops_admin`, `readonly` |
 | `-force` | — | Overwrite existing admin with same email |
+| `-link` | — | Link an administrator created before sign-in accounts to one (keeps role and authenticator) |
 
 ## Security
 

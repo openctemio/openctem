@@ -11,77 +11,60 @@ import (
 	"github.com/openctemio/api/pkg/domain/admin"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
 )
 
-// fakeAdminRepo is a minimal admin.Repository that authenticates a fixed set of
-// raw keys to pre-built AdminUsers. Only AuthenticateByAPIKey / RecordUsage are
-// exercised by the auth middleware.
-type fakeAdminRepo struct {
-	byKey map[string]*admin.AdminUser
+// fakeSessions resolves fixed console session tokens to pre-built AdminUsers,
+// standing in for the admin console service.
+type fakeSessions struct {
+	byToken map[string]*admin.AdminUser
 }
 
-func newFakeAdminRepo() *fakeAdminRepo { return &fakeAdminRepo{byKey: map[string]*admin.AdminUser{}} }
+func newFakeSessions() *fakeSessions { return &fakeSessions{byToken: map[string]*admin.AdminUser{}} }
 
-func (f *fakeAdminRepo) add(key string, role admin.AdminRole) {
+func (f *fakeSessions) add(token string, role admin.AdminRole) {
 	now := time.Now()
-	u := admin.Reconstitute(
+	f.byToken[token] = admin.Reconstitute(
 		shared.NewID(), "a-"+string(role)+"@example.com", "Admin "+string(role),
-		"hash", "oc-admin-"+string(role)[:3], role, true,
-		nil, "", 0, nil, nil, "", now, nil, now,
+		role, true, nil, "", 0, nil, nil, "", now, nil, now,
 	)
-	f.byKey[key] = u
 }
 
-func (f *fakeAdminRepo) AuthenticateByAPIKey(_ context.Context, rawKey string) (*admin.AdminUser, error) {
-	if u, ok := f.byKey[rawKey]; ok {
+func (f *fakeSessions) Authenticate(_ context.Context, token string) (*admin.AdminUser, error) {
+	if u, ok := f.byToken[token]; ok {
 		return u, nil
 	}
-	return nil, admin.ErrInvalidAPIKey
+	return nil, admin.ErrSessionNotFound
 }
 
-func (f *fakeAdminRepo) RecordUsage(_ context.Context, _ shared.ID, _ string) error { return nil }
+const testCSRF = "csrf-test-value"
 
-// --- unused Repository methods (panic to catch accidental use) ---
-func (f *fakeAdminRepo) Create(context.Context, *admin.AdminUser) error { panic("unused") }
-func (f *fakeAdminRepo) GetByID(context.Context, shared.ID) (*admin.AdminUser, error) {
-	panic("unused")
-}
-func (f *fakeAdminRepo) GetByEmail(context.Context, string) (*admin.AdminUser, error) {
-	panic("unused")
-}
-func (f *fakeAdminRepo) GetByAPIKeyPrefix(context.Context, string) (*admin.AdminUser, error) {
-	panic("unused")
-}
-func (f *fakeAdminRepo) List(context.Context, admin.Filter, pagination.Pagination) (pagination.Result[*admin.AdminUser], error) {
-	panic("unused")
-}
-func (f *fakeAdminRepo) Update(context.Context, *admin.AdminUser) error { panic("unused") }
-func (f *fakeAdminRepo) GetByUserID(context.Context, shared.ID) (*admin.AdminUser, error) {
-	panic("unused")
-}
-func (f *fakeAdminRepo) LinkUser(context.Context, shared.ID, shared.ID) error { panic("unused") }
-func (f *fakeAdminRepo) Delete(context.Context, shared.ID) error              { panic("unused") }
-func (f *fakeAdminRepo) Count(context.Context, admin.Filter) (int, error) {
-	panic("unused")
-}
-func (f *fakeAdminRepo) CountByRole(context.Context, admin.AdminRole) (int, error) {
-	panic("unused")
+// adminRequest builds a browser-like console request: the session cookie, and
+// on writes the matching admin CSRF cookie and header.
+func adminRequest(method, path, session string) *http.Request {
+	req := httptest.NewRequest(method, path, http.NoBody)
+	if session != "" {
+		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: session})
+		if method != http.MethodGet {
+			req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: testCSRF})
+			req.Header.Set(middleware.CSRFHeaderName, testCSRF)
+		}
+	}
+	return req
 }
 
 // buildAdminUsersGuard reproduces the exact middleware composition that
 // registerAdminRoutes applies to /api/v1/admin/users: Authenticate followed by
 // RequireRole(super_admin). The stub handler stands in for the real
-// list/get/create/... handlers and returns 200 so we can observe whether a
+// list/get/update/... handlers and returns 200 so we can observe whether a
 // request was allowed through the guard.
 func buildAdminUsersGuard(t *testing.T) (http.Handler, map[string]string) {
 	t.Helper()
-	repo := newFakeAdminRepo()
-	repo.add("key-super", admin.AdminRoleSuperAdmin)
-	repo.add("key-ops", admin.AdminRoleOpsAdmin)
-	repo.add("key-readonly", admin.AdminRoleReadonly)
+	sessions := newFakeSessions()
+	sessions.add("key-super", admin.AdminRoleSuperAdmin)
+	sessions.add("key-ops", admin.AdminRoleOpsAdmin)
+	sessions.add("key-readonly", admin.AdminRoleReadonly)
 
-	m := middleware.NewAdminAuthMiddleware(repo, logger.NewNop())
+	m := middleware.NewAdminAuthMiddleware(sessions, logger.NewNop())
 
 	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -97,13 +80,9 @@ func buildAdminUsersGuard(t *testing.T) (http.Handler, map[string]string) {
 	return guarded, keys
 }
 
-func doAdmin(h http.Handler, method, key string) int {
-	req := httptest.NewRequest(method, "/api/v1/admin/users/", http.NoBody)
-	if key != "" {
-		req.Header.Set(middleware.AdminAPIKeyHeader, key)
-	}
+func doAdmin(h http.Handler, method, session string) int {
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, adminRequest(method, "/api/v1/admin/users/", session))
 	return rec.Code
 }
 
@@ -144,23 +123,56 @@ func TestAdminUsers_MutationGate(t *testing.T) {
 	}
 }
 
-// TestAdminUsers_NoKeyRejected proves an unauthenticated request is rejected
-// before role evaluation.
-func TestAdminUsers_NoKeyRejected(t *testing.T) {
+// TestAdminUsers_NoSessionRejected proves an unauthenticated request is
+// rejected before role evaluation.
+func TestAdminUsers_NoSessionRejected(t *testing.T) {
 	h, _ := buildAdminUsersGuard(t)
 	if got := doAdmin(h, http.MethodGet, ""); got != http.StatusUnauthorized {
-		t.Errorf("no key: got %d, want 401", got)
+		t.Errorf("no session: got %d, want 401", got)
+	}
+}
+
+// TestAdminAPIKeysAreNotAccepted proves there is no API-key path into the
+// admin API: a key in X-Admin-API-Key or a Bearer header authenticates
+// nothing, even when the same value is a valid session token.
+func TestAdminAPIKeysAreNotAccepted(t *testing.T) {
+	h, keys := buildAdminUsersGuard(t)
+	for name, set := range map[string]func(*http.Request){
+		"X-Admin-API-Key": func(r *http.Request) { r.Header.Set("X-Admin-API-Key", keys["super"]) },
+		"Bearer":          func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+keys["super"]) },
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/", http.NoBody)
+		set(req)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: got %d, want 401", name, rec.Code)
+		}
+	}
+}
+
+// TestAdminSessionWriteNeedsCSRF proves a cookie-authenticated write without
+// the matching admin CSRF header is refused.
+func TestAdminSessionWriteNeedsCSRF(t *testing.T) {
+	h, keys := buildAdminUsersGuard(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: keys["super"]})
+	req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: testCSRF})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("write without CSRF header: got %d, want 401", rec.Code)
 	}
 }
 
 // TestTargetMappingWriteGate proves target-mapping WRITES are gated to
 // ops_admin+ (readonly rejected) while reads remain open to any admin.
 func TestTargetMappingWriteGate(t *testing.T) {
-	repo := newFakeAdminRepo()
-	repo.add("key-super", admin.AdminRoleSuperAdmin)
-	repo.add("key-ops", admin.AdminRoleOpsAdmin)
-	repo.add("key-readonly", admin.AdminRoleReadonly)
-	m := middleware.NewAdminAuthMiddleware(repo, logger.NewNop())
+	sessions := newFakeSessions()
+	sessions.add("key-super", admin.AdminRoleSuperAdmin)
+	sessions.add("key-ops", admin.AdminRoleOpsAdmin)
+	sessions.add("key-readonly", admin.AdminRoleReadonly)
+	m := middleware.NewAdminAuthMiddleware(sessions, logger.NewNop())
 
 	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	writeGuard := m.Authenticate(m.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)(stub))

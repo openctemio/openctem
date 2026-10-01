@@ -13,7 +13,7 @@ env:
 
 jobs:
   # ============================================
-  # Build - Cross-compile openctem-admin CLI
+  # Build - Cross-compile bootstrap-admin (creates the first platform administrator)
   # ============================================
   build:
     name: Build (${{ matrix.os }}/${{ matrix.arch }})
@@ -51,38 +51,38 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Build openctem-admin
+      - name: Build bootstrap-admin
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
         run: |
-          BINARY_NAME="openctem-admin"
+          BINARY_NAME="bootstrap-admin"
           if [ "${{ matrix.os }}" = "windows" ]; then
-            BINARY_NAME="openctem-admin.exe"
+            BINARY_NAME="bootstrap-admin.exe"
           fi
 
           go build \
             -ldflags="-s -w -X main.Version=${{ steps.version.outputs.VERSION }}" \
             -o "bin/${BINARY_NAME}" \
-            ./cmd/openctem-admin
+            ./cmd/bootstrap-admin
 
       - name: Package binary
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          ARCHIVE_NAME="openctem-admin-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}"
+          ARCHIVE_NAME="bootstrap-admin-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}"
 
           cd bin
           if [ "${{ matrix.os }}" = "windows" ]; then
-            zip "../${ARCHIVE_NAME}.zip" openctem-admin.exe
+            zip "../${ARCHIVE_NAME}.zip" bootstrap-admin.exe
           else
-            tar czf "../${ARCHIVE_NAME}.tar.gz" openctem-admin
+            tar czf "../${ARCHIVE_NAME}.tar.gz" bootstrap-admin
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: openctem-admin-${{ matrix.os }}-${{ matrix.arch }}
+          name: bootstrap-admin-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             *.tar.gz
             *.zip
@@ -110,7 +110,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: /tmp/artifacts
-          pattern: openctem-admin-*
+          pattern: bootstrap-admin-*
           merge-multiple: true
 
       - name: Generate checksums
@@ -139,7 +139,7 @@ jobs:
             # Database Seed
             docker pull ghcr.io/openctemio/seed:${{ steps.version.outputs.VERSION }}
 
-            # Admin CLI
+            # bootstrap-admin (creates the first platform administrator)
             docker pull ghcr.io/openctemio/admin-cli:${{ steps.version.outputs.VERSION }}
             ```
 

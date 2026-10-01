@@ -12,8 +12,9 @@ import (
 // These routes are for OpenCTEM platform administrators only.
 // They manage shared infrastructure that serves all tenants.
 //
-// All admin routes use API Key authentication via X-Admin-API-Key header.
-// This is separate from tenant admin routes which use RequireTeamAdmin.
+// Every admin route requires a verified console session (RFC-022): the
+// administrator signed in on /login and passed the TOTP step. There are no
+// admin API keys. This is separate from tenant admin routes (RequireTeamAdmin).
 //
 // AUTHORIZATION MODEL (route-layer, centralized here — do NOT rely on ad-hoc
 // in-handler role checks for the guarantee):
@@ -22,6 +23,7 @@ import (
 //	------------------------  ----------------  --------------------------
 //	/admin/auth/validate      any admin         —
 //	/admin/users              super_admin       super_admin (+ audited)
+//	/admin/administrators     —                 super_admin (audited)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //
@@ -30,33 +32,31 @@ import (
 // registerAdminRoutes registers all platform admin endpoints.
 // These are privileged operations for managing shared infrastructure.
 // Note: authMiddleware and userSyncMiddleware are kept for interface compatibility
-// but not used since admin routes use API Key authentication.
+// but not used: admin routes authenticate the console session.
 func registerAdminRoutes(
 	router Router,
 	h Handlers,
-	_ Middleware, // authMiddleware - unused, admin uses API Key auth
-	_ Middleware, // userSyncMiddleware - unused, admin uses API Key auth
+	_ Middleware, // authMiddleware - unused, admin uses the console session
+	_ Middleware, // userSyncMiddleware - unused, admin uses the console session
 ) {
 	// ==========================================================================
-	// Admin API Key authenticated routes (for Admin UI)
+	// Console-session authenticated routes
 	// ==========================================================================
 	if h.AdminAuthMiddleware == nil {
 		return
 	}
 
-	// Base chain: authenticate the admin API key. Every admin route requires
-	// at least a valid admin key (any role).
-	adminAPIKeyMiddlewares := []Middleware{h.AdminAuthMiddleware.Authenticate}
+	// Base chain: a verified console session (any role).
+	adminMiddlewares := []Middleware{h.AdminAuthMiddleware.Authenticate}
 
 	// Super-admin group guard, composed onto the base chain. Built here so the
 	// authorization guarantee lives at the route layer, not in handlers.
 	// (append onto a fresh slice so the shared base chain is never aliased.)
-	superAdminOnly := append(append([]Middleware{}, adminAPIKeyMiddlewares...),
+	superAdminOnly := append(append([]Middleware{}, adminMiddlewares...),
 		h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin))
 
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
-	// per route. /validate needs an authenticated admin (API key or console
-	// session). The console steps (RFC-022) run after the normal /login: the
+	// per route. /validate needs a verified console session. The console steps (RFC-022) run after the normal /login: the
 	// refresh-token cookie names the user, /session opens a pending console
 	// session and /mfa completes it. They share the tenant login's rate limits.
 	if h.AdminAuth != nil || h.AdminConsole != nil {
@@ -138,11 +138,11 @@ func registerAdminRoutes(
 				r.POST("/{tenantId}/sso/verified-domains/{id}/verify", h.VerifiedDomain.Verify, write("organization.domain_verify")...)
 				r.DELETE("/{tenantId}/sso/verified-domains/{id}", h.VerifiedDomain.Delete, write("organization.domain_delete")...)
 			}
-		}, adminAPIKeyMiddlewares...)
+		}, adminMiddlewares...)
 	}
 
-	// Admin user management — the platform admin roster (emails, key prefixes,
-	// last-used IPs). Restricted to super_admin for BOTH reads and writes:
+	// Admin user management — the platform admin roster (emails, last-used
+	// IPs). New administrators are added through /admin/administrators. Restricted to super_admin for BOTH reads and writes:
 	// only super_admin CanManageAdmins, and the roster itself is sensitive
 	// (AUTHZ-8: List/Get were previously ungated, so any admin key — including
 	// readonly — could enumerate all admins). Writes are additionally audited.
@@ -152,18 +152,14 @@ func registerAdminRoutes(
 			r.GET("/{id}", h.AdminUser.Get)
 
 			if h.AdminAuditMiddleware != nil {
-				r.POST("/", h.AdminUser.Create, h.AdminAuditMiddleware.AuditAdminCreate())
 				r.PATCH("/{id}", h.AdminUser.Update, h.AdminAuditMiddleware.AuditAdminUpdate())
 				r.DELETE("/{id}", h.AdminUser.Delete, h.AdminAuditMiddleware.AuditAdminDelete())
-				r.POST("/{id}/rotate-key", h.AdminUser.RotateKey, h.AdminAuditMiddleware.AuditAdminRotateKey())
 				if h.AdminConsole != nil {
 					r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials)
 				}
 			} else {
-				r.POST("/", h.AdminUser.Create)
 				r.PATCH("/{id}", h.AdminUser.Update)
 				r.DELETE("/{id}", h.AdminUser.Delete)
-				r.POST("/{id}/rotate-key", h.AdminUser.RotateKey)
 				if h.AdminConsole != nil {
 					r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials)
 				}
@@ -178,7 +174,7 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminAudit.List)
 			r.GET("/stats", h.AdminAudit.GetStats)
 			r.GET("/{id}", h.AdminAudit.Get)
-		}, adminAPIKeyMiddlewares...)
+		}, adminMiddlewares...)
 	}
 
 	// Target mapping management (scanner target type -> asset type).
@@ -208,7 +204,7 @@ func registerAdminRoutes(
 				r.PATCH("/{id}", h.AdminTargetMapping.Update, cloneMW(writeMiddlewares)...)
 				r.DELETE("/{id}", h.AdminTargetMapping.Delete, cloneMW(writeMiddlewares)...)
 			}
-		}, adminAPIKeyMiddlewares...)
+		}, adminMiddlewares...)
 	}
 }
 

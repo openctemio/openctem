@@ -25,6 +25,8 @@ type fakeAdmins struct {
 	memberUsers      map[string]bool   // user ids that belong to an organization
 }
 
+func (f *fakeAdmins) RecordUsage(context.Context, shared.ID, string) error { return nil }
+
 func (f *fakeAdmins) GetByUserID(_ context.Context, userID shared.ID) (*admin.AdminUser, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -283,7 +285,7 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	a, _, err := admin.NewAdminUser("ops@acme.io", "Ops", admin.AdminRoleSuperAdmin, nil)
+	a, err := admin.NewAdminUser("ops@acme.io", "Ops", admin.AdminRoleSuperAdmin, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -487,7 +489,7 @@ func TestResetCredentialsRequiresReenrollment(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	_, token := h.enroll(t)
-	actor, _, _ := admin.NewAdminUser("root@acme.io", "Root", admin.AdminRoleSuperAdmin, nil)
+	actor, _ := admin.NewAdminUser("root@acme.io", "Root", admin.AdminRoleSuperAdmin, nil)
 
 	if err := h.svc.ResetCredentials(ctx, actor, h.admin.ID(), client); err != nil {
 		t.Fatal(err)

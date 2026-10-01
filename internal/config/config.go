@@ -818,7 +818,7 @@ func Load() (*Config, error) {
 			// validation in middleware/middleware.go rejects "*" regardless.
 			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
 			AllowedMethods: getEnvSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}),
-			AllowedHeaders: getEnvSlice("CORS_ALLOWED_HEADERS", []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-Admin-API-Key"}),
+			AllowedHeaders: getEnvSlice("CORS_ALLOWED_HEADERS", []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"}),
 			MaxAge:         getEnvInt("CORS_MAX_AGE", 86400),
 		},
 		RateLimit: RateLimitConfig{

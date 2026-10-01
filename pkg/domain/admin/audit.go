@@ -166,7 +166,7 @@ const (
 	AuditActionAdminDelete     = "admin.delete"
 	AuditActionAdminActivate   = "admin.activate"
 	AuditActionAdminDeactivate = "admin.deactivate"
-	AuditActionAdminRotateKey  = "admin.rotate_key"
+	AuditActionAdminRotateKey  = "admin.rotate_key" // historical: admin API keys were removed
 
 	// Platform agent actions
 	AuditActionAgentCreate  = "agent.create"

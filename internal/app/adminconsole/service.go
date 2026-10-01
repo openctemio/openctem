@@ -8,9 +8,8 @@
 // linked to the users row. Only a password sign-in can open the console: no
 // organization's SSO/SAML identity provider can authenticate an administrator.
 //
-// API-key authentication for admins (CLI, automation) is separate and
-// unchanged; a session and an API key both resolve to the same AdminUser, so
-// every /api/v1/admin route and role guard works for either.
+// The console session is the only way to authenticate as an administrator:
+// there are no admin API keys, so every admin action has passed the TOTP step.
 package adminconsole
 
 import (
@@ -292,6 +291,9 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 	if err != nil {
 		return "", nil, err
 	}
+	if err := s.admins.RecordUsage(ctx, a.ID(), client.IP); err != nil {
+		s.log.Warn("record admin console usage", "error", err)
+	}
 	s.record(ctx, a, ActionLogin, client, "")
 	return token, a, nil
 }
@@ -369,9 +371,7 @@ func (s *Service) ProvisionAdmin(ctx context.Context, actor *admin.AdminUser, em
 		id := actor.ID()
 		creatorID = &id
 	}
-	// The API key is not returned: human administrators sign in with their user
-	// account. Rows need a key hash, so one is generated and discarded.
-	a, _, err := admin.NewAdminUser(email, name, role, creatorID)
+	a, err := admin.NewAdminUser(email, name, role, creatorID)
 	if err != nil {
 		return nil, "", err
 	}

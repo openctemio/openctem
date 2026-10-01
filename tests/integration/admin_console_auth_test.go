@@ -65,7 +65,7 @@ type consoleClient struct {
 	http *http.Client
 }
 
-func (c *consoleClient) do(method, path string, body any, apiKey string) (*http.Response, []byte) {
+func (c *consoleClient) do(method, path string, body any) (*http.Response, []byte) {
 	c.t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
@@ -73,9 +73,6 @@ func (c *consoleClient) do(method, path string, body any, apiKey string) (*http.
 	}
 	req, _ := http.NewRequestWithContext(c.t.Context(), method, c.base+path, &buf)
 	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set(middleware.AdminAPIKeyHeader, apiKey)
-	}
 	// Browser behavior: echo the readable admin CSRF cookie on writes.
 	u, _ := url.Parse(c.base + "/")
 	for _, ck := range c.http.Jar.Cookies(u) {
@@ -140,7 +137,7 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	// A super admin linked to a users-table account.
 	stamp := time.Now().Format("150405.000000")
 	email := "console-it-" + stamp + "@example.test"
-	a, _, err := admin.NewAdminUser(email, "Console IT", admin.AdminRoleSuperAdmin, nil)
+	a, err := admin.NewAdminUser(email, "Console IT", admin.AdminRoleSuperAdmin, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +158,7 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	svc := adminconsole.NewService(admins, consoleRepo, auditRepo, cipher, signIn, log)
 	h := handler.NewAdminConsoleHandler(svc, false, "refresh_token", log)
 	validate := handler.NewAdminAuthHandler(log)
-	authMW := middleware.NewAdminAuthMiddleware(admins, log).WithSessions(svc)
+	authMW := middleware.NewAdminAuthMiddleware(svc, log)
 
 	// Same guards as routes/admin.go for the auth group, plus a probe write
 	// route to check the console CSRF guard.
@@ -181,12 +178,12 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	base, _ := url.Parse(srv.URL + "/")
 
 	// 1. Not signed in on /login: refused.
-	if resp, _ := c.do("POST", "/api/v1/admin/auth/session", nil, ""); resp.StatusCode != http.StatusUnauthorized {
+	if resp, _ := c.do("POST", "/api/v1/admin/auth/session", nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("session without sign-in: %d", resp.StatusCode)
 	}
 	// 2. Signed in (refresh cookie from /login): first time demands enrollment.
 	jar.SetCookies(base, []*http.Cookie{{Name: "refresh_token", Value: refresh, Path: "/"}})
-	resp, body := c.do("POST", "/api/v1/admin/auth/session", nil, "")
+	resp, body := c.do("POST", "/api/v1/admin/auth/session", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("session: %d %s", resp.StatusCode, body)
 	}
@@ -196,19 +193,19 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 		t.Fatalf("expected enrollment, got %+v", login)
 	}
 	// A pending (pre-TOTP) session must not reach authenticated routes.
-	if resp, _ := c.do("GET", "/api/v1/admin/auth/validate", nil, ""); resp.StatusCode != http.StatusUnauthorized {
+	if resp, _ := c.do("GET", "/api/v1/admin/auth/validate", nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("validate before mfa: %d", resp.StatusCode)
 	}
 	// 3. Wrong code, then the right one.
-	if resp, _ := c.do("POST", "/api/v1/admin/auth/mfa", map[string]string{"code": "000000"}, ""); resp.StatusCode != http.StatusUnauthorized {
+	if resp, _ := c.do("POST", "/api/v1/admin/auth/mfa", map[string]string{"code": "000000"}); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("wrong code: %d", resp.StatusCode)
 	}
 	code, _ := totp.Code(login.Secret, time.Now())
-	if resp, body := c.do("POST", "/api/v1/admin/auth/mfa", map[string]string{"code": code}, ""); resp.StatusCode != http.StatusOK {
+	if resp, body := c.do("POST", "/api/v1/admin/auth/mfa", map[string]string{"code": code}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("mfa: %d %s", resp.StatusCode, body)
 	}
 	// 4. The session cookie now authenticates, as the right admin.
-	resp, body = c.do("GET", "/api/v1/admin/auth/validate", nil, "")
+	resp, body = c.do("GET", "/api/v1/admin/auth/validate", nil)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), email) {
 		t.Fatalf("validate with session: %d %s", resp.StatusCode, body)
 	}
@@ -233,11 +230,11 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	if noCSRF.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("write without csrf: %d, want 401", noCSRF.StatusCode)
 	}
-	if resp, _ := c.do("POST", "/api/v1/admin/auth/probe", nil, ""); resp.StatusCode != http.StatusNoContent {
+	if resp, _ := c.do("POST", "/api/v1/admin/auth/probe", nil); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("write with csrf: %d", resp.StatusCode)
 	}
 	// 6. Logout ends the session.
-	if resp, _ := c.do("POST", "/api/v1/admin/auth/logout", nil, ""); resp.StatusCode != http.StatusNoContent {
+	if resp, _ := c.do("POST", "/api/v1/admin/auth/logout", nil); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("logout: %d", resp.StatusCode)
 	}
 	req, _ = http.NewRequestWithContext(t.Context(), "GET", srv.URL+"/api/v1/admin/auth/validate", nil)
@@ -277,7 +274,7 @@ func TestPlatformAdminCannotJoinOrganization(t *testing.T) {
 	})
 
 	newAdmin := func(email string) *admin.AdminUser {
-		a, _, err := admin.NewAdminUser(email, "IT", admin.AdminRoleReadonly, nil)
+		a, err := admin.NewAdminUser(email, "IT", admin.AdminRoleReadonly, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
