@@ -638,6 +638,16 @@ Tenable.sc's RBAC.
    by design (see "Module-Gate Layer"). Never rely on it to protect data — that is
    the job of the permission gate + tenant isolation.
 
+7. **`user_roles` is the RBAC role set; `tenant_members.role` is a label.**
+   Permissions are resolved only from `user_roles`, which holds exactly the roles
+   an administrator granted (custom roles, several roles, or none).
+   `tenant_members.role` is the coarse membership label derived from them
+   (`MembershipRoleForRoleIDs`) and is what the team-role gates read. Nothing may
+   re-derive the role set from the label: the `role-sync` controller only restores
+   the owner role of a tenant owner who lacks it, and reports (does not repair)
+   active members with no role. It used to re-grant the label's system role
+   hourly, which brought back roles administrators had removed.
+
 ### Known, deliberate gaps (do not "fix" without a decision)
 
 - **Two admin oracles.** Permission-based `IsAdmin` (from the token) and live-DB
