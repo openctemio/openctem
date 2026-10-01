@@ -950,9 +950,10 @@ func (h *ScanHandler) ListScanRuns(w http.ResponseWriter, r *http.Request) {
 	// Convert through the same DTO GET /pipeline-runs/{id} already uses, and key
 	// the envelope "data" like the rest of our list endpoints.
 	if runs, ok := result["items"].([]*pipeline.Run); ok {
+		names := h.resolveRunTriggerNames(r.Context(), runs...)
 		responses := make([]*RunResponse, 0, len(runs))
 		for _, run := range runs {
-			responses = append(responses, toRunResponse(run))
+			responses = append(responses, withTriggerName(toRunResponse(run), names))
 		}
 		delete(result, "items")
 		result["data"] = responses
@@ -986,7 +987,7 @@ func (h *ScanHandler) GetLatestScanRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toRunResponse(run))
+	json.NewEncoder(w).Encode(withTriggerName(toRunResponse(run), h.resolveRunTriggerNames(r.Context(), run)))
 }
 
 // GetScanRun handles GET /api/v1/scans/{id}/runs/{runId}
@@ -1015,7 +1016,7 @@ func (h *ScanHandler) GetScanRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toRunResponse(run))
+	json.NewEncoder(w).Encode(withTriggerName(toRunResponse(run), h.resolveRunTriggerNames(r.Context(), run)))
 }
 
 // --- Conversion Helpers ---
@@ -1070,6 +1071,61 @@ func (h *ScanHandler) resolveScanCreatorNames(ctx context.Context, scans []*scan
 		}
 	}
 	return nameByID
+}
+
+// resolveRunTriggerNames batch-loads the display names of the users who
+// triggered these runs, keyed by user id. TriggeredBy is free text: a user id
+// for a manual trigger, otherwise "system", a schedule or a webhook name, so
+// only values that parse as an id are looked up. One query per page of runs.
+func (h *ScanHandler) resolveRunTriggerNames(ctx context.Context, runs ...*pipeline.Run) map[string]string {
+	if h.userRepo == nil || len(runs) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(runs))
+	ids := make([]shared.ID, 0, len(runs))
+	for _, run := range runs {
+		if run == nil || run.TriggeredBy == "" {
+			continue
+		}
+		if _, ok := seen[run.TriggeredBy]; ok {
+			continue
+		}
+		seen[run.TriggeredBy] = struct{}{}
+		id, err := shared.IDFromString(run.TriggeredBy)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	users, err := h.userRepo.GetByIDs(ctx, ids)
+	if err != nil {
+		h.logger.Warn("failed to batch-resolve run trigger names", "error", err)
+		return nil
+	}
+	names := make(map[string]string, len(users))
+	for _, u := range users {
+		if u == nil {
+			continue
+		}
+		name := u.Name()
+		if name == "" {
+			name = u.Email()
+		}
+		names[u.ID().String()] = name
+	}
+	return names
+}
+
+// withTriggerName sets TriggeredByName from a map built by
+// resolveRunTriggerNames. Pure.
+func withTriggerName(resp *RunResponse, names map[string]string) *RunResponse {
+	if resp != nil {
+		resp.TriggeredByName = names[resp.TriggeredBy]
+	}
+	return resp
 }
 
 // buildScanResponse converts a domain scan to API response using a pre-resolved
