@@ -134,7 +134,17 @@ POST /api/v1/assets/dedup/reviews/{id}/reject   — keep separate
 GET  /api/v1/assets/dedup/merge-log             — audit trail
 ```
 
-Merge moves references across 7 FK tables: findings, asset_services, asset_relationships (source+target), compliance_mappings, suppressions, asset_state_history.
+A merge moves every row that references the merged assets to the kept asset, then deletes the merged assets. The full list is in `internal/infra/postgres/asset_merge_plan.go`:
+
+- Plain moves: findings, exposures, suppression rules, SLA policies, scan sessions, pipeline runs, exposure events, runtime telemetry, attack-path nodes, threat-model threats.
+- Moves that drop a merged row when the kept asset already has the same unique key: services, components, owners, business units and services, asset groups, compensating controls, sources, scan coverage, and the derived `user_accessible_assets`.
+- Relationships and relationship suggestions. Edges that would become loops are dropped.
+- Child assets are re-parented to the kept asset, and pentest campaign asset lists are rewritten.
+- Repository data: the kept asset gets a copy of the merged repository row when it has none. Branches move to it. A branch whose name the kept repository already has hands its findings, branch occurrences and components to that branch first.
+- Other pending dedup reviews about a merged asset are deleted. Ingest proposes them again if the duplicates remain.
+- Left alone on purpose: `asset_state_history` (immutable, removed with the merged asset), `asset_merge_log`, CTEM cycle scope snapshots and ingest report records.
+
+`TestAssetMergeCoversEveryAssetReference` fails when a table in the schema references assets and the merge does not handle it, or when the merge names a table that no longer exists. Before this list existed, the merge skipped two tables that had been dropped (the error was swallowed), rows in 17 tables were deleted by `ON DELETE CASCADE` or orphaned by `SET NULL`, and two tables kept ids of deleted assets.
 
 ## Agent Integration
 
