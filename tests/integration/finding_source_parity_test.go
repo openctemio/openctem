@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"database/sql"
-	"os"
 	"regexp"
 	"sort"
 	"testing"
@@ -11,6 +10,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
@@ -78,7 +78,7 @@ func checkConstraintValues(t *testing.T, db *sql.DB) map[string]bool {
 func openParityDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping finding-source parity check")
 	}

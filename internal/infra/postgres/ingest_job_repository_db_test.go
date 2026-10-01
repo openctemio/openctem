@@ -3,12 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/ingestjob"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -18,7 +18,7 @@ import (
 // Self-contained: uses a random tenant (the table has no FKs) and cleans up.
 // Skipped unless DATABASE_URL is set.
 func TestIngestJobRepository_Lifecycle(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping ingest_jobs DB lifecycle test")
 	}
@@ -139,7 +139,7 @@ func TestIngestJobRepository_Lifecycle(t *testing.T) {
 // when one tenant floods the queue, a claim batch still interleaves tenants
 // (round-robin) rather than draining the noisy tenant first.
 func TestIngestJobRepository_FairClaim(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping fair-claim test")
 	}

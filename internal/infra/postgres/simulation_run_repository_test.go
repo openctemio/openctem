@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/simulation"
 	"github.com/openctemio/api/pkg/pagination"
@@ -20,7 +20,7 @@ import (
 // so a column-name or scan-type mismatch (the main risk of a hand-written repo)
 // surfaces here rather than in production. Skipped unless DATABASE_URL is set.
 func TestSimulationRunRepository_ReadPathsAgainstSchema(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping schema-level check")
 	}

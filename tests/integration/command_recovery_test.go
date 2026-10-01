@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -371,7 +371,7 @@ func setupCommandTestDB(t *testing.T) *sql.DB {
 	// that name resolves to on the machine running it - in a dev environment, the
 	// real one. Skipping is the only safe unset behavior, and it matches
 	// openPlatformJobDB in internal/infra/postgres.
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping command recovery tests")
 	}

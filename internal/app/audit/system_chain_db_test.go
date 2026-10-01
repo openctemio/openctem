@@ -3,13 +3,13 @@ package audit_test
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
 	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/api/internal/testdb"
 	auditdom "github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -28,7 +28,7 @@ import (
 func openAuditDB(t *testing.T) *postgres.DB {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping audit system-chain DB tests")
 	}

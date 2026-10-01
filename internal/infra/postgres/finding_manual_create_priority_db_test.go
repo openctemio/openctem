@@ -3,12 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/api/internal/app/finding"
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
@@ -74,7 +74,7 @@ func seedPublicAsset(ctx context.Context, t *testing.T, db *sql.DB, tenantID sha
 // because the service classifies BEFORE the INSERT (priority_class has always
 // been in the Create() column list). Skipped unless DATABASE_URL is set.
 func TestCreateFinding_ManualPersistsPriorityClass(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB execution check")
 	}

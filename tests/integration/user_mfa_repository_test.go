@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"database/sql"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +10,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/mfa"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -20,7 +20,7 @@ import (
 // relies on: replay protection by compare-and-set on the time step, single-use
 // recovery codes and challenges under concurrency, and atomic activation.
 func TestUserMFARepository(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := testdb.URL()
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping user MFA repository test")
 	}

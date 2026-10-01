@@ -3,10 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
+
+	"github.com/openctemio/api/internal/testdb"
 )
 
 // TestInsertChunkSQL_PreparesAgainstSchema validates the generated multi-row
@@ -21,7 +22,7 @@ import (
 //
 // Skipped unless DATABASE_URL is set (e.g. when running against the docker DB).
 func TestInsertChunkSQL_PreparesAgainstSchema(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping schema-level PREPARE check")
 	}

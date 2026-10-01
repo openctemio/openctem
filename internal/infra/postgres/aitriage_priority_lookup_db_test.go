@@ -3,11 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
+
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -18,7 +19,7 @@ import (
 //
 // DB-gated: needs DATABASE_URL pointing at app_test (never the live DB).
 func TestAITriagePriorityLookupRepo_GetFalsePositiveVerdicts(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}

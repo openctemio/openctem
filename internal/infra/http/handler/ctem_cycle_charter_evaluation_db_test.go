@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -49,7 +49,7 @@ func seedHandlerTenant(ctx context.Context, t *testing.T, db *sql.DB) string {
 // returned and persisted, the completion rate lands in the cycle metrics,
 // and another tenant can neither read nor close the cycle.
 func TestCTEMCycleHandler_CloseEvaluatesCharter(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed handler test")
 	}
@@ -188,7 +188,7 @@ func TestCTEMCycleHandler_CloseEvaluatesCharter(t *testing.T) {
 // evaluation existed already has metrics stored, but no verdicts. Reading its
 // metrics evaluates the charter once.
 func TestCTEMCycleHandler_LazyEvaluation(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed handler test")
 	}

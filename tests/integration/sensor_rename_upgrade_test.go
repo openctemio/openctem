@@ -28,6 +28,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -70,7 +71,7 @@ func execFile(t *testing.T, db *sql.DB, path string) {
 
 func scratchDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping the sensor rename upgrade test")
 	}

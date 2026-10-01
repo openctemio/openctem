@@ -3,17 +3,17 @@ package postgres
 import (
 	"context"
 	"net/url"
-	"os"
 	"strconv"
 	"testing"
 
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/internal/testdb"
 )
 
 // The jit=off DSN key must actually reach the server as a session setting
 // (lib/pq forwards unknown keys as startup parameters).
 func TestNew_DisablesJITForSessions(t *testing.T) {
-	raw := os.Getenv("DATABASE_URL")
+	raw := testdb.URL()
 	if raw == "" {
 		t.Skip("DATABASE_URL not set; skipping JIT session test")
 	}

@@ -18,6 +18,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/domain/module"
 )
 
@@ -62,7 +63,7 @@ type catalogRow struct {
 func openModuleCatalogDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping module catalog parity check")
 	}

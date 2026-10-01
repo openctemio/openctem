@@ -3,12 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
 
 	appintegration "github.com/openctemio/api/internal/app/integration"
+	"github.com/openctemio/api/internal/testdb"
 	"github.com/openctemio/api/pkg/crypto"
 	integrationdom "github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -34,7 +34,7 @@ func (f *failingSCMExtRepo) CreateInTx(_ context.Context, _ *sql.Tx, _ *integrat
 
 func openIntegrationDB(t *testing.T) *DB {
 	t.Helper()
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping integration create atomicity tests")
 	}
