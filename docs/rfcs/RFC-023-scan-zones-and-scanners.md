@@ -335,6 +335,9 @@ wakes only the sensors whose doorbell count could have changed; the
 request (P2), the response carries signed actions (K1), and `GET
 /api/v2/sensor/config` serves the configuration `config_version` points at.
 v1 sensors keep the doorbell; nothing in v1 changes.
+Results pushed over v2 follow [RFC-026](RFC-026-sensor-results-ingest.md);
+a v2 report reaching a final state is one more wake-up reason for `wait`, so
+the sensor does not have to poll the report's status resource.
 
 ### 9.3 Rollout
 

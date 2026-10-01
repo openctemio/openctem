@@ -250,6 +250,10 @@ in the worker and produce per-item outcomes (partial success, §3.7).
 - An identical replay (same URL, same `Content-Digest`) → `200` with the
   current status. A different digest at the same URL → `409 report-conflict`.
 - The response always carries `OpenCTEM-Protocol: 2`.
+- The SDK polls the status resource as `Retry-After` advises. Once the v2
+  long-poll of [RFC-023 §9.2a](RFC-023-scan-zones-and-scanners.md#92a-heartbeat-doorbell-protocol-v1-additive-extension)
+  (`GET /api/v2/sensor/wait`) exists, a report reaching `completed`,
+  `failed` or `expired` is one of its wake-up reasons, so polling stops.
 
 ### 3.5 Segments
 
@@ -571,6 +575,10 @@ enabled (C3). Metrics `ingest_v2_requests_total{outcome,problem}`,
 `ingest_v2_bytes{stage=encoded|decoded}`, `ingest_v2_items_total{result}`;
 v1 per-route counters `ingest_v1_requests_total{route}` (for §8.3). Flip
 the default to enabled.
+Discovery for v1 sensors reuses the doorbell's opt-in (api#619,
+§9.2a): a sensor that sends `X-OpenCTEM-Sensor-Features: results-v2` on its
+v1 heartbeat gets `X-OpenCTEM-Protocol: 2` back, and v1 response bytes do
+not change for anyone else (`flow.golden`).
 *Accept:* the Sensors page data (fleet by protocol) can show who still uses
 which v1 route.
 
