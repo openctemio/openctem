@@ -282,11 +282,15 @@ func (p *AssetProcessor) ProcessBatch(
 			}
 		}
 
-		// Still no assets after auto-creation attempt
+		// Still no assets after auto-creation attempt. Only worth a warning
+		// when there are findings to lose; a report with neither assets nor
+		// findings (a clean scan, an empty chunk) has nothing to orphan.
 		if len(report.Assets) == 0 {
-			p.logger.Warn("no assets after auto-creation attempt - findings will be orphaned",
-				"findings_count", len(report.Findings),
-			)
+			if len(report.Findings) > 0 {
+				p.logger.Warn("no assets after auto-creation attempt - findings will be orphaned",
+					"findings_count", len(report.Findings),
+				)
+			}
 			return assetMap, nil
 		}
 	}

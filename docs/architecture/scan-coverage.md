@@ -68,11 +68,15 @@ The requirement on the converter is therefore narrow: emit **one report per
 batch** with `tool.name="tenable"`, a unique `metadata.id` (the scan session),
 `coverage_type="full"`, and only that batch's hosts.
 
-> **Note (git-centric gate):** ingest's auto-resolve also requires a default
-> branch (`IsDefaultBranchScan()`), built for CI/SAST scans. Network scans have
-> no branch, so the converter emits a **synthetic** `Branch{IsDefaultBranch:true}`.
-> A cleaner long-term fix is to make the gate treat non-git source types as
-> eligible without a synthetic branch.
+> **Not working today (verified 2026-10):** ingest's auto-resolve requires a
+> default branch, built for CI/SAST scans. The converter emits a **synthetic**
+> `Branch{IsDefaultBranch:true}` to pass the report-level gate, but branches are
+> only tracked for repository assets and the auto-resolve query joins findings
+> to the repository's default branch, so host findings (`branch_id` NULL) are
+> never matched. Uploading a batch that no longer contains a finding leaves it
+> open. Non-repository findings do not auto-resolve by design (see
+> `shift-left-ci-scanning.md`, "Which findings auto-resolve"); making this one
+> server-side, batch-scoped path an exception is an open product decision.
 
 ## `.nessus → CTIS` converter (shipped, #139)
 
@@ -110,8 +114,9 @@ POST /api/v1/assets/import/nessus-findings        (JWT; AssetsWrite + FindingsWr
 
 Each upload is one batch: the handler builds a synthetic agent for the tenant
 (mirroring the ingest job processor), runs `nessus.Convert`, and ingests through
-the standard pipeline. Stale Tenable findings on the uploaded hosts are
-auto-resolved **scoped to that batch only**. Contrast with
+the standard pipeline. The report is shaped for batch-scoped auto-resolve
+(tool, session id, full coverage), but host findings are not auto-resolved
+today; see the note above. Contrast with
 `POST /api/v1/assets/import/nessus`, which imports host assets only (no findings).
 Handler: `internal/infra/http/handler/asset_import_handler.go` `IngestNessusFindings`.
 

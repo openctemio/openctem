@@ -97,6 +97,41 @@ graph LR
 - Default-branch flag is never silently re-pointed on ingest (anti-abuse).
 - Auto-resolve is scoped (tool × scan × assets/branch) — a partial/PR scan never resolves findings outside its scope.
 
+### Which findings auto-resolve (decision, 2026-10)
+
+Auto-resolve closes a finding because a scan **did not report it**. That is
+only evidence of a fix when the scan provably covered the same code, so the
+scope is deliberately narrow:
+
+| Finding sits on | Auto-resolves? | Why |
+|---|---|---|
+| A repository asset, on its **default branch** (`findings.branch_id` → `repository_branches.is_default`) | Yes — by a full-coverage scan of that branch, same tool, different scan id | A full scan of the default branch sees the whole codebase; absence means the code is gone. |
+| A repository asset, on a feature branch | No (its occurrence on that branch is marked `auto_fixed` instead) | A feature branch is not the source of truth. |
+| A domain, host, IP, service, cloud or any other non-repository asset | **No** | Absence from a network or external scan is not evidence of a fix: hosts go down, ports get filtered, rate limits and template sets vary between runs. These findings close through retest/validation, a human, or the scanner reporting them fixed. `resolveBranches` only tracks branches for repository assets, and the auto-resolve query joins to the default branch, so this holds for every ingest path. |
+
+`findings.branch_id` is what puts a finding in the first row. It is set when a
+finding is created from a report that carries branch info, and — since this
+decision — **backfilled** when an existing finding is reported again
+(`FindingRepository.BackfillFindingBranches`, ingest Step 6):
+
+- a finding with **no branch** (first ingested without branch info, or before
+  branch tracking worked; see migration 000174) takes the scanned branch;
+- a finding on another branch **moves to the default branch** when the scan is
+  of the repository's default branch, as recorded in `repository_branches`
+  (never as claimed by the report — same anti-abuse rule as above);
+- a feature-branch scan never moves a finding that already has a branch, and a
+  branch is only ever attached to findings of its own repository.
+
+Without the backfill a finding first seen without a branch, or first seen on a
+PR branch (the common path for a newly introduced issue), could never be
+auto-resolved however many default-branch scans later stopped reporting it.
+
+Known gap: the Tenable `.nessus` findings import was designed to auto-resolve
+host findings per batch (RFC-007) and emits a synthetic default branch for it,
+but host findings have no branch, so it does not auto-resolve today. Enabling
+absence-based resolution for that one server-side, batch-scoped path is a
+product decision tracked separately; see `scan-coverage.md`.
+
 ## 4. Component responsibilities
 
 | Component | Responsibility |

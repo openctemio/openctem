@@ -1293,6 +1293,10 @@ func (m *wfActionMockFindingRepo) UpsertBranchOccurrences(_ context.Context, _ s
 	return nil
 }
 
+func (m *wfActionMockFindingRepo) BackfillFindingBranches(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) (int64, error) {
+	return 0, nil
+}
+
 func (m *wfActionMockFindingRepo) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
 	return 0, nil
 }

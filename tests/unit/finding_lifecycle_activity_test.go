@@ -521,6 +521,10 @@ func (s *stubFindingRepo) UpsertBranchOccurrences(_ context.Context, _ shared.ID
 	return nil
 }
 
+func (s *stubFindingRepo) BackfillFindingBranches(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) (int64, error) {
+	return 0, nil
+}
+
 func (s *stubFindingRepo) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
 	return 0, nil
 }
