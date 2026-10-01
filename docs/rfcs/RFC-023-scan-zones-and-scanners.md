@@ -2,6 +2,11 @@
 
 > Status: **Proposed** (2026-10-01)
 > Scope: api + agent + ui (+ sdk-go for job verification).
+> OpenCTEM is an open platform: anyone can build tools, agents, connectors and
+> collectors with the SDK and push results in. Zones and every security control
+> here are therefore defined at the **protocol** level and implemented once in
+> the **SDK**, so third-party sensors get them by default (§4).
+>
 > Lets a tenant admin register the scanners that serve their organization, group
 > their networks into **scan zones** (address ranges → the scanners that may
 > scan them), and have every scan routed to, and enforced by, the right scanner.
@@ -81,7 +86,25 @@ credentials to an attacker — Praetorian 2025); unauthenticated update channels
 | D16 | **Permissions:** `scanners:read/write/delete`, `zones:read/write/delete`, `scanners:approve` (tenant owner/admin by default; members read-only). All zone, scanner, approval, key and credential-release events are audited. | Least privilege; a new permission is added in Go, the seed migration and the UI constants together (authorization-matrix rules). |
 | D17 | **Scope stays separate from zones.** Scope = *may* we scan this; zone = *who can reach* it. Exclusions are enforced at dispatch for **every** path and fail closed; an optional tenant setting requires targets to be in scope. | Two questions, one CIDR matcher (`pkg/domain/scope`). |
 
-## 4. Data model (Phase 1–2)
+## 4. Extensibility: sensors built with the SDK
+
+The platform is designed so that third parties write their own tools, agents,
+connectors and collectors with `sdk-go` (`core.Scanner`, `core.Collector`,
+`core.Connector`/`Provider`, `core.Parser`, `core.Agent`, `Pusher`, the
+`platform` poller) and push data in. Zones must not depend on *our* agent
+behaving well, so:
+
+| # | Decision | Why |
+|---|---|---|
+| D18 | **"Sensor" is the registered unit**, with a kind: **runner** (takes jobs: scanners, validators, recon; ours or SDK-built), **collector** (push-only: SIEM forwarder, cloud/SaaS pullers; never receives targets), **bridge** (runner fronting an external engine such as Nessus). The UI's Scanners list is the runner + bridge view of the sensor registry; collectors appear under their integration. | One identity, approval, key and health model for every extension, first- or third-party. |
+| D19 | **The rules are protocol, the code is SDK.** Signature/expiry/replay checks, the allow-list on resolved IPs with pinning, the built-in deny list and per-target skip reporting live in `sdk-go` (`platform` poller + a guarded resolver/dialer handed to scanners). A tool implementing `core.Scanner` is only ever called with targets that already passed the guard, and gets a pinned address to use. Our agent is just one consumer of the SDK. | Third-party runners inherit the controls without writing them; one audited implementation. |
+| D20 | **Capability negotiation.** At enrollment and on every heartbeat a sensor declares: protocol version, SDK version, **features** (`signed_jobs`, `zone_guard`, `ip_pinning`) and a **tool manifest** per tool (target kinds accepted: ip/cidr/domain/url/repo/image/cloud; whether it needs network reach; output types; credential needs). The server routes by manifest: zone routing applies only to network-reaching tools (a repo SAST tool needs no zone). **Jobs with private network targets are dispatched only to sensors that advertise `signed_jobs` + `zone_guard`**, unless the tenant explicitly allows legacy sensors (shown as a warning). | Safe by default for unknown code; non-network tools are unaffected. |
+| D21 | **Push is authorized, not just authenticated.** A sensor key's scopes (stored today, enforced from now) limit: the data kinds it may write (findings, assets, telemetry, …); the **tool names it may report as** (a collector must not report as `nessus` and auto-resolve real Nessus findings, since auto-resolve is scoped by tool); and, for zone-bound runners, the addresses it may report on (results outside its zones are quarantined for review, not ingested). Every record is stamped with sensor id, kind and zone (provenance). | Closes forged-result and cross-network write paths that any SDK user could otherwise reach. |
+| D22 | **Trust tiers.** *First-party* (our signed builds), *verified* (passes the SDK conformance suite, signed release), *custom* (tenant-built, approved by a tenant admin). Custom sensors never receive control-plane-held credentials (T2) and their findings are labelled as such; platform-shared scanners are first-party only. | Openness without granting unknown code the most sensitive powers. |
+| D23 | **Conformance suite in the SDK** (`platform/conformance`): a fake control plane that proves a sensor rejects unsigned, expired, replayed and out-of-range jobs, never dials the deny list, reports skips, and honours revocation. Required for *verified*. | Makes "secure by default" checkable by third parties and in our CI. |
+| D24 | **Versioned protocol.** The server publishes a minimum protocol version and a deprecation window; sensors below it keep pushing (collectors) but receive no new jobs; the UI flags "upgrade required". | Lets the platform evolve security requirements without breaking the ecosystem overnight. |
+
+## 5. Data model (Phase 1–2)
 
 ```
 scan_networks   id, tenant_id, name, is_default                      (Phase 4 uses it for identity)
@@ -89,8 +112,11 @@ scan_zones      id, tenant_id, network_id, name, description, is_default,
                 ranges inet/cidr[] (validated, normalised, no /0 for private),
                 created_by, created_at, updated_at
 scan_zone_scanners  zone_id, agent_id   (PK both; same-tenant enforced in SQL)
-agents          + approval_state (pending|approved|rejected), + health_flags int,
-                + allowed_ranges_local cidr[] (reported by agent, read-only in UI)
+agents          (the sensor registry) + kind (runner|collector|bridge),
+                + approval_state (pending|approved|rejected), + trust_tier,
+                + protocol_version, sdk_version, features text[], tool_manifest jsonb,
+                + health_flags int, + allowed_ranges_local cidr[] (reported, read-only in UI)
+agent_api_keys  scopes enforced: ingest kinds, reportable tool names
 scanner_engines id, tenant_id, kind (nessus_pro|tenable_sc|openvas…), name, host, port,
                 verify_tls, ca_pin/fingerprint, use_proxy, bridge_agent_id,
                 credential_tier (agent_local|vault|control_plane), credential_ref,
@@ -101,7 +127,7 @@ Routing and claim queries use a single CIDR matcher (reuse
 `pkg/domain/scope` matching). All tables carry `tenant_id` and every query is
 tenant-scoped.
 
-## 5. Flow
+## 6. Flow
 
 1. **Create scan**: targets validated; private targets accepted when the tenant
    has a zone covering them (D6). Exclusions removed (fail closed).
@@ -118,7 +144,7 @@ tenant-scoped.
    typed tool (layer 3), and reports per-target skips.
 5. **Results**: ingest as today; results stamped with zone (and network, Phase 4).
 
-## 6. UI (tenant admin)
+## 7. UI (tenant admin)
 
 **Settings → Scanning resources**, in the shape of SC's "Nessus Scanners" page:
 
@@ -134,19 +160,19 @@ tenant-scoped.
 - **New scan**: a zone picker (Automatic by default), and a preview of which
   targets go to which scanner and which are skipped.
 
-## 7. Phases
+## 8. Phases
 
 | Phase | Content | Ships |
 |---|---|---|
 | **0 — Fix what is broken today** (no new concepts) | All targets dispatched, batched by `TargetsPerJob`; remove the silent platform fallback (D14); exclusions fail closed on every path; agent: block `::/128`, reject target-bearing `extra_args`, pin resolved IPs; poll matches tool; Tenable `infra` capability fixed. | api + agent |
 | **1 — Zones** | Tables, API, permissions, routing (D4–D6), claim predicate (layer 2), private targets allowed in zones, Scan zones UI, zone picker + routing preview on New scan. | api + ui |
-| **2 — Scanners resource** | Unified Scanners page, enrollment approval, default key TTL + auto-renew, health flags + Update status + quarantine, external engines via bridge agent (Nessus Pro first). | api + agent + ui |
-| **3 — Scanner-side enforcement** | Signed jobs (D9), manifest + local allow-list (D8), typed `extra_args` allow-lists (D11). | sdk-go + agent + api |
-| **4 — Credentials, networks, platform** | Credential tiers T1 vault pull / T2 scoped envelope release (D12); networks + site-aware asset identity (D15); platform shared scanners/zones (D14). | api + agent + ui |
+| **2 — Sensors & Scanners resource** | Sensor kinds + capability negotiation (D18, D20), unified Scanners page, enrollment approval, default key TTL + auto-renew, health flags + Update status + quarantine, external engines via bridge (Nessus Pro first), push scopes enforced (D21). | api + agent + ui |
+| **3 — Protocol enforcement in the SDK** | Signed jobs (D9), manifest + local allow-list + guarded resolver (D8, D19), typed `extra_args` allow-lists (D11), conformance suite (D23); our agent adopts it; private-target jobs require `signed_jobs`+`zone_guard` (D20); protocol versioning (D24). | sdk-go + agent + api |
+| **4 — Credentials, networks, platform, trust** | Credential tiers T1 vault pull / T2 scoped envelope release (D12); networks + site-aware asset identity (D15); platform shared scanners/zones (D14); trust tiers + verified sensors (D22). | api + sdk-go + agent + ui |
 
 Each phase is shippable alone; Phase 0 is independent and should land first.
 
-## 8. Security notes
+## 9. Security notes
 
 - The strongest guarantee is layer 3 with an operator-set local allow-list: it
   holds even if the control plane is fully compromised. Layers 1–2 are routing
@@ -159,7 +185,7 @@ Each phase is shippable alone; Phase 0 is independent and should land first.
 - Everything here is tenant-scoped; a zone or scanner id from another tenant is
   rejected in SQL, not only in handlers.
 
-## 9. Open questions
+## 10. Open questions
 
 1. Should a public target in a tenant with zones but no internet-facing scanner
    fall back to platform scanners if the tenant opted in, or be skipped? (Proposal:
