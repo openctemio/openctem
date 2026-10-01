@@ -153,6 +153,16 @@ Code: `internal/app/sensor/doorbell.go` (hints, intervals, config version),
 `Heartbeat`), `pkg/domain/sensor/doorbell.go` (the `Action` enum). The wire is
 pinned by `testdata/protocol_v1/doorbell.golden`.
 
+## Protocol v2 results ingest (proposed)
+
+[RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) defines how sensors push
+results in protocol v2: CTIS only, declared by
+`Content-Type: application/vnd.openctem.ctis.v1+json`, sent as
+`PUT /api/v2/sensor/results/{report_id}` (self-describing segments plus a
+commit for large reports), with a mandatory `Content-Digest`, `202` + a status
+resource, and provenance stamped by the server. Raw SARIF and other files go
+to a separate user-authenticated import API. v1 ingest above is unchanged.
+
 ## History written in the old vocabulary
 
 Hash-chained audit rows (`agent.*`, resource type `agent`) and append-only
