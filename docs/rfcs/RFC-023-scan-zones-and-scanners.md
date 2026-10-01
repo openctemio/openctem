@@ -260,8 +260,9 @@ every legacy `type` value from old clients and maps it.
 
 ### 9.4 What gets renamed: inventory, risks and handling
 
-Principle: **rename what people read; keep what machines depend on.** Inventory
-taken 2026-10-01 on develop and live.
+Inventory taken 2026-10-01 on develop and live. The "keep" decisions in this
+table were **superseded by 9.5 (complete rename)**; the risk and handling
+columns still apply.
 
 | Layer | Today | Decision | Risk if renamed outright | Handling |
 |---|---|---|---|---|
@@ -286,6 +287,51 @@ is split into the R0–R3 steps (§9.3), each small and reversible. The
 compatibility CI job (C8) runs the previous released agent and SDK against
 every API change, so an accidental break of the frozen surface fails the
 build instead of a customer deployment.
+
+### 9.5 Decision update: complete rename (supersedes the "keep" rows of 9.4)
+
+The product owner asked for a complete move to *sensor*, inside the code as
+well, with no permanent internal aliases. That is feasible and is the plan.
+The only things that keep an old name are those that **cannot** change without
+breaking something already deployed or rewriting history, and each is
+time-boxed and measured.
+
+**Feasibility, proven by a spike on develop (2026-10-01).** A two-step,
+type-checked rename:
+
+1. Move the package directory and rewrite import paths, keeping the old
+   identifier as an import alias, so the tree compiles at every step
+   (`pkg/domain/agent` → `pkg/domain/sensor`, 38 importing files: build and vet pass).
+2. Rename identifiers with `gopls rename`, which resolves objects by type, so a
+   local variable named `agent` is never touched: 32 per-file package renames
+   with 0 conflicts in 92 s; type `Agent` → `Sensor` in 2 s, 189 references
+   updated; build and vet pass.
+
+`rsc.io/rf` was evaluated and rejected for this: it cannot move a whole
+package and needs ~2 min per invocation on this tree.
+
+**How the complete rename is done**
+
+| Layer | Complete rename | What keeps the old name, and why | Safety net |
+|---|---|---|---|
+| API Go code (~5,400 mentions, 29 files with *agent* in the path) | Every package, file, type, function, method, field, constant, variable, comment and log field. Driven by a committed, re-runnable script (directory moves + `gopls rename` per symbol + `goimports`), as a mechanical commit separate from any logic change. | Only the **legacy wire adapter** for protocol v1 (`/api/v1/agent/*`, the `type` values old SDKs send), isolated in one package named for what it is. | Build, vet, lint, full unit + integration tests; a CI rule that fails on any new `agent` identifier outside an allow-list (legacy adapter, migrations, the endpoint-agent role). |
+| Database | Tables `agents` → `sensors`, `agent_api_keys` → `sensor_api_keys`; columns `agent_id` → `sensor_id` in the 9 tables, `commands.platform_agent_id`, `scans.agent_preference`; 30 indexes, 22 constraints, the trigger, 2 RLS policies, the row types; the 3 PL/pgSQL functions rewritten (their bodies are text). One migration. | Nothing in the schema. For multi-replica rolling deploys only, compatibility **views** under the old names exist for exactly one release and are dropped by the next migration (expand-contract; the code never uses them). | Postgres carries policies, FKs and indexes across renames by OID; the existing **SQL schema-drift** CI check validates every query against the migrated schema, so a missed SQL string fails CI; migration tested up/down on a scratch DB. |
+| Permissions | `agents:*` → `sensors:*` renamed **in place** in the catalog, every role grant (18 live) and every `oct_` API-key scope, in one data migration; Go constants and UI constants in the same change. | Nothing. Access tokens in flight are re-resolved from the database on each request (`EnrichPermissions`). | Permission catalog sync test (Go ≡ DB); scratch-DB check that every role and key keeps the same effective access. |
+| Management REST API | `/api/v1/sensors` is the API. | `/api/v1/agents` answers with **308 redirect** + `Deprecation`/`Sunset` headers for a fixed window, then 410. | OpenAPI contract check; usage of the old path is counted and shown to the operator. |
+| Sensor protocol | Protocol v2 uses `/api/v2/sensor/*` and sensor terms throughout. | Protocol v1 (`/api/v1/agent/*`) is **still served** by the legacy adapter, because sensors and SDKs already deployed speak it. Retired when the operator raises the minimum protocol (C7); usage per tenant is visible on the Sensors page. | Compatibility CI job runs the last released agent/SDK against every API build (C8). |
+| SDK (`sdk-go`) | All 19 *Agent* identifiers renamed in the next release (pre-1.0, so a breaking minor is allowed by semver); a **migration codemod** (`sensor-migrate`, built on the same `gopls` approach) ships with it so third parties upgrade with one command. | Old SDK versions already compiled into deployed sensors keep working over protocol v1. | Release notes + migration guide; conformance suite (D23). |
+| Sensor binary, repository, images | Repository `openctemio/agent` → `openctemio/sensor` (GitHub keeps redirects for clones and links); binary `openctemio-sensor`; images `openctemio/sensor:{ci,full,slim,…}`. | Existing `openctemio/agent:*` tags stay **pullable but frozen** (no new versions), so customer CI pipelines keep running the last version until they switch; the frozen image logs a one-line notice. | Our GitHub/GitLab CI templates switch to the new image in the same release. |
+| Environment variables, CLI flags, Helm | `SENSOR_*`, `--sensor-*`, Helm values `sensor.*` (chart major version). | None silently: a new binary started with old `AGENT_*` variables, or the chart rendered with old `agent.*` values, **refuses to start with an explicit message** naming the new key, instead of falling back to defaults (e.g. private targets suddenly blocked or allowed). Old binaries keep their old variables. | Startup test per variable; `helm template` test with old values must fail with the message. |
+| UI | Routes, feature folders, components, permission constants, copy: `/sensors` everywhere. | `/agents` URLs redirect (bookmarks). | Type-check, lint, vitest, route tests. |
+| Audit log | New events are `sensor.*`. | Historical `agent.*` rows stay as written: the audit log is hash-chained and tamper-evident, so rewriting history would break its integrity by design. Queries and filters treat both as the same event family. | Chain verification unchanged. |
+| Docs | Rewritten; a glossary explains the change once. | — | Link checker. |
+
+**Order** (each step shippable, nothing deployed breaks): API (schema +
+code + permissions + legacy v1 adapter) → SDK release with codemod → sensor
+binary/images/repo → Helm chart major → UI → docs → retire v1 and the
+`/agents` redirect on the operator's schedule. Only two API PRs are open today,
+so the mechanical rename commit lands with minimal conflict; any branch opened
+later rebases by re-running the committed script.
 
 ## 10. Sensor fleet security: use cases and controls
 
