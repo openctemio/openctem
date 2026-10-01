@@ -30,7 +30,8 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	// buttons whose authorize call 404s.
 	oauthRoutesLive := h.OAuth != nil
 	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, oauthRoutesLive, log).
-		WithTenantCreationMode(cfg.Auth.TenantCreationMode)
+		WithTenantCreationMode(cfg.Auth.TenantCreationMode).
+		WithRegistrationEnabled(cfg.Auth.AllowRegistration)
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {

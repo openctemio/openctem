@@ -29,7 +29,16 @@ type AuthProvidersHandler struct {
 	// tenantCreationMode tells onboarding whether a new user may create an
 	// organization or must wait for the platform administrator.
 	tenantCreationMode string
-	logger             *logger.Logger
+	// registrationEnabled mirrors AUTH_ALLOW_REGISTRATION so the UI can hide
+	// sign-up when self-registration is off.
+	registrationEnabled bool
+	logger              *logger.Logger
+}
+
+// WithRegistrationEnabled sets the value reported as registration_enabled.
+func (h *AuthProvidersHandler) WithRegistrationEnabled(enabled bool) *AuthProvidersHandler {
+	h.registrationEnabled = enabled
+	return h
 }
 
 // WithTenantCreationMode sets the value reported as tenant_creation_mode.
@@ -75,6 +84,10 @@ type AuthProvidersResponse struct {
 	SSOEnvEntraEnabled bool `json:"sso_env_entra_enabled"`
 	// TenantCreationMode is "self_service" or "admin_only" (TENANT_CREATION_MODE).
 	TenantCreationMode string `json:"tenant_creation_mode"`
+	// RegistrationEnabled reports whether anyone may self-register
+	// (AUTH_ALLOW_REGISTRATION, default false). When false the UI hides
+	// sign-up; an invited person can still register with their invitation.
+	RegistrationEnabled bool `json:"registration_enabled"`
 }
 
 // GetProviders returns which login providers are configured on this server.
@@ -91,8 +104,9 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Reque
 			Google:    h.oauthRoutesLive && h.oauthConfig.Google.IsConfigured(),
 			GitHub:    h.oauthRoutesLive && h.oauthConfig.GitHub.IsConfigured(),
 		},
-		SSOEnvEntraEnabled: h.entraSSO.IsConfigured(),
-		TenantCreationMode: h.tenantCreationMode,
+		SSOEnvEntraEnabled:  h.entraSSO.IsConfigured(),
+		TenantCreationMode:  h.tenantCreationMode,
+		RegistrationEnabled: h.registrationEnabled,
 	}
 	if resp.TenantCreationMode == "" {
 		resp.TenantCreationMode = config.TenantCreationSelfService

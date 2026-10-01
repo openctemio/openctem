@@ -1163,7 +1163,7 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case errors.Is(err, app.ErrEmailNotVerified):
 		apierror.Forbidden("Email is not verified").WriteJSON(w)
 	case errors.Is(err, app.ErrRegistrationDisabled):
-		apierror.Forbidden("Registration is disabled").WriteJSON(w)
+		apierror.Forbidden("Registration is not available").WriteJSON(w)
 	case errors.Is(err, app.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):

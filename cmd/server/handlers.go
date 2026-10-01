@@ -133,6 +133,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetAdminOnlyTenantCreation(cfg.Auth.TenantCreationMode == config.TenantCreationAdminOnly)
+	if svc.UserProvisioning != nil {
+		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
+	}
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
 	tenantHandler.SetModuleService(svc.Module)
@@ -362,7 +365,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Admin Auth (API Key authentication for Admin UI)
 		AdminAuth:           handler.NewAdminAuthHandler(log),
-		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log),
+		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
 		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
 

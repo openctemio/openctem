@@ -67,7 +67,8 @@ services:
       AUTH_MAX_LOGIN_ATTEMPTS: "5"
       AUTH_LOCKOUT_DURATION: 15m
       AUTH_MAX_ACTIVE_SESSIONS: "10"
-      AUTH_ALLOW_REGISTRATION: "true"
+      # Self-registration is off by default; set true for an open dev instance.
+      AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}
       AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
       # Keycloak (optional - for hybrid mode)
       # KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-http://localhost:8180}

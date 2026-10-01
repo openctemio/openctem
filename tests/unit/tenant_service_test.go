@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -458,6 +459,11 @@ func seedMembershipInRepo(repo *mockTenantRepo, userID, tenantID shared.ID, role
 
 // seedPendingInvitation creates a pending invitation and stores it in the mock repo.
 func seedPendingInvitation(repo *mockTenantRepo, tenantID shared.ID, email string, role tenant.Role, inviterID shared.ID) *tenant.Invitation {
+	// The invitation's organization exists (accept checks its AllowedDomains).
+	if _, ok := repo.tenants[tenantID.String()]; !ok {
+		now := time.Now().UTC()
+		repo.tenants[tenantID.String()] = tenant.Reconstitute(tenantID, "Team", "team-"+tenantID.String()[:8], "", "", nil, shared.NewID().String(), now, now)
+	}
 	inv := tenant.ReconstituteInvitation(
 		shared.NewID(), tenantID, email, role, []string{"00000000-0000-0000-0000-000000000003"},
 		"test-token-"+email, inviterID,
@@ -1536,19 +1542,19 @@ func TestTenantSvc_CreateInvitation_InvalidTenantID(t *testing.T) {
 	}
 }
 
+// The owner role is never grantable through an invitation.
 func TestTenantSvc_CreateInvitation_InvalidRole(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
 	input := app.CreateInvitationInput{
 		Email:   "user@test.com",
-		Role:    "superadmin",
-		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000001"},
 	}
 
 	_, err := svc.CreateInvitation(context.Background(), existing.ID().String(), input, shared.NewID(), app.AuditContext{})
 	if err == nil {
-		t.Fatal("expected error for invalid role")
+		t.Fatal("expected error for the owner role")
 	}
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected ErrValidation, got %v", err)
@@ -2836,5 +2842,155 @@ func TestTenantSvc_SuspendMember_RevokesSessions(t *testing.T) {
 	}
 	if rtRepo.revokeByUserCalls != 1 {
 		t.Errorf("expected refresh tokens revoked on suspend, RevokeByUserID calls = %d, want 1", rtRepo.revokeByUserCalls)
+	}
+}
+
+// =============================================================================
+// Invitation membership role + AllowedDomains
+// =============================================================================
+
+const (
+	testViewerRoleID = "00000000-0000-0000-0000-000000000004"
+	testMemberRoleID = "00000000-0000-0000-0000-000000000003"
+)
+
+func restrictDomains(t *testing.T, tn *tenant.Tenant, domains ...string) {
+	t.Helper()
+	sec := tn.TypedSettings().Security
+	sec.AllowedDomains = domains
+	if err := tn.UpdateSecuritySettings(sec); err != nil {
+		t.Fatalf("security: %v", err)
+	}
+}
+
+// The reported bug: an invitation with only the RBAC viewer role created a
+// 'member' membership (the trigger then granted the member role too).
+func TestTenantSvc_CreateInvitation_ViewerRoleIsViewerMembership(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+
+	inv, err := svc.CreateInvitation(context.Background(), existing.ID().String(), app.CreateInvitationInput{
+		Email: "viewer@example.com", Role: "member", RoleIDs: []string{testViewerRoleID},
+	}, shared.NewID(), app.AuditContext{})
+	if err != nil {
+		t.Fatalf("CreateInvitation: %v", err)
+	}
+	if inv.Role() != tenant.RoleViewer {
+		t.Fatalf("a viewer-only invitation must carry the viewer membership role, got %s", inv.Role())
+	}
+}
+
+func TestTenantSvc_CreateInvitation_AllowedDomainsEnforced(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	restrictDomains(t, existing, "corp.com")
+
+	_, err := svc.CreateInvitation(context.Background(), existing.ID().String(), app.CreateInvitationInput{
+		Email: "x@evil.com", RoleIDs: []string{testViewerRoleID},
+	}, shared.NewID(), app.AuditContext{})
+	if !errors.Is(err, app.ErrEmailDomainNotAllowed) {
+		t.Fatalf("expected ErrEmailDomainNotAllowed, got %v", err)
+	}
+	if _, err := svc.CreateInvitation(context.Background(), existing.ID().String(), app.CreateInvitationInput{
+		Email: "x@corp.com", RoleIDs: []string{testViewerRoleID},
+	}, shared.NewID(), app.AuditContext{}); err != nil {
+		t.Fatalf("an allowed domain must be invitable: %v", err)
+	}
+}
+
+// Invitations stored before the fix carry role 'member' with a viewer role id:
+// accepting one must still create a viewer membership.
+func TestTenantSvc_AcceptInvitation_LegacyViewerInvitationBecomesViewer(t *testing.T) {
+	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	inv := seedPendingInvitation(repo, tenantID, "legacy@test.com", tenant.RoleMember, shared.NewID())
+	stored := tenant.ReconstituteInvitation(inv.ID(), inv.TenantID(), inv.Email(), tenant.RoleMember,
+		[]string{testViewerRoleID}, inv.Token(), inv.InvitedBy(), inv.ExpiresAt(), nil, inv.CreatedAt())
+	repo.invitations[inv.ID().String()] = stored
+
+	m, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "legacy@test.com", app.AuditContext{})
+	if err != nil {
+		t.Fatalf("AcceptInvitation: %v", err)
+	}
+	if m.Role() != tenant.RoleViewer {
+		t.Fatalf("expected a viewer membership, got %s", m.Role())
+	}
+}
+
+func TestTenantSvc_AcceptInvitation_MemberRoleStaysMember(t *testing.T) {
+	svc, repo := newTestTenantService()
+	inv := seedPendingInvitation(repo, shared.NewID(), "member@test.com", tenant.RoleMember, shared.NewID())
+
+	m, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "member@test.com", app.AuditContext{})
+	if err != nil {
+		t.Fatalf("AcceptInvitation: %v", err)
+	}
+	if m.Role() != tenant.RoleMember {
+		t.Fatalf("a member-role invitation stays member, got %s", m.Role())
+	}
+}
+
+// AllowedDomains tightened after the invitation was sent: accept is refused.
+func TestTenantSvc_AcceptInvitation_AllowedDomainsEnforced(t *testing.T) {
+	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	inv := seedPendingInvitation(repo, tenantID, "late@other.com", tenant.RoleMember, shared.NewID())
+	restrictDomains(t, repo.tenants[tenantID.String()], "corp.com")
+
+	_, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "late@other.com", app.AuditContext{})
+	if !errors.Is(err, app.ErrEmailDomainNotAllowed) {
+		t.Fatalf("expected ErrEmailDomainNotAllowed, got %v", err)
+	}
+	if repo.acceptInvTxCalls != 0 {
+		t.Fatal("no membership may be created")
+	}
+}
+
+// =============================================================================
+// IP allowlist lockout guard
+// =============================================================================
+
+func TestTenantSvc_UpdateSecuritySettings_IPAllowlistLockoutGuard(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+
+	_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), app.UpdateSecuritySettingsInput{
+		IPWhitelist: []string{"10.0.0.0/8"},
+		RequesterIP: "203.0.113.9",
+	}, app.AuditContext{})
+	if !errors.Is(err, app.ErrIPAllowlistExcludesRequester) || !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("a list excluding the caller's IP must be refused, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "203.0.113.9") {
+		t.Errorf("the error should name the caller's IP, got %q", err.Error())
+	}
+	if got := repo.tenants[existing.ID().String()].TypedSettings().Security.IPWhitelist; len(got) != 0 {
+		t.Fatalf("nothing may be saved, got %v", got)
+	}
+
+	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), app.UpdateSecuritySettingsInput{
+		IPWhitelist: []string{"10.0.0.0/8", "203.0.113.0/24"},
+		RequesterIP: "203.0.113.9",
+	}, app.AuditContext{}); err != nil {
+		t.Fatalf("a list including the caller's IP must save: %v", err)
+	}
+
+	// Clearing the list is always allowed.
+	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), app.UpdateSecuritySettingsInput{
+		IPWhitelist: []string{},
+		RequesterIP: "198.51.100.1",
+	}, app.AuditContext{}); err != nil {
+		t.Fatalf("clearing the list must be allowed: %v", err)
+	}
+}
+
+// The platform administrator (no requester IP) is not subject to the guard.
+func TestTenantSvc_UpdateSecuritySettings_NoRequesterIPSkipsGuard(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), app.UpdateSecuritySettingsInput{
+		IPWhitelist: []string{"10.0.0.0/8"},
+	}, app.AuditContext{}); err != nil {
+		t.Fatalf("no requester IP must skip the guard: %v", err)
 	}
 }

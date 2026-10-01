@@ -2199,16 +2199,16 @@ func TestSSOService_ValidateDefaultRole_EmptyIsValid(t *testing.T) {
 		DisplayName:  "SSO Provider",
 		ClientID:     "client-123",
 		ClientSecret: "super-secret",
-		DefaultRole:  "", // Empty should use entity default ("member")
+		DefaultRole:  "", // Empty should use entity default ("viewer", least privilege)
 	}
 
 	ip, err := svc.CreateProvider(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error for empty default role, got %v", err)
 	}
-	// Entity default should be "member"
-	if ip.DefaultRole() != "member" {
-		t.Fatalf("expected default role 'member', got %q", ip.DefaultRole())
+	// Entity default is the least-privileged role
+	if ip.DefaultRole() != "viewer" {
+		t.Fatalf("expected default role 'viewer', got %q", ip.DefaultRole())
 	}
 }
 
@@ -2419,13 +2419,16 @@ func makeDomainsList(n int) []string {
 // Tests: CompleteFederatedLogin (shared SAML/federated session tail)
 // =============================================================================
 
+// A brand-new email is admitted by SAML only through JIT on a verified domain
+// ; it then gets the configured default role.
 func TestSSOService_CompleteFederatedLogin_NewUser(t *testing.T) {
 	userRepo := newSSOmockUserRepo()
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), userRepo,
 		newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	svc.SetDomainVerifier(ssoUnitVerifier{"example.com": true})
 	tn := createTestTenant("acme")
 
-	res, err := svc.CompleteFederatedLogin(context.Background(), tn, "new@example.com", "New User", "member", false)
+	res, err := svc.CompleteFederatedLogin(context.Background(), tn, "new@example.com", "New User", "member", true)
 	if err != nil {
 		t.Fatalf("CompleteFederatedLogin: %v", err)
 	}
@@ -2475,5 +2478,38 @@ func TestSSOService_CompleteFederatedLogin_ReusesPasswordlessUser(t *testing.T) 
 	}
 	if res.User.ID() != invited.ID() {
 		t.Error("should reuse the existing passwordless user, not create a new one")
+	}
+}
+
+// ssoUnitVerifier is a static verified-domain checker (domain -> verified).
+type ssoUnitVerifier map[string]bool
+
+func (v ssoUnitVerifier) IsVerifiedDomain(_ context.Context, _, domain string) (bool, error) {
+	return v[domain], nil
+}
+
+// Without auto-provisioning, or on an unverified domain, SAML refuses a
+// brand-new email and creates no account.
+func TestSSOService_CompleteFederatedLogin_NewUser_NotAdmitted(t *testing.T) {
+	for name, tc := range map[string]struct {
+		autoProvision bool
+		verified      ssoUnitVerifier
+	}{
+		"auto-provision off": {false, ssoUnitVerifier{"example.com": true}},
+		"unverified domain":  {true, ssoUnitVerifier{"other.com": true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			userRepo := newSSOmockUserRepo()
+			svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), userRepo,
+				newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+			svc.SetDomainVerifier(tc.verified)
+			_, err := svc.CompleteFederatedLogin(context.Background(), createTestTenant("acme"), "new@example.com", "New", "member", tc.autoProvision)
+			if !errors.Is(err, app.ErrSSONotAMember) {
+				t.Fatalf("expected ErrSSONotAMember, got %v", err)
+			}
+			if _, gerr := userRepo.GetByEmail(context.Background(), "new@example.com"); gerr == nil {
+				t.Fatal("no account may be created for a refused login")
+			}
+		})
 	}
 }

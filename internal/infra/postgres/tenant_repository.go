@@ -590,7 +590,8 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 	query := `
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at
+			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at,
+			(u.auth_provider = 'local' AND u.password_hash IS NULL AND u.last_login_at IS NULL) AS pending_setup
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -614,11 +615,12 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 			avatarURL                 sql.NullString
 			status                    string
 			lastLoginAt               sql.NullTime
+			pendingSetup              bool
 		)
 
 		if err := rows.Scan(
 			&idStr, &userIDStr, &roleStr, &invitedByStr, &joinedAt,
-			&email, &name, &avatarURL, &status, &lastLoginAt,
+			&email, &name, &avatarURL, &status, &lastLoginAt, &pendingSetup,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan member with user: %w", err)
 		}
@@ -641,16 +643,17 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 		}
 
 		members = append(members, &tenant.MemberWithUser{
-			ID:          id,
-			UserID:      userID,
-			Role:        role,
-			InvitedBy:   invitedBy,
-			JoinedAt:    joinedAt,
-			Email:       email,
-			Name:        name,
-			AvatarURL:   avatarURL.String,
-			Status:      status,
-			LastLoginAt: lastLogin,
+			ID:           id,
+			UserID:       userID,
+			Role:         role,
+			InvitedBy:    invitedBy,
+			JoinedAt:     joinedAt,
+			Email:        email,
+			Name:         name,
+			AvatarURL:    avatarURL.String,
+			Status:       status,
+			LastLoginAt:  lastLogin,
+			PendingSetup: pendingSetup,
 		})
 	}
 
@@ -686,6 +689,7 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 				WHEN EXISTS (SELECT 1 FROM user_mfa f WHERE f.user_id = m.user_id AND f.enabled) THEN 'enabled'
 				ELSE 'disabled'
 			END as mfa_status,
+			(u.auth_provider = 'local' AND u.password_hash IS NULL AND u.last_login_at IS NULL) AS pending_setup,
 			COUNT(*) OVER() as total_count
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
@@ -732,13 +736,14 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			status                    string
 			lastLoginAt               sql.NullTime
 			mfaStatus                 string
+			pendingSetup              bool
 			totalCount                int
 		)
 
 		if err := rows.Scan(
 			&idStr, &userIDStr, &roleStr, &invitedByStr, &joinedAt,
 			&email, &name, &avatarURL, &status, &lastLoginAt,
-			&mfaStatus, &totalCount,
+			&mfaStatus, &pendingSetup, &totalCount,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan member: %w", err)
 		}
@@ -766,17 +771,18 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 		}
 
 		members = append(members, &tenant.MemberWithUser{
-			ID:          id,
-			UserID:      userID,
-			Role:        role,
-			InvitedBy:   invitedBy,
-			JoinedAt:    joinedAt,
-			Email:       email,
-			Name:        name,
-			AvatarURL:   avatarURL.String,
-			Status:      status,
-			LastLoginAt: lastLogin,
-			MFAStatus:   mfaStatus,
+			ID:           id,
+			UserID:       userID,
+			Role:         role,
+			InvitedBy:    invitedBy,
+			JoinedAt:     joinedAt,
+			Email:        email,
+			Name:         name,
+			AvatarURL:    avatarURL.String,
+			Status:       status,
+			LastLoginAt:  lastLogin,
+			MFAStatus:    mfaStatus,
+			PendingSetup: pendingSetup,
 		})
 	}
 
@@ -797,7 +803,8 @@ func (r *TenantRepository) GetMemberByEmail(ctx context.Context, tenantID shared
 	query := `
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at
+			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at,
+			(u.auth_provider = 'local' AND u.password_hash IS NULL AND u.last_login_at IS NULL) AS pending_setup
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -812,11 +819,12 @@ func (r *TenantRepository) GetMemberByEmail(ctx context.Context, tenantID shared
 		avatarURL                 sql.NullString
 		status                    string
 		lastLoginAt               sql.NullTime
+		pendingSetup              bool
 	)
 
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), email).Scan(
 		&idStr, &userIDStr, &roleStr, &invitedByStr, &joinedAt,
-		&memberEmail, &name, &avatarURL, &status, &lastLoginAt,
+		&memberEmail, &name, &avatarURL, &status, &lastLoginAt, &pendingSetup,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -843,16 +851,17 @@ func (r *TenantRepository) GetMemberByEmail(ctx context.Context, tenantID shared
 	}
 
 	return &tenant.MemberWithUser{
-		ID:          id,
-		UserID:      userID,
-		Role:        role,
-		InvitedBy:   invitedBy,
-		JoinedAt:    joinedAt,
-		Email:       memberEmail,
-		Name:        name,
-		AvatarURL:   avatarURL.String,
-		Status:      status,
-		LastLoginAt: lastLogin,
+		ID:           id,
+		UserID:       userID,
+		Role:         role,
+		InvitedBy:    invitedBy,
+		JoinedAt:     joinedAt,
+		Email:        memberEmail,
+		Name:         name,
+		AvatarURL:    avatarURL.String,
+		Status:       status,
+		LastLoginAt:  lastLogin,
+		PendingSetup: pendingSetup,
 	}, nil
 }
 

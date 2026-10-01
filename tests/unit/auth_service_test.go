@@ -2821,3 +2821,120 @@ func (m *mockAuthAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ i
 func (m *mockAuthAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
 	return nil
 }
+
+// =============================================================================
+// Register with self-registration OFF: only a matching invitation
+// =============================================================================
+
+func registrationOffWithInvitation(t *testing.T, invitedEmail string, allowedDomains ...string) (*app.AuthService, *authTestDeps, *tenant.Invitation) {
+	t.Helper()
+	cfg := defaultAuthTestConfig()
+	cfg.AllowRegistration = false
+	cfg.RequireEmailVerification = true
+	svc, deps := newTestAuthServiceWithConfig(cfg)
+
+	tn := mustNewTenantWithVerificationMode(t, "Inviter", tenant.EmailVerificationAlways)
+	if len(allowedDomains) > 0 {
+		sec := tn.TypedSettings().Security
+		sec.AllowedDomains = allowedDomains
+		if err := tn.UpdateSecuritySettings(sec); err != nil {
+			t.Fatalf("security: %v", err)
+		}
+	}
+	deps.tenantRepo.tenants[tn.ID().String()] = tn
+	inv, err := tenant.NewInvitation(tn.ID(), invitedEmail, tenant.RoleViewer, shared.NewID(),
+		[]string{"00000000-0000-0000-0000-000000000004"})
+	if err != nil {
+		t.Fatalf("invitation: %v", err)
+	}
+	deps.tenantRepo.invitations = []*tenant.Invitation{inv}
+	return svc, deps, inv
+}
+
+func TestAuthService_Register_RegistrationOff_InvitedEmailMayRegister(t *testing.T) {
+	svc, deps, inv := registrationOffWithInvitation(t, "invitee@corp.com")
+
+	result, err := svc.Register(context.Background(), app.RegisterInput{
+		Email: "Invitee@Corp.com", Password: "Password123!", Name: "Invitee", InvitationToken: inv.Token(),
+	})
+	if err != nil {
+		t.Fatalf("an invited email must be able to register with registration off: %v", err)
+	}
+	if result.User == nil || deps.userRepo.createCalls != 1 {
+		t.Fatal("expected the account to be created")
+	}
+	// The invitation was delivered to this address, so it is already proven.
+	if result.RequiresVerification || !result.User.EmailVerified() {
+		t.Fatal("an invited registration is email-verified")
+	}
+}
+
+func TestAuthService_Register_RegistrationOff_Refusals(t *testing.T) {
+	cases := map[string]func(inv *tenant.Invitation) app.RegisterInput{
+		"no token": func(*tenant.Invitation) app.RegisterInput {
+			return app.RegisterInput{Email: "invitee@corp.com", Password: "Password123!", Name: "X"}
+		},
+		"unknown token": func(*tenant.Invitation) app.RegisterInput {
+			return app.RegisterInput{Email: "invitee@corp.com", Password: "Password123!", Name: "X", InvitationToken: "nope"}
+		},
+		"token for another email": func(inv *tenant.Invitation) app.RegisterInput {
+			return app.RegisterInput{Email: "attacker@corp.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token()}
+		},
+	}
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc, deps, inv := registrationOffWithInvitation(t, "invitee@corp.com")
+			if name == "unknown token" {
+				deps.tenantRepo.invitations = nil
+			}
+			_, err := svc.Register(context.Background(), build(inv))
+			if !errors.Is(err, app.ErrRegistrationDisabled) {
+				t.Fatalf("expected the generic ErrRegistrationDisabled, got %v", err)
+			}
+			if deps.userRepo.createCalls != 0 {
+				t.Fatal("no account may be created")
+			}
+		})
+	}
+}
+
+func TestAuthService_Register_RegistrationOff_ExpiredInvitationRefused(t *testing.T) {
+	svc, deps, inv := registrationOffWithInvitation(t, "invitee@corp.com")
+	expired := tenant.ReconstituteInvitation(inv.ID(), inv.TenantID(), inv.Email(), inv.Role(), inv.RoleIDs(),
+		inv.Token(), inv.InvitedBy(), time.Now().Add(-time.Hour), nil, time.Now().Add(-8*24*time.Hour))
+	deps.tenantRepo.invitations = []*tenant.Invitation{expired}
+
+	_, err := svc.Register(context.Background(), app.RegisterInput{
+		Email: "invitee@corp.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
+	})
+	if !errors.Is(err, app.ErrRegistrationDisabled) {
+		t.Fatalf("an expired invitation must not open registration, got %v", err)
+	}
+}
+
+func TestAuthService_Register_RegistrationOff_AllowedDomainsEnforced(t *testing.T) {
+	svc, deps, inv := registrationOffWithInvitation(t, "invitee@other.com", "corp.com")
+
+	_, err := svc.Register(context.Background(), app.RegisterInput{
+		Email: "invitee@other.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
+	})
+	if !errors.Is(err, app.ErrRegistrationDisabled) {
+		t.Fatalf("an invitation outside the organization's allowed domains must not open registration, got %v", err)
+	}
+	if deps.userRepo.createCalls != 0 {
+		t.Fatal("no account may be created")
+	}
+}
+
+// The postgres repository reports an unknown/used/expired token as
+// user.ErrInvalidPasswordResetToken (not ErrNotFound). It must map to the 400
+// ErrInvalidResetToken, not an internal error: a used or expired set-password
+// link (RFC-025) lands here.
+func TestAuthService_ResetPassword_RepoInvalidTokenErrorIsInvalidResetToken(t *testing.T) {
+	svc, deps := newTestAuthService()
+	deps.userRepo.getByPasswordResetTokenErr = user.ErrInvalidPasswordResetToken
+	err := svc.ResetPassword(context.Background(), app.ResetPasswordInput{Token: "used", NewPassword: "Password123!"})
+	if !errors.Is(err, app.ErrInvalidResetToken) {
+		t.Fatalf("expected ErrInvalidResetToken, got %v", err)
+	}
+}

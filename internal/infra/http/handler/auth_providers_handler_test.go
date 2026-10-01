@@ -188,3 +188,24 @@ func TestAuthProvidersHandler_NoSecretLeak(t *testing.T) {
 		}
 	}
 }
+
+// registration_enabled mirrors AUTH_ALLOW_REGISTRATION so the UI can hide
+// sign-up. It defaults to false.
+func TestAuthProvidersHandler_RegistrationEnabled(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		h := NewAuthProvidersHandler(config.OAuthConfig{}, config.EntraSSOConfig{}, true, logger.NewNop())
+		if enabled {
+			h = h.WithRegistrationEnabled(true)
+		}
+		rr := httptest.NewRecorder()
+		h.GetProviders(rr, httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", nil))
+		var body map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		got, ok := body["registration_enabled"].(bool)
+		if !ok || got != enabled {
+			t.Fatalf("registration_enabled = %v (present=%v), want %v", body["registration_enabled"], ok, enabled)
+		}
+	}
+}

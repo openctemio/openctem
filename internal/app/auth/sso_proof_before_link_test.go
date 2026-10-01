@@ -43,7 +43,7 @@ func TestProofBeforeLink_Case4_ReturningUser_Allowed(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "user@corp.com", Issuer: entraIss, Subject: "entra-sub", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if err != nil {
 		t.Fatalf("returning user (same iss+sub) must log in, got %v", err)
 	}
@@ -65,7 +65,7 @@ func TestProofBeforeLink_Case3_DifferentProvider_Rejected(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "user@corp.com", Issuer: "https://login.microsoftonline.com/x/v2.0", Subject: "s", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if err == nil {
 		t.Fatal("a different federated provider must be rejected (cross-IdP)")
 	}
@@ -83,7 +83,7 @@ func TestProofBeforeLink_Case3_SameProviderDifferentIssuer_Rejected(t *testing.T
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "victim@corp.com", Issuer: evilOkta, Subject: "evil", EmailVerified: true},
-		identityproviderdom.ProviderOkta)
+		jitRP(identityproviderdom.ProviderOkta))
 	if err == nil {
 		t.Fatal("a different verified issuer must be rejected even when the domain is verified")
 	}
@@ -109,7 +109,7 @@ func TestProofBeforeLink_Case1_PasswordAccount_RefusedNotLinked(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "owner@corp.com", Issuer: "https://login.microsoftonline.com/d/v2.0", Subject: "s", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if !errors.Is(err, ErrAccountLinkRequiresVerification) {
 		t.Fatalf("password account must be refused with ErrAccountLinkRequiresVerification, got %v", err)
 	}
@@ -140,7 +140,7 @@ func TestProofBeforeLink_Case2_VerifiedEmailAndDomain_ClaimedAndBound(t *testing
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "invited@corp.com", Issuer: iss, Subject: "sub-1", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if err != nil {
 		t.Fatalf("verified email + verified domain must claim the seat, got %v", err)
 	}
@@ -162,7 +162,7 @@ func TestProofBeforeLink_Case2_UnverifiedDomain_Refused(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "invited@corp.com", Issuer: "iss", Subject: "sub", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if !errors.Is(err, ErrAccountLinkRequiresVerification) {
 		t.Fatalf("unverified domain must refuse the claim, got %v", err)
 	}
@@ -181,7 +181,7 @@ func TestProofBeforeLink_Case2_UnverifiedEmail_Refused(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "invited@corp.com", Issuer: "iss", Subject: "sub", EmailVerified: false},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if !errors.Is(err, ErrAccountLinkRequiresVerification) {
 		t.Fatalf("unverified email must refuse the claim even with a verified domain, got %v", err)
 	}
@@ -197,7 +197,7 @@ func TestProofBeforeLink_Case2_NoVerifier_Refused(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "invited@corp.com", Issuer: "iss", Subject: "sub", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if !errors.Is(err, ErrAccountLinkRequiresVerification) {
 		t.Fatalf("no domain verifier must fail closed, got %v", err)
 	}
@@ -219,7 +219,7 @@ func TestProofBeforeLink_Case2_VerifierError_Refused(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "invited@corp.com", Issuer: "iss", Subject: "sub", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if !errors.Is(err, ErrAccountLinkRequiresVerification) {
 		t.Fatalf("verifier error must fail closed, got %v", err)
 	}
@@ -236,7 +236,7 @@ func TestProofBeforeLink_Case2_NilTenant_Refused(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), nil,
 		&SSOUserInfo{Email: "invited@corp.com", Issuer: "iss", Subject: "sub", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if !errors.Is(err, ErrAccountLinkRequiresVerification) {
 		t.Fatalf("nil tenant must fail closed, got %v", err)
 	}
@@ -250,11 +250,11 @@ func TestProofBeforeLink_Case2_NilTenant_Refused(t *testing.T) {
 // -----------------------------------------------------------------------------
 func TestProofBeforeLink_NewUser_CreatedNormally(t *testing.T) {
 	const iss = "https://login.microsoftonline.com/dir-1/v2.0"
-	svc, repo := proofSvc(nil, nil) // no existing user; verifier irrelevant to create path
+	svc, repo := proofSvc(nil, map[string]bool{"corp.com": true}) // no existing user; verified org domain
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "brand-new@corp.com", Name: "New", Issuer: iss, Subject: "sub", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if err != nil {
 		t.Fatalf("a brand-new user must be created (JIT), got %v", err)
 	}
@@ -266,19 +266,21 @@ func TestProofBeforeLink_NewUser_CreatedNormally(t *testing.T) {
 	}
 }
 
-// Registration disabled + no account ⇒ refused (no self-provisioning). Confirms
-// the proof-before-link change did not weaken the FIX 4 registration gate.
-func TestProofBeforeLink_NewUser_RegistrationDisabled_Refused(t *testing.T) {
+// No account and the email domain is NOT a verified domain of the organization
+// ⇒ refused before anything is created (the organization's SSO admits
+// people only through JIT on a verified domain).
+func TestProofBeforeLink_NewUser_UnverifiedDomain_Refused(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil}
-	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false}}
+	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: true},
+		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"other.com": true}}}
 
 	_, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "nobody@corp.com", Issuer: "iss", Subject: "sub", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
-	if !errors.Is(err, ErrSSORegistrationDisabled) {
-		t.Fatalf("registration disabled + no account must refuse, got %v", err)
+		jitRP(identityproviderdom.ProviderEntraID))
+	if !errors.Is(err, ErrSSONotAMember) {
+		t.Fatalf("no account + unverified domain must refuse, got %v", err)
 	}
 	if repo.created != nil {
-		t.Fatal("must not create a user when registration is disabled")
+		t.Fatal("a refused login must not create an account")
 	}
 }

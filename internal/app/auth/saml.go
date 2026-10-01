@@ -85,7 +85,9 @@ func (s *SAMLService) UpsertConfig(ctx context.Context, tenantID shared.ID, in S
 	switch role {
 	case string(tenantdom.RoleAdmin), string(tenantdom.RoleMember), string(tenantdom.RoleViewer):
 	case "":
-		role = string(tenantdom.RoleMember)
+		// Least privilege for just-in-time members; the platform administrator
+		// raises it per organization when wanted.
+		role = string(tenantdom.RoleViewer)
 	default:
 		return nil, samlValidationErr("default_role must be admin, member, or viewer")
 	}
@@ -182,6 +184,14 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 	sp, tenantAndCfg, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
 	if err != nil {
 		return nil, err
+	}
+	// crewjam reads the SAMLResponse from r.PostForm, which is only populated
+	// by ParseForm. Without this every IdP POST looked empty ("invalid xml: no
+	// root") and SAML sign-in could never succeed.
+	if r.PostForm == nil {
+		if ferr := r.ParseForm(); ferr != nil {
+			return nil, ErrSAMLResponseInvalid
+		}
 	}
 	assertion, perr := sp.ParseResponse(r, possibleRequestIDs)
 	if perr != nil {

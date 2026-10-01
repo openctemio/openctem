@@ -144,16 +144,21 @@ func memberTestFixtures(t *testing.T) (*SSOService, *userdom.User, *tenantdom.Te
 		t.Fatalf("new tenant: %v", err)
 	}
 	mr := &p0MemberRepo{}
-	svc := &SSOService{logger: logger.NewNop(), tenantMemberRepo: mr}
+	// corp.com is a DNS-verified domain of the organization: the P0 cases below
+	// exercise the provider-level gates layered on top of it.
+	svc := &SSOService{logger: logger.NewNop(), tenantMemberRepo: mr,
+		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}}
 	return svc, u, tenant, mr
 }
 
-// Empty AllowedDomains ⇒ a non-member is refused, never silently granted.
-func TestFix2_JIT_EmptyDomains_Refused(t *testing.T) {
+// No verified-domain checker wired ⇒ a non-member is refused, never silently
+// granted (the provider allow-list alone is admin-asserted, not DNS-proven).
+func TestFix2_JIT_NoVerifier_Refused(t *testing.T) {
 	svc, u, tenant, mr := memberTestFixtures(t)
-	rp := &resolvedProvider{autoProvision: true, allowedDomains: nil, defaultRole: "member"}
+	svc.domainVerifier = nil
+	rp := &resolvedProvider{autoProvision: true, allowedDomains: []string{"corp.com"}, defaultRole: "member"}
 	if err := svc.ensureTenantMembership(context.Background(), u, tenant, rp, "jit@corp.com"); !errors.Is(err, ErrSSONotAMember) {
-		t.Fatalf("empty AllowedDomains must refuse JIT, got %v", err)
+		t.Fatalf("no verifier must refuse JIT, got %v", err)
 	}
 	if mr.created != nil {
 		t.Fatal("refused JIT must NOT create a membership")
@@ -262,19 +267,36 @@ func TestFix3_EntraUnverifiedEmail_NeverProducesUserInfo(t *testing.T) {
 // FIX 4 — federated login respects AUTH_ALLOW_REGISTRATION
 // =============================================================================
 
-// SSO: registration disabled ⇒ a brand-new user is refused (no create).
-func TestFix4_SSO_RegistrationDisabled_BlocksNewUser(t *testing.T) {
+// SSO admits people for its organization regardless of public self-registration
+// (superseding FIX 4 for per-organization SSO): with registration OFF a
+// brand-new user on a verified domain is created by JIT ...
+func TestSSO_RegistrationDisabled_JITStillAdmitsVerifiedDomain(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil} // no existing user
-	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false}}
+	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false},
+		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}}
+
+	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: "new@corp.com", Name: "New", Issuer: "iss", Subject: "sub"},
+		jitRP(identityproviderdom.ProviderEntraID))
+	if err != nil || got == nil || repo.created == nil {
+		t.Fatalf("verified-domain JIT must admit with registration off, got user=%v err=%v", got, err)
+	}
+}
+
+// ... and without auto-provisioning the same login is refused with nothing created.
+func TestSSO_RegistrationDisabled_NoAutoProvision_Refused(t *testing.T) {
+	repo := &ssoFakeUserRepo{byEmail: nil}
+	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false},
+		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}}
 
 	_, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "new@corp.com", Name: "New", Issuer: "iss", Subject: "sub"},
-		identityproviderdom.ProviderEntraID)
-	if !errors.Is(err, ErrSSORegistrationDisabled) {
-		t.Fatalf("registration disabled must block new SSO user, got %v", err)
+		&resolvedProvider{provider: identityproviderdom.ProviderEntraID, autoProvision: false})
+	if !errors.Is(err, ErrSSONotAMember) {
+		t.Fatalf("auto-provision off must refuse a new account, got %v", err)
 	}
 	if repo.created != nil {
-		t.Fatal("registration disabled must NOT create a user")
+		t.Fatal("a refused login must NOT create a user")
 	}
 }
 
@@ -300,7 +322,7 @@ func TestFix4_SSO_RegistrationDisabled_BindsExisting(t *testing.T) {
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "invited@corp.com", Issuer: "iss", Subject: "sub", EmailVerified: true},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if err != nil {
 		t.Fatalf("binding a pre-invited account must work even with registration disabled, got %v", err)
 	}

@@ -130,17 +130,17 @@ func TestP1_JIT_NilVerifier_FallsBackToP0_EmptyRefused(t *testing.T) {
 	}
 }
 
-// Nil verifier falls back to P0: a matching AllowedDomains still provisions,
-// so pre-wiring behavior is unchanged.
-func TestP1_JIT_NilVerifier_FallsBackToP0_MatchProvisioned(t *testing.T) {
+// Nil verifier no longer falls back to the provider allow-list (SSO admits only
+// verified domains). A matching AllowedDomains alone is refused.
+func TestP1_JIT_NilVerifier_MatchingAllowListRefused(t *testing.T) {
 	svc, u, tenant, mr := memberTestFixtures(t)
 	svc.domainVerifier = nil
 	rp := &resolvedProvider{autoProvision: true, allowedDomains: []string{"corp.com"}, defaultRole: "member"}
 
-	if err := svc.ensureTenantMembership(context.Background(), u, tenant, rp, "jit@corp.com"); err != nil {
-		t.Fatalf("nil verifier + matching AllowedDomains must provision (P0), got %v", err)
+	if err := svc.ensureTenantMembership(context.Background(), u, tenant, rp, "jit@corp.com"); !errors.Is(err, ErrSSONotAMember) {
+		t.Fatalf("nil verifier must refuse JIT even with a matching allow-list, got %v", err)
 	}
-	if mr.created == nil {
-		t.Fatal("P0 fallback with matching AllowedDomains must create a membership")
+	if mr.created != nil {
+		t.Fatal("no membership may be created without a verified domain")
 	}
 }

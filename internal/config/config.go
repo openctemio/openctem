@@ -322,7 +322,11 @@ type AuthConfig struct {
 	MaxActiveSessions int           // Max concurrent sessions per user (default: 10)
 
 	// Registration settings
-	AllowRegistration        bool // Allow new user registration (default: true)
+	// AllowRegistration lets anyone create an account on /auth/register
+	// (AUTH_ALLOW_REGISTRATION, default false). Off by default: accounts come
+	// from an administrator, an invitation, or the organization SSO.
+	// An invited person can still register with their invitation token.
+	AllowRegistration        bool
 	RequireEmailVerification bool // Require email verification (default: true)
 
 	// Email verification/reset token settings
@@ -364,7 +368,7 @@ type EntraSSOConfig struct {
 	ClientSecret   string   // SSO_ENTRA_CLIENT_SECRET (plaintext — env is the trust boundary)
 	TenantID       string   // SSO_ENTRA_TENANT_ID (Entra directory id; default "common")
 	AllowedDomains []string // SSO_ENTRA_ALLOWED_DOMAINS (csv; empty = any)
-	DefaultRole    string   // SSO_ENTRA_DEFAULT_ROLE (default "member")
+	DefaultRole    string   // SSO_ENTRA_DEFAULT_ROLE (default "viewer", least privilege)
 	AutoProvision  bool     // SSO_ENTRA_AUTO_PROVISION (default true)
 	DisplayName    string   // SSO_ENTRA_DISPLAY_NAME (default "Microsoft Entra ID")
 
@@ -782,7 +786,7 @@ func Load() (*Config, error) {
 			MaxLoginAttempts:          getEnvInt("AUTH_MAX_LOGIN_ATTEMPTS", 5),
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
-			AllowRegistration:         getEnvBool("AUTH_ALLOW_REGISTRATION", true),
+			AllowRegistration:         getEnvBool("AUTH_ALLOW_REGISTRATION", false),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
@@ -798,7 +802,7 @@ func Load() (*Config, error) {
 				ClientSecret:   getEnv("SSO_ENTRA_CLIENT_SECRET", ""),
 				TenantID:       getEnv("SSO_ENTRA_TENANT_ID", "common"),
 				AllowedDomains: getEnvSlice("SSO_ENTRA_ALLOWED_DOMAINS", nil),
-				DefaultRole:    getEnv("SSO_ENTRA_DEFAULT_ROLE", "member"),
+				DefaultRole:    getEnv("SSO_ENTRA_DEFAULT_ROLE", "viewer"),
 				AutoProvision:  getEnvBool("SSO_ENTRA_AUTO_PROVISION", true),
 				DisplayName:    getEnv("SSO_ENTRA_DISPLAY_NAME", "Microsoft Entra ID"),
 				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),

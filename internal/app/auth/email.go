@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/internal/config"
@@ -147,7 +148,7 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 		return nil
 	}
 
-	resetURL := fmt.Sprintf("%s/auth/reset-password?token=%s", s.config.BaseURL, token)
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.config.BaseURL, token)
 
 	data := emaildom.PasswordResetData{
 		UserName:    userName,
@@ -312,6 +313,42 @@ func (s *EmailService) SendMemberReactivatedEmail(
 
 	s.logger.Info("member reactivated email sent",
 		"email", recipientEmail, "team", teamName)
+	return nil
+}
+
+// CanDeliverTo reports whether an email can be sent on behalf of tenantID
+// (the tenant's own SMTP integration, else the system SMTP).
+func (s *EmailService) CanDeliverTo(ctx context.Context, tenantID string) bool {
+	sender := s.getSenderForTenant(ctx, tenantID)
+	return sender != nil && sender.IsConfigured()
+}
+
+// AccountSetupURL is the UI page that consumes a one-time set-password token.
+func (s *EmailService) AccountSetupURL(token string) string {
+	return fmt.Sprintf("%s/set-password?token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), token)
+}
+
+// SendAccountSetupEmail sends the one-time set-password link for an account an
+// administrator created. Unlike the best-effort notifications it returns an
+// error when no sender is configured, so the caller can fall back to showing
+// the link to the administrator instead of silently dropping it.
+func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, recipientEmail, recipientName, teamName, token string, expiresIn time.Duration) error {
+	sender := s.getSenderForTenant(ctx, tenantID)
+	if sender == nil || !sender.IsConfigured() {
+		return fmt.Errorf("email: no SMTP sender configured")
+	}
+	data := emaildom.AccountSetupData{
+		UserName:  recipientName,
+		TeamName:  teamName,
+		SetupURL:  s.AccountSetupURL(token),
+		ExpiresIn: formatDuration(expiresIn),
+		AppName:   s.appName,
+	}
+	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateAccountSetup, data); err != nil {
+		s.logger.Error("failed to send account setup email", "tenant_id", tenantID, "error", err)
+		return fmt.Errorf("failed to send account setup email: %w", err)
+	}
+	s.logger.Info("account setup email sent", "tenant_id", tenantID)
 	return nil
 }
 

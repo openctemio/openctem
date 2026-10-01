@@ -366,12 +366,18 @@ type RegisterResult struct {
 // a success result even if the email already exists. The caller should always
 // display a generic "check your email" message regardless of the result.
 func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*RegisterResult, error) {
-	if !s.config.AllowRegistration {
-		return nil, ErrRegistrationDisabled
-	}
-
 	// Normalize email
 	email := strings.TrimSpace(strings.ToLower(input.Email))
+
+	// An invitation is the one way to self-create an account when public
+	// registration is off (the default): the invitee proves they hold a
+	// pending invitation addressed to this exact email. Anything else, including
+	// an unknown, expired or mismatched token, gets the same generic refusal so
+	// the response says nothing about the token.
+	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
+	if !s.config.AllowRegistration && !invited {
+		return nil, ErrRegistrationDisabled
+	}
 
 	// Check if email already exists
 	// Security: Return success-like result to prevent email enumeration
@@ -413,26 +419,16 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Resolve tenant context for email verification rule:
-	//   1. If the caller provided an invitation_token (registration via
-	//      invite link), look it up and use the invitation's tenant.
-	//   2. Otherwise pass empty string and let
-	//      shouldRequireEmailVerification fall back to the single-tenant
-	//      heuristic / SMTP check / global env.
-	verificationTenantID := ""
-	if input.InvitationToken != "" && s.tenantRepo != nil {
-		if inv, ierr := s.tenantRepo.GetInvitationByToken(ctx, crypto.HashToken(input.InvitationToken)); ierr == nil && inv != nil {
-			verificationTenantID = inv.TenantID().String()
-		}
-		// Failure to look up the invitation is NOT fatal here — we just
-		// fall back to the platform default. Validation of the token
-		// proper happens later when the user POSTs to
-		// /invitations/{token}/accept; surfacing it as a register error
-		// would be confusing ("you can't register because of an invite?").
+	// Email verification: an invitation sent to this exact address already
+	// proves the address, so an invited registration is verified. Otherwise
+	// the rule is resolved from the invitation's tenant when a (non-matching)
+	// token was supplied, else the platform default (single-tenant heuristic /
+	// SMTP check / global env). The token is NOT consumed here; acceptance is a
+	// separate POST /invitations/{token}/accept.
+	requireVerification := false
+	if !invited {
+		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
 	}
-
-	// Generate verification token if required (smart: respects tenant setting + SMTP availability)
-	requireVerification := s.shouldRequireEmailVerification(ctx, verificationTenantID)
 
 	var verificationToken string
 	if requireVerification {
@@ -472,6 +468,29 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		VerificationToken:    verificationToken,
 		RequiresVerification: requireVerification,
 	}, nil
+}
+
+// pendingInvitationFor resolves an invitation token supplied at registration.
+// It returns the invitation's tenant id (for the email-verification rule) and
+// whether it is a pending invitation addressed to email whose organization
+// admits that email domain. A missing or invalid token returns ("", false).
+func (s *AuthService) pendingInvitationFor(ctx context.Context, token, email string) (string, bool) {
+	if token == "" || s.tenantRepo == nil {
+		return "", false
+	}
+	inv, err := s.tenantRepo.GetInvitationByToken(ctx, crypto.HashToken(token))
+	if err != nil || inv == nil {
+		return "", false
+	}
+	tenantID := inv.TenantID().String()
+	if !inv.IsPending() || !strings.EqualFold(inv.Email(), email) {
+		return tenantID, false
+	}
+	t, err := s.tenantRepo.GetByID(ctx, inv.TenantID())
+	if err != nil || !t.TypedSettings().Security.EmailDomainAllowed(email) {
+		return tenantID, false
+	}
+	return tenantID, true
 }
 
 // LoginInput represents the input for login.
@@ -1344,7 +1363,9 @@ func (s *AuthService) VerifyEmail(ctx context.Context, token string) error {
 	// Tokens are stored hashed at rest; look up by hash of the raw token.
 	u, err := s.userRepo.GetByEmailVerificationToken(ctx, crypto.HashToken(token))
 	if err != nil {
-		if shared.IsNotFound(err) {
+		// The repository reports an unknown/expired token as
+		// userdom.ErrInvalidVerificationToken (not ErrNotFound); both are a 400.
+		if shared.IsNotFound(err) || errors.Is(err, userdom.ErrInvalidVerificationToken) {
 			return ErrInvalidVerificationToken
 		}
 		return fmt.Errorf("failed to get user: %w", err)
@@ -1424,7 +1445,11 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 	// Tokens are stored hashed at rest; look up by hash of the raw token.
 	u, err := s.userRepo.GetByPasswordResetToken(ctx, crypto.HashToken(input.Token))
 	if err != nil {
-		if shared.IsNotFound(err) {
+		// The repository reports an unknown, used or expired token as
+		// userdom.ErrInvalidPasswordResetToken (not ErrNotFound). Both must be a
+		// 400 "invalid or expired" — this is what a used or expired set-password
+		// link hits, and it used to surface as a 500.
+		if shared.IsNotFound(err) || errors.Is(err, userdom.ErrInvalidPasswordResetToken) {
 			return ErrInvalidResetToken
 		}
 		return fmt.Errorf("failed to get user: %w", err)
@@ -1833,14 +1858,27 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
+	// Get the tenant info
+	t, err := s.tenantRepo.GetByID(ctx, invitation.TenantID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant: %w", err)
+	}
+	// The organization may have restricted member email domains after the
+	// invitation was sent.
+	if !t.TypedSettings().Security.EmailDomainAllowed(u.Email()) {
+		return nil, fmt.Errorf("%w: email domain is not allowed for this organization", shared.ErrValidation)
+	}
+
 	// Accept the invitation
 	if err := invitation.Accept(); err != nil {
 		return nil, err
 	}
 
-	// Create membership
+	// Create membership. The role follows the invitation's RBAC roles: a
+	// viewer-only invitation must not become a 'member' membership, which the
+	// tenant_members trigger would turn into the member role.
 	invitedBy := invitation.InvitedBy()
-	membership, err := tenantdom.NewMembership(u.ID(), invitation.TenantID(), invitation.Role(), &invitedBy)
+	membership, err := tenantdom.NewMembership(u.ID(), invitation.TenantID(), accesscontrol.InvitationMembershipRole(invitation), &invitedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -1850,37 +1888,20 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to accept invitation: %w", err)
 	}
 
-	// Apply RBAC roles attached to the invitation. Audit finding —
-	// previously the membership.Role (owner/admin/member/viewer) was
-	// the only thing carried over; the RBAC role_ids on the invitation
-	// were silently dropped, leaving the new user with the legacy
-	// coarse role only and missing any scoped permissions the inviter
-	// intended to grant. Best-effort: if a role can't be assigned, log
-	// and continue — the membership is still created so the user isn't
-	// locked out. Operators can re-assign manually from Settings.
-	if s.roleService != nil {
+	// Make the invitation's RBAC roles the user's complete role set, replacing
+	// the role the trigger copied from the membership. Best-effort: on failure
+	// the membership keeps that trigger role, which is no broader than the
+	// invitation, and an administrator can fix roles from Settings.
+	if s.roleService != nil && len(invitation.RoleIDs()) > 0 {
 		invitedByStr := invitation.InvitedBy().String()
 		invActx := auditapp.AuditContext{ActorID: invitedByStr, TenantID: invitation.TenantID().String()}
-		for _, roleID := range invitation.RoleIDs() {
-			err := s.roleService.AssignRole(ctx, accesscontrol.AssignRoleInput{
-				TenantID: invitation.TenantID().String(),
-				UserID:   u.ID().String(),
-				RoleID:   roleID,
-			}, invitedByStr, invActx)
-			if err != nil {
-				s.logger.Error("failed to assign invitation role on accept",
-					"invitation_id", invitation.ID().String(),
-					"user_id", u.ID().String(),
-					"role_id", roleID,
-					"error", err)
-			}
+		if err := s.roleService.GrantExactRoles(ctx, invitation.TenantID().String(), u.ID().String(),
+			invitation.RoleIDs(), invitedByStr, invActx); err != nil {
+			s.logger.Error("failed to apply invitation roles on accept",
+				"invitation_id", invitation.ID().String(),
+				"user_id", u.ID().String(),
+				"error", err)
 		}
-	}
-
-	// Get the tenant info
-	t, err := s.tenantRepo.GetByID(ctx, invitation.TenantID())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tenant: %w", err)
 	}
 
 	s.logger.Info("invitation accepted with refresh token",

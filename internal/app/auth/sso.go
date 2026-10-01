@@ -437,7 +437,7 @@ func (s *SSOService) envProvider(orgSlug string, provider identityproviderdom.Pr
 	cfg := s.authConfig.EntraSSO
 	role := cfg.DefaultRole
 	if role == "" {
-		role = "member"
+		role = string(tenantdom.RoleViewer)
 	}
 	autoProvision := cfg.AutoProvision
 	if isNonSpecificEntraTenant(cfg.TenantID) {
@@ -660,7 +660,7 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	// Find or create user and provision into tenant. The tenant is passed so the
 	// proof-before-link guard can require a DNS-verified tenant domain before a
 	// federated login may CLAIM a pre-existing passwordless account (Case 2).
-	u, err := s.findOrCreateUser(ctx, t, userInfo, rp.provider)
+	u, err := s.findOrCreateUser(ctx, t, userInfo, rp)
 	if err != nil {
 		return nil, fmt.Errorf("find or create user: %w", err)
 	}
@@ -720,19 +720,14 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		return nil
 	}
 
-	emailDomain := ""
-	if parts := strings.SplitN(email, "@", 2); len(parts) == 2 {
-		emailDomain = strings.ToLower(parts[1])
-	}
-
-	if !s.jitProvisioningAllowed(ctx, t.ID().String(), rp, emailDomain) {
+	if !s.jitProvisioningAllowed(ctx, t, rp, email) {
 		s.logger.Warn("SSO login refused: not a member and JIT provisioning not permitted",
 			"user_id", u.ID().String(), "tenant_id", t.ID().String(),
 			"source", rp.source, "auto_provision", rp.autoProvision)
 		return ErrSSONotAMember
 	}
 
-	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), tenantdom.Role(rp.defaultRole), nil)
+	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), jitMembershipRole(rp.defaultRole), nil)
 	if err != nil {
 		return fmt.Errorf("build membership: %w", err)
 	}
@@ -747,45 +742,62 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		return ErrSSONotAMember
 	}
 	s.logger.Info("SSO auto-provisioned tenant membership",
-		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", rp.defaultRole)
+		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", membership.Role().String())
 	return nil
 }
 
-// jitProvisioningAllowed decides whether a non-member with emailDomain may be
-// JIT auto-provisioned into the tenant. Fail-closed at every branch.
-//
-// The provider must opt in (rp.autoProvision). Then:
-//   - SSO P1 (domainVerifier wired): the domain MUST be DNS-verified for the
-//     tenant — this is the PRIMARY gate. If the provider ALSO configured a
-//     non-empty AllowedDomains allow-list, the domain must additionally be on
-//     it (an admin may narrow further). A verifier error ⇒ refuse.
-//   - Pre-wiring fallback (domainVerifier nil): the P0 behavior — the domain
-//     must be on a NON-EMPTY AllowedDomains allow-list (empty ⇒ refuse).
-func (s *SSOService) jitProvisioningAllowed(ctx context.Context, tenantID string, rp *resolvedProvider, emailDomain string) bool {
-	if !rp.autoProvision || emailDomain == "" {
+// jitMembershipRole is the membership role of a user admitted by SSO
+// just-in-time provisioning: the organization's configured default when it is
+// admin, member or viewer, otherwise viewer (least privilege). Owner is never
+// granted by SSO.
+func jitMembershipRole(configured string) tenantdom.Role {
+	switch r := tenantdom.Role(strings.ToLower(strings.TrimSpace(configured))); r {
+	case tenantdom.RoleAdmin, tenantdom.RoleMember, tenantdom.RoleViewer:
+		return r
+	default:
+		return tenantdom.RoleViewer
+	}
+}
+
+// jitProvisioningAllowed decides whether SSO may admit someone who is not yet a
+// member (and, for a first login, create their account): "for an organization,
+// SSO decides whether a user is admitted". Fail-closed at every
+// branch. All of the following must hold:
+//   - the organization's SSO provider opts in to auto-provisioning;
+//   - the email's domain is DNS-verified for the organization (the verified
+//     domains a platform administrator set up); no verifier wired, a lookup
+//     error, or an unverified domain refuses;
+//   - when the provider narrows domains (AllowedDomains), the domain is on it;
+//   - the organization's own Security.AllowedDomains admits the email.
+func (s *SSOService) jitProvisioningAllowed(ctx context.Context, t *tenantdom.Tenant, rp *resolvedProvider, email string) bool {
+	if t == nil || rp == nil || !rp.autoProvision {
 		return false
 	}
-
-	if s.domainVerifier == nil {
-		// Fallback: P0 config-AllowedDomains gate (fail-closed on empty list).
-		return rp.isDomainAllowedForProvisioning(emailDomain)
+	emailDomain := ""
+	if at := strings.LastIndex(email, "@"); at >= 0 {
+		emailDomain = strings.ToLower(strings.TrimSpace(email[at+1:]))
 	}
-
-	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, tenantID, emailDomain)
+	if emailDomain == "" {
+		return false
+	}
+	if s.domainVerifier == nil {
+		s.logger.Warn("SSO JIT refused: no verified-domain checker wired (fail-closed)",
+			"tenant_id", t.ID().String())
+		return false
+	}
+	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, t.ID().String(), emailDomain)
 	if err != nil {
 		s.logger.Warn("verified-domain check failed; refusing JIT (fail-closed)",
-			"tenant_id", tenantID, "error", err)
+			"tenant_id", t.ID().String(), "error", err)
 		return false
 	}
 	if !verified {
 		return false
 	}
-	// Verified domain confirmed. If the provider ALSO narrows via AllowedDomains,
-	// require BOTH (verified AND on the allow-list).
 	if len(rp.allowedDomains) > 0 && !rp.isDomainAllowed(emailDomain) {
 		return false
 	}
-	return true
+	return t.TypedSettings().Security.EmailDomainAllowed(email)
 }
 
 // verifyIDToken validates the provider's id_token against its JWKS, the flow
@@ -1152,10 +1164,14 @@ func (s *SSOService) parseGoogleUserInfo(body io.Reader) (*SSOUserInfo, error) {
 // findOrCreateUser finds an existing user or creates a new SSO user.
 // Handles race condition: if two concurrent SSO logins create the same user,
 // the second attempt will retry the lookup after a duplicate key error.
-func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
+func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, userInfo *SSOUserInfo, rp *resolvedProvider) (*userdom.User, error) {
 	if userInfo.Email == "" {
 		return nil, ErrSSONoEmail
 	}
+	if rp == nil {
+		return nil, ErrSSOProviderNotFound
+	}
+	provider := rp.provider
 
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
@@ -1163,14 +1179,16 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 		return s.adoptExistingUser(ctx, t, existingUser, userInfo, provider)
 	}
 
-	// SECURITY (FIX 4): when public registration is disabled, a federated login
-	// may only bind to an existing/pre-invited account (handled above) — it must
-	// NOT create a brand-new user. Reaching here means no account exists, so
-	// refuse rather than self-provisioning an identity into the platform.
-	if !s.authConfig.AllowRegistration {
-		s.logger.Warn("SSO login refused: registration disabled and no account exists",
-			"email", userInfo.Email, "provider", provider)
-		return nil, ErrSSORegistrationDisabled
+	// No account yet. The organization's SSO is what admits new people,
+	// independent of public self-registration
+	// (AUTH_ALLOW_REGISTRATION): the account is created only when this login
+	// would be just-in-time provisioned into the organization (auto-provision
+	// on, DNS-verified email domain, allowed domains). Checking BEFORE creating
+	// the account means a refused login leaves no orphan account behind.
+	if !s.jitProvisioningAllowed(ctx, t, rp, userInfo.Email) {
+		s.logger.Warn("SSO login refused: no account and just-in-time provisioning not permitted",
+			"provider", provider, "source", rp.source)
+		return nil, ErrSSONotAMember
 	}
 
 	// Map identity provider to auth provider
@@ -1282,11 +1300,24 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant,
 		}
 	}
 
+	syncFederatedProfile(existingUser, userInfo.Name)
 	existingUser.UpdateLastLogin()
 	if updateErr := s.userRepo.Update(ctx, existingUser); updateErr != nil {
 		s.logger.Warn("failed to update last login", "error", updateErr)
 	}
 	return existingUser, nil
+}
+
+// syncFederatedProfile re-syncs, on each SSO login, the only attribute that is
+// safe to take from the identity provider: the display name. Email (the
+// account key), password, roles and memberships are never changed by a login;
+// role changes go through the organization's administrators or SCIM.
+func syncFederatedProfile(u *userdom.User, idpName string) {
+	name := strings.TrimSpace(idpName)
+	if name == "" || name == u.Name() || len(name) > 255 {
+		return
+	}
+	u.UpdateProfile(name, u.Phone(), u.AvatarURL())
 }
 
 // requireClaimableOwnershipProof authorizes a federated login to CLAIM a
@@ -1455,6 +1486,7 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 		return nil, ErrSSONoEmail
 	}
 
+	newUser := false
 	u, err := s.userRepo.GetByEmail(ctx, email)
 	if err == nil && u != nil {
 		// Account-takeover guard: a password-backed local account must not be
@@ -1478,11 +1510,22 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 				return nil, ErrSSOFederatedNotMember
 			}
 		}
+		syncFederatedProfile(u, name)
 		u.UpdateLastLogin()
 		if uerr := s.userRepo.Update(ctx, u); uerr != nil {
 			s.logger.Warn("federated login: update last login", "error", uerr)
 		}
 	} else {
+		// No account yet: the organization's SSO admits new people only through
+		// just-in-time provisioning (auto-provision on, DNS-verified email
+		// domain, allowed domains). Refuse before creating anything, so a
+		// refused login leaves no orphan account and no tenant-less session.
+		if !s.jitProvisioningAllowed(ctx, t, &resolvedProvider{autoProvision: autoProvision, source: "saml"}, email) {
+			s.logger.Warn("federated login refused: no account and just-in-time provisioning not permitted",
+				"tenant_id", t.ID().String())
+			return nil, ErrSSONotAMember
+		}
+		newUser = true
 		// Create a claimable passwordless local user (same shape as an invite).
 		newU, cerr := userdom.New(email, name)
 		if cerr != nil {
@@ -1498,17 +1541,18 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 		u = newU
 	}
 
-	if autoProvision && s.tenantMemberRepo != nil {
-		role := tenantdom.Role(defaultRole)
-		if !role.IsValid() || role == tenantdom.RoleOwner {
-			role = tenantdom.RoleMember
-		}
-		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), role, nil)
+	if newUser && s.tenantMemberRepo != nil {
+		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), jitMembershipRole(defaultRole), nil)
 		if memErr == nil {
 			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
 		}
 		if memErr != nil {
-			s.logger.Debug("federated auto-provision membership", "user_id", u.ID().String(), "error", memErr)
+			// A concurrent login may have provisioned it; otherwise refuse
+			// rather than issue a session with no membership.
+			if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr != nil || m == nil {
+				s.logger.Warn("federated auto-provision membership failed", "user_id", u.ID().String(), "error", memErr)
+				return nil, ErrSSONotAMember
+			}
 		}
 	}
 

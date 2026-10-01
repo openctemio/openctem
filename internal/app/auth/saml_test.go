@@ -115,7 +115,7 @@ func TestSAMLUpsertConfig_StoresAndUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if p.DefaultRole() != "member" || !p.Enabled() {
+	if p.DefaultRole() != "viewer" || !p.Enabled() {
 		t.Errorf("unexpected stored config: role=%s enabled=%v", p.DefaultRole(), p.Enabled())
 	}
 

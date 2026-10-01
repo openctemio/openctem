@@ -334,6 +334,18 @@ func Register(
 		).Enforce
 	}
 
+	// Organization IP allowlist (Security.IPWhitelist) on user sessions.
+	// Appended to buildBaseMiddlewares (token-scoped organization)
+	// and to the /tenants/{tenant} chain (URL organization). Settings changes
+	// invalidate the cached policy through the tenant handler.
+	if tenantRepo != nil {
+		ipGate := middleware.NewIPAllowlistGate(tenantSecurityPolicyAdapter{repo: tenantRepo}, 30*time.Second, log)
+		ipAllowlistMiddleware = ipGate.Enforce
+		if h.Tenant != nil {
+			h.Tenant.SetSecurityPolicyInvalidator(ipGate.Invalidate)
+		}
+	}
+
 	// UserSync middleware syncs authenticated users to local database
 	// Supports both local auth and OIDC auth
 	var userSync Middleware
@@ -806,6 +818,10 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	if ssoEnforcementMiddleware != nil {
 		middlewares = append(middlewares, ssoEnforcementMiddleware)
 	}
+	// Organization IP allowlist for user sessions (no-op for API keys/agents).
+	if ipAllowlistMiddleware != nil {
+		middlewares = append(middlewares, ipAllowlistMiddleware)
+	}
 	return middlewares
 }
 
@@ -844,6 +860,30 @@ var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once du
 // the tenant turns enforcement on. Set once during Register once tenantRepo is
 // available; nil leaves only the mint-time gate.
 var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
+// user sessions. Set once during Register; nil disables it (tests).
+var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// tenantSecurityPolicyAdapter adapts tenant.Repository to
+// middleware.TenantSecurityPolicyProvider (the organization's security
+// settings). Cross-tenant by design: it answers a per-organization policy
+// question, not a data query.
+type tenantSecurityPolicyAdapter struct {
+	repo tenant.Repository
+}
+
+func (a tenantSecurityPolicyAdapter) SecuritySettings(ctx context.Context, tenantID string) (tenant.SecuritySettings, error) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return tenant.SecuritySettings{}, err
+	}
+	t, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return tenant.SecuritySettings{}, err
+	}
+	return t.TypedSettings().Security, nil
+}
 
 // tenantSSOEnforcedAdapter adapts tenant.Repository to
 // middleware.SSOEnforcedProvider, reading the tenant's sso_enforced security
