@@ -337,6 +337,14 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		return err
 	}
 
+	// SECURITY: the region is reported by the untrusted sensor process and is
+	// later rendered verbatim into the operator's setup snippets (env/docker/
+	// yaml) via text/template. Sanitize it at this ingest boundary so a
+	// malicious sensor cannot inject shell metacharacters that would execute
+	// when an operator copy-pastes the generated config. This covers both the
+	// persisted value (repo.UpdateHeartbeat below) and the load-score snapshot.
+	data.Region = sensordom.SanitizeRegion(data.Region)
+
 	// Capture health BEFORE the heartbeat flips it to online, so we can detect
 	// an offline/unknown/error -> online TRANSITION (a connect event) and audit
 	// it once, instead of logging on every steady-state heartbeat.
