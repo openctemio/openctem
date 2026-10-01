@@ -150,27 +150,94 @@ func (s *CredentialImportService) processCredential(
 		return credential.ImportItemResult{}, false, fmt.Errorf("invalid source type: %s", cred.Source.Type)
 	}
 
-	// Calculate fingerprint
+	// The credential fingerprint (identifier, type, source and its breach,
+	// repository/file or paste) is the credential's identity and the key it
+	// is stored under, so a re-import finds and updates it.
 	fingerprint := cred.CalculateFingerprint(tenantIDStr)
 
-	// Check for existing exposure event
-	existing, err := s.exposureRepo.GetByFingerprint(ctx, tenantID, fingerprint)
-	if err != nil && !exposure.IsExposureEventNotFound(err) {
-		return credential.ImportItemResult{}, false, fmt.Errorf("failed to check existing: %w", err)
+	existing, err := s.findExistingCredential(ctx, tenantID, tenantIDStr, cred, fingerprint)
+	if err != nil {
+		return credential.ImportItemResult{}, false, err
 	}
 
 	// Determine severity
 	severity := cred.GetSeverity(options.AutoClassifySeverity)
 	isCritical := severity == "critical"
 
-	// Handle based on existence
 	if existing == nil {
-		// New credential - create exposure event
-		return s.createCredentialExposure(ctx, tenantID, cred, fingerprint, severity, index)
+		res, critical, err := s.createCredentialExposure(ctx, tenantID, cred, fingerprint, severity, index)
+		if err == nil || !exposure.IsExposureEventExists(err) {
+			return res, critical, err
+		}
+		// Lost a race with a concurrent import of the same credential.
+		existing, err = s.exposureRepo.GetByFingerprint(ctx, tenantID, fingerprint)
+		if err != nil {
+			return credential.ImportItemResult{}, false, fmt.Errorf("failed to load existing credential: %w", err)
+		}
 	}
 
 	// Handle existing credential based on state and strategy
 	return s.handleExistingCredential(ctx, existing, cred, options, index, isCritical)
+}
+
+// findExistingCredential returns the stored credential with this fingerprint,
+// or nil. Credentials imported before the fingerprint fix are stored under
+// the exposure event's generic fingerprint (identifier and source only); such
+// a row is adopted, and re-keyed, when its stored details identify the same
+// credential, so re-importing it updates rather than duplicates it.
+func (s *CredentialImportService) findExistingCredential(
+	ctx context.Context,
+	tenantID shared.ID,
+	tenantIDStr string,
+	cred credential.CredentialImport,
+	fingerprint string,
+) (*exposure.ExposureEvent, error) {
+	existing, err := s.exposureRepo.GetByFingerprint(ctx, tenantID, fingerprint)
+	if err == nil {
+		return existing, nil
+	}
+	if !exposure.IsExposureEventNotFound(err) {
+		return nil, fmt.Errorf("failed to check existing: %w", err)
+	}
+
+	probe, err := exposure.NewExposureEvent(tenantID, exposure.EventTypeCredentialLeaked, exposure.SeverityMedium,
+		cred.Identifier, cred.GetSourceString(), cred.ToDetails())
+	if err != nil {
+		return nil, nil //nolint:nilerr // no generic fingerprint to look up; treat as new
+	}
+	legacy, err := s.exposureRepo.GetByFingerprint(ctx, tenantID, probe.Fingerprint())
+	if err != nil {
+		if exposure.IsExposureEventNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to check existing: %w", err)
+	}
+	if storedCredentialFingerprint(legacy, tenantIDStr) != fingerprint {
+		return nil, nil // another credential that shares the generic fingerprint
+	}
+	legacy.UseFingerprint(fingerprint)
+	return legacy, nil
+}
+
+// storedCredentialFingerprint recomputes the credential fingerprint of a
+// stored credential exposure from the details the import wrote.
+func storedCredentialFingerprint(e *exposure.ExposureEvent, tenantIDStr string) string {
+	d := e.Details()
+	str := func(k string) string { v, _ := d[k].(string); return v }
+	c := credential.CredentialImport{
+		Identifier:     e.Title(),
+		CredentialType: credential.CredentialType(str("credential_type")),
+		Source:         credential.CredentialSource{Type: credential.SourceType(str("source_type")), URL: str("source_url")},
+		DedupKey: credential.DedupKey{
+			BreachName: str("breach_name"),
+			BreachDate: str("breach_date"),
+			Repository: str("repository"),
+			FilePath:   str("file_path"),
+			CommitHash: str("commit_hash"),
+			PasteID:    str("paste_id"),
+		},
+	}
+	return c.CalculateFingerprint(tenantIDStr)
 }
 
 // createCredentialExposure creates a new exposure event for a credential.
@@ -178,7 +245,7 @@ func (s *CredentialImportService) createCredentialExposure(
 	ctx context.Context,
 	tenantID shared.ID,
 	cred credential.CredentialImport,
-	_ string, // fingerprint - not used, exposure event generates its own
+	fingerprint string,
 	severity string,
 	index int,
 ) (credential.ImportItemResult, bool, error) {
@@ -205,6 +272,9 @@ func (s *CredentialImportService) createCredentialExposure(
 	if err != nil {
 		return credential.ImportItemResult{}, false, fmt.Errorf("failed to create exposure event: %w", err)
 	}
+
+	// Store under the credential fingerprint, the key re-imports look up.
+	event.UseFingerprint(fingerprint)
 
 	// Set description if notes provided
 	if cred.Notes != "" {
