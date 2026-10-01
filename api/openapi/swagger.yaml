@@ -3413,6 +3413,13 @@ definitions:
       user_agent:
         type: string
     type: object
+  internal_infra_http_handler.AdminChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    type: object
   internal_infra_http_handler.AdminCreateOrganizationRequest:
     properties:
       description:
@@ -11242,6 +11249,34 @@ paths:
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       summary: Admin console login (TOTP step)
+      tags:
+      - Admin Auth
+  /admin/auth/password:
+    post:
+      consumes:
+      - application/json
+      description: Changes the signed-in administrator's password (their sign-in account's).
+        Every /login and console session of the account ends, so the administrator
+        signs in again.
+      parameters:
+      - description: Current and new password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AdminChangePasswordRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Wrong current password, or the new one does not meet the policy
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: No console session
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Change your own password
       tags:
       - Admin Auth
   /admin/auth/session:

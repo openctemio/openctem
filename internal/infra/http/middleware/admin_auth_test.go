@@ -25,7 +25,7 @@ func (f *fakeSessions) add(token string, role admin.AdminRole) {
 	now := time.Now()
 	f.byToken[token] = admin.Reconstitute(
 		shared.NewID(), "a-"+string(role)+"@example.com", "Admin "+string(role),
-		role, true, nil, "", 0, nil, nil, "", now, nil, now,
+		role, true, nil, nil, "", 0, nil, nil, "", now, nil, now,
 	)
 }
 

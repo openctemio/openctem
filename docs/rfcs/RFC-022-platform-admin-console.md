@@ -159,5 +159,16 @@ removes it:
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes
   are written to `admin_audit_logs`.
-- A compromised organization account cannot become an administrator: linking
-  needs a super admin, and an account with memberships cannot be linked.
+- Provisioning never links an existing account: it always creates a new one
+  and refuses an email that already has an account. With self-registration an
+  attacker could otherwise pre-register an administrator's email, own its
+  password, and enroll their own TOTP on first use (found in the 2026-10-01
+  review).
+- The console checks on every request that the linked account can still sign
+  in, so suspending the account ends console access at once.
+- Administrators change their own password in the console
+  (`POST /admin/auth/password`); the change ends every `/login` and console
+  session of the account.
+- An administrator cannot deactivate, demote or delete themselves, so the
+  super admin making a change always remains: the platform is never left
+  without an active super admin.

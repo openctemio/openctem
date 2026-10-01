@@ -72,6 +72,7 @@ func registerAdminRoutes(
 				r.POST("/session", h.AdminConsole.StartSession, loginRL)
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, loginRL)
 				r.POST("/logout", h.AdminConsole.Logout)
+				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
 			}
 		})
 	}

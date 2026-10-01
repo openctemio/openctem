@@ -37,6 +37,7 @@ const (
 	ActionMFAFailed        = "console.mfa_failed"
 	ActionLogout           = "console.logout"
 	ActionAdminProvisioned = "console.admin_provisioned"
+	ActionPasswordChanged  = "console.password_changed"
 	ActionCredentialsReset = "console.credentials_reset"
 )
 
@@ -101,9 +102,17 @@ type SignedInUser struct {
 type AccountDirectory interface {
 	// SignedInUser validates a refresh token (without rotating it).
 	SignedInUser(ctx context.Context, refreshToken string) (*SignedInUser, error)
-	// ProvisionAccount returns the user with this email, creating a local account
-	// with a temporary password when none exists (temporaryPassword is then set).
-	ProvisionAccount(ctx context.Context, email, name string) (userID shared.ID, temporaryPassword string, err error)
+	// CreateAccount creates a new local account with a temporary password. It
+	// returns admin.ErrEmailHasAccount when the email already has an account:
+	// an existing account is never linked, because whoever registered it (with
+	// self-registration, possibly an attacker who guessed the email) owns its
+	// password and would become the administrator.
+	CreateAccount(ctx context.Context, email, name string) (userID shared.ID, temporaryPassword string, err error)
+	// AccountActive reports whether the linked account can still sign in.
+	AccountActive(ctx context.Context, userID shared.ID) (bool, error)
+	// ChangePassword changes the account's password after checking the current
+	// one, and ends all of its /login sessions.
+	ChangePassword(ctx context.Context, userID shared.ID, current, next string) error
 	// EndSignIn revokes the /login session behind a refresh token.
 	EndSignIn(ctx context.Context, refreshToken string) error
 }
@@ -317,7 +326,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*admin.AdminU
 	if err != nil {
 		return nil, admin.ErrSessionNotFound
 	}
-	if !a.IsActive() || a.IsLocked() {
+	if !a.IsActive() || a.IsLocked() || !s.accountActive(ctx, a) {
 		_ = s.console.DeleteSessionsForAdmin(ctx, a.ID())
 		return nil, admin.ErrSessionNotFound
 	}
@@ -327,6 +336,40 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*admin.AdminU
 		}
 	}
 	return a, nil
+}
+
+// accountActive reports whether the administrator's linked account can still
+// sign in. Suspending or deactivating the account ends console access on the
+// next request, not when the console session expires. An unlinked
+// administrator has no way in.
+func (s *Service) accountActive(ctx context.Context, a *admin.AdminUser) bool {
+	if a.UserID() == nil {
+		return false
+	}
+	ok, err := s.accounts.AccountActive(ctx, *a.UserID())
+	if err != nil {
+		s.log.Warn("check administrator account", "error", err)
+		return false
+	}
+	return ok
+}
+
+// ChangePassword changes the signed-in administrator's own password (the
+// linked account's). Every /login session of the account and every console
+// session of the administrator ends, so the change also evicts anyone else
+// who knew the old password.
+func (s *Service) ChangePassword(ctx context.Context, a *admin.AdminUser, current, next string, client ClientInfo) error {
+	if a.UserID() == nil {
+		return admin.ErrNotPlatformAdmin
+	}
+	if err := s.accounts.ChangePassword(ctx, *a.UserID(), current, next); err != nil {
+		return err
+	}
+	if err := s.console.DeleteSessionsForAdmin(ctx, a.ID()); err != nil {
+		s.log.Warn("end console sessions after password change", "error", err)
+	}
+	s.record(ctx, a, ActionPasswordChanged, client, "")
+	return nil
 }
 
 // Logout ends the console session behind token and, when refreshToken is set,
@@ -357,11 +400,12 @@ func (s *Service) Logout(ctx context.Context, token, refreshToken string, client
 	return nil
 }
 
-// ProvisionAdmin makes the person with this email a platform administrator
-// (super admin action). An existing user account is linked (refused if it
-// belongs to an organization); otherwise a local account is created and its
-// temporary password returned once. The administrator then signs in on the
-// normal /login page and enrolls TOTP when opening the console.
+// ProvisionAdmin makes a new platform administrator (super admin action). A
+// new local account is created for the email and its temporary password
+// returned once; an email that already has an account is refused
+// (admin.ErrEmailHasAccount), see AccountDirectory.CreateAccount. The
+// administrator then signs in on the normal /login page and enrolls TOTP when
+// opening the console.
 func (s *Service) ProvisionAdmin(ctx context.Context, actor *admin.AdminUser, email, name string, role admin.AdminRole, client ClientInfo) (*admin.AdminUser, string, error) {
 	if _, err := s.admins.GetByEmail(ctx, email); err == nil {
 		return nil, "", admin.ErrAdminAlreadyExists
@@ -375,9 +419,9 @@ func (s *Service) ProvisionAdmin(ctx context.Context, actor *admin.AdminUser, em
 	if err != nil {
 		return nil, "", err
 	}
-	userID, temp, err := s.accounts.ProvisionAccount(ctx, a.Email(), a.Name())
+	userID, temp, err := s.accounts.CreateAccount(ctx, a.Email(), a.Name())
 	if err != nil {
-		return nil, "", fmt.Errorf("provision user account: %w", err)
+		return nil, "", fmt.Errorf("create sign-in account: %w", err)
 	}
 	if err := s.admins.Create(ctx, a); err != nil {
 		return nil, "", err

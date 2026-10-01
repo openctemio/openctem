@@ -19,6 +19,11 @@ var (
 	// ErrUserAlreadyAdmin: the user account is already an administrator.
 	ErrUserAlreadyAdmin = fmt.Errorf("%w: this account is already a platform administrator", shared.ErrConflict)
 
+	// ErrEmailHasAccount is returned when provisioning an administrator for an
+	// email that already has a sign-in account. Existing accounts are never
+	// linked (their owner, not the provisioning admin, controls the password).
+	ErrEmailHasAccount = fmt.Errorf("%w: an account with this email already exists", shared.ErrConflict)
+
 	// ErrAdminNotFound is returned when an admin user is not found.
 	ErrAdminNotFound = fmt.Errorf("%w: admin user not found", shared.ErrNotFound)
 
