@@ -44,6 +44,22 @@ type TenantHandler struct {
 	// adminOnlyCreation refuses POST /tenants: organizations are created by the
 	// platform administrator (TENANT_CREATION_MODE=admin_only).
 	adminOnlyCreation bool
+	// provisioning creates accounts on behalf of organization administrators.
+	// Nil disables POST /tenants/{tenant}/users.
+	provisioning *app.UserProvisioningService
+	// invalidateSecurityPolicy drops the IP-allowlist gate's cached policy for
+	// an organization after its security settings change.
+	invalidateSecurityPolicy func(tenantID string)
+}
+
+// SetUserProvisioning wires administrator-created accounts.
+func (h *TenantHandler) SetUserProvisioning(svc *app.UserProvisioningService) {
+	h.provisioning = svc
+}
+
+// SetSecurityPolicyInvalidator wires the IP-allowlist gate's cache invalidation.
+func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
+	h.invalidateSecurityPolicy = fn
 }
 
 // SetAdminOnlyTenantCreation reserves organization creation for the platform
@@ -131,6 +147,9 @@ type MemberWithUserResponse struct {
 	// MFAStatus ("enabled" | "disabled" | "idp") is included only for owners
 	// and admins of the tenant.
 	MFAStatus string `json:"mfa_status,omitempty"`
+	// PendingSetup is true for an account an administrator created whose
+	// owner has not set a password or signed in yet.
+	PendingSetup bool `json:"pending_setup"`
 	// RBAC roles (included when ?include=roles)
 	RBACRoles []MemberRBACRoleResponse `json:"rbac_roles,omitempty"`
 }
@@ -622,16 +641,17 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				invitedBy = m.InvitedBy.String()
 			}
 			response[i] = MemberWithUserResponse{
-				ID:          m.ID.String(),
-				UserID:      m.UserID.String(),
-				Role:        m.Role.String(),
-				InvitedBy:   invitedBy,
-				JoinedAt:    m.JoinedAt,
-				Email:       m.Email,
-				Name:        m.Name,
-				AvatarURL:   m.AvatarURL,
-				Status:      m.Status,
-				LastLoginAt: m.LastLoginAt,
+				ID:           m.ID.String(),
+				UserID:       m.UserID.String(),
+				Role:         m.Role.String(),
+				InvitedBy:    invitedBy,
+				JoinedAt:     m.JoinedAt,
+				Email:        m.Email,
+				Name:         m.Name,
+				AvatarURL:    m.AvatarURL,
+				Status:       m.Status,
+				LastLoginAt:  m.LastLoginAt,
+				PendingSetup: m.PendingSetup,
 			}
 			if showMFA {
 				response[i].MFAStatus = m.MFAStatus
@@ -940,18 +960,8 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 	// Anti-escalation: an inviter may only grant roles whose permissions they
 	// themselves hold. Otherwise an admin could invite a user with the system
 	// owner/admin role bundle, escalating beyond their own ceiling on accept.
-	if !middleware.IsAdmin(r.Context()) && h.roleService != nil {
-		for _, rid := range req.RoleIDs {
-			role, rErr := h.roleService.GetRole(r.Context(), middleware.MustGetTenantID(r.Context()), rid)
-			if rErr != nil {
-				h.handleServiceError(w, rErr)
-				return
-			}
-			if e := assertCanGrantPermissions(r.Context(), role.Permissions()); e != nil {
-				apierror.Forbidden("cannot invite with a role whose permissions you do not hold").WriteJSON(w)
-				return
-			}
-		}
+	if !h.canGrantRoles(w, r, req.RoleIDs, "cannot invite with a role whose permissions you do not hold") {
+		return
 	}
 
 	// In simplified model, all invited users are "member"
@@ -972,6 +982,186 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(toInvitationResponse(invitation, true)) // Include token for creator
+}
+
+// canGrantRoles enforces anti-escalation for invitations and administrator-
+// created accounts: a caller who is not an organization admin may only grant
+// roles whose permissions they hold. Writes the error response and returns
+// false when refused.
+func (h *TenantHandler) canGrantRoles(w http.ResponseWriter, r *http.Request, roleIDs []string, refusal string) bool {
+	if middleware.IsAdmin(r.Context()) || h.roleService == nil {
+		return true
+	}
+	for _, rid := range roleIDs {
+		role, rErr := h.roleService.GetRole(r.Context(), middleware.MustGetTenantID(r.Context()), rid)
+		if rErr != nil {
+			h.handleServiceError(w, rErr)
+			return false
+		}
+		if e := assertCanGrantPermissions(r.Context(), role.Permissions()); e != nil {
+			apierror.Forbidden(refusal).WriteJSON(w)
+			return false
+		}
+	}
+	return true
+}
+
+// CreateTenantUserRequest creates an account in the organization.
+type CreateTenantUserRequest struct {
+	Email   string   `json:"email" validate:"required,email,max=254"`
+	Name    string   `json:"name" validate:"max=255"`
+	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=10"`
+}
+
+// ProvisionedUserInfo identifies the account in a ProvisionedUserResponse.
+type ProvisionedUserInfo struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+// ProvisionedUserResponse is the result of creating an account or reissuing
+// its set-password link. SetupToken is present only when the link was not
+// emailed; it is shown once to the administrator and never stored in clear.
+type ProvisionedUserResponse struct {
+	User           ProvisionedUserInfo `json:"user"`
+	MembershipID   string              `json:"membership_id,omitempty"`
+	Role           string              `json:"role,omitempty"`
+	EmailSent      bool                `json:"email_sent"`
+	SetupToken     string              `json:"setup_token,omitempty"`
+	SetupExpiresAt *time.Time          `json:"setup_expires_at,omitempty"`
+}
+
+// toProvisionedUserResponse renders a ProvisionedUser for the API.
+func toProvisionedUserResponse(p *app.ProvisionedUser) ProvisionedUserResponse {
+	resp := ProvisionedUserResponse{
+		User:      ProvisionedUserInfo{ID: p.User.ID().String(), Email: p.User.Email(), Name: p.User.Name()},
+		EmailSent: p.EmailSent,
+	}
+	if p.Membership != nil {
+		resp.MembershipID = p.Membership.ID().String()
+		resp.Role = p.Membership.Role().String()
+	}
+	if p.SetupToken != "" {
+		exp := p.SetupExpiresAt
+		resp.SetupToken = p.SetupToken
+		resp.SetupExpiresAt = &exp
+	}
+	return resp
+}
+
+// writeProvisionedUser writes a response that may carry a one-time secret.
+func writeProvisionedUser(w http.ResponseWriter, status int, p *app.ProvisionedUser) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(toProvisionedUserResponse(p))
+}
+
+// handleProvisioningError maps account-provisioning errors.
+func (h *TenantHandler) handleProvisioningError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, app.ErrAccountExists):
+		apierror.Conflict("An account with this email already exists. Invite them instead.").WriteJSON(w)
+	case errors.Is(err, tenant.ErrPlatformAdminMembership):
+		apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("User").WriteJSON(w)
+	default:
+		h.handleServiceError(w, err)
+	}
+}
+
+// CreateUser handles POST /api/v1/tenants/{tenant}/users
+// @Summary      Create a user in the organization
+// @Description  Creates an account with the given RBAC roles and a one-time set-password link (24h, single use). The link is emailed when SMTP is configured; otherwise setup_token is returned once to the creating administrator. Owner/admin only. Refused with 409 when the email already has an account (invite instead) and 400 when the email domain is outside the organization's allowed domains.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        tenant   path      string                   true  "Tenant ID or slug"
+// @Param        request  body      CreateTenantUserRequest  true  "User"
+// @Success      201  {object}  ProvisionedUserResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /tenants/{tenant}/users [post]
+func (h *TenantHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	if h.provisioning == nil {
+		apierror.ServiceUnavailable("User creation is not available").WriteJSON(w)
+		return
+	}
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	creatorID := middleware.GetLocalUserID(r.Context())
+	if creatorID.IsZero() {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+
+	var req CreateTenantUserRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	if !h.canGrantRoles(w, r, req.RoleIDs, "cannot grant a role whose permissions you do not hold") {
+		return
+	}
+
+	result, err := h.provisioning.CreateUser(r.Context(), app.CreateUserInput{
+		TenantID:  tenantID.String(),
+		Email:     req.Email,
+		Name:      req.Name,
+		RoleIDs:   req.RoleIDs,
+		CreatedBy: creatorID,
+	}, h.buildAuditContext(r))
+	if err != nil {
+		h.handleProvisioningError(w, err)
+		return
+	}
+	writeProvisionedUser(w, http.StatusCreated, result)
+}
+
+// ReissueSetupLink handles POST /api/v1/tenants/{tenant}/users/{userId}/setup-link
+// @Summary      Issue a new set-password link for a pending account
+// @Description  Replaces the one-time set-password link of an account an administrator created that has never been used and belongs to this organization only. Owner/admin only. 400 for any other account (its owner recovers it with forgot-password).
+// @Tags         Tenants
+// @Produce      json
+// @Param        tenant  path  string  true  "Tenant ID or slug"
+// @Param        userId  path  string  true  "User ID"
+// @Success      200  {object}  ProvisionedUserResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /tenants/{tenant}/users/{userId}/setup-link [post]
+func (h *TenantHandler) ReissueSetupLink(w http.ResponseWriter, r *http.Request) {
+	if h.provisioning == nil {
+		apierror.ServiceUnavailable("User creation is not available").WriteJSON(w)
+		return
+	}
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	userID, err := shared.IDFromString(r.PathValue("userId"))
+	if err != nil {
+		apierror.BadRequest("Invalid user ID").WriteJSON(w)
+		return
+	}
+	result, err := h.provisioning.ReissueSetupLink(r.Context(), tenantID.String(), userID.String(), h.buildAuditContext(r))
+	if err != nil {
+		h.handleProvisioningError(w, err)
+		return
+	}
+	writeProvisionedUser(w, http.StatusOK, result)
 }
 
 // DeleteInvitation handles DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
@@ -1186,6 +1376,9 @@ type SecuritySettingsResponse struct {
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode string   `json:"email_verification_mode"`
+	// CurrentIP is the caller's IP as the API sees it, the value the IP
+	// allowlist is checked against (empty outside a request context).
+	CurrentIP string `json:"current_ip,omitempty"`
 }
 
 // APISettingsResponse represents API settings.
@@ -1264,9 +1457,11 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := toSettingsResponse(settings)
+	resp.Security.CurrentIP = getClientIP(r)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // UpdateGeneralSettingsRequest represents the request to update general settings.
@@ -1359,12 +1554,15 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	clientIP := getClientIP(r)
 	input := app.UpdateSecuritySettingsInput{
 		MFARequired:           req.MFARequired,
 		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,
 		AllowedDomains:        req.AllowedDomains,
 		EmailVerificationMode: req.EmailVerificationMode,
+		// Lockout guard: the saved IP allowlist must include this IP.
+		RequesterIP: clientIP,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -1373,10 +1571,15 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	if h.invalidateSecurityPolicy != nil {
+		h.invalidateSecurityPolicy(tenantID.String())
+	}
 
+	resp := toSettingsResponse(settings)
+	resp.Security.CurrentIP = clientIP
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // UpdateAPISettingsRequest represents the request to update API settings.

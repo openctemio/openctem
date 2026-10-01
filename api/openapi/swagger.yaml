@@ -3532,6 +3532,24 @@ definitions:
       new_password:
         type: string
     type: object
+  internal_infra_http_handler.AdminCreateOrgUserRequest:
+    properties:
+      email:
+        maxLength: 254
+        type: string
+      name:
+        maxLength: 255
+        type: string
+      role:
+        enum:
+        - admin
+        - member
+        - viewer
+        type: string
+    required:
+    - email
+    - role
+    type: object
   internal_infra_http_handler.AdminCreateOrganizationRequest:
     properties:
       description:
@@ -3542,6 +3560,9 @@ definitions:
         minLength: 2
         type: string
       owner_email:
+        type: string
+      owner_name:
+        maxLength: 255
         type: string
       slug:
         maxLength: 100
@@ -3594,6 +3615,32 @@ definitions:
   internal_infra_http_handler.AdminMFARequest:
     properties:
       code:
+        type: string
+    type: object
+  internal_infra_http_handler.AdminOrgUserListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AdminOrgUserResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.AdminOrgUserResponse:
+    properties:
+      email:
+        type: string
+      joined_at:
+        type: string
+      name:
+        type: string
+      pending_setup:
+        type: boolean
+      role:
+        type: string
+      status:
+        type: string
+      user_id:
         type: string
     type: object
   internal_infra_http_handler.AdminOrganizationListResponse:
@@ -4460,6 +4507,12 @@ definitions:
     type: object
   internal_infra_http_handler.AuthProvidersResponse:
     properties:
+      registration_enabled:
+        description: |-
+          RegistrationEnabled reports whether anyone may self-register
+          (AUTH_ALLOW_REGISTRATION, default false). When false the UI hides
+          sign-up; an invited person can still register with their invitation.
+        type: boolean
       social:
         $ref: '#/definitions/internal_infra_http_handler.SocialProviders'
       sso_env_entra_enabled:
@@ -6106,6 +6159,24 @@ definitions:
     - name
     - source_type
     - template_type
+    type: object
+  internal_infra_http_handler.CreateTenantUserRequest:
+    properties:
+      email:
+        maxLength: 254
+        type: string
+      name:
+        maxLength: 255
+        type: string
+      role_ids:
+        items:
+          type: string
+        maxItems: 10
+        minItems: 1
+        type: array
+    required:
+    - email
+    - role_ids
     type: object
   internal_infra_http_handler.CreateToolRequest:
     properties:
@@ -8726,6 +8797,30 @@ definitions:
         items:
           $ref: '#/definitions/github_com_openctemio_api_internal_app.ProviderInfo'
         type: array
+    type: object
+  internal_infra_http_handler.ProvisionedUserInfo:
+    properties:
+      email:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_infra_http_handler.ProvisionedUserResponse:
+    properties:
+      email_sent:
+        type: boolean
+      membership_id:
+        type: string
+      role:
+        type: string
+      setup_expires_at:
+        type: string
+      setup_token:
+        type: string
+      user:
+        $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserInfo'
     type: object
   internal_infra_http_handler.QualityGateBreachResponse:
     properties:
@@ -12154,6 +12249,68 @@ paths:
       summary: Verify an organization's domain via DNS
       tags:
       - Admin Organization SSO
+  /admin/tenants/{tenantId}/users:
+    get:
+      parameters:
+      - description: Organization ID
+        in: path
+        name: tenantId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminOrgUserListResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List an organization's users (platform admin)
+      tags:
+      - Admin Organizations
+    post:
+      consumes:
+      - application/json
+      description: Same as the organization administrator's POST /tenants/{tenant}/users,
+        with a built-in role. The one-time set-password link is emailed when SMTP
+        is configured, otherwise setup_token is returned once.
+      parameters:
+      - description: Organization ID
+        in: path
+        name: tenantId
+        required: true
+        type: string
+      - description: User
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AdminCreateOrgUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: Account exists
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create a user in an organization (platform admin)
+      tags:
+      - Admin Organizations
   /admin/users/{id}/break-glass-test:
     post:
       description: 'Super admin only, and not the break-glass account itself: records
@@ -25948,6 +26105,87 @@ paths:
       summary: Get tool stats
       tags:
       - Tool Stats
+  /tenants/{tenant}/users:
+    post:
+      consumes:
+      - application/json
+      description: Creates an account with the given RBAC roles and a one-time set-password
+        link (24h, single use). The link is emailed when SMTP is configured; otherwise
+        setup_token is returned once to the creating administrator. Owner/admin only.
+        Refused with 409 when the email already has an account (invite instead) and
+        400 when the email domain is outside the organization's allowed domains.
+      parameters:
+      - description: Tenant ID or slug
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: User
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateTenantUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create a user in the organization
+      tags:
+      - Tenants
+  /tenants/{tenant}/users/{userId}/setup-link:
+    post:
+      description: Replaces the one-time set-password link of an account an administrator
+        created that has never been used and belongs to this organization only. Owner/admin
+        only. 400 for any other account (its owner recovers it with forgot-password).
+      parameters:
+      - description: Tenant ID or slug
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Issue a new set-password link for a pending account
+      tags:
+      - Tenants
   /tools:
     get:
       consumes:

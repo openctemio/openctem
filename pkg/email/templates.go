@@ -27,6 +27,9 @@ const (
 	// TemplateSecurityNotice tells a user about a security change to their
 	// own account (2FA turned off, a recovery code used).
 	TemplateSecurityNotice Template = "security_notice"
+	// TemplateAccountSetup carries the one-time set-password link for an account
+	// an administrator created.
+	TemplateAccountSetup Template = "account_setup"
 )
 
 // SecurityNoticeData holds data for the account security notice.
@@ -87,6 +90,15 @@ type TeamInvitationData struct {
 	InvitationURL string
 	ExpiresIn     string
 	AppName       string
+}
+
+// AccountSetupData holds data for the account-setup (set your password) email.
+type AccountSetupData struct {
+	UserName  string
+	TeamName  string
+	SetupURL  string
+	ExpiresIn string
+	AppName   string
 }
 
 // MemberStatusChangeData holds data for the suspend/reactivate notifications.
@@ -187,6 +199,12 @@ func (e *TemplateEngine) registerTemplates() {
 	e.templates[TemplateSecurityNotice] = &templateDef{
 		subjectTmpl: template.Must(template.New("security_notice_subject").Parse("{{.Subject}}")),
 		bodyTmpl:    template.Must(template.New("security_notice").Parse(securityNoticeTemplate)),
+	}
+
+	// Account Setup (administrator-created account)
+	e.templates[TemplateAccountSetup] = &templateDef{
+		subjectTmpl: template.Must(template.New("account_setup_subject").Parse("Your {{.AppName}} account for {{.TeamName}} is ready")),
+		bodyTmpl:    template.Must(template.New("account_setup").Parse(accountSetupTemplate)),
 	}
 }
 
@@ -499,6 +517,54 @@ const teamInvitationTemplate = `<!DOCTYPE html>
 
         <p>If the button doesn't work, copy and paste this link into your browser:</p>
         <p style="word-break: break-all; font-size: 12px; color: #666;">{{.InvitationURL}}</p>
+
+        <div class="footer">
+            <p>&copy; {{.AppName}}. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>`
+
+const accountSetupTemplate = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set Your Password</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
+        .button { display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
+        .warning { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 12px; margin: 20px 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{.AppName}}</div>
+        </div>
+
+        <h2>Your account is ready</h2>
+
+        <p>Hi{{if .UserName}} {{.UserName}}{{end}},</p>
+
+        <p>An administrator of <strong>{{.TeamName}}</strong> created an {{.AppName}} account for you. Set your password to sign in:</p>
+
+        <div style="text-align: center;">
+            <a href="{{.SetupURL}}" class="button">Set your password</a>
+        </div>
+
+        <div class="warning">
+            This link works once and expires in <strong>{{.ExpiresIn}}</strong>. If it expires, ask your administrator for a new one.
+        </div>
+
+        <p>If you were not expecting this account, you can ignore this email.</p>
+
+        <p>If the button does not work, copy and paste this link into your browser:</p>
+        <p style="word-break: break-all; font-size: 12px; color: #666;">{{.SetupURL}}</p>
 
         <div class="footer">
             <p>&copy; {{.AppName}}. All rights reserved.</p>

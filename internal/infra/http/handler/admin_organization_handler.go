@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/admin"
+	"github.com/openctemio/api/pkg/domain/role"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/logger"
@@ -29,6 +30,15 @@ type AdminOrganizationHandler struct {
 	users     user.Repository
 	validator *validator.Validator
 	logger    *logger.Logger
+	// provisioning creates accounts (organization users, and the owner of a
+	// new organization) — the same service organization admins use.
+	provisioning *app.UserProvisioningService
+}
+
+// WithUserProvisioning wires administrator-created accounts.
+func (h *AdminOrganizationHandler) WithUserProvisioning(svc *app.UserProvisioningService) *AdminOrganizationHandler {
+	h.provisioning = svc
+	return h
 }
 
 // NewAdminOrganizationHandler creates the handler.
@@ -66,12 +76,62 @@ type AdminOrganizationListResponse struct {
 	TotalPages int                         `json:"total_pages"`
 }
 
-// AdminCreateOrganizationRequest creates an organization owned by an existing user.
+// AdminCreateOrganizationRequest creates an organization. When owner_email has
+// no account yet, one is created for the owner with a one-time
+// set-password link.
 type AdminCreateOrganizationRequest struct {
 	Name        string `json:"name" validate:"required,min=2,max=100"`
 	Slug        string `json:"slug" validate:"required,min=3,max=100,slug"`
 	Description string `json:"description" validate:"max=500"`
 	OwnerEmail  string `json:"owner_email" validate:"required,email"`
+	OwnerName   string `json:"owner_name" validate:"max=255"`
+}
+
+// AdminOwnerSetupResponse describes the owner account created with an
+// organization. SetupToken is present only when the link was not emailed.
+type AdminOwnerSetupResponse struct {
+	EmailSent      bool       `json:"email_sent"`
+	SetupToken     string     `json:"setup_token,omitempty"`
+	SetupExpiresAt *time.Time `json:"setup_expires_at,omitempty"`
+}
+
+// AdminCreateOrganizationResponse is the created organization plus, when its
+// owner account was created too, how the owner sets their password.
+type AdminCreateOrganizationResponse struct {
+	AdminOrganizationResponse
+	OwnerSetup *AdminOwnerSetupResponse `json:"owner_setup,omitempty"`
+}
+
+// AdminCreateOrgUserRequest creates an account in an organization from the
+// console. Role is the user's built-in role there.
+type AdminCreateOrgUserRequest struct {
+	Email string `json:"email" validate:"required,email,max=254"`
+	Name  string `json:"name" validate:"max=255"`
+	Role  string `json:"role" validate:"required,oneof=admin member viewer"`
+}
+
+// AdminOrgUserResponse is one member of an organization in the console.
+type AdminOrgUserResponse struct {
+	UserID       string    `json:"user_id"`
+	Email        string    `json:"email"`
+	Name         string    `json:"name"`
+	Role         string    `json:"role"`
+	Status       string    `json:"status"`
+	PendingSetup bool      `json:"pending_setup"`
+	JoinedAt     time.Time `json:"joined_at"`
+}
+
+// AdminOrgUserListResponse lists an organization's members.
+type AdminOrgUserListResponse struct {
+	Data  []AdminOrgUserResponse `json:"data"`
+	Total int                    `json:"total"`
+}
+
+// adminRoleIDs maps a console role choice to the built-in RBAC role.
+var adminRoleIDs = map[string]string{
+	"admin":  role.AdminRoleID.String(),
+	"member": role.MemberRoleID.String(),
+	"viewer": role.ViewerRoleID.String(),
 }
 
 // AdminSSOEnforcementRequest turns SSO enforcement on or off for an organization.
@@ -208,18 +268,37 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		return
 	}
 	owner, err := h.users.GetByEmail(r.Context(), req.OwnerEmail)
+	ownerCreated := false
 	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
+		if !errors.Is(err, shared.ErrNotFound) {
+			apierror.InternalError(err).WriteJSON(w)
+			return
+		}
+		if h.provisioning == nil {
 			apierror.BadRequest("owner_email must belong to an existing user").WriteJSON(w)
 			return
 		}
-		apierror.InternalError(err).WriteJSON(w)
-		return
+		// No account yet: create one for the owner. The password is set
+		// through a one-time link issued once the organization exists.
+		owner, err = h.provisioning.CreateAccount(r.Context(), req.OwnerEmail, req.OwnerName)
+		if err != nil {
+			if shared.IsValidation(err) {
+				apierror.BadRequest(err.Error()).WriteJSON(w)
+				return
+			}
+			h.logger.Error("create owner account", "error", sanitizeLogField(err.Error()))
+			apierror.InternalError(err).WriteJSON(w)
+			return
+		}
+		ownerCreated = true
 	}
 	t, err := h.tenants.CreateTenant(r.Context(), app.CreateTenantInput{
 		Name: req.Name, Slug: req.Slug, Description: req.Description,
 	}, owner.ID(), adminAuditContext(r, ""))
 	if err != nil {
+		if ownerCreated {
+			h.provisioning.DiscardAccount(r.Context(), owner.ID())
+		}
 		if shared.IsValidation(err) {
 			apierror.BadRequest(err.Error()).WriteJSON(w)
 			return
@@ -228,12 +307,120 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	resp := AdminCreateOrganizationResponse{}
+	if ownerCreated {
+		setup, serr := h.provisioning.ReissueSetupLink(r.Context(), t.ID().String(), owner.ID().String(), adminAuditContext(r, t.ID().String()))
+		if serr != nil {
+			// The organization exists; the owner can still use forgot-password
+			// or the console can issue a link again.
+			h.logger.Error("issue owner setup link", "error", sanitizeLogField(serr.Error()))
+		} else {
+			resp.OwnerSetup = &AdminOwnerSetupResponse{EmailSent: setup.EmailSent, SetupToken: setup.SetupToken}
+			if setup.SetupToken != "" {
+				exp := setup.SetupExpiresAt
+				resp.OwnerSetup.SetupExpiresAt = &exp
+			}
+		}
+	}
 	o, err := h.orgs.GetOrganization(r.Context(), t.ID())
 	if err != nil {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusCreated, toAdminOrganizationResponse(o))
+	resp.AdminOrganizationResponse = toAdminOrganizationResponse(o)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// ListUsers handles GET /api/v1/admin/tenants/{tenantId}/users.
+// @Summary List an organization's users (platform admin)
+// @Tags Admin Organizations
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Success 200 {object} AdminOrgUserListResponse
+// @Failure 404 {object} apierror.Error "Not Found"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/users [get]
+func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	id, ok := orgIDParam(r)
+	if !ok {
+		apierror.BadRequest("invalid organization id").WriteJSON(w)
+		return
+	}
+	members, err := h.tenants.ListMembersWithUserInfo(r.Context(), id.String())
+	if err != nil {
+		h.logger.Error("list organization users", "error", sanitizeLogField(err.Error()))
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+	resp := AdminOrgUserListResponse{Data: make([]AdminOrgUserResponse, 0, len(members))}
+	for _, m := range members {
+		resp.Data = append(resp.Data, AdminOrgUserResponse{
+			UserID: m.UserID.String(), Email: m.Email, Name: m.Name, Role: m.Role.String(),
+			Status: m.Status, PendingSetup: m.PendingSetup, JoinedAt: m.JoinedAt,
+		})
+	}
+	resp.Total = len(resp.Data)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// CreateUser handles POST /api/v1/admin/tenants/{tenantId}/users.
+// @Summary Create a user in an organization (platform admin)
+// @Description Same as the organization administrator's POST /tenants/{tenant}/users, with a built-in role. The one-time set-password link is emailed when SMTP is configured, otherwise setup_token is returned once.
+// @Tags Admin Organizations
+// @Accept json
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param request body AdminCreateOrgUserRequest true "User"
+// @Success 201 {object} ProvisionedUserResponse
+// @Failure 400 {object} apierror.Error "Bad Request"
+// @Failure 409 {object} apierror.Error "Account exists"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/users [post]
+func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	if h.provisioning == nil {
+		apierror.ServiceUnavailable("User creation is not available").WriteJSON(w)
+		return
+	}
+	id, ok := orgIDParam(r)
+	if !ok {
+		apierror.BadRequest("invalid organization id").WriteJSON(w)
+		return
+	}
+	var req AdminCreateOrgUserRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+	result, err := h.provisioning.CreateUser(r.Context(), app.CreateUserInput{
+		TenantID: id.String(),
+		Email:    req.Email,
+		Name:     req.Name,
+		RoleIDs:  []string{adminRoleIDs[req.Role]},
+	}, adminAuditContext(r, id.String()))
+	if err != nil {
+		switch {
+		case errors.Is(err, app.ErrAccountExists):
+			apierror.Conflict("An account with this email already exists. Invite them instead.").WriteJSON(w)
+		case errors.Is(err, shared.ErrNotFound):
+			apierror.NotFound("organization").WriteJSON(w)
+		case shared.IsValidation(err):
+			msg := err.Error()
+			if idx := strings.Index(msg, ": "); idx != -1 {
+				msg = msg[idx+2:]
+			}
+			apierror.BadRequest(msg).WriteJSON(w)
+		default:
+			h.logger.Error("create organization user", "error", sanitizeLogField(err.Error()))
+			apierror.InternalError(err).WriteJSON(w)
+		}
+		return
+	}
+	writeProvisionedUser(w, http.StatusCreated, result)
 }
 
 // GetSSOEnforcement handles GET /api/v1/admin/tenants/{tenantId}/sso/enforcement.

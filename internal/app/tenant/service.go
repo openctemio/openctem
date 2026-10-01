@@ -521,6 +521,20 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
+	// Security.AllowedDomains applies to every way into the organization.
+	if s.userService != nil {
+		users, uerr := s.userService.GetUsersByIDs(ctx, []string{input.UserID.String()})
+		if uerr != nil {
+			return nil, fmt.Errorf("failed to look up user: %w", uerr)
+		}
+		if len(users) == 0 {
+			return nil, shared.ErrNotFound
+		}
+		if err := s.requireAllowedEmailDomain(ctx, parsedTenantID, users[0].Email()); err != nil {
+			return nil, err
+		}
+	}
+
 	// A zero inviter (e.g. system/SCIM-driven provisioning, where there is no
 	// human inviter) must map to NULL invited_by — writing the all-zeros UUID
 	// would violate the invited_by → users(id) foreign key.
@@ -937,16 +951,17 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	role, ok := tenantdom.ParseRole(input.Role)
-	if !ok {
-		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
+	// Role ids must be well-formed and never the owner role.
+	if err := accesscontrol.ValidateGrantableRoleIDs(input.RoleIDs); err != nil {
+		return nil, err
 	}
+	// The membership role follows the granted RBAC roles. It used to be a fixed
+	// 'member', which the tenant_members -> user_roles trigger turned into the
+	// member role on top of e.g. a viewer-only invitation.
+	role := accesscontrol.MembershipRoleForRoleIDs(input.RoleIDs)
 
-	// Validate role_ids are valid UUIDs (prevent empty strings → DB errors)
-	for _, rid := range input.RoleIDs {
-		if _, err := shared.IDFromString(rid); err != nil {
-			return nil, fmt.Errorf("%w: invalid role_id '%s'", shared.ErrValidation, rid)
-		}
+	if err := s.requireAllowedEmailDomain(ctx, parsedID, input.Email); err != nil {
+		return nil, err
 	}
 
 	// Check for existing pending invitation
@@ -1005,7 +1020,7 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		WithResourceName(input.Email).
 		WithMessage(fmt.Sprintf("Invitation sent to %s with role %s", input.Email, role)).
 		WithMetadata("email", input.Email).
-		WithMetadata("role", input.Role)
+		WithMetadata("role", role.String())
 	s.logAudit(ctx, actx, event)
 
 	// Enqueue email job if email enqueuer is configured
@@ -1050,6 +1065,39 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	}
 
 	return invitation, nil
+}
+
+// requireAllowedEmailDomain enforces the organization's Security.AllowedDomains
+// (empty = no restriction) for an email about to join it.
+func (s *TenantService) requireAllowedEmailDomain(ctx context.Context, tenantID shared.ID, email string) error {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if !t.TypedSettings().Security.EmailDomainAllowed(email) {
+		return ErrEmailDomainNotAllowed
+	}
+	return nil
+}
+
+// applyInvitationRoles makes the invitation's RBAC roles the new member's
+// complete role set, replacing the system role the tenant_members trigger
+// copied from the membership role. Best-effort: on failure the membership
+// keeps that trigger role, which MembershipRoleForRoleIDs keeps no broader
+// than the invitation, and an administrator can fix roles from Settings.
+func (s *TenantService) applyInvitationRoles(ctx context.Context, invitation *tenantdom.Invitation, userID shared.ID) {
+	if s.roleService == nil || len(invitation.RoleIDs()) == 0 {
+		return
+	}
+	invitedByStr := invitation.InvitedBy().String()
+	invActx := auditapp.AuditContext{ActorID: invitedByStr, TenantID: invitation.TenantID().String()}
+	if err := s.roleService.GrantExactRoles(ctx, invitation.TenantID().String(), userID.String(),
+		invitation.RoleIDs(), invitedByStr, invActx); err != nil {
+		s.logger.Error("failed to apply invitation roles on accept",
+			"invitation_id", invitation.ID().String(),
+			"user_id", userID.String(),
+			"error", err)
+	}
 }
 
 // GetInvitationByToken retrieves an invitation by its token.
@@ -1100,14 +1148,20 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
+	// The organization may have restricted member email domains after the
+	// invitation was sent.
+	if err := s.requireAllowedEmailDomain(ctx, invitation.TenantID(), invitation.Email()); err != nil {
+		return nil, err
+	}
+
 	// Accept the invitation
 	if err := invitation.Accept(); err != nil {
 		return nil, err
 	}
 
-	// Create membership
+	// Create membership (role derived from the invitation's RBAC roles)
 	invitedBy := invitation.InvitedBy()
-	membership, err := tenantdom.NewMembership(userID, invitation.TenantID(), invitation.Role(), &invitedBy)
+	membership, err := tenantdom.NewMembership(userID, invitation.TenantID(), accesscontrol.InvitationMembershipRole(invitation), &invitedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -1117,28 +1171,7 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		return nil, fmt.Errorf("failed to accept invitation: %w", err)
 	}
 
-	// Apply RBAC role_ids attached to the invitation. Best-effort:
-	// failure to assign a single role logs but doesn't roll back —
-	// the user is already a member, missing roles can be granted
-	// manually from Settings. Audit finding: previously these were
-	// silently dropped, leaving the user with only membership.Role.
-	if s.roleService != nil {
-		invitedByStr := invitation.InvitedBy().String()
-		invActx := auditapp.AuditContext{ActorID: invitedByStr, TenantID: invitation.TenantID().String()}
-		for _, roleID := range invitation.RoleIDs() {
-			if err := s.roleService.AssignRole(ctx, accesscontrol.AssignRoleInput{
-				TenantID: invitation.TenantID().String(),
-				UserID:   userID.String(),
-				RoleID:   roleID,
-			}, invitedByStr, invActx); err != nil {
-				s.logger.Error("failed to assign invitation role on accept",
-					"invitation_id", invitation.ID().String(),
-					"user_id", userID.String(),
-					"role_id", roleID,
-					"error", err)
-			}
-		}
-	}
+	s.applyInvitationRoles(ctx, invitation, userID)
 
 	s.logger.Info("invitation accepted", "token", token[:8]+"...", "user_id", userID.String(),
 		"role_count", len(invitation.RoleIDs()))
@@ -1444,7 +1477,16 @@ type UpdateSecuritySettingsInput struct {
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	// RequesterIP is the client IP of the tenant user saving the settings, as
+	// the API sees it (trusted-proxy aware). When set, an IP allowlist that
+	// would exclude it is refused (lockout guard). Empty for the platform
+	// administrator, who is not subject to organization allowlists.
+	RequesterIP string `json:"-"`
 }
+
+// ErrIPAllowlistExcludesRequester is returned when saving an IP allowlist that
+// does not include the saving administrator's own IP.
+var ErrIPAllowlistExcludesRequester = fmt.Errorf("%w: IP allowlist must include your current IP address", shared.ErrValidation)
 
 // UpdateSecuritySettings updates only the security settings.
 func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID string, input UpdateSecuritySettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
@@ -1500,6 +1542,14 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 				return nil, fmt.Errorf("%w: cannot enforce SSO — configure an active SSO identity provider first", shared.ErrValidation)
 			}
 		}
+	}
+
+	// Lockout guard: an administrator may not save an IP allowlist that would
+	// block their own next request. Checked only when this request changes the
+	// list and comes from a tenant user (the platform administrator passes no
+	// requester IP and is not subject to the allowlist).
+	if input.IPWhitelist != nil && input.RequesterIP != "" && !security.IPAllowed(input.RequesterIP) {
+		return nil, fmt.Errorf("%w (%s)", ErrIPAllowlistExcludesRequester, input.RequesterIP)
 	}
 
 	if err := t.UpdateSecuritySettings(security); err != nil {

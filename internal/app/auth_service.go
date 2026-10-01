@@ -112,6 +112,7 @@ var (
 	ErrSSOInvalidState                 = auth.ErrSSOInvalidState
 	ErrSSONoActiveProviders            = auth.ErrSSONoActiveProviders
 	ErrSSONoEmail                      = auth.ErrSSONoEmail
+	ErrSSONotAMember                   = auth.ErrSSONotAMember
 	ErrSSOProviderInactive             = auth.ErrSSOProviderInactive
 	ErrSSOProviderNotFound             = auth.ErrSSOProviderNotFound
 	ErrSSOProviderUnsupported          = auth.ErrSSOProviderUnsupported

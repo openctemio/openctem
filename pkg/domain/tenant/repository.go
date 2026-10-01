@@ -115,6 +115,9 @@ type MemberWithUser struct {
 	// "idp" for accounts that sign in through an identity provider (which
 	// owns the second factor). Filled by SearchMembersWithUserInfo only.
 	MFAStatus string
+	// PendingSetup: an administrator-created local account whose owner has not
+	// set a password or signed in yet.
+	PendingSetup bool
 }
 
 // MemberStats contains statistics about tenant members.

@@ -44,9 +44,14 @@ func registerTenantRoutes(
 		// membership. Without TenantContext + RequireMembership any
 		// authenticated user could read any tenant's record + settings
 		// by guessing its id/slug (cross-tenant IDOR).
-		r.GET("/{tenant}", h.Get,
+		getMiddlewares := []Middleware{
 			middleware.TenantContext(tenantRepo),
-			middleware.RequireMembership(membershipReader))
+			middleware.RequireMembership(membershipReader),
+		}
+		if ipAllowlistMiddleware != nil {
+			getMiddlewares = append(getMiddlewares, ipAllowlistMiddleware)
+		}
+		r.GET("/{tenant}", h.Get, getMiddlewares...)
 	}, baseMiddlewares...)
 
 	// Tenantless module-preset catalog — used by the team-creation
@@ -64,6 +69,10 @@ func registerTenantRoutes(
 	tenantMiddlewares = append(tenantMiddlewares,
 		middleware.TenantContext(tenantRepo),
 		middleware.RequireMembership(membershipReader))
+	// The organization's IP allowlist, for the organization in the URL.
+	if ipAllowlistMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, ipAllowlistMiddleware)
+	}
 
 	router.Group("/api/v1/tenants/{tenant}", func(r Router) {
 		// Read operations - any member (viewer+)
@@ -80,6 +89,10 @@ func registerTenantRoutes(
 		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin())
 		r.DELETE("/members/{userId}", h.RemoveMember, middleware.RequireTeamAdmin())
 		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin())
+		// Administrator-created accounts: create a user with roles and a
+		// one-time set-password link; reissue the link while the account is unused.
+		r.POST("/users", h.CreateUser, middleware.RequireTeamAdmin())
+		r.POST("/users/{userId}/setup-link", h.ReissueSetupLink, middleware.RequireTeamAdmin())
 		r.POST("/invitations/{invitationId}/resend", h.ResendInvitation, middleware.RequireTeamAdmin())
 		r.DELETE("/invitations/{invitationId}", h.DeleteInvitation, middleware.RequireTeamAdmin())
 

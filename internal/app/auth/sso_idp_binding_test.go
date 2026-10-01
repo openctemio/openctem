@@ -46,7 +46,7 @@ func (r *ssoFakeUserRepo) Create(_ context.Context, u *userdom.User) error { r.c
 
 func newSSOSvc(existing *userdom.User) (*SSOService, *ssoFakeUserRepo) {
 	repo := &ssoFakeUserRepo{byEmail: existing}
-	return &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}, repo
+	return &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}, repo
 }
 
 const (
@@ -66,7 +66,7 @@ func TestSSOFindOrCreate_BlocksCrossIdPSameEnum(t *testing.T) {
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: evilOkta, Subject: "evil-sub"},
-		identityproviderdom.ProviderOkta)
+		jitRP(identityproviderdom.ProviderOkta))
 
 	if err == nil {
 		t.Fatal("expected cross-IdP takeover (corp account ← attacker Okta) to be BLOCKED")
@@ -91,7 +91,7 @@ func TestSSOFindOrCreate_SameIssuerOK(t *testing.T) {
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},
-		identityproviderdom.ProviderOkta)
+		jitRP(identityproviderdom.ProviderOkta))
 	if err != nil {
 		t.Fatalf("same-issuer re-login should succeed, got %v", err)
 	}
@@ -111,7 +111,7 @@ func TestSSOFindOrCreate_LegacyTrustOnFirstUseBinds(t *testing.T) {
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},
-		identityproviderdom.ProviderOkta)
+		jitRP(identityproviderdom.ProviderOkta))
 	if err != nil {
 		t.Fatalf("legacy first-use login should succeed, got %v", err)
 	}
@@ -136,7 +136,7 @@ func TestSSOFindOrCreate_NoIssuerNoRegression(t *testing.T) {
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: "", Subject: ""},
-		identityproviderdom.ProviderOkta)
+		jitRP(identityproviderdom.ProviderOkta))
 	if err != nil {
 		t.Fatalf("no-id_token login should not regress, got %v", err)
 	}
@@ -175,11 +175,11 @@ var errTestCreateConflict = fmt.Errorf("duplicate key value violates unique cons
 func TestSSOFindOrCreate_RetryPathBlocksPasswordLocalTakeover(t *testing.T) {
 	victim, _ := userdom.NewLocalUser(victimMail, "Victim", "hashed-password")
 	repo := &raceUserRepo{onRetry: victim}
-	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}
+	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: evilOkta, Subject: "evil"},
-		identityproviderdom.ProviderOkta)
+		jitRP(identityproviderdom.ProviderOkta))
 	if err == nil {
 		t.Fatal("expected the retry path to block adoption of a password-backed local account")
 	}
@@ -197,11 +197,11 @@ func TestSSOFindOrCreate_RetryPathAdoptsSameIssuer(t *testing.T) {
 	concurrent, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
 	concurrent.BindFederatedIdentity(corpOkta, "corp-sub")
 	repo := &raceUserRepo{onRetry: concurrent}
-	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}
+	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},
-		identityproviderdom.ProviderOkta)
+		jitRP(identityproviderdom.ProviderOkta))
 	if err != nil {
 		t.Fatalf("same-issuer concurrent creation should be adopted, got %v", err)
 	}
@@ -217,7 +217,7 @@ func TestSSOFindOrCreate_NewOktaUserCreated(t *testing.T) {
 	s, repo := newSSOSvc(nil) // no existing user
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "newokta@corp.com", Name: "New Okta", Issuer: corpOkta, Subject: "okta-sub"},
-		identityproviderdom.ProviderOkta)
+		jitRP(identityproviderdom.ProviderOkta))
 	if err != nil {
 		t.Fatalf("Okta first-login should create the user, got %v", err)
 	}
@@ -240,7 +240,7 @@ func TestSSOFindOrCreate_NewUserBindsIssuer(t *testing.T) {
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "new@corp.com", Name: "New", Issuer: entraIss, Subject: "entra-sub"},
-		identityproviderdom.ProviderEntraID)
+		jitRP(identityproviderdom.ProviderEntraID))
 	if err != nil {
 		t.Fatalf("new federated user creation should succeed, got %v", err)
 	}
@@ -250,4 +250,17 @@ func TestSSOFindOrCreate_NewUserBindsIssuer(t *testing.T) {
 	if iss := repo.created.FederatedIssuer(); iss == nil || *iss != entraIss {
 		t.Fatalf("new user must be bound to %q, got %v", entraIss, iss)
 	}
+}
+
+// jitRP is the resolved provider a findOrCreateUser test logs in through:
+// auto-provisioning on, so a brand-new account is admitted exactly when the
+// verified-domain gate passes.
+func jitRP(p identityproviderdom.Provider) *resolvedProvider {
+	return &resolvedProvider{provider: p, autoProvision: true, source: "tenant"}
+}
+
+// corpVerified is a domain verifier for which corp.com is DNS-verified for the
+// organization, the precondition for SSO to create a brand-new account.
+func corpVerified() *fakeDomainVerifier {
+	return &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}
 }

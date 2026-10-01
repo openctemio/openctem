@@ -267,6 +267,26 @@ func run() int {
 	if services.Email != nil {
 		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
 	}
+	// Re-wire the RBAC role service. The rebuild above dropped the
+	// SetRoleService call from initServices, so POST /invitations/{token}/accept
+	// silently discarded the invitation's role_ids and the new member kept only
+	// the role the tenant_members trigger copied from the membership role.
+	if services.Role != nil {
+		services.Tenant.SetRoleService(services.Role)
+	}
+	// The user service lets AddMember enforce Security.AllowedDomains and lets
+	// the suspend/reactivate notifier resolve the recipient (it was never wired,
+	// so those emails were skipped).
+	services.Tenant.SetUserService(services.User)
+	// Administrator-created accounts. The set-password link is emailed
+	// when SMTP is configured, otherwise returned once to the administrator.
+	var setupMailer app.AccountSetupMailer
+	if services.Email != nil {
+		setupMailer = services.Email
+	}
+	if services.Role != nil {
+		services.UserProvisioning = app.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
+	}
 
 	// Wire AI triage job enqueuer if service is enabled
 	if services.AITriage != nil {

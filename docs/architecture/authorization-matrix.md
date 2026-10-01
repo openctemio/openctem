@@ -108,7 +108,7 @@ Handler
 |----------|-------------|
 | `GET /health` | Health check |
 | `GET /ready` | Readiness check |
-| `POST /api/v1/auth/register` | User registration |
+| `POST /api/v1/auth/register` | User registration (403 unless `AUTH_ALLOW_REGISTRATION=true` or a matching invitation token) |
 | `POST /api/v1/auth/login` | User login |
 | `POST /api/v1/auth/token` | Token exchange |
 | `POST /api/v1/auth/refresh` | Token refresh |
@@ -201,7 +201,18 @@ These routes require the tenant ID in the URL path and use database-based member
 | `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
+| `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
+| `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only) |
+| `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** (refuses an IP allowlist that excludes the caller's IP) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** |
+
+> **Granting roles** (invitations and created users) is anti-escalation checked:
+> a caller who is not an organization admin may grant only roles whose
+> permissions they hold, and the owner role is never grantable. The membership
+> role is derived from the granted RBAC roles (`member` if they include the
+> system member/admin role, else `viewer`) and the granted roles become the
+> user's exact role set, so the `tenant_members` → `user_roles` trigger cannot
+> add more.
 
 #### Invitations (`/api/v1/invitations`)
 
@@ -335,7 +346,9 @@ recorded in `admin_audit_logs`, and in the organization's own audit log with
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin |
-| `POST /api/v1/admin/tenants` | **ops_admin+** (audited) |
+| `POST /api/v1/admin/tenants` | **ops_admin+** (audited; creates the owner's account when `owner_email` has none) |
+| `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
+| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** (audited; RFC-025) |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
 | `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited) |
 
@@ -361,6 +374,25 @@ recorded in `admin_audit_logs`, and in the organization's own audit log with
 
 `/health` and `/ready` remain public. Configure the scraper's bearer token to
 match `METRICS_TOKEN`.
+
+## Organization access policy (RFC-025)
+
+Two per-organization policies (`Security.AllowedDomains`, `Security.IPWhitelist`,
+owner-managed) are enforced, not just stored. See
+[user-onboarding.md](./user-onboarding.md).
+
+- **Allowed email domains** gate every way into the organization: invitations
+  (create and accept), invited registration, administrator-created users,
+  `AddMember`/SCIM, and SSO just-in-time provisioning.
+- **IP allowlist**: `middleware.IPAllowlistGate` runs on every user-token
+  request (in `buildBaseMiddlewares` for the token's organization and after
+  `RequireMembership` on `/tenants/{tenant}` for the URL organization). Not
+  applied to sensor/agent or tenant API keys, the admin console, or public
+  routes. 403 `IP_NOT_ALLOWED`; lookup errors fail closed; client IP from
+  `httpsec.ClientIP` (trusted proxies only).
+- **Self-registration** (`POST /auth/register`) is off unless
+  `AUTH_ALLOW_REGISTRATION=true`; a pending invitation for the same email opens
+  it for that person only.
 
 ## Module-Gate Layer (per-tenant feature gating)
 

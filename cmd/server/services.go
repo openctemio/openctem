@@ -474,6 +474,8 @@ type Services struct {
 	Audit  *app.AuditService
 	User   *app.UserService
 	Tenant *app.TenantService
+	// UserProvisioning creates accounts on behalf of administrators.
+	UserProvisioning *app.UserProvisioningService
 
 	// Assets
 	Asset                  *app.AssetService

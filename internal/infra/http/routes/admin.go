@@ -131,6 +131,12 @@ func registerAdminRoutes(
 			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite}, audit("organization.create"))...)
 			r.GET("/{tenantId}", h.AdminOrganization.Get)
 
+			// Organization users: list, and create an account with a
+			// one-time set-password link (same service organization admins use).
+			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, read...)
+			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
+				with([]Middleware{opsWrite, scope}, audit("organization.user_create"))...)
+
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
 				with([]Middleware{superWrite}, audit("organization.sso_enforcement"))...)

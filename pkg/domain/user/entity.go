@@ -188,6 +188,28 @@ func NewLocalUser(email, name, passwordHash string) (*User, error) {
 	}, nil
 }
 
+// NewProvisionedLocalUser creates a local account that an administrator set up
+// for someone else: no password yet (the user sets it through a one-time link)
+// and the email marked verified on the administrator's word. Until the
+// password is set the account cannot sign in with a password.
+func NewProvisionedLocalUser(email, name string) (*User, error) {
+	if email == "" {
+		return nil, fmt.Errorf("%w: email is required", shared.ErrValidation)
+	}
+	now := time.Now().UTC()
+	return &User{
+		id:            shared.NewID(),
+		email:         email,
+		name:          name,
+		status:        StatusActive,
+		preferences:   Preferences{},
+		createdAt:     now,
+		updatedAt:     now,
+		authProvider:  AuthProviderLocal,
+		emailVerified: true,
+	}, nil
+}
+
 // NewLocalUserWithID creates a new local user with a specific ID (for syncing from JWT tokens).
 // This is used when the user ID already exists in the JWT but not in the database.
 func NewLocalUserWithID(id shared.ID, email, name string) (*User, error) {
@@ -519,6 +541,15 @@ func (u *User) IsLocked() bool {
 		return false
 	}
 	return time.Now().Before(*u.lockedUntil)
+}
+
+// IsPendingSetup reports whether the account was provisioned for the user
+// (by an administrator) and has never been used: a local account with no
+// password that has never signed in. Only such an account may be handed a new
+// one-time set-password link by an administrator; a used account belongs to
+// its owner and recovers through forgot-password.
+func (u *User) IsPendingSetup() bool {
+	return u.authProvider == AuthProviderLocal && u.passwordHash == nil && u.lastLoginAt == nil
 }
 
 // CanLogin returns true if the user can attempt to login.

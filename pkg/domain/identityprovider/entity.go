@@ -105,7 +105,7 @@ func New(
 		clientSecretEncrypted: clientSecretEncrypted,
 		scopes:                []string{"openid", "email", "profile", "User.Read"},
 		autoProvision:         true,
-		defaultRole:           "member",
+		defaultRole:           "viewer", // least privilege for SSO just-in-time members
 		isActive:              true,
 		metadata:              make(map[string]any),
 		createdAt:             now,

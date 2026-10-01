@@ -493,9 +493,21 @@ type TenantSMTPResolver interface {
 
 ### User Management (Production)
 
-In production, disable public registration: `AUTH_ALLOW_REGISTRATION=false`
+Public registration is **off by default** (`AUTH_ALLOW_REGISTRATION=false`,
+RFC-025). People get accounts from an administrator, an invitation, or their
+organization's SSO (JIT on verified domains). See
+`docs/architecture/user-onboarding.md`.
 
-Users are added via the invitation system:
+Administrators create users directly (one-time set-password link, emailed or
+returned once as `setup_token`):
+
+```go
+POST /api/v1/tenants/{tenant}/users        // owner/admin
+{"email": "user@company.com", "name": "User", "role_ids": ["00000000-0000-0000-0000-000000000004"]}
+POST /api/v1/admin/tenants/{tenantId}/users // platform admin console
+```
+
+Or invite (invitees without an account register with the invitation token):
 
 ```go
 // 1. Admin creates invitation (requires team:admin)

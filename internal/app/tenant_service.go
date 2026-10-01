@@ -11,6 +11,11 @@ type (
 	UserService             = tenant.UserService
 	TenantMembershipAdapter = tenant.TenantMembershipAdapter
 
+	UserProvisioningService = tenant.UserProvisioningService
+	AccountSetupMailer      = tenant.AccountSetupMailer
+	CreateUserInput         = tenant.CreateUserInput
+	ProvisionedUser         = tenant.ProvisionedUser
+
 	AddMemberInput              = tenant.AddMemberInput
 	BranchTypeRuleInput         = tenant.BranchTypeRuleInput
 	CreateInvitationInput       = tenant.CreateInvitationInput
@@ -30,9 +35,18 @@ type (
 	UserInfoProvider            = tenant.UserInfoProvider
 )
 
+// Errors re-exported from the tenant bounded context.
+var (
+	ErrAccountExists                = tenant.ErrAccountExists
+	ErrEmailDomainNotAllowed        = tenant.ErrEmailDomainNotAllowed
+	ErrNotPendingSetup              = tenant.ErrNotPendingSetup
+	ErrIPAllowlistExcludesRequester = tenant.ErrIPAllowlistExcludesRequester
+)
+
 var (
 	NewTenantService                   = tenant.NewTenantService
 	NewUserService                     = tenant.NewUserService
+	NewUserProvisioningService         = tenant.NewUserProvisioningService
 	NewTenantMembershipAdapter         = tenant.NewTenantMembershipAdapter
 	WithEmailEnqueuer                  = tenant.WithEmailEnqueuer
 	WithTenantAuditService             = tenant.WithTenantAuditService
