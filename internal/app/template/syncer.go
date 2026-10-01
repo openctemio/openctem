@@ -258,8 +258,10 @@ func (s *Syncer) createS3Fetcher(ctx context.Context, source *templatesource.Tem
 		ExternalID: source.S3Config.ExternalID,
 	}
 
-	// Get credentials if using keys
-	if source.CredentialID != nil && cfg.AuthType == "keys" {
+	// Tenant keys are required for both auth types ("sts_role" uses them as
+	// the base identity for AssumeRole). Without them the fetcher refuses to
+	// build a client rather than fall back to the server's own AWS identity.
+	if source.CredentialID != nil && (cfg.AuthType == templatesource.S3AuthKeys || cfg.AuthType == templatesource.S3AuthSTSRole) {
 		cred, err := s.getCredential(ctx, source.TenantID, *source.CredentialID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get credential: %w", err)

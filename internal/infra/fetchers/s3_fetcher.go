@@ -7,17 +7,19 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // S3Config contains configuration for S3 fetcher.
@@ -39,41 +41,66 @@ type S3Fetcher struct {
 	client *s3.Client
 }
 
-// NewS3Fetcher creates a new S3 fetcher.
+// s3HTTPClient builds the HTTP client every S3/STS call of a tenant source
+// goes through: the SSRF-guarded client, so a tenant endpoint (or a redirect
+// from it) can never reach loopback, link-local/IMDS or — unless the operator
+// allows private ranges — internal networks. A variable only for tests.
+var s3HTTPClient = func() *http.Client { return httpsec.SafeHTTPClient(2 * time.Minute) }
+
+// checkS3Endpoint rejects a tenant endpoint before any request is built.
+// A variable only for tests.
+var checkS3Endpoint = func(endpoint string) error {
+	_, err := httpsec.ValidateURL(endpoint)
+	return err
+}
+
+// NewS3Fetcher creates a new S3 fetcher for a tenant-configured source.
+//
+// The tenant's own credentials are required. The fetcher never consults the
+// SDK's default credential chain (environment, shared config, EC2/ECS/IRSA
+// role): a template source is configured by a tenant, and signing its
+// requests with the API server's identity would let the tenant read any
+// bucket that identity can read. "sts_role" assumes RoleARN using the
+// tenant's keys as the base identity, for the same reason.
 func NewS3Fetcher(ctx context.Context, cfg S3Config) (*S3Fetcher, error) {
 	f := &S3Fetcher{config: cfg}
 
-	// Build AWS config
-	var awsOpts []func(*config.LoadOptions) error
+	if cfg.AccessKey == "" || cfg.SecretKey == "" {
+		return nil, fmt.Errorf("s3 source requires tenant access keys; the server's own AWS credentials are never used")
+	}
+	if cfg.Endpoint != "" {
+		if err := checkS3Endpoint(cfg.Endpoint); err != nil {
+			return nil, fmt.Errorf("s3 endpoint blocked: %w", err)
+		}
+	}
 
-	awsOpts = append(awsOpts, config.WithRegion(cfg.Region))
+	httpClient := s3HTTPClient()
+	tenantKeys := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""))
 
-	// Setup authentication
+	// Built by hand rather than with config.LoadDefaultConfig so nothing from
+	// the server's environment (credentials, profiles, AWS_ENDPOINT_URL,
+	// IMDS region lookup) leaks into a tenant's client.
+	awsCfg := aws.Config{
+		Region:      cfg.Region,
+		Credentials: tenantKeys,
+		HTTPClient:  httpClient,
+	}
+
 	switch cfg.AuthType {
 	case "keys":
-		awsOpts = append(awsOpts, config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
-		))
 	case "sts_role":
-		// Load base config first
-		baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.Region))
-		if err != nil {
-			return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		if cfg.RoleARN == "" {
+			return nil, fmt.Errorf("s3 sts_role requires a role ARN")
 		}
-
-		stsClient := sts.NewFromConfig(baseCfg)
+		stsClient := sts.NewFromConfig(awsCfg)
 		assumeOpts := func(o *stscreds.AssumeRoleOptions) {
 			if cfg.ExternalID != "" {
 				o.ExternalID = aws.String(cfg.ExternalID)
 			}
 		}
-		creds := stscreds.NewAssumeRoleProvider(stsClient, cfg.RoleARN, assumeOpts)
-		awsOpts = append(awsOpts, config.WithCredentialsProvider(creds))
-	}
-
-	awsCfg, err := config.LoadDefaultConfig(ctx, awsOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		awsCfg.Credentials = aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(stsClient, cfg.RoleARN, assumeOpts))
+	default:
+		return nil, fmt.Errorf("unsupported s3 auth type %q (use keys or sts_role)", cfg.AuthType)
 	}
 
 	// Create S3 client

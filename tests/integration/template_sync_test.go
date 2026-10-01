@@ -778,6 +778,8 @@ func TestTemplateSource_Create_S3(t *testing.T) {
 			"prefix":    "semgrep/",
 			"auth_type": "keys",
 		},
+		// S3 sources sign with the tenant's own keys from the secret store.
+		"credential_id": shared.NewID().String(),
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -994,10 +996,12 @@ func TestE2E_TemplateSource_CreateAndList(t *testing.T) {
 		"source_type":   "s3",
 		"template_type": "semgrep",
 		"s3_config": map[string]interface{}{
-			"bucket": "test-bucket",
-			"region": "us-east-1",
+			"bucket":    "test-bucket",
+			"region":    "us-east-1",
+			"auth_type": "keys",
 		},
-		"enabled": true,
+		"credential_id": shared.NewID().String(),
+		"enabled":       true,
 	}
 	s3BodyBytes, _ := json.Marshal(s3Body)
 

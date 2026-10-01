@@ -223,9 +223,11 @@ func TestTemplateSourceService_CreateSource_S3(t *testing.T) {
 		TemplateType: "semgrep",
 		Enabled:      true,
 		S3Config: &ts.S3SourceConfig{
-			Bucket: "my-bucket",
-			Region: "us-east-1",
+			Bucket:   "my-bucket",
+			Region:   "us-east-1",
+			AuthType: ts.S3AuthKeys,
 		},
+		CredentialID: shared.NewID().String(),
 	}
 
 	source, err := svc.CreateSource(ctx, input)
@@ -237,6 +239,29 @@ func TestTemplateSourceService_CreateSource_S3(t *testing.T) {
 	}
 	if source.S3Config == nil || source.S3Config.Bucket != "my-bucket" {
 		t.Error("expected s3 config to be set")
+	}
+}
+
+// An S3 source must carry the tenant's own credentials: without them the
+// fetcher would otherwise have signed with the API server's AWS identity.
+func TestTemplateSourceService_CreateSource_S3WithoutCredentialRefused(t *testing.T) {
+	repo := newTmplSrcMockRepo()
+	svc := newTmplSrcService(repo)
+
+	for name, cfg := range map[string]*ts.S3SourceConfig{
+		"no auth type":  {Bucket: "my-bucket", Region: "us-east-1"},
+		"no credential": {Bucket: "my-bucket", Region: "us-east-1", AuthType: ts.S3AuthKeys},
+	} {
+		_, err := svc.CreateSource(context.Background(), template.CreateSourceInput{
+			TenantID:     shared.NewID().String(),
+			Name:         "S3 " + name,
+			SourceType:   "s3",
+			TemplateType: "semgrep",
+			S3Config:     cfg,
+		})
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("%s: expected a validation error, got %v", name, err)
+		}
 	}
 }
 

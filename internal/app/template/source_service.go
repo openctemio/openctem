@@ -144,6 +144,10 @@ func (s *SourceService) CreateSource(ctx context.Context, input CreateSourceInpu
 		source.SetCredential(credID)
 	}
 
+	if err := source.Validate(); err != nil {
+		return nil, err
+	}
+
 	// Persist
 	if err := s.repo.Create(ctx, source); err != nil {
 		return nil, err
@@ -307,6 +311,16 @@ func (s *SourceService) UpdateSource(ctx context.Context, input UpdateSourceInpu
 				return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
 			}
 			source.SetCredential(credID)
+		}
+	}
+
+	// An S3 source signs with the tenant's own keys only; refuse an edit
+	// that would leave it without them. (Checked only when the edit touches
+	// the S3 config or the credential, so a legacy source can still be
+	// disabled or renamed.)
+	if source.SourceType == ts.SourceTypeS3 && (input.S3Config != nil || input.CredentialID != nil) {
+		if err := source.Validate(); err != nil {
+			return nil, err
 		}
 	}
 
