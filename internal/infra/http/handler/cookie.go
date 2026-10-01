@@ -120,7 +120,10 @@ func GetRefreshTokenFromCookie(r *http.Request, cfg CookieConfig) string {
 }
 
 // SetTenantCookie sets the current tenant info as JSON in a cookie.
-// This cookie is NOT httpOnly because frontend needs to read it.
+// This cookie is deliberately NOT httpOnly: the frontend reads it to know which
+// tenant is active. It holds only the tenant id/slug/role hint, never a
+// credential — every request is authorized from the access token, so tampering
+// with it grants nothing. Secure/SameSite follow the shared CookieConfig.
 // The JSON format matches what frontend TenantProvider expects: {id, slug, role}
 func SetTenantCookie(w http.ResponseWriter, tenantID, tenantSlug, role string, cfg CookieConfig) {
 	// Create JSON data

@@ -85,6 +85,12 @@ func clientInfo(r *http.Request) adminconsole.ClientInfo {
 	return adminconsole.ClientInfo{IP: middleware.ClientIP(r), UserAgent: r.UserAgent()}
 }
 
+// setCookie writes an admin console cookie. admin_session and admin_mfa are
+// HttpOnly (admin_session is forced so a caller can never weaken it);
+// admin_csrf is deliberately JS-readable because it is the double-submit CSRF
+// token the console echoes in a header, a nonce rather than a credential.
+// Secure follows AUTH_COOKIE_SECURE (required in production) and SameSite is
+// always Strict: the console never needs its cookies on cross-site requests.
 func (h *AdminConsoleHandler) setCookie(w http.ResponseWriter, name, value, path string, maxAge int, httpOnly bool) {
 	effectiveHTTPOnly := httpOnly
 	if name == middleware.AdminSessionCookie {
