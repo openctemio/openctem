@@ -344,11 +344,14 @@ func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, reci
 		ExpiresIn: formatDuration(expiresIn),
 		AppName:   s.appName,
 	}
+	// tenantID reaches here from the request path; strip line breaks before
+	// logging it (CWE-117).
+	logTenant := strings.ReplaceAll(strings.ReplaceAll(tenantID, "\n", ""), "\r", "")
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateAccountSetup, data); err != nil {
-		s.logger.Error("failed to send account setup email", "tenant_id", tenantID, "error", err)
+		s.logger.Error("failed to send account setup email", "tenant_id", logTenant)
 		return fmt.Errorf("failed to send account setup email: %w", err)
 	}
-	s.logger.Info("account setup email sent", "tenant_id", tenantID)
+	s.logger.Info("account setup email sent", "tenant_id", logTenant)
 	return nil
 }
 
