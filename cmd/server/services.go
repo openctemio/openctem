@@ -1738,6 +1738,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			cfg.Auth,
 			log,
 		)
+		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
+		// GETDEL = single use) so a login can finish on any replica. Without
+		// Redis the service keeps them in process.
+		if redisClient != nil {
+			s.OAuth.SetPKCEStore(redisClient)
+		} else {
+			log.Warn("oauth: no Redis client; PKCE verifiers kept in process (single-replica only)")
+		}
 	}
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.

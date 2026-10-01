@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,6 +80,24 @@ type OAuthService struct {
 	// (Microsoft/Entra), so identity is taken from verified claims rather than
 	// a mutable directory attribute. See getMicrosoftUserInfo.
 	oidcVerifier *oidcVerifier
+	// pkceStore holds each login's PKCE code_verifier server-side, keyed by
+	// its state, until the callback consumes it.
+	pkceStore PKCEVerifierStore
+}
+
+// SetPKCEStore replaces the PKCE verifier store. Production wires the Redis
+// store so a login started on one replica can finish on another; the default
+// is in-process.
+func (s *OAuthService) SetPKCEStore(store PKCEVerifierStore) {
+	if store != nil {
+		s.pkceStore = store
+	}
+}
+
+// pkceStoreKey derives the store key from the signed state.
+func pkceStoreKey(state string) string {
+	sum := sha256.Sum256([]byte(state))
+	return "oauth_pkce:" + hex.EncodeToString(sum[:])
 }
 
 // NewOAuthService creates a new OAuthService.
@@ -112,6 +131,7 @@ func NewOAuthService(
 		// refuses the connection instead of silently following.
 		httpClient:   httpsec.SafeHTTPClient(30 * time.Second),
 		oidcVerifier: newOIDCVerifier(httpsec.SafeHTTPClient(30*time.Second), log),
+		pkceStore:    NewMemoryPKCEStore(),
 	}
 }
 
@@ -147,6 +167,9 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 	state, codeVerifier, err := s.generateState(input.Provider, input.FinalRedirect)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
+	}
+	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), codeVerifier, s.stateTTL()); err != nil {
+		return nil, fmt.Errorf("failed to store PKCE verifier: %w", err)
 	}
 
 	// Build authorization URL with PKCE challenge
@@ -193,9 +216,18 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 		return nil, ErrProviderDisabled
 	}
 
-	// Validate state and extract PKCE verifier
-	finalRedirect, codeVerifier, err := s.validateState(input.State, input.Provider)
+	// Validate state, then claim its PKCE verifier. Taking it is single use:
+	// a replayed state finds nothing and is refused before any code exchange.
+	finalRedirect, err := s.validateState(input.State, input.Provider)
 	if err != nil {
+		return nil, ErrInvalidState
+	}
+	codeVerifier, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(input.State))
+	if err != nil {
+		s.logger.Error("failed to read PKCE verifier", "provider", input.Provider, "error", err)
+		return nil, ErrInvalidState
+	}
+	if !found || codeVerifier == "" {
 		return nil, ErrInvalidState
 	}
 
@@ -289,7 +321,17 @@ func generatePKCE() (verifier, challenge string, err error) {
 	return verifier, challenge, nil
 }
 
-// generateState generates a signed state token with PKCE verifier.
+// stateTTL is how long a state (and its stored PKCE verifier) is valid.
+func (s *OAuthService) stateTTL() time.Duration {
+	if s.config.StateDuration > 0 {
+		return s.config.StateDuration
+	}
+	return 10 * time.Minute
+}
+
+// generateState generates a signed state token and a fresh PKCE verifier.
+// The verifier is returned to the caller to store server-side; it is not
+// part of the state.
 func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect string) (state string, codeVerifier string, err error) {
 	// Generate random bytes
 	randomBytes := make([]byte, 16)
@@ -303,13 +345,12 @@ func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect strin
 		return "", "", pkceErr
 	}
 
-	// Create state data (includes PKCE verifier for callback verification)
+	// Create state data. The PKCE verifier is deliberately NOT in here.
 	stateData := map[string]interface{}{
 		"provider":       string(provider),
 		"final_redirect": finalRedirect,
-		"code_verifier":  verifier,
 		"random":         base64.URLEncoding.EncodeToString(randomBytes),
-		"exp":            time.Now().Add(s.config.StateDuration).Unix(),
+		"exp":            time.Now().Add(s.stateTTL()).Unix(),
 	}
 
 	// Encode state data
@@ -336,11 +377,11 @@ func (s *OAuthService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates and decodes the state token. Returns finalRedirect and codeVerifier.
-func (s *OAuthService) validateState(state string, expectedProvider OAuthProvider) (string, string, error) {
+// validateState validates and decodes the state token. Returns finalRedirect.
+func (s *OAuthService) validateState(state string, expectedProvider OAuthProvider) (string, error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", "", errors.New("invalid state format")
+		return "", errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -348,38 +389,37 @@ func (s *OAuthService) validateState(state string, expectedProvider OAuthProvide
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", "", errors.New("invalid state signature")
+		return "", errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", "", errors.New("invalid state encoding")
+		return "", errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", "", errors.New("invalid state JSON")
+		return "", errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", "", errors.New("invalid state expiration")
+		return "", errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", "", errors.New("state expired")
+		return "", errors.New("state expired")
 	}
 
 	// Check provider
 	provider, ok := data["provider"].(string)
 	if !ok || provider != string(expectedProvider) {
-		return "", "", errors.New("provider mismatch")
+		return "", errors.New("provider mismatch")
 	}
 
 	finalRedirect, _ := data["final_redirect"].(string)
-	verifier, _ := data["code_verifier"].(string)
-	return finalRedirect, verifier, nil
+	return finalRedirect, nil
 }
 
 // OAuth token response.
