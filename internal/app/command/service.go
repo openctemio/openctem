@@ -4,11 +4,13 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 	"unicode/utf8"
 
 	commanddom "github.com/openctemio/api/pkg/domain/command"
+	sensordom "github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -16,16 +18,36 @@ import (
 
 // Service handles command-related business operations.
 type Service struct {
-	repo   commanddom.Repository
-	logger *logger.Logger
+	repo    commanddom.Repository
+	sensors SensorLookup
+	logger  *logger.Logger
+}
+
+// SensorLookup resolves a sensor inside one tenant. Satisfied by the sensor
+// repository.
+type SensorLookup interface {
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sensordom.Sensor, error)
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithSensorLookup makes Create check that a command's sensor belongs to the
+// command's tenant.
+func WithSensorLookup(l SensorLookup) Option {
+	return func(s *Service) { s.sensors = l }
 }
 
 // NewService creates a new Service.
-func NewService(repo commanddom.Repository, log *logger.Logger) *Service {
-	return &Service{
+func NewService(repo commanddom.Repository, log *logger.Logger, opts ...Option) *Service {
+	s := &Service{
 		repo:   repo,
 		logger: log.With("service", "command"),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // CreateInput represents the input for creating a command.
@@ -62,6 +84,18 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*commanddom.Co
 		sensorID, err := shared.IDFromString(input.SensorID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+		}
+		// The sensor must belong to this tenant. Without the check a command
+		// could be pinned to another tenant's sensor (stored, never claimable),
+		// and an unknown id failed on the foreign key with a 500 — together an
+		// oracle for which sensor ids exist in other tenants.
+		if s.sensors != nil {
+			if _, err := s.sensors.GetByTenantAndID(ctx, tenantID, sensorID); err != nil {
+				if errors.Is(err, shared.ErrNotFound) {
+					return nil, shared.NewDomainError("SENSOR_NOT_FOUND", "sensor_id: no such sensor in this tenant", shared.ErrValidation)
+				}
+				return nil, fmt.Errorf("look up sensor: %w", err)
+			}
 		}
 		cmd.SetSensorID(sensorID)
 	}
