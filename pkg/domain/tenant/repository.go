@@ -19,6 +19,7 @@ type Repository interface {
 
 	// ListActiveTenantIDs returns all active tenant IDs.
 	// Used by background jobs that need to process data across all tenants.
+	// The platform system tenant (SystemTenantID) is not included.
 	ListActiveTenantIDs(ctx context.Context) ([]shared.ID, error)
 
 	// CreateWithOwner atomically creates a tenant and its owner membership in a
@@ -157,3 +158,10 @@ type UserMembershipsByStatus struct {
 	Active    []UserMembership
 	Suspended []UserMembership
 }
+
+// SystemTenantID is the platform system tenant seeded by migration 000058. It
+// owns system scan profiles and pipeline templates; it has no members, assets
+// or findings, and it is not a customer tenant. shared.ID treats this all-zero
+// UUID as empty, so per-tenant services reject it — background sweeps must
+// never iterate it.
+const SystemTenantID = "00000000-0000-0000-0000-000000000000"

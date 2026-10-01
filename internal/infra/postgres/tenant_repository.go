@@ -155,9 +155,11 @@ func (r *TenantRepository) ExistsBySlug(ctx context.Context, slug string) (bool,
 // ListActiveTenantIDs returns all active tenant IDs.
 // Used by background jobs that need to process data across all tenants.
 func (r *TenantRepository) ListActiveTenantIDs(ctx context.Context) ([]shared.ID, error) {
-	query := `SELECT id FROM tenants ORDER BY id`
+	// The system tenant is excluded: it is not a customer tenant, and every
+	// sweep that received it failed on it (cert-monitor warned on every tick).
+	query := `SELECT id FROM tenants WHERE id <> $1::uuid ORDER BY id`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, tenant.SystemTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tenant IDs: %w", err)
 	}
