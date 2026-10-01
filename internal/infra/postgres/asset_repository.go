@@ -1345,6 +1345,10 @@ func (r *AssetRepository) GetByNames(ctx context.Context, tenantID shared.ID, na
 // UpsertBatch creates or updates multiple assets in a single operation.
 // Uses PostgreSQL ON CONFLICT for atomic upsert behavior.
 // Conflict is detected on (tenant_id, name) unique constraint.
+//
+// An asset that already exists under another name (ingest matched it by IP
+// and renamed it in memory) is renamed by id first, in the same transaction,
+// so the insert below meets it on its new name. See renameExistingTx.
 func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
 	if len(assets) == 0 {
 		return 0, 0, map[string]shared.ID{}, nil
@@ -1531,6 +1535,60 @@ func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sq
 	return nil
 }
 
+// assetRenameByIDSQL renames existing rows by id. The upsert's conflict target
+// is (tenant_id, name), so a row whose name changed is otherwise invisible to
+// it: the insert carries the row's own id under the new name and fails on
+// assets_pkey, which rolled back the whole batch (every other asset in the
+// report, and the findings that referenced them).
+//
+// A rename whose new name another asset already holds is skipped; the insert
+// then merges into that asset, exactly as a name match would.
+const assetRenameByIDSQL = `
+	UPDATE assets a
+	SET name = v.name, updated_at = NOW()
+	FROM unnest($1::uuid[], $2::uuid[], $3::text[]) AS v(id, tenant_id, name)
+	WHERE a.id = v.id
+	  AND a.tenant_id = v.tenant_id
+	  AND a.name <> v.name
+	  AND NOT EXISTS (
+		SELECT 1 FROM assets o
+		WHERE o.tenant_id = v.tenant_id AND o.name = v.name AND o.id <> v.id
+	  )`
+
+// renameCandidates returns the id, tenant and name arrays for the rename
+// statement. Names that occur more than once in the batch are left out: two
+// rows cannot both take one name, and the multi-row insert already falls back
+// to the per-row path for such a batch.
+func renameCandidates(assets []*asset.Asset) (ids, tenants, names []string) {
+	count := make(map[string]int, len(assets))
+	for _, a := range assets {
+		count[a.TenantID().String()+"\x00"+a.Name()]++
+	}
+	for _, a := range assets {
+		if a.TenantID().IsZero() || count[a.TenantID().String()+"\x00"+a.Name()] > 1 {
+			continue
+		}
+		ids = append(ids, a.ID().String())
+		tenants = append(tenants, a.TenantID().String())
+		names = append(names, a.Name())
+	}
+	return ids, tenants, names
+}
+
+// renameExistingTx applies renames of existing assets inside the upsert's
+// transaction. Rows that do not exist yet, or whose name is unchanged, are
+// not touched.
+func (r *AssetRepository) renameExistingTx(ctx context.Context, tx *sql.Tx, assets []*asset.Asset) error {
+	ids, tenants, names := renameCandidates(assets)
+	if len(ids) == 0 {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, assetRenameByIDSQL, pq.Array(ids), pq.Array(tenants), pq.Array(names)); err != nil {
+		return fmt.Errorf("failed to rename existing assets: %w", err)
+	}
+	return nil
+}
+
 // upsertBatchMultiRow upserts the whole batch in a single multi-row INSERT.
 func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -1542,6 +1600,10 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 			_ = tx.Rollback()
 		}
 	}()
+
+	if renameErr := r.renameExistingTx(ctx, tx, assets); renameErr != nil {
+		return 0, 0, nil, renameErr
+	}
 
 	args := make([]any, 0, len(assets)*assetUpsertColumnCount)
 	for _, a := range assets {
@@ -1607,6 +1669,10 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 			_ = tx.Rollback()
 		}
 	}()
+
+	if renameErr := r.renameExistingTx(ctx, tx, assets); renameErr != nil {
+		return 0, 0, nil, renameErr
+	}
 
 	stmt, err := tx.PrepareContext(ctx, assetUpsertColumnsSQL()+"\nVALUES "+assetValuesPlaceholders(1)+"\n"+assetUpsertConflictSQL())
 	if err != nil {

@@ -76,6 +76,34 @@ When name match fails, correlator checks alternative identifiers:
 
 **Key files**: `internal/app/ingest/correlator.go`, `correlator_test.go`
 
+## Renames
+
+A host matched by IP takes the name the scanner reports when:
+
+| Incoming vs current name | Renamed? |
+|---|---|
+| Better (IP → hostname → FQDN) | Yes |
+| Different, same quality (`x` → `y`, `x.corp` → `y.corp`) | Yes, if the IP matched exactly one asset and the name is not already one of its aliases |
+| Worse (FQDN → short name, hostname → IP) | No |
+
+The alias rule keeps two sources that name one IP differently from renaming
+the asset back and forth on every scan. The cost: renaming a host back to a
+name it had before is not followed.
+
+The batch upsert renames rows by id, in its own transaction, before its
+`ON CONFLICT (tenant_id, name)` insert. Without that step a renamed row was
+inserted under its own id with a new name, failed on `assets_pkey`, and rolled
+back every asset in the report.
+
+IP correlation reads addresses from `ip`, `ip_address` (a string or an object
+with `address`), `ip_addresses`, and from the CTIS `value` when the asset is
+named by hostname and its value is an IP address (the Vuls adapter does this).
+
+Renames rely on an IP match, so a host whose IP is reused by another machine
+within the staleness window can be renamed wrongly. Hosts with stable
+identifiers (MAC address, sensor host ID, cloud instance ID) are not matched
+on those identifiers yet.
+
 ## Aliases
 
 When an asset is renamed (e.g., IP → hostname via correlation), the old name is stored in `properties.aliases[]` (max 10). Search queries check aliases so users can still find assets by old names.

@@ -153,18 +153,64 @@ func (c *AssetCorrelator) CorrelateHost(
 		CorrelationType: "ip",
 	}
 
-	// Should we rename? Only if incoming name is higher quality
-	if nameQuality(incomingName) > nameQuality(primary.Name()) {
-		result.ShouldRename = true
-		result.NewName = incomingName
-	}
-
 	// Additional assets to merge (if multiple matched)
 	if len(assets) > 1 {
 		result.MergeTargets = assets[1:]
 	}
 
+	if shouldAdoptName(primary, incomingName, len(assets) == 1) {
+		result.ShouldRename = true
+		result.NewName = incomingName
+	}
+
 	return result, nil
+}
+
+// shouldAdoptName decides whether an asset matched by IP takes the name the
+// scanner reports now. A hostname is an attribute of the host, not its
+// identity: when the matched host was renamed (x -> y, same IP) the inventory
+// must follow, or every later report is merged into a record that still shows
+// the old name and the new one is recorded nowhere.
+//
+//   - A better name always wins (IP -> hostname -> FQDN), as before.
+//   - A different name of the same quality (x -> y, x.corp -> y.corp) wins
+//     only when the IP match is unambiguous (one asset matched) and the name
+//     is not one this asset already had. The alias check stops two sources
+//     that name one IP differently from renaming the asset back and forth on
+//     every scan; the price is that renaming a host back to an earlier name
+//     is not followed.
+//   - A worse name (FQDN -> short name, hostname -> IP) never wins.
+func shouldAdoptName(existing *asset.Asset, incomingName string, unambiguous bool) bool {
+	if incomingName == "" || incomingName == existing.Name() {
+		return false
+	}
+	incoming, current := nameQuality(incomingName), nameQuality(existing.Name())
+	if incoming > current {
+		return true
+	}
+	if incoming < current || looksLikeIP(incomingName) {
+		return false
+	}
+	return unambiguous && !hasAlias(existing, incomingName)
+}
+
+// hasAlias reports whether name is one of the asset's recorded former names.
+func hasAlias(a *asset.Asset, name string) bool {
+	switch v := a.Properties()["aliases"].(type) {
+	case []string:
+		for _, s := range v {
+			if s == name {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok && s == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // shouldCorrelateByIP checks staleness and type compatibility.
@@ -320,6 +366,15 @@ func ExtractAllIPs(properties map[string]any, assetName string) []string {
 
 	// From properties.ip (legacy string)
 	if ip, ok := properties["ip"].(string); ok && ip != "" {
+		if parsed := net.ParseIP(ip); parsed != nil {
+			ipSet[parsed.String()] = true
+		}
+	}
+
+	// From properties.ip_address as a plain string (the shape sdk-go's Nessus /
+	// Tenable parser emits); before this a renamed Nessus host matched nothing
+	// and became a second asset.
+	if ip, ok := properties["ip_address"].(string); ok && ip != "" {
 		if parsed := net.ParseIP(ip); parsed != nil {
 			ipSet[parsed.String()] = true
 		}

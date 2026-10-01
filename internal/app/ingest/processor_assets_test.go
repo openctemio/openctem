@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/api/pkg/domain/asset"
+	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/ctis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -389,4 +390,40 @@ func TestInferAssetExposure(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The address must land in ip_addresses (what IP correlation searches) for
+// the host shapes sdk-go's scanners emit, or a renamed host is never matched.
+func TestBuildPropertiesFromCTIS_KeepsAddressForCorrelation(t *testing.T) {
+	p := NewAssetProcessor(nil, logger.NewNop())
+
+	t.Run("nessus: ip_address as a string", func(t *testing.T) {
+		props := p.buildPropertiesFromCTIS(&ctis.Asset{
+			Type: ctis.AssetTypeHost, Value: "web-01.corp.example", Name: "web-01.corp.example",
+			Properties: ctis.Properties{"ip_address": "10.0.0.9"},
+		})
+		assert.ElementsMatch(t, []string{"10.0.0.9"}, props["ip_addresses"])
+		assert.Equal(t, "10.0.0.9", props["ip_address"], "the scanner's own key is left in place")
+	})
+
+	t.Run("vuls: hostname as name, address as value", func(t *testing.T) {
+		props := p.buildPropertiesFromCTIS(&ctis.Asset{
+			Type: ctis.AssetTypeIPAddress, Value: "10.0.0.10", Name: "web-02",
+			Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Version: 4, Hostname: "web-02"}},
+		})
+		assert.ElementsMatch(t, []string{"10.0.0.10"}, props["ip_addresses"])
+	})
+
+	t.Run("host named by hostname, value is its address", func(t *testing.T) {
+		props := p.buildPropertiesFromCTIS(&ctis.Asset{
+			Type: ctis.AssetTypeHost, Value: "10.0.0.11", Name: "web-03",
+			Properties: ctis.Properties{"ip": "10.0.0.11"},
+		})
+		assert.ElementsMatch(t, []string{"10.0.0.11"}, props["ip_addresses"], "no duplicate entry")
+	})
+
+	t.Run("value equal to name adds nothing", func(t *testing.T) {
+		props := p.buildPropertiesFromCTIS(&ctis.Asset{Type: ctis.AssetTypeIPAddress, Value: "10.0.0.12", Name: "10.0.0.12"})
+		assert.NotContains(t, props, "ip_addresses")
+	})
 }

@@ -296,7 +296,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings)
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", err)
-		// Continue with partial results
+		// Continue with partial results, but say so: the asset upsert is one
+		// transaction, so a failure here drops every asset in the report and
+		// the findings on new ones. It was logged only, and the sensor got a
+		// clean response.
+		addError(output, fmt.Sprintf("assets: %v", err))
 	}
 
 	output.AssetMap = assetMap
