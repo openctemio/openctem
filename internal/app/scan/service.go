@@ -191,16 +191,17 @@ type Service struct {
 	agentSelector       AgentSelector
 	securityValidator   SecurityValidator
 	auditService        AuditService
-	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusion enforcement (fail-open)
+	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
 	logger              *logger.Logger
 }
 
-// ScopeExclusionFilter reports which of the given candidate assets match an
+// ScopeExclusionFilter reports which of the given candidate targets match an
 // active scope EXCLUSION for the tenant and must therefore be skipped by a scan.
-// Implemented by *scope.Service. FAIL-OPEN by contract: on any error it returns
-// an empty set so scanning is never blocked by a scope lookup.
+// Implemented by *scope.Service. A lookup error is returned, and the scan is
+// not dispatched: scanning something the tenant excluded is worse than a
+// delayed scan (fail closed).
 type ScopeExclusionFilter interface {
-	FilterExcludedTargets(ctx context.Context, tenantID string, candidates []scope.ExclusionCandidate) map[shared.ID]bool
+	ExcludedTargets(ctx context.Context, tenantID string, candidates []scope.ExclusionCandidate) (map[shared.ID]bool, error)
 }
 
 // ServiceOption is a functional option for Service.
@@ -228,8 +229,8 @@ func WithProfileRepo(repo scanprofile.Repository) ServiceOption {
 }
 
 // WithScopeExclusionFilter wires scope-exclusion enforcement into scan target
-// selection. Optional — nil keeps the legacy behavior (exclusions advisory,
-// everything scanned). Fail-open regardless.
+// selection: excluded targets are removed server-side before dispatch, and a
+// failed lookup stops the dispatch.
 func WithScopeExclusionFilter(f ScopeExclusionFilter) ServiceOption {
 	return func(s *Service) {
 		s.scopeExclusions = f

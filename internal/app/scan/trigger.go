@@ -153,11 +153,18 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
-	// Propagate direct targets (e.g. from QuickScan) so the workflow step
-	// commands carry them to the agent. Without this the agent has only the
-	// (possibly empty, ephemeral) asset group and scans nothing.
-	if len(sc.Targets) > 0 {
-		runContext["targets"] = sc.Targets
+	// Resolve the targets server-side (direct targets + asset-group members,
+	// minus scope exclusions) and carry them to the step commands; agents do
+	// not resolve asset groups, so without this a group scan scans nothing.
+	resolved, err := s.resolveScanTargets(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
+		return nil, err
+	}
+	if len(resolved.Targets) > 0 {
+		runContext["targets"] = resolved.Targets
 	}
 
 	// Create pipeline run
@@ -234,9 +241,15 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 		}
 	}
 
-	// Scope enforcement: drop assets that match an active scope EXCLUSION from
-	// the scan target set. Fail-open — a nil filter or any error scans everything.
-	s.applyScopeExclusions(ctx, sc, runContext)
+	// Resolve what this run actually scans, server-side: direct targets plus
+	// asset-group members, minus scope exclusions (fail closed).
+	resolved, err := s.resolveScanTargets(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
+		return nil, err
+	}
 
 	// Use the system quick scan template for tracking
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
@@ -266,7 +279,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	stepRun := s.createSingleScanStepRun(ctx, run)
 
 	// Create command for the scanner
-	if err := s.createScannerCommand(ctx, sc, run, stepRun); err != nil {
+	if err := s.createScannerCommand(ctx, sc, run, stepRun, resolved.Targets); err != nil {
 		run.Fail("Failed to create command: " + err.Error())
 		_ = s.runRepo.Update(ctx, run)
 		return nil, fmt.Errorf("failed to create scanner command: %w", err)
@@ -390,7 +403,7 @@ type EmbeddedTemplate struct {
 // payload carries the keys the command handler needs to report the step back
 // (`pipeline_run_id`, `step_key`, `step_run_id`); `run_id` is kept because the
 // agent SDK reads it.
-func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun) error {
+func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, targets []string) error {
 	payloadMap := map[string]any{
 		"run_id":             run.ID.String(),
 		"scan_id":            sc.ID.String(),
@@ -418,14 +431,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		payloadMap[pipeline.PayloadKeyStepKey] = stepRun.StepKey
 		payloadMap[pipeline.PayloadKeyStepRunID] = stepRun.ID.String()
 	}
-	if len(sc.Targets) > 0 {
-		payloadMap["target"] = sc.Targets[0]
-	}
-	// Carry the scope-excluded asset set (computed at trigger time) so the agent
-	// resolving the asset group skips them. Present only when exclusions matched.
-	if ex, ok := run.Context["excluded_asset_ids"]; ok {
-		payloadMap["excluded_asset_ids"] = ex
-	}
+	applyTargetsToPayload(payloadMap, sc.ScannerName, targets)
 
 	// Embed custom templates if configured
 	if templates, err := s.resolveCustomTemplates(ctx, sc); err != nil {
@@ -446,7 +452,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	}
 
 	// Determine whether to use platform agents based on AgentSelector
-	usePlatform, err := s.shouldUsePlatformAgent(ctx, sc)
+	usePlatform, err := s.shouldUsePlatformAgent(ctx, sc, targets)
 	if err != nil {
 		s.logger.Warn("failed to determine agent selection, falling back to tenant only",
 			"error", err, "scan_id", sc.ID.String())
@@ -624,16 +630,25 @@ func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared
 	return nil
 }
 
-// shouldUsePlatformAgent determines whether to route this scan to platform agents.
-func (s *Service) shouldUsePlatformAgent(ctx context.Context, sc *scan.Scan) (bool, error) {
+// shouldUsePlatformAgent determines whether to route this scan to shared
+// platform agents. Shared infrastructure must never receive a tenant's
+// internal targets or asset groups, and is only used when the tenant may use
+// it: in auto mode a busy tenant fleet means the job waits for a tenant agent,
+// it is not silently moved to shared agents (RFC-023 D14).
+func (s *Service) shouldUsePlatformAgent(ctx context.Context, sc *scan.Scan, targets []string) (bool, error) {
 	// If explicitly set to tenant only, never use platform
 	if sc.RunOnTenantRunner || sc.AgentPreference == scan.AgentPreferenceTenant {
 		return false, nil
 	}
+	internal := !sc.AssetGroupID.IsZero() || hasInternalTarget(targets)
 
-	// If explicitly set to platform only, always use platform
+	// If explicitly set to platform only, the tenant must be allowed and the
+	// targets must be public.
 	if sc.AgentPreference == scan.AgentPreferencePlatform {
-		// Check if tenant can use platform agents
+		if internal {
+			return false, fmt.Errorf("%w: platform agents cannot scan internal targets or asset groups; use a tenant agent",
+				shared.ErrValidation)
+		}
 		if s.agentSelector != nil {
 			canUse, reason := s.agentSelector.CanUsePlatformAgents(ctx, sc.TenantID)
 			if !canUse {
@@ -643,26 +658,26 @@ func (s *Service) shouldUsePlatformAgent(ctx context.Context, sc *scan.Scan) (bo
 		return true, nil
 	}
 
-	// For "auto" mode, use AgentSelector to determine
-	if s.agentSelector != nil {
-		result, err := s.agentSelector.SelectAgent(ctx, SelectAgentRequest{
-			TenantID:     sc.TenantID,
-			Capabilities: []string{sc.ScannerName},
-			Tool:         sc.ScannerName,
-			Mode:         SelectTenantFirst,
-			AllowQueue:   true,
-		})
-		if err != nil {
-			return false, err
-		}
-
-		// If no tenant agent available, use platform if allowed
-		if result.Agent == nil || result.IsPlatform {
-			return true, nil
-		}
+	// Auto: tenant agents first. Shared agents only if the tenant may use them
+	// and nothing in the scan is internal; otherwise the job waits.
+	if s.agentSelector == nil || internal {
+		return false, nil
 	}
-
-	return false, nil
+	result, err := s.agentSelector.SelectAgent(ctx, SelectAgentRequest{
+		TenantID:     sc.TenantID,
+		Capabilities: []string{sc.ScannerName},
+		Tool:         sc.ScannerName,
+		Mode:         SelectTenantFirst,
+		AllowQueue:   true,
+	})
+	if err != nil {
+		return false, err
+	}
+	if result.Agent != nil && !result.IsPlatform {
+		return false, nil
+	}
+	canUse, _ := s.agentSelector.CanUsePlatformAgents(ctx, sc.TenantID)
+	return canUse, nil
 }
 
 // calculateInitialPriority calculates the initial queue priority for a platform job.
@@ -788,47 +803,23 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 	return nil
 }
 
-// applyScopeExclusions removes assets matching an active scope EXCLUSION from
-// the scan's target set. It materializes the scan's asset-group members, asks
-// the scope service which are excluded, records the excluded IDs in runContext
-// (surfaced to the agent via the command payload) and logs how many were
-// skipped.
-//
-// FAIL-OPEN throughout: a nil filter, a group with no resolvable assets, or any
-// materialization error simply leaves the target set untouched — a scope lookup
-// must never block a scan. Only exclusions are enforced here; in-scope-target
-// filtering is intentionally out of scope.
-func (s *Service) applyScopeExclusions(ctx context.Context, sc *scan.Scan, runContext map[string]any) {
-	if s.scopeExclusions == nil || sc.AssetGroupID.IsZero() {
-		return
+// recordResolvedTargets stores what the run will scan in its context (counts
+// and warnings, not the list itself), and refuses a run whose every target was
+// excluded by scope.
+func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[string]any) error {
+	runContext["resolved_target_count"] = len(r.Targets)
+	if r.Excluded > 0 {
+		runContext["excluded_target_count"] = r.Excluded
 	}
-
-	candidates, err := s.listGroupExclusionCandidates(ctx, sc.AssetGroupID)
-	if err != nil {
-		s.logger.Warn("scope exclusion check skipped: failed to list group assets (fail-open)",
-			"scan_id", sc.ID.String(), "error", err)
-		return
+	if len(r.Warnings) > 0 {
+		runContext["dispatch_warnings"] = r.Warnings
 	}
-	if len(candidates) == 0 {
-		return
+	if len(r.Targets) == 0 && r.Excluded > 0 {
+		return shared.NewDomainError("ALL_TARGETS_EXCLUDED",
+			fmt.Sprintf("Every target of scan %q is excluded by scope; nothing to scan.", sc.Name),
+			shared.ErrValidation)
 	}
-
-	excluded := s.scopeExclusions.FilterExcludedTargets(ctx, sc.TenantID.String(), candidates)
-	if len(excluded) == 0 {
-		return
-	}
-
-	excludedIDs := make([]string, 0, len(excluded))
-	for id := range excluded {
-		excludedIDs = append(excludedIDs, id.String())
-	}
-	runContext["excluded_asset_ids"] = excludedIDs
-	s.logger.Info("scope exclusions applied to scan",
-		"scan_id", sc.ID.String(),
-		"asset_group_id", sc.AssetGroupID.String(),
-		"candidates", len(candidates),
-		"excluded", len(excludedIDs),
-	)
+	return nil
 }
 
 // listGroupExclusionCandidates materializes an asset group's members into scope

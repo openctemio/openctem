@@ -1148,13 +1148,35 @@ type ExclusionCandidate struct {
 	Values []string
 }
 
+// ExcludedTargets returns the set of candidate IDs that match an ACTIVE scope
+// exclusion for the tenant, the targets a scan must skip. Unlike
+// FilterExcludedTargets it reports a failed lookup as an error, so the scan
+// path can refuse to dispatch rather than scan something the tenant excluded
+// (fail closed, RFC-023 D17).
+func (s *Service) ExcludedTargets(ctx context.Context, tenantID string, candidates []ExclusionCandidate) (map[shared.ID]bool, error) {
+	excluded := make(map[shared.ID]bool)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list active scope exclusions: %w", err)
+	}
+	for _, c := range candidates {
+		if len(exclusions) > 0 && s.isAssetExcluded(c.Values, exclusions) {
+			excluded[c.ID] = true
+		}
+	}
+	return excluded, nil
+}
+
 // FilterExcludedTargets returns the set of candidate asset IDs that match an
 // ACTIVE scope exclusion for the tenant — the assets a scan must skip.
 //
 // FAIL-OPEN by contract: an invalid tenant id, an exclusion-lookup error, or no
-// active exclusions all yield an EMPTY set (nothing excluded), so a scope lookup
-// can never block a scan. This is the only scope enforcement wired into
-// scanning; in-scope-target filtering is deliberately NOT applied here.
+// active exclusions all yield an EMPTY set (nothing excluded). Scan dispatch
+// uses ExcludedTargets instead, which fails closed.
 func (s *Service) FilterExcludedTargets(ctx context.Context, tenantID string, candidates []ExclusionCandidate) map[shared.ID]bool {
 	excluded := make(map[shared.ID]bool)
 
