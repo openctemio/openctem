@@ -278,6 +278,14 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		a.Tools = input.Tools
 	}
 
+	// Revocation is permanent (ActivateSensor refuses it too). Without this a
+	// PUT with {"status":"active"} brought a revoked sensor and its old key
+	// back.
+	if input.Status != "" && a.Status == sensordom.SensorStatusRevoked &&
+		sensordom.SensorStatus(input.Status) != sensordom.SensorStatusRevoked {
+		return nil, shared.NewDomainError("FORBIDDEN", "cannot change the status of a revoked sensor", shared.ErrForbidden)
+	}
+
 	if input.Status != "" {
 		oldStatus := string(a.Status)
 		a.SetStatus(sensordom.SensorStatus(input.Status), "")
