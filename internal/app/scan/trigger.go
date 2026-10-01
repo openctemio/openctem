@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // =============================================================================
@@ -405,16 +406,16 @@ type EmbeddedTemplate struct {
 // sensor SDK reads it.
 func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, targets []string) error {
 	payloadMap := map[string]any{
-		"run_id":             run.ID.String(),
-		"scan_id":            sc.ID.String(),
-		"scanner_name":       sc.ScannerName,
-		"scanner_config":     sc.ScannerConfig,
-		"asset_group_id":     sc.AssetGroupID.String(),
-		"targets_per_job":    sc.TargetsPerJob,
-		"routing_tags":       sc.Tags,
-		"tenant_runner_only": sc.RunOnTenantRunner,
-		"sensor_preference":   string(sc.SensorPreference),
-		"context":            run.Context,
+		"run_id":                            run.ID.String(),
+		"scan_id":                           sc.ID.String(),
+		"scanner_name":                      sc.ScannerName,
+		"scanner_config":                    sc.ScannerConfig,
+		"asset_group_id":                    sc.AssetGroupID.String(),
+		"targets_per_job":                   sc.TargetsPerJob,
+		"routing_tags":                      sc.Tags,
+		"tenant_runner_only":                sc.RunOnTenantRunner,
+		legacyv1.PayloadKeySensorPreference: string(sc.SensorPreference),
+		"context":                           run.Context,
 		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
 		// single `target`, not `scanner_name`/`scanner_config` — send both sets
 		// so the command dispatches correctly (contract drift previously left

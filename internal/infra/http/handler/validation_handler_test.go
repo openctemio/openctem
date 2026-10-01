@@ -326,7 +326,7 @@ func TestValidationHandler_IngestEvidence_ForeignOrStaleCommandRejected(t *testi
 	scanCmd.Status = commanddom.CommandStatusRunning
 
 	cases := map[string]*commanddom.Command{
-		"other sensor":        validateCmd(t, tenantID, &other, findingID, commanddom.CommandStatusRunning),
+		"other sensor":       validateCmd(t, tenantID, &other, findingID, commanddom.CommandStatusRunning),
 		"unassigned":         validateCmd(t, tenantID, nil, findingID, commanddom.CommandStatusPending),
 		"completed":          validateCmd(t, tenantID, &me, findingID, commanddom.CommandStatusCompleted),
 		"failed":             validateCmd(t, tenantID, &me, findingID, commanddom.CommandStatusFailed),

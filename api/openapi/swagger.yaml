@@ -3316,6 +3316,99 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_openctemio_api_pkg_sensorproto_legacyv1.Command:
+    properties:
+      acknowledged_at:
+        type: string
+      agent_id:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error_message:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      payload:
+        items:
+          type: integer
+        type: array
+      priority:
+        type: string
+      result:
+        items:
+          type: integer
+        type: array
+      started_at:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_sensorproto_legacyv1.Heartbeat:
+    properties:
+      agent_id:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_sensorproto_legacyv1.ScanSession:
+    properties:
+      agent_id:
+        type: string
+      asset_id:
+        type: string
+      asset_type:
+        type: string
+      asset_value:
+        type: string
+      base_commit_sha:
+        type: string
+      branch:
+        type: string
+      commit_sha:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      duration_ms:
+        type: integer
+      error_message:
+        type: string
+      findings_by_severity:
+        additionalProperties:
+          type: integer
+        type: object
+      findings_fixed:
+        type: integer
+      findings_new:
+        type: integer
+      findings_total:
+        type: integer
+      id:
+        type: string
+      scanner_name:
+        type: string
+      scanner_type:
+        type: string
+      scanner_version:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: string
+    type: object
   internal_infra_http_handler.APIKeyDataRequest:
     properties:
       key:
@@ -3622,131 +3715,6 @@ definitions:
         type: string
       package:
         type: string
-    type: object
-  internal_infra_http_handler.AgentConfigTemplatesResponse:
-    properties:
-      cli:
-        type: string
-      docker:
-        type: string
-      env:
-        type: string
-      yaml:
-        type: string
-    type: object
-  internal_infra_http_handler.AgentDisableRequest:
-    properties:
-      reason:
-        maxLength: 500
-        type: string
-    type: object
-  internal_infra_http_handler.AgentRegenerateAPIKeyResponse:
-    properties:
-      api_key:
-        type: string
-    type: object
-  internal_infra_http_handler.AgentResponse:
-    properties:
-      api_key_prefix:
-        type: string
-      available_slots:
-        type: integer
-      capabilities:
-        items:
-          type: string
-        type: array
-      cpu_percent:
-        description: System metrics
-        type: number
-      created_at:
-        type: string
-      current_jobs:
-        type: integer
-      description:
-        type: string
-      error_count:
-        type: integer
-      execution_mode:
-        type: string
-      health:
-        description: 'Automatic: unknown, online, offline, error'
-        type: string
-      hostname:
-        type: string
-      id:
-        type: string
-      ip_address:
-        type: string
-      labels:
-        additionalProperties: {}
-        type: object
-      last_seen_at:
-        description: Statistics
-        type: string
-      load_factor:
-        description: 0.0 to 1.0
-        type: number
-      max_concurrent_jobs:
-        description: Load balancing
-        type: integer
-      memory_percent:
-        type: number
-      name:
-        type: string
-      region:
-        type: string
-      status:
-        description: 'Admin-controlled: active, disabled, revoked'
-        type: string
-      status_message:
-        type: string
-      tenant_id:
-        type: string
-      tools:
-        items:
-          type: string
-        type: array
-      total_findings:
-        type: integer
-      total_scans:
-        type: integer
-      type:
-        type: string
-      updated_at:
-        type: string
-      version:
-        type: string
-    type: object
-  internal_infra_http_handler.AgentRevokeRequest:
-    properties:
-      reason:
-        maxLength: 500
-        type: string
-    type: object
-  internal_infra_http_handler.AgentStatsResponse:
-    properties:
-      active_jobs:
-        type: integer
-      by_execution_mode:
-        additionalProperties:
-          type: integer
-        type: object
-      by_health:
-        additionalProperties:
-          type: integer
-        type: object
-      by_status:
-        additionalProperties:
-          type: integer
-        type: object
-      by_type:
-        additionalProperties:
-          type: integer
-        type: object
-      online_active:
-        type: integer
-      total:
-        type: integer
     type: object
   internal_infra_http_handler.AssetBriefResponse:
     properties:
@@ -5070,8 +5038,6 @@ definitions:
     properties:
       acknowledged_at:
         type: string
-      agent_id:
-        type: string
       completed_at:
         type: string
       created_at:
@@ -5092,6 +5058,8 @@ definitions:
         items:
           type: integer
         type: array
+      sensor_id:
+        type: string
       started_at:
         type: string
       status:
@@ -5150,52 +5118,6 @@ definitions:
         type: string
       vulnerability_count:
         type: integer
-    type: object
-  internal_infra_http_handler.CreateAgentRequest:
-    properties:
-      capabilities:
-        items:
-          type: string
-        maxItems: 20
-        type: array
-      description:
-        maxLength: 1000
-        type: string
-      execution_mode:
-        enum:
-        - standalone
-        - daemon
-        type: string
-      max_concurrent_jobs:
-        maximum: 100
-        minimum: 1
-        type: integer
-      name:
-        maxLength: 255
-        minLength: 1
-        type: string
-      tools:
-        items:
-          type: string
-        maxItems: 20
-        type: array
-      type:
-        enum:
-        - runner
-        - worker
-        - collector
-        - sensor
-        type: string
-    required:
-    - name
-    - type
-    type: object
-  internal_infra_http_handler.CreateAgentResponse:
-    properties:
-      agent:
-        $ref: '#/definitions/internal_infra_http_handler.AgentResponse'
-      api_key:
-        type: string
     type: object
   internal_infra_http_handler.CreateAssetGroupRequest:
     properties:
@@ -5341,8 +5263,6 @@ definitions:
     type: object
   internal_infra_http_handler.CreateCommandRequest:
     properties:
-      agent_id:
-        type: string
       expires_in:
         description: Seconds until expiration
         type: integer
@@ -5356,6 +5276,8 @@ definitions:
         - normal
         - high
         - critical
+        type: string
+      sensor_id:
         type: string
       type:
         enum:
@@ -5895,12 +5817,6 @@ definitions:
     type: object
   internal_infra_http_handler.CreateScanRequest:
     properties:
-      agent_preference:
-        enum:
-        - auto
-        - tenant
-        - platform
-        type: string
       asset_group_id:
         description: Single asset group (legacy)
         type: string
@@ -5955,6 +5871,12 @@ definitions:
         - weekly
         - monthly
         - crontab
+        type: string
+      sensor_preference:
+        enum:
+        - auto
+        - tenant
+        - platform
         type: string
       tags:
         items:
@@ -6096,6 +6018,52 @@ definitions:
     required:
     - pattern
     - target_type
+    type: object
+  internal_infra_http_handler.CreateSensorRequest:
+    properties:
+      capabilities:
+        items:
+          type: string
+        maxItems: 20
+        type: array
+      description:
+        maxLength: 1000
+        type: string
+      execution_mode:
+        enum:
+        - standalone
+        - daemon
+        type: string
+      max_concurrent_jobs:
+        maximum: 100
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+      tools:
+        items:
+          type: string
+        maxItems: 20
+        type: array
+      type:
+        enum:
+        - runner
+        - worker
+        - collector
+        - sensor
+        type: string
+    required:
+    - name
+    - type
+    type: object
+  internal_infra_http_handler.CreateSensorResponse:
+    properties:
+      api_key:
+        type: string
+      sensor:
+        $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
     type: object
   internal_infra_http_handler.CreateTemplateSourceRequest:
     properties:
@@ -7588,7 +7556,7 @@ definitions:
         type: number
       disk_read_mbps:
         description: |-
-          Disk/network throughput in MB/s. Optional — agents that omit them leave
+          Disk/network throughput in MB/s. Optional — sensors that omit them leave
           the corresponding load-balancing terms at zero. Accepted here so the
           AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
         type: number
@@ -7901,23 +7869,6 @@ definitions:
       total_count:
         type: integer
     type: object
-  internal_infra_http_handler.ListResponse-internal_infra_http_handler_AgentResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.AgentResponse'
-        type: array
-      links:
-        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
-      page:
-        type: integer
-      per_page:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
   internal_infra_http_handler.ListResponse-internal_infra_http_handler_AssetGroupResponse:
     properties:
       data:
@@ -8127,6 +8078,23 @@ definitions:
       data:
         items:
           $ref: '#/definitions/internal_infra_http_handler.ScopeTargetResponse'
+        type: array
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_infra_http_handler.ListResponse-internal_infra_http_handler_SensorResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
         type: array
       links:
         $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
@@ -9261,8 +9229,6 @@ definitions:
     type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
-      agent_preference:
-        type: string
       asset_group_id:
         description: Primary asset group (legacy)
         type: string
@@ -9319,6 +9285,8 @@ definitions:
       schedule_timezone:
         type: string
       schedule_type:
+        type: string
+      sensor_preference:
         type: string
       status:
         type: string
@@ -9451,8 +9419,6 @@ definitions:
     type: object
   internal_infra_http_handler.ScanSessionResponse:
     properties:
-      agent_id:
-        type: string
       asset_id:
         type: string
       asset_type:
@@ -9490,6 +9456,8 @@ definitions:
       scanner_type:
         type: string
       scanner_version:
+        type: string
+      sensor_id:
         type: string
       started_at:
         type: string
@@ -9655,6 +9623,131 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  internal_infra_http_handler.SensorConfigTemplatesResponse:
+    properties:
+      cli:
+        type: string
+      docker:
+        type: string
+      env:
+        type: string
+      yaml:
+        type: string
+    type: object
+  internal_infra_http_handler.SensorDisableRequest:
+    properties:
+      reason:
+        maxLength: 500
+        type: string
+    type: object
+  internal_infra_http_handler.SensorRegenerateAPIKeyResponse:
+    properties:
+      api_key:
+        type: string
+    type: object
+  internal_infra_http_handler.SensorResponse:
+    properties:
+      api_key_prefix:
+        type: string
+      available_slots:
+        type: integer
+      capabilities:
+        items:
+          type: string
+        type: array
+      cpu_percent:
+        description: System metrics
+        type: number
+      created_at:
+        type: string
+      current_jobs:
+        type: integer
+      description:
+        type: string
+      error_count:
+        type: integer
+      execution_mode:
+        type: string
+      health:
+        description: 'Automatic: unknown, online, offline, error'
+        type: string
+      hostname:
+        type: string
+      id:
+        type: string
+      ip_address:
+        type: string
+      labels:
+        additionalProperties: {}
+        type: object
+      last_seen_at:
+        description: Statistics
+        type: string
+      load_factor:
+        description: 0.0 to 1.0
+        type: number
+      max_concurrent_jobs:
+        description: Load balancing
+        type: integer
+      memory_percent:
+        type: number
+      name:
+        type: string
+      region:
+        type: string
+      status:
+        description: 'Admin-controlled: active, disabled, revoked'
+        type: string
+      status_message:
+        type: string
+      tenant_id:
+        type: string
+      tools:
+        items:
+          type: string
+        type: array
+      total_findings:
+        type: integer
+      total_scans:
+        type: integer
+      type:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+  internal_infra_http_handler.SensorRevokeRequest:
+    properties:
+      reason:
+        maxLength: 500
+        type: string
+    type: object
+  internal_infra_http_handler.SensorStatsResponse:
+    properties:
+      active_jobs:
+        type: integer
+      by_execution_mode:
+        additionalProperties:
+          type: integer
+        type: object
+      by_health:
+        additionalProperties:
+          type: integer
+        type: object
+      by_status:
+        additionalProperties:
+          type: integer
+        type: object
+      by_type:
+        additionalProperties:
+          type: integer
+        type: object
+      online_active:
+        type: integer
+      total:
+        type: integer
     type: object
   internal_infra_http_handler.SessionsResponse:
     properties:
@@ -10215,7 +10308,7 @@ definitions:
         additionalProperties: {}
         type: object
       is_available:
-        description: True if at least one agent supports this tool
+        description: True if at least one sensor supports this tool
         type: boolean
       is_enabled:
         type: boolean
@@ -10241,37 +10334,6 @@ definitions:
     properties:
       count:
         type: integer
-    type: object
-  internal_infra_http_handler.UpdateAgentRequest:
-    properties:
-      capabilities:
-        items:
-          type: string
-        maxItems: 20
-        type: array
-      description:
-        maxLength: 1000
-        type: string
-      max_concurrent_jobs:
-        maximum: 100
-        minimum: 1
-        type: integer
-      name:
-        maxLength: 255
-        minLength: 1
-        type: string
-      status:
-        description: Admin-controlled
-        enum:
-        - active
-        - disabled
-        - revoked
-        type: string
-      tools:
-        items:
-          type: string
-        maxItems: 20
-        type: array
     type: object
   internal_infra_http_handler.UpdateAssetGroupRequest:
     properties:
@@ -10780,12 +10842,6 @@ definitions:
     type: object
   internal_infra_http_handler.UpdateScanRequest:
     properties:
-      agent_preference:
-        enum:
-        - auto
-        - tenant
-        - platform
-        type: string
       description:
         maxLength: 1000
         type: string
@@ -10827,6 +10883,12 @@ definitions:
         - weekly
         - monthly
         - crontab
+        type: string
+      sensor_preference:
+        enum:
+        - auto
+        - tenant
+        - platform
         type: string
       tags:
         items:
@@ -10945,6 +11007,37 @@ definitions:
         minimum: 0
         type: integer
       tags:
+        items:
+          type: string
+        maxItems: 20
+        type: array
+    type: object
+  internal_infra_http_handler.UpdateSensorRequest:
+    properties:
+      capabilities:
+        items:
+          type: string
+        maxItems: 20
+        type: array
+      description:
+        maxLength: 1000
+        type: string
+      max_concurrent_jobs:
+        maximum: 100
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+      status:
+        description: Admin-controlled
+        enum:
+        - active
+        - disabled
+        - revoked
+        type: string
+      tools:
         items:
           type: string
         maxItems: 20
@@ -12148,7 +12241,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Agent polls for pending commands to execute
+      description: Sensor polls for pending commands to execute
       parameters:
       - default: 10
         description: Max commands to return
@@ -12162,7 +12255,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/internal_infra_http_handler.CommandResponse'
+              $ref: '#/definitions/github_com_openctemio_api_pkg_sensorproto_legacyv1.Command'
             type: array
         "401":
           description: Unauthorized
@@ -12176,12 +12269,12 @@ paths:
       - ApiKeyAuth: []
       summary: Poll commands
       tags:
-      - Agent
+      - Sensor
   /agent/commands/{id}/acknowledge:
     post:
       consumes:
       - application/json
-      description: Agent acknowledges receipt of a command
+      description: Sensor acknowledges receipt of a command
       parameters:
       - description: Command ID
         in: path
@@ -12194,7 +12287,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.CommandResponse'
+            $ref: '#/definitions/github_com_openctemio_api_pkg_sensorproto_legacyv1.Command'
         "400":
           description: Bad Request
           schema:
@@ -12211,12 +12304,12 @@ paths:
       - ApiKeyAuth: []
       summary: Acknowledge command
       tags:
-      - Agent
+      - Sensor
   /agent/commands/{id}/complete:
     post:
       consumes:
       - application/json
-      description: Agent reports successful command completion with optional result
+      description: Sensor reports successful command completion with optional result
       parameters:
       - description: Command ID
         in: path
@@ -12234,7 +12327,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.CommandResponse'
+            $ref: '#/definitions/github_com_openctemio_api_pkg_sensorproto_legacyv1.Command'
         "400":
           description: Bad Request
           schema:
@@ -12251,12 +12344,12 @@ paths:
       - ApiKeyAuth: []
       summary: Complete command
       tags:
-      - Agent
+      - Sensor
   /agent/commands/{id}/fail:
     post:
       consumes:
       - application/json
-      description: Agent reports command execution failure with error message
+      description: Sensor reports command execution failure with error message
       parameters:
       - description: Command ID
         in: path
@@ -12274,7 +12367,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.CommandResponse'
+            $ref: '#/definitions/github_com_openctemio_api_pkg_sensorproto_legacyv1.Command'
         "400":
           description: Bad Request
           schema:
@@ -12291,12 +12384,12 @@ paths:
       - ApiKeyAuth: []
       summary: Fail command
       tags:
-      - Agent
+      - Sensor
   /agent/commands/{id}/start:
     post:
       consumes:
       - application/json
-      description: Agent reports that command execution has started
+      description: Sensor reports that command execution has started
       parameters:
       - description: Command ID
         in: path
@@ -12309,7 +12402,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.CommandResponse'
+            $ref: '#/definitions/github_com_openctemio_api_pkg_sensorproto_legacyv1.Command'
         "400":
           description: Bad Request
           schema:
@@ -12326,12 +12419,12 @@ paths:
       - ApiKeyAuth: []
       summary: Start command
       tags:
-      - Agent
+      - Sensor
   /agent/heartbeat:
     post:
       consumes:
       - application/json
-      description: Send a heartbeat to indicate agent is alive
+      description: Send a heartbeat to indicate sensor is alive
       parameters:
       - description: Heartbeat data
         in: body
@@ -12344,17 +12437,16 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_openctemio_api_pkg_sensorproto_legacyv1.Heartbeat'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - ApiKeyAuth: []
-      summary: Agent heartbeat
+      summary: Sensor heartbeat
       tags:
-      - Agent
+      - Sensor
   /agent/ingest/baseline-diff:
     post:
       consumes:
@@ -12379,7 +12471,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_internal_app_ingest.BaselineDiffOutput'
       summary: New-vs-base-branch findings
       tags:
-      - Agent
+      - Sensor
   /agent/ingest/check:
     post:
       consumes:
@@ -12415,7 +12507,7 @@ paths:
       - ApiKeyAuth: []
       summary: Check fingerprints
       tags:
-      - Agent
+      - Sensor
   /agent/ingest/chunk:
     post:
       consumes:
@@ -12452,7 +12544,7 @@ paths:
       - ApiKeyAuth: []
       summary: Ingest CTIS report chunk
       tags:
-      - Agent
+      - Sensor
   /agent/ingest/ctis:
     post:
       consumes:
@@ -12489,7 +12581,7 @@ paths:
       - ApiKeyAuth: []
       summary: Ingest CTIS report
       tags:
-      - Agent
+      - Sensor
   /agent/ingest/recon:
     post:
       consumes:
@@ -12525,7 +12617,7 @@ paths:
       - ApiKeyAuth: []
       summary: Ingest recon results
       tags:
-      - Agent
+      - Sensor
   /agent/ingest/sarif:
     post:
       consumes:
@@ -12561,12 +12653,12 @@ paths:
       - ApiKeyAuth: []
       summary: Ingest SARIF results
       tags:
-      - Agent
+      - Sensor
   /agent/renew:
     post:
       consumes:
       - application/json
-      description: Rotate the calling agent's own API key. Authenticated by the current
+      description: Rotate the calling sensor's own API key. Authenticated by the current
         key; returns a fresh key shown once. The building block for auto-rotating
         credentials (kubelet-style).
       produces:
@@ -12590,14 +12682,14 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - ApiKeyAuth: []
-      summary: Renew agent API key (self-service)
+      summary: Renew sensor API key (self-service)
       tags:
-      - Agent
+      - Sensor
   /agent/scans:
     post:
       consumes:
       - application/json
-      description: Agent registers a new scan session before starting a scan
+      description: Sensor registers a new scan session before starting a scan
       parameters:
       - description: Scan registration data
         in: body
@@ -12628,12 +12720,12 @@ paths:
       - ApiKeyAuth: []
       summary: Register scan session
       tags:
-      - Agent
+      - Sensor
   /agent/scans/{id}:
     get:
       consumes:
       - application/json
-      description: Agent retrieves scan session details
+      description: Sensor retrieves scan session details
       parameters:
       - description: Scan session ID
         in: path
@@ -12646,7 +12738,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.ScanSessionResponse'
+            $ref: '#/definitions/github_com_openctemio_api_pkg_sensorproto_legacyv1.ScanSession'
         "400":
           description: Bad Request
           schema:
@@ -12665,13 +12757,13 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - ApiKeyAuth: []
-      summary: Get scan session (agent)
+      summary: Get scan session (sensor)
       tags:
-      - Agent
+      - Sensor
     patch:
       consumes:
       - application/json
-      description: Agent updates scan status after completion
+      description: Sensor updates scan status after completion
       parameters:
       - description: Scan session ID
         in: path
@@ -12709,460 +12801,148 @@ paths:
       - ApiKeyAuth: []
       summary: Update scan session
       tags:
-      - Agent
+      - Sensor
   /agents:
     get:
-      consumes:
-      - application/json
-      description: Get a paginated list of agents for the current tenant
-      parameters:
-      - description: Filter by type (runner, worker, collector, sensor)
-        in: query
-        name: type
-        type: string
-      - description: Filter by admin-controlled status (active, disabled, revoked)
-        in: query
-        name: status
-        type: string
-      - description: Filter by automatic health (unknown, online, offline, error)
-        in: query
-        name: health
-        type: string
-      - description: Filter by execution mode (standalone, daemon)
-        in: query
-        name: execution_mode
-        type: string
-      - description: Filter by capabilities (comma-separated)
-        in: query
-        name: capabilities
-        type: string
-      - description: Filter by tools (comma-separated)
-        in: query
-        name: tools
-        type: string
-      - description: Filter by agents with available capacity
-        in: query
-        name: has_capacity
-        type: boolean
-      - description: Search by name or description
-        in: query
-        name: search
-        type: string
-      - default: 1
-        description: Page number
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: Items per page
-        in: query
-        name: per_page
-        type: integer
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_AgentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: List agents
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
     post:
-      consumes:
-      - application/json
-      description: Create a new agent and receive its API key
-      parameters:
-      - description: Agent data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.CreateAgentRequest'
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.CreateAgentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Create agent
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
   /agents/{id}:
     delete:
-      consumes:
-      - application/json
-      description: Delete an agent and revoke its API key
-      parameters:
-      - description: Agent ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Delete agent
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
     get:
-      consumes:
-      - application/json
-      description: Get a single agent by ID
-      parameters:
-      - description: Agent ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AgentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get agent
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
     put:
-      consumes:
-      - application/json
-      description: Update an existing agent
-      parameters:
-      - description: Agent ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Update data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.UpdateAgentRequest'
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AgentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Update agent
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
   /agents/{id}/activate:
     post:
-      consumes:
-      - application/json
-      description: Activate an agent (admin action). Allows the agent to authenticate.
-      parameters:
-      - description: Agent ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AgentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Activate agent
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
   /agents/{id}/config-templates:
     get:
-      description: Returns rendered config templates for an agent in multiple formats
-      parameters:
-      - description: Agent ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Optional API key to embed in templates (only available right
-          after creation/regeneration). MUST be sent as header, not query parameter.
-        in: header
-        name: X-Agent-API-Key
-        type: string
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AgentConfigTemplatesResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "503":
-          description: Template service not configured
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get agent configuration templates
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
   /agents/{id}/deactivate:
     post:
-      consumes:
-      - application/json
-      description: Disable an agent (admin action). Prevents the agent from authenticating.
-      parameters:
-      - description: Agent ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Disable reason
-        in: body
-        name: body
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.AgentDisableRequest'
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AgentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Disable agent
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
   /agents/{id}/regenerate-key:
     post:
-      consumes:
-      - application/json
-      description: Regenerate the API key for an agent. The old key will be invalidated.
-      parameters:
-      - description: Agent ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AgentRegenerateAPIKeyResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Regenerate API key
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
   /agents/{id}/revoke:
     post:
-      consumes:
-      - application/json
-      description: Permanently revoke an agent's access (admin action). Cannot be
-        undone.
-      parameters:
-      - description: Agent ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Revoke reason
-        in: body
-        name: body
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.AgentRevokeRequest'
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AgentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Revoke agent
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
   /agents/available-capabilities:
     get:
-      description: Returns all unique capability names from all agents accessible
-        to the tenant
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AvailableCapabilitiesResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      summary: Get available capabilities
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - agents
+      - Sensors
   /agents/stats:
     get:
-      description: Returns aggregated stats for the tenant's agents (status, health,
-        type, mode breakdowns)
-      produces:
-      - application/json
+      deprecated: true
+      description: The sensor management API moved from /agents to /sensors. Every
+        /agents route answers 308 to its /sensors equivalent until the date in the
+        Sunset header.
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AgentStatsResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get tenant agent statistics
+        "308":
+          description: Permanent Redirect
+      summary: 'Deprecated: moved to /sensors'
       tags:
-      - Agents
+      - Sensors
   /asset-groups:
     get:
       consumes:
@@ -15792,9 +15572,9 @@ paths:
       - application/json
       description: Get a paginated list of commands
       parameters:
-      - description: Filter by agent ID
+      - description: Filter by sensor ID
         in: query
-        name: agent_id
+        name: sensor_id
         type: string
       - description: Filter by type (scan, collect, health_check, config_update, cancel)
         in: query
@@ -15841,7 +15621,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new command to be executed by an agent
+      description: Create a new command to be executed by a sensor
       parameters:
       - description: Command data
         in: body
@@ -24010,6 +23790,459 @@ paths:
       summary: Update credential
       tags:
       - Credentials
+  /sensors:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of sensors for the current tenant
+      parameters:
+      - description: Filter by type (runner, worker, collector, sensor)
+        in: query
+        name: type
+        type: string
+      - description: Filter by admin-controlled status (active, disabled, revoked)
+        in: query
+        name: status
+        type: string
+      - description: Filter by automatic health (unknown, online, offline, error)
+        in: query
+        name: health
+        type: string
+      - description: Filter by execution mode (standalone, daemon)
+        in: query
+        name: execution_mode
+        type: string
+      - description: Filter by capabilities (comma-separated)
+        in: query
+        name: capabilities
+        type: string
+      - description: Filter by tools (comma-separated)
+        in: query
+        name: tools
+        type: string
+      - description: Filter by sensors with available capacity
+        in: query
+        name: has_capacity
+        type: boolean
+      - description: Search by name or description
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_SensorResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List sensors
+      tags:
+      - Sensors
+    post:
+      consumes:
+      - application/json
+      description: Create a new sensor and receive its API key
+      parameters:
+      - description: Sensor data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateSensorRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CreateSensorResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create sensor
+      tags:
+      - Sensors
+  /sensors/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a sensor and revoke its API key
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete sensor
+      tags:
+      - Sensors
+    get:
+      consumes:
+      - application/json
+      description: Get a single sensor by ID
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get sensor
+      tags:
+      - Sensors
+    put:
+      consumes:
+      - application/json
+      description: Update an existing sensor
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateSensorRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update sensor
+      tags:
+      - Sensors
+  /sensors/{id}/activate:
+    post:
+      consumes:
+      - application/json
+      description: Activate a sensor (admin action). Allows the sensor to authenticate.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Activate sensor
+      tags:
+      - Sensors
+  /sensors/{id}/config-templates:
+    get:
+      description: Returns rendered config templates for a sensor in multiple formats
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Optional API key to embed in templates (only available right
+          after creation/regeneration). MUST be sent as header, not query parameter.
+        in: header
+        name: X-Sensor-API-Key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorConfigTemplatesResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "503":
+          description: Template service not configured
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get sensor configuration templates
+      tags:
+      - Sensors
+  /sensors/{id}/deactivate:
+    post:
+      consumes:
+      - application/json
+      description: Disable a sensor (admin action). Prevents the sensor from authenticating.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Disable reason
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SensorDisableRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Disable sensor
+      tags:
+      - Sensors
+  /sensors/{id}/regenerate-key:
+    post:
+      consumes:
+      - application/json
+      description: Regenerate the API key for a sensor. The old key will be invalidated.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorRegenerateAPIKeyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Regenerate API key
+      tags:
+      - Sensors
+  /sensors/{id}/revoke:
+    post:
+      consumes:
+      - application/json
+      description: Permanently revoke a sensor's access (admin action). Cannot be
+        undone.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Revoke reason
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SensorRevokeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke sensor
+      tags:
+      - Sensors
+  /sensors/available-capabilities:
+    get:
+      description: Returns all unique capability names from all sensors accessible
+        to the tenant
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AvailableCapabilitiesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Get available capabilities
+      tags:
+      - sensors
+  /sensors/stats:
+    get:
+      description: Returns aggregated stats for the tenant's sensors (status, health,
+        type, mode breakdowns)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorStatsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get tenant sensor statistics
+      tags:
+      - Sensors
   /services:
     get:
       consumes:

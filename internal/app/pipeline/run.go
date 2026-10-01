@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/scanprofile"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // ========== Run Operations (Orchestration) ==========
@@ -297,16 +298,16 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 
 	// Create command payload with step info
 	payload := map[string]any{
-		"pipeline_run_id":       run.ID.String(),
-		"step_run_id":           stepRun.ID.String(),
-		"step_id":               step.ID.String(),
-		"step_key":              step.StepKey,
-		"step_config":           step.Config,
-		"required_capabilities": step.Capabilities,
-		"preferred_tool":        step.Tool,
-		"timeout_seconds":       step.TimeoutSeconds,
-		"context":               run.Context,
-		"sensor_preference":      string(settings.SensorPreference),
+		"pipeline_run_id":                   run.ID.String(),
+		"step_run_id":                       stepRun.ID.String(),
+		"step_id":                           step.ID.String(),
+		"step_key":                          step.StepKey,
+		"step_config":                       step.Config,
+		"required_capabilities":             step.Capabilities,
+		"preferred_tool":                    step.Tool,
+		"timeout_seconds":                   step.TimeoutSeconds,
+		"context":                           run.Context,
+		legacyv1.PayloadKeySensorPreference: string(settings.SensorPreference),
 	}
 
 	if run.AssetID != nil {

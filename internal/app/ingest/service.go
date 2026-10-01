@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/ctis"
 )
 
@@ -555,7 +556,7 @@ func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInpu
 
 	// Convert Recon to CTIS using SDK
 	opts := ctis.DefaultReconConverterOptions()
-	opts.DiscoverySource = "sensor"
+	opts.DiscoverySource = legacyv1.DiscoverySourceSensor
 	report, err := ctis.ConvertReconToCTIS(reconInput, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert recon data: %w", err)
@@ -801,8 +802,8 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 	}
 
 	metadata := map[string]any{
-		"sensor_id":               agt.ID.String(),
-		"sensor_name":             agt.Name,
+		"sensor_id":              agt.ID.String(),
+		"sensor_name":            agt.Name,
 		"report_id":              output.ReportID,
 		"source_type":            report.Metadata.SourceType,
 		"findings_count":         len(report.Findings),

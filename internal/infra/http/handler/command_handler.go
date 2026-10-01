@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/api/pkg/validator"
 )
 
@@ -336,7 +337,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Accept       json
 // @Produce      json
 // @Param        limit  query     int  false  "Max commands to return" default(10)
-// @Success      200  {array}   CommandResponse
+// @Success      200  {array}   legacyv1.Command
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     ApiKeyAuth
@@ -344,7 +345,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 	if !requireSensorTenant(w, agt) {
@@ -367,10 +368,7 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := make([]CommandResponse, len(commands))
-	for i, c := range commands {
-		resp[i] = toCommandResponse(c)
-	}
+	resp := legacyv1.NewCommands(commands)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -383,7 +381,7 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Command ID"
-// @Success      200  {object}  CommandResponse
+// @Success      200  {object}  legacyv1.Command
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
@@ -392,7 +390,7 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 	if !requireSensorTenant(w, agt) {
@@ -408,7 +406,7 @@ func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // Start handles POST /api/v1/agent/commands/{id}/start
@@ -418,7 +416,7 @@ func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Command ID"
-// @Success      200  {object}  CommandResponse
+// @Success      200  {object}  legacyv1.Command
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
@@ -427,7 +425,7 @@ func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 	if !requireSensorTenant(w, agt) {
@@ -443,7 +441,7 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // Complete handles POST /api/v1/agent/commands/{id}/complete
@@ -454,7 +452,7 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Param        id    path      string                      true  "Command ID"
 // @Param        body  body      UpdateCommandStatusRequest  false "Completion result"
-// @Success      200   {object}  CommandResponse
+// @Success      200   {object}  legacyv1.Command
 // @Failure      400   {object}  apierror.Error
 // @Failure      401   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
@@ -463,7 +461,7 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 	if !requireSensorTenant(w, agt) {
@@ -499,7 +497,7 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	h.triggerSimulationFinalize(cmd)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // triggerSimulationFinalize finalizes a running attack-simulation run when the
@@ -729,7 +727,7 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 // @Produce      json
 // @Param        id    path      string                      true  "Command ID"
 // @Param        body  body      UpdateCommandStatusRequest  false "Error details"
-// @Success      200   {object}  CommandResponse
+// @Success      200   {object}  legacyv1.Command
 // @Failure      400   {object}  apierror.Error
 // @Failure      401   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
@@ -738,7 +736,7 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 	if !requireSensorTenant(w, agt) {
@@ -767,7 +765,7 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 	h.triggerPipelineFailed(r.Context(), cmd, req.ErrorMessage)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // triggerPipelineFailed triggers pipeline failure when a command fails.

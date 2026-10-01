@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/api/pkg/validator"
 )
 
@@ -146,7 +147,7 @@ type RegisterScanResponse struct {
 func (h *ScanSessionHandler) RegisterScan(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -213,7 +214,7 @@ type UpdateScanSessionRequest struct {
 func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -259,7 +260,7 @@ func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) 
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Scan session ID"
-// @Success      200  {object}  ScanSessionResponse
+// @Success      200  {object}  legacyv1.ScanSession
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
@@ -269,13 +270,13 @@ func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) 
 func (h *ScanSessionHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
 	// Platform sensors must have tenant context
 	if agt.TenantID == nil {
-		apierror.Forbidden("Platform agents require job context for this operation").WriteJSON(w)
+		apierror.Forbidden(legacyv1.MsgJobContextRequired).WriteJSON(w)
 		return
 	}
 	tenantID := *agt.TenantID
@@ -293,7 +294,7 @@ func (h *ScanSessionHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScanSessionResponse(session))
+	json.NewEncoder(w).Encode(legacyv1.NewScanSession(session))
 }
 
 // List handles GET /api/v1/scan-sessions (admin interface)

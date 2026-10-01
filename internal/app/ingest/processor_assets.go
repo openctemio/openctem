@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/api/pkg/validator"
 	"github.com/openctemio/ctis"
 )
@@ -1540,13 +1541,14 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	}
 
 	// Set discovery info
-	discoverySource := "sensor"
+	discoverySource := legacyv1.DiscoverySourceSensor
 	discoveryTool := ""
 	if tool != nil {
 		discoveryTool = tool.Name
 	}
 	if source, ok := ctisAsset.Properties[asset.PropKeyDiscoverySource].(string); ok {
-		discoverySource = source
+		// v1 sensors label their own discoveries "agent".
+		discoverySource = legacyv1.NormalizeDiscoverySource(source)
 	}
 	if toolName, ok := ctisAsset.Properties[asset.PropKeyDiscoveryTool].(string); ok {
 		discoveryTool = toolName

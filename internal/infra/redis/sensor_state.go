@@ -24,7 +24,7 @@ const (
 	sensorPrevHealthKey     = "sensor:prev_health:%s"     // sensor:prev_health:{sensor_id} (previous health state)
 	platformSensorOnlineKey = "platform:sensors:online"   // sorted set of online platform sensors
 	platformSensorStatusKey = "platform:sensor:status:%s" // platform:sensor:status:{sensor_id}
-	queueStatsKey           = "platform:queue:stats"     // hash with queue statistics
+	queueStatsKey           = "platform:queue:stats"      // hash with queue statistics
 
 	// Default TTLs
 	heartbeatTTL      = 2 * time.Minute  // Sensor heartbeat expires after 2 minutes

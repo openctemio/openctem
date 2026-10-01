@@ -59,6 +59,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // BasePath is the swagger `@BasePath`. Annotations and spec paths are relative
@@ -212,12 +214,8 @@ func collect(fset *token.FileSet, n ast.Node, prefix string, out map[Op]string) 
 		if !ok || len(call.Args) == 0 {
 			return true
 		}
-		lit, ok := call.Args[0].(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return true
-		}
-		s, err := strconv.Unquote(lit.Value)
-		if err != nil {
+		s, ok := pathArg(call.Args[0])
+		if !ok {
 			return true
 		}
 
@@ -235,6 +233,25 @@ func collect(fset *token.FileSet, n ast.Node, prefix string, out map[Op]string) 
 		}
 		return true
 	})
+}
+
+// pathArg resolves a route path argument: a string literal, or one of the
+// legacyv1 constants that name the frozen sensor protocol v1 mounts.
+func pathArg(e ast.Expr) (string, bool) {
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return "", false
+		}
+		s, err := strconv.Unquote(v.Value)
+		return s, err == nil
+	case *ast.SelectorExpr:
+		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "legacyv1" {
+			s, ok := legacyv1.Paths[v.Sel.Name]
+			return s, ok
+		}
+	}
+	return "", false
 }
 
 func join(prefix, path string) string {

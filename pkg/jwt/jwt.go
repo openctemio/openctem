@@ -743,7 +743,7 @@ func AllJobScopes() []JobTokenScope {
 // These are more restrictive than user tokens - tied to a specific job and sensor.
 type JobTokenClaims struct {
 	TokenType TokenType       `json:"token_type"`
-	SensorID  string          `json:"sensor_id"`           // Platform sensor ID
+	SensorID  string          `json:"sensor_id"`          // Platform sensor ID
 	JobID     string          `json:"job_id"`             // Command/Job ID
 	TenantID  string          `json:"tenant_id"`          // Tenant owning the job
 	Scopes    []JobTokenScope `json:"scopes"`             // Allowed operations

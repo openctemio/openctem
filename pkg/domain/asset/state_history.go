@@ -321,7 +321,7 @@ const (
 	ChangeSourceManual      ChangeSource = "manual"      // Manual user action
 	ChangeSourceIntegration ChangeSource = "integration" // From external integration (GitHub, AWS, etc.)
 	ChangeSourceSystem      ChangeSource = "system"      // System-generated (e.g., auto-archive)
-	ChangeSourceSensor      ChangeSource = "sensor"       // From platform sensor
+	ChangeSourceSensor      ChangeSource = "sensor"      // From platform sensor
 	ChangeSourceAPI         ChangeSource = "api"         // From API call
 )
 

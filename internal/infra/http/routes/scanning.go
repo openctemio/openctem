@@ -8,6 +8,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // IngestMaxConcurrentPerTenant caps in-flight report-ingest requests per
@@ -122,8 +123,9 @@ func registerSensorRoutes(
 		return ""
 	}, "key renewal rate limit exceeded")
 
-	// Sensor routes - authenticated via API key
-	router.Group("/api/v1/agent", func(r Router) {
+	// Sensor protocol v1 — authenticated via sensor API key. The mount keeps
+	// its pre-sensor name: deployed sensors and SDKs call it (RFC-023 §9.2 C1).
+	router.Group(legacyv1.PathPrefix, func(r Router) {
 		// Heartbeat - essential for sensor health monitoring
 		r.POST("/heartbeat", ingestHandler.Heartbeat)
 
@@ -182,7 +184,8 @@ func registerSensorRoutes(
 }
 
 // registerSensorManagementRoutes registers sensor management endpoints.
-// Sensors are distributed runners, workers, collectors, sensors that execute tasks.
+// Sensors are the scanners, agents and collectors that run on the customer
+// side and authenticate to the platform with their own key (RFC-023 D18).
 func registerSensorManagementRoutes(
 	router Router,
 	h *handler.SensorHandler,
@@ -219,6 +222,25 @@ func registerSensorManagementRoutes(
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete))
 	}, tenantMiddlewares...)
+
+	// The management API used to live at /api/v1/agents. Every one of its
+	// routes now answers 308 to the same resource under /api/v1/sensors, with
+	// Deprecation/Sunset headers, until legacyv1.SunsetAt. No auth here: the
+	// client re-sends its credentials to the target, which is gated as above.
+	router.Group(legacyv1.ManagementPathPrefix, func(r Router) {
+		r.GET("/", h.RedirectDeprecatedPath)
+		r.GET("/stats", h.RedirectDeprecatedPath)
+		r.GET("/{id}", h.RedirectDeprecatedPath)
+		r.GET("/{id}/config-templates", h.RedirectDeprecatedPath)
+		r.GET("/available-capabilities", h.RedirectDeprecatedPath)
+		r.POST("/", h.RedirectDeprecatedPath)
+		r.PUT("/{id}", h.RedirectDeprecatedPath)
+		r.POST("/{id}/regenerate-key", h.RedirectDeprecatedPath)
+		r.POST("/{id}/activate", h.RedirectDeprecatedPath)
+		r.POST("/{id}/deactivate", h.RedirectDeprecatedPath)
+		r.POST("/{id}/revoke", h.RedirectDeprecatedPath)
+		r.DELETE("/{id}", h.RedirectDeprecatedPath)
+	})
 }
 
 // registerPipelineRoutes registers pipeline management endpoints.

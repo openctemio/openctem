@@ -61,7 +61,7 @@ func TestParseTenableConfig_CoverageFields(t *testing.T) {
 		"batch_size":       float64(500),
 		"license_cap":      "500",
 		"safety_margin":    float64(10),
-		"sensor_id":         "  sensor-123  ",
+		"sensor_id":        "  sensor-123  ",
 		"template_uuid":    " tmpl-xyz ",
 	})
 	if err != nil {

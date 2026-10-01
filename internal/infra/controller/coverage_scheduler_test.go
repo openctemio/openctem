@@ -154,7 +154,7 @@ func TestCoverageScheduler_PinsSensorFromConfig(t *testing.T) {
 			tenableIntegration(t, tenant, map[string]any{
 				"engine":           "nessus_pro",
 				"coverage_enabled": true,
-				"sensor_id":         sensor.String(),
+				"sensor_id":        sensor.String(),
 			}),
 		},
 		Total: 1,

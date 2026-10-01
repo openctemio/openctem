@@ -1563,7 +1563,7 @@ func TestAITriage_GetAIConfig_BYOKMode_DefaultModels(t *testing.T) {
 	}
 }
 
-func TestAITriage_GetAIConfig_SensorMode(t *testing.T) {
+func TestAITriage_GetAIConfig_AgentMode(t *testing.T) {
 	t.Parallel()
 
 	tenantID := shared.NewID()
@@ -1573,7 +1573,7 @@ func TestAITriage_GetAIConfig_SensorMode(t *testing.T) {
 		tenantID, "test", "test", "", "",
 		map[string]any{
 			"ai": map[string]any{
-				"mode": "sensor",
+				"mode": "agent",
 			},
 		},
 		"creator", now, now,
@@ -1591,8 +1591,8 @@ func TestAITriage_GetAIConfig_SensorMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if info.Provider != "sensor" {
-		t.Errorf("expected provider 'sensor', got %q", info.Provider)
+	if info.Provider != "agent" {
+		t.Errorf("expected provider 'agent', got %q", info.Provider)
 	}
 	if info.Model != "self-hosted" {
 		t.Errorf("expected model 'self-hosted', got %q", info.Model)

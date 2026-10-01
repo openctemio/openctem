@@ -4,6 +4,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/permission"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // registerExposureRoutes registers exposure event management endpoints.
@@ -151,7 +152,7 @@ func registerCredentialRoutes(
 	if ingestHandler != nil {
 		sensorMiddlewares := []Middleware{ingestHandler.AuthenticateSource}
 
-		router.Group("/api/v1/agent/credentials", func(r Router) {
+		router.Group(legacyv1.CredentialsPathPrefix, func(r Router) {
 			// Ingest credentials from sensors
 			r.POST("/ingest", h.Import)
 		}, sensorMiddlewares...)

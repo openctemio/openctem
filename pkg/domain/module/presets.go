@@ -103,7 +103,7 @@ const DefaultPresetID = "ctem_full"
 // have to enumerate them. Adding a module here = retroactive opt-in
 // for every tenant on next preset apply.
 var MandatoryModuleIDs = map[string]bool{
-	"sensors":                     true,
+	"sensors":                    true,
 	"notification_settings":      true,
 	"integrations":               true,
 	"integrations.notifications": true,

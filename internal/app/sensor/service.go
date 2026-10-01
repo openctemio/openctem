@@ -932,7 +932,7 @@ func (s *SensorService) hashSensorAPIKey(key string) string {
 
 // TenantAvailableCapabilitiesOutput represents the output for available capabilities.
 type TenantAvailableCapabilitiesOutput struct {
-	Capabilities []string `json:"capabilities"` // Unique capability names available to tenant
+	Capabilities []string `json:"capabilities"`  // Unique capability names available to tenant
 	TotalSensors int      `json:"total_sensors"` // Total number of online sensors
 }
 

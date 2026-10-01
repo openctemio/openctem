@@ -38,8 +38,8 @@ type CreateScanInput struct {
 	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner     bool           `json:"run_on_tenant_runner"`
 	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
-	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`                             // Optional scan profile (tool configs, quality gates)
-	TimeoutSeconds   int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`            // Max execution time (default 3600, min 30, max 86400)
+	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`                              // Optional scan profile (tool configs, quality gates)
+	TimeoutSeconds   int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max execution time (default 3600, min 30, max 86400)
 	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`

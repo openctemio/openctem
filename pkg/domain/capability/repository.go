@@ -73,7 +73,7 @@ type Repository interface {
 type CapabilityUsageStats struct {
 	ToolCount   int      `json:"tool_count"`
 	SensorCount int      `json:"sensor_count"`
-	ToolNames   []string `json:"tool_names,omitempty"`  // Names of tools using this capability
+	ToolNames   []string `json:"tool_names,omitempty"`   // Names of tools using this capability
 	SensorNames []string `json:"sensor_names,omitempty"` // Names of sensors with this capability
 }
 

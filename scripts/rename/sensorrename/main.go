@@ -54,8 +54,9 @@ const modulePath = "github.com/openctemio/api"
 // keep lists identifiers that contain "agent" but do not mean a sensor.
 var keep = map[string]bool{
 	// AI triage "agent" mode: a self-hosted LLM agent, not a sensor.
-	"AIModeAgent":         true,
-	"ModuleAITriageAgent": true,
+	"AIModeAgent":                        true,
+	"ModuleAITriageAgent":                true,
+	"TestAITriage_GetAIConfig_AgentMode": true,
 }
 
 // overrides are names whose mechanical rename would read wrongly.
