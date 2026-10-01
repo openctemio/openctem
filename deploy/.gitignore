@@ -1,0 +1,4 @@
+# Local settings and generated material; never commit.
+.env
+ca/
+certs/

@@ -25,7 +25,9 @@ Dockerfile
 | `Dockerfile` | Multi-target build (dev, prod) |
 | `docker-compose.yml` | Base services (PostgreSQL, Redis) |
 | `docker-compose.dev.yml` | Development app (target: development) |
-| `docker-compose.prod.yml` | Production app (target: production) |
+| `docker-compose.prod.yml` | Production API alone (target: production), not published |
+| `deploy/docker-compose.yml` | **Production stack**: gateway (one HTTPS port) + web UI + API + Postgres/Redis with TLS |
+| `deploy/gateway/` | Gateway Caddyfile, TLS modes, entrypoint, `smoke-test.sh` |
 
 ---
 

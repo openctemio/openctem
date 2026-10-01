@@ -1,0 +1,5 @@
+# TLS mode `http`: plain HTTP, ONLY behind an existing proxy that terminates
+# TLS. The entrypoint refuses to start it unless OPENCTEM_ALLOW_PLAIN_HTTP=true.
+# Set OPENCTEM_TRUSTED_PROXIES to that proxy's address so the real client IP is
+# kept; otherwise every request is recorded as coming from the proxy.
+auto_https off

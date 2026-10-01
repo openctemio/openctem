@@ -1,0 +1,4 @@
+# No HSTS here: the proxy in front owns TLS and sets it.
+http://:80 {
+	import openctem
+}

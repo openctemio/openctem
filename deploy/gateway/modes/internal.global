@@ -1,0 +1,16 @@
+# TLS mode `internal`: certificates from the gateway's own CA (LAN / IP installs).
+# The root certificate is exported to /ca/openctem-root-ca.crt (0644) by the
+# entrypoint so sensors can trust it (SSL_CERT_FILE).
+
+# Clients send no SNI when they connect to an IP address; serve this site's
+# certificate anyway.
+default_sni {$OPENCTEM_HOSTNAME}
+# No :80 listener; only the HTTPS port is published.
+auto_https disable_redirects
+# Do not try to install the root into the container's own trust store.
+skip_install_trust
+pki {
+	ca local {
+		name "OpenCTEM Internal CA"
+	}
+}

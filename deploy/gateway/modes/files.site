@@ -1,0 +1,7 @@
+https://{$OPENCTEM_HOSTNAME} {
+	# Full chain (leaf first) and its private key, PEM.
+	tls {$OPENCTEM_CERT_DIR:/certs}/{$TLS_CERT_FILE:tls.crt} {$OPENCTEM_CERT_DIR:/certs}/{$TLS_KEY_FILE:tls.key}
+	# Default only: the API sets its own HSTS in production; never send two.
+	header ?Strict-Transport-Security "max-age=31536000"
+	import openctem
+}

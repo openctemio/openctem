@@ -1,0 +1,4 @@
+# TLS mode `files`: the operator's own certificate and key, mounted at /certs.
+default_sni {$OPENCTEM_HOSTNAME}
+auto_https disable_redirects
+skip_install_trust

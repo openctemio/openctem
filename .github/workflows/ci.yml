@@ -167,6 +167,37 @@ jobs:
       - name: Spec matches the handler annotations
         run: bash scripts/check-openapi.sh
 
+  # ============================================
+  # Gateway — the single public entry point (deploy/gateway). Validates the
+  # Caddyfile in every TLS mode, the entrypoint's refusals, and the routing
+  # table against stub upstreams; and that the production compose renders.
+  # Unconditional for the same reason as the OpenAPI gate.
+  # ============================================
+  gateway:
+    name: Gateway Routing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Routing smoke test
+        run: bash deploy/gateway/smoke-test.sh
+
+      - name: Production compose renders
+        working-directory: deploy
+        run: |
+          cp .env.example .env
+          sed -i -e 's/^DB_PASSWORD=.*/DB_PASSWORD=x/' -e 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=x/' \
+            -e 's/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=x/' -e 's/^APP_ENCRYPTION_KEY=.*/APP_ENCRYPTION_KEY=x/' \
+            -e 's/^CSRF_SECRET=.*/CSRF_SECRET=x/' .env
+          docker compose config -q
+          docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.plain-http.yml config -q
+          # Only the gateway publishes a port.
+          published="$(docker compose config --format json | jq -r '.services | to_entries[] | select(.value.ports != null and (.value.ports | length) > 0) | .key')"
+          echo "services with published ports: $published"
+          test "$published" = "gateway"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
