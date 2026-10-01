@@ -416,6 +416,10 @@ func TestRevokeSession_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for session not found")
 	}
+	// Must be the not-found sentinel so the handler maps it to 404, not 500.
+	if !errors.Is(err, session.ErrSessionNotFound) {
+		t.Errorf("expected ErrSessionNotFound, got %v", err)
+	}
 }
 
 func TestRevokeSession_BelongsToDifferentUser(t *testing.T) {
@@ -440,6 +444,10 @@ func TestRevokeSession_InvalidUserID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid user ID")
 	}
+	// Must be a validation error so the handler maps it to 400, not 500.
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
 }
 
 func TestRevokeSession_InvalidSessionID(t *testing.T) {
@@ -448,6 +456,10 @@ func TestRevokeSession_InvalidSessionID(t *testing.T) {
 	err := svc.RevokeSession(context.Background(), shared.NewID().String(), "bad-id")
 	if err == nil {
 		t.Fatal("expected error for invalid session ID")
+	}
+	// Must be a validation error so the handler maps it to 400, not 500.
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
 	}
 }
 

@@ -1222,6 +1222,10 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Unauthorized("Session has expired, please login again").WriteJSON(w)
 	case errors.Is(err, session.ErrSessionRevoked):
 		apierror.Unauthorized("Session has been revoked").WriteJSON(w)
+	case errors.Is(err, session.ErrSessionNotFound):
+		// Unknown session id, or one that belongs to another user. 404 (not
+		// 500), and identical for both so a caller can't probe others' ids.
+		apierror.NotFound("Session").WriteJSON(w)
 	case errors.Is(err, session.ErrTokenFamilyMismatch):
 		apierror.Unauthorized("Invalid token (possible replay attack detected)").WriteJSON(w)
 	// Password validation errors

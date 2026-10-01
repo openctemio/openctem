@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -149,20 +150,27 @@ func (s *SessionService) ListUserSessions(ctx context.Context, userID string, cu
 func (s *SessionService) RevokeSession(ctx context.Context, userID, sessionID string) error {
 	uid, err := shared.IDFromString(userID)
 	if err != nil {
-		return fmt.Errorf("invalid user id: %w", err)
+		return fmt.Errorf("%w: invalid user id", shared.ErrValidation)
 	}
 
+	// A malformed session id is a client error (400), not a server error.
 	sid, err := shared.IDFromString(sessionID)
 	if err != nil {
-		return fmt.Errorf("invalid session id: %w", err)
+		return fmt.Errorf("%w: invalid session id", shared.ErrValidation)
 	}
 
 	sess, err := s.sessionRepo.GetByID(ctx, sid)
 	if err != nil {
+		// Unknown session id: surface the not-found sentinel (404) rather than
+		// a wrapped generic error that the handler maps to 500.
+		if errors.Is(err, sessiondom.ErrSessionNotFound) {
+			return sessiondom.ErrSessionNotFound
+		}
 		return fmt.Errorf("failed to get session: %w", err)
 	}
 
-	// Ensure the session belongs to the user
+	// Ensure the session belongs to the user. A session owned by someone else
+	// is reported as not-found, so one user cannot probe another's session ids.
 	if !sess.UserID().Equals(uid) {
 		return sessiondom.ErrSessionNotFound
 	}
