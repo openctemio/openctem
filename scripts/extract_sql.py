@@ -49,8 +49,11 @@ def candidates(path):
         # concatenates with a base query built elsewhere — preparing it alone
         # yields a bogus "column does not exist". Requiring FROM is what keeps
         # this gate free of the false alarms that get a check switched off.
+        # Collapse whitespace first: a FROM that begins an indented line is
+        # preceded by a newline or tab, not a space, and matching the raw text
+        # silently dropped every such query from the gate (342 of them).
         head = raw.lstrip()[:6].upper()
-        if head.startswith("SELECT") and " FROM " not in raw.upper():
+        if head.startswith("SELECT") and " FROM " not in " ".join(raw.split()).upper():
             continue
         # schema_migrations is created by the migration tool at runtime, not by
         # any migrations/*.sql, so it is legitimately absent from this schema.
@@ -73,7 +76,39 @@ def candidates(path):
         if "sqlgate:optional" in src[max(0, m.start() - 400):m.start()]:
             continue
         line = src.count("\n", 0, m.start()) + 1
-        yield line, " ".join(raw.split())
+        yield line, " ".join(strip_line_comments(raw).split())
+
+
+def strip_line_comments(sql):
+    """Drop SQL `--` comments, which run to the end of their line.
+
+    The statement is emitted on ONE line, so a comment left in place would
+    swallow everything after it — including the terminating `;` — and the
+    unterminated PREPARE then absorbed every following statement in the batch
+    into a single syntax error, which the gate ignores. That silently cut
+    verification from all statements down to the ones before the first
+    commented query. Quotes are tracked so a `--` inside a string survives.
+    """
+    out = []
+    i, n, in_str = 0, len(sql), False
+    while i < n:
+        c = sql[i]
+        if in_str:
+            out.append(c)
+            if c == "'":
+                in_str = False
+            i += 1
+        elif c == "'":
+            in_str = True
+            out.append(c)
+            i += 1
+        elif sql.startswith("--", i):
+            j = sql.find("\n", i)
+            i = n if j == -1 else j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 def main():
