@@ -1,6 +1,8 @@
 package aitriage
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -396,10 +398,52 @@ func (s *PromptSanitizer) SanitizeForPrompt(text string) string {
 
 	for _, pattern := range injectionPatterns {
 		re := regexp.MustCompile(pattern)
-		text = re.ReplaceAllString(text, "[FILTERED]")
+		text = re.ReplaceAllString(text, filteredMarker)
 	}
 
 	return text
+}
+
+// filteredMarker replaces text that matched a known prompt-injection pattern.
+const filteredMarker = "[FILTERED]"
+
+// fenceMarkerReplacement replaces fence-like markup found inside untrusted text.
+const fenceMarkerReplacement = "[fence-marker-removed]"
+
+// injectionCappedFPLikelihood is the false-positive likelihood an analysis is
+// capped to when its input attempted prompt injection: just below
+// aitriageFPReclassifyThreshold, so it cannot trigger automatic de-escalation.
+const injectionCappedFPLikelihood = aitriageFPReclassifyThreshold - 0.01
+
+// fenceMarkerRe matches tags that look like a prompt fence: the per-request
+// <untrusted-...> family (any nonce, any case, optional whitespace or
+// attributes) and the legacy static <user_input> tag. Ordinary code such as
+// "a < b" or "<div>" does not match.
+var fenceMarkerRe = regexp.MustCompile(`(?i)<\s*/?\s*(?:user[_\s-]*input|untrusted(?:[-_][0-9a-z]*)?)\b[^>]*>`)
+
+// promptFence delimits untrusted content in a prompt with a tag whose name
+// carries a random nonce, so the content cannot contain the closing tag.
+type promptFence struct {
+	tag string
+}
+
+// newPromptFence returns a fence with a fresh 128-bit nonce.
+func newPromptFence() promptFence {
+	nonce := make([]byte, 16)
+	// crypto/rand.Read never returns an error on supported platforms (Go 1.24+).
+	_, _ = rand.Read(nonce)
+	return promptFence{tag: "untrusted-" + hex.EncodeToString(nonce)}
+}
+
+// wrap neutralizes fence-like markup in v and wraps it in the fence. The bool
+// reports whether any fence marker had to be removed (an injection attempt).
+func (p promptFence) wrap(v string) (string, bool) {
+	clean := fenceMarkerRe.ReplaceAllString(v, fenceMarkerReplacement)
+	// Belt and braces: the nonce is unguessable, but never let the exact tag
+	// through even if the regex were bypassed.
+	clean = strings.ReplaceAll(clean, p.tag, fenceMarkerReplacement)
+	hit := clean != v
+	return "<" + p.tag + ">" + clean + "</" + p.tag + ">", hit
 }
 
 // SanitizeCodeSnippet sanitizes a code snippet for inclusion in prompts.
