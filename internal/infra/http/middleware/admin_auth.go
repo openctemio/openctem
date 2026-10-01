@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
-	"strings"
 
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/admin"
@@ -252,24 +251,10 @@ func MustGetAdminUser(ctx context.Context) *admin.AdminUser {
 // 2. Configure TrustedProxies with the proxy's IP range
 // 3. The proxy should overwrite (not append to) X-Forwarded-For from untrusted sources
 func extractIP(r *http.Request) string {
-	// SECURITY: Always use RemoteAddr as the authoritative source.
-	// RemoteAddr is set by the Go HTTP server from the actual TCP connection
-	// and cannot be spoofed by the client.
-	ip := r.RemoteAddr
-
-	// Remove port from RemoteAddr (format is "IP:port" or "[IPv6]:port")
-	if idx := strings.LastIndex(ip, ":"); idx != -1 {
-		// Handle IPv6 addresses in brackets
-		if strings.HasPrefix(ip, "[") {
-			if bracketIdx := strings.Index(ip, "]"); bracketIdx != -1 {
-				ip = ip[1:bracketIdx]
-			}
-		} else {
-			ip = ip[:idx]
-		}
-	}
-
-	return ip
+	// SECURITY (S-4): the TCP peer is authoritative; forwarding headers count
+	// only when that peer is a configured trusted proxy. Without trusted
+	// proxies this is r.RemoteAddr, so a client cannot choose its own IP.
+	return getClientIP(r)
 }
 
 // withAdmin stores the authenticated admin (and how it authenticated) on ctx.

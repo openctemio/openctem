@@ -344,7 +344,7 @@ func (h *MCPHandler) auditToolCall(r *http.Request, tenantID, toolName string, a
 	actx := auditapp.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(ctx),
-		ActorEmail: middleware.GetUsername(ctx),
+		ActorEmail: auditActorEmail(ctx),
 		ActorIP:    auditClientIP(r),
 		UserAgent:  r.UserAgent(),
 		RequestID:  r.Header.Get("X-Request-ID"),
@@ -378,7 +378,7 @@ func (h *MCPHandler) auditPromptGet(r *http.Request, tenantID, promptName string
 	actx := auditapp.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(ctx),
-		ActorEmail: middleware.GetUsername(ctx),
+		ActorEmail: auditActorEmail(ctx),
 		ActorIP:    auditClientIP(r),
 		UserAgent:  r.UserAgent(),
 		RequestID:  r.Header.Get("X-Request-ID"),
@@ -425,15 +425,10 @@ func sanitizeMCPArgs(raw json.RawMessage) map[string]any {
 	return out
 }
 
-// auditClientIP resolves the caller IP, preferring proxy headers.
+// auditClientIP resolves the caller IP. Forwarding headers count only from a
+// trusted proxy (S-4).
 func auditClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-	return r.RemoteAddr
+	return getClientIP(r)
 }
 
 // toolResult wraps text as an MCP tools/call result content block.

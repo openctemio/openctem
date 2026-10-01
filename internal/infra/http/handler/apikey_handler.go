@@ -221,7 +221,7 @@ func apiKeyAuditContext(r *http.Request, tenantID string) *app.AuditContext {
 	return &app.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(r.Context()),
-		ActorEmail: middleware.GetUsername(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    middleware.ClientIP(r),
 		UserAgent:  r.UserAgent(),
 		RequestID:  middleware.GetRequestID(r.Context()),

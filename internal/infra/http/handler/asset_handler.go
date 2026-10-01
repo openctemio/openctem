@@ -137,16 +137,13 @@ func (rl *snoozeRateLimiter) cleanup() {
 // request. Mirrors SensorHandler's helper — kept local so the audit
 // dependency is opt-in per handler.
 func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext {
-	clientIP := r.RemoteAddr
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		clientIP = xff
-	} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		clientIP = xri
-	}
+	// Forwarding headers count only from a trusted proxy (S-4); a client
+	// must not be able to write any IP it likes into the audit log.
+	clientIP := getClientIP(r)
 	return auditapp.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
 		ActorID:    middleware.GetUserID(r.Context()),
-		ActorEmail: middleware.GetUsername(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    clientIP,
 		UserAgent:  r.UserAgent(),
 		RequestID:  r.Header.Get("X-Request-ID"),
