@@ -955,6 +955,14 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	if err := accesscontrol.ValidateGrantableRoleIDs(input.RoleIDs); err != nil {
 		return nil, err
 	}
+	// ...and each must be a system role or one of this tenant's own roles. The
+	// handler's anti-escalation check is skipped for administrators, so this is
+	// the only place an id from another tenant is refused before it is stored.
+	if s.roleService != nil {
+		if err := s.roleService.ValidateRolesForTenant(ctx, parsedID.String(), input.RoleIDs); err != nil {
+			return nil, err
+		}
+	}
 	// The membership role follows the granted RBAC roles. It used to be a fixed
 	// 'member', which the tenant_members -> user_roles trigger turned into the
 	// member role on top of e.g. a viewer-only invitation.

@@ -51,8 +51,11 @@ type AccountSetupMailer interface {
 	SendAccountSetupEmail(ctx context.Context, tenantID, recipientEmail, recipientName, teamName, token string, expiresIn time.Duration) error
 }
 
-// RoleGranter makes a role set the user's complete RBAC role set in a tenant.
+// RoleGranter makes a role set the user's complete RBAC role set in a tenant,
+// and checks up front that every role is one the tenant may grant (a system
+// role or one of its own).
 type RoleGranter interface {
+	ValidateRolesForTenant(ctx context.Context, tenantID string, roleIDs []string) error
 	GrantExactRoles(ctx context.Context, tenantID, userID string, roleIDs []string, grantedBy string, actx auditapp.AuditContext) error
 }
 
@@ -115,6 +118,9 @@ func (s *UserProvisioningService) CreateUser(ctx context.Context, in CreateUserI
 		return nil, fmt.Errorf("%w: a valid email is required", shared.ErrValidation)
 	}
 	if err := accesscontrol.ValidateGrantableRoleIDs(in.RoleIDs); err != nil {
+		return nil, err
+	}
+	if err := s.roles.ValidateRolesForTenant(ctx, tenantID.String(), in.RoleIDs); err != nil {
 		return nil, err
 	}
 

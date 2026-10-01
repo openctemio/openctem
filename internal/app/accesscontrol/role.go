@@ -267,6 +267,23 @@ func assertRoleTenant(r *roledom.Role, tenantID string) error {
 	return nil
 }
 
+// ValidateRolesForTenant checks that every id names a role the tenant may
+// grant: a system role or one of the tenant's own custom roles. Another
+// tenant's role, an unknown id and a malformed id all fail with
+// shared.ErrValidation, and the error never says which tenant a foreign role
+// belongs to.
+func (s *RoleService) ValidateRolesForTenant(ctx context.Context, tenantID string, roleIDs []string) error {
+	for _, raw := range roleIDs {
+		if _, err := s.GetRole(ctx, tenantID, raw); err != nil {
+			if errors.Is(err, roledom.ErrRoleNotFound) || shared.IsNotFound(err) || errors.Is(err, shared.ErrValidation) {
+				return fmt.Errorf("%w: role %s is not available in this organization", shared.ErrValidation, raw)
+			}
+			return fmt.Errorf("look up role %s: %w", raw, err)
+		}
+	}
+	return nil
+}
+
 // GetRole retrieves a role by ID, scoped to the caller's tenant.
 func (s *RoleService) GetRole(ctx context.Context, tenantID, roleID string) (*roledom.Role, error) {
 	id, err := roledom.ParseID(roleID)
