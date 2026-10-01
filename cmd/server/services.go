@@ -39,6 +39,7 @@ import (
 	"github.com/openctemio/api/internal/app/scim"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
+	tenantapp "github.com/openctemio/api/internal/app/tenant"
 	"github.com/openctemio/api/internal/app/threatmodel"
 	"github.com/openctemio/api/internal/app/ticketing"
 	"github.com/openctemio/api/internal/app/validation"
@@ -742,6 +743,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.User = app.NewUserService(repos.User, log)
 	s.Tenant = app.NewTenantService(repos.Tenant, log,
 		app.WithTenantAuditService(s.Audit),
+		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
 	)
 
 	// Initialize asset services

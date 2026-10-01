@@ -7879,6 +7879,36 @@ definitions:
         example: "2024-01-15T10:30:00Z"
         type: string
     type: object
+  internal_infra_http_handler.InvitationListItem:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      invited_by:
+        type: string
+      pending:
+        type: boolean
+      role:
+        type: string
+      role_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.InvitationListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationListItem'
+        type: array
+      total:
+        type: integer
+    type: object
   internal_infra_http_handler.LicensingModuleResponse:
     properties:
       category:
@@ -9579,6 +9609,10 @@ definitions:
           type: string
         type: array
       target_scope:
+        enum:
+        - all
+        - selected
+        - tag
         type: string
       target_tags:
         items:
@@ -11196,6 +11230,10 @@ definitions:
         maxItems: 100
         type: array
       target_scope:
+        enum:
+        - all
+        - selected
+        - tag
         type: string
       target_tags:
         items:
@@ -26604,6 +26642,32 @@ paths:
       summary: Get tool stats
       tags:
       - Tool Stats
+  /tenants/{tenant}/invitations:
+    get:
+      description: 'Pending invitations of the organization. No token: tokens are
+        stored hashed and the raw token is returned only once, by the create call.'
+      parameters:
+      - description: Tenant ID or slug
+        in: path
+        name: tenant
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.InvitationListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List pending invitations
+      tags:
+      - Tenants
   /tenants/{tenant}/users:
     post:
       consumes:

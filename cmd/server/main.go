@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	tenantapp "github.com/openctemio/api/internal/app/tenant"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http"
 	"github.com/openctemio/api/internal/infra/http/routes"
@@ -239,6 +240,9 @@ func run() int {
 	services.Tenant = app.NewTenantService(repos.Tenant, log,
 		app.WithTenantAuditService(services.Audit),
 		app.WithEmailEnqueuer(emailEnqueuer),
+		// Inviter display name for invitation emails and the public preview
+		// (was never wired: emails said "A team member", the preview was blank).
+		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
 	)
 	services.Tenant.SetPermissionServices(services.PermCache, services.PermVersion)
 	// Re-wire session service after rebuilding the tenant service —
