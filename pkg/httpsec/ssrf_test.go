@@ -116,6 +116,9 @@ func TestIsIPBlocked_AllowPrivateMode(t *testing.T) {
 		"224.1.2.3",       // multicast
 		"255.255.255.255", // broadcast
 		"0.0.0.1",         // "this" network
+		"::",              // IPv6 unspecified: reaches the local host, like 0.0.0.0
+		"ff02::1",         // IPv6 multicast (all nodes)
+		"ff05::2",         // IPv6 multicast (site-local routers)
 	}
 	for _, ip := range hardBlocked {
 		if !IsIPBlocked(net.ParseIP(ip)) {
