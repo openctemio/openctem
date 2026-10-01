@@ -44,15 +44,17 @@ type resolvedTargets struct {
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
-// targets plus the members of its asset group (sensors do not resolve asset
-// groups themselves, so a group-only scan used to dispatch nothing), minus
-// every target matching an active scope exclusion. Exclusions are enforced
-// here, on the server, for every scan, and a failed exclusion lookup stops the
-// dispatch (fail closed) instead of scanning everything.
+// targets plus the members of every one of its asset groups (sensors do not
+// resolve asset groups themselves, so a group-only scan used to dispatch
+// nothing), deduplicated, minus every target matching an active scope
+// exclusion. Exclusions are enforced here, on the server, for every scan, and
+// a failed exclusion lookup stops the dispatch (fail closed) instead of
+// scanning everything. The per-run cap counts all groups together.
 func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resolvedTargets, error) {
 	seen := make(map[string]bool)
 	var candidates []scope.ExclusionCandidate
 	names := make(map[shared.ID]string)
+	var warnings []string
 
 	add := func(id shared.ID, value string) {
 		v := strings.TrimSpace(value)
@@ -67,14 +69,30 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	for _, t := range sc.Targets {
 		add(shared.NewID(), t)
 	}
-	if !sc.AssetGroupID.IsZero() && s.assetGroupRepo != nil {
-		members, err := s.listGroupExclusionCandidates(ctx, sc.AssetGroupID)
-		if err != nil {
-			return nil, fmt.Errorf("list asset group members: %w", err)
-		}
-		for _, m := range members {
-			for _, v := range m.Values {
-				add(m.ID, v)
+	if s.assetGroupRepo != nil {
+		listed := make(map[shared.ID]bool)
+		for _, groupID := range sc.GetAllAssetGroupIDs() {
+			if groupID.IsZero() || listed[groupID] {
+				continue
+			}
+			listed[groupID] = true
+			members, err := s.listGroupExclusionCandidates(ctx, groupID)
+			if err != nil {
+				return nil, fmt.Errorf("list asset group %s members: %w", groupID, err)
+			}
+			if len(members) == 0 {
+				warnings = append(warnings, fmt.Sprintf("asset group %s has no assets; nothing from it is scanned", groupID))
+			}
+			for _, m := range members {
+				for _, v := range m.Values {
+					add(m.ID, v)
+				}
+			}
+			// Bound the work before the exclusion lookup: exclusions only
+			// remove targets, so far more candidates than the cap cannot fit.
+			if len(candidates) > 2*maxResolvedTargets {
+				return nil, fmt.Errorf("%w: scan resolves to more than %d targets, more than the %d allowed per run",
+					shared.ErrValidation, len(candidates), maxResolvedTargets)
 			}
 		}
 	}
@@ -88,7 +106,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		}
 	}
 
-	out := &resolvedTargets{Targets: make([]string, 0, len(candidates))}
+	out := &resolvedTargets{Targets: make([]string, 0, len(candidates)), Warnings: warnings}
 	for _, c := range candidates {
 		if excluded[c.ID] {
 			out.Excluded++

@@ -195,12 +195,26 @@ when the trigger recorded one:
     "jobs", "targets_per_job", "unzoned_targets", "uncovered_targets",
     "zone_id"?,                                          // workflow runs
     "zones": [{"zone_id", "zone_name", "targets", "jobs", "queued_jobs", "sensor_ids"}]
-  }
+  },
+  "sensor_routing": "tenant" | "platform"               // single-scanner runs
 }
 ```
 
+`resolved_targets` counts the direct targets plus the members of **every**
+asset group of the scan (`asset_group_ids`), deduplicated, after scope
+exclusions; the 10,000-target cap applies to all groups together. An empty
+group is named in `warnings`.
+
+`sensor_routing` is decided once, before the run is created. Nothing falls
+back silently (D14): `sensor_preference: platform` with an asset group, an
+internal target, a zoned target, or a tenant without platform access refuses
+the trigger (`PLATFORM_SENSOR_REFUSED`). In `auto` mode a failed sensor lookup
+keeps the job on tenant sensors and adds a warning.
+
 Trigger errors the New-scan screen should explain: `NO_ZONE_COVERAGE`,
-`ZONE_SPLIT_REQUIRED`, `TOO_MANY_JOBS` (all `400`). Scan creation with a private
+`ZONE_SPLIT_REQUIRED`, `TOO_MANY_JOBS`, `NO_TARGETS` (the scan resolves to no
+target: empty asset groups and no direct targets), `ALL_TARGETS_EXCLUDED`,
+`PLATFORM_SENSOR_REFUSED` (all `400`). No run or command is created. Scan creation with a private
 target outside every zone fails with `400` naming the target.
 
 UI permission constants to add: `sensors:zones:read`, `sensors:zones:write`,

@@ -224,7 +224,7 @@ func recordZonePlan(sc *scan.Scan, plan *zonePlan, runContext map[string]any) er
 // run. Zone batches are stamped with their zone and pinned to the chosen
 // sensor; they are never platform jobs (RFC-023 D14). Unzoned public batches
 // follow the pre-zone platform/tenant rules.
-func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, plan *zonePlan) error {
+func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, plan *zonePlan, usePlatform bool) error {
 	templates := s.customTemplatesForScan(ctx, sc)
 	batchContext := batchRunContext(run.Context)
 
@@ -251,12 +251,8 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *pi
 				cmd.SetSensorID(*b.SensorID)
 			}
 		} else {
-			usePlatform, err := s.shouldUsePlatformSensor(ctx, sc, b.Targets)
-			if err != nil {
-				s.logger.Warn("failed to determine sensor selection, falling back to tenant only",
-					"error", err, "scan_id", sc.ID.String())
-				usePlatform = false
-			}
+			// Unzoned batches follow the routing decided before the run
+			// was created (decideSensorRouting); nothing is re-decided here.
 			if usePlatform {
 				cmd.SetPlatformJob(s.calculateInitialPriority(cmd.Priority))
 			}

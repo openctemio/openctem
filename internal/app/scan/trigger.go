@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/api/internal/app/scope"
 	"github.com/openctemio/api/internal/metrics"
@@ -280,6 +281,16 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 		}
 	}
 
+	// Decide platform vs tenant sensors now, before any run or command
+	// exists: an explicit 'platform' preference that cannot be honored
+	// refuses the trigger instead of quietly becoming a tenant job (RFC-023
+	// D14). The decision is recorded in the run.
+	routing, err := s.decideSensorRouting(ctx, sc, resolved.Targets, plan)
+	if err != nil {
+		return nil, err
+	}
+	routing.record(runContext)
+
 	// Use the system quick scan template for tracking
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
 
@@ -309,9 +320,9 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 
 	// Create the command(s) for the scanner
 	if plan != nil {
-		err = s.createZoneCommands(ctx, sc, run, stepRun, plan)
+		err = s.createZoneCommands(ctx, sc, run, stepRun, plan, routing.usePlatform())
 	} else {
-		err = s.createScannerCommand(ctx, sc, run, stepRun, resolved.Targets)
+		err = s.createScannerCommand(ctx, sc, run, stepRun, resolved.Targets, routing.usePlatform())
 	}
 	if err != nil {
 		run.Fail("Failed to create command: " + err.Error())
@@ -440,7 +451,7 @@ type EmbeddedTemplate struct {
 // payload carries the keys the command handler needs to report the step back
 // (`pipeline_run_id`, `step_key`, `step_run_id`); `run_id` is kept because the
 // sensor SDK reads it.
-func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, targets []string) error {
+func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, targets []string, usePlatform bool) error {
 	templates := s.customTemplatesForScan(ctx, sc)
 	payloadMap := s.scannerPayload(sc, run, stepRun, sc.ScannerConfig, run.Context, targets, templates)
 	payload, _ := json.Marshal(payloadMap)
@@ -450,14 +461,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		return err
 	}
 
-	// Determine whether to use platform sensors based on SensorSelector
-	usePlatform, err := s.shouldUsePlatformSensor(ctx, sc, targets)
-	if err != nil {
-		s.logger.Warn("failed to determine sensor selection, falling back to tenant only",
-			"error", err, "scan_id", sc.ID.String())
-		usePlatform = false
-	}
-
+	// usePlatform was decided before the run was created (decideSensorRouting).
 	if usePlatform {
 		// Calculate initial queue priority based on command priority
 		initialPriority := s.calculateInitialPriority(cmd.Priority)
@@ -686,6 +690,77 @@ func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared
 	return nil
 }
 
+const (
+	sensorRoutingTenant   = "tenant"
+	sensorRoutingPlatform = "platform"
+
+	runContextKeySensorRouting = "sensor_routing"
+)
+
+// sensorRouting is the trigger-time decision between tenant and shared
+// platform sensors, and why.
+type sensorRouting struct {
+	Routing string // sensorRoutingTenant or sensorRoutingPlatform
+	Warning string // set when the decision was not the one asked for
+}
+
+func (r sensorRouting) usePlatform() bool { return r.Routing == sensorRoutingPlatform }
+
+// record writes the decision into the run context (shown as the run's
+// dispatch.sensor_routing, with any warning in dispatch.warnings).
+func (r sensorRouting) record(runContext map[string]any) {
+	runContext[runContextKeySensorRouting] = r.Routing
+	if r.Warning == "" {
+		return
+	}
+	warnings, _ := runContext["dispatch_warnings"].([]string)
+	runContext["dispatch_warnings"] = append(warnings, r.Warning)
+}
+
+// decideSensorRouting decides once, before the run is created, whether the
+// scan's commands go to shared platform sensors. Nothing falls back silently
+// (RFC-023 D14): an explicit 'platform' preference that cannot be honored —
+// internal targets, asset groups, or a tenant without platform access — is
+// returned as a validation error and the trigger is refused. In 'auto' mode
+// a failed sensor lookup keeps the job on tenant sensors (where auto mode
+// starts anyway) and says so in the run.
+//
+// With a zone plan only the unzoned batches can go to platform sensors; zoned
+// targets stay on their zone's sensors, so an explicit 'platform' preference
+// with any zoned target is refused as well.
+func (s *Service) decideSensorRouting(ctx context.Context, sc *scan.Scan, targets []string, plan *zonePlan) (sensorRouting, error) {
+	if plan != nil {
+		targets = targets[:0:0]
+		for _, b := range plan.Batches {
+			if b.Zone != nil {
+				if sc.SensorPreference == scan.SensorPreferencePlatform {
+					return sensorRouting{}, shared.NewDomainError("PLATFORM_SENSOR_REFUSED", fmt.Sprintf(
+						"sensor_preference is 'platform', but target(s) of scan %q are inside scan zone %q and are scanned only by that zone's sensors; set sensor_preference to 'tenant' or 'auto'",
+						sc.Name, b.Zone.Name), shared.ErrValidation)
+				}
+				continue
+			}
+			targets = append(targets, b.Targets...)
+		}
+	}
+	usePlatform, err := s.shouldUsePlatformSensor(ctx, sc, targets)
+	if err != nil {
+		if sc.SensorPreference == scan.SensorPreferencePlatform {
+			return sensorRouting{}, err
+		}
+		s.logger.Warn("sensor selection failed; job queued for tenant sensors",
+			"error", err, "scan_id", sc.ID.String())
+		return sensorRouting{
+			Routing: sensorRoutingTenant,
+			Warning: "sensor selection failed; the job is queued for tenant sensors only",
+		}, nil
+	}
+	if usePlatform {
+		return sensorRouting{Routing: sensorRoutingPlatform}, nil
+	}
+	return sensorRouting{Routing: sensorRoutingTenant}, nil
+}
+
 // shouldUsePlatformSensor determines whether to route this scan to shared
 // platform sensors. Shared infrastructure must never receive a tenant's
 // internal targets or asset groups, and is only used when the tenant may use
@@ -696,19 +771,22 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	if sc.RunOnTenantRunner || sc.SensorPreference == scan.SensorPreferenceTenant {
 		return false, nil
 	}
-	internal := !sc.AssetGroupID.IsZero() || hasInternalTarget(targets)
+	internal := sc.HasAssetGroup() || hasInternalTarget(targets)
 
 	// If explicitly set to platform only, the tenant must be allowed and the
 	// targets must be public.
 	if sc.SensorPreference == scan.SensorPreferencePlatform {
 		if internal {
-			return false, fmt.Errorf("%w: platform sensors cannot scan internal targets or asset groups; use a tenant sensor",
+			return false, shared.NewDomainError("PLATFORM_SENSOR_REFUSED",
+				"sensor_preference is 'platform', but shared platform sensors never scan asset groups or internal targets; set sensor_preference to 'tenant' or 'auto', or scan only public targets",
 				shared.ErrValidation)
 		}
 		if s.sensorSelector != nil {
 			canUse, reason := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)
 			if !canUse {
-				return false, fmt.Errorf("platform sensors not available: %s", reason)
+				return false, shared.NewDomainError("PLATFORM_SENSOR_REFUSED",
+					fmt.Sprintf("sensor_preference is 'platform', but platform sensors are not available to this tenant: %s", reason),
+					shared.ErrValidation)
 			}
 		}
 		return true, nil
@@ -860,8 +938,10 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 }
 
 // recordResolvedTargets stores what the run will scan in its context (counts
-// and warnings, not the list itself), and refuses a run whose every target was
-// excluded by scope.
+// and warnings, not the list itself), and refuses a run that would scan
+// nothing: every target excluded by scope, or no target at all (an empty
+// asset group and no direct targets). A command with no targets is never
+// dispatched.
 func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[string]any) error {
 	runContext["resolved_target_count"] = len(r.Targets)
 	if r.Excluded > 0 {
@@ -874,6 +954,13 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 		return shared.NewDomainError("ALL_TARGETS_EXCLUDED",
 			fmt.Sprintf("Every target of scan %q is excluded by scope; nothing to scan.", sc.Name),
 			shared.ErrValidation)
+	}
+	if len(r.Targets) == 0 {
+		msg := fmt.Sprintf("Scan %q resolves to no targets: it has no direct targets and its asset group(s) have no assets. Add assets to the group or targets to the scan.", sc.Name)
+		if len(r.Warnings) > 0 {
+			msg += " (" + strings.Join(r.Warnings, "; ") + ")"
+		}
+		return shared.NewDomainError("NO_TARGETS", msg, shared.ErrValidation)
 	}
 	return nil
 }
@@ -923,10 +1010,21 @@ func (s *Service) filterAssetsForSingleScan(ctx context.Context, sc *scan.Scan) 
 		return nil, nil
 	}
 
-	// Get asset type counts from asset group
-	assetTypeCounts, err := s.assetGroupRepo.CountAssetsByType(ctx, sc.AssetGroupID)
-	if err != nil {
-		return nil, fmt.Errorf("count assets by type: %w", err)
+	// Get asset type counts across every asset group of the scan
+	assetTypeCounts := map[string]int64{}
+	listed := map[shared.ID]bool{}
+	for _, groupID := range sc.GetAllAssetGroupIDs() {
+		if listed[groupID] {
+			continue
+		}
+		listed[groupID] = true
+		counts, err := s.assetGroupRepo.CountAssetsByType(ctx, groupID)
+		if err != nil {
+			return nil, fmt.Errorf("count assets by type: %w", err)
+		}
+		for t, n := range counts {
+			assetTypeCounts[t] += n
+		}
 	}
 
 	if len(assetTypeCounts) == 0 {
