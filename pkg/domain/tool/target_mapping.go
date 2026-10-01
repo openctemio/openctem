@@ -2,8 +2,10 @@ package tool
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -29,17 +31,47 @@ type TargetAssetTypeMapping struct {
 	CreatedBy   *shared.ID // Optional: who created this mapping
 }
 
+// Bounds on the admin-editable fields of a mapping.
+const (
+	// PrimaryMappingPriority marks the primary mapping of a target type.
+	PrimaryMappingPriority = 10
+	// MinMappingPriority and MaxMappingPriority bound Priority. The seeded
+	// mappings use 10-60 and new ones default to 100.
+	MinMappingPriority = 1
+	MaxMappingPriority = 1000
+	// MaxMappingDescriptionLength bounds Description, in characters.
+	MaxMappingDescriptionLength = 500
+)
+
+// ValidateMappingPriority checks Priority is within the allowed range.
+func ValidateMappingPriority(p int) error {
+	if p < MinMappingPriority || p > MaxMappingPriority {
+		return shared.NewDomainError("VALIDATION", fmt.Sprintf("priority must be between %d and %d",
+			MinMappingPriority, MaxMappingPriority), shared.ErrValidation)
+	}
+	return nil
+}
+
+// ValidateMappingDescription checks Description is not too long.
+func ValidateMappingDescription(d string) error {
+	if utf8.RuneCountInString(d) > MaxMappingDescriptionLength {
+		return shared.NewDomainError("VALIDATION", fmt.Sprintf("description must be at most %d characters",
+			MaxMappingDescriptionLength), shared.ErrValidation)
+	}
+	return nil
+}
+
 // IsPrimary returns true if this mapping has primary priority (10).
 // Primary mappings are used for reverse lookups (asset_type -> target_type).
 func (m *TargetAssetTypeMapping) IsPrimary() bool {
-	return m.Priority == 10
+	return m.Priority == PrimaryMappingPriority
 }
 
 // SetPrimary sets the mapping as primary (priority = 10) or non-primary (priority = 100).
 func (m *TargetAssetTypeMapping) SetPrimary(isPrimary bool) {
 	if isPrimary {
-		m.Priority = 10
-	} else if m.Priority == 10 {
+		m.Priority = PrimaryMappingPriority
+	} else if m.Priority == PrimaryMappingPriority {
 		m.Priority = 100 // Reset to default if was primary
 	}
 }
