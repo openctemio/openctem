@@ -247,11 +247,11 @@ func rejectCSRF(w http.ResponseWriter, r *http.Request, log *logger.Logger, reas
 	case csrfReasonMismatch:
 		msg = "Invalid CSRF token"
 		if log != nil {
-			log.Warn("CSRF token mismatch", "path", r.URL.Path, "ip", r.RemoteAddr)
+			log.Warn("CSRF token mismatch", "path", logSafe(r.URL.Path), "ip", logSafe(r.RemoteAddr))
 		}
 	}
 	if reason != csrfReasonMismatch && log != nil {
-		log.Debug("CSRF check failed", "reason", reason, "path", r.URL.Path)
+		log.Debug("CSRF check failed", "reason", reason, "path", logSafe(r.URL.Path))
 	}
 	apierror.Forbidden(msg).WriteJSON(w)
 }
