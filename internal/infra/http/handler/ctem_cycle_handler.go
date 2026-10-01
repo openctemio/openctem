@@ -468,11 +468,11 @@ func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.
 // within the cycle window, how many have a validation evidence
 // record attached.
 //
-// The evidence source is currently the pentest_findings.evidence
-// JSONB column (non-empty array = evidence present). When the
-// dedicated simulation_evidence table lands (see
-// internal/app/validation/evidence_store.go), this query should be
-// extended with a UNION to include scripted/sensor evidence.
+// Evidence is a validation_evidence row for the finding (RFC-011:
+// pentest, scripted and sensor evidence all land there), the same
+// definition the cycle's validation_coverage metric uses. This used to
+// join pentest_findings.finding_id, a column that does not exist, so the
+// query always failed and the close-time SLO gate was never enforced.
 //
 // An empty cycle window (NULL start/end) means "everything to date" —
 // the query uses IS NULL guards so the cycle's intent survives even
@@ -499,11 +499,13 @@ func (h *CTEMCycleHandler) computeValidationCoverage(
 		SELECT
 		  COALESCE(f.priority_class, '') AS pc,
 		  COUNT(*) AS total,
-		  SUM(CASE WHEN pf.finding_id IS NOT NULL THEN 1 ELSE 0 END) AS with_ev
+		  COUNT(*) FILTER (
+		    WHERE EXISTS (
+		      SELECT 1 FROM validation_evidence v
+		       WHERE v.tenant_id = f.tenant_id AND v.finding_id = f.id
+		    )
+		  ) AS with_ev
 		FROM findings f
-		LEFT JOIN pentest_findings pf
-		  ON pf.finding_id = f.id
-		 AND jsonb_array_length(COALESCE(pf.evidence, '[]'::jsonb)) > 0
 		WHERE f.tenant_id = $1
 		  AND f.status IN ('resolved','verified','accepted','false_positive')` + windowSQL + `
 		GROUP BY COALESCE(f.priority_class, '')
