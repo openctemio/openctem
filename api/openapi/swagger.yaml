@@ -12918,6 +12918,20 @@ paths:
         required: true
         schema:
           type: object
+      - description: Repository the log was produced from, when the log has no runs[].versionControlProvenance.
+          Required in that case unless the artifact URIs name a github.com/gitlab.com/bitbucket.org
+          repository.
+        in: query
+        name: repository_url
+        type: string
+      - description: Branch that was scanned
+        in: query
+        name: branch
+        type: string
+      - description: Commit that was scanned
+        in: query
+        name: commit_sha
+        type: string
       produces:
       - application/json
       responses:

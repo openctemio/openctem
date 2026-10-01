@@ -543,16 +543,38 @@ func (s *Service) logAutoResolveSkipped(input Input, report *ctis.Report, toolGa
 }
 
 // IngestSARIF processes a SARIF log and ingests it as findings.
-func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData []byte) (*Output, error) {
+//
+// The findings are attached to the repository the log was produced from:
+// repo.URL when the request names it, else the log's
+// versionControlProvenance, else a git-hosted repository its artifact URIs
+// agree on. A log with results that identifies no repository is refused with
+// ErrSARIFNoRepository rather than filed under a shared per-tool pseudo-asset,
+// where findings of unrelated repositories would deduplicate into each other.
+func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData []byte, repo SARIFRepository) (*Output, error) {
 	s.logger.Info("ingesting SARIF data",
 		"sensor_id", agt.ID.String(),
 	)
 
-	// Convert SARIF to CTIS using SDK
-	report, err := ctis.FromSARIF(sarifData, nil)
+	if err := validateSARIFRepositoryInput(repo); err != nil {
+		return nil, err
+	}
+	resolved, identified, err := resolveSARIFRepository(sarifData, repo)
+	if err != nil {
+		return nil, err
+	}
+	var opts *ctis.ConvertOptions
+	if identified {
+		opts = sarifConvertOptions(resolved)
+	}
+
+	// Convert SARIF to CTIS
+	report, err := ctis.FromSARIF(sarifData, opts)
 	if err != nil {
 		// The sensor sent something that is not SARIF: a client error.
 		return nil, fmt.Errorf("%w: failed to parse SARIF: %v", shared.ErrValidation, err) //nolint:errorlint // the parse error is detail, the class is validation
+	}
+	if !identified && len(report.Findings) > 0 {
+		return nil, ErrSARIFNoRepository
 	}
 
 	// Use the unified ingestion pipeline
