@@ -464,12 +464,20 @@ func (s *TenantService) DeleteTenant(ctx context.Context, actx auditapp.AuditCon
 		return err
 	}
 
+	// The tenant row is gone, so the event cannot carry its tenant_id
+	// (audit_logs.tenant_id references tenants, and the insert used to fail
+	// silently, leaving no durable record of the deletion). Record it on the
+	// platform-level system chain instead; resource_id and metadata keep the
+	// deleted tenant's identity.
 	event := auditapp.NewSuccessEvent(audit.ActionTenantDeleted, audit.ResourceTypeTenant, tenantID).
 		WithResourceName(tenantName).
 		WithSeverity(audit.SeverityCritical).
 		WithMessage(fmt.Sprintf("Tenant %q deleted (all tenant data cascaded)", tenantName)).
-		WithMetadata("slug", tenantSlug)
-	s.logAudit(ctx, actx, event)
+		WithMetadata("slug", tenantSlug).
+		WithMetadata("deleted_tenant_id", tenantID)
+	platformCtx := actx
+	platformCtx.TenantID = ""
+	s.logAudit(ctx, platformCtx, event)
 
 	s.logger.Info("tenant deleted", "id", tenantID, "name", tenantName)
 	return nil
