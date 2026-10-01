@@ -269,10 +269,32 @@ func toMemberResponse(m *tenant.Membership) MemberResponse {
 	}
 }
 
-// canSeeInvitationTokens reports whether a team role may read invitation
-// tokens (the same roles that may create invitations).
-func canSeeInvitationTokens(role tenant.Role) bool {
-	return role == tenant.RoleOwner || role == tenant.RoleAdmin
+// InvitationListItem is a pending invitation in the list. It has no token:
+// tokens are stored hashed, so the list could only return the hash, which is
+// not a usable link. The raw token is returned once, by the create call.
+type InvitationListItem struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	RoleIDs   []string  `json:"role_ids"`
+	InvitedBy string    `json:"invited_by"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+	Pending   bool      `json:"pending"`
+}
+
+// InvitationListResponse is the body of GET /tenants/{tenant}/invitations.
+type InvitationListResponse struct {
+	Data  []InvitationListItem `json:"data"`
+	Total int                  `json:"total"`
+}
+
+func toInvitationListItem(inv *tenant.Invitation) InvitationListItem {
+	r := toInvitationResponse(inv, false)
+	return InvitationListItem{
+		ID: r.ID, Email: r.Email, Role: r.Role, RoleIDs: r.RoleIDs, InvitedBy: r.InvitedBy,
+		ExpiresAt: r.ExpiresAt, CreatedAt: r.CreatedAt, Pending: r.Pending,
+	}
 }
 
 func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationResponse {
@@ -903,6 +925,15 @@ func (h *TenantHandler) ReactivateMember(w http.ResponseWriter, r *http.Request)
 // =============================================================================
 
 // ListInvitations handles GET /api/v1/tenants/{tenant}/invitations
+// @Summary List pending invitations
+// @Description Pending invitations of the organization. No token: tokens are stored hashed and the raw token is returned only once, by the create call.
+// @Tags Tenants
+// @Produce json
+// @Param tenant path string true "Tenant ID or slug"
+// @Success 200 {object} InvitationListResponse
+// @Failure 403 {object} apierror.Error
+// @Security BearerAuth
+// @Router /tenants/{tenant}/invitations [get]
 func (h *TenantHandler) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())
 	if tenantID.IsZero() {
@@ -916,22 +947,14 @@ func (h *TenantHandler) ListInvitations(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// The token is the invitation's credential: whoever holds it can accept
-	// (as the invited email, with the invited role). Only owners/admins, who
-	// can create invitations anyway, get it, to copy an invite link when no
-	// email is sent. The list itself stays readable by any member.
-	includeToken := canSeeInvitationTokens(middleware.GetTeamRole(r.Context()))
-	response := make([]InvitationResponse, len(invitations))
+	response := InvitationListResponse{Data: make([]InvitationListItem, len(invitations)), Total: len(invitations)}
 	for i, inv := range invitations {
-		response[i] = toInvitationResponse(inv, includeToken)
+		response.Data[i] = toInvitationListItem(inv)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data":  response,
-		"total": len(response),
-	})
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // CreateInvitation handles POST /api/v1/tenants/{tenant}/invitations

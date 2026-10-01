@@ -211,7 +211,6 @@ GET /api/v1/suppressions/active
 GET /api/v1/suppressions/{}
 GET /api/v1/tenants
 GET /api/v1/tenants/{}
-GET /api/v1/tenants/{}/invitations
 GET /api/v1/tenants/{}/members
 GET /api/v1/tenants/{}/members/stats
 GET /api/v1/tenants/{}/settings
