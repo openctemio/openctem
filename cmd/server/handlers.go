@@ -428,6 +428,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			frontendOrigin(cfg.OAuth.FrontendCallbackURL),
 			log,
 		)
+		// SP entity ID / ACS URL come from APP_URL, never from client headers.
+		handlers.SAML.SetPublicURL(cfg.App.URL)
+		if cfg.App.URL == "" && cfg.IsProduction() {
+			log.Warn("saml: APP_URL is not set; SP URLs fall back to the request Host (forwarded headers only from SERVER_TRUSTED_PROXIES). Set APP_URL to the public API origin.")
+		}
 	}
 
 	// AUTHZ-07: record an audit event whenever plaintext leaked-secret values
