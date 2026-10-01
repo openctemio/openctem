@@ -185,6 +185,7 @@ type RunResponse struct {
 	ScanProfileID     *string                        `json:"scan_profile_id,omitempty"`
 	TriggerType       string                         `json:"trigger_type"`
 	TriggeredBy       string                         `json:"triggered_by,omitempty"`
+	TriggeredByName   string                         `json:"triggered_by_name,omitempty"` // display name, when triggered_by is a user id
 	Status            string                         `json:"status"`
 	StartedAt         *string                        `json:"started_at,omitempty"`
 	CompletedAt       *string                        `json:"completed_at,omitempty"`
