@@ -277,8 +277,9 @@ func (h *ComponentHandler) GetEcosystemStats(w http.ResponseWriter, r *http.Requ
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
-// @Param        limit  query     int  false  "Limit results"  default(10)
-// @Success      200  {array}   component.VulnerableComponent
+// @Param        page      query     int  false  "Page number"     default(1)
+// @Param        per_page  query     int  false  "Items per page"  default(20)
+// @Success      200  {object}  ListResponse[component.VulnerableComponent]
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
 // @Router       /components/vulnerable [get]
