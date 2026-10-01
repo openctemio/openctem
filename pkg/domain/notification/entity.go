@@ -86,8 +86,16 @@ type NotificationParams struct {
 	ActorID          *shared.ID
 }
 
+// defaultSeverity is used when a caller does not set one. The severity column
+// has a CHECK constraint and the INSERT writes the value verbatim, so an empty
+// severity was rejected and the notification silently dropped.
+const defaultSeverity = "info"
+
 // NewNotification creates a new notification.
 func NewNotification(params NotificationParams) *Notification {
+	if params.Severity == "" {
+		params.Severity = defaultSeverity
+	}
 	return &Notification{
 		id:               shared.NewID(),
 		tenantID:         params.TenantID,
