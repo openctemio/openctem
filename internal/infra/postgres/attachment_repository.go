@@ -54,7 +54,8 @@ func (r *AttachmentRepository) GetByID(ctx context.Context, tenantID, id shared.
 
 	var (
 		idStr, tenantStr, filename, contentType, storageKey string
-		uploadedByStr, contextType, contextID               string
+		contextType, contextID                              string
+		uploadedByStr                                       sql.NullString // NULL once the uploader is deleted
 		contentHash, storageProvider                        sql.NullString
 		size                                                int64
 		createdAt                                           time.Time
@@ -73,7 +74,7 @@ func (r *AttachmentRepository) GetByID(ctx context.Context, tenantID, id shared.
 
 	parsedID, _ := shared.IDFromString(idStr)
 	parsedTenantID, _ := shared.IDFromString(tenantStr)
-	parsedUploadedBy, _ := shared.IDFromString(uploadedByStr)
+	parsedUploadedBy, _ := shared.IDFromString(uploadedByStr.String)
 
 	return attachment.ReconstituteAttachment(
 		parsedID, parsedTenantID,
@@ -114,7 +115,8 @@ func (r *AttachmentRepository) ListByContext(ctx context.Context, tenantID share
 	for rows.Next() {
 		var (
 			idStr, tenantStr, filename, contentType, storageKey string
-			uploadedByStr, ctxType, ctxID                       string
+			ctxType, ctxID                                      string
+			uploadedByStr                                       sql.NullString // NULL once the uploader is deleted
 			hashVal, providerVal                                sql.NullString
 			size                                                int64
 			createdAt                                           time.Time
@@ -128,7 +130,7 @@ func (r *AttachmentRepository) ListByContext(ctx context.Context, tenantID share
 
 		parsedID, _ := shared.IDFromString(idStr)
 		parsedTenantID, _ := shared.IDFromString(tenantStr)
-		parsedUploadedBy, _ := shared.IDFromString(uploadedByStr)
+		parsedUploadedBy, _ := shared.IDFromString(uploadedByStr.String)
 
 		result = append(result, attachment.ReconstituteAttachment(
 			parsedID, parsedTenantID,
@@ -153,7 +155,8 @@ func (r *AttachmentRepository) FindByHash(ctx context.Context, tenantID shared.I
 		LIMIT 1`
 	var (
 		idStr, tenantStr, filename, ct, storageKey string
-		uploadedByStr, ctxType, ctxID              string
+		ctxType, ctxID                             string
+		uploadedByStr                              sql.NullString // NULL once the uploader is deleted
 		hashVal                                    sql.NullString
 		size                                       int64
 		createdAt                                  time.Time
@@ -171,7 +174,7 @@ func (r *AttachmentRepository) FindByHash(ctx context.Context, tenantID shared.I
 	}
 	parsedID, _ := shared.IDFromString(idStr)
 	parsedTenantID, _ := shared.IDFromString(tenantStr)
-	parsedUploadedBy, _ := shared.IDFromString(uploadedByStr)
+	parsedUploadedBy, _ := shared.IDFromString(uploadedByStr.String)
 	return attachment.ReconstituteAttachment(
 		parsedID, parsedTenantID, filename, ct, size, storageKey,
 		parsedUploadedBy, ctxType, ctxID, hashVal.String, provVal.String, createdAt,

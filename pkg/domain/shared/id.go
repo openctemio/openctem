@@ -45,6 +45,15 @@ func (id ID) String() string {
 	return id.value.String()
 }
 
+// StringOrEmpty is String, but "" for the zero ID. Use it for optional
+// references, e.g. the author of a row whose user has been deleted.
+func (id ID) StringOrEmpty() string {
+	if id.IsZero() {
+		return ""
+	}
+	return id.String()
+}
+
 // IsZero returns true if the ID is empty.
 func (id ID) IsZero() bool {
 	return id.value == uuid.Nil

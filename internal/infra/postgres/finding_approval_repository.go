@@ -209,7 +209,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		id              string
 		tenantID        string
 		findingID       string
-		requestedBy     string
+		requestedBy     sql.NullString // NULL once the requester is deleted
 		approvedBy      *string
 		approvedAt      *time.Time
 		rejectedBy      *string
@@ -234,7 +234,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 	a.ID, _ = shared.IDFromString(id)
 	a.TenantID, _ = shared.IDFromString(tenantID)
 	a.FindingID, _ = shared.IDFromString(findingID)
-	a.RequestedBy, _ = shared.IDFromString(requestedBy)
+	a.RequestedBy, _ = shared.IDFromString(requestedBy.String)
 	a.Status = vulnerability.ApprovalStatus(status)
 	a.ApprovedAt = approvedAt
 	a.RejectedAt = rejectedAt

@@ -242,6 +242,31 @@ make docker-migrate-up  # Should work again
    - Create new migration instead
    - Old migrations are backed up in `_backup/` for reference
 
+5. **Pick the ON DELETE action for every FK to `tenants` and `users`**
+
+   Deleting an organization (`DELETE /api/v1/tenants/{tenant}`) or a user is a
+   plain `DELETE`; a `NO ACTION`/`RESTRICT` key makes it fail for every tenant
+   or user that has such a row.
+
+   | Reference | Action |
+   |-----------|--------|
+   | `tenant_id` of a row the tenant owns | `ON DELETE CASCADE` |
+   | a user who *did* something (`created_by`, `assigned_by`, `approved_by`, `actor_id`, ...) | nullable column, `ON DELETE SET NULL` |
+   | a row that *is* the user's (`sessions`, `user_roles`, `tenant_members`, ...) | `ON DELETE CASCADE` |
+   | an audit/history row (`audit_logs`, `asset_state_history`, `suppression_rule_audit`, ...) | `ON DELETE SET NULL`, never `CASCADE` from `users` |
+
+   `TestDeleteFKPolicy` (`internal/infra/postgres/tenant_user_delete_db_test.go`)
+   reads every such key from `pg_constraint` and fails on a blocking one unless
+   it is in `blockingFKAllowlist` with a reason.
+   `TestDeleteTenantAndUser_EverySchemaTable` seeds a row in every table with a
+   `tenant_id` column and checks both deletes; a new table it cannot seed fails
+   the test until `seedOverrides` learns its constraints.
+
+   `asset_state_history` is immutable by trigger. Since migration 000242 its
+   triggers admit only the referential actions: the `changed_by` SET NULL when
+   the user row is gone, and the delete of a recent row once its asset or
+   tenant is gone. Direct `UPDATE`/`DELETE` of a recent row still fails.
+
 ## Environment Variables
 
 Configure via `.env` file or environment:
