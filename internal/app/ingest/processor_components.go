@@ -505,8 +505,8 @@ func (p *ComponentProcessor) linkDependencyToAssetWithoutParent(
 		if err != nil {
 			p.logger.Warn("failed to record licenses",
 				"component_id", compID.String(),
-				"licenses", dep.Licenses,
-				"error", err,
+				"licenses", sanitizeIngestLogField(strings.Join(dep.Licenses, ",")),
+				"error", sanitizeIngestLogField(err.Error()),
 			)
 			output.Warnings = append(output.Warnings, fmt.Sprintf("license recording failed for %s: %v", dep.Name, err))
 		}
