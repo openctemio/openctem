@@ -2,7 +2,7 @@
 
 > Companion to [RFC-023 §9.5](RFC-023-scan-zones-and-scanners.md#95-decision-update-complete-rename-supersedes-the-keep-rows-of-94).
 > Scope: the API step of the complete agent → sensor rename (migration
-> **000228**). This is the exhaustive list the UI follow-up, operators and
+> **000229**). This is the exhaustive list the UI follow-up, operators and
 > integrators implement against. Anything not listed here did not change.
 
 ## 1. What did not change (protocol v1)
@@ -96,7 +96,7 @@ Value changes in management responses:
 
 ## 4. Permissions
 
-Renamed in place by migration 000228 in the catalog, every system and custom
+Renamed in place by migration 000229 in the catalog, every system and custom
 role, every group grant, every permission set and every `oct_` API-key scope.
 Effective access is unchanged (verified by `TestSensorRenameUpgrade`).
 
@@ -202,7 +202,7 @@ The default template directory moved from `configs/agent-templates` to
 `configs/sensor-templates`; when only the old directory exists (for example a
 mounted configmap) it is used, with a warning.
 
-## 8. Stored values migration 000228 converts
+## 8. Stored values migration 000229 converts
 
 | Data | Conversion |
 |---|---|
@@ -252,7 +252,7 @@ docker compose exec api ./server -sensor-upgrade-check
 ```
 
 Prints one line per probe (`ok`, `kept`, `LEFTOVER`) and exits 0 when nothing
-migration 000228 should have converted is left, 1 otherwise. A cheap subset
+migration 000229 should have converted is left, 1 otherwise. A cheap subset
 runs at every API start and logs `WARN pre-sensor vocabulary left after
 upgrade` per leftover.
 
