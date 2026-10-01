@@ -92,16 +92,20 @@ var dangerousHosts = []string{
 	"169.254.169.254",
 }
 
-// resolver performs every DNS lookup this package makes, including the one the
-// dialer would do for a hostname. It is a variable only so tests can point it
-// at a scripted DNS server (e.g. one that answers differently on the second
-// query, which is what a DNS-rebinding attacker does).
-var resolver = net.DefaultResolver
+// guardedDialer is the SSRF-guarded dial: resolve once with resolver, vet
+// every answer, connect to the vetted IPs with dial. Production uses
+// defaultDialer; tests build their own value (a scripted DNS server, a
+// recording dial) instead of mutating package state.
+type guardedDialer struct {
+	resolver *net.Resolver
+	// dial connects to an already-vetted IP literal; it never resolves.
+	dial func(ctx context.Context, network, addr string) (net.Conn, error)
+}
 
-// dialContext opens the TCP connection to an already-vetted IP literal (it
-// never resolves anything). A variable only so tests can observe which
-// address is dialed.
-var dialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+var defaultDialer = guardedDialer{
+	resolver: net.DefaultResolver,
+	dial:     (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+}
 
 var hardBlockedCIDRs []*net.IPNet
 var privateCIDRs []*net.IPNet
@@ -156,7 +160,7 @@ func ValidateHost(ctx context.Context, host string) error {
 // DNS-rebinding TOCTOU window where the second lookup returns an internal IP.
 // Fail-closed on DNS resolution failure.
 func ResolveSafeHost(ctx context.Context, host string) (net.IP, error) {
-	ips, err := resolveSafeIPs(ctx, host)
+	ips, err := resolveSafeIPs(ctx, net.DefaultResolver, host)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +170,7 @@ func ResolveSafeHost(ctx context.Context, host string) (net.IP, error) {
 // resolveSafeIPs is ResolveSafeHost returning every vetted address, in
 // resolver order, so a dialer can fall back across them without resolving
 // again.
-func resolveSafeIPs(ctx context.Context, host string) ([]net.IP, error) {
+func resolveSafeIPs(ctx context.Context, resolver *net.Resolver, host string) ([]net.IP, error) {
 	if host == "" {
 		return nil, fmt.Errorf("empty host")
 	}
@@ -238,7 +242,7 @@ func ValidateURL(rawURL string) (*ValidationResult, error) {
 
 	lookupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	addrs, err := resolver.LookupIPAddr(lookupCtx, parsed.Hostname())
+	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, parsed.Hostname())
 	if err != nil {
 		return nil, fmt.Errorf("DNS lookup failed for %s: %w", parsed.Hostname(), err)
 	}
@@ -276,8 +280,12 @@ func ValidateURL(rawURL string) (*ValidationResult, error) {
 // emitted it to a DNS server the attacker controls. ValidateURL
 // rejects before the lookup leaves the host process.
 func SafeHTTPClient(timeout time.Duration) *http.Client {
+	return newSafeHTTPClient(timeout, defaultDialer)
+}
+
+func newSafeHTTPClient(timeout time.Duration, d guardedDialer) *http.Client {
 	tr := &http.Transport{
-		DialContext:           SafeDialContext,
+		DialContext:           d.dialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 15 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
@@ -295,17 +303,21 @@ func SafeHTTPClient(timeout time.Duration) *http.Client {
 // only — trying each in resolver order — so a second DNS answer can never
 // redirect the connection.
 func SafeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return defaultDialer.dialContext(ctx, network, addr)
+}
+
+func (d guardedDialer) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
 	}
-	ips, err := resolveSafeIPs(ctx, host)
+	ips, err := resolveSafeIPs(ctx, d.resolver, host)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf guard: %w", err)
 	}
 	var lastErr error
 	for _, ip := range ips {
-		conn, dialErr := dialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		conn, dialErr := d.dial(ctx, network, net.JoinHostPort(ip.String(), port))
 		if dialErr == nil {
 			return conn, nil
 		}

@@ -91,18 +91,15 @@ func (d *rebindDNS) serve() {
 	}
 }
 
-// useResolver points the package resolver at d for the duration of the test.
-func useResolver(t *testing.T, d *rebindDNS) {
-	t.Helper()
-	prev := resolver
-	resolver = &net.Resolver{
+// resolverFor returns a resolver that sends every query to d.
+func resolverFor(d *rebindDNS) *net.Resolver {
+	return &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var dl net.Dialer
 			return dl.DialContext(ctx, "udp", d.conn.LocalAddr().String())
 		},
 	}
-	t.Cleanup(func() { resolver = prev })
 }
 
 // TestSafeHTTPClient_DNSRebinding is the exploit for the dial-time TOCTOU:
@@ -125,9 +122,15 @@ func TestSafeHTTPClient_DNSRebinding(t *testing.T) {
 	dns := newRebindDNS(t, map[string][]net.IP{
 		"rebind.attacker.test": {net.ParseIP("192.0.2.10"), net.ParseIP("127.0.0.1")},
 	})
-	useResolver(t, dns)
+	res := resolverFor(dns)
 
-	client := SafeHTTPClient(time.Second)
+	// The connect step resolves through the same scripted DNS, exactly as
+	// net.Dialer would through the system resolver — so dialing a hostname
+	// here is a second lookup the attacker answers with 127.0.0.1.
+	client := newSafeHTTPClient(time.Second, guardedDialer{
+		resolver: res,
+		dial:     (&net.Dialer{Timeout: time.Second, Resolver: res}).DialContext,
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://rebind.attacker.test:"+port+"/", nil)
@@ -160,13 +163,10 @@ func TestSafeHTTPClient_DialsVettedAddress(t *testing.T) {
 	dns := newRebindDNS(t, map[string][]net.IP{
 		"hooks.partner.test": {net.ParseIP("192.0.2.20")},
 	})
-	useResolver(t, dns)
-
 	// Nothing listens on 192.0.2.20 offline, so route that one vetted address
 	// to the local upstream and record what the dialer was asked for.
 	var dialed []string
-	prevDial := dialContext
-	dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		dialed = append(dialed, addr)
 		if strings.HasPrefix(addr, "192.0.2.20:") {
 			var dl net.Dialer
@@ -174,10 +174,9 @@ func TestSafeHTTPClient_DialsVettedAddress(t *testing.T) {
 		}
 		return nil, &net.OpError{Op: "dial", Net: network, Err: errUnexpectedDial}
 	}
-	defer func() { dialContext = prevDial }()
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://hooks.partner.test:8443/hook", nil)
-	resp, err := SafeHTTPClient(3 * time.Second).Do(req)
+	resp, err := newSafeHTTPClient(3*time.Second, guardedDialer{resolver: resolverFor(dns), dial: dial}).Do(req)
 	if err != nil {
 		t.Fatalf("legitimate request failed: %v", err)
 	}
@@ -200,10 +199,9 @@ func TestSafeHTTPClient_BlocksWhenAnyAnswerIsInternal(t *testing.T) {
 	dns := newRebindDNS(t, map[string][]net.IP{
 		"mixed.attacker.test": {net.ParseIP("169.254.169.254")},
 	})
-	useResolver(t, dns)
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://mixed.attacker.test/latest/meta-data/", nil)
-	resp, err := SafeHTTPClient(2 * time.Second).Do(req)
+	resp, err := newSafeHTTPClient(2*time.Second, guardedDialer{resolver: resolverFor(dns), dial: defaultDialer.dial}).Do(req)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
