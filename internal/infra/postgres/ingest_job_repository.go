@@ -26,7 +26,8 @@ func NewIngestJobRepository(db *DB) *IngestJobRepository {
 const ingestJobColumns = `
 	id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
 	status, attempts, max_attempts, priority, result, error, locked_by, locked_at,
-	available_at, created_at, updated_at`
+	available_at, created_at, updated_at,
+	protocol, ingest_report_id, segment_seq, content_digest, media_type`
 
 // Enqueue inserts a pending job, or returns the existing one on idempotency
 // conflict (tenant_id, report_id, payload_sha).
@@ -278,11 +279,15 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		lockedAt                   sql.NullTime
 		availableAt                time.Time
 		createdAt, updatedAt       time.Time
+		protocol, segmentSeq       sql.NullInt64
+		reportRef                  sql.NullString
+		contentDigest, mediaType   sql.NullString
 	)
 	if err := s.Scan(
 		&idStr, &tenantStr, &sensorStr, &reportID, &sourceType, &payload, &payloadSHA,
 		&statusStr, &attempts, &maxAttempts, &pri, &result, &lastError, &lockedBy, &lockedAt,
 		&availableAt, &createdAt, &updatedAt,
+		&protocol, &reportRef, &segmentSeq, &contentDigest, &mediaType,
 	); err != nil {
 		return nil, err
 	}
@@ -308,12 +313,25 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		lockedAtPtr = &t
 	}
 
-	return ingestjob.FromRow(
+	job := ingestjob.FromRow(
 		id, tenantID, sensorID, reportID, sourceType, payload, payloadSHA,
 		ingestjob.Status(statusStr), attempts, maxAttempts, pri, result,
 		lastError.String, lockedBy.String, lockedAtPtr,
 		availableAt, createdAt, updatedAt,
-	), nil
+	)
+	if protocol.Valid && protocol.Int64 == ingestjob.ProtocolV2 && reportRef.Valid {
+		ref, err := shared.IDFromString(reportRef.String)
+		if err != nil {
+			return nil, fmt.Errorf("parse ingest job report ref: %w", err)
+		}
+		seg := &ingestjob.V2Segment{ReportRef: ref, ContentDigest: contentDigest.String, MediaType: mediaType.String}
+		if segmentSeq.Valid {
+			n := int(segmentSeq.Int64)
+			seg.Seq = &n
+		}
+		job.SetV2(seg)
+	}
+	return job, nil
 }
 
 func scanIngestJobRows(rows *sql.Rows) ([]*ingestjob.Job, error) {
@@ -329,4 +347,126 @@ func scanIngestJobRows(rows *sql.Rows) ([]*ingestjob.Job, error) {
 		return nil, fmt.Errorf("iterate ingest jobs: %w", err)
 	}
 	return jobs, nil
+}
+
+// --- protocol v2 (RFC-026) ---
+
+var _ ingestjob.V2Repository = (*IngestJobRepository)(nil)
+
+// EnqueueV2 inserts a v2 segment or commit job, or returns the job the report
+// already has for that segment (created=false).
+func (r *IngestJobRepository) EnqueueV2(ctx context.Context, job *ingestjob.Job) (*ingestjob.Job, bool, error) {
+	seg := job.V2()
+	if seg == nil {
+		return nil, false, errors.New("enqueue v2 ingest job: job has no v2 binding")
+	}
+	conflict := `ON CONFLICT (ingest_report_id, segment_seq)
+		WHERE ingest_report_id IS NOT NULL AND segment_seq IS NOT NULL DO NOTHING`
+	if seg.IsCommit() {
+		conflict = `ON CONFLICT (ingest_report_id)
+		WHERE ingest_report_id IS NOT NULL AND segment_seq IS NULL DO NOTHING`
+	}
+	var seq any
+	if seg.Seq != nil {
+		seq = *seg.Seq
+	}
+	query := `
+		INSERT INTO ingest_jobs (
+			id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
+			status, attempts, max_attempts, priority, available_at, created_at, updated_at,
+			protocol, ingest_report_id, segment_seq, content_digest, media_type
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		` + conflict + `
+		RETURNING ` + ingestJobColumns
+	row := r.db.QueryRowContext(ctx, query,
+		job.ID().String(), job.TenantID().String(), nullIDPtr(job.SensorID()),
+		job.ReportID(), job.SourceType(), job.Payload(), job.PayloadSHA(),
+		job.Status().String(), job.Attempts(), job.MaxAttempts(), job.Priority(),
+		job.AvailableAt(), job.CreatedAt(), job.UpdatedAt(),
+		ingestjob.ProtocolV2, seg.ReportRef.String(), seq, seg.ContentDigest, seg.MediaType,
+	)
+	stored, err := scanIngestJobRow(row)
+	if err == nil {
+		return stored, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, false, fmt.Errorf("enqueue v2 ingest job: %w", err)
+	}
+	var existing *ingestjob.Job
+	if seg.IsCommit() {
+		existing, err = scanIngestJobRow(r.db.QueryRowContext(ctx, `SELECT `+ingestJobColumns+`
+			FROM ingest_jobs WHERE ingest_report_id = $1 AND segment_seq IS NULL`, seg.ReportRef.String()))
+	} else {
+		existing, err = r.GetV2Segment(ctx, seg.ReportRef, *seg.Seq)
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("fetch existing v2 ingest job: %w", err)
+	}
+	return existing, false, nil
+}
+
+// GetV2Segment returns the job of one segment of a report.
+func (r *IngestJobRepository) GetV2Segment(ctx context.Context, reportRef shared.ID, seq int) (*ingestjob.Job, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+ingestJobColumns+`
+		FROM ingest_jobs WHERE ingest_report_id = $1 AND segment_seq = $2`, reportRef.String(), seq)
+	job, err := scanIngestJobRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get v2 segment job: %w", err)
+	}
+	return job, nil
+}
+
+// V2SegmentDigests returns segment number -> stored content digest.
+func (r *IngestJobRepository) V2SegmentDigests(ctx context.Context, reportRef shared.ID) (map[int]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT segment_seq, content_digest FROM ingest_jobs
+		WHERE ingest_report_id = $1 AND segment_seq IS NOT NULL`, reportRef.String())
+	if err != nil {
+		return nil, fmt.Errorf("list v2 segment digests: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[int]string{}
+	for rows.Next() {
+		var (
+			seq    int
+			digest sql.NullString
+		)
+		if err := rows.Scan(&seq, &digest); err != nil {
+			return nil, fmt.Errorf("scan v2 segment digest: %w", err)
+		}
+		out[seq] = digest.String
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate v2 segment digests: %w", err)
+	}
+	return out, nil
+}
+
+// RequeueDeadV2 gives a report's dead jobs a fresh retry budget.
+func (r *IngestJobRepository) RequeueDeadV2(ctx context.Context, reportRef shared.ID) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE ingest_jobs
+		SET status = 'pending', attempts = 0, error = NULL, available_at = NOW(),
+			locked_by = NULL, locked_at = NULL, updated_at = NOW()
+		WHERE ingest_report_id = $1 AND status = 'dead'`, reportRef.String())
+	if err != nil {
+		return 0, fmt.Errorf("requeue dead v2 jobs: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// ClearV2Payloads empties the payload of a finished report's completed jobs.
+func (r *IngestJobRepository) ClearV2Payloads(ctx context.Context, reportRef shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE ingest_jobs SET payload = ''::bytea, updated_at = NOW()
+		WHERE ingest_report_id = $1 AND status = 'completed' AND octet_length(payload) > 0`, reportRef.String())
+	if err != nil {
+		return fmt.Errorf("clear v2 payloads: %w", err)
+	}
+	return nil
 }
