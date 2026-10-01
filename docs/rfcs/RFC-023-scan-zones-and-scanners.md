@@ -258,7 +258,100 @@ every legacy `type` value from old clients and maps it.
 | R2 | SDK minor release: aliases, role/feature/manifest reporting when the server advertises v2, signature verification when present. Our agent bumps to it. | No (opt-in) |
 | R3 | Security switches: per-sensor "signature required", tenant "require guarded scanners for private targets", platform minimum protocol. Defaults keep v1 working; operators raise them when their fleet is upgraded. | Only when an operator raises the minimum |
 
-## 10. Security notes
+## 10. Sensor fleet security: use cases and controls
+
+The platform must always know what every sensor is doing, notice when one goes
+quiet or misbehaves, and keep a compromised sensor from reaching anything
+beyond its own narrow lane, in both directions (sensor → platform and
+platform → sensor). Each use case below names the control that answers it.
+
+### 10.1 Visibility: the platform always knows the state of every sensor
+
+| # | Use case | Control |
+|---|---|---|
+| V1 | A sensor stops connecting (crash, network cut, host powered off) | Heartbeat at poll cadence; states **online → late → offline → lost** after N missed intervals; per-tenant alert (in-app + notification channels) at *offline*, escalation at *lost*; fleet health on the Sensors page. |
+| V2 | A sensor is connected but does no work ("silent") | Per-job lease + progress watchdog: no progress before lease expiry ⇒ job re-queued to another scanner in the zone, sensor marked *degraded*; job success-rate per sensor tracked. |
+| V3 | A zone has no healthy scanner | Coverage alert per zone; New-scan preview shows which targets would be skipped. |
+| V4 | Assets stop being scanned | Freshness SLO per zone (assets not scanned in N days) with alert (extends RFC-007 coverage stats). |
+| V5 | Sensor runs an outdated or vulnerable version | Heartbeat reports SDK/protocol/tool versions; platform advisories + minimum version (C7); *upgrade required* flag. |
+| V6 | Sensor configuration drifts from what the platform set | Heartbeat carries a hash of effective config (allowed ranges, tools, limits, template set); mismatch ⇒ *config drift* flag and alert. |
+| V7 | Sensor clock is wrong (breaks signatures and expiries) | Skew measured on every signed request; warn at 1 min, refuse at 5 min. |
+| V8 | Fleet inventory goes stale | Sensors with no heartbeat for 30 days are auto-disabled (keys revoked), and reported for decommission. |
+
+### 10.2 Control: the platform governs sensor behaviour
+
+| # | Use case | Control |
+|---|---|---|
+| K1 | Stop a sensor now | Typed, signed remote actions: **pause / resume / drain / quarantine / revoke / rotate key / force re-enroll / apply config / update**. No shell or free-form command exists. |
+| K2 | Stop all scanning during an incident | **Kill switch** per tenant and platform-wide: no new jobs, running jobs cancelled at next poll. |
+| K3 | Limit how hard a sensor scans | Policy per sensor/zone: allowed tools, max concurrency, packets-per-second / intensity, **scan windows and blackout windows**; enforced by the SDK locally and by dispatch. |
+| K4 | A job must not run late or forever | Job `exp` in the signed envelope, max runtime, cancel propagation; expired jobs are never executed after a reconnect. |
+| K5 | Change what a sensor may do | Role/capability approval per role (D18a); removing a tool from the manifest or policy takes effect at the next poll. |
+
+### 10.3 Containment: a compromised sensor cannot spread to the platform
+
+| # | Use case | Control |
+|---|---|---|
+| C-1 | Attacker steals a sensor's identity | Private key never leaves the host (P1); request signing (P2) means captured traffic is useless; identity bound to host fingerprint ⇒ **the same identity used from two hosts or a new host fingerprint ⇒ quarantine**; unusual source IP/ASN ⇒ alert. |
+| C-2 | Compromised sensor calls other APIs | Sensor credentials only work on the sensor route group (no user/admin/tenant-data APIs); it can read only its own jobs and config; tenant from identity, never the body. |
+| C-3 | Compromised sensor floods or crashes the API | Separate rate limits, concurrency and quotas for sensor traffic (bulkhead from user traffic), limits applied **before** decompression; bounded decompression everywhere (the ingest-chunk zstd bomb, api#554); per-tenant asset/finding quotas. |
+| C-4 | Compromised sensor poisons data | Push scopes (D21): reportable tool names must be in its manifest/job; results outside its zone or job are quarantined; mass auto-resolve or zero-finding "blinding" reports are held for review; provenance on every record. |
+| C-5 | Clean up after a compromise | **Purge or roll back everything a sensor wrote in a time window** (findings created/resolved, assets, evidence), driven by provenance; findings it auto-resolved are reopened. |
+| C-6 | Sensor-supplied content attacks users or the server | All sensor strings are untrusted: escaped in the UI, markdown sanitised; the server never fetches a sensor-supplied URL except through the SSRF-guarded client; filenames and ids are validated. |
+| C-7 | Compromised sensor harvests credentials | Credentials released per job, only for in-range targets, envelope-encrypted to that sensor (D12); custom sensors never get control-plane credentials; every release audited; SSH keys preferred over passwords. |
+| C-8 | Compromised sensor forges validation or job outcomes | Evidence and outcomes accepted only for a job assigned to that sensor and still open; state transitions validated (no "fail" after "complete"). |
+
+### 10.4 Reverse containment: a compromised platform cannot weaponise sensors
+
+| # | Use case | Control |
+|---|---|---|
+| R-1 | Platform tells a scanner to scan something outside its network | Operator-held local allow-list intersected with the signed manifest (D8); built-in deny list (loopback, link-local/IMDS, `::/128`, control plane) on resolved, pinned IPs. |
+| R-2 | Forged or replayed jobs | JWS envelopes, offline root key, nonce + expiry, addressed to one sensor (P5, P6). |
+| R-3 | Malicious update or template | TUF-signed updates and templates with rollback protection (P7); signed releases (P8). |
+| R-4 | Platform asks for shell access | Not part of the protocol; the SDK has no such verb. |
+
+### 10.5 Detecting a compromised sensor
+
+| # | Use case | Control |
+|---|---|---|
+| D-1 | Binary or tools replaced on the host | Sensor reports the digest of its binary and tools; mismatch with the signed release ⇒ quarantine (TPM-based attestation later). |
+| D-2 | Sensor lies about results ("blinding") | **Canary jobs**: the platform periodically schedules a scan of a known canary target with known findings; a scanner that misses them is flagged. Cross-check when two scanners cover the same zone. |
+| D-3 | Abnormal behaviour | Baselines per sensor: auth failures, renew rate, job volume, result volume, new-asset rate; deviations raise alerts and can auto-quarantine. |
+
+### 10.6 Disconnection and recovery
+
+| # | Use case | Control |
+|---|---|---|
+| N-1 | Network partition mid-job | Results buffered locally (encrypted, bounded, file mode 0600), retried with `Idempotency-Key`; the platform re-routes after lease expiry; duplicates are dropped. |
+| N-2 | Platform unavailable | Exponential backoff with jitter; the sensor never starts work that was not assigned and signed. |
+| N-3 | Key expires while offline | Short grace window for renewal signed by the old key; otherwise re-enrollment with approval. |
+
+### 10.7 Lifecycle, audit and response
+
+| # | Use case | Control |
+|---|---|---|
+| L-1 | New sensor appears | Single-use enrollment token, approval before any job (D10). |
+| L-2 | Sensor decommissioned | Revoke keys, delete released credentials, keep provenance for history. |
+| L-3 | Everything must be reviewable | Every enrollment, approval, policy change, remote action, job signature, credential release, quarantine and purge goes to the tamper-evident audit log, exportable to SIEM. |
+| L-4 | Incident response | Runbook built into the UI: **quarantine → revoke → purge window → re-enroll**, with the affected data listed. |
+
+### 10.8 Findings from the 2026-10-01 platform ↔ SDK review (to fix)
+
+| Sev | Side | Finding | Phase |
+|---|---|---|---|
+| HIGH | api | Ingest chunk zstd decompression bomb (any agent key could OOM the shared API) | **fixed, api#554** |
+| HIGH | sdk | `DefaultCommandExecutor` passes server-supplied targets to scanners with no target validation or path confinement (third-party users exposed; our agent wraps it) | 0 |
+| MED | sdk | gitleaks findings send the **full plaintext secret** as the snippet | 0 |
+| MED | api | Heartbeat rewrites the whole agent row (can undo an admin revoke or key change) | 0 |
+| MED | api | Auto-resolve trusts the reported tool name; any agent key can resolve another tool's findings | 0 (D21) |
+| MED | api | Validation evidence accepted for any finding without an assigned validate job | 0 |
+| MED | api | Ingest rate limiter runs after decompression; no per-tenant asset/finding quota | 0 |
+| MED | sdk | `pkg/platform` targets routes that do not exist on the API; its checks never run | 0 |
+| MED | agent | Per-tool images download binaries without checksums, run as root, no provenance/SBOM | 4 (P8) |
+| MED | sdk | Template cache path traversal (`TemplateType`, tenant id) | 0 |
+| LOW | both | Unbounded response reads; command expiry dropped by the client; scheme-downgrade redirect keeps the key; non-atomic key save; child processes inherit secrets; API key visible in `ps`; chunk DB permissions; regenerate does not revoke renewed keys; `oct_` scope escalation; missing audit events; key scopes unenforced; `Fail` state checks; unvalidated `X-Request-ID`; global 10 MB limit masks the ingest limit | 0–2 |
+
+## 11. Security notes
 
 - The strongest guarantee is layer 3 with an operator-set local allow-list: it
   holds even if the control plane is fully compromised. Layers 1–2 are routing
@@ -271,7 +364,7 @@ every legacy `type` value from old clients and maps it.
 - Everything here is tenant-scoped; a zone or scanner id from another tenant is
   rejected in SQL, not only in handlers.
 
-## 11. Open questions
+## 12. Open questions
 
 1. Should a public target in a tenant with zones but no internet-facing scanner
    fall back to platform scanners if the tenant opted in, or be skipped? (Proposal:
