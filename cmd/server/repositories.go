@@ -186,6 +186,10 @@ type Repositories struct {
 	// Asset Dedup (RFC-001)
 	AssetDedup *postgres.AssetDedupRepository
 
+	// Asset identity model: identifiers each asset was seen with
+	AssetIdentifier       *postgres.AssetIdentifierRepository
+	AssetIdentityBackfill *postgres.AssetIdentityBackfillRepository
+
 	// Priority Classification (RFC-004)
 	PriorityRule  *postgres.PriorityRuleRepository
 	PriorityAudit *postgres.PriorityAuditRepository
@@ -214,6 +218,13 @@ type Repositories struct {
 
 // NewRepositories initializes all repositories.
 func NewRepositories(db *postgres.DB) *Repositories {
+	r := newRepositories(db)
+	r.AssetIdentifier = postgres.NewAssetIdentifierRepository(db, r.Asset)
+	r.AssetIdentityBackfill = postgres.NewAssetIdentityBackfillRepository(db)
+	return r
+}
+
+func newRepositories(db *postgres.DB) *Repositories {
 	return &Repositories{
 		// Core
 		User:   postgres.NewUserRepository(db),

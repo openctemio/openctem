@@ -3,32 +3,41 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// AssetDedupReview represents a pending dedup review entry.
+// AssetDedupReview represents a pending dedup review entry. The json names
+// are the API contract the duplicate-review page reads; without them the
+// list was encoded with Go field names and the page showed empty rows.
 type AssetDedupReview struct {
-	ID                string
-	TenantID          string
-	NormalizedName    string
-	AssetType         string
-	KeepAssetID       string
-	KeepAssetName     string
-	KeepFindingCount  int
-	MergeAssetIDs     []string
-	MergeAssetNames   []string
-	MergeFindingCount int
-	Status            string
-	ReviewedBy        *string
-	ReviewedAt        *time.Time
-	MergedAt          *time.Time
-	CreatedAt         time.Time
+	ID                string     `json:"id"`
+	TenantID          string     `json:"tenant_id"`
+	NormalizedName    string     `json:"normalized_name"`
+	AssetType         string     `json:"asset_type"`
+	KeepAssetID       string     `json:"keep_asset_id"`
+	KeepAssetName     string     `json:"keep_asset_name"`
+	KeepFindingCount  int        `json:"keep_finding_count"`
+	MergeAssetIDs     []string   `json:"merge_asset_ids"`
+	MergeAssetNames   []string   `json:"merge_asset_names"`
+	MergeFindingCount int        `json:"merge_finding_count"`
+	Status            string     `json:"status"`
+	ReviewedBy        *string    `json:"reviewed_by,omitempty"`
+	ReviewedAt        *time.Time `json:"reviewed_at,omitempty"`
+	MergedAt          *time.Time `json:"merged_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	// Reason says why the review was raised (one of the asset.DuplicateReason*
+	// values; nil for reviews raised before reasons were recorded).
+	Reason *string `json:"reason"`
+	// Evidence is what the assets share, e.g. {"kind":"mac","value":"..."}.
+	Evidence map[string]any `json:"evidence"`
 }
 
 // AssetDedupRepository handles dedup review and merge operations.
@@ -47,7 +56,8 @@ func (r *AssetDedupRepository) ListPendingReviews(ctx context.Context, tenantID 
 		SELECT id, tenant_id, normalized_name, asset_type,
 			keep_asset_id, keep_asset_name, keep_finding_count,
 			merge_asset_ids, merge_asset_names, merge_finding_count,
-			status, reviewed_by, reviewed_at, merged_at, created_at
+			status, reviewed_by, reviewed_at, merged_at, created_at,
+			reason, COALESCE(evidence, '{}'::jsonb)
 		FROM asset_dedup_review
 		WHERE tenant_id = $1 AND status = 'pending'
 		ORDER BY merge_finding_count DESC, created_at ASC
@@ -59,17 +69,23 @@ func (r *AssetDedupRepository) ListPendingReviews(ctx context.Context, tenantID 
 	}
 	defer func() { _ = rows.Close() }()
 
-	var reviews []AssetDedupReview
+	reviews := []AssetDedupReview{}
 	for rows.Next() {
 		var rev AssetDedupReview
+		var evidence []byte
 		err := rows.Scan(
 			&rev.ID, &rev.TenantID, &rev.NormalizedName, &rev.AssetType,
 			&rev.KeepAssetID, &rev.KeepAssetName, &rev.KeepFindingCount,
 			pq.Array(&rev.MergeAssetIDs), pq.Array(&rev.MergeAssetNames), &rev.MergeFindingCount,
 			&rev.Status, &rev.ReviewedBy, &rev.ReviewedAt, &rev.MergedAt, &rev.CreatedAt,
+			&rev.Reason, &evidence,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan review: %w", err)
+		}
+		rev.Evidence = map[string]any{}
+		if err := json.Unmarshal(evidence, &rev.Evidence); err != nil {
+			return nil, fmt.Errorf("decode review evidence: %w", err)
 		}
 		reviews = append(reviews, rev)
 	}
@@ -95,10 +111,11 @@ func (r *AssetDedupRepository) UpsertReview(
 		INSERT INTO asset_dedup_review (
 			tenant_id, normalized_name, asset_type,
 			keep_asset_id, keep_asset_name, keep_finding_count,
-			merge_asset_ids, merge_asset_names, merge_finding_count, status
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')
+			merge_asset_ids, merge_asset_names, merge_finding_count, status, reason
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending','`+asset.DuplicateReasonSharedIP+`')
 		ON CONFLICT (tenant_id, keep_asset_id) WHERE status = 'pending'
 		DO UPDATE SET
+			reason = EXCLUDED.reason,
 			normalized_name = EXCLUDED.normalized_name,
 			asset_type = EXCLUDED.asset_type,
 			keep_asset_name = EXCLUDED.keep_asset_name,
@@ -113,6 +130,134 @@ func (r *AssetDedupRepository) UpsertReview(
 		return fmt.Errorf("upsert dedup review: %w", err)
 	}
 	return nil
+}
+
+// EnqueueIdentityReview raises (or extends) a pending duplicate review for
+// rev.KeepID. Unlike UpsertReview, merge candidates already on the pending
+// review are kept: identity conflicts arrive one pair at a time. A pair an
+// operator already rejected (either direction) is not raised again. Never
+// merges anything.
+func (r *AssetDedupRepository) EnqueueIdentityReview(ctx context.Context, tenantID string, rev asset.DuplicateReview) (bool, error) {
+	if rev.KeepID == "" || len(rev.MergeIDs) == 0 {
+		return false, nil
+	}
+	evidence, err := json.Marshal(rev.Evidence)
+	if err != nil {
+		return false, fmt.Errorf("encode review evidence: %w", err)
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Drop candidates an operator already decided to keep separate.
+	open, err := openDuplicateCandidates(ctx, tx, tenantID, rev.KeepID, rev.MergeIDs)
+	if err != nil {
+		return false, err
+	}
+
+	ids := make([]string, 0, len(rev.MergeIDs))
+	names := make([]string, 0, len(rev.MergeIDs))
+	for i, id := range rev.MergeIDs {
+		if !open[id] || id == rev.KeepID {
+			continue
+		}
+		open[id] = false // once
+		ids = append(ids, id)
+		name := ""
+		if i < len(rev.MergeNames) {
+			name = rev.MergeNames[i]
+		}
+		names = append(names, name)
+	}
+	if len(ids) == 0 {
+		return false, nil
+	}
+
+	// One pending review per kept asset (uq_asset_dedup_review_pending):
+	// extend it with the new candidates.
+	var existingID string
+	var existingIDs, existingNames []string
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, merge_asset_ids, merge_asset_names FROM asset_dedup_review
+		WHERE tenant_id = $1 AND keep_asset_id = $2 AND status = 'pending'
+		FOR UPDATE`, tenantID, rev.KeepID).Scan(&existingID, pq.Array(&existingIDs), pq.Array(&existingNames))
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO asset_dedup_review (
+				tenant_id, normalized_name, asset_type,
+				keep_asset_id, keep_asset_name, keep_finding_count,
+				merge_asset_ids, merge_asset_names, merge_finding_count, status, reason, evidence
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11)`,
+			tenantID, rev.NormalizedName, rev.AssetType, rev.KeepID, rev.KeepName, rev.KeepFindingCount,
+			pq.Array(ids), pq.Array(names), rev.MergeFindingCount, rev.Reason, evidence); err != nil {
+			return false, fmt.Errorf("insert identity review: %w", err)
+		}
+	case err != nil:
+		return false, fmt.Errorf("lock pending review: %w", err)
+	default:
+		have := make(map[string]bool, len(existingIDs))
+		for _, id := range existingIDs {
+			have[id] = true
+		}
+		added := false
+		for i, id := range ids {
+			if !have[id] {
+				existingIDs = append(existingIDs, id)
+				existingNames = append(existingNames, names[i])
+				added = true
+			}
+		}
+		if !added {
+			return false, tx.Commit()
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE asset_dedup_review SET
+				merge_asset_ids = $2, merge_asset_names = $3,
+				merge_finding_count = merge_finding_count + $4,
+				reason = $5, evidence = $6
+			WHERE id = $1`,
+			existingID, pq.Array(existingIDs), pq.Array(existingNames), rev.MergeFindingCount,
+			rev.Reason, evidence); err != nil {
+			return false, fmt.Errorf("extend identity review: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit identity review: %w", err)
+	}
+	return true, nil
+}
+
+// openDuplicateCandidates returns the merge candidates that no rejected
+// review already pairs with keepID, in either direction.
+func openDuplicateCandidates(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) (map[string]bool, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT m FROM unnest($3::uuid[]) AS m
+		WHERE NOT EXISTS (
+			SELECT 1 FROM asset_dedup_review d
+			WHERE d.tenant_id = $1 AND d.status = 'rejected'
+			  AND ((d.keep_asset_id = $2 AND m = ANY(d.merge_asset_ids))
+			    OR (d.keep_asset_id = m AND $2 = ANY(d.merge_asset_ids))))`,
+		tenantID, keepID, pq.Array(mergeIDs))
+	if err != nil {
+		return nil, fmt.Errorf("filter rejected pairs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	open := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan candidate: %w", err)
+		}
+		open[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate candidates: %w", err)
+	}
+	return open, nil
 }
 
 // ReviewKeepAssetID returns the surviving (keep) asset ID for a review. Used by

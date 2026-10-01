@@ -74,9 +74,10 @@ type CorrelationResult struct {
 	ShouldRename bool
 	NewName      string
 
-	// MergeTargets are additional assets that should be merged into Matched.
-	// This happens when multiple existing assets match the same incoming data.
-	MergeTargets []*asset.Asset
+	// Ambiguous lists the assets an IP matched when it matched more than one
+	// (most findings first). Matched is nil then: the match does not count,
+	// and the caller raises a duplicate review for these assets.
+	Ambiguous []*asset.Asset
 
 	// CorrelationType records how the match was found (for audit log).
 	CorrelationType string // "ip", "hostname", "external_id", "fingerprint"
@@ -97,6 +98,12 @@ func NewAssetCorrelator(repo CorrelationRepo, log *logger.Logger, cfg Correlatio
 	}
 }
 
+// IPRecency reports when an IP address was last seen on an asset, from the
+// asset_identifiers table. ok is false when nothing is recorded for the pair
+// (an asset ingested before identifiers existed); the asset's own last_seen is
+// used then.
+type IPRecency func(assetID, ip string) (lastSeen time.Time, ok bool)
+
 // CorrelateHost tries to find an existing host asset by IP addresses.
 // tenantCfg overrides system defaults (pass nil to use system defaults).
 func (c *AssetCorrelator) CorrelateHost(
@@ -109,6 +116,28 @@ func (c *AssetCorrelator) CorrelateHost(
 	cfg := c.config
 	if len(tenantCfg) > 0 {
 		cfg = tenantCfg[0]
+	}
+	return c.CorrelateHostRecent(ctx, tenantID, incomingName, properties, cfg, nil)
+}
+
+// CorrelateHostRecent is CorrelateHost with per-IP recency. An IP match
+// counts only when that IP was seen on the asset within the trust window
+// (cfg.StaleAssetDays), and only when it is unambiguous: an IP that matches
+// several assets matches none of them, and they are returned in Ambiguous for
+// a duplicate review.
+func (c *AssetCorrelator) CorrelateHostRecent(
+	ctx context.Context,
+	tenantID shared.ID,
+	incomingName string,
+	properties map[string]any,
+	cfg CorrelationConfig,
+	recency IPRecency,
+) (*CorrelationResult, error) {
+	if cfg.StaleAssetDays <= 0 {
+		cfg.StaleAssetDays = DefaultIPTrustWindowDays
+	}
+	if cfg.MaxIPsPerAsset <= 0 {
+		cfg.MaxIPsPerAsset = DefaultMaxIPsPerAsset
 	}
 
 	ips := ExtractAllIPs(properties, incomingName)
@@ -130,14 +159,20 @@ func (c *AssetCorrelator) CorrelateHost(
 		return nil, err
 	}
 
-	// Collect unique matched assets, applying staleness filter
+	// Collect unique matched assets, applying the trust window per IP.
 	seen := make(map[string]*asset.Asset)
-	for _, assets := range matched {
+	for ip, assets := range matched {
 		for _, a := range assets {
 			if _, ok := seen[a.ID().String()]; ok {
 				continue
 			}
-			if !c.shouldCorrelateByIP(a, incomingName, cfg.StaleAssetDays) {
+			lastSeen := a.LastSeen()
+			if recency != nil {
+				if t, ok := recency(a.ID().String(), ip); ok {
+					lastSeen = t
+				}
+			}
+			if !c.shouldCorrelateByIP(a, incomingName, cfg.StaleAssetDays, lastSeen) {
 				continue
 			}
 			seen[a.ID().String()] = a
@@ -148,7 +183,7 @@ func (c *AssetCorrelator) CorrelateHost(
 		return &CorrelationResult{}, nil
 	}
 
-	// Convert to slice, pick primary (most findings, oldest)
+	// Convert to slice, most findings then oldest first
 	assets := make([]*asset.Asset, 0, len(seen))
 	for _, a := range seen {
 		assets = append(assets, a)
@@ -160,22 +195,20 @@ func (c *AssetCorrelator) CorrelateHost(
 		return assets[i].CreatedAt().Before(assets[j].CreatedAt())
 	})
 
+	// An IP shared by several assets says nothing about which one this is.
+	if len(assets) > 1 {
+		return &CorrelationResult{Ambiguous: assets, CorrelationType: "ip"}, nil
+	}
+
 	primary := assets[0]
 	result := &CorrelationResult{
 		Matched:         primary,
 		CorrelationType: "ip",
 	}
-
-	// Additional assets to merge (if multiple matched)
-	if len(assets) > 1 {
-		result.MergeTargets = assets[1:]
-	}
-
-	if shouldAdoptName(primary, incomingName, len(assets) == 1) {
+	if shouldAdoptName(primary, incomingName, true) {
 		result.ShouldRename = true
 		result.NewName = incomingName
 	}
-
 	return result, nil
 }
 
@@ -226,8 +259,9 @@ func hasAlias(a *asset.Asset, name string) bool {
 	return false
 }
 
-// shouldCorrelateByIP checks staleness and type compatibility.
-func (c *AssetCorrelator) shouldCorrelateByIP(existing *asset.Asset, incomingName string, staleDays int) bool {
+// shouldCorrelateByIP checks the trust window and type compatibility.
+// lastSeen is when the matched IP was last seen on the asset.
+func (c *AssetCorrelator) shouldCorrelateByIP(existing *asset.Asset, incomingName string, staleDays int, lastSeen time.Time) bool {
 	// Same name → always match (existing behavior)
 	if existing.Name() == incomingName {
 		return true
@@ -243,11 +277,11 @@ func (c *AssetCorrelator) shouldCorrelateByIP(existing *asset.Asset, incomingNam
 	// the ones it reported when last seen, so an asset outside the window may
 	// have handed its address to another machine (DHCP).
 	staleThreshold := time.Duration(staleDays) * 24 * time.Hour
-	if time.Since(existing.LastSeen()) > staleThreshold {
+	if time.Since(lastSeen) > staleThreshold {
 		c.logger.Debug("skipping stale asset for IP correlation",
 			"asset_id", existing.ID().String(),
 			"name", existing.Name(),
-			"last_seen", existing.LastSeen(),
+			"last_seen", lastSeen,
 			"stale_days", staleDays,
 		)
 		return false

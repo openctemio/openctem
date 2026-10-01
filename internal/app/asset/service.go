@@ -965,6 +965,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		return nil, err
 	}
 
+	oldName := a.Name()
 	if input.Name != nil {
 		if err := a.UpdateName(*input.Name); err != nil {
 			return nil, err
@@ -1076,6 +1077,11 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 
 	// Recalculate affected group stats (risk_score, finding_count, etc.)
 	s.recalculateAffectedGroups(ctx, parsedID)
+
+	if a.Name() != oldName {
+		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
+			assetdom.StateChangeRenamed, "name", oldName, a.Name(), assetdom.ChangeSourceManual, nil))
+	}
 
 	// A manual exposure change (e.g. an operator marking an asset public) is
 	// part of "what changed" in the attack surface, same as a scan-driven one.

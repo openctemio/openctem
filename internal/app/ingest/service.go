@@ -161,6 +161,12 @@ func (s *Service) SetDedupEnqueuer(e DedupReviewEnqueuer) {
 	s.assetProcessor.SetDedupEnqueuer(e)
 }
 
+// SetIdentityStore enables identifier-based asset matching (asset identity
+// model); conflicts are raised as duplicate reviews through reviewer.
+func (s *Service) SetIdentityStore(store IdentityStore, reviewer IdentityReviewer) {
+	s.assetProcessor.SetIdentityStore(store, reviewer)
+}
+
 // SetActivityService sets the finding activity service for audit trail during ingestion.
 func (s *Service) SetActivityService(activityService *app.FindingActivityService) {
 	s.activityService = activityService

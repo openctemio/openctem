@@ -125,6 +125,36 @@ func (r *AssetRepository) GetByID(ctx context.Context, tenantID, assetID shared.
 	return r.scanAsset(row, assetID)
 }
 
+// GetByIDs loads the given assets of one tenant in one query, keyed by id.
+// Ids from another tenant are not returned.
+func (r *AssetRepository) GetByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[string]*asset.Asset, error) {
+	result := make(map[string]*asset.Asset, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx, r.selectQuery()+" WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[])",
+		tenantID.String(), pq.Array(idStrs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get assets by ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		a, err := r.scanAssetFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		result[a.ID().String()] = a
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate assets by ids: %w", err)
+	}
+	return result, nil
+}
+
 // GetDisplayInfoByIDs returns id/name/type for the given assets of one tenant
 // in a single query. Unlike GetByID it skips the per-asset LATERAL finding
 // aggregate and the wide column list, which a caller that only labels rows

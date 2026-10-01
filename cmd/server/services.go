@@ -1249,6 +1249,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Enqueue an admin dedup review when correlation finds multiple existing
 	// assets sharing identity (RFC-001) — populates the previously-empty queue.
 	s.Ingest.SetDedupEnqueuer(repos.AssetDedup)
+	// Match assets on stable identifiers (host ID, cloud ID, BIOS UUID,
+	// serial, MAC, SCM repository ID) before name and IP; conflicts go to
+	// the same review queue.
+	s.Ingest.SetIdentityStore(repos.AssetIdentifier, repos.AssetDedup)
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
