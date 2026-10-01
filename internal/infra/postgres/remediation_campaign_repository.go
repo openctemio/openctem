@@ -193,14 +193,14 @@ func (r *RemediationCampaignRepository) Update(ctx context.Context, c *remediati
 }
 
 func (r *RemediationCampaignRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
-	_, err := r.db.ExecContext(ctx,
+	res, err := r.db.ExecContext(ctx,
 		"DELETE FROM remediation_campaigns WHERE tenant_id = $1 AND id = $2",
 		tenantID.String(), id.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete remediation campaign: %w", err)
 	}
-	return nil
+	return deletedOne(res, "remediation campaign")
 }
 
 func (r *RemediationCampaignRepository) List(ctx context.Context, filter remediation.CampaignFilter, page pagination.Pagination) (pagination.Result[*remediation.Campaign], error) {

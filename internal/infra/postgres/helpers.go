@@ -151,6 +151,20 @@ func invalidInput(err error) error {
 	return nil
 }
 
+// deletedOne turns a tenant-scoped DELETE that matched no row into
+// shared.ErrNotFound. Without it a DELETE of an unknown id — or of another
+// tenant's id, which the tenant_id predicate filters out — reported success.
+func deletedOne(res sql.Result, what string) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete %s: rows affected: %w", what, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %s not found", shared.ErrNotFound, what)
+	}
+	return nil
+}
+
 // parseIP parses an IP address string into net.IP.
 func parseIP(s string) net.IP {
 	return net.ParseIP(s)

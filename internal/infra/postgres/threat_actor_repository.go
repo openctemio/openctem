@@ -167,14 +167,14 @@ func (r *ThreatActorRepository) Update(ctx context.Context, actor *threatactor.T
 }
 
 func (r *ThreatActorRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
-	_, err := r.db.ExecContext(ctx,
+	res, err := r.db.ExecContext(ctx,
 		"DELETE FROM threat_actors WHERE tenant_id = $1 AND id = $2",
 		tenantID.String(), id.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete threat actor: %w", err)
 	}
-	return nil
+	return deletedOne(res, "threat actor")
 }
 
 func (r *ThreatActorRepository) List(ctx context.Context, filter threatactor.Filter, page pagination.Pagination) (pagination.Result[*threatactor.ThreatActor], error) {

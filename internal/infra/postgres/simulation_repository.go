@@ -186,14 +186,14 @@ func (r *SimulationRepository) Update(ctx context.Context, sim *simulation.Simul
 }
 
 func (r *SimulationRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
-	_, err := r.db.ExecContext(ctx,
+	res, err := r.db.ExecContext(ctx,
 		"DELETE FROM attack_simulations WHERE tenant_id = $1 AND id = $2",
 		tenantID.String(), id.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete simulation: %w", err)
 	}
-	return nil
+	return deletedOne(res, "simulation")
 }
 
 func (r *SimulationRepository) List(ctx context.Context, filter simulation.SimulationFilter, page pagination.Pagination) (pagination.Result[*simulation.Simulation], error) {

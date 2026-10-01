@@ -89,11 +89,14 @@ func (r *ReportScheduleRepository) Update(ctx context.Context, s *reportschedule
 
 // Delete removes a report schedule.
 func (r *ReportScheduleRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
-	_, err := r.db.ExecContext(ctx,
+	res, err := r.db.ExecContext(ctx,
 		`DELETE FROM report_schedules WHERE tenant_id = $1 AND id = $2`,
 		tenantID.String(), id.String(),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return deletedOne(res, "report schedule")
 }
 
 // List returns report schedules for a tenant.
