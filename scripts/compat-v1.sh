@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Protocol-v1 compatibility check (RFC-023 §9.2, C8).
+#
+# Proves that a sensor built with the LAST RELEASED sdk-go keeps working
+# against this API build: connection test, heartbeat, CTIS push, command
+# lifecycle, suppressions, key renewal. The sensor side lives in
+# tests/compat/v1 (its own module, pinned to that SDK release); this script
+# prepares a tenant, a sensor key and a queued command, runs it, and checks
+# the platform recorded the outcome.
+#
+# The provisioning calls below use the MANAGEMENT API, which is allowed to
+# change between versions; update them with it. The protocol-v1 surface the
+# harness exercises is frozen and must never need changes here.
+#
+# Requires: a migrated database, the API running at COMPAT_API_URL, curl, jq,
+# and the bootstrap-tenant binary. Usage:
+#   COMPAT_API_URL=http://127.0.0.1:8080 DATABASE_URL=postgres://... \
+#   BOOTSTRAP_TENANT_BIN=./bin/bootstrap-tenant scripts/compat-v1.sh
+set -euo pipefail
+
+API="${COMPAT_API_URL:?COMPAT_API_URL is required}"
+: "${DATABASE_URL:?DATABASE_URL is required}"
+BOOTSTRAP_TENANT_BIN="${BOOTSTRAP_TENANT_BIN:?BOOTSTRAP_TENANT_BIN is required}"
+HARNESS_DIR="$(cd "$(dirname "$0")/../tests/compat/v1" && pwd)"
+
+EMAIL="compat-owner@openctem-test.local"
+PASSWORD="CompatP@ss123!"
+SLUG="compat-v1-$(date +%s)"
+WORK="$(mktemp -d)"
+JAR="$WORK/cookies"
+trap 'rm -rf "$WORK"' EXIT
+
+fail() { echo "[FAIL] $*" >&2; exit 1; }
+
+# call METHOD PATH [JSON] — authenticated management call; prints the body,
+# fails on a non-2xx status.
+call() {
+	local method="$1" path="$2" data="${3:-}" csrf code
+	csrf=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$JAR" 2>/dev/null || true)
+	local args=(-sS -o "$WORK/body" -w '%{http_code}' -X "$method" "$API$path"
+		-b "$JAR" -c "$JAR" -H 'Content-Type: application/json')
+	[ -n "${ACCESS_TOKEN:-}" ] && args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
+	[ -n "$csrf" ] && args+=(-H "X-CSRF-Token: $csrf")
+	[ -n "$data" ] && args+=(-d "$data")
+	code=$(curl "${args[@]}")
+	[[ "$code" =~ ^2 ]] || fail "$method $path -> HTTP $code: $(head -c 300 "$WORK/body")"
+	cat "$WORK/body"
+}
+
+echo "== provisioning (management API)"
+"$BOOTSTRAP_TENANT_BIN" -db="$DATABASE_URL" -email="$EMAIL" -password="$PASSWORD" \
+	-team="Compat V1" -slug="$SLUG" -force >/dev/null
+
+TENANT_ID=$(call POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" |
+	jq -r --arg s "$SLUG" '.tenants[] | select(.slug==$s) | .id')
+[ -n "$TENANT_ID" ] || fail "tenant $SLUG not in login response"
+ACCESS_TOKEN=$(call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}" | jq -r '.access_token')
+
+created=$(call POST /api/v1/agents \
+	'{"name":"compat-v1","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}')
+AGENT_ID=$(jq -r '.agent.id' <<<"$created")
+API_KEY=$(jq -r '.api_key' <<<"$created")
+[ -n "$API_KEY" ] && [ "$API_KEY" != null ] || fail "agent created without an API key"
+
+COMMAND_ID=$(call POST /api/v1/commands "{\"agent_id\":\"$AGENT_ID\",\"type\":\"health_check\"}" | jq -r '.id')
+[ -n "$COMMAND_ID" ] && [ "$COMMAND_ID" != null ] || fail "command not created"
+echo "tenant=$TENANT_ID sensor=$AGENT_ID command=$COMMAND_ID"
+
+echo "== protocol v1, driven by the last released sdk-go"
+# The SDK's API client refuses loopback by default; the API under test runs on it.
+(cd "$HARNESS_DIR" && GOWORK=off \
+	OPENCTEM_SDK_HTTPSEC_ALLOW_LOOPBACK=1 \
+	COMPAT_API_URL="$API" COMPAT_AGENT_ID="$AGENT_ID" COMPAT_API_KEY="$API_KEY" \
+	COMPAT_COMMAND_ID="$COMMAND_ID" go run .)
+
+echo "== the platform recorded the outcome"
+status=$(call GET "/api/v1/commands/$COMMAND_ID" | jq -r '.status')
+[ "$status" = completed ] || fail "command status is '$status', want completed"
+echo "[PASS] command recorded as completed"
+
+health=$(call GET "/api/v1/agents/$AGENT_ID" | jq -r '.health')
+[ "$health" = online ] || fail "sensor health is '$health', want online"
+echo "[PASS] sensor shown online"
+
+echo "PASS: protocol v1 is compatible"
