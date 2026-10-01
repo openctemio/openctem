@@ -1,0 +1,5 @@
+https://{$OPENCTEM_HOSTNAME} {
+	# Default only: the API sets its own HSTS in production; never send two.
+	header ?Strict-Transport-Security "max-age=31536000"
+	import openctem
+}

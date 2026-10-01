@@ -1,0 +1,306 @@
+# =============================================================================
+# OpenCTEM - production stack behind ONE HTTPS port
+# =============================================================================
+# Only the gateway is published. The web UI (Next.js), the API (Go), Postgres
+# and Redis stay on the internal network; browsers, sensors, API-key clients,
+# SCIM and MCP all use https://<OPENCTEM_HOSTNAME>. Routing and TLS modes:
+# gateway/Caddyfile. Guide: docs "Exposing OpenCTEM: one HTTPS port".
+#
+#   cp .env.example .env    # set OPENCTEM_HOSTNAME, OPENCTEM_TLS_MODE, secrets
+#   docker compose up -d
+#
+# Optional overlays:
+#   docker-compose.http-redirect.yml  also publish :80 (HTTP->HTTPS redirect,
+#                                     ACME HTTP-01); for OPENCTEM_TLS_MODE=acme
+#   docker-compose.plain-http.yml     OPENCTEM_TLS_MODE=http behind your own
+#                                     TLS proxy (explicit opt-in)
+#
+# Never published: API :8080, gRPC/metrics :9090, web :3000, Postgres, Redis.
+# =============================================================================
+
+name: openctem
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Gateway: the only published service
+  # ---------------------------------------------------------------------------
+  gateway:
+    image: caddy:${CADDY_VERSION:-2.11.4-alpine}
+    entrypoint: ["/bin/sh", "/etc/caddy/entrypoint.sh"]
+    ports:
+      - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_HTTPS_PORT:-443}:443"
+    environment:
+      OPENCTEM_HOSTNAME: ${OPENCTEM_HOSTNAME:?OPENCTEM_HOSTNAME is required (DNS name or IP clients use)}
+      OPENCTEM_TLS_MODE: ${OPENCTEM_TLS_MODE:-internal}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-tls.crt}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-tls.key}
+      OPENCTEM_ALLOW_PLAIN_HTTP: ${OPENCTEM_ALLOW_PLAIN_HTTP:-false}
+      OPENCTEM_TRUSTED_PROXIES: ${OPENCTEM_TRUSTED_PROXIES:-}
+      GATEWAY_MAX_BODY_SIZE: ${GATEWAY_MAX_BODY_SIZE:-256MB}
+    volumes:
+      # A directory, not single files: editors replace a file's inode on save
+      # and a single-file bind mount keeps showing the old content.
+      - ./gateway:/etc/caddy:ro
+      # TLS mode `files`: your certificate and key (TLS_CERT_FILE/TLS_KEY_FILE).
+      - ${TLS_CERT_DIR:-./certs}:/certs:ro
+      # TLS mode `internal`: the root CA certificate for sensors, 0644.
+      - ${OPENCTEM_CA_EXPORT_DIR:-./ca}:/ca
+      - gateway-data:/data # certificates, ACME account, internal CA (keep!)
+      - gateway-config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+    networks:
+      openctem:
+        ipv4_address: ${OPENCTEM_NET_PREFIX:-172.30.80}.10
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Web UI (Next.js): internal only
+  # ---------------------------------------------------------------------------
+  web:
+    image: ${UI_IMAGE:-ghcr.io/openctemio/ui}:${UI_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is required, e.g. v0.8.0}}
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      BACKEND_API_URL: http://api:8080
+      CSRF_SECRET: ${CSRF_SECRET:?CSRF_SECRET is required (openssl rand -hex 32)}
+      # Browsers always see HTTPS (the gateway, or your TLS proxy in `http` mode).
+      SECURE_COOKIES: "true"
+      # The gateway overwrites X-Real-IP / X-Forwarded-For, so pass them on to
+      # the API (audit log, IP allowlists). Safe only because web is not
+      # published: nothing but the gateway can reach it.
+      TRUST_PROXY_HEADERS: "true"
+    depends_on:
+      - api
+    networks:
+      openctem:
+        ipv4_address: ${OPENCTEM_NET_PREFIX:-172.30.80}.11
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Database migrations (one-shot, before the API)
+  # ---------------------------------------------------------------------------
+  migrate:
+    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION}}
+    command:
+      - "-path=/migrations"
+      - "-database"
+      - "postgres://${DB_USER:-openctem}:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-openctem}?sslmode=${DB_SSLMODE:-require}"
+      - "up"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - openctem
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # API (Go): internal only
+  # ---------------------------------------------------------------------------
+  api:
+    image: ${API_IMAGE:-ghcr.io/openctemio/api}:${API_VERSION:-${OPENCTEM_VERSION}}
+    expose:
+      - "8080"
+    environment:
+      APP_NAME: openctem
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: "false"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      # Only the gateway and the web UI may assert a client address
+      # (X-Real-IP / X-Forwarded-For). Anything else is recorded as its own
+      # TCP peer, so a client cannot choose the IP in the audit log.
+      SERVER_TRUSTED_PROXIES: ${OPENCTEM_NET_PREFIX:-172.30.80}.10,${OPENCTEM_NET_PREFIX:-172.30.80}.11
+      # One origin for the UI, the API and the WebSocket.
+      CORS_ALLOWED_ORIGINS: ${OPENCTEM_PUBLIC_URL:?OPENCTEM_PUBLIC_URL is required, e.g. https://ctem.example.com}
+      # Public origin: SAML SP URLs, links in e-mails.
+      APP_URL: ${OPENCTEM_PUBLIC_URL}
+      SMTP_BASE_URL: ${OPENCTEM_PUBLIC_URL}
+      AUTH_COOKIE_SECURE: "true"
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-openctem}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-openctem}
+      DB_SSLMODE: ${DB_SSLMODE:-require}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required (32+ characters)}
+      REDIS_TLS_ENABLED: ${REDIS_TLS_ENABLED:-true}
+      REDIS_TLS_CA_FILE: ${REDIS_TLS_CA_FILE:-/datastore-tls/ca.crt}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required (openssl rand -hex 64)}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required (openssl rand -hex 32)}
+      AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}
+      SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - openctem
+    restart: unless-stopped
+    volumes:
+      - datastore-tls:/datastore-tls:ro
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=100M
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Postgres and Redis: internal only, TLS on the internal network
+  # ---------------------------------------------------------------------------
+  # The API in production refuses a database or Redis connection without TLS.
+  # This one-shot job gives the bundled Postgres and Redis certificates from a
+  # private CA kept in the datastore-tls volume (the API verifies Redis against
+  # it). Using managed Postgres/Redis instead: set DB_HOST/REDIS_HOST (and
+  # REDIS_TLS_CA_FILE if their CA is not public) and drop these services.
+  datastore-tls:
+    image: postgres:${POSTGRES_VERSION:-17} # only for its openssl
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cd /tls
+        if [ ! -s ca.crt ]; then
+          openssl req -x509 -newkey rsa:3072 -nodes -days 3650 -subj "/CN=OpenCTEM datastore CA" -keyout ca.key -out ca.crt
+        fi
+        if [ -s server.crt ] && openssl x509 -checkend 2592000 -noout -in server.crt; then
+          exit 0
+        fi
+        openssl req -newkey rsa:2048 -nodes -subj "/CN=postgres" -keyout server.key -out server.csr
+        printf 'subjectAltName=DNS:postgres,DNS:redis\n' > server.ext
+        openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 825 -extfile server.ext -out server.crt
+        cp server.key postgres.key && chown 999:999 postgres.key && chmod 0600 postgres.key
+        cp server.key redis.key && chown 999:1000 redis.key && chmod 0600 redis.key
+        rm -f server.key server.csr server.ext
+        chmod 0600 ca.key && chmod 0644 ca.crt server.crt
+        echo "datastore TLS certificates issued"
+    volumes:
+      - datastore-tls:/tls
+    networks:
+      - openctem
+    restart: "no"
+    logging: *default-logging
+
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-17}
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/tls/server.crt
+      - -c
+      - ssl_key_file=/tls/postgres.key
+    environment:
+      POSTGRES_USER: ${DB_USER:-openctem}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-openctem}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - datastore-tls:/tls:ro
+    depends_on:
+      datastore-tls:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-openctem} -d ${DB_NAME:-openctem}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - openctem
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  redis:
+    image: redis:${REDIS_VERSION:-7-alpine}
+    command:
+      - sh
+      - -c
+      - >-
+        exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        --port 0 --tls-port 6379 --tls-auth-clients no
+        --tls-cert-file /tls/server.crt --tls-key-file /tls/redis.key
+        --tls-ca-cert-file /tls/ca.crt
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+      - datastore-tls:/tls:ro
+    depends_on:
+      datastore-tls:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --tls --cacert /tls/ca.crt --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openctem
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+volumes:
+  datastore-tls:
+  gateway-data:
+  gateway-config:
+  postgres-data:
+  redis-data:
+
+networks:
+  openctem:
+    ipam:
+      config:
+        # Fixed so the API can trust exactly the gateway (.10) and web (.11).
+        # Change OPENCTEM_NET_PREFIX if it overlaps a network on your host.
+        - subnet: ${OPENCTEM_NET_PREFIX:-172.30.80}.0/24

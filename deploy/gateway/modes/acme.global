@@ -1,0 +1,5 @@
+# TLS mode `acme`: automatic Let's Encrypt certificate for a public DNS name.
+# Port 443 alone is enough (TLS-ALPN-01). Publishing :80 as well
+# (docker-compose.http-redirect.yml) adds HTTP-01 and the HTTP->HTTPS redirect.
+email {$ACME_EMAIL}
+acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}

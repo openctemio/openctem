@@ -125,26 +125,30 @@ docker compose up
 
 ### Production
 
-```bash
-# Set required environment variables
-export DB_PASSWORD=<secure-password>
-export REDIS_PASSWORD=<secure-password>
-export AUTH_JWT_SECRET=<64-char-secret>
-export APP_ENCRYPTION_KEY=$(openssl rand -hex 32)
-export CORS_ALLOWED_ORIGINS=https://your-domain.com
+The production stack exposes ONE port: a gateway on 443 (HTTPS) fronts both
+the web UI and this API, like any appliance. The API, the web UI, Postgres and
+Redis are never published.
 
-# Start
-docker compose -f docker-compose.prod.yml up -d
+```bash
+cd deploy
+cp .env.example .env   # set OPENCTEM_HOSTNAME, OPENCTEM_PUBLIC_URL, OPENCTEM_TLS_MODE, secrets
+docker compose up -d
 ```
+
+TLS modes (`OPENCTEM_TLS_MODE`): `internal` (own CA, for LAN/IP installs; the
+root for sensors is exported to `deploy/ca/`), `acme` (Let's Encrypt), `files`
+(your certificate), `http` (only behind your own TLS proxy, explicit opt-in).
+Routing table and details: `deploy/gateway/Caddyfile` and the docs page
+"Exposing OpenCTEM: one HTTPS port". Sensors use `API_URL=https://<host>`.
 
 ### Verify
 
 ```bash
-curl http://localhost:8080/health
+curl --cacert deploy/ca/openctem-root-ca.crt https://<host>/health
 # {"status":"healthy"}
 
-curl http://localhost:8080/ready
-# {"status":"ready","database":"ok","redis":"ok"}
+# Readiness and metrics are not public; ask from inside the network:
+docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/ready
 ```
 
 ## Environment Variables

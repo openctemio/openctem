@@ -1,0 +1,157 @@
+# =============================================================================
+# OpenCTEM gateway: the single public entry point (one HTTPS port).
+# =============================================================================
+# The browser UI (web, Next.js) and the REST API (api, Go) stay on the internal
+# network. This gateway terminates TLS and routes by path and credential:
+#
+#   to the API (api:8080)
+#     /api/v1/agent/*  /api/v2/sensor/*  /api/v1/platform/*   sensors
+#     /scim/v2/*                                              SCIM provisioning
+#     /api/v1/mcp                                             MCP (oct_ key)
+#     /api/v1/webhooks/incoming/*                             Jira/GitHub webhooks (HMAC)
+#     /api/v1/auth/saml/*                                     SAML metadata, login redirect,
+#                                                             ACS (IdP form POST)
+#     /api/v1/auth/backchannel-logout                         OIDC back-channel logout (IdP)
+#     /api/v1/ws                                              browser WebSocket (ticket auth)
+#     /health  /openapi.yaml  /docs                           liveness, API reference
+#     /api/* with Authorization: Bearer oct_*  or  X-API-Key  API-key clients
+#     /api/* with Authorization: Bearer * and no session cookie
+#                                                           other token clients
+#   blocked here (404): /metrics  /ready  /debug/*
+#   everything else to the web UI (web:3000), including the browser's
+#   cookie-session calls to /api/v1/*, which the web proxy authenticates.
+#
+# Why the credential split: the web's /api/v1 proxy authenticates with the
+# browser's session cookie and does not forward the caller's Authorization
+# header, so a token client sent there gets 401. A browser always carries the
+# session cookie, so "Bearer and no session cookie" is never a browser call.
+#
+# TLS is chosen by OPENCTEM_TLS_MODE (internal | acme | files | http); each
+# mode is a pair of small files under modes/. Environment placeholders
+# {$NAME:default} are substituted when the file is read.
+# =============================================================================
+{
+	# Admin API stays inside the container (the healthcheck uses it).
+	admin 127.0.0.1:2019
+
+	# Runtime log: plain text, not JSON, so `docker logs` is readable.
+	log default {
+		output stdout
+		format console {
+			level_format upper
+		}
+		# The healthcheck polls the admin API every 30s; keep that out of the log.
+		exclude admin.api
+	}
+
+	servers {
+		# Sensors and browsers speak HTTP/1.1 and HTTP/2; no QUIC (UDP) listener.
+		protocols h1 h2
+		# Proxies in front of this gateway whose X-Forwarded-For is believed.
+		# Default: none (127.0.0.1 never connects from outside), so a client
+		# cannot choose its own address. Set only for the `http` mode or an L4/L7
+		# load balancer in front: space-separated CIDRs.
+		trusted_proxies static {$OPENCTEM_TRUSTED_PROXIES:127.0.0.1/32}
+		client_ip_headers X-Forwarded-For
+	}
+
+	import modes/{$OPENCTEM_TLS_MODE}.global
+}
+
+# Everything a site needs apart from its address and TLS.
+(openctem) {
+	# Above the API's largest per-route limit (asset import, 200 MB); the API
+	# enforces the real per-route limits. Bodies are streamed, not buffered.
+	request_body {
+		max_size {$GATEWAY_MAX_BODY_SIZE:256MB}
+	}
+
+	# Access log: one readable line per request. Secrets are removed:
+	# Authorization/Cookie are redacted by Caddy itself; API keys sent as
+	# headers and the single-use WebSocket ticket are removed here.
+	log {
+		output stdout
+		format filter {
+			wrap console {
+				level_format upper
+			}
+			fields {
+				request>headers>X-Api-Key delete
+				request>headers>X-Sensor-Api-Key delete
+				request>headers>X-Csrf-Token delete
+				request>uri query {
+					replace ticket REDACTED
+				}
+			}
+		}
+	}
+
+	# Defaults only (`?`): the web UI sets its own frame/CSP/referrer headers,
+	# which win. These cover API responses.
+	header {
+		-Server
+		-Via
+		?X-Content-Type-Options nosniff
+		?X-Frame-Options DENY
+		?Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	# Never public: Prometheus metrics, readiness detail, debug handlers.
+	@internal path /metrics /metrics/* /ready /debug/*
+	handle @internal {
+		respond 404
+	}
+
+	@api_paths path /api/v1/agent/* /api/v2/sensor/* /api/v1/platform/* /scim/v2/* /api/v1/mcp /api/v1/mcp/* /api/v1/webhooks/incoming/* /api/v1/auth/saml/* /api/v1/auth/backchannel-logout /api/v1/ws /health /openapi.yaml /docs
+	handle @api_paths {
+		import to_api
+	}
+
+	@api_key_bearer {
+		path /api/*
+		header Authorization "Bearer oct_*"
+	}
+	handle @api_key_bearer {
+		import to_api
+	}
+
+	@api_key_header {
+		path /api/*
+		header X-API-Key *
+	}
+	handle @api_key_header {
+		import to_api
+	}
+
+	@token_no_session {
+		path /api/*
+		header Authorization "Bearer *"
+		not header Cookie *{$AUTH_COOKIE_NAME:auth_token}=*
+	}
+	handle @token_no_session {
+		import to_api
+	}
+
+	handle {
+		reverse_proxy {$OPENCTEM_WEB_UPSTREAM:web:3000} {
+			import forwarded
+		}
+	}
+}
+
+(to_api) {
+	reverse_proxy {$OPENCTEM_API_UPSTREAM:api:8080} {
+		import forwarded
+	}
+}
+
+# The client address for the API's audit log, rate limits and IP allowlists.
+# Caddy already sets X-Forwarded-For/-Proto/-Host and drops any a client sent;
+# X-Real-IP is not touched by Caddy, so it is overwritten here (the API reads
+# it first). Responses are flushed immediately (long polls, SSE, streaming).
+(forwarded) {
+	header_up X-Real-IP {client_ip}
+	flush_interval -1
+}
+
+import modes/{$OPENCTEM_TLS_MODE}.site

@@ -1,6 +1,10 @@
 # =============================================================================
-# Docker Compose - Production Environment
+# Docker Compose - Production Environment (API only)
 # =============================================================================
+# For a complete installation (web UI + API behind ONE HTTPS port), use
+# deploy/docker-compose.yml instead. This file runs the API alone and does not
+# publish it; put it behind the gateway (deploy/gateway) or your own proxy.
+#
 # Option 1: Pull from Docker Hub (recommended for deployment):
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
@@ -72,9 +76,11 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    ports:
-      - "8080:8080" # HTTP API
-      - "9090:9090" # gRPC
+    # Not published: clients reach the API through the gateway on one HTTPS
+    # port (deploy/docker-compose.yml, which also runs the web UI). Port 9090
+    # (gRPC/metrics) is never public.
+    expose:
+      - "8080"
     environment:
       # Application
       APP_NAME: openctem
