@@ -170,6 +170,9 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	if err != nil {
 		return nil, err
 	}
+	if _, err := selectedZone(sc, zones); err != nil {
+		return nil, err // pinned to a deleted zone: fail closed
+	}
 	if len(zones) > 0 {
 		// A workflow stays inside one zone; see routeWorkflowTargets.
 		if targets, err = s.routeWorkflowTargets(ctx, sc, zones, targets, runContext); err != nil {
@@ -270,6 +273,9 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	zones, err := s.loadZones(ctx, sc.TenantID)
 	if err != nil {
 		return nil, err
+	}
+	if _, err := selectedZone(sc, zones); err != nil {
+		return nil, err // pinned to a deleted zone: fail closed
 	}
 	var plan *zonePlan
 	if len(zones) > 0 && s.toolReachesNetwork(ctx, sc.ScannerName) {

@@ -38,9 +38,10 @@ const singleTargetWarningPrefix = "scanner "
 
 // resolvedTargets is what a scan run actually dispatches.
 type resolvedTargets struct {
-	Targets  []string
-	Excluded int
-	Warnings []string
+	Targets       []string
+	Excluded      int
+	ExcludedNames []string // the targets scope exclusions removed, in order
+	Warnings      []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
@@ -110,6 +111,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	for _, c := range candidates {
 		if excluded[c.ID] {
 			out.Excluded++
+			out.ExcludedNames = append(out.ExcludedNames, names[c.ID])
 			continue
 		}
 		out.Targets = append(out.Targets, names[c.ID])

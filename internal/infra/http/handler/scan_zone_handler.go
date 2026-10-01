@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	auditapp "github.com/openctemio/api/internal/app/audit"
+	scanapp "github.com/openctemio/api/internal/app/scan"
 	scanzoneapp "github.com/openctemio/api/internal/app/scanzone"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
@@ -21,12 +23,33 @@ import (
 // /api/v1/scan-zones. Tenant from the JWT; every query is tenant-scoped.
 type ScanZoneHandler struct {
 	service *scanzoneapp.Service
+	preview ScanZoneRoutingPreviewer
 	logger  *logger.Logger
 }
 
+// ScanZoneRoutingPreviewer computes where a scan's targets would go.
+// *scanapp.Service implements it with the trigger's own routing code.
+type ScanZoneRoutingPreviewer interface {
+	PreviewZoneRouting(ctx context.Context, in scanapp.ZoneRoutingPreviewInput) (*scanapp.ZoneRoutingPreview, error)
+}
+
 // NewScanZoneHandler creates a ScanZoneHandler.
-func NewScanZoneHandler(svc *scanzoneapp.Service, log *logger.Logger) *ScanZoneHandler {
-	return &ScanZoneHandler{service: svc, logger: log.With("handler", "scan_zone")}
+func NewScanZoneHandler(svc *scanzoneapp.Service, preview ScanZoneRoutingPreviewer, log *logger.Logger) *ScanZoneHandler {
+	return &ScanZoneHandler{service: svc, preview: preview, logger: log.With("handler", "scan_zone")}
+}
+
+// ScanZonePreviewRequest is a scan about to be created: its targets, asset
+// groups, scanner and zone picker value.
+type ScanZonePreviewRequest struct {
+	Targets       []string `json:"targets"`
+	AssetGroupIDs []string `json:"asset_group_ids"`
+	ScanType      string   `json:"scan_type"`
+	ScannerName   string   `json:"scanner_name"`
+	TargetsPerJob int      `json:"targets_per_job"`
+	ScanZoneID    *string  `json:"scan_zone_id"`
+	// PipelineID is accepted so a client can send its whole draft; a workflow
+	// is routed the same whatever its steps, so it does not change the result.
+	PipelineID *string `json:"pipeline_id,omitempty"`
 }
 
 // ScanZoneResponse is a scan zone.
@@ -341,6 +364,49 @@ func (h *ScanZoneHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 	writeScanZoneJSON(w, http.StatusOK, resp)
 }
 
+// Preview handles POST /api/v1/scan-zones/preview
+// @Summary      Preview scan zone routing
+// @Description  For a scan about to be created: which targets go to which zone and sensor, which scope excludes, and which are not scanned and why. Computed with the trigger's routing code; creates nothing. Hostnames are resolved now, as at trigger time. What a trigger would refuse is reported in `error` (NO_TARGETS, ALL_TARGETS_EXCLUDED, NO_ZONE_COVERAGE, ZONE_SPLIT_REQUIRED, TOO_MANY_JOBS, INVALID_TARGET).
+// @Tags         Scan Zones
+// @Accept       json
+// @Produce      json
+// @Param        body  body      ScanZonePreviewRequest  true  "Scan targets and settings"
+// @Success      200   {object}  scanapp.ZoneRoutingPreview
+// @Failure      400   {object}  apierror.Error
+// @Failure      401   {object}  apierror.Error
+// @Failure      403   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error  "scan zone or asset group not in this tenant"
+// @Security     BearerAuth
+// @Router       /scan-zones/preview [post]
+func (h *ScanZoneHandler) Preview(w http.ResponseWriter, r *http.Request) {
+	var req ScanZonePreviewRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	in := scanapp.ZoneRoutingPreviewInput{
+		TenantID:      middleware.GetTenantID(r.Context()),
+		Targets:       req.Targets,
+		AssetGroupIDs: req.AssetGroupIDs,
+		ScanType:      req.ScanType,
+		ScannerName:   req.ScannerName,
+		TargetsPerJob: req.TargetsPerJob,
+	}
+	if req.ScanZoneID != nil {
+		in.ScanZoneID = *req.ScanZoneID
+	}
+	out, err := h.preview.PreviewZoneRouting(r.Context(), in)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) && !errors.Is(err, scanzone.ErrZoneNotFound) {
+			apierror.NotFound("Asset group").WriteJSON(w)
+			return
+		}
+		h.handleError(w, err)
+		return
+	}
+	writeScanZoneJSON(w, http.StatusOK, out)
+}
+
 func (h *ScanZoneHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, scanzone.ErrSensorNotFound):
@@ -348,13 +414,42 @@ func (h *ScanZoneHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan zone").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists), errors.Is(err, shared.ErrConflict):
-		apierror.Conflict(cleanErrorMessage(err, "Scan zone conflict")).WriteJSON(w)
+		apierror.New(http.StatusConflict, scanZoneErrorCode(err, apierror.CodeConflict),
+			cleanErrorMessage(err, "Scan zone conflict")).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
-		apierror.BadRequest(cleanErrorMessage(err, "Invalid scan zone")).WriteJSON(w)
+		apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
+			cleanErrorMessage(err, "Invalid scan zone")).WriteJSON(w)
 	default:
 		h.logger.Error("scan zone service error", "error", sanitizeLogField(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// scanZoneErrorCodes are the domain error codes the scan-zone contract
+// (docs/architecture/scan-zones.md) promises in the error body's `code`, so a
+// client can tell a duplicate name from a second default zone, or explain why
+// a trigger was refused. Other domain codes keep the generic HTTP code.
+var scanZoneErrorCodes = map[string]bool{
+	"ZONE_NAME_TAKEN":         true,
+	"DEFAULT_ZONE_EXISTS":     true,
+	"ZONE_IN_USE":             true,
+	"TOO_MANY_ZONES":          true,
+	"SCAN_ZONE_NOT_FOUND":     true,
+	"NO_ZONE_COVERAGE":        true,
+	"ZONE_SPLIT_REQUIRED":     true,
+	"TOO_MANY_JOBS":           true,
+	"NO_TARGETS":              true,
+	"ALL_TARGETS_EXCLUDED":    true,
+	"PLATFORM_SENSOR_REFUSED": true,
+}
+
+// scanZoneErrorCode returns the contract code carried by err, or fallback.
+func scanZoneErrorCode(err error, fallback apierror.Code) apierror.Code {
+	var de *shared.DomainError
+	if errors.As(err, &de) && scanZoneErrorCodes[de.Code] {
+		return apierror.Code(de.Code)
+	}
+	return fallback
 }
 
 func writeScanZoneJSON(w http.ResponseWriter, status int, v any) {

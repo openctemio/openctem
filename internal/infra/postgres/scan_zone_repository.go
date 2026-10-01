@@ -117,6 +117,18 @@ func (r *ScanZoneRepository) Delete(ctx context.Context, tenantID, id shared.ID)
 		return scanzone.ErrZoneInUse
 	}
 
+	// Scans that pin their targets to this zone would fail closed on their
+	// next trigger; refuse instead, so the admin moves them first.
+	var pinned int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scans WHERE tenant_id = $1 AND scan_zone_id = $2`,
+		tenantID.String(), id.String()).Scan(&pinned); err != nil {
+		return fmt.Errorf("check scans using scan zone: %w", err)
+	}
+	if pinned > 0 {
+		return scanzone.ErrZoneSelectedByScans(pinned)
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM scan_zones WHERE tenant_id = $1 AND id = $2`,
 		tenantID.String(), id.String()); err != nil {
@@ -336,14 +348,14 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 }
 
 // coverageAddresses is the tenant's distinct inventory IP addresses: assets
-// whose name is a single IP address (ip_address assets, and hosts/servers
-// named by their address). Malformed names are skipped, never cast.
+// whose name is a single IP address (ip_address assets, and hosts named by
+// their address). Malformed names are skipped, never cast.
 const coverageAddresses = `
 	WITH addrs AS (
 		SELECT DISTINCT a.name::inet AS ip
 		FROM assets a
 		WHERE a.tenant_id = $1
-		  AND a.asset_type IN ('ip_address', 'host', 'server')
+		  AND a.asset_type IN ('ip_address', 'host')
 		  AND position('/' IN a.name) = 0
 		  AND pg_input_is_valid(a.name, 'inet')
 	)

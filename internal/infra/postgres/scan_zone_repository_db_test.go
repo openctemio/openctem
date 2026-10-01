@@ -11,6 +11,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/api/pkg/domain/command"
+	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/scanzone"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -442,5 +443,60 @@ func TestCommandRepository_StepBatchGate(t *testing.T) {
 	}
 	if second, _ := cmds.ClaimStepFinalization(ctx, srID); second {
 		t.Error("the step was finalized twice")
+	}
+}
+
+// The zone picker: a scan stores the zone it pins its targets to, and a zone
+// that scans still pin cannot be deleted.
+func TestScanZoneRepository_ScanZonePicker(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	db := &DB{DB: sqlDB}
+	zones := NewScanZoneRepository(db)
+	scans := NewScanRepository(db)
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	z := newTestZone(t, tenant, "picked", false, "10.40.0.0/16")
+	if err := zones.Create(ctx, z); err != nil {
+		t.Fatal(err)
+	}
+
+	sc, err := scan.NewScanWithTargets(tenant, "pinned-"+shared.NewID().String(), []string{"10.40.0.1"}, scan.ScanTypeSingle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sc.SetSingleScanner("nuclei", nil, 1); err != nil {
+		t.Fatal(err)
+	}
+	sc.SetScanZone(&z.ID)
+	if err := scans.Create(ctx, sc); err != nil {
+		t.Fatal(err)
+	}
+	got, err := scans.GetByTenantAndID(ctx, tenant, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ScanZoneID == nil || *got.ScanZoneID != z.ID {
+		t.Fatalf("scan_zone_id = %v, want %s", got.ScanZoneID, z.ID)
+	}
+
+	err = zones.Delete(ctx, tenant, z.ID)
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code != "ZONE_IN_USE" || !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("delete a zone a scan pins: err = %v, want ZONE_IN_USE conflict", err)
+	}
+
+	got.SetScanZone(nil)
+	if err := scans.Update(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	again, err := scans.GetByTenantAndID(ctx, tenant, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ScanZoneID != nil {
+		t.Errorf("scan_zone_id = %v after switching to Automatic", again.ScanZoneID)
+	}
+	if err := zones.Delete(ctx, tenant, z.ID); err != nil {
+		t.Errorf("delete zone no scan pins: %v", err)
 	}
 }

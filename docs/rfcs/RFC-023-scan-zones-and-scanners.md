@@ -237,6 +237,8 @@ Decisions taken while building it, where this RFC left room:
 | Non-network tools | Tools whose supported targets are only files, repositories or containers are not zone-routed (D20, before the tool manifest exists). |
 | Results (§6 step 5) | Stamped on the command only (`commands.scan_zone_id`): v1 ingest does not carry the command, so per-record zone provenance waits for D21 (Phase 2). |
 | Run report | `GET /pipeline-runs/{id}` gains `dispatch` (resolved/excluded counts, warnings, uncovered targets with reasons, zone routing). |
+| Zone picker | `scans.scan_zone_id` (null = Automatic). A selected zone's ranges are enforced (D5): the router runs over that zone alone and every other target is uncovered ("outside the selected scan zone"), public targets included unless it is the default zone. A pinned zone that was deleted fails the trigger (`SCAN_ZONE_NOT_FOUND`); deleting a zone scans pin is refused (409). |
+| Routing preview | `POST /scan-zones/preview` (`sensors:zones:read`) runs creation's target validation, asset-group expansion, exclusions, routing, batching and sensor pinning read-only, and reports what a trigger would refuse in `error`. |
 
 ## 9. Renaming and compatibility plan
 

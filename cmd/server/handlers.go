@@ -267,7 +267,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Sensors & Commands
 		Command:          commandHandler,
 		Sensor:           newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log),
-		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, log),
+		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		Ingest:           ingestHandler,
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),

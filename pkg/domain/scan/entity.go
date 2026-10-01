@@ -39,6 +39,10 @@ type Scan struct {
 	Tags              []string         // Route to sensors with matching tags
 	RunOnTenantRunner bool             // Restrict to tenant's own runners
 	SensorPreference  SensorPreference // Sensor selection mode: auto, tenant, platform
+	// ScanZoneID pins every target to one scan zone; nil = Automatic (each
+	// target goes to the narrowest zone holding it). Targets outside the
+	// selected zone are not scanned.
+	ScanZoneID *shared.ID
 
 	// Profile - links to ScanProfile for tool configs, intensity, quality gates
 	ProfileID *shared.ID
@@ -413,6 +417,16 @@ func (s *Scan) SetSensorPreference(pref SensorPreference) {
 	s.UpdatedAt = time.Now()
 }
 
+// SetScanZone pins the scan's targets to one scan zone; nil (or a zero id)
+// means Automatic routing.
+func (s *Scan) SetScanZone(zoneID *shared.ID) {
+	if zoneID != nil && zoneID.IsZero() {
+		zoneID = nil
+	}
+	s.ScanZoneID = zoneID
+	s.UpdatedAt = time.Now()
+}
+
 // SetProfileID links the scan to a scan profile (for tool configs and quality gates).
 // Pass nil to unlink.
 func (s *Scan) SetProfileID(profileID *shared.ID) {
@@ -651,6 +665,7 @@ func (s *Scan) Clone(newName string) *Scan {
 		Tags:                make([]string, len(s.Tags)),
 		RunOnTenantRunner:   s.RunOnTenantRunner,
 		SensorPreference:    s.SensorPreference,
+		ScanZoneID:          s.ScanZoneID,
 		ProfileID:           s.ProfileID,
 		TimeoutSeconds:      s.TimeoutSeconds,
 		MaxRetries:          s.MaxRetries,

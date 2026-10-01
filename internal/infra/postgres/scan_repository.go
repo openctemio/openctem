@@ -89,9 +89,9 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
-			created_by, created_at, updated_at
+			created_by, created_at, updated_at, scan_zone_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -130,6 +130,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		createdBy,
 		s.CreatedAt,
 		s.UpdatedAt,
+		nullableIDString(s.ScanZoneID),
 	)
 
 	if err != nil {
@@ -260,7 +261,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
-		    updated_at = $26
+		    updated_at = $26, scan_zone_id = $28
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -292,6 +293,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		string(s.Status),
 		s.UpdatedAt,
 		s.TenantID.String(), // $27 — tenant scope: never update another tenant's scan
+		nullableIDString(s.ScanZoneID),
 	)
 
 	if err != nil {
@@ -659,7 +661,7 @@ func (r *ScanRepository) selectQuery() string {
 		       max_retries, retry_backoff_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
-		       created_by, created_at, updated_at
+		       created_by, created_at, updated_at, scan_zone_id
 		FROM scans
 	`
 }
@@ -697,6 +699,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		scheduleCron        sql.NullString
 		lastRunStatus       sql.NullString
 		scheduleTimezone    sql.NullString
+		scanZoneID          sql.NullString
 	)
 
 	err := reader.Scan(
@@ -735,9 +738,15 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&createdBy,
 		&s.CreatedAt,
 		&s.UpdatedAt,
+		&scanZoneID,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if scanZoneID.Valid {
+		if zid, err := shared.IDFromString(scanZoneID.String); err == nil {
+			s.ScanZoneID = &zid
+		}
 	}
 
 	s.ID, _ = shared.IDFromString(id)
@@ -892,4 +901,13 @@ func (r *ScanRepository) scanFromRows(rows *sql.Rows) (*scan.Scan, error) {
 		return nil, fmt.Errorf("failed to scan scan: %w", err)
 	}
 	return s, nil
+}
+
+// nullableIDString maps an optional id to a nullable SQL value.
+func nullableIDString(id *shared.ID) *string {
+	if id == nil || id.IsZero() {
+		return nil
+	}
+	v := id.String()
+	return &v
 }

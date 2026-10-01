@@ -2698,6 +2698,94 @@ definitions:
       rate_pct:
         type: number
     type: object
+  github_com_openctemio_api_internal_app_scan.PreviewError:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
+  github_com_openctemio_api_internal_app_scan.PreviewTarget:
+    properties:
+      addresses:
+        description: what a hostname resolved to
+        items:
+          type: string
+        type: array
+      reason:
+        type: string
+      sensor_id:
+        description: the sensor its job would be pinned to
+        type: string
+      status:
+        description: zone | unzoned | uncovered
+        type: string
+      target:
+        type: string
+      zone_id:
+        type: string
+      zone_name:
+        type: string
+    type: object
+  github_com_openctemio_api_internal_app_scan.PreviewZone:
+    properties:
+      jobs:
+        type: integer
+      queued_jobs:
+        description: 'jobs with no online sensor yet: they wait in the zone'
+        type: integer
+      sensor_ids:
+        items:
+          type: string
+        type: array
+      targets:
+        type: integer
+      zone_id:
+        type: string
+      zone_name:
+        type: string
+    type: object
+  github_com_openctemio_api_internal_app_scan.ZoneRoutingPreview:
+    properties:
+      error:
+        $ref: '#/definitions/github_com_openctemio_api_internal_app_scan.PreviewError'
+      excluded:
+        items:
+          type: string
+        type: array
+      excluded_targets:
+        type: integer
+      jobs:
+        type: integer
+      not_routed_reason:
+        type: string
+      resolved_targets:
+        type: integer
+      routed:
+        type: boolean
+      selected_zone_id:
+        type: string
+      targets:
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_internal_app_scan.PreviewTarget'
+        type: array
+      targets_per_job:
+        type: integer
+      uncovered_targets:
+        type: integer
+      unzoned_targets:
+        type: integer
+      warnings:
+        items:
+          type: string
+        type: array
+      zones:
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_internal_app_scan.PreviewZone'
+        type: array
+      zones_enabled:
+        type: boolean
+    type: object
   github_com_openctemio_api_internal_app_scancoverage.CoverageStats:
     properties:
       coverage_percent:
@@ -5934,6 +6022,10 @@ definitions:
         enum:
         - workflow
         - single
+        type: string
+      scan_zone_id:
+        description: ScanZoneID pins every target to one scan zone; empty = Automatic
+          routing.
         type: string
       scanner_config:
         additionalProperties: {}
@@ -9499,6 +9591,9 @@ definitions:
         type: boolean
       scan_type:
         type: string
+      scan_zone_id:
+        description: null = Automatic routing
+        type: string
       scanner_config:
         additionalProperties: {}
         type: object
@@ -9773,6 +9868,30 @@ definitions:
           $ref: '#/definitions/internal_infra_http_handler.ScanZoneResponse'
         type: array
       total:
+        type: integer
+    type: object
+  internal_infra_http_handler.ScanZonePreviewRequest:
+    properties:
+      asset_group_ids:
+        items:
+          type: string
+        type: array
+      pipeline_id:
+        description: |-
+          PipelineID is accepted so a client can send its whole draft; a workflow
+          is routed the same whatever its steps, so it does not change the result.
+        type: string
+      scan_type:
+        type: string
+      scan_zone_id:
+        type: string
+      scanner_name:
+        type: string
+      targets:
+        items:
+          type: string
+        type: array
+      targets_per_job:
         type: integer
     type: object
   internal_infra_http_handler.ScanZoneResponse:
@@ -11220,6 +11339,10 @@ definitions:
         type: integer
       run_on_tenant_runner:
         type: boolean
+      scan_zone_id:
+        description: 'ScanZoneID: omitted = unchanged, "" = Automatic routing, id
+          = pin to that zone.'
+        type: string
       scanner_config:
         additionalProperties: {}
         type: object
@@ -22285,6 +22408,51 @@ paths:
       security:
       - BearerAuth: []
       summary: Scan zone coverage
+      tags:
+      - Scan Zones
+  /scan-zones/preview:
+    post:
+      consumes:
+      - application/json
+      description: 'For a scan about to be created: which targets go to which zone
+        and sensor, which scope excludes, and which are not scanned and why. Computed
+        with the trigger''s routing code; creates nothing. Hostnames are resolved
+        now, as at trigger time. What a trigger would refuse is reported in `error`
+        (NO_TARGETS, ALL_TARGETS_EXCLUDED, NO_ZONE_COVERAGE, ZONE_SPLIT_REQUIRED,
+        TOO_MANY_JOBS, INVALID_TARGET).'
+      parameters:
+      - description: Scan targets and settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.ScanZonePreviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_internal_app_scan.ZoneRoutingPreview'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: scan zone or asset group not in this tenant
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Preview scan zone routing
       tags:
       - Scan Zones
   /scanner-templates:

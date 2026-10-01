@@ -21,6 +21,13 @@ var (
 	ErrTooManyZones     = shared.NewDomainError("TOO_MANY_ZONES", fmt.Sprintf("a tenant may define at most %d scan zones", MaxZonesPerTenant), shared.ErrValidation)
 )
 
+// ErrZoneSelectedByScans refuses deleting a zone that n scans pin their
+// targets to (the zone picker).
+func ErrZoneSelectedByScans(n int) error {
+	return shared.NewDomainError("ZONE_IN_USE", fmt.Sprintf(
+		"%d scan(s) are pinned to this scan zone; switch them to Automatic or another zone first", n), shared.ErrConflict)
+}
+
 // SensorCandidate is a sensor that can take a zone's jobs now: assigned to
 // the zone, active, online, pulling jobs, key not expired.
 type SensorCandidate struct {
@@ -58,7 +65,8 @@ type Repository interface {
 	Create(ctx context.Context, z *Zone) error
 	Update(ctx context.Context, z *Zone) error
 	// Delete removes a zone. It returns ErrZoneInUse while commands routed to
-	// the zone are still pending, acknowledged or running.
+	// the zone are still pending, acknowledged or running, or while scans pin
+	// their targets to it.
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*Zone, error)
 	// List returns every zone of the tenant with its assigned sensor ids.

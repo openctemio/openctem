@@ -260,6 +260,8 @@ func registerScanZoneRoutes(
 		r.GET("/", h.List, middleware.Require(permission.ScanZonesRead))
 		// Before /{id} so chi does not read "coverage" as an id.
 		r.GET("/coverage", h.Coverage, middleware.Require(permission.ScanZonesRead))
+		// Read-only: computes routing for a scan about to be created.
+		r.POST("/preview", h.Preview, middleware.Require(permission.ScanZonesRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ScanZonesRead))
 
 		r.POST("/", h.Create, middleware.Require(permission.ScanZonesWrite))
