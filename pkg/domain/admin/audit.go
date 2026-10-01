@@ -42,6 +42,10 @@ type AuditLog struct {
 	Success      bool
 	ErrorMessage string
 
+	// Severity is info by default; security-relevant events (break-glass
+	// sign-ins, platform IdP changes) are high.
+	Severity string
+
 	// Timestamp (immutable)
 	CreatedAt time.Time
 }
@@ -72,9 +76,16 @@ func NewAuditLog(
 		ResourceID:   resourceID,
 		ResourceName: resourceName,
 		Success:      true, // Default to success
+		Severity:     SeverityInfo,
 		CreatedAt:    time.Now(),
 	}
 }
+
+// Audit severities.
+const (
+	SeverityInfo = "info"
+	SeverityHigh = "high"
+)
 
 // SetRequest sets the request details.
 func (a *AuditLog) SetRequest(method, path string, body map[string]interface{}) {
@@ -146,6 +157,12 @@ func (b *AuditLogBuilder) Context(ip, userAgent string) *AuditLogBuilder {
 // Error marks the log as failed.
 func (b *AuditLogBuilder) Error(message string) *AuditLogBuilder {
 	b.log.SetError(message)
+	return b
+}
+
+// High marks the entry as high severity.
+func (b *AuditLogBuilder) High() *AuditLogBuilder {
+	b.log.Severity = SeverityHigh
 	return b
 }
 

@@ -245,8 +245,14 @@ Authorization is enforced at the **route layer** in
 | `GET /api/v1/admin/auth/validate` | any admin |
 | `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
-| `POST /api/v1/admin/administrators` | **super_admin** (audited) |
+| `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
+| `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
+| `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (rate-limited; state bound to the `admin_idp` cookie, single use) |
+| `POST /api/v1/admin/administrators` | **super_admin** (audited; `break_glass` audited high) |
 | `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** (audited; not self) |
+| `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
+| `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
+| `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** (audited) |
@@ -289,8 +295,31 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   `/api/v1/admin/*`; only a verified console session does (there are no
   admin API keys).
 - Provisioning is `POST /api/v1/admin/administrators` (super admin), or
-  `bootstrap-admin` for the first one. Rows without a `user_id` (former
-  API-key identities) were deactivated by migration 000227.
+  `bootstrap-admin` for the first one and its break-glass backup. Rows without
+  a `user_id` (former API-key identities) were deactivated by migration 000227.
+- **Temporary password gate.** A provisioned account has
+  `password_change_required`; a password-authenticated console session can then
+  call only `GET /auth/validate` and `POST /auth/password` (403
+  `PASSWORD_CHANGE_REQUIRED` otherwise).
+
+#### Break-glass administrators and the platform IdP (RFC-022 revision 4)
+
+- **Platform IdP** (`platform_identity_provider`, one OIDC provider, not
+  tenant-scoped) is the only IdP that can open the console, and only for an
+  administrator that already exists: matched by bound (`iss`, `sub`), or on
+  first sign-in by verified email, then bound. No JIT creation. The console TOTP
+  is still required after it unless a super admin trusts specific `acr`/`amr`
+  values. Organization IdPs still cannot open the console.
+- **Require IdP** refuses the local password path (`/auth/session`) for every
+  administrator except break-glass ones.
+- **Break-glass** administrators are local `super_admin`s that can never be
+  bound to the IdP (database `CHECK`), are exempt from "require IdP", and every
+  sign-in is audited high + alerted (`alert=break_glass_sign_in` + email).
+- **Invariant** (server-side, under an advisory lock): at least one active,
+  linked `super_admin` who can sign in locally always remains — while "require
+  IdP" is in force, at least one break-glass `super_admin`. Delete, deactivate,
+  demote and unmark that would break it return 409, as does turning on "require
+  IdP" without one.
 
 ### Organizations — platform admin cross-tenant (RFC-022 Phase 2)
 

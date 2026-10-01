@@ -33,7 +33,9 @@ func (r *AdminRepository) selectQuery() string {
 		SELECT id, email, name,
 		       role, is_active, user_id, last_used_at, last_used_ip,
 		       failed_login_count, locked_until, last_failed_login_at, last_failed_login_ip,
-		       created_at, created_by, updated_at
+		       created_at, created_by, updated_at,
+		       is_break_glass, break_glass_tested_at, password_change_required,
+		       COALESCE(idp_issuer, ''), COALESCE(idp_subject, ''), idp_bound_at
 		FROM admin_users
 	`
 }
@@ -43,9 +45,10 @@ func (r *AdminRepository) Create(ctx context.Context, a *admin.AdminUser) error 
 	query := `
 		INSERT INTO admin_users (
 			id, email, name,
-			role, is_active, created_at, created_by, updated_at
+			role, is_active, created_at, created_by, updated_at,
+			is_break_glass, password_change_required
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -57,6 +60,8 @@ func (r *AdminRepository) Create(ctx context.Context, a *admin.AdminUser) error 
 		a.CreatedAt(),
 		nullIDString(a.CreatedBy()),
 		a.UpdatedAt(),
+		a.IsBreakGlass(),
+		a.PasswordChangeRequired(),
 	)
 
 	if err != nil {
@@ -317,12 +322,19 @@ func scanAdminRow(scanner interface{ Scan(dest ...any) error }) (*admin.AdminUse
 		createdAt         time.Time
 		createdBy         sql.NullString
 		updatedAt         time.Time
+		breakGlass        bool
+		testedAt          sql.NullTime
+		pwChange          bool
+		idpIssuer         string
+		idpSubject        string
+		idpBoundAt        sql.NullTime
 	)
 	if err := scanner.Scan(
 		&id, &email, &name, &role, &isActive, &userID,
 		&lastUsedAt, &lastUsedIP,
 		&failedLoginCount, &lockedUntil, &lastFailedLoginAt, &lastFailedLoginIP,
 		&createdAt, &createdBy, &updatedAt,
+		&breakGlass, &testedAt, &pwChange, &idpIssuer, &idpSubject, &idpBoundAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, err
@@ -365,7 +377,14 @@ func scanAdminRow(scanner interface{ Scan(dest ...any) error }) (*admin.AdminUse
 		createdAt,
 		optID(createdBy),
 		updatedAt,
-	), nil
+	).WithSignInState(admin.SignInState{
+		BreakGlass:             breakGlass,
+		BreakGlassTestedAt:     optTime(testedAt),
+		PasswordChangeRequired: pwChange,
+		IdPIssuer:              idpIssuer,
+		IdPSubject:             idpSubject,
+		IdPBoundAt:             optTime(idpBoundAt),
+	}), nil
 }
 
 // =============================================================================
@@ -386,7 +405,7 @@ func (r *AuditLogRepository) selectQuery() string {
 	return `
 		SELECT id, admin_id, admin_email, action, resource_type, resource_id, resource_name,
 		       request_method, request_path, request_body, response_status,
-		       ip_address, user_agent, success, error_message, created_at
+		       ip_address, user_agent, success, error_message, created_at, severity
 		FROM admin_audit_logs
 	`
 }
@@ -397,9 +416,9 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 		INSERT INTO admin_audit_logs (
 			id, admin_id, admin_email, action, resource_type, resource_id, resource_name,
 			request_method, request_path, request_body, response_status,
-			ip_address, user_agent, success, error_message, created_at
+			ip_address, user_agent, success, error_message, created_at, severity
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
 	requestBody, err := json.Marshal(log.RequestBody)
@@ -424,6 +443,7 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 		log.Success,
 		nullString(log.ErrorMessage),
 		log.CreatedAt,
+		auditSeverity(log.Severity),
 	)
 
 	if err != nil {
@@ -668,6 +688,7 @@ func (r *AuditLogRepository) scanAuditLog(row *sql.Row) (*admin.AuditLog, error)
 		&log.Success,
 		&errorMessage,
 		&log.CreatedAt,
+		&log.Severity,
 	)
 
 	if err != nil {
@@ -738,6 +759,7 @@ func (r *AuditLogRepository) scanAuditLogFromRows(rows *sql.Rows) (*admin.AuditL
 		&log.Success,
 		&errorMessage,
 		&log.CreatedAt,
+		&log.Severity,
 	)
 
 	if err != nil {
@@ -845,4 +867,12 @@ func (r *AdminRepository) LinkUser(ctx context.Context, adminID, userID shared.I
 		return admin.ErrAdminNotFound
 	}
 	return admin.ErrUserHasMemberships
+}
+
+// auditSeverity defaults an unset severity to info.
+func auditSeverity(v string) string {
+	if v == "" {
+		return admin.SeverityInfo
+	}
+	return v
 }

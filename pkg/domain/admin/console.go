@@ -43,7 +43,16 @@ type Session struct {
 	LastSeenAt  time.Time
 	IP          string
 	UserAgent   string
+	// AuthMethod is how the first factor was proven: AuthMethodPassword (the
+	// /login session) or AuthMethodIdP (the platform identity provider).
+	AuthMethod string
 }
+
+// Console session authentication methods.
+const (
+	AuthMethodPassword = "password"
+	AuthMethodIdP      = "idp"
+)
 
 // Usable reports whether a verified session can authenticate a request at now.
 func (s *Session) Usable(now time.Time) bool {
@@ -71,6 +80,9 @@ type ConsoleRepository interface {
 	DeleteSessionsForAdmin(ctx context.Context, adminID shared.ID) error
 	// DeleteExpiredSessions removes sessions past their absolute expiry.
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
+	// DeletePasswordSessionsExceptBreakGlass ends every password-authenticated
+	// session of a non-break-glass administrator (when "require IdP" turns on).
+	DeletePasswordSessionsExceptBreakGlass(ctx context.Context) (int64, error)
 }
 
 // Console authentication errors.
@@ -87,4 +99,9 @@ var (
 	// ErrPasswordSignInRequired: the console opens only from a password sign-in,
 	// so an organization's SSO/SAML provider can never authenticate an admin.
 	ErrPasswordSignInRequired = fmt.Errorf("%w: platform administrators sign in with their password", shared.ErrForbidden)
+	// ErrIdPSignInRequired: "require IdP" is on and this administrator is not
+	// break-glass, so the local password path is refused.
+	ErrIdPSignInRequired = fmt.Errorf("%w: sign in to the console with the identity provider", shared.ErrForbidden)
+	// ErrPasswordChangeRequired: the session may only change the temporary password.
+	ErrPasswordChangeRequired = fmt.Errorf("%w: change your temporary password first", shared.ErrForbidden)
 )

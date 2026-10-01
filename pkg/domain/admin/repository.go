@@ -67,6 +67,38 @@ type Repository interface {
 	LinkUser(ctx context.Context, adminID, userID shared.ID) error
 
 	// ==========================================================================
+	// Break-glass and platform IdP (RFC-022 revision 4)
+	// ==========================================================================
+
+	// GuardedUpdate saves name, role, is_active and the break-glass marker,
+	// refusing with ErrLastLocalAdmin when the change would leave no active
+	// local super admin (see RFC-022 revision 4). Runs under the roster lock.
+	GuardedUpdate(ctx context.Context, a *AdminUser) error
+
+	// GuardedDelete deletes an administrator under the same rule.
+	GuardedDelete(ctx context.Context, id shared.ID) error
+
+	// GetByIdPSubject returns the administrator bound to (issuer, subject).
+	GetByIdPSubject(ctx context.Context, issuer, subject string) (*AdminUser, error)
+
+	// BindIdP binds an unbound, non-break-glass administrator to an IdP
+	// identity. Returns ErrIdPBindingConflict when the administrator is already
+	// bound, is break-glass, or the identity is bound to someone else.
+	BindIdP(ctx context.Context, adminID shared.ID, issuer, subject string) error
+
+	// UnbindIdP removes one administrator's IdP binding.
+	UnbindIdP(ctx context.Context, adminID shared.ID) error
+
+	// SetPasswordChangeRequired sets or clears the temporary-password marker.
+	SetPasswordChangeRequired(ctx context.Context, adminID shared.ID, required bool) error
+
+	// SetBreakGlassTestedAt records a confirmed break-glass test.
+	SetBreakGlassTestedAt(ctx context.Context, adminID shared.ID, at time.Time) error
+
+	// ListActive returns every active administrator (the alert recipients).
+	ListActive(ctx context.Context) ([]*AdminUser, error)
+
+	// ==========================================================================
 	// Statistics
 	// ==========================================================================
 

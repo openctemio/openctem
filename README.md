@@ -299,8 +299,8 @@ make auto-ssl
 # 5. Start production
 make prod-up
 
-# 6. Create first admin user
-make bootstrap-admin-prod email=admin@example.com
+# 6. Create the first admin and its break-glass backup (see Bootstrap Admin below)
+docker compose exec api /app/bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com
 ```
 
 ### Kubernetes (Helm)
@@ -331,6 +331,7 @@ helm install openctem ../setup/kubernetes/helm/openctem \
   --namespace openctem \
   --set bootstrapAdmin.enabled=true \
   --set bootstrapAdmin.email=admin@example.com \
+  --set bootstrapAdmin.backupEmail=breakglass@example.com \
   --set ingress.hosts[0].host=openctem.yourdomain.com
 
 # 3. Get the administrator's temporary password (shown once), then sign in on
@@ -340,28 +341,46 @@ kubectl logs job/openctem-bootstrap-admin -n openctem
 
 ### Bootstrap Admin (First-time Setup)
 
-The first platform administrator must be created with `bootstrap-admin` — there
-is no default account. It creates (or reuses) a sign-in account with that email,
-which must not belong to any organization, and prints a temporary password once.
-The administrator signs in on the normal `/login` page and opens the admin
-console with a TOTP code. Administrators have no API keys.
+The first platform administrators must be created with `bootstrap-admin` —
+there is no default account. One run creates two (RFC-022 revision 4):
+
+- the **primary** administrator (`-email`, role `-role`, default `super_admin`);
+- a **break-glass backup** (`-backup-email`), always a `super_admin`. It is a
+  local account that can never be bound to the platform identity provider and
+  is exempt from "require IdP", so the console stays reachable when the IdP is
+  down. Every sign-in with it writes a high-severity `console.break_glass_sign_in`
+  audit row, a `WARN` log line with `alert=break_glass_sign_in` (alert on it), and
+  emails the other administrators through the system SMTP sender (`SMTP_*`).
+  Test it periodically (at least every 90 days): sign in with it, then another
+  super admin confirms the test on the console's Administrators page. Store its
+  credentials offline.
+
+Each gets a new sign-in account (an email that already has one is refused) and a
+temporary password printed **once**. On first use the administrator signs in on
+`/login`, enrolls an authenticator app when opening the admin console, and must
+change the temporary password before anything else. Administrators have no API
+keys. The run is idempotent: existing administrators are reported and left
+alone, so re-running with `-backup-email` adds a backup to an existing install.
+`-backup-email` is required unless `-no-backup` is passed explicitly.
 
 **Docker Compose:**
 ```bash
-make bootstrap-admin-prod email=admin@example.com role=super_admin
+docker compose exec api /app/bootstrap-admin \
+  -email=admin@example.com -backup-email=breakglass@example.com
 ```
 
 **Kubernetes (during helm install):**
 ```bash
 helm install openctem ./openctem \
   --set bootstrapAdmin.enabled=true \
-  --set bootstrapAdmin.email=admin@example.com
+  --set bootstrapAdmin.email=admin@example.com \
+  --set bootstrapAdmin.backupEmail=breakglass@example.com
 ```
 
 **Kubernetes (after install):**
 ```bash
 kubectl exec -it deploy/openctem-api -n openctem -- \
-  /app/bootstrap-admin -email=admin@example.com
+  /app/bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com
 ```
 
 **Standalone binary:**
@@ -369,7 +388,7 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
 ./bootstrap-admin \
   -db="postgres://user:pass@host:5432/openctem?sslmode=require" \
   -email=admin@example.com \
-  -role=super_admin
+  -backup-email=breakglass@example.com
 ```
 
 | Flag | Env Var | Description |
@@ -377,8 +396,11 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
 | `-db` | `DATABASE_URL` or `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` | Database connection |
 | `-email` | `ADMIN_EMAIL` | Admin email (required) |
 | `-name` | `ADMIN_NAME` | Display name (defaults to email prefix) |
-| `-role` | — | `super_admin`, `ops_admin`, `readonly` |
-| `-force` | — | Overwrite existing admin with same email |
+| `-role` | — | `super_admin`, `ops_admin`, `readonly` (primary only) |
+| `-backup-email` | `ADMIN_BACKUP_EMAIL` | Break-glass backup administrator (required unless `-no-backup`) |
+| `-backup-name` | `ADMIN_BACKUP_NAME` | Backup display name (defaults to email prefix) |
+| `-no-backup` | — | Skip the break-glass backup (not recommended; prints a warning) |
+| `-force` | — | Delete and re-create an existing admin with the same email (and its sign-in account) |
 | `-link` | — | Link an administrator created before sign-in accounts to one (keeps role and authenticator) |
 
 ## Security

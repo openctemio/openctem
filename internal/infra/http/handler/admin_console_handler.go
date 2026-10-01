@@ -64,6 +64,8 @@ type AdminProvisionRequest struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
 	Role  string `json:"role"`
+	// BreakGlass makes a local emergency-access administrator (super_admin only).
+	BreakGlass bool `json:"break_glass"`
 }
 
 // AdminChangePasswordRequest changes the signed-in administrator's password.
@@ -128,6 +130,9 @@ func (h *AdminConsoleHandler) StartSession(w http.ResponseWriter, r *http.Reques
 			apierror.Unauthorized("Sign in first").WriteJSON(w)
 		case errors.Is(err, admin.ErrPasswordSignInRequired):
 			apierror.Forbidden("Platform administrators sign in with their password, not single sign-on").WriteJSON(w)
+		case errors.Is(err, admin.ErrIdPSignInRequired):
+			apierror.New(http.StatusForbidden, codeIdPSignInRequired,
+				"Sign in to the admin console with the identity provider").WriteJSON(w)
 		case errors.Is(err, admin.ErrNotPlatformAdmin):
 			apierror.Forbidden("This account is not a platform administrator").WriteJSON(w)
 		default:
@@ -167,7 +172,9 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("role must be super_admin, ops_admin or readonly").WriteJSON(w)
 		return
 	}
-	a, temp, err := h.svc.ProvisionAdmin(r.Context(), actor, req.Email, req.Name, role, clientInfo(r))
+	a, temp, err := h.svc.Provision(r.Context(), actor, adminconsole.ProvisionInput{
+		Email: req.Email, Name: req.Name, Role: role, BreakGlass: req.BreakGlass,
+	}, clientInfo(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, admin.ErrAdminAlreadyExists), errors.Is(err, admin.ErrUserAlreadyAdmin):
@@ -185,7 +192,10 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusCreated, AdminProvisionResponse{
-		Admin:             ValidateResponse{ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role())},
+		Admin: ValidateResponse{
+			ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role()),
+			IsBreakGlass: a.IsBreakGlass(), PasswordChangeRequired: a.PasswordChangeRequired(),
+		},
 		TemporaryPassword: temp,
 	})
 }
@@ -255,19 +265,19 @@ func (h *AdminConsoleHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) 
 			apierror.Unauthorized("Invalid or expired verification code").WriteJSON(w)
 			return
 		}
+		if errors.Is(err, admin.ErrIdPSignInRequired) {
+			apierror.New(http.StatusForbidden, codeIdPSignInRequired,
+				"Sign in to the admin console with the identity provider").WriteJSON(w)
+			return
+		}
 		h.logger.Error("admin console mfa", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	csrf, err := middleware.GenerateCSRFToken()
-	if err != nil {
+	if err := h.issueSessionCookies(w, token); err != nil {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	maxAge := int(admin.SessionTTL.Seconds())
-	h.clearCookie(w, middleware.AdminMFACookie, adminAuthPath, true)
-	h.setCookie(w, middleware.AdminSessionCookie, token, adminAPIPath, maxAge, true)
-	h.setCookie(w, middleware.AdminCSRFCookie, csrf, "/", maxAge, false)
 	writeJSON(w, http.StatusOK, ValidateResponse{
 		ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role()),
 	})
@@ -330,4 +340,18 @@ func (h *AdminConsoleHandler) ResetCredentials(w http.ResponseWriter, r *http.Re
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// issueSessionCookies sets the verified console session and CSRF cookies and
+// clears the pending-MFA cookie.
+func (h *AdminConsoleHandler) issueSessionCookies(w http.ResponseWriter, token string) error {
+	csrf, err := middleware.GenerateCSRFToken()
+	if err != nil {
+		return err
+	}
+	maxAge := int(admin.SessionTTL.Seconds())
+	h.clearCookie(w, middleware.AdminMFACookie, adminAuthPath, true)
+	h.setCookie(w, middleware.AdminSessionCookie, token, adminAPIPath, maxAge, true)
+	h.setCookie(w, middleware.AdminCSRFCookie, csrf, "/", maxAge, false)
+	return nil
 }

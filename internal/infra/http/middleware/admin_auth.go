@@ -39,6 +39,25 @@ type AdminSessionAuthenticator interface {
 	Authenticate(ctx context.Context, token string) (*admin.AdminUser, error)
 }
 
+// adminSessionDetailer is implemented by authenticators that also return the
+// session (how it was authenticated), which the temporary-password gate needs.
+type adminSessionDetailer interface {
+	AuthenticateSession(ctx context.Context, token string) (*admin.AdminUser, *admin.Session, error)
+}
+
+// CodePasswordChangeRequired is the error code of the temporary-password gate.
+const CodePasswordChangeRequired apierror.Code = "PASSWORD_CHANGE_REQUIRED"
+
+// AdminSessionKey holds the authenticated console session.
+const AdminSessionKey logger.ContextKey = "admin_session"
+
+// passwordChangeAllowed lists what a session holding a temporary password may
+// call: who am I, change the password (logout needs no session).
+var passwordChangeAllowed = map[string]bool{
+	"GET /api/v1/admin/auth/validate":  true,
+	"POST /api/v1/admin/auth/password": true,
+}
+
 // AdminAuthMiddleware provides authentication for admin API endpoints.
 type AdminAuthMiddleware struct {
 	sessions AdminSessionAuthenticator
@@ -48,13 +67,13 @@ type AdminAuthMiddleware struct {
 // authenticateSession accepts a verified console session cookie and, for
 // state-changing methods, requires the double-submit CSRF header to match the
 // admin CSRF cookie.
-func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.AdminUser, bool) {
+func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.AdminUser, *admin.Session, bool) {
 	if m.sessions == nil {
-		return nil, false
+		return nil, nil, false
 	}
 	c, err := r.Cookie(AdminSessionCookie)
 	if err != nil || c.Value == "" {
-		return nil, false
+		return nil, nil, false
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -64,14 +83,21 @@ func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.Admin
 		if err != nil || csrf.Value == "" || header == "" ||
 			subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(header)) != 1 {
 			m.logger.Debug("admin auth: session request failed CSRF check")
-			return nil, false
+			return nil, nil, false
 		}
+	}
+	if d, ok := m.sessions.(adminSessionDetailer); ok {
+		a, sess, err := d.AuthenticateSession(r.Context(), c.Value)
+		if err != nil {
+			return nil, nil, false
+		}
+		return a, sess, true
 	}
 	a, err := m.sessions.Authenticate(r.Context(), c.Value)
 	if err != nil {
-		return nil, false
+		return nil, nil, false
 	}
-	return a, true
+	return a, nil, true
 }
 
 // NewAdminAuthMiddleware creates the admin authentication middleware over the
@@ -87,13 +113,24 @@ func NewAdminAuthMiddleware(sessions AdminSessionAuthenticator, log *logger.Logg
 // request context. An X-Admin-API-Key or Bearer header is not accepted.
 func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		adminUser, ok := m.authenticateSession(r)
+		adminUser, sess, ok := m.authenticateSession(r)
 		if !ok {
 			m.logger.Debug("admin auth: no valid console session")
 			apierror.Unauthorized("admin authentication required").WriteJSON(w)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withAdmin(r.Context(), adminUser, AdminAuthMethodSession)))
+		// A session opened with a temporary password may only change it.
+		if adminUser.PasswordChangeRequired() && sess != nil && sess.AuthMethod == admin.AuthMethodPassword &&
+			!passwordChangeAllowed[r.Method+" "+r.URL.Path] {
+			apierror.New(http.StatusForbidden, CodePasswordChangeRequired,
+				"Change your temporary password before using the console").WriteJSON(w)
+			return
+		}
+		ctx := withAdmin(r.Context(), adminUser, AdminAuthMethodSession)
+		if sess != nil {
+			ctx = context.WithValue(ctx, AdminSessionKey, sess)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -255,3 +292,11 @@ func GetAdminAuthMethod(ctx context.Context) string {
 
 // ClientIP returns the request's client IP the same way admin auth records it.
 func ClientIP(r *http.Request) string { return extractIP(r) }
+
+// GetAdminSession returns the authenticated console session, or nil.
+func GetAdminSession(ctx context.Context) *admin.Session {
+	if s, ok := ctx.Value(AdminSessionKey).(*admin.Session); ok {
+		return s
+	}
+	return nil
+}

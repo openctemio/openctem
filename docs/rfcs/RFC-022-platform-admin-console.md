@@ -5,6 +5,9 @@
 > the normal `/login` (see [Revision 2](#revision-2-administrators-are-user-accounts)).
 > **Revision 3** (2026-10-01): administrators have no API keys (see
 > [Revision 3](#revision-3-no-admin-api-keys)).
+> **Revision 4** (2026-10-01): break-glass administrators and a platform-level
+> identity provider for administrators (see
+> [Revision 4](#revision-4-break-glass-administrators-and-the-platform-identity-provider)).
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*, modeled on Tenable Security Center,
 > where the system administrator is an account with a system-level role and a
@@ -135,6 +138,123 @@ removes it:
 - `bootstrap-admin` creates only a person: the admin row and its sign-in
   account (temporary password printed once). It ships in the API image and the
   `admin-cli` image.
+
+## Revision 4: break-glass administrators and the platform identity provider
+
+Two decisions taken on 2026-10-01: `bootstrap-admin` also creates a backup
+(break-glass) administrator, and administrators can sign in to the console
+through a platform-level identity provider that is separate from every
+organization's IdP.
+
+References: Microsoft's emergency-access guidance (at least two accounts, not
+federated, alert on every use, test regularly) and Tenable's advice to keep a
+local administrator for when SSO is unavailable.
+
+### Break-glass administrators
+
+- **Schema** (migration 000229): `admin_users.is_break_glass`,
+  `break_glass_tested_at`, `password_change_required`, and the IdP binding
+  (`idp_issuer`, `idp_subject`, `idp_bound_at`). A `CHECK` forbids a binding on a
+  break-glass row, so a break-glass administrator can never sign in through the
+  IdP, whatever the application does. `admin_sessions.auth_method`
+  (`password` | `idp`) and `admin_audit_logs.severity` are added.
+- **Provisioning.** `bootstrap-admin -email=a@x -backup-email=b@x` creates both
+  in one run: the primary `super_admin` and a `super_admin` marked break-glass,
+  each with a new local account and a temporary password printed once. It is
+  idempotent: an administrator that already exists is reported and skipped, so
+  re-running it with `-backup-email` adds a backup to an existing install.
+  `-backup-email` is required unless `-no-backup` is given explicitly. A super
+  admin can also mark or unmark an administrator as break-glass in the console.
+- **First use.** Both temporary passwords set `password_change_required`.
+  After the TOTP step, a password-authenticated console session can call only
+  `GET /auth/validate`, `POST /auth/password` and `POST /auth/logout` (403
+  `PASSWORD_CHANGE_REQUIRED` otherwise) until the password is changed; TOTP
+  enrollment is already mandatory. An IdP session is not held to this, since it
+  did not use the password.
+- **Every use is alerted.** When a break-glass administrator completes the
+  console sign-in: an `admin_audit_logs` row `console.break_glass_sign_in` with
+  severity `high`; a `WARN` log line with the stable field
+  `alert=break_glass_sign_in` (for log-based alerting, the always-on channel);
+  and an email to every other active administrator through the system SMTP
+  sender (`SMTP_*`; skipped with a warning when it is not configured). There is
+  no platform-level notification integration (integrations are per tenant), so
+  email plus the log line is the channel.
+- **Testing.** A test is a real sign-in with the break-glass account (which
+  alerts like any other). Another super admin then confirms it on the
+  Administrators page (`POST /admin/users/{id}/break-glass-test`), which records
+  the sign-in time as `break_glass_tested_at`. The account cannot confirm its
+  own test (four eyes), and the console flags a break-glass account that has
+  not been tested for 90 days.
+- **At least one way in remains.** The invariant, enforced server-side under a
+  transaction-scoped advisory lock: there is always at least one active,
+  linked `super_admin` who can sign in locally. While "require IdP" is in force,
+  that means at least one break-glass `super_admin`. Deleting, deactivating,
+  demoting or unmarking an administrator that would break it is refused (409),
+  and so is turning on "require IdP" without a break-glass `super_admin`.
+
+### Platform identity provider (OIDC)
+
+- **Configuration** (`platform_identity_provider`, a single row, platform-level,
+  not tenant-scoped): issuer, client id, client secret (AES-GCM via the
+  application `Encryptor`; write-only, never returned), redirect URI, scopes,
+  display name, enabled, `require_idp`, and the trusted `acr` / `amr` values.
+  Managed by super admins at System → Admin sign-in
+  (`GET/PUT/DELETE /api/v1/admin/platform-idp`), every change audited with
+  severity `high`. On save the API fetches `{issuer}/.well-known/openid-configuration`,
+  requires its `issuer` to equal the configured issuer exactly (OIDC Discovery
+  4.3) and every endpoint to be `https`, and stores the authorization, token
+  and JWKS endpoints. Discovery, JWKS and token requests use
+  `httpsec.SafeHTTPClient` after `httpsec.ValidateURL`. The redirect URI is
+  configured, never taken from a request, so there is no open redirect.
+  Changing the issuer removes every administrator's IdP binding.
+- **OIDC only.** SAML in this code base is tenant-shaped (per-organization
+  metadata, ACS, JIT into tenant membership); reusing it for a platform IdP is
+  not cheap, so it is left out. The protocol column exists for a later addition.
+- **Separate from organizations.** The tenant `/login` page lists only the
+  organization's providers (`/auth/providers`, per org slug); the platform IdP
+  appears only on the console sign-in page, through
+  `GET /api/v1/admin/auth/idp` (enabled + display name, nothing else). An
+  organization's IdP still cannot open the console: `/auth/session` refuses any
+  non-password `/login` session as before.
+- **Flow** (authorization code + PKCE S256 + nonce + state):
+  1. `POST /api/v1/admin/auth/idp/start` stores `sha256(state)`, the nonce and
+     the encrypted PKCE verifier server-side (10-minute expiry, single use) and
+     sets the state in an HttpOnly `admin_idp` cookie scoped to
+     `/api/v1/admin/auth`. It returns the authorization URL (with `acr_values`
+     when trusted `acr` values are configured).
+  2. The IdP redirects to the console page `/admin/login/callback`, which posts
+     `{code, state}` to `POST /api/v1/admin/auth/idp/callback`. The state must
+     equal the cookie (constant time) and is consumed atomically
+     (`DELETE ... RETURNING`), so it cannot be replayed or used from another
+     browser.
+  3. The code is exchanged with the client secret and the PKCE verifier. The
+     `id_token` must verify against the JWKS (RS256/384/512, PS256, ES256), with
+     `iss` equal to the pinned issuer, `aud` containing the client id (`azp`
+     equal to it when there are several audiences), `exp` and `iat` within a
+     two-minute leeway, a non-empty `sub`, and the nonce.
+  4. **Matching, no JIT.** The administrator bound to (`iss`, `sub`) signs in.
+     With no binding, an administrator whose email equals the token's email is
+     bound on this first sign-in, only if the email is verified
+     (`email_verified: true`, or Entra's `xms_edov: true`), the administrator
+     is active, not break-glass, and not bound to another subject. After that,
+     matching is by `iss` + `sub` only, never by email. An unknown identity is
+     refused; nothing is created.
+- **Second factor.** The default still requires the console TOTP after an IdP
+  sign-in. Reason: the console cannot see how the IdP authenticated the user,
+  and an IdP compromise or a weak IdP policy would otherwise be enough to reach
+  every organization. A super admin can opt in to accepting the IdP's MFA by
+  listing trusted `acr` values (sent as `acr_values` and required in the
+  token's `acr`) and/or `amr` values (any one present in the token's `amr`).
+  Only then does a matching token open a verified session directly. The
+  session records `auth_method = idp`.
+- **Require IdP.** With the IdP enabled and `require_idp` on, the local
+  password path (`/auth/session`) is refused for every administrator except
+  break-glass ones, and turning it on ends existing password sessions of
+  non-break-glass administrators. The `/login` account itself is untouched,
+  since it belongs to no organization and can open nothing without the console.
+- **Audit.** `console.idp_login` / `console.idp_login_failed` /
+  `console.idp_bound` rows, with the reason server-side only. The client gets
+  one generic "single sign-on failed" message.
 
 ## Later phases
 

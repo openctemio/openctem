@@ -100,6 +100,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// and its own session, accepted by the admin auth middleware alongside API keys.
 	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor,
 		adminAccountDirectory{auth: svc.Auth}, log)
+	// Administrators' platform identity provider (RFC-022 revision 4): every
+	// discovery, JWKS and token request goes through the SSRF-safe client.
+	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
+	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.App.Name, log: log})
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)

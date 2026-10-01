@@ -45,6 +45,25 @@ var (
 	// ErrLastSuperAdmin is returned when trying to remove the last super admin.
 	ErrLastSuperAdmin = fmt.Errorf("%w: cannot remove the last super admin", shared.ErrForbidden)
 
+	// ErrLastLocalAdmin is returned when a change would leave no active super
+	// admin who can sign in locally (while "require IdP" is in force: no
+	// break-glass super admin). Someone must always be able to get in when the
+	// IdP is down.
+	ErrLastLocalAdmin = fmt.Errorf("%w: at least one active local super admin must remain (a break-glass super admin while the IdP is required)", shared.ErrConflict)
+
+	// ErrBreakGlassBound: a break-glass administrator is local and can never be
+	// bound to the platform IdP.
+	ErrBreakGlassBound = fmt.Errorf("%w: a break-glass administrator cannot be bound to the identity provider", shared.ErrConflict)
+
+	// ErrNotBreakGlass: the operation applies only to break-glass administrators.
+	ErrNotBreakGlass = fmt.Errorf("%w: not a break-glass administrator", shared.ErrValidation)
+
+	// ErrCannotModifySelfBreakGlassTest: another super admin confirms a test.
+	ErrCannotModifySelfBreakGlassTest = fmt.Errorf("%w: another super admin must confirm a break-glass test", shared.ErrValidation)
+
+	// ErrNoBreakGlassSignIn: a test can only be confirmed after a sign-in.
+	ErrNoBreakGlassSignIn = fmt.Errorf("%w: this break-glass account has not signed in yet", shared.ErrValidation)
+
 	// ==========================================================================
 	// Audit Log Errors
 	// ==========================================================================

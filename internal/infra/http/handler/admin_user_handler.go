@@ -4,8 +4,10 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -47,6 +49,14 @@ type AdminResponse struct {
 	LastUsedIP string  `json:"last_used_ip,omitempty"`
 	CreatedAt  string  `json:"created_at"`
 	UpdatedAt  string  `json:"updated_at"`
+
+	// Break-glass (emergency access) and platform IdP state (RFC-022 rev. 4).
+	IsBreakGlass           bool    `json:"is_break_glass"`
+	BreakGlassTestedAt     *string `json:"break_glass_tested_at,omitempty"`
+	BreakGlassTestOverdue  bool    `json:"break_glass_test_overdue"`
+	PasswordChangeRequired bool    `json:"password_change_required"`
+	IdPBound               bool    `json:"idp_bound"`
+	IdPBoundAt             *string `json:"idp_bound_at,omitempty"`
 }
 
 // AdminListResponse represents a paginated list of admins.
@@ -67,6 +77,8 @@ type UpdateAdminRequest struct {
 	Name     *string `json:"name,omitempty"`
 	Role     *string `json:"role,omitempty"`
 	IsActive *bool   `json:"is_active,omitempty"`
+	// IsBreakGlass marks or unmarks an emergency-access administrator.
+	IsBreakGlass *bool `json:"is_break_glass,omitempty"`
 }
 
 // =============================================================================
@@ -188,6 +200,10 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 			apierror.BadRequest("cannot change your own role").WriteJSON(w)
 			return
 		}
+		if req.IsBreakGlass != nil && *req.IsBreakGlass != currentAdmin.IsBreakGlass() {
+			apierror.BadRequest("cannot change your own break-glass marker").WriteJSON(w)
+			return
+		}
 	}
 
 	adminUser, err := h.repo.GetByID(ctx, id)
@@ -221,11 +237,21 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 			adminUser.Deactivate()
 		}
 	}
+	if req.IsBreakGlass != nil {
+		if *req.IsBreakGlass && adminUser.Role() != admin.AdminRoleSuperAdmin {
+			apierror.BadRequest("a break-glass administrator must be a super admin").WriteJSON(w)
+			return
+		}
+		if err := adminUser.SetBreakGlass(*req.IsBreakGlass); err != nil {
+			apierror.Conflict("This administrator is bound to the identity provider; remove the binding first.").WriteJSON(w)
+			return
+		}
+	}
 
-	// Save changes
-	if err := h.repo.Update(ctx, adminUser); err != nil {
-		h.logger.Error("failed to update admin", "error", err, "id", idStr)
-		apierror.InternalError(err).WriteJSON(w)
+	// Save changes. The roster guard refuses a change that would leave no
+	// active local super admin (a break-glass one while the IdP is required).
+	if err := h.repo.GuardedUpdate(ctx, adminUser); err != nil {
+		writeAdminRosterError(w, h.logger, err, "update")
 		return
 	}
 
@@ -257,13 +283,8 @@ func (h *AdminUserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.Delete(ctx, id); err != nil {
-		if admin.IsAdminNotFound(err) {
-			apierror.NotFound("Admin").WriteJSON(w)
-			return
-		}
-		h.logger.Error("failed to delete admin", "error", err, "id", idStr)
-		apierror.InternalError(err).WriteJSON(w)
+	if err := h.repo.GuardedDelete(ctx, id); err != nil {
+		writeAdminRosterError(w, h.logger, err, "delete")
 		return
 	}
 
@@ -296,6 +317,34 @@ func toAdminResponse(a *admin.AdminUser) AdminResponse {
 	if a.LastUsedIP() != "" {
 		resp.LastUsedIP = a.LastUsedIP()
 	}
+	st := a.SignInState()
+	resp.IsBreakGlass = st.BreakGlass
+	resp.BreakGlassTestOverdue = a.BreakGlassTestOverdue(time.Now())
+	resp.PasswordChangeRequired = st.PasswordChangeRequired
+	resp.IdPBound = st.IdPSubject != ""
+	if st.BreakGlassTestedAt != nil {
+		t := st.BreakGlassTestedAt.UTC().Format(time.RFC3339)
+		resp.BreakGlassTestedAt = &t
+	}
+	if st.IdPBoundAt != nil {
+		t := st.IdPBoundAt.UTC().Format(time.RFC3339)
+		resp.IdPBoundAt = &t
+	}
 
 	return resp
+}
+
+// writeAdminRosterError maps roster-change errors to responses.
+func writeAdminRosterError(w http.ResponseWriter, log *logger.Logger, err error, op string) {
+	switch {
+	case admin.IsAdminNotFound(err):
+		apierror.NotFound("Admin").WriteJSON(w)
+	case errors.Is(err, admin.ErrLastLocalAdmin):
+		apierror.Conflict("At least one active local super admin must remain (a break-glass super admin while the identity provider is required).").WriteJSON(w)
+	case errors.Is(err, admin.ErrBreakGlassBound):
+		apierror.Conflict("This administrator is bound to the identity provider; remove the binding first.").WriteJSON(w)
+	default:
+		log.Error("admin roster change failed", "op", op, "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+	}
 }

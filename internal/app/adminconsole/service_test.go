@@ -94,6 +94,8 @@ type fakeConsole struct {
 	mu       sync.Mutex
 	creds    map[string]*admin.Credentials
 	sessions map[string]*admin.Session // by token hash
+	// isBreakGlass answers DeletePasswordSessionsExceptBreakGlass.
+	isBreakGlass func(adminID shared.ID) bool
 }
 
 func newFakeConsole() *fakeConsole {

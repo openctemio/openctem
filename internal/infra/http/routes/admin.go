@@ -26,6 +26,8 @@ import (
 //	/admin/administrators     —                 super_admin (audited)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
+//	/admin/platform-idp       super_admin       super_admin (audited)
+//	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
 
@@ -73,6 +75,10 @@ func registerAdminRoutes(
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, loginRL)
 				r.POST("/logout", h.AdminConsole.Logout)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
+				// Platform identity provider sign-in (RFC-022 revision 4).
+				r.GET("/idp", h.AdminConsole.IdPInfo)
+				r.POST("/idp/start", h.AdminConsole.IdPStart, loginRL)
+				r.POST("/idp/callback", h.AdminConsole.IdPCallback, loginRL)
 			}
 		})
 	}
@@ -83,6 +89,14 @@ func registerAdminRoutes(
 	if h.AdminConsole != nil {
 		router.Group("/api/v1/admin/administrators", func(r Router) {
 			r.POST("/", h.AdminConsole.Provision)
+		}, superAdminOnly...)
+
+		// The administrators' identity provider (System -> Admin sign-in). The
+		// service writes high-severity audit rows for every change.
+		router.Group("/api/v1/admin/platform-idp", func(r Router) {
+			r.GET("/", h.AdminConsole.GetPlatformIdP)
+			r.PUT("/", h.AdminConsole.PutPlatformIdP)
+			r.DELETE("/", h.AdminConsole.DeletePlatformIdP)
 		}, superAdminOnly...)
 	}
 
@@ -157,12 +171,16 @@ func registerAdminRoutes(
 				r.DELETE("/{id}", h.AdminUser.Delete, h.AdminAuditMiddleware.AuditAdminDelete())
 				if h.AdminConsole != nil {
 					r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials)
+					r.POST("/{id}/break-glass-test", h.AdminConsole.ConfirmBreakGlassTest)
+					r.DELETE("/{id}/idp-binding", h.AdminConsole.UnbindIdP)
 				}
 			} else {
 				r.PATCH("/{id}", h.AdminUser.Update)
 				r.DELETE("/{id}", h.AdminUser.Delete)
 				if h.AdminConsole != nil {
 					r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials)
+					r.POST("/{id}/break-glass-test", h.AdminConsole.ConfirmBreakGlassTest)
+					r.DELETE("/{id}/idp-binding", h.AdminConsole.UnbindIdP)
 				}
 			}
 		}, superAdminOnly...)
