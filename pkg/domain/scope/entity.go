@@ -279,11 +279,21 @@ func (e *Exclusion) UpdateExpiresAt(expiresAt *time.Time) {
 	e.updatedAt = time.Now()
 }
 
-func (e *Exclusion) Approve(approvedBy string) {
+// Approve records that approvedBy reviewed and authorized the exclusion. The
+// user who requested the exclusion cannot approve it (separation of duties,
+// as for finding status approvals).
+func (e *Exclusion) Approve(approvedBy string) error {
+	if approvedBy == "" {
+		return fmt.Errorf("%w: approver is required", shared.ErrValidation)
+	}
+	if e.createdBy != "" && approvedBy == e.createdBy {
+		return ErrExclusionSelfApproval
+	}
 	now := time.Now()
 	e.approvedBy = approvedBy
 	e.approvedAt = &now
 	e.updatedAt = now
+	return nil
 }
 
 func (e *Exclusion) Activate() {
