@@ -36,6 +36,19 @@ type MembershipManager interface {
 	ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error
 }
 
+// DomainVerifier reports whether an organization has DNS-proven an email domain
+// (the domainverify service satisfies it).
+type DomainVerifier interface {
+	IsVerifiedDomain(ctx context.Context, tenantID, emailDomain string) (bool, error)
+}
+
+// ErrExistingAccountNeedsInvite is returned when SCIM asks to provision an email
+// that already has an account outside this organization and the organization
+// has not DNS-verified its domain. Attaching an existing account needs the
+// account owner's consent (an invitation), the same rule as administrator-
+// created accounts; otherwise any organization could enroll any person by email.
+var ErrExistingAccountNeedsInvite = fmt.Errorf("%w: an account with this email already exists; invite them instead", shared.ErrConflict)
+
 // ScimUser is the renderer-agnostic projection the HTTP layer wraps into SCIM
 // JSON. Active reflects the tenant membership (suspended → active:false).
 type ScimUser struct {
@@ -67,7 +80,14 @@ type ProvisioningService struct {
 	members     MembershipReader
 	manager     MembershipManager
 	defaultRole string
+	domains     DomainVerifier
 	logger      *logger.Logger
+}
+
+// SetDomainVerifier wires the verified-domain check. Without it an existing
+// account is never attached by SCIM (fail-closed); new accounts are unaffected.
+func (s *ProvisioningService) SetDomainVerifier(v DomainVerifier) {
+	s.domains = v
 }
 
 // NewProvisioningService wires the service.
@@ -101,7 +121,7 @@ func (s *ProvisioningService) CreateOrActivate(ctx context.Context, tenantID sha
 		name = email
 	}
 
-	u, err := s.findOrCreateUser(ctx, email, name)
+	u, existed, err := s.findOrCreateUser(ctx, email, name)
 	if err != nil {
 		return ScimUser{}, false, err
 	}
@@ -114,6 +134,11 @@ func (s *ProvisioningService) CreateOrActivate(ctx context.Context, tenantID sha
 			return ScimUser{}, false, err
 		}
 	case errors.Is(merr, shared.ErrNotFound):
+		if existed && !s.domainVerified(ctx, tenantID, email) {
+			s.logger.Warn("scim provision refused: existing account outside a verified domain",
+				"tenant_id", tenantID.String(), "user_id", u.ID().String())
+			return ScimUser{}, false, ErrExistingAccountNeedsInvite
+		}
 		if aerr := s.manager.AddMember(ctx, tenantID, u.ID(), s.defaultRole); aerr != nil {
 			return ScimUser{}, false, fmt.Errorf("add member: %w", aerr)
 		}
@@ -151,9 +176,26 @@ func (s *ProvisioningService) reconcileExisting(ctx context.Context, tenantID sh
 	return nil
 }
 
-func (s *ProvisioningService) findOrCreateUser(ctx context.Context, email, name string) (*userdom.User, error) {
+// domainVerified reports whether tenantID has DNS-proven the domain of email.
+// Fail-closed on a missing verifier, a lookup error or an unparseable email.
+func (s *ProvisioningService) domainVerified(ctx context.Context, tenantID shared.ID, email string) bool {
+	at := strings.LastIndex(email, "@")
+	if s.domains == nil || at < 0 || at == len(email)-1 {
+		return false
+	}
+	ok, err := s.domains.IsVerifiedDomain(ctx, tenantID.String(), email[at+1:])
+	if err != nil {
+		s.logger.Warn("scim verified-domain check failed (fail-closed)", "tenant_id", tenantID.String(), "error", err)
+		return false
+	}
+	return ok
+}
+
+// findOrCreateUser returns the account for email, creating a passwordless one
+// when none exists. existed reports whether the account was already there.
+func (s *ProvisioningService) findOrCreateUser(ctx context.Context, email, name string) (u *userdom.User, existed bool, err error) {
 	if u, err := s.users.GetByEmail(ctx, email); err == nil && u != nil {
-		return u, nil
+		return u, true, nil
 	}
 	// Create as a local user with no password — the same "invited, not yet
 	// logged in" state the invitation flow uses, so the user can later be
@@ -161,16 +203,17 @@ func (s *ProvisioningService) findOrCreateUser(ctx context.Context, email, name 
 	// passwordless local user).
 	newU, cerr := userdom.New(email, name)
 	if cerr != nil {
-		return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cerr)
+		return nil, false, fmt.Errorf("%w: %v", shared.ErrValidation, cerr)
 	}
 	if cerr := s.users.Create(ctx, newU); cerr != nil {
-		// Race: a concurrent request may have created it between lookup and create.
+		// Race: a concurrent request may have created it between lookup and
+		// create. Treat it as existing: we cannot tell it was ours.
 		if retry, rerr := s.users.GetByEmail(ctx, email); rerr == nil && retry != nil {
-			return retry, nil
+			return retry, true, nil
 		}
-		return nil, fmt.Errorf("create user: %w", cerr)
+		return nil, false, fmt.Errorf("create user: %w", cerr)
 	}
-	return newU, nil
+	return newU, false, nil
 }
 
 // Get returns a provisioned user scoped to the tenant.
