@@ -822,6 +822,25 @@ func (c *AITriageConfig) IsConfigured() bool {
 }
 
 // Load loads configuration from environment variables.
+// envDevelopment is the APP_ENV value of a developer machine.
+const envDevelopment = "development"
+
+// defaultLogLevel is LOG_LEVEL when it is not set.
+func defaultLogLevel(appEnv string) string {
+	if appEnv == envDevelopment {
+		return "debug"
+	}
+	return "info"
+}
+
+// defaultLogFormat is LOG_FORMAT when it is not set.
+func defaultLogFormat(appEnv string) string {
+	if appEnv == envDevelopment {
+		return "text"
+	}
+	return "json"
+}
+
 func Load() (*Config, error) {
 	deprecations, err := resolveRenamedEnv(os.LookupEnv, os.Setenv)
 	if err != nil {
@@ -914,8 +933,11 @@ func Load() (*Config, error) {
 			MaxRetryDelay: getEnvDuration("REDIS_MAX_RETRY_DELAY", 3*time.Second),
 		},
 		Log: LogConfig{
-			Level:              getEnv("LOG_LEVEL", "info"), // Default info for safety
-			Format:             getEnv("LOG_FORMAT", "json"),
+			// Unset: debug/text for APP_ENV=development (readable while
+			// developing), info/json everywhere else. Set, they apply in every
+			// environment.
+			Level:              getEnv("LOG_LEVEL", defaultLogLevel(getEnv("APP_ENV", envDevelopment))),
+			Format:             getEnv("LOG_FORMAT", defaultLogFormat(getEnv("APP_ENV", envDevelopment))),
 			SamplingEnabled:    getEnvBool("LOG_SAMPLING_ENABLED", false),   // Enable via env for production
 			SamplingThreshold:  getEnvInt("LOG_SAMPLING_THRESHOLD", 100),    // First 100 identical logs/sec
 			SamplingRate:       getEnvFloat("LOG_SAMPLING_RATE", 0.1),       // Then 10%
