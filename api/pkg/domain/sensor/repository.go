@@ -17,7 +17,7 @@ type Filter struct {
 	ExcludePlatform bool
 	Type            *SensorType
 	Status          *SensorStatus // Admin-controlled: active, disabled, revoked
-	Health          *SensorHealth // Automatic: unknown, online, offline, error
+	Health          *SensorHealth // Automatic: unknown, online, late, stale, offline, error
 	ExecutionMode   *ExecutionMode
 	Capabilities    []string
 	Tools           []string
@@ -78,6 +78,34 @@ type HeartbeatUpdate struct {
 	// Build is the resolved build information (build.go); each empty part
 	// leaves the stored value untouched.
 	Build BuildInfo
+	// Interval is the heartbeat interval the sensor follows from now on
+	// (FollowedHeartbeatInterval); the next heartbeat is due Interval after
+	// this one. Clamped by the repository; 0 stores DefaultHeartbeatInterval.
+	Interval time.Duration
+	// Control is the clamped control-channel report (control.go); nil leaves
+	// the stored one untouched.
+	Control *ControlReport
+}
+
+// LivenessCandidate is a sensor the health controller watches: its stored
+// health (online, late or stale) and its deadline.
+type LivenessCandidate struct {
+	ID       shared.ID
+	Health   SensorHealth
+	Deadline HeartbeatDeadline
+}
+
+// LivenessRepository is what the health controller needs to walk sensors
+// along the ladder (liveness.go). Implemented by postgres.SensorRepository.
+type LivenessRepository interface {
+	// ListLivenessCandidates returns every sensor whose health is online,
+	// late or stale, with the database's current time to judge them at.
+	ListLivenessCandidates(ctx context.Context) (now time.Time, candidates []LivenessCandidate, err error)
+	// ApplyLiveness moves the given sensors to health, each only if its
+	// health is still online, late or stale and its last_seen_at is still
+	// the one read (a request since then wins). Moving to offline also sets
+	// last_offline_at. Returns the ids that moved.
+	ApplyLiveness(ctx context.Context, health SensorHealth, candidates []LivenessCandidate) ([]shared.ID, error)
 }
 
 // MaxReportedUptime caps the uptime a heartbeat may report (ten years); a

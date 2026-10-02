@@ -1,5 +1,9 @@
 package controller
 
+// Sensor health: the heartbeat ladder
+// (docs/rfcs/RFC-035-sensor-control-plane-under-load.md §5.6, owner decisions
+// D1 and D3).
+
 import (
 	"context"
 	"fmt"
@@ -9,6 +13,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -26,8 +31,9 @@ type SensorHealthControllerConfig struct {
 	// Default: 30 seconds.
 	Interval time.Duration
 
-	// StaleTimeout is how long since last heartbeat before marking a sensor as offline.
-	// Default: 90 seconds (1.5x the typical heartbeat interval of 60s).
+	// StaleTimeout is no longer a conviction threshold: each sensor is judged
+	// against its own heartbeat deadline (pkg/domain/sensor/liveness.go).
+	// Kept for the configuration surface; it only appears in logs.
 	StaleTimeout time.Duration
 
 	// Logger for logging.
@@ -46,14 +52,18 @@ type SensorOfflineNotifier interface {
 // scans silently stop running.
 const sensorOfflineSeverity = "high"
 
-// SensorHealthController periodically checks sensor health and marks stale sensors as offline.
-// This is a K8s-style controller that reconciles the desired state (sensors with recent
-// heartbeats are online, sensors without recent heartbeats are offline) with the actual state.
+// SensorHealthController walks sensors down the heartbeat ladder each tick:
+// online -> late -> stale -> offline, each step judged against the sensor's
+// own stored deadline (sensor.Ladder). Only the offline step is announced
+// (sensor.offline notification, audit and activity events), and it is held
+// while the platform itself is degraded (PlatformHealth).
 type SensorHealthController struct {
 	sensorRepo   sensor.Repository
+	liveness     sensor.LivenessRepository
 	auditService *auditapp.AuditService
 	notifier     SensorOfflineNotifier
 	events       SensorOfflineRecorder
+	platform     *sensorapp.PlatformHealth
 	config       *SensorHealthControllerConfig
 	logger       *logger.Logger
 }
@@ -81,8 +91,10 @@ func NewSensorHealthController(
 		config.Logger = logger.NewNop()
 	}
 
+	liveness, _ := sensorRepo.(sensor.LivenessRepository)
 	return &SensorHealthController{
 		sensorRepo:   sensorRepo,
+		liveness:     liveness,
 		auditService: auditService,
 		config:       config,
 		logger:       config.Logger,
@@ -93,6 +105,13 @@ func NewSensorHealthController(
 // controller still marks sensors offline and writes the audit event.
 func (c *SensorHealthController) SetNotifier(n SensorOfflineNotifier) {
 	c.notifier = n
+}
+
+// SetPlatformHealth wires the platform-health guard: while it reports the
+// platform degraded no sensor is moved to offline (RFC-035 D3). Optional:
+// without it the controller convicts whenever the ladder says so.
+func (c *SensorHealthController) SetPlatformHealth(p *sensorapp.PlatformHealth) {
+	c.platform = p
 }
 
 // SensorOfflineRecorder records the offline transition on the sensor's
@@ -116,45 +135,94 @@ func (c *SensorHealthController) Interval() time.Duration {
 	return c.config.Interval
 }
 
-// Reconcile checks sensor health and marks stale sensors as offline.
-// Uses the MarkStaleSensorsOffline method which also updates last_offline_at timestamp.
+// errNoLivenessRepository: the repository cannot list deadlines, so the
+// controller cannot judge anyone. Loud on purpose: a controller that silently
+// does nothing leaves dead sensors online forever.
+var errNoLivenessRepository = fmt.Errorf("sensor-health: the sensor repository does not implement sensor.LivenessRepository")
+
+// Reconcile places every watched sensor (online, late or stale) on the
+// ladder and stores the steps that changed. Moves to offline are held while
+// the platform-health guard reports the platform degraded; such a sensor is
+// moved to stale instead (or left there). Returns the number of sensors
+// moved.
 func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
-	// Mark stale sensors as offline (based on last_seen_at)
-	// This also updates last_offline_at timestamp for historical queries
-	offlineSensorIDs, err := c.sensorRepo.MarkStaleSensorsOffline(ctx, c.config.StaleTimeout)
+	if c.liveness == nil {
+		c.logger.Error("cannot check sensor heartbeats", "controller", "sensor-health", "error", errNoLivenessRepository)
+		return 0, errNoLivenessRepository
+	}
+	hold := c.platform.HoldConvictions(c.config.Interval)
+
+	now, candidates, err := c.liveness.ListLivenessCandidates(ctx)
 	if err != nil {
-		c.logger.Error("failed to mark stale sensors as offline",
+		c.logger.Error("failed to list sensor heartbeat deadlines",
 			"controller", "sensor-health",
 			"error", err,
 		)
 		return 0, err
 	}
 
-	if len(offlineSensorIDs) > 0 {
-		c.logger.Info("marked stale sensors as offline",
-			"controller", "sensor-health",
-			"count", len(offlineSensorIDs),
-			"stale_timeout", c.config.StaleTimeout,
-		)
-		for _, sensorID := range offlineSensorIDs {
-			c.logger.Debug("sensor marked offline due to heartbeat timeout",
-				"controller", "sensor-health",
-				"sensor_id", sensorID,
-				"stale_timeout", c.config.StaleTimeout,
-			)
-			c.onOffline(ctx, sensorID)
+	moves := map[sensor.SensorHealth][]sensor.LivenessCandidate{}
+	held := 0
+	for _, cand := range candidates {
+		next := sensor.Ladder(now, cand.Deadline).State
+		if next == sensor.SensorHealthOffline && hold != "" {
+			held++
+			next = sensor.SensorHealthStale
 		}
+		if next == cand.Health || next == sensor.SensorHealthOnline {
+			// Only a request brings a sensor back online (it sets health
+			// itself); the controller only moves sensors down the ladder.
+			continue
+		}
+		moves[next] = append(moves[next], cand)
+	}
+	if held > 0 {
+		c.logger.Warn("holding sensor offline convictions while the platform is degraded",
+			"controller", "sensor-health",
+			"sensors", held,
+			"reason", hold,
+		)
 	}
 
-	return len(offlineSensorIDs), nil
+	total := 0
+	var firstErr error
+	for _, step := range []sensor.SensorHealth{sensor.SensorHealthLate, sensor.SensorHealthStale, sensor.SensorHealthOffline} {
+		ids, err := c.liveness.ApplyLiveness(ctx, step, moves[step])
+		if err != nil {
+			c.logger.Error("failed to move sensors down the heartbeat ladder",
+				"controller", "sensor-health",
+				"health", step,
+				"error", err,
+			)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		total += len(ids)
+		if len(ids) == 0 {
+			continue
+		}
+		c.logger.Info("sensors moved down the heartbeat ladder",
+			"controller", "sensor-health",
+			"health", step,
+			"count", len(ids),
+		)
+		if step == sensor.SensorHealthOffline {
+			for _, sensorID := range ids {
+				c.onOffline(ctx, sensorID)
+			}
+		}
+	}
+	return total, firstErr
 }
 
 // onOffline records a sensor.disconnected audit event and enqueues a
 // sensor.offline notification for a single sensor that this tick transitioned
-// to offline. MarkStaleSensorsOffline only returns sensors whose health WAS
-// online (its WHERE clause), so this is a genuine online->offline transition —
-// repeated reconciles never re-emit for an already-offline sensor, and a sensor
-// that comes back and drops again is a new episode that notifies again.
+// to offline. ApplyLiveness only returns sensors whose health WAS online, late
+// or stale, so this is a genuine transition to offline — repeated reconciles
+// never re-emit for an already-offline sensor, and a sensor that comes back
+// and drops again is a new episode that notifies again.
 //
 // Tenant sensors only: platform sensors (TenantID == nil) are shared
 // infrastructure with no owning tenant to scope the audit log or the
@@ -206,10 +274,13 @@ func (c *SensorHealthController) notifyOffline(ctx context.Context, a *sensor.Se
 	}
 
 	lastSeen := "never"
+	pos := sensor.Ladder(time.Now(), a.HeartbeatDeadline())
+	silentFor := sensor.OfflineDistance(pos.Interval)
 	metadata := map[string]any{
-		"sensor_id":     a.ID.String(),
-		"sensor_name":   a.Name,
-		"stale_timeout": c.config.StaleTimeout.String(),
+		"sensor_id":          a.ID.String(),
+		"sensor_name":        a.Name,
+		"heartbeat_interval": pos.Interval.String(),
+		"offline_after":      silentFor.String(),
 	}
 	if a.LastSeenAt != nil {
 		lastSeen = a.LastSeenAt.UTC().Format(time.RFC3339)
@@ -228,8 +299,8 @@ func (c *SensorHealthController) notifyOffline(ctx context.Context, a *sensor.Se
 		AggregateType: "sensor",
 		AggregateID:   &aggregateID,
 		Title:         fmt.Sprintf("Sensor offline: %s", a.Name),
-		Body: fmt.Sprintf("Sensor '%s' has not sent a heartbeat for more than %s (last seen: %s). "+
-			"Scans routed to it will not run until it reconnects.", a.Name, c.config.StaleTimeout, lastSeen),
+		Body: fmt.Sprintf("Sensor '%s' has not sent a heartbeat for more than %s (it heartbeats every %s; last seen: %s). "+
+			"Scans routed to it will not run until it reconnects.", a.Name, silentFor, pos.Interval, lastSeen),
 		Severity: sensorOfflineSeverity,
 		URL:      "/sensors",
 		Metadata: metadata,

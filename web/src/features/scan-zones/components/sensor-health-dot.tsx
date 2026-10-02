@@ -25,11 +25,15 @@ export function SensorHealthChip({
         aria-hidden
         className={cn(
           'h-2 w-2 shrink-0 rounded-full',
-          healthy
-            ? 'bg-success'
-            : label === 'Error'
-              ? 'bg-destructive'
-              : 'border border-muted-foreground'
+          label === 'Late'
+            ? 'bg-warning'
+            : healthy
+              ? 'bg-success'
+              : label === 'Error'
+                ? 'bg-destructive'
+                : label === 'Stale'
+                  ? 'border border-warning'
+                  : 'border border-muted-foreground'
         )}
       />
       <span className="truncate">{sensor.name}</span>

@@ -196,7 +196,7 @@ func TestSensorFleetHealth_ResponseFields(t *testing.T) {
 	if st.LatestVersion != "v0.8.0" || st.MinVersion != "v0.4.0" {
 		t.Errorf("channel latest=%q min=%q", st.LatestVersion, st.MinVersion)
 	}
-	if st.OnlineWindowSeconds != 90 || st.OfflineAfterSeconds != 300 {
+	if st.OnlineWindowSeconds != 40 || st.OfflineAfterSeconds != 300 { // 30s idle interval + 10s grace
 		t.Errorf("windows online=%d offline=%d", st.OnlineWindowSeconds, st.OfflineAfterSeconds)
 	}
 	if st.CanTakeJobs != 1 || st.JobSlots != 5 {

@@ -19,8 +19,8 @@ func TestSensorHealthPolicy_FromConfig(t *testing.T) {
 	if p.OfflineAfter != 10*time.Minute {
 		t.Errorf("offline after = %s, want the heartbeat timeout", p.OfflineAfter)
 	}
-	if p.OnlineWindow != 3*time.Minute {
-		t.Errorf("online window = %s, want three 1m heartbeats", p.OnlineWindow)
+	if p.OnlineWindow != 72*time.Second {
+		t.Errorf("online window = %s, want the 1m interval plus its 12s grace", p.OnlineWindow)
 	}
 	if p.LatestVersion != "v0.4.2" || p.MinVersion != "" {
 		t.Errorf("channel = %q / %q", p.LatestVersion, p.MinVersion)

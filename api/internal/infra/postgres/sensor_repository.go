@@ -457,6 +457,10 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 	if err != nil {
 		return false, err
 	}
+	control, err := controlArg(hb.Control)
+	if err != nil {
+		return false, err
+	}
 
 	query := `
 		UPDATE sensors
@@ -502,6 +506,13 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    sensor_product = COALESCE(NULLIF($31, ''), sensor_product),
 		    sensor_commit = COALESCE(NULLIF($32, ''), sensor_commit),
 		    sensor_build_time = COALESCE($33::timestamptz, sensor_build_time),
+		    -- Deadline of the next heartbeat (RFC-035 §5.6): the interval the
+		    -- sensor follows from now on.
+		    heartbeat_interval_seconds = $35::integer,
+		    heartbeat_due_at = NOW() + make_interval(secs => $35::integer),
+		    -- Control report: NULL ($36) leaves the stored one as it is.
+		    reported_control = COALESCE($36::jsonb, reported_control),
+		    control_reported_at = CASE WHEN $36::jsonb IS NULL THEN control_reported_at ELSE NOW() END,
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -525,6 +536,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		load.resources, load.capacity, load.queue, load.present,
 		hb.Build.SDKName, hb.Build.SDKVersion, hb.Build.Product, hb.Build.Commit, nullTime(hb.Build.BuildTime),
 		rep.clearMaxJobs,
+		heartbeatIntervalSeconds(hb.Interval), control,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -625,7 +637,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 		query := r.selectQuery() + `
 			WHERE tenant_id = $1
 			  AND status = 'active'
-			  AND health = 'online'
+			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
 			  AND ` + sensorFreeSlotsSQL("sensors") + ` > 0
 			ORDER BY ` + sensorActiveCommandsSQL("sensors") + ` ASC, total_scans ASC
@@ -648,7 +660,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
 		  AND status = 'active'
-		  AND health = 'online'
+		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
 		  AND $2 = ANY(effective_tools)
 		  AND ` + sensorFreeSlotsSQL("sensors") + ` > 0
@@ -678,7 +690,7 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
 		  AND status = 'active'
-		  AND health = 'online'
+		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
 		  AND (execution_mode = 'daemon' OR type IN ('worker', 'collector'))
 	`
@@ -722,36 +734,25 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 	return sensors, nil
 }
 
-// MarkStaleAsOffline marks sensors as offline (health) if they haven't sent heartbeat within the timeout.
+// MarkStaleAsOffline is the worker's backstop (jobs.SensorHealthChecker,
+// WORKER_HEARTBEAT_TIMEOUT): it marks offline the sensors still stored
+// online that the heartbeat ladder (pkg/domain/sensor/liveness.go) puts past
+// its offline step and that were last seen more than timeout ago. In normal
+// operation the health controller has moved such a sensor to late and stale
+// long before, so this only acts when the controller does not run. It never
+// convicts a sensor the controller holds at stale while the platform is slow.
 // Note: This updates Health (automatic), not Status (admin-controlled).
-// Sensors can still authenticate if their Status is 'active', regardless of Health.
-// Returns the number of sensors marked as offline.
 //
 // A NULL last_seen_at counts as stale. It means "online but never once
-// heartbeated", which the app cannot produce — UpdateLastSeen is the only writer
-// of health='online' and it always sets last_seen_at in the same statement — but
-// a fixture, a restore or a manual UPDATE can, and such a row was previously
-// unreachable by this sweep forever.
+// heartbeated", which the app cannot produce, but a fixture, a restore or a
+// manual UPDATE can, and such a row was previously unreachable by this sweep
+// forever.
 func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.Duration) (int64, error) {
-	query := `
-		UPDATE sensors
-		SET health = 'offline',
-		    updated_at = NOW()
-		WHERE health = 'online'
-		  AND (last_seen_at IS NULL OR last_seen_at < NOW() - $1::interval)
-	`
-
-	result, err := r.db.ExecContext(ctx, query, timeout.String())
+	ids, err := r.convictOffline(ctx, []sensor.SensorHealth{sensor.SensorHealthOnline}, timeout)
 	if err != nil {
 		return 0, fmt.Errorf("failed to mark stale sensors as offline: %w", err)
 	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	return rowsAffected, nil
+	return int64(len(ids)), nil
 }
 
 // heartbeatProtocol bounds the protocol telemetry value to a smallint; an
@@ -794,7 +795,8 @@ func (r *SensorRepository) selectQuery() string {
 		       sdk_name, sdk_version, sensor_product, sensor_commit, sensor_build_time,
 		       api_key_last_used_at, host(api_key_last_used_ip),
 		       instance_id, instance_state, identity_cloned_at,
-		       manifest_digest, manifest_at, manifest_source
+		       manifest_digest, manifest_at, manifest_source,
+		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at
 		FROM sensors
 	`
 }
@@ -953,6 +955,10 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		manifestDigest   sql.NullString
 		manifestAt       sql.NullTime
 		manifestSource   sql.NullString
+		hbInterval       sql.NullInt32
+		hbDueAt          sql.NullTime
+		control          []byte
+		controlAt        sql.NullTime
 	)
 
 	err := row.Scan(
@@ -1026,6 +1032,10 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&manifestDigest,
 		&manifestAt,
 		&manifestSource,
+		&hbInterval,
+		&hbDueAt,
+		&control,
+		&controlAt,
 	)
 
 	if err != nil {
@@ -1149,6 +1159,13 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 
 	a.Reported = scanReported(a.ID, reportedTools, reportedCaps, reportedMaxJobs, reportedOS, reportedArch, reportedAt)
 	a.Load = scanLoadReport(a.ID, loadResources, loadCapacity, loadQueue, loadReportedAt)
+	if hbInterval.Valid {
+		a.HeartbeatInterval = time.Duration(hbInterval.Int32) * time.Second
+	}
+	if hbDueAt.Valid {
+		a.HeartbeatDueAt = &hbDueAt.Time
+	}
+	a.Control = scanControl(a.ID, control, controlAt)
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
@@ -1181,7 +1198,7 @@ func (r *SensorRepository) GetAvailableToolsForTenant(ctx context.Context, tenan
 		FROM sensors
 		WHERE tenant_id = $1
 		  AND status = 'active'
-		  AND health = 'online'
+		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
 		ORDER BY tool_name
 	`
@@ -1215,7 +1232,7 @@ func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
 			  AND status = 'active'
-			  AND health = 'online'
+			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
 			  AND $2 = ANY(effective_tools)
 		)
@@ -1238,7 +1255,7 @@ func (r *SensorRepository) GetAvailableCapabilitiesForTenant(ctx context.Context
 		FROM sensors
 		WHERE tenant_id = $1
 		  AND status = 'active'
-		  AND health = 'online'
+		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
 		ORDER BY capability_name
 	`
@@ -1286,44 +1303,20 @@ func (r *SensorRepository) UpdateOfflineTimestamp(ctx context.Context, id shared
 	return nil
 }
 
-// MarkStaleSensorsOffline finds sensors that haven't sent heartbeat within timeout and marks them offline.
-// Returns the list of sensor IDs that were marked offline (for audit logging).
-// This is used by the health monitor worker.
+// MarkStaleSensorsOffline marks offline the sensors (online, late or stale)
+// that the heartbeat ladder puts past its offline step, judged against each
+// sensor's stored deadline and interval (pkg/domain/sensor/liveness.go), and
+// that were last seen more than minAge ago (0: no floor). Returns the ids it
+// moved. The health controller walks the whole ladder itself
+// (ListLivenessCandidates / ApplyLiveness); this is the same offline step in
+// one call.
 //
 // NULL last_seen_at counts as stale — see MarkStaleAsOffline for why.
-func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, timeout time.Duration) ([]shared.ID, error) {
-	query := `
-		UPDATE sensors
-		SET last_offline_at = NOW(),
-		    health = 'offline',
-		    updated_at = NOW()
-		WHERE health = 'online'
-		  AND (last_seen_at IS NULL OR last_seen_at < NOW() - $1::interval)
-		RETURNING id
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, timeout.String())
+func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, minAge time.Duration) ([]shared.ID, error) {
+	ids, err := r.convictOffline(ctx, liveHealths, minAge)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mark stale sensors offline: %w", err)
 	}
-	defer rows.Close()
-
-	var ids []shared.ID
-	for rows.Next() {
-		var idStr string
-		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("failed to scan sensor id: %w", err)
-		}
-		id, err := shared.IDFromString(idStr)
-		if err != nil {
-			continue // Skip invalid IDs
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate stale sensors: %w", err)
-	}
-
 	return ids, nil
 }
 
@@ -1368,7 +1361,7 @@ func (r *SensorRepository) GetPlatformSensorStats(ctx context.Context, tenantID 
 			SELECT
 				COALESCE(labels->>'tier', 'shared') AS tier,
 				COUNT(*) AS total_sensors,
-				COUNT(*) FILTER (WHERE health = 'online') AS online_sensors,
+				COUNT(*) FILTER (WHERE health IN ` + sensorDispatchableHealthSQL + `) AS online_sensors,
 				COALESCE(SUM(effective_max_jobs), 0) AS total_capacity,
 				COALESCE(SUM(` + sensorActiveCommandsSQL("sensors") + `), 0) AS current_load
 			FROM sensors
@@ -1443,10 +1436,10 @@ WITH tenant_sensors AS (
 SELECT category, key, value FROM (
   SELECT 'total'::text         AS category, ''::text       AS key, COUNT(*)::float8 AS value FROM tenant_sensors
   UNION ALL
-  SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_sensors WHERE status = 'active' AND health = 'online'
+  SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_sensors WHERE status = 'active' AND health IN ` + sensorDispatchableHealthSQL + `
   AND last_seen_at IS NOT NULL
   UNION ALL
-  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_sensors WHERE status = 'active' AND health = 'online'
+  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_sensors WHERE status = 'active' AND health IN ` + sensorDispatchableHealthSQL + `
   AND last_seen_at IS NOT NULL AND execution_mode = 'daemon'
   UNION ALL
   SELECT 'status',               status,                            COUNT(*)::float8 FROM tenant_sensors GROUP BY status
@@ -1502,7 +1495,7 @@ func (r *SensorRepository) HasSensorForCapability(ctx context.Context, tenantID 
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
 			  AND status = 'active'
-			  AND health = 'online'
+			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
 			  AND $2 = ANY(effective_capabilities)
 		)

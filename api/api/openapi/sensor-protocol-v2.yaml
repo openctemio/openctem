@@ -611,6 +611,20 @@ components:
         scanners: { type: array, items: { type: string } }
         collectors: { type: array, items: { type: string } }
         uptime_seconds: { type: integer }
+        control:
+          description: >-
+            How well the sensor's heartbeat loop keeps time (sdk-go, RFC-035
+            §5.5). Read leniently (a member of the wrong type is ignored) and
+            clamped. interval_s, with the advised next_heartbeat_seconds,
+            sets the sensor's heartbeat deadline (the longer of the two).
+          type: object
+          properties:
+            interval_s: { type: number, description: The interval the sensor follows. }
+            gap_s: { type: number, description: Time since the previous delivered heartbeat. }
+            lag_ms: { type: integer, description: How late the heartbeat timer fired. }
+            build_ms: { type: integer, description: How long building the report took. }
+            rtt_ms: { type: integer, description: Round trip of the previous heartbeat. }
+            failures: { type: integer, description: Heartbeats lost since the previous delivered one. }
         total_scans: { type: integer }
         errors: { type: integer }
         cpu_percent: { type: number }

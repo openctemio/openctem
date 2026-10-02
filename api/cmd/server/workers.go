@@ -18,15 +18,19 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
-// sensorStaleTimeout is how long after its last heartbeat the health
-// controller marks a sensor offline. The doorbell never advises an interval
-// above half of it (heartbeatDoorbellConfig).
-const sensorStaleTimeout = 90 * time.Second
+// sensorStaleTimeout is the shortest time from a sensor's heartbeat deadline
+// to offline on the heartbeat ladder (sensordom.LadderOfflineFloor; each
+// sensor is judged against its own deadline, pkg/domain/sensor/liveness.go).
+// The doorbell never advises an interval above half of it
+// (heartbeatDoorbellConfig), which is also below half of every sensor's own
+// offline distance.
+const sensorStaleTimeout = sensordom.LadderOfflineFloor
 
 // ddTenantSyncerAdapter adapts *defectdojo.SyncService (which returns a
 // SyncResult) to the scheduler's error-only TenantSyncer, so the controller
@@ -236,6 +240,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc.Sensor != nil {
 		sensorHealth.SetEventRecorder(svc.Sensor)
 	}
+	// No offline conviction while the platform itself is degraded (RFC-035
+	// D3): just started, stalled, or slow to handle heartbeats.
+	sensorHealth.SetPlatformHealth(svc.SensorPlatformHealth)
 	w.ControllerManager.Register(sensorHealth)
 
 	w.ControllerManager.Register(controller.NewJobRecoveryController(

@@ -1272,8 +1272,9 @@ func (r *CommandRepository) GetPlatformJobsBySensor(ctx context.Context, sensorI
 // =============================================================================
 
 // ReleasePendingFromUnavailableSensors unpins pending scan commands that the
-// platform routed to a sensor which has since gone offline (the health
-// controller marks it after missed heartbeats) or stopped being active
+// platform routed to a sensor which has since gone stale or offline (the
+// health controller walks it down the heartbeat ladder after missed
+// heartbeats; a late sensor keeps its pins) or stopped being active
 // (disabled, revoked). Before this, such a command waited for the run timeout:
 // only a zone unassignment ever unpinned pending work (RFC-030 B7).
 //
@@ -1293,7 +1294,7 @@ func (r *CommandRepository) ReleasePendingFromUnavailableSensors(ctx context.Con
 		  AND c.status = 'pending'
 		  AND c.type = 'scan'
 		  AND c.payload ? 'pipeline_run_id'
-		  AND (s.health = 'offline' OR s.status <> 'active')`)
+		  AND (s.health IN ('stale', 'offline') OR s.status <> 'active')`)
 	if err != nil {
 		return 0, fmt.Errorf("failed to release pending commands of unavailable sensors: %w", err)
 	}

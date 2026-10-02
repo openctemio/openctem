@@ -34,10 +34,12 @@ export function isOneShotSensor(sensor: Pick<Sensor, 'type' | 'execution_mode'>)
 
 /**
  * The sensor's operational state. The API computes it (`state`) and is the
- * authority; against an older API this computes the same ladder:
- * revoked, disabled, never connected, online (heartbeat within the online
- * window), degraded (online with a problem), idle (a CI sensor between runs),
- * stale (past the window, within the heartbeat timeout), offline.
+ * authority: each sensor is judged against its own heartbeat deadline, online
+ * -> late -> stale -> offline (api RFC-035 §5.6). Against an older API, which
+ * sends no state, this computes that API's ladder: revoked, disabled, never
+ * connected, online (heartbeat within the online window), degraded (online
+ * with a problem), idle (a CI sensor between runs), stale (past the window,
+ * within the heartbeat timeout), offline.
  */
 export function sensorState(
   sensor: StateInput,
@@ -63,6 +65,19 @@ export function sensorState(
   return 'offline'
 }
 
+/**
+ * States the platform dispatches new work to: online, degraded, and late (past
+ * its heartbeat deadline but not yet stale). Stale and offline sensors get none.
+ */
+export function stateTakesJobs(state: SensorState): boolean {
+  return state === 'online' || state === 'degraded' || state === 'late'
+}
+
+/** States of a sensor that is still heartbeating (late and stale included). */
+export function stateIsHeartbeating(state: SensorState): boolean {
+  return stateTakesJobs(state) || state === 'stale'
+}
+
 /** Enabled, long-running and heartbeating: the platform can dispatch to it. */
 export function canTakeJobs(
   sensor: StateInput,
@@ -70,8 +85,7 @@ export function canTakeJobs(
   thresholds: FleetThresholds = DEFAULT_FLEET_THRESHOLDS
 ): boolean {
   if (isOneShotSensor(sensor)) return false
-  const state = sensorState(sensor, now, thresholds)
-  return state === 'online' || state === 'degraded'
+  return stateTakesJobs(sensorState(sensor, now, thresholds))
 }
 
 export type SensorStateTone = 'success' | 'warning' | 'destructive' | 'info' | 'muted'
@@ -86,10 +100,16 @@ export const SENSOR_STATE_META: Record<
     tone: 'warning',
     description: 'Heartbeating, but something needs attention.',
   },
+  late: {
+    label: 'Late',
+    tone: 'warning',
+    description: 'Its heartbeat is past due. It still takes work; nobody is notified yet.',
+  },
   stale: {
     label: 'Stale',
     tone: 'warning',
-    description: 'Heartbeat late, not yet offline.',
+    description:
+      'Its heartbeat is well past due. It takes no new work and its queued work goes to other sensors; it is not offline yet.',
   },
   offline: { label: 'Offline', tone: 'destructive', description: 'No heartbeat in time.' },
   idle: {
@@ -110,6 +130,7 @@ export const SENSOR_STATE_META: Record<
 export const SENSOR_STATES: SensorState[] = [
   'online',
   'degraded',
+  'late',
   'stale',
   'offline',
   'idle',

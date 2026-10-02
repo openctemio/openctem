@@ -33560,6 +33560,13 @@ export interface components {
        *     tool's content here, with "tool" set. Merged into the stored tools.
        */
       content?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedContent'][]
+      /**
+       * @description Control is how well the sensor's heartbeat loop keeps time (sdk-go,
+       *     RFC-035 §5.5): {"interval_s","gap_s","lag_ms","build_ms","rtt_ms",
+       *     "failures"}. Read leniently (a member of the wrong type is ignored)
+       *     and clamped; interval_s feeds the sensor's heartbeat deadline.
+       */
+      control?: Record<string, never>
       cpu_percent?: number
       /**
        * @description Disk/network throughput in MB/s. Optional — sensors that omit them leave
@@ -34971,6 +34978,21 @@ export interface components {
       updated_at?: string
       version?: string
     }
+    'internal_infra_http_handler.SensorControlResponse': {
+      /** @description BuildMillis is how long building the heartbeat report took. */
+      build_ms?: number
+      /** @description Failures is the number of heartbeats lost before the last one. */
+      failures?: number
+      /** @description GapSeconds is the time between its last two delivered heartbeats. */
+      gap_s?: number
+      /** @description IntervalSeconds is the heartbeat interval the sensor follows. */
+      interval_s?: number
+      /** @description LagMillis is how late its heartbeat timer fired (CPU starvation). */
+      lag_ms?: number
+      reported_at?: string
+      /** @description RTTMillis is the round trip of its previous heartbeat. */
+      rtt_ms?: number
+    }
     'internal_infra_http_handler.SensorDisableRequest': {
       reason?: string
     }
@@ -34994,6 +35016,8 @@ export interface components {
         | 'error_reported'
         | 'content_stale'
         | 'content_refresh_failed'
+        | 'heartbeat_late'
+        | 'control_slow'
       message?: string
       /** @enum {string} */
       severity?: 'warning' | 'critical'
@@ -35064,6 +35088,12 @@ export interface components {
        *     POST /sensors/{id}/content/refresh.
        */
       content_refresh_supported?: boolean
+      /**
+       * @description Control is the control-channel report of the sensor's last heartbeat
+       *     that carried one (sdk-go, RFC-035 §5.5): how well its heartbeat loop
+       *     keeps time. null when it never reported one.
+       */
+      control?: components['schemas']['internal_infra_http_handler.SensorControlResponse']
       /** @description System metrics */
       cpu_percent?: number
       created_at?: string
@@ -35072,14 +35102,33 @@ export interface components {
       effective?: components['schemas']['internal_infra_http_handler.SensorEffectiveResponse']
       error_count?: number
       execution_mode?: string
-      /** @description Automatic: unknown, online, offline, error */
-      health?: string
+      /**
+       * @description Health is automatic: stored by heartbeats and the heartbeat ladder.
+       * @enum {string}
+       */
+      health?: 'unknown' | 'online' | 'late' | 'stale' | 'offline' | 'error'
       /**
        * @description HealthReasons lists the problems found (never null): an outbox backlog
        *     or lost results, an expired or expiring key, a version below the
        *     minimum, no scan tools, an error the sensor reported.
        */
       health_reasons?: components['schemas']['internal_infra_http_handler.SensorHealthReasonResponse'][]
+      heartbeat_due_at?: string
+      /**
+       * @description HeartbeatIntervalSeconds is the interval the sensor follows, stored at
+       *     its last heartbeat (its reported interval or the advised one); null
+       *     before its first heartbeat since the deadline was introduced (60 s
+       *     applies). HeartbeatDueAt is when its next heartbeat is due.
+       */
+      heartbeat_interval_seconds?: number
+      /**
+       * @description HeartbeatState is where the sensor stands on the heartbeat ladder now
+       *     (RFC-035 §5.6): online until its deadline plus grace, then late (still
+       *     takes work), stale (takes no new work), offline. "" when it never
+       *     connected.
+       * @enum {string}
+       */
+      heartbeat_state?: '' | 'online' | 'late' | 'stale' | 'offline'
       hostname?: string
       id?: string
       /**
@@ -35189,17 +35238,19 @@ export interface components {
        */
       started_at?: string
       /**
-       * @description State is the computed operational state: online, degraded, stale,
-       *     offline, idle (a CI sensor between runs), never_connected, disabled or
-       *     revoked. Online means a heartbeat within the online window (see
-       *     GET /sensors/stats online_window_seconds); stale is older than that but
-       *     within the heartbeat timeout; degraded is heartbeating with at least
-       *     one health reason.
+       * @description State is the computed operational state: online, degraded, late,
+       *     stale, offline, idle (a CI sensor between runs), never_connected,
+       *     disabled or revoked. Each sensor is judged against its own heartbeat
+       *     deadline (heartbeat_due_at): online until the deadline plus grace,
+       *     then late (still takes work), stale (takes no new work), offline once
+       *     the health checker convicts it; degraded is online with at least one
+       *     health reason.
        * @enum {string}
        */
       state?:
         | 'online'
         | 'degraded'
+        | 'late'
         | 'stale'
         | 'offline'
         | 'idle'
@@ -35268,7 +35319,7 @@ export interface components {
       }
       /**
        * @description CanTakeJobs counts sensors that can be dispatched work now: enabled,
-       *     long-running (not one-shot CI) and online or degraded.
+       *     long-running (not one-shot CI) and online, degraded or late.
        */
       can_take_jobs?: number
       job_slots?: number
@@ -35288,9 +35339,11 @@ export interface components {
       offline_after_seconds?: number
       online_active?: number
       /**
-       * @description OnlineWindowSeconds and OfflineAfterSeconds are the thresholds of the
-       *     state ladder: a heartbeat at most online_window_seconds old is online,
-       *     one older than offline_after_seconds is offline, stale in between.
+       * @description Each sensor is judged against its own heartbeat deadline
+       *     (heartbeat_due_at; RFC-035 §5.6). OnlineWindowSeconds is how long a
+       *     sensor on the idle interval stays online after a heartbeat (interval
+       *     plus grace); OfflineAfterSeconds (WORKER_HEARTBEAT_TIMEOUT) is the
+       *     backstop after which an unconvicted sensor shows offline anyway.
        */
       online_window_seconds?: number
       sdk_latest_version?: string

@@ -92,7 +92,7 @@ claim predicate and claim semantics stay in one place.
 | Field | Type | Meaning |
 |---|---|---|
 | `pending_jobs` | int | Commands this sensor could claim right now, capped at 100. Exactly what the poll would offer: pinned to the sensor or unpinned, pending, not expired, not scheduled for later, zone claim predicate (`zoneClaimPredicate`, incl. the tool match), capability gate. `> 0` ⇒ poll now. Not computed for platform sensors (no tenant poll). |
-| `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting, 30 s idle, 120 s when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than half of `WORKER_HEARTBEAT_TIMEOUT` (default 5 m ⇒ 150 s), so a sensor that follows it is never marked offline. |
+| `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting, 30 s idle, 120 s when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than half of the offline distance (45 s: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter; RFC-035 D2). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
 | `actions` | []string | Typed directives from a closed set: `pause`, `resume`, `drain`, `rotate_key`, `update`. Rung today: `pause` (sensor disabled by an admin), `rotate_key` (the presented key expires within `SENSOR_KEY_RENEW_BEFORE`, default half of `SENSOR_KEY_TTL`). `resume`, `drain`, `update` are reserved. There is no free-form or shell verb (RFC-023 §10.4 R-4); a sensor ignores a value it does not know. |
 | `config_version` | string | 16 hex chars, opaque. A digest of what the platform governs about the sensor: capabilities, tools, max concurrent jobs, execution mode, operator config, the presented key's expiry and the assigned scan zones with each zone's last change. Heartbeat metrics and `last_seen_at` are not part of it (both rewrite `sensors.updated_at` on every heartbeat, which is why `updated_at` cannot be the source). |
 
@@ -259,23 +259,61 @@ computed on read (`pkg/domain/sensor/fleet_health.go`, `AssessHealth`).
 |---|---|
 | `revoked`, `disabled` | admin status |
 | `never_connected` | no heartbeat yet |
-| `online` | last heartbeat within the online window |
-| `degraded` | heartbeating and at least one health reason |
+| `online` | its next heartbeat is not past due (deadline + grace, below) |
+| `degraded` | online and at least one health reason |
 | `idle` | a one-shot (CI, `standalone`/`runner`) sensor between runs: it connects only while it runs, so no heartbeat is normal |
-| `stale` | older than the online window, within `WORKER_HEARTBEAT_TIMEOUT` |
-| `offline` | older than `WORKER_HEARTBEAT_TIMEOUT`, or marked offline by the health checker |
+| `offline` | convicted by the health controller (`health = 'offline'`), or past the offline step and silent longer than `WORKER_HEARTBEAT_TIMEOUT` |
+| `late` | past its deadline + grace; still takes work |
+| `stale` | well past its deadline; takes no new work. Also a sensor past the offline step that the controller has not convicted yet (it holds convictions while the platform is slow) |
 
-The online window is three idle heartbeat intervals (`SENSOR_HEARTBEAT_INTERVAL`),
-at least 90s, at most the timeout. `GET /sensors/stats` returns both thresholds
-(`online_window_seconds`, `offline_after_seconds`) so clients can explain them.
+**Heartbeat deadline** ([RFC-035](../rfcs/RFC-035-sensor-control-plane-under-load.md)
+§5.6, migration 000261). Every heartbeat stores the interval the sensor
+follows (`sensors.heartbeat_interval_seconds`) and the deadline of its next
+heartbeat (`heartbeat_due_at` = now + interval). The interval is the longer
+of the `control.interval_s` the sensor reports and, for a sensor that follows
+the doorbell (protocol v2, or v1 with the `doorbell` feature), the
+`next_heartbeat_seconds` just advised; 60 s (the SDK default) for a sensor
+that does neither, and for rows that have not heartbeated since the
+migration. It is clamped to 1–300 s. Any authenticated request also proves
+the sensor alive, so the effective deadline is the later of `heartbeat_due_at`
+and `last_seen_at` + interval.
+
+With `grace = max(10 s, 0.2 × interval)` (`pkg/domain/sensor/liveness.go`,
+`Ladder`, the one implementation the controller and the fleet view share):
+
+| Step | Until | Stored `health` | Dispatch | Pinned pending work | Notified |
+|---|---|---|---|---|---|
+| online | due + grace | `online` | yes | kept | no |
+| late | due + 2 × interval + grace | `late` | yes | kept | no |
+| stale | due + max(3 × interval, 90 s) | `stale` | no | released to the zone | no |
+| offline | beyond | `offline` | no | released | `sensor.offline`, audit `sensor.disconnected`, activity entry |
+
+At the default 30 s idle interval a silent sensor is late 40 s after its last
+heartbeat, stale at 100 s and offline at 120 s; a busy sensor (5 s) is stale
+after 25 s and offline after 95 s; one told to back off (45 s) is offline
+after 180 s. The health controller (`internal/infra/controller/sensor_health.go`,
+every 30 s) writes the steps; only a request moves a sensor back to
+`online`. Dispatch, zone routing and tool availability take `health IN
+('online', 'late')`; `ReleasePendingFromUnavailableSensors` unpins work held
+by `stale` and `offline` sensors. A heartbeat from a `late` or `stale` sensor
+is not a reconnect (no `sensor.connected` audit row).
+
+`GET /sensors/{id}` also returns `heartbeat_interval_seconds`,
+`heartbeat_due_at`, `heartbeat_state` (the ladder step now) and `control`.
+`GET /sensors/stats` returns `online_window_seconds` (how long a sensor on the
+idle interval stays online: interval + grace) and `offline_after_seconds`
+(`WORKER_HEARTBEAT_TIMEOUT`, the backstop above).
 
 **Health reasons** (`health_reasons[]`: `code`, `severity`, `message`), listed
 whatever the state: `outbox_backlog` (results waiting over an hour),
 `outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
 7 days), `identity_cloned` (two live processes use the key; see "Key use and
 cloned identities"), `version_unsupported`, `sdk_unsupported` (see "Build information"),
-`no_tools` (a scanning daemon with no tools), `error_reported`. A heartbeating
-sensor with any reason is `degraded`.
+`no_tools` (a scanning daemon with no tools), `error_reported`,
+`heartbeat_late` (the sensor is late or stale, or its last delivered heartbeat
+came more than 1.5 intervals after the previous one, `control.gap_s`) and
+`control_slow` (`control.lag_ms` or `build_ms` above 5 s). An online sensor
+with any reason is `degraded`.
 
 **Release channel**: `SENSOR_LATEST_VERSION` (default: the newest sensor release
 when the API was built, `none` turns it off) and `SENSOR_MIN_VERSION` (default
@@ -932,8 +970,9 @@ A sensor holds every command it claims under a **lease** (migration 000260:
 
 - **Claim.** A claim starts a new lease epoch (`lease_epoch + 1`) and a lease
   of `SENSOR_COMMAND_LEASE` (default 3 min, clamped to 1–30 min). That is
-  longer than the 90 s after which a silent sensor is marked offline, so a
-  sensor whose heartbeats are only late keeps its work.
+  longer than a silent sensor takes to go `stale` and `offline` at the
+  idle interval ("Fleet health"), so a sensor whose heartbeats are only late
+  keeps its work.
 - **Renewal.**
   - Every accepted heartbeat (v1 and v2) renews the leases of the commands
     the sensor lists in `running`.
@@ -1048,18 +1087,37 @@ still has to heartbeat. [RFC-035](../rfcs/RFC-035-sensor-control-plane-under-loa
 measured where this breaks and splits the fix into sensor-side (SDK) and
 platform-side work.
 
-**What the platform does today**:
+**What the platform does** (owner decisions D1–D3):
 
-- The health controller (`internal/infra/controller/sensor_health.go`, every
-  30 s) marks a sensor `offline` 90 s after its last heartbeat. This is
-  hard-coded in `cmd/server/workers.go`.
-- On that transition it notifies `sensor.offline`, writes the audit and
-  activity events, and releases pending work pinned to the sensor.
-- `stale` (fleet health) therefore lasts at most one controller tick (RFC-035
-  B2).
-- The doorbell's "loaded" advice (`SENSOR_HEARTBEAT_LOADED_INTERVAL`, 120 s)
-  is longer than those 90 s (B1). Until RFC-035 D2 lands, keep it below 45 s
-  on installations where the doorbell query can be slow.
+- **Per-sensor deadline and ladder (D1).** Each heartbeat stores the interval
+  the sensor follows and its deadline; the health controller walks a silent
+  sensor online -> late -> stale -> offline against that deadline (see
+  "Fleet health"). This replaced the hard-coded 90 s, so a sensor told to
+  back off is no longer convicted for following the advice (B1), and `late`
+  and `stale` are stored states that last as long as the ladder says (B2).
+  The worker's backstop sweep (`jobs.SensorHealthChecker`,
+  `WORKER_HEARTBEAT_TIMEOUT`) uses the same ladder and only touches sensors
+  still stored `online`.
+- **Advice inside the deadline (D2).** The doorbell never advises more than
+  half of the offline distance (45 s with the 90 s floor); with the stored
+  interval the deadline follows the advice anyway.
+- **Notified only at offline, never while the platform is slow (D3).**
+  `sensor.offline`, the `sensor.disconnected` audit event and the activity
+  entry fire only at the offline step. Each tick the controller asks a
+  platform-health guard (`internal/app/sensor/platform_health.go`) first; it
+  holds every offline conviction (the sensor stays or goes `stale`, nobody
+  is notified, a WARN log says why) while:
+  - the API started less than `SENSOR_HEALTH_STARTUP_GRACE` ago (default:
+    the offline distance of a sensor on the SDK's 60 s default, 4 min);
+  - the controller's previous tick ran more than two intervals ago (the
+    process was stalled);
+  - the p95 of the heartbeat handler's latency (the write and the doorbell
+    query, v1 and v2) over the last 2 min is at or above
+    `SENSOR_HEALTH_SLOW_HEARTBEAT` (default 2 s, at least 5 heartbeats).
+- **`control` stored and shown.** The heartbeat's `control` member is read
+  leniently, clamped (`pkg/domain/sensor/control.go`) and stored
+  (`sensors.reported_control`, `control_reported_at`); `GET /sensors/{id}`
+  returns it and the console's sensor drawer shows a "Control channel" card.
 - `running` commands of a sensor that died are not recovered before the run
   timeout (B5); RFC-030 leases address it.
 
@@ -1070,20 +1128,13 @@ platform-side work.
 | Heartbeat client | Its own `http.Client`: a clone of the API client's transport (proxy, TLS, dial guard) with its own connection pool. `Config.ControlTimeout`, default 15 s. |
 | Failure | At most 1 retry (an idle connection the platform closed). After a failed heartbeat, the next one follows in about 10 s (`core.HeartbeatRetryDelay`, jittered), never later than the interval. A rejected key backs off through the auth gate as before. |
 | Report building | Tool version probes run in the background after the first one (`ToolRegistry.SetBackgroundRefresh`). The manifest exchange is bounded by 15 s. |
-| `control` member | Additive; ignored by the API until RFC-035 Phase 2: `{"interval_s","gap_s","lag_ms","build_ms","rtt_ms","failures"}`. `lag_ms` is how late the heartbeat timer fired (the sensor waiting for a CPU); `build_ms` is report building. |
+| `control` member | `{"interval_s","gap_s","lag_ms","build_ms","rtt_ms","failures"}`, stored by the API (above). `lag_ms` is how late the heartbeat timer fired (the sensor waiting for a CPU); `build_ms` is report building. |
 | Scanner processes | Linux: process group at nice +10, best-effort I/O level 7, `oom_score_adj` 500, set right after start. `SENSOR_SCANNER_PRIORITY=normal` turns it off. |
 | Slots | Leave memory free for the sensor: a tenth of its memory, 256 MiB to 1 GiB (`resource.DefaultReservedMem`). |
 
-**What the platform will do** (Phase 2, owner decisions D1–D6):
-
-- Convict a sensor against the interval the platform itself advised
-  (`heartbeat_due_at`).
-- Use a `late` → `stale` → `offline` ladder, with `sensor.offline` notified
-  only at `offline`.
-- Never advise beyond the deadline.
-- Skip conviction while the platform itself is slow.
-- Store and show `control`, with `heartbeat_late` and `control_slow` health
-  reasons.
+**Still to come**: command leases with re-queue (D6, RFC-030), a
+`sensor_heartbeat_gap_seconds` histogram, an activity entry when a sensor
+recovers from `late`, and a gap sparkline on the Control channel card.
 
 ## History written in the old vocabulary
 
