@@ -105,7 +105,7 @@ function SubScoreRow({ label, value }: { label: string; value: number }) {
  * EXPLAINS the class above, it does not decide it — the P0-P3 cascade stays
  * authoritative. Shown only when the backend supplies the breakdown.
  */
-function ScoreBreakdown({ breakdown }: { breakdown: PriorityScoreBreakdown }) {
+export function ScoreBreakdown({ breakdown }: { breakdown: PriorityScoreBreakdown }) {
   const reductionPct = Math.round(breakdown.control_reduction * 100)
   return (
     <div className="space-y-2 rounded-md border p-3">
