@@ -25,6 +25,7 @@ type sensorReportArgs struct {
 	toolNames    any            // text[] or nil
 	capabilities any            // text[] or nil
 	maxJobs      sql.NullInt32
+	clearMaxJobs bool // store NULL (the sensor reports no ceiling)
 	os           sql.NullString
 	arch         sql.NullString
 	present      bool
@@ -46,6 +47,10 @@ func sensorReportArgsOf(r *sensor.CapabilityReport) (sensorReportArgs, error) {
 	}
 	if r.Capabilities != nil {
 		c.capabilities = pq.Array(r.Capabilities)
+		c.present = true
+	}
+	if r.NoCeiling && r.MaxConcurrentJobs <= 0 {
+		c.clearMaxJobs = true
 		c.present = true
 	}
 	if r.MaxConcurrentJobs > 0 {

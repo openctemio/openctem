@@ -64,13 +64,15 @@ func TestSensor_FreeSlots(t *testing.T) {
 		load             LoadReport
 		want             int
 	}{
-		"no report":                  {maxJobs: 5, current: 2, want: 3},
-		"held more than capacity":    {maxJobs: 2, current: 4, want: 0},
-		"fresh report narrows":       {maxJobs: 5, current: 0, load: LoadReport{Capacity: cap3free1, ReportedAt: &fresh}, want: 1},
-		"fresh report cannot widen":  {maxJobs: 2, current: 1, load: LoadReport{Capacity: &ReportedCapacity{SlotsTotal: 50, SlotsFree: 50}, ReportedAt: &fresh}, want: 1},
-		"stale report ignored":       {maxJobs: 5, current: 0, load: LoadReport{Capacity: cap3free1, ReportedAt: &stale}, want: 5},
-		"slots_total 0 is no report": {maxJobs: 5, current: 0, load: LoadReport{Capacity: &ReportedCapacity{}, ReportedAt: &fresh}, want: 5},
-		"no capacity limit":          {maxJobs: 0, current: 9, want: 1},
+		"no report":                 {maxJobs: 5, current: 2, want: 3},
+		"held more than capacity":   {maxJobs: 2, current: 4, want: 0},
+		"fresh report narrows":      {maxJobs: 5, current: 0, load: LoadReport{Capacity: cap3free1, ReportedAt: &fresh}, want: 1},
+		"fresh report cannot widen": {maxJobs: 2, current: 1, load: LoadReport{Capacity: &ReportedCapacity{SlotsTotal: 50, SlotsFree: 50}, ReportedAt: &fresh}, want: 1},
+		// A stale report's free slots are ignored; its slots still bound the
+		// capacity (effective max jobs, RFC-033), like the generated column.
+		"stale report: free slots ignored": {maxJobs: 5, current: 0, load: LoadReport{Capacity: cap3free1, ReportedAt: &stale}, want: 3},
+		"slots_total 0 is no report":       {maxJobs: 5, current: 0, load: LoadReport{Capacity: &ReportedCapacity{}, ReportedAt: &fresh}, want: 5},
+		"no capacity limit":                {maxJobs: 0, current: 9, want: 1},
 	} {
 		a := &Sensor{MaxConcurrentJobs: tc.maxJobs, CurrentJobs: tc.current, Load: tc.load}
 		if got := a.FreeSlots(now); got != tc.want {

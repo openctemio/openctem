@@ -484,7 +484,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    reported_tools = COALESCE($18::jsonb, reported_tools),
 		    reported_tool_names = COALESCE($19::text[], reported_tool_names),
 		    reported_capabilities = COALESCE($20::text[], reported_capabilities),
-		    reported_max_jobs = COALESCE($21::integer, reported_max_jobs),
+		    reported_max_jobs = CASE WHEN $34::boolean THEN NULL ELSE COALESCE($21::integer, reported_max_jobs) END,
 		    reported_os = COALESCE($22::varchar, reported_os),
 		    reported_arch = COALESCE($23::varchar, reported_arch),
 		    reported_at = CASE WHEN $24::boolean THEN NOW() ELSE reported_at END,
@@ -522,6 +522,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		rep.tools, rep.toolNames, rep.capabilities, rep.maxJobs, rep.os, rep.arch, rep.present,
 		load.resources, load.capacity, load.queue, load.present,
 		hb.Build.SDKName, hb.Build.SDKVersion, hb.Build.Product, hb.Build.Commit, nullTime(hb.Build.BuildTime),
+		rep.clearMaxJobs,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)

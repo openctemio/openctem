@@ -662,21 +662,29 @@ by protocol and route name (closed sets).
 
 [RFC-029 §4.3.1](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md).
 The heartbeat (v1 and v2) can carry what the sensor really has: `tools`
-(`[{name, version, installed}]`), `capabilities`, `max_concurrent_jobs`, `os`
-and `arch`. The sensor's report is the truth. The administrator's `tools`,
+(`[{name, kind, version, installed, capabilities, content}]`), `capabilities`,
+`max_concurrent_jobs`, `os` and `arch`. Each tool's `capabilities` (sdk-go
+v0.13+) says what that tool serves besides its name (`nuclei` → `dast`,
+`validate:nuclei`), so the flat list can be traced to a tool; `kind` is
+`scanner` or `collector`. Both are sanitized like the flat list (known names
+only, at most 32 per tool) and kept in `reported_tools`. The sensor's report is the truth. The administrator's `tools`,
 `capabilities` and `max_concurrent_jobs` on the sensor are **limits** that can
 only narrow it:
 
 - effective tools = reported installed tools ∩ `tools` (empty `tools`: all reported)
 - effective capabilities = reported ∩ `capabilities` (likewise)
-- effective concurrency = min(reported, `max_concurrent_jobs`)
+- effective concurrency = the smallest of the reported ceiling
+  (`max_concurrent_jobs`), the administrator's `max_concurrent_jobs` and the
+  reported slots (`capacity.slots_total`, see "Load, capacity and release")
+  that is set (RFC-033 §6.1)
 - not reported (old SDK): the administrator's values, unchanged
 
 Storage (migration 000253): `reported_tools` (jsonb), `reported_tool_names`,
 `reported_capabilities`, `reported_max_jobs`, `reported_os`, `reported_arch`,
 `reported_at`, and the generated columns `effective_tools`,
 `effective_capabilities`, `effective_max_jobs`, built with
-`sensor_effective_list(declared, reported)`. Every dispatch query reads the
+`sensor_effective_list(declared, reported)` and (000257)
+`sensor_effective_max_jobs(admin, reported, capacity)`. Every dispatch query reads the
 `effective_*` columns: selector, `ClaimJob`, tool and capability
 availability, list filters and platform capacity. The command poll's capability
 gate and the API use `Sensor.EffectiveCapabilities()` and the other
@@ -687,9 +695,17 @@ methods agree across a matrix of inputs.
 RFC-030's tool gate on the command poll, the claim, the doorbell count and
 the zone predicate (`sensorDispatchTools` in `command_repository.go`) reads
 `effective_tools`. A command that names a tool reaches only sensors whose
-effective tools include it. The reported
-`max_concurrent_jobs` is the sensor's configured cap. RFC-030's live slots
-(its `capacity` block) bound dispatch further.
+effective tools include it.
+
+**Capacity vs slots** (Kubernetes' `capacity` vs `allocatable`). The reported
+`max_concurrent_jobs` is the sensor **operator's ceiling** (`SENSOR_MAX_JOBS`),
+sent only when one is set; `capacity.slots_total` is what the sensor can run
+**now**, sized by the SDK from its CPU, memory and tools' learned cost (at
+most the ceiling). sdk-go before v0.13 sent its resource manager's upper bound
+(64) as `max_concurrent_jobs` when no ceiling was set; the slots bound keeps
+such a sensor from being counted at 64 or at an administrator limit above
+what it runs. The last reported slots count however old they are (the column
+cannot see the clock); a stale report's `slots_free` is ignored (below).
 
 Ingest (`SensorService.UpdateHeartbeat` → `sanitizeReport`): one catalog
 lookup (`KnownCapabilityNames`: active platform tools and the tenant's own,
@@ -780,7 +796,6 @@ report's `tool.properties.content` (CTIS `properties` is free-form, no schema
 change). For protocol v2 the tool is part of the report header, stored
 verbatim in `ingest_reports.header`; findings carry the report id as
 `scan_id`. Protocol v1 ingest keeps no report header.
-||||||| parent of 27ab6f1d (feat(dispatch): sensor load report, server-counted capacity and release)
 
 ## Load, capacity and release (RFC-030)
 

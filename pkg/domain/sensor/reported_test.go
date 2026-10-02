@@ -207,3 +207,69 @@ func TestAssessHealth_NoToolsUsesEffectiveTools(t *testing.T) {
 		}
 	}
 }
+
+// Each tool keeps its kind and its own capabilities (known names only), and
+// the catalog lookup covers them.
+func TestSanitizeToolKindAndCapabilities(t *testing.T) {
+	known := map[string]bool{"nuclei": true, "semgrep": true}
+	caps := map[string]bool{"dast": true, "sast": true}
+	in := CapabilityReportInput{Tools: []ReportedTool{
+		{Name: "nuclei", Kind: "Scanner", Installed: true, Capabilities: []string{"dast", "DAST", "validate:nuclei", "made-up", "validate:evil"}},
+		{Name: "semgrep", Kind: "rootkit", Installed: true, Capabilities: []string{}},
+	}}
+	_, lookup := in.CatalogCandidates()
+	if !reflect.DeepEqual(lookup, []string{"dast", "validate:nuclei", "made-up", "validate:evil"}) {
+		t.Errorf("catalog lookup = %#v", lookup)
+	}
+	out := in.Sanitize(known, caps)
+	want := []ReportedTool{
+		{Name: "nuclei", Kind: ToolKindScanner, Installed: true, Capabilities: []string{"dast", "validate:nuclei"}},
+		{Name: "semgrep", Installed: true, Capabilities: []string{}},
+	}
+	if !reflect.DeepEqual(out.Tools, want) {
+		t.Errorf("tools = %#v", out.Tools)
+	}
+	// An older SDK sends neither: nil stays nil.
+	old := CapabilityReportInput{Tools: []ReportedTool{{Name: "nuclei", Installed: true}}}.Sanitize(known, caps)
+	if old.Tools[0].Kind != "" || old.Tools[0].Capabilities != nil {
+		t.Errorf("old sdk tool = %#v", old.Tools[0])
+	}
+	// A long list is capped.
+	many := make([]string, 0, 3*MaxReportedToolCapabilities)
+	for range 3 * MaxReportedToolCapabilities {
+		many = append(many, "dast")
+	}
+	many = append(many, "sast")
+	capped := CapabilityReportInput{Tools: []ReportedTool{{Name: "nuclei", Capabilities: many}}}.Sanitize(known, caps)
+	if got := capped.Tools[0].Capabilities; !reflect.DeepEqual(got, []string{"dast"}) {
+		t.Errorf("capped = %#v", got)
+	}
+}
+
+// What the sensor can run now (its reported slots) bounds its capacity:
+// live, a 4-core sensor reported 64 as its ceiling, 4 slots, and the admin
+// limit is 5.
+func TestEffectiveMaxJobsBoundedBySlots(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		admin, ceiling, slots int
+		want                  int
+	}{
+		{"live", 5, 64, 4, 4},
+		{"slots only", 5, 0, 4, 4},
+		{"slots above limits", 5, 3, 8, 3},
+		{"no load report", 5, 64, 0, 5},
+		{"nothing at all", 0, 0, 0, 0},
+		{"no admin limit", 0, 0, 6, 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &Sensor{MaxConcurrentJobs: tc.admin, Reported: CapabilityReport{MaxConcurrentJobs: tc.ceiling}}
+			if tc.slots > 0 {
+				a.Load.Capacity = &ReportedCapacity{SlotsTotal: tc.slots}
+			}
+			if got := a.EffectiveMaxConcurrentJobs(); got != tc.want {
+				t.Fatalf("effective = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

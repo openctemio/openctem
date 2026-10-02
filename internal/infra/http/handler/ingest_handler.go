@@ -317,9 +317,14 @@ func (req *HeartbeatRequest) buildReport() sensor.BuildReport {
 
 // HeartbeatTool is one tool of a heartbeat's tool inventory.
 type HeartbeatTool struct {
-	Name      string `json:"name"`
+	Name string `json:"name"`
+	// Kind is "scanner" or "collector" (sdk-go v0.10+).
+	Kind      string `json:"kind,omitempty"`
 	Version   string `json:"version,omitempty"`
 	Installed bool   `json:"installed"`
+	// Capabilities are what the tool serves besides its name (sdk-go
+	// v0.13+); sanitized against the capability registry like the flat list.
+	Capabilities []string `json:"capabilities,omitempty"`
 	// Content is the scanner content the tool scans with (RFC-031).
 	Content []sensor.ReportedContent `json:"content,omitempty"`
 }
@@ -339,7 +344,8 @@ func (req *HeartbeatRequest) capabilityReport() *sensor.CapabilityReportInput {
 			if i >= sensor.MaxReportedTools {
 				break
 			}
-			in.Tools = append(in.Tools, sensor.ReportedTool{Name: t.Name, Version: t.Version, Installed: t.Installed, Content: t.Content})
+			in.Tools = append(in.Tools, sensor.ReportedTool{Name: t.Name, Kind: t.Kind, Version: t.Version,
+				Installed: t.Installed, Capabilities: t.Capabilities, Content: t.Content})
 		}
 	}
 	if in.IsEmpty() {

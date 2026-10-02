@@ -8,7 +8,12 @@ package sensor
 //
 //	effective tools        = reported installed tools ∩ admin tools (admin list empty: all reported)
 //	effective capabilities = reported ∩ admin capabilities          (likewise)
-//	effective max jobs     = min(reported, admin limit)
+//	effective max jobs     = min(reported ceiling, admin limit, reported slots)
+//
+// The reported ceiling (max_concurrent_jobs) is the sensor operator's cap;
+// the reported slots (capacity.slots_total, load.go) are what the sensor can
+// run now, sized from its CPU and memory (RFC-033: Kubernetes' capacity vs
+// allocatable). Dispatch never counts on more than the slots.
 //
 // A sensor that reports nothing (an SDK from before the report) keeps the
 // administrator's values, so nothing changes for it. The same rule is
@@ -18,6 +23,7 @@ package sensor
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -31,6 +37,8 @@ const (
 	MaxReportedCapLen       = 64
 	MaxReportedVersionLen   = 64
 	MaxReportedPlatformLen  = 32
+	// MaxReportedToolCapabilities bounds one tool's capability list.
+	MaxReportedToolCapabilities = 32
 	// MaxReportedJobs is the highest concurrency a sensor may report; an
 	// administrator cannot set more either.
 	MaxReportedJobs = 100
@@ -40,11 +48,23 @@ const (
 // jobs; "validate:<tool>" is validation with that tool.
 const CapabilityValidate = "validate"
 
+// Tool kinds a sensor reports (sdk-go core.ToolKind).
+const (
+	ToolKindScanner   = "scanner"
+	ToolKindCollector = "collector"
+)
+
 // ReportedTool is one tool on a sensor's reported inventory.
 type ReportedTool struct {
-	Name      string `json:"name"`
+	Name string `json:"name"`
+	// Kind is "scanner" or "collector"; "" when the sensor did not say.
+	Kind      string `json:"kind,omitempty"`
 	Version   string `json:"version,omitempty"`
 	Installed bool   `json:"installed"`
+	// Capabilities are what this tool serves besides its own name ("dast",
+	// "validate:nuclei"), known names only; nil when the sensor did not say
+	// (sdk-go before v0.13 reports only the sensor's flat list).
+	Capabilities []string `json:"capabilities,omitempty"`
 	// Content is the scanner content the tool scans with (RFC-031,
 	// content.go); nil when the sensor reported none for it.
 	Content []ReportedContent `json:"content,omitempty"`
@@ -56,8 +76,13 @@ type CapabilityReport struct {
 	Tools             []ReportedTool
 	Capabilities      []string
 	MaxConcurrentJobs int
-	OS                string
-	Arch              string
+	// NoCeiling: the sensor said it has no operator ceiling (an SDK that
+	// reports its slots and no max_concurrent_jobs), so a ceiling stored
+	// from an older SDK (which sent its upper bound, 64) is cleared. Not
+	// stored; MaxConcurrentJobs is 0 then.
+	NoCeiling bool
+	OS        string
+	Arch      string
 	// ReportedAt is when the report was last written; nil before the first.
 	ReportedAt *time.Time
 }
@@ -117,17 +142,23 @@ func (a *Sensor) EffectiveCapabilities() []string {
 }
 
 // EffectiveMaxConcurrentJobs is the sensor's capacity for dispatch: the
-// smaller of what it reported and the administrator's limit.
+// smallest of the ceiling it reported, the administrator's limit and the
+// slots it last reported (what it can run now); a value that was not
+// reported does not count. Without any it is the administrator's limit.
+// The same rule as the generated column effective_max_jobs (migration
+// 000257); the last reported slots count however old they are, like the
+// column (the free-slot rule, FreeSlots, ignores a stale load report).
 func (a *Sensor) EffectiveMaxConcurrentJobs() int {
-	rep := a.Reported.MaxConcurrentJobs
-	switch {
-	case rep <= 0:
-		return a.MaxConcurrentJobs
-	case a.MaxConcurrentJobs <= 0:
-		return rep
-	default:
-		return min(rep, a.MaxConcurrentJobs)
+	limit := 0
+	for _, n := range []int{a.Reported.MaxConcurrentJobs, a.MaxConcurrentJobs, a.Load.SlotsTotal()} {
+		if n > 0 && (limit == 0 || n < limit) {
+			limit = n
+		}
 	}
+	if limit == 0 {
+		return a.MaxConcurrentJobs
+	}
+	return limit
 }
 
 // CapabilityMismatch lists what an administrator set that the sensor's own
@@ -223,19 +254,35 @@ func (in CapabilityReportInput) CatalogCandidates() (tools, capabilities []strin
 		addTool(strings.ToLower(strings.TrimSpace(t.Name)))
 	}
 	seenC := map[string]bool{}
-	for i, c := range in.Capabilities {
-		if i >= MaxReportedCapabilities {
-			break
-		}
+	addCap := func(c string) {
 		c = strings.ToLower(strings.TrimSpace(c))
-		if !validCapName(c) || seenC[c] {
-			continue
+		if !validCapName(c) || seenC[c] || len(capabilities) >= 2*MaxReportedCapabilities {
+			return
 		}
 		seenC[c] = true
 		capabilities = append(capabilities, c)
 		addTool(c)
 		if t, ok := strings.CutPrefix(c, CapabilityValidate+":"); ok {
 			addTool(t)
+		}
+	}
+	for i, c := range in.Capabilities {
+		if i >= MaxReportedCapabilities {
+			break
+		}
+		addCap(c)
+	}
+	// Each tool's own capabilities (sdk-go v0.13+): usually the same words
+	// as the flat list, looked up once.
+	for i, t := range in.Tools {
+		if i >= MaxReportedTools {
+			break
+		}
+		for j, c := range t.Capabilities {
+			if j >= MaxReportedToolCapabilities {
+				break
+			}
+			addCap(c)
 		}
 	}
 	return tools, capabilities
@@ -262,7 +309,8 @@ func (in CapabilityReportInput) Sanitize(knownTools, knownCaps map[string]bool) 
 			if !validToolName(name) || !knownTools[name] {
 				continue
 			}
-			rt := ReportedTool{Name: name, Version: sanitizeReportedVersion(t.Version), Installed: t.Installed,
+			rt := ReportedTool{Name: name, Kind: sanitizeToolKind(t.Kind), Version: sanitizeReportedVersion(t.Version),
+				Installed: t.Installed, Capabilities: sanitizeToolCapabilities(t.Capabilities, knownTools, knownCaps),
 				Content: sanitizeToolContent(name, t.Content, time.Now())}
 			if j, dup := idx[name]; dup {
 				// Duplicates: installed wins, then a known version.
@@ -297,6 +345,35 @@ func (in CapabilityReportInput) Sanitize(knownTools, knownCaps map[string]bool) 
 	}
 	out.OS = sanitizePlatform(in.OS)
 	out.Arch = sanitizePlatform(in.Arch)
+	return out
+}
+
+// sanitizeToolKind keeps a known tool kind; anything else is "".
+func sanitizeToolKind(k string) string {
+	switch k = strings.ToLower(strings.TrimSpace(k)); k {
+	case ToolKindScanner, ToolKindCollector:
+		return k
+	default:
+		return ""
+	}
+}
+
+// sanitizeToolCapabilities keeps a tool's well-formed, known capabilities,
+// deduplicated and capped; nil stays nil (not reported).
+func sanitizeToolCapabilities(in []string, knownTools, knownCaps map[string]bool) []string {
+	if in == nil {
+		return nil
+	}
+	out := make([]string, 0, min(len(in), MaxReportedToolCapabilities))
+	for i, c := range in {
+		if i >= MaxReportedToolCapabilities {
+			break
+		}
+		c = strings.ToLower(strings.TrimSpace(c))
+		if validCapName(c) && !slices.Contains(out, c) && knownCapability(c, knownTools, knownCaps) {
+			out = append(out, c)
+		}
+	}
 	return out
 }
 

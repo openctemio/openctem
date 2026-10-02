@@ -100,7 +100,7 @@ func TestSensorLoad_HeartbeatReportIsStoredAndNarrowsCapacity(t *testing.T) {
 		t.Fatalf("free slots = %d, want 4 (the report cannot widen the effective capacity)", n)
 	}
 
-	// A stale report stops counting.
+	// A stale report's free slots stop counting.
 	h.heartbeatV2(s, map[string]any{"status": "running",
 		"capacity": map[string]any{"slots_total": 3, "slots_free": 0, "active_jobs": 3}})
 	if n := h.load(s).FreeSlots(time.Now()); n != 0 {
@@ -109,8 +109,11 @@ func TestSensorLoad_HeartbeatReportIsStoredAndNarrowsCapacity(t *testing.T) {
 	if _, err := h.db.ExecContext(ctx, `UPDATE sensors SET load_reported_at = NOW() - INTERVAL '10 minutes' WHERE id = $1`, s.id); err != nil {
 		t.Fatal(err)
 	}
-	if n := h.load(s).FreeSlots(time.Now()); n != 4 {
-		t.Fatalf("free slots = %d with a stale report, want 4", n)
+	// Its free slots no longer count; its slots (3, what the sensor could
+	// last run) still bound the capacity, like the last known allocatable
+	// of a Kubernetes node (RFC-033).
+	if n := h.load(s).FreeSlots(time.Now()); n != 3 {
+		t.Fatalf("free slots = %d with a stale report, want 3", n)
 	}
 }
 
