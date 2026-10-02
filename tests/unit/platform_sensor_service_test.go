@@ -1207,3 +1207,7 @@ func TestSensor_IsAvailable(t *testing.T) {
 		t.Error("Disabled sensor should not be available")
 	}
 }
+
+func (m *mockSensorRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
+	return map[string]bool{}, map[string]bool{}, nil
+}

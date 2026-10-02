@@ -164,7 +164,7 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 	if a.TenantID != nil && d.src != nil {
 		qctx, cancel := context.WithTimeout(ctx, d.cfg.QueryTimeout)
 		start := time.Now()
-		work, err := d.src.PendingWorkForSensor(qctx, *a.TenantID, a.ID, a.Capabilities, d.cfg.PendingCap)
+		work, err := d.src.PendingWorkForSensor(qctx, *a.TenantID, a.ID, a.EffectiveCapabilities(), d.cfg.PendingCap)
 		elapsed := time.Since(start)
 		cancel()
 		if err != nil {

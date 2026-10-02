@@ -360,7 +360,7 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 		// Pass the sensor's advertised capabilities so the poll only returns
 		// capability-scoped commands (e.g. a validate:nuclei job) to a sensor
 		// that can actually execute them.
-		Capabilities: agt.Capabilities,
+		Capabilities: agt.EffectiveCapabilities(),
 		Limit:        limit,
 	})
 	if err != nil {

@@ -290,7 +290,7 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 	var tools []string
 	if s.sensorRepo != nil {
 		if stored, err := s.sensorRepo.GetByID(ctx, prov.SensorID); err == nil && stored != nil {
-			tools = stored.Tools
+			tools = stored.EffectiveTools()
 		}
 	}
 	if !SensorDeclaresTool(tools, toolName) {

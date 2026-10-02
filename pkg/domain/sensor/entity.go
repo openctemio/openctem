@@ -203,6 +203,11 @@ type Sensor struct {
 	// nil before the first heartbeat that recorded it. Display data only.
 	Protocol *ProtocolInfo
 
+	// Reported is what the sensor last reported it can do (reported.go).
+	// Tools, Capabilities and MaxConcurrentJobs above are the
+	// administrator's settings; dispatch uses the Effective* values.
+	Reported CapabilityReport
+
 	// Statistics
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"
 	LastOfflineAt *time.Time // When sensor went offline (heartbeat timeout)
@@ -518,12 +523,13 @@ func (w LoadBalancingWeights) withDefaults() LoadBalancingWeights {
 }
 
 // JobLoadPercent returns the sensor's queue occupancy as 0-100. A sensor with
-// no configured limit (MaxConcurrentJobs <= 0) reports 0.
+// no capacity limit (EffectiveMaxConcurrentJobs <= 0) reports 0.
 func (a *Sensor) JobLoadPercent() float64 {
-	if a.MaxConcurrentJobs <= 0 {
+	limit := a.EffectiveMaxConcurrentJobs()
+	if limit <= 0 {
 		return 0
 	}
-	return (float64(a.CurrentJobs) / float64(a.MaxConcurrentJobs)) * 100
+	return (float64(a.CurrentJobs) / float64(limit)) * 100
 }
 
 // ComputeLoadScore calculates the weighted load score for sensor selection.
@@ -556,9 +562,10 @@ func (a *Sensor) ComputeLoadScoreWithWeights(weights LoadBalancingWeights) float
 	return score
 }
 
-// HasCapability checks if the sensor has a specific capability.
+// HasCapability checks if the sensor has a specific capability (effective:
+// what it reports, narrowed by the administrator).
 func (a *Sensor) HasCapability(cap string) bool {
-	for _, c := range a.Capabilities {
+	for _, c := range a.EffectiveCapabilities() {
 		if c == cap {
 			return true
 		}
@@ -566,9 +573,10 @@ func (a *Sensor) HasCapability(cap string) bool {
 	return false
 }
 
-// HasTool checks if the sensor has a specific tool.
+// HasTool checks if the sensor has a specific tool (effective: what it
+// reports installed, narrowed by the administrator).
 func (a *Sensor) HasTool(tool string) bool {
-	for _, t := range a.Tools {
+	for _, t := range a.EffectiveTools() {
 		if t == tool {
 			return true
 		}
@@ -620,10 +628,11 @@ func (a *Sensor) SetMaxConcurrentJobs(max int) {
 
 // AvailableSlots returns the number of available job slots.
 func (a *Sensor) AvailableSlots() int {
-	if a.MaxConcurrentJobs <= 0 {
+	limit := a.EffectiveMaxConcurrentJobs()
+	if limit <= 0 {
 		return 1 // Default to 1 if not set
 	}
-	slots := a.MaxConcurrentJobs - a.CurrentJobs
+	slots := limit - a.CurrentJobs
 	if slots < 0 {
 		return 0
 	}
@@ -632,18 +641,20 @@ func (a *Sensor) AvailableSlots() int {
 
 // LoadFactor returns the current load factor (0.0 to 1.0).
 func (a *Sensor) LoadFactor() float64 {
-	if a.MaxConcurrentJobs <= 0 {
+	limit := a.EffectiveMaxConcurrentJobs()
+	if limit <= 0 {
 		return 0
 	}
-	return float64(a.CurrentJobs) / float64(a.MaxConcurrentJobs)
+	return float64(a.CurrentJobs) / float64(limit)
 }
 
 // HasCapacity checks if the sensor has capacity for more jobs.
 func (a *Sensor) HasCapacity() bool {
-	if a.MaxConcurrentJobs <= 0 {
+	limit := a.EffectiveMaxConcurrentJobs()
+	if limit <= 0 {
 		return true // No limit set
 	}
-	return a.CurrentJobs < a.MaxConcurrentJobs
+	return a.CurrentJobs < limit
 }
 
 // SetPlatformSensor marks this sensor as a platform-managed sensor.

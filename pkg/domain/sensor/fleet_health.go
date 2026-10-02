@@ -248,9 +248,14 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus) 
 			NormalizeVersion(a.Version), p.MinVersion))
 	}
 
-	if len(a.Tools) == 0 && !a.Type.IsCollector() && a.IsDaemon() {
-		add(ReasonNoTools, SeverityWarning,
-			"No scan tools are configured, so the platform cannot dispatch scans to this sensor.")
+	if len(a.EffectiveTools()) == 0 && !a.Type.IsCollector() && a.IsDaemon() {
+		msg := "No scan tools are configured, so the platform cannot dispatch scans to this sensor."
+		if a.Reported.Tools != nil {
+			// The sensor reported its inventory: nothing it has installed is
+			// allowed by its tool limit (or it has nothing installed).
+			msg = "None of the sensor's installed tools is allowed by its tool limit (or none is installed), so the platform cannot dispatch scans to this sensor."
+		}
+		add(ReasonNoTools, SeverityWarning, msg)
 	}
 
 	if a.Health == SensorHealthError {

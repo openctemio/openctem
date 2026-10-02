@@ -245,6 +245,49 @@ type HeartbeatRequest struct {
 	// it, and a heartbeat without it leaves the stored snapshot untouched.
 	// Display data only; values are clamped before they are stored.
 	Outbox *HeartbeatOutbox `json:"outbox,omitempty"`
+
+	// What the sensor reports it can do (RFC-029 §4.3.1), all optional:
+	// its tool inventory, the capabilities it serves, how many jobs it runs
+	// at once, and its platform. An absent list is "not reported" (the
+	// administrator's settings apply); [] is "none". Untrusted: sanitized
+	// against the tool catalog before it is stored, and it can only narrow
+	// what the administrator allows.
+	Tools             []HeartbeatTool `json:"tools,omitempty"`
+	Capabilities      []string        `json:"capabilities,omitempty"`
+	MaxConcurrentJobs int             `json:"max_concurrent_jobs,omitempty"`
+	OS                string          `json:"os,omitempty"`
+	Arch              string          `json:"arch,omitempty"`
+}
+
+// HeartbeatTool is one tool of a heartbeat's tool inventory.
+type HeartbeatTool struct {
+	Name      string `json:"name"`
+	Version   string `json:"version,omitempty"`
+	Installed bool   `json:"installed"`
+}
+
+// capabilityReport returns the heartbeat's capability report, nil when it
+// carried none.
+func (req *HeartbeatRequest) capabilityReport() *sensor.CapabilityReportInput {
+	in := sensor.CapabilityReportInput{
+		Capabilities:      req.Capabilities,
+		MaxConcurrentJobs: req.MaxConcurrentJobs,
+		OS:                req.OS,
+		Arch:              req.Arch,
+	}
+	if req.Tools != nil {
+		in.Tools = make([]sensor.ReportedTool, 0, min(len(req.Tools), sensor.MaxReportedTools))
+		for i, t := range req.Tools {
+			if i >= sensor.MaxReportedTools {
+				break
+			}
+			in.Tools = append(in.Tools, sensor.ReportedTool{Name: t.Name, Version: t.Version, Installed: t.Installed})
+		}
+	}
+	if in.IsEmpty() {
+		return nil
+	}
+	return &in
 }
 
 // HeartbeatOutbox is the outbox block of the heartbeat request.

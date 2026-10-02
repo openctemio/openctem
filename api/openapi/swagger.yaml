@@ -3215,6 +3215,32 @@ definitions:
       reason:
         type: string
     type: object
+  github_com_openctemio_api_pkg_domain_sensor.CapabilityMismatch:
+    properties:
+      capabilities_not_reported:
+        description: |-
+          CapabilitiesNotReported are capabilities the administrator set that
+          the sensor does not report.
+        items:
+          type: string
+        type: array
+      tools_not_installed:
+        description: |-
+          ToolsNotInstalled are tools the administrator set that the sensor
+          reports as not installed or does not report at all.
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ReportedTool:
+    properties:
+      installed:
+        type: boolean
+      name:
+        type: string
+      version:
+        type: string
+    type: object
   github_com_openctemio_api_pkg_domain_templatesource.GitSourceConfig:
     properties:
       auth_type:
@@ -7811,6 +7837,12 @@ definitions:
     properties:
       active_jobs:
         type: integer
+      arch:
+        type: string
+      capabilities:
+        items:
+          type: string
+        type: array
       collectors:
         items:
           type: string
@@ -7829,6 +7861,8 @@ definitions:
         type: integer
       hostname:
         type: string
+      max_concurrent_jobs:
+        type: integer
       memory_percent:
         type: number
       message:
@@ -7839,6 +7873,8 @@ definitions:
         type: number
       network_tx_mbps:
         type: number
+      os:
+        type: string
       outbox:
         allOf:
         - $ref: '#/definitions/internal_infra_http_handler.HeartbeatOutbox'
@@ -7855,10 +7891,30 @@ definitions:
         type: array
       status:
         type: string
+      tools:
+        description: |-
+          What the sensor reports it can do (RFC-029 §4.3.1), all optional:
+          its tool inventory, the capabilities it serves, how many jobs it runs
+          at once, and its platform. An absent list is "not reported" (the
+          administrator's settings apply); [] is "none". Untrusted: sanitized
+          against the tool catalog before it is stored, and it can only narrow
+          what the administrator allows.
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.HeartbeatTool'
+        type: array
       total_scans:
         type: integer
       uptime_seconds:
         type: integer
+      version:
+        type: string
+    type: object
+  internal_infra_http_handler.HeartbeatTool:
+    properties:
+      installed:
+        type: boolean
+      name:
+        type: string
       version:
         type: string
     type: object
@@ -10221,6 +10277,19 @@ definitions:
         maxLength: 500
         type: string
     type: object
+  internal_infra_http_handler.SensorEffectiveResponse:
+    properties:
+      capabilities:
+        items:
+          type: string
+        type: array
+      max_concurrent_jobs:
+        type: integer
+      tools:
+        items:
+          type: string
+        type: array
+    type: object
   internal_infra_http_handler.SensorHealthReasonResponse:
     properties:
       code:
@@ -10273,6 +10342,25 @@ definitions:
       api_key:
         type: string
     type: object
+  internal_infra_http_handler.SensorReportedResponse:
+    properties:
+      arch:
+        type: string
+      capabilities:
+        items:
+          type: string
+        type: array
+      max_concurrent_jobs:
+        type: integer
+      os:
+        type: string
+      reported_at:
+        type: string
+      tools:
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedTool'
+        type: array
+    type: object
   internal_infra_http_handler.SensorResponse:
     properties:
       api_key_prefix:
@@ -10283,6 +10371,12 @@ definitions:
         items:
           type: string
         type: array
+      capability_mismatch:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.CapabilityMismatch'
+        description: |-
+          CapabilityMismatch lists settings the sensor's report contradicts
+          (a tool set here that the sensor does not have); omitted when none.
       cpu_percent:
         description: System metrics
         type: number
@@ -10292,6 +10386,8 @@ definitions:
         type: integer
       description:
         type: string
+      effective:
+        $ref: '#/definitions/internal_infra_http_handler.SensorEffectiveResponse'
       error_count:
         type: integer
       execution_mode:
@@ -10363,6 +10459,15 @@ definitions:
           deprecated is true for protocol v1: the sensor needs an upgrade.
       region:
         type: string
+      reported:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.SensorReportedResponse'
+        description: |-
+          capabilities, tools and max_concurrent_jobs above are the
+          administrator's settings (limits). Reported is what the sensor last
+          reported it has (RFC-029 §4.3.1), null when it never reported;
+          Effective is what dispatch uses: the report narrowed by the
+          administrator's settings (the settings alone without a report).
       started_at:
         description: |-
           StartedAt is when the sensor process started (from the uptime its

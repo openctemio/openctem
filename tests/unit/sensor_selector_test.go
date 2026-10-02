@@ -871,3 +871,7 @@ func TestSensorSelErrNoSensorAvailable(t *testing.T) {
 		t.Error("ErrNoSensorAvailable should have a non-empty message")
 	}
 }
+
+func (m *sensorSelMockSensorRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
+	return map[string]bool{}, map[string]bool{}, nil
+}

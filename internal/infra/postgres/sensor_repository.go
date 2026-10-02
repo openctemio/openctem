@@ -346,6 +346,11 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		outbox = sql.NullString{String: string(raw), Valid: true}
 	}
 
+	rep, err := sensorReportArgsOf(hb.Report)
+	if err != nil {
+		return false, err
+	}
+
 	query := `
 		UPDATE sensors
 		SET version = COALESCE(NULLIF($3, ''), version),
@@ -369,6 +374,15 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    process_started_at = CASE WHEN $17::bigint > 0
 		        THEN NOW() - make_interval(secs => $17::bigint::double precision)
 		        ELSE process_started_at END,
+		    -- Capability report: each part NULL ($18..$23) leaves it as it is;
+		    -- $24 says the heartbeat carried a report at all.
+		    reported_tools = COALESCE($18::jsonb, reported_tools),
+		    reported_tool_names = COALESCE($19::text[], reported_tool_names),
+		    reported_capabilities = COALESCE($20::text[], reported_capabilities),
+		    reported_max_jobs = COALESCE($21::integer, reported_max_jobs),
+		    reported_os = COALESCE($22::varchar, reported_os),
+		    reported_arch = COALESCE($23::varchar, reported_arch),
+		    reported_at = CASE WHEN $24::boolean THEN NOW() ELSE reported_at END,
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -388,6 +402,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		outbox,
 		heartbeatProtocol(hb.Protocol), hb.UserAgent,
 		sensor.ClampUptime(hb.UptimeSeconds),
+		rep.tools, rep.toolNames, rep.capabilities, rep.maxJobs, rep.os, rep.arch, rep.present,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -440,13 +455,13 @@ func (r *SensorRepository) FindByCapabilities(ctx context.Context, tenantID shar
 	argIndex := 2
 
 	if len(capabilities) > 0 {
-		query += fmt.Sprintf(" AND capabilities @> $%d", argIndex)
+		query += fmt.Sprintf(" AND effective_capabilities @> $%d", argIndex)
 		args = append(args, pq.Array(capabilities))
 		argIndex++
 	}
 
 	if tool != "" {
-		query += fmt.Sprintf(" AND $%d = ANY(tools)", argIndex)
+		query += fmt.Sprintf(" AND $%d = ANY(effective_tools)", argIndex)
 		args = append(args, tool)
 	}
 
@@ -490,7 +505,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 			  AND status = 'active'
 			  AND health = 'online'
 			  AND last_seen_at IS NOT NULL
-			  AND current_jobs < max_concurrent_jobs
+			  AND current_jobs < effective_max_jobs
 			ORDER BY current_jobs ASC, total_scans ASC
 			LIMIT 1
 		`
@@ -513,8 +528,8 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 		  AND status = 'active'
 		  AND health = 'online'
 		  AND last_seen_at IS NOT NULL
-		  AND $2 = ANY(tools)
-		  AND current_jobs < max_concurrent_jobs
+		  AND $2 = ANY(effective_tools)
+		  AND current_jobs < effective_max_jobs
 		ORDER BY current_jobs ASC, total_scans ASC
 		LIMIT 1
 	`
@@ -541,25 +556,25 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 		  AND status = 'active'
 		  AND health = 'online'
 		  AND last_seen_at IS NOT NULL
-		  AND current_jobs < max_concurrent_jobs
+		  AND current_jobs < effective_max_jobs
 		  AND (execution_mode = 'daemon' OR type IN ('worker', 'collector'))
 	`
 	args := []any{tenantID.String()}
 	argIndex := 2
 
 	if len(capabilities) > 0 {
-		query += fmt.Sprintf(" AND capabilities @> $%d", argIndex)
+		query += fmt.Sprintf(" AND effective_capabilities @> $%d", argIndex)
 		args = append(args, pq.Array(capabilities))
 		argIndex++
 	}
 
 	if tool != "" {
-		query += fmt.Sprintf(" AND $%d = ANY(tools)", argIndex)
+		query += fmt.Sprintf(" AND $%d = ANY(effective_tools)", argIndex)
 		args = append(args, tool)
 	}
 
-	// Order by load factor (current_jobs / max_concurrent_jobs) ascending
-	query += " ORDER BY (current_jobs::float / NULLIF(max_concurrent_jobs, 0)) ASC, total_scans ASC"
+	// Order by load factor (current_jobs / effective capacity) ascending
+	query += " ORDER BY (current_jobs::float / NULLIF(effective_max_jobs, 0)) ASC, total_scans ASC"
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -591,7 +606,7 @@ func (r *SensorRepository) ClaimJob(ctx context.Context, id shared.ID) error {
 		    updated_at = NOW()
 		WHERE id = $1
 		  AND status = 'active'
-		  AND current_jobs < max_concurrent_jobs
+		  AND current_jobs < effective_max_jobs
 	`
 	result, err := r.db.ExecContext(ctx, query, id.String())
 	if err != nil {
@@ -683,7 +698,9 @@ func (r *SensorRepository) selectQuery() string {
 		       created_at, updated_at, key_expires_at,
 		       outbox_stats, outbox_reported_at,
 		       protocol_version, protocol_client, protocol_seen_at,
-		       process_started_at
+		       process_started_at,
+		       reported_tools, reported_capabilities, reported_max_jobs,
+		       reported_os, reported_arch, reported_at
 		FROM sensors
 	`
 }
@@ -728,13 +745,13 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 	}
 
 	if len(filter.Capabilities) > 0 {
-		conditions = append(conditions, fmt.Sprintf("capabilities @> $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("effective_capabilities @> $%d", argIndex))
 		args = append(args, pq.Array(filter.Capabilities))
 		argIndex++
 	}
 
 	if len(filter.Tools) > 0 {
-		conditions = append(conditions, fmt.Sprintf("tools && $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("effective_tools && $%d", argIndex))
 		args = append(args, pq.Array(filter.Tools))
 		argIndex++
 	}
@@ -746,7 +763,7 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 	}
 
 	if filter.HasCapacity != nil && *filter.HasCapacity {
-		conditions = append(conditions, "current_jobs < max_concurrent_jobs")
+		conditions = append(conditions, "current_jobs < effective_max_jobs")
 	}
 
 	if len(conditions) == 0 {
@@ -809,6 +826,12 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		protocolUA       sql.NullString
 		protocolSeenAt   sql.NullTime
 		processStarted   sql.NullTime
+		reportedTools    []byte
+		reportedCaps     pq.StringArray
+		reportedMaxJobs  sql.NullInt32
+		reportedOS       sql.NullString
+		reportedArch     sql.NullString
+		reportedAt       sql.NullTime
 	)
 
 	err := row.Scan(
@@ -859,6 +882,12 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&protocolUA,
 		&protocolSeenAt,
 		&processStarted,
+		&reportedTools,
+		&reportedCaps,
+		&reportedMaxJobs,
+		&reportedOS,
+		&reportedArch,
+		&reportedAt,
 	)
 
 	if err != nil {
@@ -954,6 +983,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		}
 	}
 
+	a.Reported = scanReported(a.ID, reportedTools, reportedCaps, reportedMaxJobs, reportedOS, reportedArch, reportedAt)
+
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
 			log.Printf("[DEBUG] failed to unmarshal sensor metadata (id=%s): %v", a.ID, err)
@@ -981,7 +1012,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 // Only sensors with health='online' are considered - meaning daemon is running and recently sent heartbeat.
 func (r *SensorRepository) GetAvailableToolsForTenant(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	query := `
-		SELECT DISTINCT unnest(tools) AS tool_name
+		SELECT DISTINCT unnest(effective_tools) AS tool_name
 		FROM sensors
 		WHERE tenant_id = $1
 		  AND status = 'active'
@@ -1021,7 +1052,7 @@ func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared
 			  AND status = 'active'
 			  AND health = 'online'
 			  AND last_seen_at IS NOT NULL
-			  AND $2 = ANY(tools)
+			  AND $2 = ANY(effective_tools)
 		)
 	`
 
@@ -1038,7 +1069,7 @@ func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared
 // Only sensors with health='online' are considered.
 func (r *SensorRepository) GetAvailableCapabilitiesForTenant(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	query := `
-		SELECT DISTINCT unnest(capabilities) AS capability_name
+		SELECT DISTINCT unnest(effective_capabilities) AS capability_name
 		FROM sensors
 		WHERE tenant_id = $1
 		  AND status = 'active'
@@ -1173,7 +1204,7 @@ func (r *SensorRepository) GetPlatformSensorStats(ctx context.Context, tenantID 
 				COALESCE(labels->>'tier', 'shared') AS tier,
 				COUNT(*) AS total_sensors,
 				COUNT(*) FILTER (WHERE health = 'online') AS online_sensors,
-				COALESCE(SUM(max_concurrent_jobs), 0) AS total_capacity,
+				COALESCE(SUM(effective_max_jobs), 0) AS total_capacity,
 				COALESCE(SUM(current_jobs), 0) AS current_load
 			FROM sensors
 			WHERE is_platform_sensor = TRUE AND status = 'active'
@@ -1308,7 +1339,7 @@ func (r *SensorRepository) HasSensorForCapability(ctx context.Context, tenantID 
 			  AND status = 'active'
 			  AND health = 'online'
 			  AND last_seen_at IS NOT NULL
-			  AND $2 = ANY(capabilities)
+			  AND $2 = ANY(effective_capabilities)
 		)
 	`
 

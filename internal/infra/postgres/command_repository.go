@@ -282,12 +282,13 @@ const commandToolSQL = `COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLI
 // aliased alias work for. It is the one place that decides it, for the poll,
 // the claim, the heartbeat doorbell and the zone predicate.
 //
-// Today that is the tools set on the sensor (sensors.tools), the same list
-// the trigger checks (HasSensorForTool) before it creates a scan. When the
-// sensor-reported capabilities land (RFC-029 §4.3.1: reported ∩ allowed),
-// this returns alias + ".effective_tools" and nothing else changes.
+// It is the sensor's effective tools (RFC-029 §4.3.1, migration 000250):
+// the tools it reports installed, narrowed by its tool limit (sensors.tools;
+// an empty limit allows every reported tool), or the tools set on it when it
+// never reported. The trigger's availability check (HasSensorForTool) and
+// the selector read the same column.
 func sensorDispatchTools(alias string) string {
-	return alias + ".tools"
+	return alias + ".effective_tools"
 }
 
 // toolClaimPredicate is the tool gate (RFC-030 B5): keep a command only if it
