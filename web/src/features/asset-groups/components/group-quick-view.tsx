@@ -2,67 +2,44 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { SheetDetailToolbar, DangerZone, DangerZoneItem } from '@/features/shared'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { RiskScoreBadge } from '@/features/shared'
-import { copyToClipboard } from '@/lib/clipboard'
-import { Can, Permission } from '@/lib/permissions'
 import {
-  FolderKanban,
-  Copy,
-  Link,
   ExternalLink,
-  Pencil,
-  Trash2,
-  RefreshCw,
-  X,
+  Hash,
+  Link as LinkIcon,
   Package,
-  AlertTriangle,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import {
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+  RiskScoreBadge,
+  type DetailMenuItem,
+} from '@/features/shared'
+import { copyToClipboard } from '@/lib/clipboard'
+import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'
+import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 import { useGroupAssets, useRemoveAssetsFromGroup } from '../hooks'
 import type { AssetGroup } from '../types'
 
 // ============================================
-// STYLE HELPERS
-// ============================================
-
-const CRITICALITY_COLORS: Record<string, { gradient: string; icon: string; badge: string }> = {
-  critical: {
-    gradient: 'bg-gradient-to-br from-red-500/20 to-red-600/5',
-    icon: 'bg-red-500/20 text-red-500',
-    badge: 'bg-red-500 text-white',
-  },
-  high: {
-    gradient: 'bg-gradient-to-br from-orange-500/20 to-orange-600/5',
-    icon: 'bg-orange-500/20 text-orange-500',
-    badge: 'bg-orange-500 text-white',
-  },
-  medium: {
-    gradient: 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/5',
-    icon: 'bg-yellow-500/20 text-yellow-500',
-    badge: 'bg-yellow-500 text-black',
-  },
-  low: {
-    gradient: 'bg-gradient-to-br from-blue-500/20 to-blue-600/5',
-    icon: 'bg-blue-500/20 text-blue-500',
-    badge: 'bg-blue-500 text-white',
-  },
-}
-
-const ENVIRONMENT_COLORS: Record<string, string> = {
-  production: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
-  staging: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100',
-  development: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100',
-  testing: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100',
-}
-
-// ============================================
-// QUICK VIEW ASSETS
+// ASSETS IN THE GROUP
 // ============================================
 
 function QuickViewAssets({ groupId, onRefresh }: { groupId: string; onRefresh?: () => void }) {
@@ -84,94 +61,83 @@ function QuickViewAssets({ groupId, onRefresh }: { groupId: string; onRefresh?: 
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="rounded-xl border bg-card">
-        <div className="flex items-center justify-between p-4 border-b">
-          <span className="text-sm font-medium">Recent Assets</span>
-        </div>
-        <div className="divide-y">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="flex items-center gap-3 p-3">
-              <div className="h-8 w-8 rounded-lg bg-muted animate-pulse" />
-              <div className="flex-1 space-y-2">
-                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-                <div className="h-3 w-20 bg-muted animate-pulse rounded" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
   const displayAssets = (assets || []).slice(0, 5)
 
   return (
-    <div className="rounded-xl border bg-card">
-      <div className="flex items-center justify-between p-4 border-b">
-        <span className="text-sm font-medium">Recent Assets ({assets?.length || 0})</span>
+    <DetailSection
+      title="Recent assets"
+      icon={Package}
+      count={isLoading ? undefined : (assets?.length ?? 0)}
+      actions={
         <Button
           variant="ghost"
           size="sm"
           className="h-7 text-xs"
           onClick={() => router.push(`/asset-groups/${groupId}?tab=assets`)}
         >
-          Manage All
+          Manage all
           <ExternalLink className="ms-1 h-3 w-3" />
         </Button>
-      </div>
-      {displayAssets.length === 0 ? (
-        <div className="p-4 text-center text-sm text-muted-foreground">No assets in this group</div>
+      }
+    >
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : displayAssets.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No assets in this group</p>
       ) : (
-        <div className="divide-y">
+        <ul className="divide-y rounded-lg border">
           {displayAssets.map(
-            (asset: { id: string; name: string; type: string; status?: string }) => (
-              <div
-                key={asset.id}
-                className="flex items-center justify-between p-3 hover:bg-muted/50 group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Package className="h-4 w-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{asset.name}</p>
+            (asset: { id: string; name: string; type: string; status?: string }) => {
+              const status = asset.status || 'active'
+              return (
+                <li
+                  key={asset.id}
+                  className="group flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/50"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium break-all">{asset.name}</p>
                     <p className="text-xs text-muted-foreground">{asset.type}</p>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className="text-green-500 border-green-500/30 bg-green-500/10"
-                  >
-                    {asset.status || 'active'}
-                  </Badge>
-                  <Can permission={Permission.AssetGroupsWrite}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleRemoveAsset(asset.id)
-                      }}
-                      disabled={isRemoving}
-                    >
-                      {removingId === asset.id ? (
-                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <X className="h-3.5 w-3.5" />
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        status === 'active' && 'border-success/30 bg-success/10 text-success'
                       )}
-                    </Button>
-                  </Can>
-                </div>
-              </div>
-            )
+                    >
+                      {status}
+                    </Badge>
+                    <Can permission={Permission.AssetGroupsWrite}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove ${asset.name} from the group`}
+                        className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleRemoveAsset(asset.id)
+                        }}
+                        disabled={isRemoving}
+                      >
+                        {removingId === asset.id ? (
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <X className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </Can>
+                  </div>
+                </li>
+              )
+            }
           )}
-        </div>
+        </ul>
       )}
-    </div>
+    </DetailSection>
   )
 }
 
@@ -195,193 +161,136 @@ export function GroupQuickView({
   onRefresh,
 }: GroupQuickViewProps) {
   const router = useRouter()
-  const colors = group ? CRITICALITY_COLORS[group.criticality] || CRITICALITY_COLORS.low : null
+  const canWrite = useHasPermission(Permission.AssetGroupsWrite)
+  const canDelete = useHasPermission(Permission.AssetGroupsDelete)
+  if (!group) return null
 
-  const handleCopyId = (id: string) => {
-    copyToClipboard(id)
-    toast.success('Group ID copied')
+  const menu: DetailMenuItem[] = [
+    {
+      label: 'Copy ID',
+      icon: Hash,
+      onSelect: () => {
+        copyToClipboard(group.id)
+        toast.success('Group ID copied')
+      },
+    },
+    {
+      label: 'Copy link',
+      icon: LinkIcon,
+      onSelect: () => {
+        copyToClipboard(`${window.location.origin}/asset-groups/${group.id}`)
+        toast.success('Link copied to clipboard')
+      },
+    },
+  ]
+  if (canDelete) {
+    menu.push({
+      label: 'Delete group',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => {
+        onClose()
+        onDelete(group)
+      },
+    })
   }
 
-  const handleCopyLink = (id: string) => {
-    copyToClipboard(`${window.location.origin}/asset-groups/${id}`)
-    toast.success('Link copied to clipboard')
-  }
+  const criticality = group.criticality as CriticalityLevel
 
   return (
-    <Sheet open={!!group} onOpenChange={() => onClose()}>
-      <SheetContent
-        className="sm:max-w-xl p-0 overflow-y-auto [&>button]:hidden"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <VisuallyHidden>
-          <SheetTitle>Asset Group Details</SheetTitle>
-          <SheetDescription>View details of the selected asset group</SheetDescription>
-        </VisuallyHidden>
-        {group && colors && (
-          <>
-            <TooltipProvider>
-              <SheetDetailToolbar
-                title="Asset Group"
-                onClose={onClose}
-                onEdit={() => onEdit(group)}
-                onCopyId={() => handleCopyId(group.id)}
-              />
-            </TooltipProvider>
-            {/* Header */}
-            <div className={`relative p-6 ${colors.gradient}`}>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`flex h-14 w-14 items-center justify-center rounded-xl ${colors.icon.split(' ')[0]}`}
-                  >
-                    <FolderKanban className={`h-7 w-7 ${colors.icon.split(' ')[1]}`} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">{group.name}</h2>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      {group.description || 'No description'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 mt-4">
-                <Badge variant="outline" className={ENVIRONMENT_COLORS[group.environment]}>
+    <TooltipProvider>
+      <DetailSheet
+        open
+        onOpenChange={(open) => !open && onClose()}
+        header={
+          <DetailHeader
+            title={group.name}
+            badges={
+              <>
+                <Badge variant="secondary" className="capitalize">
                   {group.environment}
                 </Badge>
-                <Badge className={colors.badge}>{group.criticality}</Badge>
-              </div>
-
-              <div className="flex items-center gap-1 mt-4">
-                <Button
+                <Badge
                   variant="outline"
-                  size="sm"
-                  className="h-8"
-                  onClick={() => handleCopyId(group.id)}
+                  className={cn('capitalize', CRITICALITY_BADGE_SOFT[criticality])}
                 >
-                  <Copy className="h-3.5 w-3.5 me-1" />
-                  Copy ID
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8"
-                  onClick={() => handleCopyLink(group.id)}
-                >
-                  <Link className="h-3.5 w-3.5 me-1" />
-                  Copy Link
-                </Button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 space-y-6">
-              {/* Stats Grid */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-xl border bg-card p-4">
-                  <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                    <Package className="h-4 w-4" />
-                    <span className="text-xs font-medium">Assets</span>
-                  </div>
-                  <p className="text-2xl font-bold">{group.assetCount}</p>
-                </div>
-                <div className="rounded-xl border bg-card p-4">
-                  <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                    <AlertTriangle className="h-4 w-4" />
-                    <span className="text-xs font-medium">Findings</span>
-                  </div>
-                  <p
-                    className={`text-2xl font-bold ${group.findingCount > 0 ? 'text-orange-500' : ''}`}
-                  >
-                    {group.findingCount}
-                  </p>
-                </div>
-                <div className="rounded-xl border bg-card p-4">
-                  <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                    <span className="text-xs font-medium">Risk</span>
-                  </div>
-                  <RiskScoreBadge score={group.riskScore} size="lg" />
-                </div>
-              </div>
-
-              {/* Assets Preview */}
-              <QuickViewAssets groupId={group.id} onRefresh={onRefresh} />
-
-              {/* Metadata */}
-              <div className="rounded-xl border bg-card p-4 space-y-3">
-                <h4 className="text-sm font-medium">Details</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground text-xs">Group ID</p>
-                    <p className="font-mono text-xs mt-0.5">{group.id}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Created</p>
-                    <p className="mt-0.5">{new Date(group.createdAt).toLocaleDateString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Last Updated</p>
-                    <p className="mt-0.5">{new Date(group.updatedAt).toLocaleDateString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Owner</p>
-                    <p className="mt-0.5">{group.owner || 'Not assigned'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 pt-2">
-                <Can permission={Permission.AssetGroupsWrite}>
+                  {group.criticality}
+                </Badge>
+              </>
+            }
+            meta={['Asset group', group.owner ? `owner ${group.owner}` : 'no owner']}
+            actions={
+              <>
+                {canWrite && (
                   <Button
-                    className="flex-1"
+                    size="sm"
                     onClick={() => {
                       onClose()
                       onEdit(group)
                     }}
                   >
-                    <Pencil className="me-2 h-4 w-4" />
-                    Edit Group
+                    <Pencil className="h-4 w-4" />
+                    Edit
                   </Button>
-                </Can>
+                )}
                 <Button
+                  size="sm"
                   variant="outline"
-                  className="flex-1"
                   onClick={() => {
                     onClose()
                     router.push(`/asset-groups/${group.id}`)
                   }}
                 >
-                  <ExternalLink className="me-2 h-4 w-4" />
-                  Open Full Page
+                  <ExternalLink className="h-4 w-4" />
+                  Open full page
                 </Button>
-              </div>
+              </>
+            }
+            menu={menu}
+            onClose={onClose}
+          />
+        }
+      >
+        <div className="space-y-5">
+          <DetailStatGrid aria-label="Key numbers">
+            <DetailStat label="Assets" value={group.assetCount} />
+            <DetailStat
+              label="Findings"
+              value={group.findingCount}
+              tone={group.findingCount > 0 ? 'warning' : 'default'}
+            />
+            <DetailStat label="Risk" value={<RiskScoreBadge score={group.riskScore} />} />
+          </DetailStatGrid>
 
-              <Can permission={Permission.AssetGroupsDelete}>
-                <DangerZone as="h3">
-                  <DangerZoneItem
-                    title="Delete group"
-                    description="Permanently delete this group and unassign all assets."
-                    action={
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                          onClose()
-                          onDelete(group)
-                        }}
-                      >
-                        <Trash2 className="me-2 h-4 w-4" />
-                        Delete
-                      </Button>
-                    }
-                  />
-                </DangerZone>
-              </Can>
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
+          <DetailSections>
+            {group.description && (
+              <DetailSection title="Description">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {group.description}
+                </p>
+              </DetailSection>
+            )}
+
+            <QuickViewAssets groupId={group.id} onRefresh={onRefresh} />
+
+            <DetailSection title="Details">
+              <DetailFieldGrid>
+                <DetailField label="Owner">{group.owner || 'Not assigned'}</DetailField>
+                <DetailField label="Created">
+                  {new Date(group.createdAt).toLocaleDateString()}
+                </DetailField>
+                <DetailField label="Last updated">
+                  {new Date(group.updatedAt).toLocaleDateString()}
+                </DetailField>
+                <DetailField label="ID" full>
+                  <DetailCopyId id={group.id} label="Group ID" />
+                </DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
+          </DetailSections>
+        </div>
+      </DetailSheet>
+    </TooltipProvider>
   )
 }
