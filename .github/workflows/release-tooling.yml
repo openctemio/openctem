@@ -1,0 +1,72 @@
+name: Release Tooling
+
+# The release train's scripts and the version manifest (api/docs/rfcs/RFC-037).
+#
+#   Release scripts       shellcheck + the shell tests of .github/scripts/release
+#   Version consistency   every versioned default agrees with versions.yaml,
+#                         web/package.json stays 0.0.0, and platform.release
+#                         names an existing tag
+#
+# Neither check is required (yet), so `paths:` is safe here: a skipped workflow
+# leaves no required check pending. Make "Version consistency" required once it
+# has been green for a train or two.
+
+on:
+  pull_request:
+    paths:
+      - versions.yaml
+      - .github/scripts/release/**
+      - .github/workflows/release-*.yml
+      - api/.env.example
+      - api/deploy/.env.example
+      - api/deploy/docker-compose.yml
+      - api/internal/config/config.go
+      - api/internal/infra/http/handler/sensor_handler.go
+      - web/package.json
+  push:
+    branches: [develop, main]
+    paths:
+      - versions.yaml
+      - .github/scripts/release/**
+      - .github/workflows/release-*.yml
+      - api/.env.example
+      - api/deploy/.env.example
+      - api/deploy/docker-compose.yml
+      - api/internal/config/config.go
+      - api/internal/infra/http/handler/sensor_handler.go
+      - web/package.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-tooling-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scripts:
+    name: Release scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          fetch-tags: true
+      - name: shellcheck
+        run: shellcheck -x .github/scripts/release/*.sh .github/scripts/release/tests/*.sh
+      - name: Tests
+        run: bash .github/scripts/release/tests/run.sh
+
+  versions:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          fetch-tags: true
+      - name: versions.yaml and its consumers agree
+        run: bash .github/scripts/release/sync-versions.sh --check

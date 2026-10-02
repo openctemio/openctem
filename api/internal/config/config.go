@@ -245,16 +245,18 @@ type SensorConfigConfig struct {
 	// snippets pin the image to it. Empty turns the comparison off.
 	LatestVersion string
 	// MinVersion is the oldest sensor release still supported
-	// (SENSOR_MIN_VERSION, default empty = no minimum). A heartbeating sensor
-	// below it shows as degraded with "version unsupported".
+	// (SENSOR_MIN_VERSION, default DefaultSensorMinVersion; empty = no
+	// minimum). A heartbeating sensor below it shows as degraded with
+	// "version unsupported".
 	MinVersion string
 	// SDKMinVersion is the oldest SDK release still supported
-	// (SENSOR_SDK_MIN_VERSION, default empty = no minimum). A heartbeating
-	// sensor built with an older SDK shows as degraded with "sdk_unsupported".
+	// (SENSOR_SDK_MIN_VERSION, default DefaultSensorSDKMinVersion; empty = no
+	// minimum). A heartbeating sensor built with an older SDK shows as
+	// degraded with "sdk_unsupported".
 	SDKMinVersion string
 	// SDKLatestVersion is the newest SDK release (SENSOR_SDK_LATEST_VERSION,
-	// default empty). A sensor built with an older SDK has sdk_status
-	// "outdated"; empty turns that comparison off.
+	// default DefaultSensorSDKLatestVersion). A sensor built with an older SDK
+	// has sdk_status "outdated"; empty turns that comparison off.
 	SDKLatestVersion string
 
 	// Image is the sensor image repository the install snippets run
@@ -277,10 +279,26 @@ type SensorConfigConfig struct {
 // own only when that volume persists (RFC-032 Phase 0).
 const DefaultSensorKeyTTL = 90 * 24 * time.Hour
 
+// Sensor and SDK release defaults. They are copied from versions.yaml at the
+// repository root by .github/scripts/release/sync-versions.sh, and CI fails
+// when they drift (RFC-037): change versions.yaml, never these lines.
+//
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
 // the platform is upgraded; set it to "none" to turn the comparison off.
-const DefaultSensorLatestVersion = "v0.4.2"
+const DefaultSensorLatestVersion = "v0.6.4"
+
+// DefaultSensorMinVersion is the oldest supported sensor release
+// (SENSOR_MIN_VERSION); empty means no minimum.
+const DefaultSensorMinVersion = ""
+
+// DefaultSensorSDKLatestVersion is the newest SDK release
+// (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
+const DefaultSensorSDKLatestVersion = "v0.14.0"
+
+// DefaultSensorSDKMinVersion is the oldest supported SDK release
+// (SENSOR_SDK_MIN_VERSION); empty means no minimum.
+const DefaultSensorSDKMinVersion = ""
 
 // DefaultSensorImageRepository is the published sensor image.
 const DefaultSensorImageRepository = "ghcr.io/openctemio/sensor"
@@ -902,9 +920,9 @@ func Load() (*Config, error) {
 			HealthSlowHeartbeat:     getEnvDuration("SENSOR_HEALTH_SLOW_HEARTBEAT", 2*time.Second),
 			HealthStartupGrace:      getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
 			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
-			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", "")),
-			SDKMinVersion:           sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", "")),
-			SDKLatestVersion:        sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", "")),
+			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", DefaultSensorMinVersion)),
+			SDKMinVersion:           sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", DefaultSensorSDKMinVersion)),
+			SDKLatestVersion:        sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", DefaultSensorSDKLatestVersion)),
 			Image:                   getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
 			CACertFile:              getEnv("SENSOR_CA_CERT_FILE", ""),
 		},

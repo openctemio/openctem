@@ -1,0 +1,38 @@
+# versions.yaml: the one compatibility manifest (api/docs/rfcs/RFC-037).
+#
+# Every version default in this repository is copied from here. Do not edit a
+# default anywhere else: change it here, then run
+#
+#   .github/scripts/release/sync-versions.sh          # rewrite the consumers
+#   .github/scripts/release/sync-versions.sh --check  # what CI runs
+#
+# The consumers (Go defaults, compose defaults, .env examples) are listed in
+# sync-versions.sh. The release workflow bumps platform.release after it tags;
+# the sensor and sdk-go release workflows open a PR that bumps their entries.
+#
+# Format: two levels, "key: value" with values unquoted or double-quoted. ""
+# means "not set" (no minimum, comparison off). Keep it that simple: the
+# scripts read it without a YAML library.
+
+# The newest released vX.Y.Z tag of this repository (API + web share it).
+platform:
+  release: v0.8.0
+
+# Sensor (openctemio/sensor). latest: the install snippets pin this image tag
+# and the Sensors page shows "update available" below it. min: a sensor below it
+# is degraded ("version unsupported"); "" = no minimum.
+sensor:
+  latest: v0.6.4
+  min: ""
+
+# SDK (openctemio/sdk-go) a sensor is built with. latest: older is "outdated".
+# min: older is degraded ("SDK below minimum"); "" = no minimum.
+sdk:
+  latest: v0.14.0
+  min: ""
+
+# Helm chart (openctemio/helm-charts): the newest published chart whose
+# appVersion is platform.release. Charts 0.5.0 to 0.10.0 target v0.9.0, which
+# is not tagged yet; v0.8.0 deploys with chart 0.4.1.
+chart:
+  version: 0.4.1
