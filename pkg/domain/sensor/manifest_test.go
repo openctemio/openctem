@@ -195,3 +195,17 @@ func TestManifestFromReport(t *testing.T) {
 		t.Fatal("a content timestamp changed the digest")
 	}
 }
+
+// The SDK computes the same digest for the same manifest (sdk-go
+// pkg/core TestManifestDigestMatchesPlatform pins this value); its JSON
+// encoder escapes "<", which the canonical form does not.
+func TestManifestDigestMatchesSDK(t *testing.T) {
+	raw := `{"schema":1,"capabilities":["validate"],"tools":[{"name":"nuclei","kind":"scanner","installed":true,"capabilities":["dast","<x>"]}]}`
+	got, err := ManifestDigest([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "sha256:053d2bb0ced8606d7b0278818bb6dc30e49116b36d6e6380d228de3e82fe4d51"; got != want {
+		t.Fatalf("digest = %s, want %s", got, want)
+	}
+}

@@ -2,8 +2,8 @@
 
 > Status: **Proposed** (2026-10-02). Phase 0 (defect fixes): api#714,
 > sdk-go#106 (merged), ui#589, sensor#99. Phase 1 needs no owner decision
-> (§10.1); its api part is implemented with this RFC (§8 P1 tracking), and
-> the SDK part follows. §10.2 lists the owner's decisions, which govern
+> (§10.1); its api part is implemented with this RFC and its sdk-go part in
+> a companion PR (§8.1). §10.2 lists the owner's decisions, which govern
 > Phases 2 to 4.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md) (protocol
@@ -438,8 +438,8 @@ nothing else.
 | Part | State |
 |---|---|
 | api: migration 000258 (`sensor_manifests`, `sensors.manifest_*`), `PUT /api/v2/sensor/manifest`, feature `manifest`, heartbeat `manifest_digest` + `send_manifest`, derived manifests, version-diff events with digests, `GET /api/v1/sensors/{id}/manifest[s]`, `manifest_digest/at/source` on the sensor response | implemented with this RFC (DB tests `sensor_manifest_db_test.go`, unit tests `manifest_test.go`) |
-| sdk-go: `core.Manifest`, `BuildManifest`, `client.PutManifest`, `BaseSensor` register / echo / re-send | next sdk-go PR; until then every SDK sensor gets derived manifests |
-| sensor | SDK bump only |
+| sdk-go: `core.Manifest`, `BuildManifest`, `client.PutManifest`, `BaseSensor` register / echo / re-send, conformance fake | sdk-go `feat/sensor-manifest` (the digest is pinned to the same value by a test on both sides); until it ships, every SDK sensor gets derived manifests |
+| sensor | SDK bump only. Verified end to end: a sensor built with the SDK branch registered against this API (`source = sensor`, ceiling 0, model dynamic, 4 tools); a second version followed when its content manager installed nuclei templates and the trivy DB |
 | ui | Phase 2 (manifest section) |
 
 ## 9. Alternatives considered
