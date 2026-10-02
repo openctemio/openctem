@@ -3224,11 +3224,6 @@ definitions:
         items:
           type: string
         type: array
-      max_jobs_above_reported:
-        description: |-
-          MaxJobsAboveReported is set when the administrator's limit is higher
-          than what the sensor runs (the reported value applies).
-        type: boolean
       tools_not_installed:
         description: |-
           ToolsNotInstalled are tools the administrator set that the sensor

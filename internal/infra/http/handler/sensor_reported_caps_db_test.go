@@ -80,7 +80,7 @@ func TestSensorReportedCaps_Response(t *testing.T) {
 	if got := string(after["effective"]); got != `{"tools":[],"capabilities":["sast"],"max_concurrent_jobs":2}` {
 		t.Fatalf("effective = %s", got)
 	}
-	if got := string(after["capability_mismatch"]); got != `{"tools_not_installed":["semgrep"],"max_jobs_above_reported":true}` {
+	if got := string(after["capability_mismatch"]); got != `{"tools_not_installed":["semgrep"]}` {
 		t.Fatalf("capability_mismatch = %s", got)
 	}
 	// The administrator's settings are unchanged.

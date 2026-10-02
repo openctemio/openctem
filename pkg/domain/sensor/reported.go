@@ -137,18 +137,17 @@ type CapabilityMismatch struct {
 	// CapabilitiesNotReported are capabilities the administrator set that
 	// the sensor does not report.
 	CapabilitiesNotReported []string `json:"capabilities_not_reported,omitempty"`
-	// MaxJobsAboveReported is set when the administrator's limit is higher
-	// than what the sensor runs (the reported value applies).
-	MaxJobsAboveReported bool `json:"max_jobs_above_reported,omitempty"`
 }
 
 // IsEmpty reports whether there is nothing to show.
 func (m CapabilityMismatch) IsEmpty() bool {
-	return len(m.ToolsNotInstalled) == 0 && len(m.CapabilitiesNotReported) == 0 && !m.MaxJobsAboveReported
+	return len(m.ToolsNotInstalled) == 0 && len(m.CapabilitiesNotReported) == 0
 }
 
 // CapabilityMismatch compares the administrator's settings with the report.
-// Parts the sensor did not report are not compared.
+// Parts the sensor did not report are not compared. A concurrency limit above
+// the reported cap is not a mismatch: every sensor gets the default limit,
+// and the API shows both numbers.
 func (a *Sensor) CapabilityMismatch() CapabilityMismatch {
 	var m CapabilityMismatch
 	if a.Reported.Tools != nil {
@@ -156,9 +155,6 @@ func (a *Sensor) CapabilityMismatch() CapabilityMismatch {
 	}
 	if a.Reported.Capabilities != nil {
 		m.CapabilitiesNotReported = missingFrom(a.Capabilities, a.Reported.Capabilities)
-	}
-	if a.Reported.MaxConcurrentJobs > 0 && a.MaxConcurrentJobs > a.Reported.MaxConcurrentJobs {
-		m.MaxJobsAboveReported = true
 	}
 	return m
 }

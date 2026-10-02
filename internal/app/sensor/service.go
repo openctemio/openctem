@@ -16,8 +16,8 @@ import (
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/audit"
 	sensordom "github.com/openctemio/api/pkg/domain/sensor"
-	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )

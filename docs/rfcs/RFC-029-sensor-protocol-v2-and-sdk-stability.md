@@ -216,13 +216,13 @@ stable.
 - **Never widens.** Reporting cannot add a tool or capability the
   administrator excluded, raise the concurrency above the administrator's
   limit, or bypass scan-zone pinning (`zoneClaimPredicate` does not read it).
-- **Unpinned scans go only to sensors that have the tool.** Once a sensor
-  reports its inventory, the command poll and the doorbell count offer it an
-  unpinned command that names a tool (`scanner`, or a pipeline step's
-  `preferred_tool`) only if that tool is in its effective tools
-  (`reportedToolClaimPredicate`). A sensor that never reported is offered
-  every command, as before. Zone routing and the zone claim check also use
-  the effective tools.
+- **Scans go only to sensors that have the tool.** RFC-030's tool gate
+  covers the command poll, the claim, the doorbell count and the zone
+  predicate. It reads the effective tools (`sensorDispatchTools` in
+  `command_repository.go`), so a command that names a tool (`scanner`, or a
+  pipeline step's `preferred_tool`) reaches only sensors that report that
+  tool installed and are allowed it. Zone routing uses the effective tools
+  too.
 - **Where it applies:** the selector (`FindAvailableWithCapacity`,
   `FindAvailableWithTool`, `FindByCapabilities`), `ClaimJob`, tool and
   capability availability (`GetAvailableToolsForTenant`, `HasSensorForTool`,
@@ -234,8 +234,8 @@ stable.
 - **Management API:** `GET /api/v1/sensors[/{id}]` keeps `tools`,
   `capabilities` and `max_concurrent_jobs` as the administrator's settings (the
   limits). It adds `reported` (null before the first report), `effective`, and
-  `capability_mismatch` (`tools_not_installed`, `capabilities_not_reported`,
-  `max_jobs_above_reported`; omitted when there is nothing to show). On
+  `capability_mismatch` (`tools_not_installed`, `capabilities_not_reported`;
+  omitted when there is nothing to show). On
   `PUT /api/v1/sensors/{id}`, a `tools` or `capabilities` list that is present
   replaces the limit, `[]` removes it, and an absent list leaves it as it is.
   Before this change, `[]` was ignored.

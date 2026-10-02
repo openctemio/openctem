@@ -98,7 +98,7 @@ func TestCapabilityMismatch(t *testing.T) {
 	}
 	m := a.CapabilityMismatch()
 	if !reflect.DeepEqual(m.ToolsNotInstalled, []string{"nuclei"}) ||
-		!reflect.DeepEqual(m.CapabilitiesNotReported, []string{"validate"}) || !m.MaxJobsAboveReported {
+		!reflect.DeepEqual(m.CapabilitiesNotReported, []string{"validate"}) {
 		t.Fatalf("mismatch = %+v", m)
 	}
 }
