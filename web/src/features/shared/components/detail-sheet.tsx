@@ -190,6 +190,9 @@ export function DetailStatGrid({ className, children, ...props }: React.Componen
       data-slot="detail-stat-grid"
       className={cn(
         'grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border',
+        // An odd count on phones: the last cell takes the whole row instead
+        // of leaving an empty, border-coloured cell beside it.
+        '[&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1',
         'sm:grid-cols-[repeat(var(--detail-stat-cols),minmax(0,1fr))]',
         className
       )}
