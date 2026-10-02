@@ -98,6 +98,7 @@ func TestIsIPBlocked_AllowPrivateMode(t *testing.T) {
 		"172.16.0.1",
 		"172.31.255.255",
 		"192.168.1.1",
+		"fd00:ec2::253", // ULA next to the AWS IPv6 IMDS
 	}
 	for _, ip := range rfc1918 {
 		if IsIPBlocked(net.ParseIP(ip)) {
@@ -119,6 +120,8 @@ func TestIsIPBlocked_AllowPrivateMode(t *testing.T) {
 		"::",              // IPv6 unspecified: reaches the local host, like 0.0.0.0
 		"ff02::1",         // IPv6 multicast (all nodes)
 		"ff05::2",         // IPv6 multicast (site-local routers)
+		"fd00:ec2::254",   // AWS IMDS over IPv6 (inside the ULA range fc00::/7)
+		"fd20:ce::254",    // GCP metadata server over IPv6 (inside fc00::/7)
 	}
 	for _, ip := range hardBlocked {
 		if !IsIPBlocked(net.ParseIP(ip)) {
