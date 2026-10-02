@@ -40,6 +40,37 @@ type ManifestResponse struct {
 	Changed        bool              `json:"changed"`
 	Accepted       ManifestAccepted  `json:"accepted"`
 	Ignored        []ManifestIgnored `json:"ignored"`
+	// Policy is what the platform lets the sensor run now (RFC-033 §6.12,
+	// owner decision O2); the SDK refuses commands for other tools.
+	Policy ManifestPolicy `json:"policy"`
+	// Heartbeat says how the sensor's heartbeats may look while they echo
+	// ManifestDigest (owner decision O3).
+	Heartbeat ManifestHeartbeat `json:"heartbeat"`
+}
+
+// ManifestStateResponse answers GET /manifest: the current digest and the
+// policy as it stands now (the sensor re-reads it when config_version
+// changes).
+type ManifestStateResponse struct {
+	ManifestDigest string            `json:"manifest_digest"`
+	Policy         ManifestPolicy    `json:"policy"`
+	Heartbeat      ManifestHeartbeat `json:"heartbeat"`
+}
+
+// ManifestPolicy is the sensor's effective tools, capabilities and
+// capacity: its report narrowed by the administrator's settings.
+type ManifestPolicy struct {
+	AllowedTools        []string `json:"allowed_tools"`
+	AllowedCapabilities []string `json:"allowed_capabilities"`
+	MaxJobs             int      `json:"max_jobs"`
+}
+
+// ManifestHeartbeat: OmitInventory lets the sensor leave tools,
+// capabilities and max_concurrent_jobs out of heartbeats that echo the
+// digest, sending only the content block (false: the kill switch
+// SENSOR_SLIM_HEARTBEAT=false, or a platform that wants them).
+type ManifestHeartbeat struct {
+	OmitInventory bool `json:"omit_inventory"`
 }
 
 // ManifestAccepted is what the platform kept of a manifest: tool names and

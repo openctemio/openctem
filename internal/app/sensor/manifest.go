@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	sensordom "github.com/openctemio/api/pkg/domain/sensor"
@@ -23,7 +24,21 @@ var (
 	ErrManifestUnavailable = errors.New("sensor manifest store unavailable")
 	// ErrManifestSensorInactive: the sensor was disabled or revoked.
 	ErrManifestSensorInactive = fmt.Errorf("%w: sensor is not active", shared.ErrForbidden)
+	// ErrManifestNotRegistered: the sensor has no current manifest.
+	ErrManifestNotRegistered = fmt.Errorf("%w: no manifest registered", shared.ErrNotFound)
 )
+
+// SetSlimHeartbeat turns slim heartbeats on or off (RFC-033 §6.12, owner
+// decision O3; SENSOR_SLIM_HEARTBEAT). On by default.
+func (s *SensorService) SetSlimHeartbeat(on bool) {
+	s.slimHeartbeatOff = !on
+}
+
+// SlimHeartbeat reports whether sensors may leave their inventory out of
+// heartbeats once their manifest is acknowledged.
+func (s *SensorService) SlimHeartbeat() bool {
+	return s != nil && !s.slimHeartbeatOff
+}
 
 // ManifestResult is the answer to a registered manifest.
 type ManifestResult struct {
@@ -38,6 +53,22 @@ type ManifestResult struct {
 	AcceptedCapabilities []string
 	// Ignored is what the sanitizing dropped.
 	Ignored []sensordom.ManifestIgnored
+	// Policy is what the platform lets the sensor run now (owner decision
+	// O2): the SDK refuses commands for tools outside it.
+	Policy sensordom.ManifestPolicy
+	// OmitInventory: the sensor may leave its tool inventory out of
+	// heartbeats while it echoes Digest (owner decision O3).
+	OmitInventory bool
+}
+
+// ManifestState answers GET /api/v2/sensor/manifest: the sensor's current
+// manifest digest and its policy as it stands now (the SDK re-reads it when
+// config_version changes). ErrManifestNotRegistered when it has none.
+func (s *SensorService) ManifestState(a *sensordom.Sensor) (*ManifestResult, error) {
+	if a.ManifestDigest == "" {
+		return nil, ErrManifestNotRegistered
+	}
+	return &ManifestResult{Digest: a.ManifestDigest, Policy: a.ManifestPolicy(), OmitInventory: s.SlimHeartbeat()}, nil
 }
 
 func (s *SensorService) manifestStore() (sensordom.ManifestStore, bool) {
@@ -80,11 +111,16 @@ func (s *SensorService) RegisterManifest(ctx context.Context, a *sensordom.Senso
 	if len(ignored) > sensordom.MaxManifestIgnored {
 		ignored = ignored[:sensordom.MaxManifestIgnored]
 	}
+	// The policy as it will stand with this manifest's projection.
+	projected := *a
+	projected.Reported = *report
 	res := &ManifestResult{
 		Digest:               digest,
 		AcceptedTools:        clean.AcceptedToolNames(),
 		AcceptedCapabilities: slices.Clone(report.Capabilities),
 		Ignored:              ignored,
+		Policy:               projected.ManifestPolicy(),
+		OmitInventory:        s.SlimHeartbeat(),
 	}
 
 	if digest == a.ManifestDigest {
@@ -92,6 +128,14 @@ func (s *SensorService) RegisterManifest(ctx context.Context, a *sensordom.Senso
 			s.logger.Warn("failed to confirm sensor manifest", "sensor_id", a.ID.String(), "error", err)
 		}
 		return res, nil
+	}
+
+	// The version it replaces, for the manifest_changed event.
+	var prev *sensordom.ManifestVersion
+	if a.ManifestDigest != "" && a.TenantID != nil && s.events != nil {
+		if p, err := store.CurrentManifest(ctx, a.TenantID, a.ID); err == nil {
+			prev = p
+		}
 	}
 
 	saved, err := store.SaveManifest(ctx, sensordom.ManifestVersion{
@@ -109,10 +153,30 @@ func (s *SensorService) RegisterManifest(ctx context.Context, a *sensordom.Senso
 		"tools", len(clean.Tools), "ignored", len(ignored))
 
 	if a.TenantID != nil && s.events != nil {
-		events := sensordom.DiffHeartbeat(a, sensordom.HeartbeatObservation{At: now, Report: report})
-		s.recordEvents(ctx, withManifestDigests(events, a.ManifestDigest, digest))
+		s.recordEvents(ctx, withManifestDigests(s.manifestEvents(a, prev, clean, report, now), a.ManifestDigest, digest))
 	}
 	return res, nil
+}
+
+// manifestEvents are the timeline entries of a newly registered manifest
+// (RFC-033 §6.12): one manifest_changed with the diff against the version it
+// replaces, plus the content events of the projection (content versions
+// have their own events). A first manifest is not a change.
+func (s *SensorService) manifestEvents(a *sensordom.Sensor, prev *sensordom.ManifestVersion, next sensordom.Manifest,
+	report *sensordom.CapabilityReport, now time.Time) []sensordom.Event {
+	var events []sensordom.Event
+	if prev != nil {
+		if d := sensordom.DiffManifests(prev.Manifest, next); !d.IsEmpty() {
+			events = append(events, sensordom.NewEvent(*a.TenantID, a.ID, sensordom.EventManifestChanged, now, d.Summary(),
+				map[string]any{"diff": d, "previous_source": prev.Source}))
+		}
+	}
+	for _, e := range sensordom.DiffHeartbeat(a, sensordom.HeartbeatObservation{At: now, Report: report}) {
+		if e.Type == sensordom.EventContentUpdated || e.Type == sensordom.EventContentRefreshFailed {
+			events = append(events, e)
+		}
+	}
+	return events
 }
 
 // recordDerivedManifest stores the manifest a heartbeat implies for a
@@ -184,4 +248,35 @@ func (s *SensorService) manifestSensor(ctx context.Context, tenantID, sensorID s
 		return nil, nil, err
 	}
 	return a, store, nil
+}
+
+// withSlimContent turns a slim heartbeat's content block (RFC-033 §6.12)
+// into a report: the stored tools, each with the content the heartbeat sent
+// for it (a tool it sent none for keeps its stored content). A heartbeat
+// that carries tools, or no content, or a sensor with no stored tools, is
+// returned as it is.
+func withSlimContent(a *sensordom.Sensor, in *sensordom.CapabilityReportInput, content []sensordom.ReportedContent) *sensordom.CapabilityReportInput {
+	if content == nil || a.Reported.Tools == nil || (in != nil && in.Tools != nil) {
+		return in
+	}
+	byTool := map[string][]sensordom.ReportedContent{}
+	for i, c := range content {
+		if i >= sensordom.MaxReportedTools*sensordom.MaxReportedContentPerTool {
+			break
+		}
+		c.Tool = strings.ToLower(strings.TrimSpace(c.Tool))
+		byTool[c.Tool] = append(byTool[c.Tool], c)
+	}
+	out := sensordom.CapabilityReportInput{}
+	if in != nil {
+		out = *in
+	}
+	out.Tools = make([]sensordom.ReportedTool, 0, len(a.Reported.Tools))
+	for _, t := range a.Reported.Tools {
+		if c, ok := byTool[t.Name]; ok {
+			t.Content = c
+		}
+		out.Tools = append(out.Tools, t)
+	}
+	return &out
 }

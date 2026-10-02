@@ -777,6 +777,36 @@ digest differs from the current one. Every sensor therefore gets a version
 history, and a steady heartbeat writes nothing extra. The comparison uses the
 digest in the row the heartbeat already reads.
 
+**Phase 2** (RFC-033 §6.12, owner decisions O1–O4):
+
+- **Policy echo.** The PUT answer and `GET /api/v2/sensor/manifest` carry
+  `policy {allowed_tools, allowed_capabilities, max_jobs}`, the sensor's
+  effective values, and `heartbeat {omit_inventory}`. GET answers 404
+  `manifest-not-found` before the first registration. The SDK re-reads it
+  when the heartbeat's `config_version` changes, and fails a command whose
+  tool (payload `scanner`, else `preferred_tool`) is not allowed, with
+  `tool-not-allowed`.
+- **Slim heartbeats.** While a heartbeat echoes the acknowledged digest and
+  the answer said `omit_inventory: true`, it leaves `tools`, `capabilities`
+  and `max_concurrent_jobs` out. It sends `content: [{tool, name, version,
+  …timestamps, error}]` instead, which `withSlimContent` merges into the
+  stored tools, so RFC-031 content health keeps working. A slim heartbeat
+  never clears the ceiling.
+- **Kill switch.** `SENSOR_SLIM_HEARTBEAT=false` (default `true`) makes
+  answers say `omit_inventory: false`, and a slim heartbeat gets
+  `send_manifest`, so the sensor goes back to full heartbeats.
+- **Activity.** A sensor-registered manifest that replaces another records
+  one `manifest_changed` event (`updates`). Its details carry `diff` (tools
+  added and removed, versions, installed, per-tool and sensor-wide
+  capabilities, other members) and both digests. Content versions keep
+  `content_updated`. Heartbeat-derived manifests keep the heartbeat's diff
+  events. A heartbeat that carries `manifest_digest` writes no
+  `tools_changed` or `capacity_changed`: for a registering sensor, the
+  manifest records those. No re-approval (O1).
+- **Size.** On the official sensor, a slim heartbeat is about 2.1 KB against
+  2.6 KB for a full one. The load report (resources, per-tool cost, queue)
+  makes up the rest and stays.
+
 **Reads.**
 
 - `GET /api/v1/sensors/{id}/manifest`: the current version, or 404 when there

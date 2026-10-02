@@ -37,6 +37,9 @@ const (
 	EventKeyIPChanged EventType = "key_ip_changed"
 	// EventIdentityCloned: two live instances use the same key (identity.go).
 	EventIdentityCloned EventType = "identity_cloned"
+	// EventManifestChanged: a manifest the sensor registered replaced the
+	// previous one (RFC-033 §6.12); details carry the diff and both digests.
+	EventManifestChanged EventType = "manifest_changed"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -74,7 +77,7 @@ func (t EventType) Category() ActivityCategory {
 func EventTypesIn(cats []ActivityCategory) []EventType {
 	all := []EventType{EventOnline, EventOffline, EventRestarted, EventVersionChanged, EventSDKVersionChanged,
 		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
-		EventKeyIPChanged, EventIdentityCloned}
+		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {

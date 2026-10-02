@@ -209,3 +209,57 @@ func TestManifestDigestMatchesSDK(t *testing.T) {
 		t.Fatalf("digest = %s, want %s", got, want)
 	}
 }
+
+func TestDiffManifests(t *testing.T) {
+	prev := Manifest{Schema: 1, Capabilities: []string{"validate"},
+		Concurrency: &ManifestConcurrency{Ceiling: 0, Model: "dynamic"},
+		Tools: []ManifestTool{
+			{Name: "nuclei", Version: "v3.11.1", Installed: true, Capabilities: []string{"dast"},
+				Content: []ManifestContent{{Name: "nuclei-templates", Version: "v10.4.9"}}},
+			{Name: "trivy", Version: "0.75.0", Installed: true, Capabilities: []string{"sca"}},
+		}}
+	next := Manifest{Schema: 1, Capabilities: []string{"validate"},
+		Concurrency: &ManifestConcurrency{Ceiling: 4, Model: "dynamic"},
+		Tools: []ManifestTool{
+			{Name: "nuclei", Version: "v3.12.0", Installed: true, Capabilities: []string{"dast", "validate:nuclei"},
+				Content: []ManifestContent{{Name: "nuclei-templates", Version: "v10.5.0"}}},
+			{Name: "semgrep", Version: "1.179.0", Installed: true, Capabilities: []string{"sast"}},
+		}}
+	d := DiffManifests(prev, next)
+	if !reflect.DeepEqual(d.ToolsAdded, []string{"semgrep"}) || !reflect.DeepEqual(d.ToolsRemoved, []string{"trivy"}) ||
+		len(d.Versions) != 1 || d.Versions[0].To != "v3.12.0" ||
+		len(d.Capabilities) != 1 || !reflect.DeepEqual(d.Capabilities[0].Added, []string{"validate:nuclei"}) ||
+		d.SensorWide != nil || !reflect.DeepEqual(d.Other, []string{"concurrency"}) {
+		t.Fatalf("diff = %+v", d)
+	}
+	if got := d.Summary(); got != "Manifest changed: added semgrep; removed trivy; nuclei v3.11.1 → v3.12.0; capabilities of 1 changed; concurrency changed" {
+		t.Fatalf("summary %q", got)
+	}
+	// A content version alone is not a manifest_changed (content_updated
+	// covers it).
+	same := prev
+	same.Tools = []ManifestTool{prev.Tools[0], prev.Tools[1]}
+	same.Tools[0].Content = []ManifestContent{{Name: "nuclei-templates", Version: "v10.6.0"}}
+	if d := DiffManifests(prev, same); !d.IsEmpty() {
+		t.Fatalf("content-only diff = %+v", d)
+	}
+	// A long summary fits sensor_events.summary.
+	many := Manifest{Schema: 1}
+	for i := range 64 {
+		many.Tools = append(many.Tools, ManifestTool{Name: strings.Repeat("t", 40) + string(rune('a'+i%26)) + string(rune('a'+i/26))})
+	}
+	if s := DiffManifests(Manifest{Schema: 1}, many).Summary(); len(s) > 500 {
+		t.Fatalf("summary %d bytes", len(s))
+	}
+}
+
+func TestSensorManifestPolicy(t *testing.T) {
+	a := &Sensor{Tools: []string{"nuclei"}, MaxConcurrentJobs: 5, Reported: CapabilityReport{
+		Tools:        []ReportedTool{{Name: "nuclei", Installed: true}, {Name: "semgrep", Installed: true}},
+		Capabilities: []string{"nuclei", "semgrep", "sast"}, MaxConcurrentJobs: 3,
+	}}
+	p := a.ManifestPolicy()
+	if !reflect.DeepEqual(p.AllowedTools, []string{"nuclei"}) || p.MaxJobs != 3 || len(p.AllowedCapabilities) != 3 {
+		t.Fatalf("policy %+v", p)
+	}
+}

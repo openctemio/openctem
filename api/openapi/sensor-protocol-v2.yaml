@@ -202,6 +202,22 @@ paths:
         "422": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
+    get:
+      summary: The current manifest digest and the policy as it stands now (RFC-033 §6.12)
+      operationId: sensorV2GetManifest
+      description: >-
+        Re-read when the heartbeat's config_version changes: the administrator's
+        tool, capability or capacity settings changed the policy. 404
+        manifest-not-found when the sensor registered no manifest.
+      responses:
+        "200":
+          description: The current digest, policy and heartbeat form.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManifestStateResponse" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/commands:
     get:
       summary: Commands this sensor may claim now
@@ -551,6 +567,25 @@ components:
     HeartbeatRequest:
       type: object
       properties:
+        content:
+          type: array
+          description: >-
+            Slim heartbeat (RFC-033 §6.12): with tools left out, each tool's
+            content freshness, merged into the stored tools' content.
+          items:
+            type: object
+            required: [tool, name]
+            properties:
+              tool: { type: string }
+              name: { type: string }
+              version: { type: string }
+              updated_at: { type: string, format: date-time }
+              fetched_at: { type: string, format: date-time }
+              checked_at: { type: string, format: date-time }
+              source: { type: string }
+              digest: { type: string }
+              managed: { type: boolean }
+              error: { type: string }
         manifest_digest:
           type: string
           maxLength: 71
@@ -686,10 +721,32 @@ components:
                     digest: { type: string }
                     source: { type: string }
                     managed: { type: boolean }
+    ManifestPolicy:
+      type: object
+      description: The sensor's effective tools, capabilities and capacity (its report narrowed by the administrator's settings). The SDK refuses commands whose tool (payload scanner, else preferred_tool) is not in allowed_tools (owner decision O2).
+      required: [allowed_tools, allowed_capabilities, max_jobs]
+      properties:
+        allowed_tools: { type: array, items: { type: string } }
+        allowed_capabilities: { type: array, items: { type: string } }
+        max_jobs: { type: integer }
+    ManifestHeartbeat:
+      type: object
+      required: [omit_inventory]
+      properties:
+        omit_inventory: { type: boolean, description: "While heartbeats echo the digest they may leave out tools, capabilities and max_concurrent_jobs and send the content block instead (owner decision O3). False under the kill switch SENSOR_SLIM_HEARTBEAT=false." }
+    ManifestStateResponse:
+      type: object
+      required: [manifest_digest, policy, heartbeat]
+      properties:
+        manifest_digest: { type: string }
+        policy: { $ref: "#/components/schemas/ManifestPolicy" }
+        heartbeat: { $ref: "#/components/schemas/ManifestHeartbeat" }
     ManifestResponse:
       type: object
-      required: [manifest_digest, changed, accepted, ignored]
+      required: [manifest_digest, changed, accepted, ignored, policy, heartbeat]
       properties:
+        policy: { $ref: "#/components/schemas/ManifestPolicy" }
+        heartbeat: { $ref: "#/components/schemas/ManifestHeartbeat" }
         manifest_digest: { type: string, description: '"sha256:" + hex over the canonical JSON of the manifest as received.' }
         changed: { type: boolean, description: False when it was already the current manifest. }
         accepted:
@@ -716,7 +773,7 @@ components:
         status: { type: string, enum: [ok, paused] }
         pending_jobs: { type: integer }
         next_heartbeat_seconds: { type: integer }
-        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest (RFC-033: PUT /manifest; only for a sensor that sent manifest_digest); ignore unknown values" } }
+        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest (RFC-033: PUT /manifest; only for a sensor that sent manifest_digest, or one that sent a slim heartbeat while slim heartbeats are switched off); ignore unknown values" } }
         config_version: { type: string }
     Command:
       type: object

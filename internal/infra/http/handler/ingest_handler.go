@@ -284,6 +284,10 @@ type HeartbeatRequest struct {
 	// (action send_manifest). Absent: the platform derives the manifest
 	// from this heartbeat.
 	ManifestDigest string `json:"manifest_digest,omitempty"`
+	// Content is a slim heartbeat's content freshness (RFC-033 §6.12): a
+	// sensor whose manifest is acknowledged leaves tools out and sends each
+	// tool's content here, with "tool" set. Merged into the stored tools.
+	Content []sensor.ReportedContent `json:"content,omitempty"`
 }
 
 // loadReport returns the heartbeat's load report, nil when it carried none.
