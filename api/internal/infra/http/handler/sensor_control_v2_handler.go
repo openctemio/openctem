@@ -164,9 +164,19 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &req) {
 		return
 	}
+	start := time.Now()
+	defer func() { h.ingest.observeHeartbeat(time.Since(start)) }()
 	id := sensorIdentityFromContext(r.Context())
+	// The doorbell rings first so the write stores the deadline of the
+	// interval just advised (RFC-035 §5.6); a v2 sensor always follows it.
+	var hints sensor.HeartbeatHints
+	if h.ingest.doorbell != nil {
+		hints = h.ingest.doorbell.Ring(r.Context(), app.DoorbellRequest{Identity: id, Aware: true})
+	}
 	if !id.Paused {
-		if err := h.ingest.sensorService.UpdateHeartbeat(r.Context(), s.ID, heartbeatData(r, &req, 2)); err != nil {
+		data := heartbeatData(r, &req, 2)
+		data.AdvisedSeconds, data.DoorbellAware = hints.NextHeartbeatSeconds, true
+		if err := h.ingest.sensorService.UpdateHeartbeat(r.Context(), s.ID, data); err != nil {
 			// As v1: the heartbeat answers even when the write failed.
 			h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", s.ID)
 		}
@@ -180,7 +190,6 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 		resp.Status = protov2.HeartbeatStatusPaused
 	}
 	if h.ingest.doorbell != nil {
-		hints := h.ingest.doorbell.Ring(r.Context(), app.DoorbellRequest{Identity: id, Aware: true})
 		resp.PendingJobs = hints.PendingJobs
 		resp.ConfigVersion = hints.ConfigVersion
 		resp.NextHeartbeatSeconds = hints.NextHeartbeatSeconds
@@ -344,6 +353,7 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		// v1 has no manifest: its heartbeat is always the source.
 		ManifestDigest: manifestDigestFor(req, protocol),
 		Content:        slimContentFor(req, protocol),
+		Control:        sensor.ParseControlReport(req.Control),
 	}
 }
 

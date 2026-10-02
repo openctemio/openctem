@@ -42,7 +42,8 @@ function checkTitle(check: HealthCheck, state: ReturnType<typeof sensorState>): 
       if (state === 'disabled') return 'Disabled'
       if (state === 'revoked') return 'Access revoked'
       if (state === 'never_connected') return 'Not connected yet'
-      if (state === 'stale') return 'Heartbeat late'
+      if (state === 'late') return 'Heartbeat late'
+      if (state === 'stale') return 'Heartbeat well overdue'
       return 'No heartbeat'
     case 'outbox':
       return check.status === 'critical' ? 'Results lost' : 'Results waiting to upload'
@@ -143,7 +144,7 @@ export function sensorHealthIssues(
       text: error ? shortContentError(error) : check.text,
       error: error && shortContentError(error) !== error ? error : undefined,
       since:
-        check.key === 'heartbeat' && (state === 'stale' || state === 'offline')
+        check.key === 'heartbeat' && (state === 'late' || state === 'stale' || state === 'offline')
           ? (sensor.last_seen_at ?? null)
           : check.key === 'key' && check.status === 'critical'
             ? (sensor.key_expires_at ?? null)

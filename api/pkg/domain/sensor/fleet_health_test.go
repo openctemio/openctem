@@ -58,11 +58,37 @@ func TestAssessHealth_StateLadder(t *testing.T) {
 		sensor func() *Sensor
 		want   State
 	}{
+		// No stored deadline: due = last seen + 60s, grace 12s, late after
+		// 72s, stale after 192s, offline step after 240s; unconvicted it
+		// stays stale until the 5 min heartbeat timeout.
 		{"online: heartbeat 10s ago", func() *Sensor { return daemon(ago(10 * time.Second)) }, StateOnline},
-		{"online at the window edge", func() *Sensor { return daemon(ago(90 * time.Second)) }, StateOnline},
-		{"stale: just past the online window", func() *Sensor { return daemon(ago(91 * time.Second)) }, StateStale},
-		{"stale at the offline edge", func() *Sensor { return daemon(ago(5 * time.Minute)) }, StateStale},
+		{"online at the grace edge", func() *Sensor { return daemon(ago(72 * time.Second)) }, StateOnline},
+		{"late: just past the grace", func() *Sensor { return daemon(ago(73 * time.Second)) }, StateLate},
+		{"late at the stale edge", func() *Sensor { return daemon(ago(192 * time.Second)) }, StateLate},
+		{"stale: just past the late step", func() *Sensor { return daemon(ago(193 * time.Second)) }, StateStale},
+		{"stale past the offline step while not convicted", func() *Sensor { return daemon(ago(4 * time.Minute)) }, StateStale},
+		{"stale at the heartbeat timeout while not convicted", func() *Sensor { return daemon(ago(5 * time.Minute)) }, StateStale},
 		{"offline past the heartbeat timeout", func() *Sensor { return daemon(ago(5*time.Minute + time.Second)) }, StateOffline},
+		{"offline: convicted past the offline step", func() *Sensor {
+			s := daemon(ago(241 * time.Second))
+			s.Health = SensorHealthOffline
+			return s
+		}, StateOffline},
+		{"busy sensor (5s deadline) is stale after 25s", func() *Sensor {
+			s := daemon(ago(26 * time.Second))
+			s.HeartbeatInterval, s.HeartbeatDueAt = 5*time.Second, ago(21*time.Second)
+			return s
+		}, StateStale},
+		{"loaded sensor (45s deadline) is online at 50s", func() *Sensor {
+			s := daemon(ago(50 * time.Second))
+			s.HeartbeatInterval, s.HeartbeatDueAt = 45*time.Second, ago(5*time.Second)
+			return s
+		}, StateOnline},
+		{"late sensor with problems stays late", func() *Sensor {
+			s := daemon(ago(100 * time.Second))
+			s.Outbox = &OutboxStats{DeadLetterCount: 2}
+			return s
+		}, StateLate},
 		{"offline: checker marked it, time not yet past", func() *Sensor {
 			s := daemon(ago(2 * time.Minute))
 			s.Health = SensorHealthOffline
@@ -100,7 +126,7 @@ func TestAssessHealth_StateLadder(t *testing.T) {
 			return s
 		}, StateDegraded},
 		{"stale stays stale even with problems", func() *Sensor {
-			s := daemon(ago(3 * time.Minute))
+			s := daemon(ago(200 * time.Second))
 			s.Outbox = &OutboxStats{DeadLetterCount: 2}
 			return s
 		}, StateStale},
@@ -232,6 +258,44 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 		}
 	})
 
+	t.Run("a late heartbeat is a reason", func(t *testing.T) {
+		a := daemon(ago(100*time.Second)).AssessHealth(testNow, p)
+		if a.State != StateLate || !hasCode(a.Reasons, ReasonHeartbeatLate) {
+			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
+		}
+	})
+
+	t.Run("control: a late gap and a slow loop degrade an online sensor", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Control = &ControlReport{IntervalSeconds: 30, GapSeconds: 46, LagMillis: 5001}
+		a := s.AssessHealth(testNow, p)
+		if a.State != StateDegraded || !hasCode(a.Reasons, ReasonHeartbeatLate) || !hasCode(a.Reasons, ReasonControlSlow) {
+			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
+		}
+	})
+
+	t.Run("control: on time and fast is fine", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Control = &ControlReport{IntervalSeconds: 30, GapSeconds: 45, LagMillis: 5000, BuildMillis: 5000}
+		if a := s.AssessHealth(testNow, p); a.State != StateOnline || len(a.Reasons) != 0 {
+			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
+		}
+	})
+
+	t.Run("a late sensor with a late gap lists heartbeat_late once", func(t *testing.T) {
+		s := daemon(ago(100 * time.Second))
+		s.Control = &ControlReport{IntervalSeconds: 30, GapSeconds: 90}
+		n := 0
+		for _, r := range s.AssessHealth(testNow, p).Reasons {
+			if r.Code == ReasonHeartbeatLate {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("heartbeat_late listed %d times", n)
+		}
+	})
+
 	t.Run("every reason has a severity and a message", func(t *testing.T) {
 		s := daemon(ago(5 * time.Second))
 		s.Tools, s.Version, s.Health = nil, "0.1.0", SensorHealthError
@@ -291,11 +355,11 @@ func TestHealthPolicy_Normalized(t *testing.T) {
 }
 
 func TestOnlineWindowFor(t *testing.T) {
-	// Never shorter than 90s; follows a slow idle heartbeat; never past the timeout.
-	if got := OnlineWindowFor(30*time.Second, 5*time.Minute); got != 90*time.Second {
+	// The interval plus the ladder's grace; never past the timeout.
+	if got := OnlineWindowFor(30*time.Second, 5*time.Minute); got != 40*time.Second {
 		t.Errorf("30s idle -> %s", got)
 	}
-	if got := OnlineWindowFor(60*time.Second, 5*time.Minute); got != 3*time.Minute {
+	if got := OnlineWindowFor(60*time.Second, 5*time.Minute); got != 72*time.Second {
 		t.Errorf("60s idle -> %s", got)
 	}
 	if got := OnlineWindowFor(5*time.Minute, 5*time.Minute); got != 5*time.Minute {

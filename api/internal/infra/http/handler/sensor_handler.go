@@ -126,16 +126,17 @@ type CreateSensorRequest struct {
 
 // SensorResponse represents the response for a sensor.
 type SensorResponse struct {
-	ID            string         `json:"id"`
-	TenantID      string         `json:"tenant_id"`
-	Name          string         `json:"name"`
-	Type          string         `json:"type"`
-	Description   string         `json:"description,omitempty"`
-	Capabilities  []string       `json:"capabilities"`
-	Tools         []string       `json:"tools"`
-	ExecutionMode string         `json:"execution_mode"`
-	Status        string         `json:"status"` // Admin-controlled: active, disabled, revoked
-	Health        string         `json:"health"` // Automatic: unknown, online, offline, error
+	ID            string   `json:"id"`
+	TenantID      string   `json:"tenant_id"`
+	Name          string   `json:"name"`
+	Type          string   `json:"type"`
+	Description   string   `json:"description,omitempty"`
+	Capabilities  []string `json:"capabilities"`
+	Tools         []string `json:"tools"`
+	ExecutionMode string   `json:"execution_mode"`
+	Status        string   `json:"status"` // Admin-controlled: active, disabled, revoked
+	// Health is automatic: stored by heartbeats and the heartbeat ladder.
+	Health        string         `json:"health" enums:"unknown,online,late,stale,offline,error"`
 	StatusMessage string         `json:"status_message,omitempty"`
 	APIKeyPrefix  string         `json:"api_key_prefix,omitempty"`
 	Labels        map[string]any `json:"labels,omitempty"`
@@ -160,6 +161,21 @@ type SensorResponse struct {
 	// fresh is false once it is older than 3 minutes (dispatch then ignores
 	// it).
 	Load *SensorLoadResponse `json:"load"`
+	// Control is the control-channel report of the sensor's last heartbeat
+	// that carried one (sdk-go, RFC-035 §5.5): how well its heartbeat loop
+	// keeps time. null when it never reported one.
+	Control *SensorControlResponse `json:"control"`
+	// HeartbeatIntervalSeconds is the interval the sensor follows, stored at
+	// its last heartbeat (its reported interval or the advised one); null
+	// before its first heartbeat since the deadline was introduced (60 s
+	// applies). HeartbeatDueAt is when its next heartbeat is due.
+	HeartbeatIntervalSeconds *int    `json:"heartbeat_interval_seconds"`
+	HeartbeatDueAt           *string `json:"heartbeat_due_at"`
+	// HeartbeatState is where the sensor stands on the heartbeat ladder now
+	// (RFC-035 §5.6): online until its deadline plus grace, then late (still
+	// takes work), stale (takes no new work), offline. "" when it never
+	// connected.
+	HeartbeatState string `json:"heartbeat_state" enums:",online,late,stale,offline"`
 	// Statistics
 	LastSeenAt    *string `json:"last_seen_at,omitempty"`
 	TotalFindings int64   `json:"total_findings"`
@@ -179,13 +195,14 @@ type SensorResponse struct {
 	// deprecated is true for protocol v1: the sensor needs an upgrade.
 	Protocol *SensorProtocolResponse `json:"protocol"`
 
-	// State is the computed operational state: online, degraded, stale,
-	// offline, idle (a CI sensor between runs), never_connected, disabled or
-	// revoked. Online means a heartbeat within the online window (see
-	// GET /sensors/stats online_window_seconds); stale is older than that but
-	// within the heartbeat timeout; degraded is heartbeating with at least
-	// one health reason.
-	State string `json:"state" enums:"online,degraded,stale,offline,idle,never_connected,disabled,revoked"`
+	// State is the computed operational state: online, degraded, late,
+	// stale, offline, idle (a CI sensor between runs), never_connected,
+	// disabled or revoked. Each sensor is judged against its own heartbeat
+	// deadline (heartbeat_due_at): online until the deadline plus grace,
+	// then late (still takes work), stale (takes no new work), offline once
+	// the health checker convicts it; degraded is online with at least one
+	// health reason.
+	State string `json:"state" enums:"online,degraded,late,stale,offline,idle,never_connected,disabled,revoked"`
 	// HealthReasons lists the problems found (never null): an outbox backlog
 	// or lost results, an expired or expiring key, a version below the
 	// minimum, no scan tools, an error the sensor reported.
@@ -295,6 +312,25 @@ type SensorLoadResponse struct {
 	Fresh      bool                      `json:"fresh"`
 }
 
+// SensorControlResponse is a sensor's last control-channel report. Values
+// are reported by the sensor (clamped on ingest); reported_at is the server
+// time it was stored.
+type SensorControlResponse struct {
+	// IntervalSeconds is the heartbeat interval the sensor follows.
+	IntervalSeconds float64 `json:"interval_s"`
+	// GapSeconds is the time between its last two delivered heartbeats.
+	GapSeconds float64 `json:"gap_s"`
+	// LagMillis is how late its heartbeat timer fired (CPU starvation).
+	LagMillis int64 `json:"lag_ms"`
+	// BuildMillis is how long building the heartbeat report took.
+	BuildMillis int64 `json:"build_ms"`
+	// RTTMillis is the round trip of its previous heartbeat.
+	RTTMillis int64 `json:"rtt_ms"`
+	// Failures is the number of heartbeats lost before the last one.
+	Failures   int64   `json:"failures"`
+	ReportedAt *string `json:"reported_at"`
+}
+
 // SensorReportedResponse is a sensor's last capability report. A list is
 // null when that part was never reported, [] when the sensor reported none.
 type SensorReportedResponse struct {
@@ -327,7 +363,7 @@ type SensorProtocolResponse struct {
 // stable (clients map it to their own wording and fix actions); message is a
 // plain-English fallback.
 type SensorHealthReasonResponse struct {
-	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_unsupported,no_tools,error_reported,content_stale,content_refresh_failed"`
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_unsupported,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow"`
 	Severity string `json:"severity" enums:"warning,critical"`
 	Message  string `json:"message"`
 }
@@ -534,7 +570,7 @@ type SensorStatsResponse struct {
 	// NeedsAttention counts enabled sensors with at least one health reason.
 	NeedsAttention int `json:"needs_attention"`
 	// CanTakeJobs counts sensors that can be dispatched work now: enabled,
-	// long-running (not one-shot CI) and online or degraded.
+	// long-running (not one-shot CI) and online, degraded or late.
 	CanTakeJobs int `json:"can_take_jobs"`
 	// JobsRunning is the sum of current jobs on those sensors, JobSlots the
 	// sum of their max concurrent jobs.
@@ -544,9 +580,11 @@ type SensorStatsResponse struct {
 	// (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION); "" when not configured.
 	LatestVersion string `json:"latest_version"`
 	MinVersion    string `json:"min_version"`
-	// OnlineWindowSeconds and OfflineAfterSeconds are the thresholds of the
-	// state ladder: a heartbeat at most online_window_seconds old is online,
-	// one older than offline_after_seconds is offline, stale in between.
+	// Each sensor is judged against its own heartbeat deadline
+	// (heartbeat_due_at; RFC-035 §5.6). OnlineWindowSeconds is how long a
+	// sensor on the idle interval stays online after a heartbeat (interval
+	// plus grace); OfflineAfterSeconds (WORKER_HEARTBEAT_TIMEOUT) is the
+	// backstop after which an unconvicted sensor shows offline anyway.
 	OnlineWindowSeconds int `json:"online_window_seconds"`
 	OfflineAfterSeconds int `json:"offline_after_seconds"`
 
@@ -632,7 +670,7 @@ func (h *SensorHandler) addFleetSummary(resp *SensorStatsResponse, sensors []*se
 		if enabled && len(hl.Reasons) > 0 {
 			resp.NeedsAttention++
 		}
-		if (hl.State == sensor.StateOnline || hl.State == sensor.StateDegraded) && !a.IsOneShot() {
+		if (hl.State == sensor.StateOnline || hl.State == sensor.StateDegraded || hl.State == sensor.StateLate) && !a.IsOneShot() {
 			resp.CanTakeJobs++
 			resp.JobsRunning += a.CurrentJobs
 			resp.JobSlots += a.MaxConcurrentJobs
@@ -979,6 +1017,22 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 			ReportedAt: rfc3339Ptr(a.Load.ReportedAt),
 			Fresh:      a.Load.IsFresh(now),
 		}
+	}
+
+	if c := a.Control; c != nil {
+		resp.Control = &SensorControlResponse{
+			IntervalSeconds: c.IntervalSeconds, GapSeconds: c.GapSeconds,
+			LagMillis: c.LagMillis, BuildMillis: c.BuildMillis, RTTMillis: c.RTTMillis,
+			Failures: c.Failures, ReportedAt: rfc3339Ptr(c.ReportedAt),
+		}
+	}
+	if a.HeartbeatInterval > 0 {
+		secs := int(a.HeartbeatInterval / time.Second)
+		resp.HeartbeatIntervalSeconds = &secs
+	}
+	resp.HeartbeatDueAt = rfc3339Ptr(a.HeartbeatDueAt)
+	if a.LastSeenAt != nil {
+		resp.HeartbeatState = string(sensor.Ladder(now, a.HeartbeatDeadline()).State)
 	}
 
 	if p := a.Protocol; p != nil {

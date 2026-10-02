@@ -497,6 +497,19 @@ type SensorHeartbeatData struct {
 	// the stored tools' content. nil: none.
 	Content []sensordom.ReportedContent
 
+	// Control is the control-channel report the heartbeat carried
+	// (sensordom.ParseControlReport, already clamped); nil when it carried
+	// none. Stored as the latest report; its interval_s feeds the deadline.
+	Control *sensordom.ControlReport
+
+	// AdvisedSeconds is the next_heartbeat_seconds the doorbell computed for
+	// this heartbeat (0: none), and DoorbellAware whether the sensor follows
+	// that advice (protocol v2, or v1 with the doorbell feature). Together
+	// with Control they give the interval the next deadline is computed
+	// from (sensordom.FollowedHeartbeatInterval).
+	AdvisedSeconds int
+	DoorbellAware  bool
+
 	// ManifestDigest is the manifest digest the sensor echoes (RFC-033); ""
 	// from a sensor that registers no manifest, whose manifest is then
 	// derived from this heartbeat's report.
@@ -642,6 +655,8 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		UptimeSeconds: uptime,
 		Report:        report,
 		Build:         build,
+		Interval:      sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware),
+		Control:       data.Control,
 	})
 	if err != nil {
 		return err
@@ -658,9 +673,12 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	s.renewLeases(ctx, a, data)
 
 	// Record a connect event only on an offline/unknown/error -> online
-	// transition. Tenant sensors only: platform sensors (TenantID == nil) are
-	// shared infrastructure with no owning tenant to scope the audit log to.
-	if s.auditService != nil && prevHealth != sensordom.SensorHealthOnline && a.TenantID != nil {
+	// transition. A late or stale sensor never stopped being connected: its
+	// heartbeat only came after its deadline (RFC-035 §5.6). Tenant sensors
+	// only: platform sensors (TenantID == nil) are shared infrastructure with
+	// no owning tenant to scope the audit log to.
+	reconnected := !prevHealth.IsLive()
+	if s.auditService != nil && reconnected && a.TenantID != nil {
 		ip := "an unknown address"
 		switch {
 		case clientIP != nil:
@@ -683,7 +701,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 			startedAt = &t
 		}
 		var events []sensordom.Event
-		if prevHealth != sensordom.SensorHealthOnline {
+		if reconnected {
 			if e, ok := sensordom.OnlineEvent(a, now); ok {
 				events = append(events, e)
 			}

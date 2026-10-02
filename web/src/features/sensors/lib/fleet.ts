@@ -22,7 +22,8 @@ export interface ReleaseChannel {
 }
 
 /** What a health reason is about, for the "Needs attention" caption. */
-export type AttentionKind = 'backlog' | 'key' | 'version' | 'sdk' | 'tools' | 'content' | 'error'
+export type AttentionKind =
+  'backlog' | 'key' | 'version' | 'sdk' | 'heartbeat' | 'tools' | 'content' | 'error'
 
 function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKind[] {
   const kinds: AttentionKind[] = []
@@ -35,13 +36,15 @@ function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKin
           ? 'version'
           : r.code === 'sdk_unsupported'
             ? 'sdk'
-            : r.code === 'no_tools'
-              ? 'tools'
-              : r.code.startsWith('content_')
-                ? 'content'
-                : r.code === 'error_reported'
-                  ? 'error'
-                  : null
+            : r.code === 'heartbeat_late' || r.code === 'control_slow'
+              ? 'heartbeat'
+              : r.code === 'no_tools'
+                ? 'tools'
+                : r.code.startsWith('content_')
+                  ? 'content'
+                  : r.code === 'error_reported'
+                    ? 'error'
+                    : null
     if (kind && !kinds.includes(kind)) kinds.push(kind)
   }
   // Older APIs send no reasons: derive what the page can see itself.
@@ -75,7 +78,7 @@ export interface FleetSummary {
   /** Not disabled or revoked. */
   enabled: number
   byState: Record<SensorState, number>
-  /** Long-running and online or degraded: the platform can dispatch to them. */
+  /** Long-running and online, degraded or late: the platform can dispatch to them. */
   canTakeJobs: number
   needsAttention: number
   attentionKinds: AttentionKind[]

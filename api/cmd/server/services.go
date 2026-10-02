@@ -612,7 +612,11 @@ type Services struct {
 	Command  *command.Service
 	// SensorContent is the scanner content policy and refresh (RFC-031).
 	SensorContent *sensorapp.ContentService
-	Ingest        *ingest.Service
+	// SensorPlatformHealth is the platform-health guard (RFC-035 D3): the
+	// heartbeat handlers feed it their latency, the sensor health controller
+	// holds offline convictions while it reports the platform degraded.
+	SensorPlatformHealth *sensorapp.PlatformHealth
+	Ingest               *ingest.Service
 
 	// Scanning & Pipelines
 	ScanProfile     *app.ScanProfileService
@@ -1348,6 +1352,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Sensor.SetLeaseRenewer(repos.Command)
 	s.Command = command.NewService(repos.Command, log, command.WithSensorLookup(repos.Sensor))
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
+	s.SensorPlatformHealth = sensorapp.NewPlatformHealth(sensorapp.PlatformHealthConfig{
+		SlowHeartbeat: cfg.SensorConfig.HealthSlowHeartbeat,
+		StartupGrace:  cfg.SensorConfig.HealthStartupGrace,
+	})
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)

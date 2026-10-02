@@ -61,6 +61,7 @@ import {
   DEFAULT_FLEET_THRESHOLDS,
   SENSOR_STATE_META,
   SENSOR_STATES,
+  stateTakesJobs,
   sensorState,
   type FleetThresholds,
 } from '../lib/sensor-state'
@@ -114,7 +115,7 @@ function legacyStates(status: string): SensorState[] {
     case 'all':
       return []
     case 'online':
-      return ['online', 'degraded']
+      return ['online', 'degraded', 'late']
     case 'offline':
       return ['stale', 'offline', 'never_connected']
     case 'error':
@@ -351,10 +352,7 @@ export function SensorsSection({
       renderHeader: (key: string, rows: Sensor[]) => {
         const g = byKey.get(key)
         if (!g) return null
-        const online = rows.filter((s) => {
-          const st = sensorState(s, now, thresholds)
-          return st === 'online' || st === 'degraded'
-        }).length
+        const online = rows.filter((s) => stateTakesJobs(sensorState(s, now, thresholds))).length
         const zoneGap = g.zone && online === 0
         return (
           <span className="flex flex-wrap items-center gap-x-1.5">
@@ -659,7 +657,6 @@ export function SensorsSection({
     )
   }
 
-  const onlineWindow = thresholds.onlineWindowSeconds
   const offlineAfter = thresholds.offlineAfterSeconds
   const secondsLabel = (s: number) => (s % 60 === 0 && s >= 60 ? `${s / 60} min` : `${s}s`)
 
@@ -759,9 +756,11 @@ export function SensorsSection({
               {body}
               {!fleetEmpty && !error && !isLoading && (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Online: heartbeat within {secondsLabel(onlineWindow)} · Stale:{' '}
-                  {secondsLabel(onlineWindow)} to {secondsLabel(offlineAfter)} · Offline: over{' '}
-                  {secondsLabel(offlineAfter)} · Idle (CI): a CI sensor between runs
+                  Each sensor is judged against its own heartbeat interval. Online: its next
+                  heartbeat is not yet due · Late: past due, still takes work · Stale: well past
+                  due, takes no new work · Offline: over 3 intervals (at least 90s) past due, at
+                  most {secondsLabel(offlineAfter)} without a heartbeat · Idle (CI): a CI sensor
+                  between runs
                 </p>
               )}
             </div>

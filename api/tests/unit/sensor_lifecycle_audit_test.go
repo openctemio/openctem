@@ -7,6 +7,7 @@ package unit
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
@@ -119,10 +120,9 @@ func TestSensorHealthReconcile_LogsDisconnectForNewlyOfflineSensor(t *testing.T)
 
 	tenantID := shared.NewID()
 	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
-	// The controller flow: MarkStaleSensorsOffline already flipped health to
-	// offline and returns the id; GetByID then resolves tenant + name.
-	a.Health = sensor.SensorHealthOffline
-	repo.staleOfflineIDs = []shared.ID{a.ID}
+	// Silent for ten minutes: the ladder puts it past offline; GetByID then
+	// resolves tenant + name.
+	repo.silence(a, 10*time.Minute)
 
 	ctrl := controller.NewSensorHealthController(repo, auditSvc, &controller.SensorHealthControllerConfig{
 		Logger: logger.NewNop(),
@@ -156,7 +156,6 @@ func TestSensorHealthReconcile_LogsDisconnectForNewlyOfflineSensor(t *testing.T)
 func TestSensorHealthReconcile_NoDisconnectWhenNothingWentOffline(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	repo.staleOfflineIDs = nil // steady state — no transitions this tick
 
 	ctrl := controller.NewSensorHealthController(repo, auditSvc, &controller.SensorHealthControllerConfig{
 		Logger: logger.NewNop(),
@@ -176,8 +175,7 @@ func TestSensorHealthReconcile_NoDisconnectForPlatformSensor(t *testing.T) {
 
 	a := repo.seedSensor(shared.NewID(), "platform-sensor", sensor.SensorTypeWorker)
 	a.TenantID = nil // platform sensor
-	a.Health = sensor.SensorHealthOffline
-	repo.staleOfflineIDs = []shared.ID{a.ID}
+	repo.silence(a, 10*time.Minute)
 
 	ctrl := controller.NewSensorHealthController(repo, auditSvc, &controller.SensorHealthControllerConfig{
 		Logger: logger.NewNop(),
@@ -194,8 +192,7 @@ func TestSensorHealthReconcile_NoDisconnectForPlatformSensor(t *testing.T) {
 func TestSensorHealthReconcile_NilAuditServiceIsSafe(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeWorker)
-	a.Health = sensor.SensorHealthOffline
-	repo.staleOfflineIDs = []shared.ID{a.ID}
+	repo.silence(a, 10*time.Minute)
 
 	// nil audit service — the controller must still reconcile without panicking.
 	ctrl := controller.NewSensorHealthController(repo, nil, &controller.SensorHealthControllerConfig{

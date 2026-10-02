@@ -104,7 +104,7 @@ const (
 // IsValid checks if the sensor health is valid.
 func (h SensorHealth) IsValid() bool {
 	switch h {
-	case SensorHealthUnknown, SensorHealthOnline, SensorHealthOffline, SensorHealthError:
+	case SensorHealthUnknown, SensorHealthOnline, SensorHealthLate, SensorHealthStale, SensorHealthOffline, SensorHealthError:
 		return true
 	}
 	return false
@@ -154,7 +154,7 @@ type Sensor struct {
 	Tools         []string // Specific tools: semgrep, trivy, nuclei, nmap, etc.
 	ExecutionMode ExecutionMode
 	Status        SensorStatus // Admin-controlled: active, disabled, revoked
-	Health        SensorHealth // Automatic heartbeat: unknown, online, offline, error
+	Health        SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
 	StatusMessage string
 
 	// Platform sensor flag (SaaS model)
@@ -241,6 +241,15 @@ type Sensor struct {
 	// Load is the load the sensor last reported (load.go): resources,
 	// capacity, local queue. Untrusted; it can only lower FreeSlots.
 	Load LoadReport
+
+	// HeartbeatInterval is the interval the sensor follows, stored at its
+	// last heartbeat (0 before the first since migration 000261), and
+	// HeartbeatDueAt the deadline of its next heartbeat (liveness.go).
+	HeartbeatInterval time.Duration
+	HeartbeatDueAt    *time.Time
+	// Control is the control-channel report of its last heartbeat that
+	// carried one (control.go); nil when it never did.
+	Control *ControlReport
 
 	// Statistics
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"
@@ -692,7 +701,7 @@ func (a *Sensor) CanExecutePlatformJob(capabilities []string, tool, preferredReg
 	if !a.IsPlatformSensor {
 		return false
 	}
-	if !a.IsAvailable() || a.Health != SensorHealthOnline {
+	if !a.IsAvailable() || !a.Health.IsDispatchable() {
 		return false
 	}
 	if !a.HasCapacity() {

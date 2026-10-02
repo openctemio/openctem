@@ -131,6 +131,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
 	ingestHandler.SetDoorbell(app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log))
+	// Heartbeat latency feeds the health controller's platform-health guard
+	// (RFC-035 D3): no offline conviction while heartbeats are slow.
+	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
 	// Protocol v2 results discovery on the v1 heartbeat (RFC-026 WP-A7).
 	ingestHandler.SetV2Advertised(cfg.Ingest.V2Results)
 	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
@@ -573,9 +576,10 @@ func sensorInstallImage(cfg *config.Config, log *logger.Logger) string {
 }
 
 // sensorHealthPolicy maps the heartbeat settings and the sensor release
-// channel onto the fleet-health thresholds: offline after
-// WORKER_HEARTBEAT_TIMEOUT (what the health checker uses), online within
-// three idle heartbeat intervals (at least 90s).
+// channel onto the fleet-health thresholds. Each sensor is judged against
+// its own heartbeat deadline (pkg/domain/sensor/liveness.go); the policy adds
+// the online window of the idle interval (informational) and the
+// WORKER_HEARTBEAT_TIMEOUT backstop.
 func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.HealthPolicy {
 	sc := cfg.SensorConfig
 	for name, v := range map[string]string{

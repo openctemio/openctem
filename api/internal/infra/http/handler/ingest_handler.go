@@ -77,6 +77,25 @@ type IngestHandler struct {
 	// from a sensor that announced the results-v2 feature is answered with
 	// X-OpenCTEM-Protocol: 2. Nobody else sees the header.
 	v2Advertised bool
+
+	// heartbeats observes heartbeat handling latency for the health
+	// controller's platform-health guard (RFC-035 D3). Nil: not observed.
+	heartbeats HeartbeatLatencyObserver
+}
+
+// HeartbeatLatencyObserver records how long one heartbeat took to handle.
+// Implemented by app.PlatformHealth.
+type HeartbeatLatencyObserver interface {
+	ObserveHeartbeat(d time.Duration)
+}
+
+// SetHeartbeatObserver wires the heartbeat latency observer (v1 and v2).
+func (h *IngestHandler) SetHeartbeatObserver(o HeartbeatLatencyObserver) { h.heartbeats = o }
+
+func (h *IngestHandler) observeHeartbeat(d time.Duration) {
+	if h != nil && h.heartbeats != nil {
+		h.heartbeats.ObserveHeartbeat(d)
+	}
 }
 
 // SetV2Advertised turns on the protocol v2 advertisement on the heartbeat.
@@ -294,6 +313,12 @@ type HeartbeatRequest struct {
 	// sensor whose manifest is acknowledged leaves tools out and sends each
 	// tool's content here, with "tool" set. Merged into the stored tools.
 	Content []sensor.ReportedContent `json:"content,omitempty"`
+
+	// Control is how well the sensor's heartbeat loop keeps time (sdk-go,
+	// RFC-035 §5.5): {"interval_s","gap_s","lag_ms","build_ms","rtt_ms",
+	// "failures"}. Read leniently (a member of the wrong type is ignored)
+	// and clamped; interval_s feeds the sensor's heartbeat deadline.
+	Control json.RawMessage `json:"control,omitempty" swaggertype:"object"`
 }
 
 // loadReport returns the heartbeat's load report, nil when it carried none.
@@ -835,14 +860,8 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update sensor metrics via service. A paused (disabled) sensor is only
-	// told to pause: it does not come online and its row is not written.
-	if !id.Paused {
-		if err := h.sensorService.UpdateHeartbeat(r.Context(), agt.ID, heartbeatData(r, &req, 1)); err != nil {
-			h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", agt.ID)
-			// Don't fail the request - heartbeat should be resilient
-		}
-	}
+	start := time.Now()
+	defer func() { h.observeHeartbeat(time.Since(start)) }()
 
 	resp := legacyv1.Heartbeat{
 		SensorID: agt.ID.String(),
@@ -851,12 +870,27 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Doorbell hints (RFC-023 §9.2a). Ring never fails; with nothing to say
-	// every field stays zero and the response is the plain v1 one.
+	// every field stays zero and the response is the plain v1 one. It rings
+	// before the write so the write stores the deadline of the interval
+	// just advised (RFC-035 §5.6).
+	aware := sensorHasFeature(r, legacyv1.FeatureDoorbell)
+	var hints sensor.HeartbeatHints
 	if h.doorbell != nil {
-		hints := h.doorbell.Ring(r.Context(), app.DoorbellRequest{
-			Identity: id,
-			Aware:    sensorHasFeature(r, legacyv1.FeatureDoorbell),
-		})
+		hints = h.doorbell.Ring(r.Context(), app.DoorbellRequest{Identity: id, Aware: aware})
+	}
+
+	// Update sensor metrics via service. A paused (disabled) sensor is only
+	// told to pause: it does not come online and its row is not written.
+	if !id.Paused {
+		data := heartbeatData(r, &req, 1)
+		data.AdvisedSeconds, data.DoorbellAware = hints.NextHeartbeatSeconds, aware
+		if err := h.sensorService.UpdateHeartbeat(r.Context(), agt.ID, data); err != nil {
+			h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", agt.ID)
+			// Don't fail the request - heartbeat should be resilient
+		}
+	}
+
+	if h.doorbell != nil {
 		resp.PendingJobs = hints.PendingJobs
 		resp.ConfigVersion = hints.ConfigVersion
 		resp.NextHeartbeatSeconds = hints.NextHeartbeatSeconds

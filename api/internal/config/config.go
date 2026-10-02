@@ -228,6 +228,16 @@ type SensorConfigConfig struct {
 	// SENSOR_COMMAND_LEASE, default 3m, clamped to 1m-30m.
 	CommandLease time.Duration
 
+	// Platform-health guard of the sensor health controller (RFC-035 D3):
+	// no sensor is convicted offline while the platform itself is slow.
+	// HealthSlowHeartbeat is the heartbeat handling p95 that counts as slow
+	// (SENSOR_HEALTH_SLOW_HEARTBEAT, default 2s); HealthStartupGrace is how
+	// long after the API starts no sensor is convicted
+	// (SENSOR_HEALTH_STARTUP_GRACE, default 0 = the offline distance of a
+	// sensor on the SDK's 60s default interval, 4m).
+	HealthSlowHeartbeat time.Duration
+	HealthStartupGrace  time.Duration
+
 	// LatestVersion is the newest sensor release (SENSOR_LATEST_VERSION,
 	// default DefaultSensorLatestVersion). The Sensors page compares each
 	// sensor's version with it ("update available"), and the install
@@ -888,6 +898,8 @@ func Load() (*Config, error) {
 			HeartbeatMaxInterval:    getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
 			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
 			CommandLease:            getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
+			HealthSlowHeartbeat:     getEnvDuration("SENSOR_HEALTH_SLOW_HEARTBEAT", 2*time.Second),
+			HealthStartupGrace:      getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
 			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
 			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", "")),
 			SDKMinVersion:           sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", "")),

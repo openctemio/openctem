@@ -8269,6 +8269,13 @@ definitions:
         items:
           $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedContent'
         type: array
+      control:
+        description: |-
+          Control is how well the sensor's heartbeat loop keeps time (sdk-go,
+          RFC-035 §5.5): {"interval_s","gap_s","lag_ms","build_ms","rtt_ms",
+          "failures"}. Read leniently (a member of the wrong type is ignored)
+          and clamped; interval_s feeds the sensor's heartbeat deadline.
+        type: object
       cpu_percent:
         type: number
       disk_read_mbps:
@@ -10865,6 +10872,29 @@ definitions:
       version:
         type: string
     type: object
+  internal_infra_http_handler.SensorControlResponse:
+    properties:
+      build_ms:
+        description: BuildMillis is how long building the heartbeat report took.
+        type: integer
+      failures:
+        description: Failures is the number of heartbeats lost before the last one.
+        type: integer
+      gap_s:
+        description: GapSeconds is the time between its last two delivered heartbeats.
+        type: number
+      interval_s:
+        description: IntervalSeconds is the heartbeat interval the sensor follows.
+        type: number
+      lag_ms:
+        description: LagMillis is how late its heartbeat timer fired (CPU starvation).
+        type: integer
+      reported_at:
+        type: string
+      rtt_ms:
+        description: RTTMillis is the round trip of its previous heartbeat.
+        type: integer
+    type: object
   internal_infra_http_handler.SensorDisableRequest:
     properties:
       reason:
@@ -10900,6 +10930,8 @@ definitions:
         - error_reported
         - content_stale
         - content_refresh_failed
+        - heartbeat_late
+        - control_slow
         type: string
       message:
         type: string
@@ -11032,6 +11064,13 @@ definitions:
           ContentRefreshSupported: the sensor manages content, so it accepts
           POST /sensors/{id}/content/refresh.
         type: boolean
+      control:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.SensorControlResponse'
+        description: |-
+          Control is the control-channel report of the sensor's last heartbeat
+          that carried one (sdk-go, RFC-035 §5.5): how well its heartbeat loop
+          keeps time. null when it never reported one.
       cpu_percent:
         description: System metrics
         type: number
@@ -11048,7 +11087,15 @@ definitions:
       execution_mode:
         type: string
       health:
-        description: 'Automatic: unknown, online, offline, error'
+        description: 'Health is automatic: stored by heartbeats and the heartbeat
+          ladder.'
+        enum:
+        - unknown
+        - online
+        - late
+        - stale
+        - offline
+        - error
         type: string
       health_reasons:
         description: |-
@@ -11058,6 +11105,28 @@ definitions:
         items:
           $ref: '#/definitions/internal_infra_http_handler.SensorHealthReasonResponse'
         type: array
+      heartbeat_due_at:
+        type: string
+      heartbeat_interval_seconds:
+        description: |-
+          HeartbeatIntervalSeconds is the interval the sensor follows, stored at
+          its last heartbeat (its reported interval or the advised one); null
+          before its first heartbeat since the deadline was introduced (60 s
+          applies). HeartbeatDueAt is when its next heartbeat is due.
+        type: integer
+      heartbeat_state:
+        description: |-
+          HeartbeatState is where the sensor stands on the heartbeat ladder now
+          (RFC-035 §5.6): online until its deadline plus grace, then late (still
+          takes work), stale (takes no new work), offline. "" when it never
+          connected.
+        enum:
+        - ""
+        - online
+        - late
+        - stale
+        - offline
+        type: string
       hostname:
         type: string
       id:
@@ -11199,15 +11268,17 @@ definitions:
         type: string
       state:
         description: |-
-          State is the computed operational state: online, degraded, stale,
-          offline, idle (a CI sensor between runs), never_connected, disabled or
-          revoked. Online means a heartbeat within the online window (see
-          GET /sensors/stats online_window_seconds); stale is older than that but
-          within the heartbeat timeout; degraded is heartbeating with at least
-          one health reason.
+          State is the computed operational state: online, degraded, late,
+          stale, offline, idle (a CI sensor between runs), never_connected,
+          disabled or revoked. Each sensor is judged against its own heartbeat
+          deadline (heartbeat_due_at): online until the deadline plus grace,
+          then late (still takes work), stale (takes no new work), offline once
+          the health checker convicts it; degraded is online with at least one
+          health reason.
         enum:
         - online
         - degraded
+        - late
         - stale
         - offline
         - idle
@@ -11303,7 +11374,7 @@ definitions:
       can_take_jobs:
         description: |-
           CanTakeJobs counts sensors that can be dispatched work now: enabled,
-          long-running (not one-shot CI) and online or degraded.
+          long-running (not one-shot CI) and online, degraded or late.
         type: integer
       job_slots:
         type: integer
@@ -11329,9 +11400,11 @@ definitions:
         type: integer
       online_window_seconds:
         description: |-
-          OnlineWindowSeconds and OfflineAfterSeconds are the thresholds of the
-          state ladder: a heartbeat at most online_window_seconds old is online,
-          one older than offline_after_seconds is offline, stale in between.
+          Each sensor is judged against its own heartbeat deadline
+          (heartbeat_due_at; RFC-035 §5.6). OnlineWindowSeconds is how long a
+          sensor on the idle interval stays online after a heartbeat (interval
+          plus grace); OfflineAfterSeconds (WORKER_HEARTBEAT_TIMEOUT) is the
+          backstop after which an unconvicted sensor shows offline anyway.
         type: integer
       sdk_latest_version:
         type: string

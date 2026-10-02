@@ -64,6 +64,7 @@ import { cn } from '@/lib/utils'
 
 import { SensorActivity, SensorRecentActivity } from './sensor-activity'
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
+import { SensorControlSection } from './sensor-control-section'
 import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
@@ -104,6 +105,8 @@ import {
   canTakeJobs,
   isOneShotSensor,
   sensorState,
+  stateIsHeartbeating,
+  stateTakesJobs,
   type FleetThresholds,
 } from '../lib/sensor-state'
 
@@ -404,7 +407,7 @@ function SensorStats({
 }) {
   const state = sensorState(sensor, now, thresholds)
   const oneShot = isOneShotSensor(sensor)
-  const running = state === 'online' || state === 'degraded' || state === 'stale'
+  const running = stateIsHeartbeating(state)
   const cap = sensorCapacity(sensor)
   const current = sensor.current_jobs ?? 0
   const takesJobs = canTakeJobs(sensor, now, thresholds)
@@ -428,7 +431,13 @@ function SensorStats({
           label={oneShot ? 'Last run' : 'Last heartbeat'}
           value={agoShort(sensor.last_seen_at, now)}
           title={exactTime(sensor.last_seen_at)}
-          tone={state === 'offline' ? 'destructive' : state === 'stale' ? 'warning' : 'default'}
+          tone={
+            state === 'offline'
+              ? 'destructive'
+              : state === 'late' || state === 'stale'
+                ? 'warning'
+                : 'default'
+          }
           caption={
             Number.isNaN(new Date(sensor.last_seen_at).getTime())
               ? undefined
@@ -470,7 +479,7 @@ function ToolsAndCapacity({
     ? [sensor.reported.os, sensor.reported.arch].filter(Boolean).join('/')
     : null
   const state = sensorState(sensor, now, thresholds)
-  const live = state === 'online' || state === 'degraded'
+  const live = stateTakesJobs(state)
   const load =
     live && (sensor.cpu_percent > 0 || sensor.memory_percent > 0)
       ? { cpu: Math.round(sensor.cpu_percent), mem: Math.round(sensor.memory_percent) }
@@ -1051,6 +1060,7 @@ export function SensorDetailSheet({
                 {(sensor.content?.length ?? 0) > 0 && (
                   <SensorContentSection sensor={sensor} now={now} canManage={canWrite} />
                 )}
+                {sensor.control && <SensorControlSection sensor={sensor} now={now} />}
                 <SensorRecentActivity sensorId={sensor.id} onAll={() => setTab('activity')} />
                 <ConnectionAndIdentity
                   sensor={sensor}

@@ -51,6 +51,7 @@ export function sensorStateDetail(
     case 'online':
     case 'degraded':
       return seen ? `heartbeat ${seen}` : null
+    case 'late':
     case 'stale':
     case 'offline':
       return seen ? `last heartbeat ${seen}` : null

@@ -57,6 +57,9 @@ type sensorSvcMockRepo struct {
 	hasCapability       bool
 	platformStats       *sensor.PlatformSensorStatsResult
 	staleOfflineIDs     []shared.ID // returned by MarkStaleSensorsOffline
+	// livenessNow is the database time ListLivenessCandidates reports; zero
+	// is time.Now().
+	livenessNow time.Time
 
 	// Call tracking
 	createCalls           int
@@ -354,6 +357,58 @@ func (m *sensorSvcMockRepo) MarkStaleSensorsOffline(_ context.Context, _ time.Du
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.staleOfflineIDs, nil
+}
+
+// ListLivenessCandidates implements sensor.LivenessRepository over the
+// seeded sensors.
+func (m *sensorSvcMockRepo) ListLivenessCandidates(_ context.Context) (time.Time, []sensor.LivenessCandidate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := m.livenessNow
+	if now.IsZero() {
+		now = time.Now()
+	}
+	var out []sensor.LivenessCandidate
+	for _, a := range m.sensors {
+		if a.Health.IsLive() {
+			out = append(out, sensor.LivenessCandidate{ID: a.ID, Health: a.Health, Deadline: a.HeartbeatDeadline()})
+		}
+	}
+	return now, out, nil
+}
+
+// ApplyLiveness implements sensor.LivenessRepository with the same guard as
+// the postgres one: still live, not already there, last seen unchanged.
+func (m *sensorSvcMockRepo) ApplyLiveness(_ context.Context, h sensor.SensorHealth, cands []sensor.LivenessCandidate) ([]shared.ID, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var moved []shared.ID
+	for _, c := range cands {
+		a, ok := m.sensors[c.ID.String()]
+		if !ok || !a.Health.IsLive() || a.Health == h {
+			continue
+		}
+		if (a.LastSeenAt == nil) != (c.Deadline.LastSeenAt == nil) ||
+			(a.LastSeenAt != nil && !a.LastSeenAt.Equal(*c.Deadline.LastSeenAt)) {
+			continue
+		}
+		a.Health = h
+		if h == sensor.SensorHealthOffline {
+			now := time.Now()
+			a.LastOfflineAt = &now
+		}
+		moved = append(moved, a.ID)
+	}
+	return moved, nil
+}
+
+// silence makes a seeded sensor online but last seen ago, with no stored
+// deadline (due = last seen + 60s).
+func (m *sensorSvcMockRepo) silence(a *sensor.Sensor, ago time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := time.Now().Add(-ago)
+	a.Health, a.LastSeenAt, a.HeartbeatDueAt, a.HeartbeatInterval = sensor.SensorHealthOnline, &seen, nil, 0
 }
 
 func (m *sensorSvcMockRepo) GetSensorsOfflineSince(_ context.Context, _ time.Time) ([]*sensor.Sensor, error) {

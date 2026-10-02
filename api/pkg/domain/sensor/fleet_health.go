@@ -19,10 +19,14 @@ const (
 	// health reasons): results piling up, an expiring key, an unsupported
 	// version, no scan tools, or an error the sensor reported.
 	StateDegraded State = "degraded"
-	// StateStale: the last heartbeat is older than the online window but the
-	// heartbeat timeout has not passed yet.
+	// StateLate: past its heartbeat deadline and grace (liveness.go). Still
+	// takes work; nobody is notified.
+	StateLate State = "late"
+	// StateStale: well past its deadline. Takes no new work and its pending
+	// pinned work is released; nobody is notified yet.
 	StateStale State = "stale"
-	// StateOffline: no heartbeat within the heartbeat timeout.
+	// StateOffline: past the offline step of the ladder and convicted by the
+	// health checker (or past the heartbeat timeout).
 	StateOffline State = "offline"
 	// StateIdle: a one-shot (CI) sensor between runs. It only connects while
 	// it runs, so a missing heartbeat is normal, not an outage.
@@ -38,7 +42,7 @@ const (
 // AllStates lists every state, in ladder order (for stable breakdowns).
 func AllStates() []State {
 	return []State{
-		StateOnline, StateDegraded, StateStale, StateOffline,
+		StateOnline, StateDegraded, StateLate, StateStale, StateOffline,
 		StateIdle, StateNeverConnected, StateDisabled, StateRevoked,
 	}
 }
@@ -58,6 +62,8 @@ const (
 	ReasonSDKUnsupported     HealthReasonCode = "sdk_unsupported"
 	ReasonNoTools            HealthReasonCode = "no_tools"
 	ReasonErrorReported      HealthReasonCode = "error_reported"
+	ReasonHeartbeatLate      HealthReasonCode = "heartbeat_late"
+	ReasonControlSlow        HealthReasonCode = "control_slow"
 )
 
 // Reason severities.
@@ -75,9 +81,9 @@ type HealthReason struct {
 
 // Defaults for HealthPolicy.
 const (
-	// DefaultOnlineWindow: a sensor heartbeats every 30s by default, so 90s
-	// is three missed heartbeats.
-	DefaultOnlineWindow = 90 * time.Second
+	// DefaultOnlineWindow is the online window at the default 30s idle
+	// interval: the interval plus the ladder's 10s grace.
+	DefaultOnlineWindow = 40 * time.Second
 	// DefaultOfflineAfter matches WORKER_HEARTBEAT_TIMEOUT's default.
 	DefaultOfflineAfter = 5 * time.Minute
 	// DefaultKeyExpiryWarning: warn a week before a key stops working.
@@ -89,10 +95,14 @@ const (
 
 // HealthPolicy holds the thresholds AssessHealth uses.
 type HealthPolicy struct {
-	// OnlineWindow: a heartbeat at most this old is online.
+	// OnlineWindow is how long after its last heartbeat a sensor on the idle
+	// interval stays online (interval + grace). Informational, for the stats
+	// response: each sensor is judged against its own deadline (liveness.go).
 	OnlineWindow time.Duration
-	// OfflineAfter: a heartbeat older than this is offline
-	// (WORKER_HEARTBEAT_TIMEOUT, the same timeout the health checker uses).
+	// OfflineAfter (WORKER_HEARTBEAT_TIMEOUT) is the backstop: a sensor past
+	// the ladder's offline step that the health checker has not convicted
+	// (it holds convictions while the platform is slow) shows stale until
+	// its last heartbeat is this old, then offline.
 	OfflineAfter time.Duration
 	// KeyExpiryWarning: an API key expiring within this is reported.
 	KeyExpiryWarning time.Duration
@@ -145,14 +155,12 @@ func releaseOrEmpty(v string) string {
 	return NormalizeVersion(v)
 }
 
-// OnlineWindowFor derives the online window from the idle heartbeat interval
-// the platform advises (SENSOR_HEARTBEAT_INTERVAL): three intervals, at least
-// DefaultOnlineWindow, at most the offline timeout.
+// OnlineWindowFor is how long after its last heartbeat a sensor on the idle
+// interval the platform advises (SENSOR_HEARTBEAT_INTERVAL) stays online: the
+// interval plus the ladder's grace, at most the offline timeout.
 func OnlineWindowFor(idleInterval, offlineAfter time.Duration) time.Duration {
-	w := 3 * idleInterval
-	if w < DefaultOnlineWindow {
-		w = DefaultOnlineWindow
-	}
+	idleInterval = ClampHeartbeatInterval(idleInterval)
+	w := idleInterval + LadderGrace(idleInterval)
 	if offlineAfter > 0 && w > offlineAfter {
 		w = offlineAfter
 	}
@@ -193,22 +201,34 @@ func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
 	case a.LastSeenAt == nil:
 		out.State = StateNeverConnected
 	default:
-		age := now.Sub(*a.LastSeenAt)
+		pos := Ladder(now, a.HeartbeatDeadline())
 		switch {
-		case age <= p.OnlineWindow:
+		case pos.State == SensorHealthOnline:
 			heartbeating = true
 			out.State = StateOnline
-			if len(out.Reasons) > 0 {
-				out.State = StateDegraded
-			}
 		case a.IsOneShot():
 			out.State = StateIdle
-		case age <= p.OfflineAfter && a.Health != SensorHealthOffline:
+		case a.Health == SensorHealthOffline:
+			// Convicted by the health checker and silent since (any request
+			// would have set health back to online).
+			out.State = StateOffline
+		case pos.State == SensorHealthLate:
+			heartbeating = true
+			out.State = StateLate
+		case pos.State == SensorHealthStale || a.convictionPending(now, pos, p):
 			heartbeating = true
 			out.State = StateStale
 		default:
 			out.State = StateOffline
 		}
+		if (out.State == StateLate || out.State == StateStale) && !hasReason(out.Reasons, ReasonHeartbeatLate) {
+			out.Reasons = append(out.Reasons, HealthReason{Code: ReasonHeartbeatLate, Severity: SeverityWarning,
+				Message: fmt.Sprintf("The heartbeat due at %s has not arrived (the sensor heartbeats every %s). It goes offline at %s.",
+					pos.Due.UTC().Format(time.RFC3339), humanDuration(pos.Interval), pos.OfflineAt.UTC().Format(time.RFC3339))})
+		}
+	}
+	if out.State == StateOnline && len(out.Reasons) > 0 {
+		out.State = StateDegraded
 	}
 
 	if heartbeating && a.StartedAt != nil && a.LastSeenAt != nil {
@@ -218,6 +238,26 @@ func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
 		}
 	}
 	return out
+}
+
+func hasReason(rs []HealthReason, code HealthReasonCode) bool {
+	for _, r := range rs {
+		if r.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+// convictionPending reports whether a sensor past the offline step of the
+// ladder is still shown stale: the health checker has not convicted it
+// (health is not offline), which it holds while the platform itself is slow
+// (RFC-035 D3), and the heartbeat timeout has not passed either.
+func (a *Sensor) convictionPending(now time.Time, pos LadderPosition, p HealthPolicy) bool {
+	if a.Health == SensorHealthOffline || a.LastSeenAt == nil {
+		return false
+	}
+	return now.Sub(*a.LastSeenAt) <= max(p.OfflineAfter, OfflineDistance(pos.Interval))
 }
 
 // healthReasons lists the problems that make a heartbeating sensor degraded.
@@ -289,6 +329,19 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, 
 	}
 
 	reasons = append(reasons, a.contentReasons(now, p.Content)...)
+
+	if c := a.Control; c != nil {
+		if c.GapLate() {
+			add(ReasonHeartbeatLate, SeverityWarning, fmt.Sprintf(
+				"The last heartbeat came %s after the previous one, more than %.1f times the %s interval. The sensor or its network may be overloaded.",
+				humanDuration(secondsDuration(c.GapSeconds)), HeartbeatLateGapFactor, humanDuration(secondsDuration(c.IntervalSeconds))))
+		}
+		if c.IsSlow() {
+			add(ReasonControlSlow, SeverityWarning, fmt.Sprintf(
+				"The sensor's heartbeat loop is slow (timer lag %d ms, report build %d ms). Its host is short of CPU or a tool probe is hanging.",
+				c.LagMillis, c.BuildMillis))
+		}
+	}
 
 	if a.Health == SensorHealthError {
 		msg := "The sensor reported an error."

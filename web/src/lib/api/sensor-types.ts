@@ -28,8 +28,12 @@ export function sensorRoleOf(type: SensorType): SensorRole {
 // Admin-controlled status
 export type SensorStatus = 'active' | 'disabled' | 'revoked'
 
-// Heartbeat-based health (automatic)
-export type SensorHealth = 'unknown' | 'online' | 'offline' | 'error'
+// Heartbeat-based health (automatic). late and stale are the heartbeat
+// ladder's steps between online and offline (api RFC-035 §5.6).
+export type SensorHealth = 'unknown' | 'online' | 'late' | 'stale' | 'offline' | 'error'
+
+/** Where a sensor stands on the heartbeat ladder (api RFC-035 §5.6). */
+export type SensorHeartbeatState = 'online' | 'late' | 'stale' | 'offline'
 
 export type ExecutionMode = 'standalone' | 'daemon'
 
@@ -39,7 +43,15 @@ export type ExecutionMode = 'standalone' | 'daemon'
  * Older APIs do not send it; `sensorState()` computes the same ladder then.
  */
 export type SensorState =
-  'online' | 'degraded' | 'stale' | 'offline' | 'idle' | 'never_connected' | 'disabled' | 'revoked'
+  | 'online'
+  | 'degraded'
+  | 'late'
+  | 'stale'
+  | 'offline'
+  | 'idle'
+  | 'never_connected'
+  | 'disabled'
+  | 'revoked'
 
 /** How a sensor's version compares with the platform's release channel. */
 export type SensorVersionStatus = 'latest' | 'update_available' | 'unsupported' | 'unknown'
@@ -65,6 +77,8 @@ export interface SensorHealthReason {
     | 'content_stale'
     | 'content_refresh_failed'
     | 'sdk_unsupported'
+    | 'heartbeat_late'
+    | 'control_slow'
     | (string & {})
   severity: 'warning' | 'critical'
   message: string
@@ -79,6 +93,27 @@ export interface SensorOutbox {
   evicted_count: number
   /** Server time the snapshot was stored. */
   reported_at: string
+}
+
+/**
+ * How well the sensor's heartbeat loop keeps time, as it last reported it
+ * (sdk-go, api RFC-035 §5.5). Values are reported by the sensor (clamped).
+ */
+export interface SensorControl {
+  /** The heartbeat interval the sensor follows, in seconds. */
+  interval_s: number
+  /** Seconds between its last two delivered heartbeats. */
+  gap_s: number
+  /** How late its heartbeat timer fired (CPU starvation), in ms. */
+  lag_ms: number
+  /** How long building the heartbeat report took, in ms. */
+  build_ms: number
+  /** Round trip of its previous heartbeat, in ms. */
+  rtt_ms: number
+  /** Heartbeats lost before the last one. */
+  failures: number
+  /** Server time the report was stored. */
+  reported_at: string | null
 }
 
 /**
@@ -224,7 +259,7 @@ export interface Sensor {
   tools: SensorTool[]
   execution_mode: ExecutionMode
   status: SensorStatus // Admin-controlled: active, disabled, revoked
-  health: SensorHealth // Automatic heartbeat: unknown, online, offline, error
+  health: SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
   status_message?: string
   api_key_prefix: string
   version?: string
@@ -290,6 +325,14 @@ export interface Sensor {
    * null when it never reported one, absent on APIs without it.
    */
   load?: SensorLoad | null
+  /** Last control-channel report (api RFC-035); null when never reported. */
+  control?: SensorControl | null
+  /** The interval the sensor follows, stored at its last heartbeat; null before the first. */
+  heartbeat_interval_seconds?: number | null
+  /** When its next heartbeat is due. */
+  heartbeat_due_at?: string | null
+  /** Where it stands on the heartbeat ladder now; "" when it never connected. */
+  heartbeat_state?: SensorHeartbeatState | ''
   /** Limits the report contradicts (a tool set here that is not installed). */
   capability_mismatch?: SensorCapabilityMismatch | null
   /** The SDK the sensor binary is built with ("openctem-sdk-go"); "" when unknown. */

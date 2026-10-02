@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
@@ -40,8 +41,7 @@ func TestSensorHealthReconcile_EnqueuesSensorOfflineNotification(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	tenantID := shared.NewID()
 	a := repo.seedSensor(tenantID, "edge-scanner", sensor.SensorTypeWorker)
-	a.Health = sensor.SensorHealthOffline
-	repo.staleOfflineIDs = []shared.ID{a.ID}
+	repo.silence(a, 10*time.Minute)
 
 	notifier := &recordingEnqueuer{}
 	ctrl := controller.NewSensorHealthController(repo, nil, &controller.SensorHealthControllerConfig{Logger: logger.NewNop()})
@@ -76,15 +76,13 @@ func TestSensorHealthReconcile_EnqueuesSensorOfflineNotification(t *testing.T) {
 func TestSensorHealthReconcile_NoRepeatNotificationWhileStillOffline(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	a := repo.seedSensor(shared.NewID(), "edge-scanner", sensor.SensorTypeWorker)
-	a.Health = sensor.SensorHealthOffline
-	repo.staleOfflineIDs = []shared.ID{a.ID}
+	repo.silence(a, 10*time.Minute)
 
 	notifier := &recordingEnqueuer{}
 	ctrl := controller.NewSensorHealthController(repo, nil, &controller.SensorHealthControllerConfig{Logger: logger.NewNop()})
 	ctrl.SetNotifier(notifier)
 
 	_, _ = ctrl.Reconcile(context.Background())
-	repo.staleOfflineIDs = nil // next ticks: nothing transitions
 	_, _ = ctrl.Reconcile(context.Background())
 	_, _ = ctrl.Reconcile(context.Background())
 
@@ -97,8 +95,7 @@ func TestSensorHealthReconcile_NoNotificationForPlatformSensor(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	a := repo.seedSensor(shared.NewID(), "platform", sensor.SensorTypeWorker)
 	a.TenantID = nil
-	a.Health = sensor.SensorHealthOffline
-	repo.staleOfflineIDs = []shared.ID{a.ID}
+	repo.silence(a, 10*time.Minute)
 
 	notifier := &recordingEnqueuer{}
 	ctrl := controller.NewSensorHealthController(repo, nil, &controller.SensorHealthControllerConfig{Logger: logger.NewNop()})

@@ -4,7 +4,13 @@ import type { ScanZone } from '@/lib/api/scan-zone-types'
 import { dispatchTools, hasReportedTools, toolsNotInstalled } from './capabilities'
 import { contentCheckSummary } from './content'
 import { formatDurationShort, keyExpiry } from './format'
-import { isOneShotSensor, sensorState, type FleetThresholds } from './sensor-state'
+import {
+  isOneShotSensor,
+  sensorState,
+  stateIsHeartbeating,
+  stateTakesJobs,
+  type FleetThresholds,
+} from './sensor-state'
 import {
   normalizeSensorVersion,
   sensorSdkStatus,
@@ -59,6 +65,24 @@ function age(iso: string, now: number): string {
   return `${formatDurationShort((now - t) / 1000)} ago`
 }
 
+/**
+ * "Last heartbeat 2m ago, due 1m ago (every 30s)": how late a late or stale
+ * sensor is against its own deadline (api RFC-035 §5.6).
+ */
+function heartbeatDue(
+  sensor: Pick<Sensor, 'last_seen_at' | 'heartbeat_due_at' | 'heartbeat_interval_seconds'>,
+  now: number
+): string {
+  const parts = [
+    `Last heartbeat ${sensor.last_seen_at ? age(sensor.last_seen_at, now) : 'unknown'}`,
+  ]
+  if (sensor.heartbeat_due_at) parts.push(`due ${age(sensor.heartbeat_due_at, now)}`)
+  const every = sensor.heartbeat_interval_seconds
+    ? ` (every ${formatDurationShort(sensor.heartbeat_interval_seconds)})`
+    : ''
+  return `${parts.join(', ')}${every}.`
+}
+
 export function sensorHealthChecks(sensor: Sensor, ctx: HealthCheckContext): HealthCheck[] {
   const { now, thresholds, channel } = ctx
   const state = sensorState(sensor, now, thresholds)
@@ -67,8 +91,7 @@ export function sensorHealthChecks(sensor: Sensor, ctx: HealthCheckContext): Hea
 
   // Heartbeat
   const uptime =
-    sensor.uptime_seconds != null &&
-    (state === 'online' || state === 'degraded' || state === 'stale')
+    sensor.uptime_seconds != null && stateIsHeartbeating(state)
       ? `up ${formatDurationShort(sensor.uptime_seconds)}`
       : undefined
   if (state === 'disabled' || state === 'revoked') {
@@ -104,15 +127,24 @@ export function sensorHealthChecks(sensor: Sensor, ctx: HealthCheckContext): Hea
       text: age(sensor.last_seen_at, now),
       aside: uptime,
     })
+  } else if (state === 'late' || state === 'stale') {
+    checks.push({
+      key: 'heartbeat',
+      label: 'Heartbeat',
+      status: 'warning',
+      text: `${heartbeatDue(sensor, now)}${
+        state === 'late'
+          ? ' It still takes work.'
+          : ' It takes no new work and its queued work goes to other sensors.'
+      }`,
+      aside: uptime,
+    })
   } else {
     checks.push({
       key: 'heartbeat',
       label: 'Heartbeat',
-      status: state === 'stale' ? 'warning' : 'critical',
-      text:
-        state === 'stale'
-          ? `Late: last heartbeat ${age(sensor.last_seen_at, now)}.`
-          : `No heartbeat for ${age(sensor.last_seen_at, now).replace(' ago', '')}. Check the host, its network path to the platform and the sensor's logs.`,
+      status: 'critical',
+      text: `No heartbeat for ${age(sensor.last_seen_at, now).replace(' ago', '')}. Check the host, its network path to the platform and the sensor's logs.`,
       aside: uptime,
     })
   }
@@ -301,7 +333,7 @@ export function sensorHealthChecks(sensor: Sensor, ctx: HealthCheckContext): Hea
         const members = fleet.filter((s) => z.sensor_ids.includes(s.id))
         const online = members.filter((s) => {
           const st = sensorState(s, now, thresholds)
-          return st === 'online' || st === 'degraded'
+          return stateTakesJobs(st)
         }).length
         const ranges = z.ranges.length ? ` · ${z.ranges.slice(0, 2).join(', ')}` : ''
         return `${z.name}${ranges} (${online} of ${members.length} online)`
