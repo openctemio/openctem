@@ -14,6 +14,12 @@ import { IP_NOT_ALLOWED_CODE, IP_NOT_ALLOWED_MESSAGE, notifyIpNotAllowed } from 
 // ============================================
 
 /**
+ * 403 code for a change only an approver may make (e.g. marking a finding false
+ * positive). The message names the permission the approver needs.
+ */
+export const APPROVAL_REQUIRED_CODE = 'APPROVAL_REQUIRED'
+
+/**
  * Custom API Client Error
  */
 export class ApiClientError extends Error {
@@ -216,7 +222,12 @@ export function handleApiError(
     notifyIpNotAllowed()
   } else if (showToast && apiError.code !== 'MODULE_NOT_ENABLED') {
     // Different toast types based on error
-    if (apiError.isAuthError()) {
+    if (apiError.code === APPROVAL_REQUIRED_CODE) {
+      // The server message says who can approve and what to do instead.
+      toast.error('Approval required', {
+        description: message,
+      })
+    } else if (apiError.isAuthError()) {
       toast.error('Authentication Error', {
         description: message,
       })
@@ -262,6 +273,13 @@ function getUserFriendlyMessage(
   // Check custom messages first
   if (customMessages[error.code]) {
     return customMessages[error.code]
+  }
+
+  // An approval-required refusal carries an actionable server message (which
+  // permission the approver needs, and to submit a request instead); the
+  // generic 403 text below would hide it.
+  if (error.code === APPROVAL_REQUIRED_CODE && error.message) {
+    return error.message
   }
 
   // Built-in messages by error code
