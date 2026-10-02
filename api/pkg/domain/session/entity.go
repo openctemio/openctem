@@ -27,8 +27,13 @@ type Session struct {
 	idpIssuer string // id_token iss — scopes back-channel logout per-provider
 	idpSID    string // id_token sid — IdP session id
 	idpSub    string // id_token sub — IdP subject
-	createdAt time.Time
-	updatedAt time.Time
+	// idpTenantID is the organization whose own SAML/OIDC identity provider
+	// issued this session. Zero for password sessions, social OAuth and
+	// sessions created before it was recorded. Only that organization treats
+	// the session as an SSO sign-in (see AuthMethodFor).
+	idpTenantID shared.ID
+	createdAt   time.Time
+	updatedAt   time.Time
 }
 
 // New creates a new session.
@@ -202,6 +207,47 @@ func (s *Session) AuthMethod() AuthMethod {
 func (s *Session) SetAuthMethod(m AuthMethod) {
 	s.authMethod = m
 	s.updatedAt = time.Now()
+}
+
+// SetIDPTenant records the organization whose own identity provider issued
+// this federated session. Call it only from an organization's SAML/OIDC login,
+// never from social OAuth or a password login. It is set once, before the
+// session is persisted (the repository also uses it when loading a row), so it
+// does not touch updatedAt.
+func (s *Session) SetIDPTenant(tenantID shared.ID) {
+	s.idpTenantID = tenantID
+}
+
+// IDPTenantID returns the organization whose identity provider issued this
+// session, or the zero ID when no organization did.
+func (s *Session) IDPTenantID() shared.ID { return s.idpTenantID }
+
+// FederatedFor reports whether this session is an SSO sign-in OF the given
+// organization: federated AND issued by that organization's own identity
+// provider. Only then is the session exempt from that organization's SSO
+// enforcement and 2FA requirement. A session from another organization's IdP,
+// from social OAuth, or recorded before the issuing organization was stored is
+// not (fail closed).
+func (s *Session) FederatedFor(tenantID string) bool {
+	if !s.AuthMethod().IsFederated() || s.idpTenantID.IsZero() {
+		return false
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false
+	}
+	return s.idpTenantID.Equals(tid)
+}
+
+// AuthMethodFor returns how the session counts for the given organization:
+// its real federated method when FederatedFor(tenantID), otherwise password.
+// This is the value minted into a tenant-scoped access token's auth_method
+// claim, so the per-request SSO gate makes the same decision as token mint.
+func (s *Session) AuthMethodFor(tenantID string) AuthMethod {
+	if s.FederatedFor(tenantID) {
+		return s.AuthMethod()
+	}
+	return AuthMethodPassword
 }
 
 // IDPIssuer returns the verified id_token issuer bound to this session (empty
