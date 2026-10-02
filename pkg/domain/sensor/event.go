@@ -296,17 +296,24 @@ func (d *differ) content() {
 	before := map[key]ReportedContent{}
 	for _, t := range d.prev.Reported.Tools {
 		for _, c := range t.Content {
-			before[key{t.Name, c.Name}] = c
+			before[key{t.Name, c.Name}] = normalizeContent(c)
 		}
 	}
 	var updated, failed []map[string]any
+	installed := 0
 	for _, t := range d.hb.Report.Tools {
 		for _, c := range t.Content {
 			old, ok := before[key{t.Name, c.Name}]
 			if !ok {
 				continue
 			}
-			if old.Version != "" && c.Version != "" && old.Version != c.Version {
+			c = normalizeContent(c)
+			// A first install (nothing before) is an update too: it is how a
+			// failure or a fresh container recovers on the timeline.
+			if c.Version != "" && old.Version != c.Version {
+				if old.Version == "" {
+					installed++
+				}
 				updated = append(updated, map[string]any{"tool": t.Name, "name": c.Name, "from": old.Version, "to": c.Version})
 			}
 			if c.Error != "" && c.Error != old.Error {
@@ -315,7 +322,11 @@ func (d *differ) content() {
 		}
 	}
 	if len(updated) > 0 {
-		d.add(EventContentUpdated, contentSummary("Content updated", updated), map[string]any{"items": updated})
+		prefix := "Content updated"
+		if installed == len(updated) {
+			prefix = "Content installed"
+		}
+		d.add(EventContentUpdated, contentSummary(prefix, updated), map[string]any{"items": updated})
 	}
 	if len(failed) > 0 {
 		d.add(EventContentRefreshFailed, contentSummary("Content refresh failed", failed), map[string]any{"items": failed})
