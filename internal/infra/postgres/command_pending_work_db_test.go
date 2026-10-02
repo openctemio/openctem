@@ -112,8 +112,9 @@ func TestPendingWorkForSensor_MatchesThePoll(t *testing.T) {
 	assertPollParity(ctx, t, cmds, tenant, s1, []string{"validate", "validate:nuclei"}, 4)
 	// s2: its pinned command, the zone-b pool, the unzoned pool.
 	assertPollParity(ctx, t, cmds, tenant, s2, nil, 3)
-	// A zone member without the command's tool gets only the unzoned pool.
-	assertPollParity(ctx, t, cmds, tenant, s1noTool, nil, 1)
+	// A zone member without the command's tool gets nothing: every command
+	// here asks for nuclei, zoned or not (RFC-030 B5 tool gate).
+	assertPollParity(ctx, t, cmds, tenant, s1noTool, nil, 0)
 	// A sensor in no zone: only the unzoned pool.
 	assertPollParity(ctx, t, cmds, tenant, outsider, nil, 1)
 
