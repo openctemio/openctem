@@ -321,17 +321,28 @@ func (p AuthProvider) SupportsOIDC() bool {
 // Organization (tenant) creation modes, TENANT_CREATION_MODE (RFC-022 D8).
 const (
 	// TenantCreationSelfService lets any signed-in user create an organization
-	// (SaaS / trial installs). The default.
+	// (SaaS / trial installs). An explicit opt-in.
 	TenantCreationSelfService = "self_service"
 	// TenantCreationAdminOnly reserves organization creation for the platform
-	// administrator (on-prem / enterprise installs, Tenable-style).
+	// administrator: the admin console, or bootstrap-admin -org-name at first
+	// install (on-prem / enterprise, Tenable Security Center style). The
+	// default.
 	TenantCreationAdminOnly = "admin_only"
 )
+
+// SelfServiceTenantCreation reports whether signed-in users may create
+// organizations themselves. It fails closed: only an explicit
+// TENANT_CREATION_MODE=self_service opens it.
+func (c AuthConfig) SelfServiceTenantCreation() bool {
+	return c.TenantCreationMode == TenantCreationSelfService
+}
 
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
 	// TenantCreationMode is TenantCreationSelfService or TenantCreationAdminOnly.
 	// The platform administrator can create organizations in either mode.
+	// Anything but TenantCreationSelfService (including empty) is admin-only:
+	// use SelfServiceTenantCreation to test it.
 	TenantCreationMode string
 
 	// Provider determines which authentication methods are available.
@@ -479,6 +490,25 @@ type SMTPConfig struct {
 	Enabled    bool
 	BaseURL    string // Frontend base URL for email links (e.g., https://app.openctem.io)
 	Timeout    time.Duration
+}
+
+// SMTPFromEnv reads the system SMTP settings (SMTP_*) on their own, for tools
+// such as bootstrap-admin that send email without loading (and validating) the
+// whole server configuration.
+func SMTPFromEnv() SMTPConfig {
+	return SMTPConfig{
+		Enabled:    getEnvBool("SMTP_ENABLED", false),
+		Host:       getEnv("SMTP_HOST", ""),
+		Port:       getEnvInt("SMTP_PORT", 587),
+		User:       getEnv("SMTP_USER", ""),
+		Password:   getEnv("SMTP_PASSWORD", ""),
+		From:       getEnv("SMTP_FROM", ""),
+		FromName:   getEnv("SMTP_FROM_NAME", "OpenCTEM"),
+		TLS:        getEnvBool("SMTP_TLS", true),
+		SkipVerify: getEnvBool("SMTP_SKIP_VERIFY", false),
+		BaseURL:    getEnv("SMTP_BASE_URL", "http://localhost:3000"), // Frontend URL for email links
+		Timeout:    getEnvDuration("SMTP_TIMEOUT", 30*time.Second),
+	}
 }
 
 // IsConfigured returns true if SMTP is properly configured.
@@ -858,7 +888,7 @@ func Load() (*Config, error) {
 				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
 			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
-			TenantCreationMode:  getEnv("TENANT_CREATION_MODE", TenantCreationSelfService),
+			TenantCreationMode:  getEnv("TENANT_CREATION_MODE", TenantCreationAdminOnly),
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
@@ -884,19 +914,7 @@ func Load() (*Config, error) {
 			// hard-coded default (DefaultReadEndpointRateLimitConfig).
 			ReadRequestsPerMin: getEnvInt("RATE_LIMIT_READ_PER_MIN", 120),
 		},
-		SMTP: SMTPConfig{
-			Enabled:    getEnvBool("SMTP_ENABLED", false),
-			Host:       getEnv("SMTP_HOST", ""),
-			Port:       getEnvInt("SMTP_PORT", 587),
-			User:       getEnv("SMTP_USER", ""),
-			Password:   getEnv("SMTP_PASSWORD", ""),
-			From:       getEnv("SMTP_FROM", ""),
-			FromName:   getEnv("SMTP_FROM_NAME", "OpenCTEM"),
-			TLS:        getEnvBool("SMTP_TLS", true),
-			SkipVerify: getEnvBool("SMTP_SKIP_VERIFY", false),
-			BaseURL:    getEnv("SMTP_BASE_URL", "http://localhost:3000"), // Frontend URL for email links
-			Timeout:    getEnvDuration("SMTP_TIMEOUT", 30*time.Second),
-		},
+		SMTP: SMTPFromEnv(),
 		OAuth: OAuthConfig{
 			Enabled:             getEnvBool("OAUTH_ENABLED", true),
 			FrontendCallbackURL: getEnv("OAUTH_FRONTEND_CALLBACK_URL", "http://localhost:3000/auth/callback"),
@@ -951,8 +969,8 @@ func Load() (*Config, error) {
 			JiraSecret: getEnv("JIRA_WEBHOOK_SECRET", ""),
 		},
 		Ingest: IngestConfig{
-			Mode:                getEnv("INGEST_MODE", "sync"),
-			MaxPendingPerTenant: getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
+			Mode:                  getEnv("INGEST_MODE", "sync"),
+			MaxPendingPerTenant:   getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
 			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
@@ -1209,7 +1227,7 @@ func (c *Config) validateAuth() error {
 	switch c.Auth.TenantCreationMode {
 	case "":
 		// Unset (e.g. a Config built in code): the default.
-		c.Auth.TenantCreationMode = TenantCreationSelfService
+		c.Auth.TenantCreationMode = TenantCreationAdminOnly
 	case TenantCreationSelfService, TenantCreationAdminOnly:
 	default:
 		return fmt.Errorf("invalid TENANT_CREATION_MODE: %s (must be '%s' or '%s')",

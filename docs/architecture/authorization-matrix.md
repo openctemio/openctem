@@ -492,9 +492,11 @@ log (`user.created`, `bootstrap_owner: true`, actor `platform-admin:<email>`).
 - `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.
   Enforcement is set only through `PUT /admin/tenants/{tenantId}/sso/enforcement`,
   which keeps the "usable SSO path required" guard.
-- With `TENANT_CREATION_MODE=admin_only`, both self-service creation paths
+- With `TENANT_CREATION_MODE=admin_only` (the default; anything but
+  `self_service` counts), both self-service creation paths
   (`POST /api/v1/tenants` and `POST /api/v1/auth/create-first-team`) return
-  403. Only `POST /admin/tenants` creates organizations. The mode is published
+  403. Only `POST /admin/tenants` (and `bootstrap-admin -org-*` at install)
+  creates organizations. The mode is published
   as `tenant_creation_mode` on the public `GET /api/v1/auth/providers`.
 
 ### Metrics Endpoint (`GET /metrics`)

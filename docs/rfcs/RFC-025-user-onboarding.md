@@ -54,7 +54,8 @@ So a person gets an account in exactly one of these ways:
   email-verified (the invitation was delivered to that address).
 - `GET /auth/providers` reports `registration_enabled`; the UI hides sign-up
   unless it is true or the visitor came from an invitation.
-- `TENANT_CREATION_MODE` is unchanged (RFC-022 D8): with `admin_only`, both
+- `TENANT_CREATION_MODE` is unchanged here (RFC-022 D8; its default became
+  `admin_only` in RFC-022 revision 6): with `admin_only`, both
   `POST /tenants` and `POST /auth/create-first-team` return 403. With
   registration off, self-service creation is still only reachable by people
   who already have an account.

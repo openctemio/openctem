@@ -152,15 +152,39 @@ func TestValidate_TenantCreationMode(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("empty mode must default, got %v", err)
 	}
-	if cfg.Auth.TenantCreationMode != TenantCreationSelfService {
-		t.Fatalf("empty mode defaulted to %q", cfg.Auth.TenantCreationMode)
+	if cfg.Auth.TenantCreationMode != TenantCreationAdminOnly {
+		t.Fatalf("empty mode defaulted to %q, want admin_only", cfg.Auth.TenantCreationMode)
 	}
-	cfg.Auth.TenantCreationMode = TenantCreationAdminOnly
+	cfg.Auth.TenantCreationMode = TenantCreationSelfService
 	if err := cfg.Validate(); err != nil {
-		t.Fatalf("admin_only must be valid, got %v", err)
+		t.Fatalf("self_service must be valid, got %v", err)
 	}
 	cfg.Auth.TenantCreationMode = "adminonly"
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("a typo must fail validation, not silently allow self-service")
+	}
+}
+
+// Organization creation is admin-only unless the operator opts in, and the
+// check fails closed for any value but self_service (RFC-022 D8, 2026-10).
+func TestLoad_TenantCreationModeDefaultsToAdminOnly(t *testing.T) {
+	t.Setenv("TENANT_CREATION_MODE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.TenantCreationMode != TenantCreationAdminOnly {
+		t.Fatalf("unset TENANT_CREATION_MODE loaded as %q, want admin_only", cfg.Auth.TenantCreationMode)
+	}
+	t.Setenv("TENANT_CREATION_MODE", TenantCreationSelfService)
+	if cfg, err = Load(); err != nil || !cfg.Auth.SelfServiceTenantCreation() {
+		t.Fatalf("explicit self_service must load and open self-service creation: %v", err)
+	}
+	for mode, want := range map[string]bool{
+		"": false, TenantCreationAdminOnly: false, "adminonly": false, TenantCreationSelfService: true,
+	} {
+		if got := (AuthConfig{TenantCreationMode: mode}).SelfServiceTenantCreation(); got != want {
+			t.Fatalf("mode %q: SelfServiceTenantCreation=%v, want %v", mode, got, want)
+		}
 	}
 }

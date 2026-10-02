@@ -139,7 +139,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// constructed. The handler returns 503 from the dry-run
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
-	tenantHandler.SetAdminOnlyTenantCreation(cfg.Auth.TenantCreationMode == config.TenantCreationAdminOnly)
+	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}

@@ -12,6 +12,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | New set-password link for a pending account | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | owner/admin; account unused and in this organization only |
 | Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner — see [First owner](#first-owner-platform-administrator) |
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
+| First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/{token}/accept` | owner/admin to invite; the token + matching email to accept |
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain + allowed domains |
 | Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
@@ -117,7 +118,7 @@ UPDATE tenants
 | Setting | Default | Meaning |
 |---------|---------|---------|
 | `AUTH_ALLOW_REGISTRATION` | `false` | Open self-registration. Invited people can register either way. |
-| `TENANT_CREATION_MODE` | `self_service` | `admin_only`: only the platform administrator creates organizations. |
+| `TENANT_CREATION_MODE` | `admin_only` | Only the platform administrator creates organizations (console, `bootstrap-admin -org-*`). `self_service` (opt-in, SaaS/trial): any signed-in user may, through create-first-team and `POST /tenants`. Anything else fails startup. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password?token=`). |
 | `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). |
@@ -127,6 +128,7 @@ UPDATE tenants
 | Piece | Where |
 |-------|-------|
 | Account provisioning service | `internal/app/tenant/user_provisioning.go` |
+| Organization + owner (console and `bootstrap-admin`) | `internal/app/tenant/organization_creator.go`, `internal/adminbootstrap/organization.go` |
 | Membership role derivation, exact role grant | `internal/app/accesscontrol/membership_role.go` |
 | Domain / IP policy | `pkg/domain/tenant/security_policy.go` |
 | IP allowlist middleware | `internal/infra/http/middleware/ip_allowlist.go` (wired in `routes/routes.go`, `routes/tenant.go`) |

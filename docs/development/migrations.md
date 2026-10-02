@@ -318,13 +318,19 @@ SELECT * FROM schema_migrations;
 
 ### Test User Accounts
 
-The seed files do not create users or passwords. Create a local account with
-`bootstrap-tenant`, which makes the first user and their organization:
+The seed files do not create users or passwords. Create them the way a first
+install does, with `bootstrap-admin`: a platform administrator, and the first
+organization with you as its owner:
 
 ```bash
-GOWORK=off go run ./cmd/bootstrap-tenant -db "$DATABASE_URL" \
-  -email you@example.com -password '<a local password>' -team "Dev" -slug dev
+SMTP_BASE_URL=http://localhost:3000 GOWORK=off go run ./cmd/bootstrap-admin -db "$DATABASE_URL" \
+  -email admin@example.com -no-backup \
+  -org-name "Dev" -org-slug dev -org-owner-email you@example.com
 ```
+
+Open the printed one-time `/set-password?token=...` link to choose the owner's
+password, then sign in at `/login`. The administrator signs in with the printed
+temporary password and opens the console at `/admin`.
 
 Never commit password hashes to docs or seeds, even for test accounts.
 

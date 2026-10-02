@@ -1,4 +1,4 @@
-.PHONY: all build run test lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required seed-test docker-seed-required docker-seed-test docker-seed-vnsecurity docker-seed-all db-setup db-setup-dev
+.PHONY: all build run test lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev
 
 # Variables
 APP_NAME := openctem
@@ -303,34 +303,16 @@ seed-required:
 	fi
 	PGPASSWORD=$(DB_PASSWORD) psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -f migrations/seed/seed_required.sql
 
-## docker-seed: Run the comprehensive seed script (Aliases to new standard)
-docker-seed: docker-seed-comprehensive
+## docker-seed-required: Seed database with required data only (docker)
+docker-seed-required:
+	@echo "Seeding required data..."
+	docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -f /dev/stdin < migrations/seed/seed_required.sql
+	@echo "Required seed complete"
 
-## docker-seed-comprehensive: Run the comprehensive seed script (Tenants, Users, Assets, Findings)
-docker-seed-comprehensive:
-	@echo "Running comprehensive seed..."
-	docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -f /dev/stdin < migrations/seed/seed_comprehensive.sql
-	@echo "Comprehensive seed complete"
-
-## docker-seed-access-control: Seed access control data (modules, permissions, permission sets)
-docker-seed-access-control:
-	@echo "Seeding access control data..."
-	docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -f /dev/stdin < migrations/seed/seed_access_control.sql
-	@echo "Access control seed complete"
-
-## docker-seed-recommended-teams: Seed recommended teams for a tenant (requires tenant_id)
-docker-seed-recommended-teams:
-	@if [ -z "$(tenant_id)" ]; then \
-		echo "Usage: make docker-seed-recommended-teams tenant_id=<uuid>"; \
-		echo "Example: make docker-seed-recommended-teams tenant_id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; \
-		exit 1; \
-	fi
-	@echo "Seeding recommended teams for tenant $(tenant_id)..."
-	docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -f /dev/stdin < migrations/seed/seed_recommended_teams.sql
-	docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "SELECT * FROM seed_recommended_teams('$(tenant_id)');"
-	@echo "Recommended teams seed complete"
-
-
+## docker-seed: Seed development data (required data; no users or organizations)
+## Users and organizations come from bootstrap-admin (-org-name/-org-owner-email),
+## as on a real install: see docs/development/migrations.md.
+docker-seed: docker-seed-required
 
 ## docker-psql: Open psql shell in docker
 docker-psql:

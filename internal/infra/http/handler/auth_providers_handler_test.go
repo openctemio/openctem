@@ -209,3 +209,26 @@ func TestAuthProvidersHandler_RegistrationEnabled(t *testing.T) {
 		}
 	}
 }
+
+// The UI reads tenant_creation_mode to decide whether to offer "create
+// organization". It must report what the server enforces: admin_only unless
+// self_service was set explicitly.
+func TestAuthProvidersHandler_TenantCreationMode(t *testing.T) {
+	for mode, want := range map[string]string{
+		"":                               config.TenantCreationAdminOnly,
+		config.TenantCreationAdminOnly:   config.TenantCreationAdminOnly,
+		config.TenantCreationSelfService: config.TenantCreationSelfService,
+	} {
+		h := NewAuthProvidersHandler(config.OAuthConfig{}, config.EntraSSOConfig{}, false, logger.NewNop()).
+			WithTenantCreationMode(mode)
+		rec := httptest.NewRecorder()
+		h.GetProviders(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", nil))
+		var body AuthProvidersResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.TenantCreationMode != want {
+			t.Fatalf("mode %q reported as %q, want %q", mode, body.TenantCreationMode, want)
+		}
+	}
+}

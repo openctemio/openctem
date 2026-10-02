@@ -17,7 +17,7 @@ import (
 // preset was ignored. It is refused before anything is created (the zero
 // handler has no service: reaching it would panic).
 func TestTenantCreate_UnknownPresetRefused(t *testing.T) {
-	h := &TenantHandler{validator: validator.New(), logger: logger.NewNop()}
+	h := &TenantHandler{validator: validator.New(), logger: logger.NewNop(), selfServiceCreation: true}
 	u, err := userdom.NewProvisionedLocalUser("o@acme.test", "Owner")
 	if err != nil {
 		t.Fatal(err)

@@ -388,8 +388,8 @@ jobs:
       - name: Apply migrations
         run: migrate -path migrations -database "$DATABASE_URL" up
 
-      - name: Build API and bootstrap-tenant
-        run: go build -o bin/ ./cmd/server ./cmd/bootstrap-tenant
+      - name: Build API and bootstrap-admin
+        run: go build -o bin/ ./cmd/server ./cmd/bootstrap-admin
 
       - name: Start API
         run: |
@@ -404,7 +404,7 @@ jobs:
         run: bash scripts/compat-v1.sh
         env:
           COMPAT_API_URL: http://127.0.0.1:8080
-          BOOTSTRAP_TENANT_BIN: ./bin/bootstrap-tenant
+          BOOTSTRAP_ADMIN_BIN: ./bin/bootstrap-admin
 
       - name: API log on failure
         if: failure()

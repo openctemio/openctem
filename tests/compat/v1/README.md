@@ -14,8 +14,9 @@ any step a deployed sensor performs stops working:
 | suppression rules | `client.GetSuppressions` |
 | key renewal | `platform.PlatformClient.RenewKey`, then a heartbeat with the new key |
 
-`scripts/compat-v1.sh` provisions a tenant, a sensor key and a queued command
-through the management API, runs this module, then checks the platform recorded
+`scripts/compat-v1.sh` provisions an organization (with `bootstrap-admin
+-org-*`, as at first install), a sensor key and a queued command through the
+management API, runs this module, then checks the platform recorded
 the command as completed and the sensor as online. CI runs it in the
 *Protocol v1 Compatibility* job.
 
@@ -24,7 +25,7 @@ Run locally against a migrated database and a running API:
 ```bash
 COMPAT_API_URL=http://127.0.0.1:8080 \
 DATABASE_URL=postgres://openctem:secret@127.0.0.1:5432/openctem?sslmode=disable \
-BOOTSTRAP_TENANT_BIN=./bin/bootstrap-tenant \
+BOOTSTRAP_ADMIN_BIN=./bin/bootstrap-admin \
 scripts/compat-v1.sh
 ```
 

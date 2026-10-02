@@ -11,6 +11,9 @@
 > **Revision 5** (2026-10-02): the platform administrator only bootstraps an
 > organization's first owner (see
 > [Revision 5](#revision-5-first-owner-bootstrap-only)).
+> **Revision 6** (2026-10-02): organizations are created by the platform
+> administrator by default, and the installer creates the first one (see
+> [Revision 6](#revision-6-admin-only-organization-creation-and-the-first-organization)).
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*, modeled on Tenable Security Center,
 > where the system administrator is an account with a system-level role and a
@@ -45,7 +48,7 @@
 | D5 | **Same Next.js app, separate shell** (own route group, layout, login, sidebar; shared `SidebarBrand`). | Tenable does the same: one application, a different menu per account type. Can be split into its own deployable later because the route group is independent. `/admin` + `/api/v1/admin` can be IP-restricted at the ingress. |
 | D6 | **SCIM stays a tenant-admin feature** (api#546). | The tenant's own IT connects their IdP. |
 | D7 | **Bundles become licensing only through a separate entitlement layer.** | Today a tenant admin's per-module "on" override beats the bundle baseline, and the module gate is fail-open, so locking bundle *subscription* alone would lock nothing. Entitlement (platform-set ceiling, fail-closed) ⊇ subscription (tenant) ⊇ toggles. OSS default: entitled to everything. |
-| D8 | **Organization creation is a per-installation setting**, `TENANT_CREATION_MODE=self_service\|admin_only` (default `self_service`). | SaaS/trials need self-service; on-prem/enterprise wants admin-only (Tenable). The platform admin can always create organizations. |
+| D8 | **Organization creation is a per-installation setting**, `TENANT_CREATION_MODE=self_service\|admin_only` (default `admin_only` since rev. 6; was `self_service`). | SaaS/trials need self-service; on-prem/enterprise wants admin-only (Tenable). The platform admin can always create organizations. |
 
 ## Design — Phase 1: console authentication (api, as revised)
 
@@ -309,6 +312,47 @@ Owner decision, implemented here:
 Not changed: a lost or departed owner still has no recovery path short of SQL
 (no ownership transfer, no "assign owner" for an organization whose owner
 exists). That is a separate decision.
+
+## Revision 6: admin-only organization creation and the first organization
+
+Owner decision 2026-10-02 ("admin-only + setup creates the first org", the
+Tenable Security Center model).
+
+- **Default `TENANT_CREATION_MODE=admin_only`.** Organizations are created by
+  the platform administrator: the console (`POST /admin/tenants`) or
+  `bootstrap-admin -org-*` at install. `self_service` (create-first-team and
+  `POST /tenants` for any signed-in user) is an explicit opt-in for SaaS and
+  trial installs. The check fails closed: anything but `self_service`,
+  including an unset mode in a configuration built in code, is admin-only.
+  Existing organizations are unaffected.
+- **The installer creates the first organization.** A platform administrator
+  belongs to no organization (revision 2), so a fresh install had no one who
+  could use the product until an administrator created an organization in the
+  console. `bootstrap-admin` takes `-org-name`, `-org-slug` (derived when
+  empty), `-org-owner-email` and `-org-owner-name` and creates it through
+  `tenantapp.OrganizationCreator`, the service the console's create path uses:
+  organization, owner membership and owner role in one transaction;
+  `tenant.created` and (for a new owner account) `user.created` audited in the
+  new organization with actor `bootstrap-admin`; a one-time set-password link
+  for a new owner under the revision 5 first-owner rule: emailed when the
+  organization can send email (never printed then; a failed send is reported
+  and the owner uses forgot-password), otherwise printed once by the command.
+  An existing slug is reported and left alone, so re-running is safe; the
+  System tenant's slug is refused; an administrator's email cannot own it.
+- **`bootstrap-tenant` is removed.** It wrote users, tenants, memberships and
+  roles with raw SQL, audited nothing, ignored the creation mode and took the
+  owner's password on the command line. The Helm chart's `api.bootstrapTenant`
+  Job is removed with it (the chart refuses to render if it is still enabled).
+- **Self-service paths are audited.** `create-first-team` now writes the
+  organization and owner atomically (`CreateWithOwner`, like the other paths)
+  and audits `tenant.created`; `POST /tenants` already did. The UI no longer
+  pre-fills "<Name>'s Team", which produced personal organizations.
+
+First install: migrations → `bootstrap-admin -email … -backup-email …
+-org-name … -org-owner-email …` → the administrator signs in on `/login`,
+changes the temporary password and enrolls TOTP in `/admin` → the owner sets a
+password through the link → the owner adds users; the administrator configures
+the organization's SSO in the console.
 
 ## Later phases
 

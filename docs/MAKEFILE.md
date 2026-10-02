@@ -93,8 +93,8 @@ make dev
 | Command | Description |
 |---------|-------------|
 | `make seed-required` | Seed required data (local) |
-| `make docker-seed-comprehensive` | Seed comprehensive data |
-| `make docker-seed-access-control` | Seed access control data |
+| `make docker-seed-required` | Seed required data (docker) |
+| `make docker-seed` | Development seed (required data; users and organizations come from `bootstrap-admin`) |
 
 ## Security & Pre-commit
 

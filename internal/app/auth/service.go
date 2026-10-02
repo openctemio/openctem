@@ -1583,6 +1583,9 @@ type CreateFirstTeamInput struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 	TeamName     string `json:"team_name" validate:"required,min=2,max=100"`
 	TeamSlug     string `json:"team_slug" validate:"required,min=3,max=50"`
+	// IPAddress and UserAgent are recorded in the tenant.created audit event.
+	IPAddress string `json:"-"`
+	UserAgent string `json:"-"`
 }
 
 // CreateFirstTeamResult represents the result of creating first team.
@@ -1596,7 +1599,7 @@ type CreateFirstTeamResult struct {
 // CreateFirstTeam creates the first team for a user who has no tenants.
 // This endpoint uses refresh_token for authentication since user has no access_token yet.
 func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeamInput) (*CreateFirstTeamResult, error) {
-	if s.config.TenantCreationMode == config.TenantCreationAdminOnly {
+	if !s.config.SelfServiceTenantCreation() {
 		return nil, ErrTenantCreationDisabled
 	}
 
@@ -1669,20 +1672,14 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
 
-	if err := s.tenantRepo.Create(ctx, newTenant); err != nil {
-		return nil, fmt.Errorf("failed to save tenant: %w", err)
-	}
-
-	// Create owner membership
+	// Tenant, owner membership and owner role in one transaction, the same
+	// write the other organization-creation paths use.
 	membership, err := tenantdom.NewOwnerMembership(u.ID(), newTenant.ID())
 	if err != nil {
-		_ = s.tenantRepo.Delete(ctx, newTenant.ID())
 		return nil, fmt.Errorf("failed to create membership: %w", err)
 	}
-
-	if err := s.tenantRepo.CreateMembership(ctx, membership); err != nil {
-		_ = s.tenantRepo.Delete(ctx, newTenant.ID())
-		return nil, fmt.Errorf("failed to save membership: %w", err)
+	if err := s.tenantRepo.CreateWithOwner(ctx, newTenant, membership); err != nil {
+		return nil, fmt.Errorf("failed to create team: %w", err)
 	}
 
 	s.logger.Info("first team created",
@@ -1690,6 +1687,16 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		"tenant_id", newTenant.ID().String(),
 		"tenant_name", newTenant.Name(),
 	)
+	s.audit(ctx, auditapp.AuditContext{
+		TenantID:   newTenant.ID().String(),
+		ActorID:    u.ID().String(),
+		ActorEmail: u.Email(),
+		ActorIP:    input.IPAddress,
+		UserAgent:  input.UserAgent,
+	}, auditapp.NewSuccessEvent(auditdom.ActionTenantCreated, auditdom.ResourceTypeTenant, newTenant.ID().String()).
+		WithResourceName(newTenant.Name()).
+		WithMessage(fmt.Sprintf("Team '%s' created", newTenant.Name())).
+		WithMetadata("via", "create_first_team"))
 
 	// Mark old refresh token as used (token rotation)
 	if err := storedToken.MarkUsed(); err != nil {

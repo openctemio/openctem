@@ -641,6 +641,8 @@ func (h *LocalAuthHandler) CreateFirstTeam(w http.ResponseWriter, r *http.Reques
 		RefreshToken: refreshToken,
 		TeamName:     req.TeamName,
 		TeamSlug:     req.TeamSlug,
+		IPAddress:    getClientIP(r),
+		UserAgent:    r.UserAgent(),
 	})
 	if err != nil {
 		h.handleAuthError(w, err)
