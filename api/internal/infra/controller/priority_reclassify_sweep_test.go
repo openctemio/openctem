@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // errOnTenantQueue enqueues normally except for one tenant, for which it

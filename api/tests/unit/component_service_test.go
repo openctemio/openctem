@@ -5,12 +5,12 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/component"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/internal/app"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/component"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // =============================================================================

@@ -10,8 +10,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // There are three definitions of "valid finding source" — the Go consts, the

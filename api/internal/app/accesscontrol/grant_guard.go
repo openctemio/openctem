@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	roledom "github.com/openctemio/api/pkg/domain/role"
-	"github.com/openctemio/api/pkg/domain/shared"
+	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Role-grant ceiling.

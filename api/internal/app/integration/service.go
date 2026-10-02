@@ -10,17 +10,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/internal/app/scancoverage"
-	"github.com/openctemio/api/internal/infra/notifier"
-	"github.com/openctemio/api/internal/infra/scm"
-	"github.com/openctemio/api/pkg/crypto"
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	branchdom "github.com/openctemio/api/pkg/domain/branch"
-	integrationdom "github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/outbox"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/httpsec"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/scancoverage"
+	"github.com/openctemio/openctem/api/internal/infra/notifier"
+	"github.com/openctemio/openctem/api/internal/infra/scm"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	branchdom "github.com/openctemio/openctem/api/pkg/domain/branch"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // validateNotificationWebhookURL rejects an SSRF-unsafe webhook URL for

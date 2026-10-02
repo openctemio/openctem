@@ -3,8 +3,9 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // A network/host vulnerability — a CVE observed on a host by a scanner such as

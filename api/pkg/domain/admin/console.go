@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Console authentication (RFC-022): an administrator signs in on the normal

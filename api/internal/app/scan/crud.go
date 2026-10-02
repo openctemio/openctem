@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/scan"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // =============================================================================

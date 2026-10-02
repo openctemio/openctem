@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/suppression"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // MockSuppressionRepository implements suppression.Repository for handler tests.

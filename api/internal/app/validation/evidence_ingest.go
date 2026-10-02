@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // EvidenceIngestService records validation evidence submitted out-of-band — an

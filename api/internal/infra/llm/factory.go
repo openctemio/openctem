@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // Factory creates LLM providers based on configuration.

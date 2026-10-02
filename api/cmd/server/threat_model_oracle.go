@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // defaultThreatScoreThreshold is the minimum threat_model_threats.score for a

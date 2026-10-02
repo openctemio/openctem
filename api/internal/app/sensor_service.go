@@ -3,7 +3,7 @@ package app
 // Compatibility shim — real impl lives in internal/app/sensor/.
 // See internal/app/audit_service.go for the pattern rationale.
 
-import "github.com/openctemio/api/internal/app/sensor"
+import "github.com/openctemio/openctem/api/internal/app/sensor"
 
 type (
 	SensorService                     = sensor.SensorService

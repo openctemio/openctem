@@ -12,11 +12,12 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/domain/ioc"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/ioc"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // mockIOCRepo is a concurrency-safe in-memory implementation of

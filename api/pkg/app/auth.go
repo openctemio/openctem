@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
 )
 
 // LoginInput represents the input for user login.

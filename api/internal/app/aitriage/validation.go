@@ -9,10 +9,11 @@ import (
 	"strings"
 	"unicode"
 
-	aitriagedom "github.com/openctemio/api/pkg/domain/aitriage"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
+
+	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
 )
 
 // =============================================================================

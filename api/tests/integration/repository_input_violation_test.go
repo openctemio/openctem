@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/pentest"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/simulation"
-	"github.com/openctemio/api/pkg/domain/threatactor"
-	"github.com/openctemio/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/pentest"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/simulation"
+	"github.com/openctemio/openctem/api/pkg/domain/threatactor"
+	"github.com/openctemio/openctem/api/pkg/domain/tool"
 )
 
 // A value the database rejects because the CALLER sent it — longer than its

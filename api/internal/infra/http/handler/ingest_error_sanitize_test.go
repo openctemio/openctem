@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/app/ingest"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // A sensor controls the payload, and parser errors quote it. The client

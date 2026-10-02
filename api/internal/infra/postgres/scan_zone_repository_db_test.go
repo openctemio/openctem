@@ -10,10 +10,10 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/pkg/domain/command"
-	"github.com/openctemio/api/pkg/domain/scan"
-	"github.com/openctemio/api/pkg/domain/scanzone"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Scan zones (RFC-023 Phase 1) against a real schema: tenant isolation in SQL,

@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func metricsStub() http.Handler {

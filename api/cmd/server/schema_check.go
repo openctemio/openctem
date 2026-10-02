@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // migrationUpFileRe matches a golang-migrate up file: NNNN_name.up.sql.

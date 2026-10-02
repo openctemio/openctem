@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Session represents an authentication session.

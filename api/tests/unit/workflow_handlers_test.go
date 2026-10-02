@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/workflow"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/workflow"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // =============================================================================

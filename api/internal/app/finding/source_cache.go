@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/internal/infra/redis"
-	"github.com/openctemio/api/pkg/domain/findingsource"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/pkg/domain/findingsource"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // FindingSourceCacheService provides cached access to finding sources.

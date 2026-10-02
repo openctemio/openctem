@@ -6,11 +6,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ============================================================================
@@ -36,11 +36,11 @@ func newScannerTemplateMockRepository() *scannerTemplateMockRepository {
 	return &scannerTemplateMockRepository{
 		templates: make(map[string]*scannertemplate.ScannerTemplate),
 		usage: &scannertemplate.TemplateUsage{
-			TotalTemplates:    0,
-			NucleiTemplates:   0,
-			SemgrepTemplates:  0,
+			TotalTemplates:       0,
+			NucleiTemplates:      0,
+			SemgrepTemplates:     0,
 			BetterleaksTemplates: 0,
-			TotalStorageBytes: 0,
+			TotalStorageBytes:    0,
 		},
 	}
 }
@@ -488,11 +488,11 @@ func TestScannerTemplateService_CreateTemplate_QuotaTotalTemplatesExceeded(t *te
 
 	// Set usage to be at the limit
 	repo.usage = &scannertemplate.TemplateUsage{
-		TotalTemplates:    100,
-		NucleiTemplates:   10,
-		SemgrepTemplates:  0,
+		TotalTemplates:       100,
+		NucleiTemplates:      10,
+		SemgrepTemplates:     0,
 		BetterleaksTemplates: 0,
-		TotalStorageBytes: 0,
+		TotalStorageBytes:    0,
 	}
 
 	tenantID := shared.NewID()
@@ -518,11 +518,11 @@ func TestScannerTemplateService_CreateTemplate_QuotaPerTypeExceeded(t *testing.T
 	svc := newTestScannerTemplateService(repo)
 
 	repo.usage = &scannertemplate.TemplateUsage{
-		TotalTemplates:    10,
-		NucleiTemplates:   50, // At per-type limit
-		SemgrepTemplates:  0,
+		TotalTemplates:       10,
+		NucleiTemplates:      50, // At per-type limit
+		SemgrepTemplates:     0,
 		BetterleaksTemplates: 0,
-		TotalStorageBytes: 0,
+		TotalStorageBytes:    0,
 	}
 
 	tenantID := shared.NewID()
@@ -548,11 +548,11 @@ func TestScannerTemplateService_CreateTemplate_QuotaStorageExceeded(t *testing.T
 	svc := newTestScannerTemplateService(repo)
 
 	repo.usage = &scannertemplate.TemplateUsage{
-		TotalTemplates:    1,
-		NucleiTemplates:   1,
-		SemgrepTemplates:  0,
+		TotalTemplates:       1,
+		NucleiTemplates:      1,
+		SemgrepTemplates:     0,
 		BetterleaksTemplates: 0,
-		TotalStorageBytes: 50 * 1024 * 1024, // At storage limit
+		TotalStorageBytes:    50 * 1024 * 1024, // At storage limit
 	}
 
 	tenantID := shared.NewID()
@@ -643,11 +643,11 @@ func TestScannerTemplateService_CreateTemplate_CustomQuota(t *testing.T) {
 
 	// Set a very low quota
 	svc.SetQuota(scannertemplate.TemplateQuota{
-		MaxTemplates:         1,
-		MaxTemplatesNuclei:   1,
-		MaxTemplatesSemgrep:  1,
+		MaxTemplates:            1,
+		MaxTemplatesNuclei:      1,
+		MaxTemplatesSemgrep:     1,
 		MaxTemplatesBetterleaks: 1,
-		MaxTotalStorageBytes: 100,
+		MaxTotalStorageBytes:    100,
 	})
 
 	tenantID := shared.NewID()
@@ -1609,11 +1609,11 @@ func TestScannerTemplateService_GetUsage_Success(t *testing.T) {
 	svc := newTestScannerTemplateService(repo)
 
 	repo.usage = &scannertemplate.TemplateUsage{
-		TotalTemplates:    5,
-		NucleiTemplates:   2,
-		SemgrepTemplates:  2,
+		TotalTemplates:       5,
+		NucleiTemplates:      2,
+		SemgrepTemplates:     2,
 		BetterleaksTemplates: 1,
-		TotalStorageBytes: 12345,
+		TotalStorageBytes:    12345,
 	}
 
 	tenantID := shared.NewID()
@@ -1689,11 +1689,11 @@ func TestScannerTemplateService_GetQuota_Custom(t *testing.T) {
 	svc := newTestScannerTemplateService(repo)
 
 	customQuota := scannertemplate.TemplateQuota{
-		MaxTemplates:         200,
-		MaxTemplatesNuclei:   100,
-		MaxTemplatesSemgrep:  80,
+		MaxTemplates:            200,
+		MaxTemplatesNuclei:      100,
+		MaxTemplatesSemgrep:     80,
 		MaxTemplatesBetterleaks: 60,
-		MaxTotalStorageBytes: 100 * 1024 * 1024,
+		MaxTotalStorageBytes:    100 * 1024 * 1024,
 	}
 	svc.SetQuota(customQuota)
 
@@ -1715,11 +1715,11 @@ func TestScannerTemplateService_CreateTemplate_SemgrepQuotaExceeded(t *testing.T
 	svc := newTestScannerTemplateService(repo)
 
 	repo.usage = &scannertemplate.TemplateUsage{
-		TotalTemplates:    10,
-		NucleiTemplates:   0,
-		SemgrepTemplates:  50, // At per-type limit
+		TotalTemplates:       10,
+		NucleiTemplates:      0,
+		SemgrepTemplates:     50, // At per-type limit
 		BetterleaksTemplates: 0,
-		TotalStorageBytes: 0,
+		TotalStorageBytes:    0,
 	}
 
 	tenantID := shared.NewID()
@@ -1745,11 +1745,11 @@ func TestScannerTemplateService_CreateTemplate_BetterleaksQuotaExceeded(t *testi
 	svc := newTestScannerTemplateService(repo)
 
 	repo.usage = &scannertemplate.TemplateUsage{
-		TotalTemplates:    10,
-		NucleiTemplates:   0,
-		SemgrepTemplates:  0,
+		TotalTemplates:       10,
+		NucleiTemplates:      0,
+		SemgrepTemplates:     0,
 		BetterleaksTemplates: 50, // At per-type limit
-		TotalStorageBytes: 0,
+		TotalStorageBytes:    0,
 	}
 
 	tenantID := shared.NewID()

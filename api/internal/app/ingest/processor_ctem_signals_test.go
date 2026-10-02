@@ -3,9 +3,10 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // The ingest mapper previously dropped the scanner's CTEM signals (only

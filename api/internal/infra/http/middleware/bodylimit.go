@@ -4,7 +4,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 )
 
 // DefaultMaxBodySize is the default maximum request body size (10MB).

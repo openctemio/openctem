@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/adapters/core"
+	"github.com/openctemio/openctem/api/internal/infra/adapters/core"
 )
 
 func TestAdapter_NameAndFormats(t *testing.T) {

@@ -4,7 +4,7 @@ package threatintel
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // EPSSScore represents an EPSS score entry from FIRST.org.

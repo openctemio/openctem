@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/api/pkg/version"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 func TestVersionHandler(t *testing.T) {

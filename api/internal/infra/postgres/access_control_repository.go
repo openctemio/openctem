@@ -12,8 +12,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/pkg/domain/accesscontrol"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AccessControlRepository implements accesscontrol.Repository using PostgreSQL.

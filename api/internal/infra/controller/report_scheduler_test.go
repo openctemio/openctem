@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	moduledom "github.com/openctemio/api/pkg/domain/module"
-	"github.com/openctemio/api/pkg/domain/reportschedule"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/reportschedule"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 type fakeStore struct {

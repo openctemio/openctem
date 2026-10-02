@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/threatactor"
-	"github.com/openctemio/api/pkg/pagination"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/threatactor"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ThreatActorRepository implements threatactor.Repository.

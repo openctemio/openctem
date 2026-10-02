@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/command"
-	pipelinedom "github.com/openctemio/api/pkg/domain/pipeline"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // A zone-routed scan (RFC-023) runs one command per batch under one step run.

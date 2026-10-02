@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/ctemid"
-	"github.com/openctemio/api/pkg/httpsec"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 const (

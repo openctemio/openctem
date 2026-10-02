@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/app/apikey"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/apikey"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // holds returns a CallerHolds func for a caller with exactly perms.

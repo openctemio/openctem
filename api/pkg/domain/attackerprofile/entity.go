@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ProfileType represents the category of attacker profile.
@@ -109,15 +109,15 @@ func ReconstituteAttackerProfile(data AttackerProfileData) *AttackerProfile {
 }
 
 // Getters
-func (p *AttackerProfile) ID() shared.ID           { return p.id }
-func (p *AttackerProfile) TenantID() shared.ID     { return p.tenantID }
-func (p *AttackerProfile) Name() string             { return p.name }
-func (p *AttackerProfile) ProfileType() ProfileType { return p.profileType }
-func (p *AttackerProfile) Description() string      { return p.description }
+func (p *AttackerProfile) ID() shared.ID              { return p.id }
+func (p *AttackerProfile) TenantID() shared.ID        { return p.tenantID }
+func (p *AttackerProfile) Name() string               { return p.name }
+func (p *AttackerProfile) ProfileType() ProfileType   { return p.profileType }
+func (p *AttackerProfile) Description() string        { return p.description }
 func (p *AttackerProfile) Capabilities() Capabilities { return p.capabilities }
-func (p *AttackerProfile) Assumptions() string      { return p.assumptions }
-func (p *AttackerProfile) IsDefault() bool          { return p.isDefault }
-func (p *AttackerProfile) CreatedAt() time.Time     { return p.createdAt }
+func (p *AttackerProfile) Assumptions() string        { return p.assumptions }
+func (p *AttackerProfile) IsDefault() bool            { return p.isDefault }
+func (p *AttackerProfile) CreatedAt() time.Time       { return p.createdAt }
 
 // SetDescription updates the description.
 func (p *AttackerProfile) SetDescription(desc string) {

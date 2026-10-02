@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/pipeline"
-	"github.com/openctemio/api/pkg/domain/shared"
-	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
 )
 
 // maxAssetsInTriggerData caps the asset list carried in one asset_discovered

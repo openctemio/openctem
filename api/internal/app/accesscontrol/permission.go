@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
-	accesscontroldom "github.com/openctemio/api/pkg/domain/accesscontrol"
-	"github.com/openctemio/api/pkg/domain/audit"
-	groupdom "github.com/openctemio/api/pkg/domain/group"
-	permissiondom "github.com/openctemio/api/pkg/domain/permission"
-	permissionsetdom "github.com/openctemio/api/pkg/domain/permissionset"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	accesscontroldom "github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
+	permissiondom "github.com/openctemio/openctem/api/pkg/domain/permission"
+	permissionsetdom "github.com/openctemio/openctem/api/pkg/domain/permissionset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // PermissionService handles permission-related business operations.

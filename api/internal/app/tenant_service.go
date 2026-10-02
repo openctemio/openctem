@@ -3,7 +3,7 @@ package app
 // Compatibility shim — real impl lives in internal/app/tenant/.
 // Covers tenant, user, tenant_membership_adapter (tenant bounded context).
 
-import "github.com/openctemio/api/internal/app/tenant"
+import "github.com/openctemio/openctem/api/internal/app/tenant"
 
 type (
 	TenantService           = tenant.TenantService

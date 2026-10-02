@@ -3,10 +3,11 @@ package pipeline_test
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/pipeline"
-	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestStep_SetTimeout_Validation(t *testing.T) {

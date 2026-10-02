@@ -5,9 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // restHarness wires OrJWT in front of a stand-in JWT authenticator that only

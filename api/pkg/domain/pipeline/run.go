@@ -3,8 +3,8 @@ package pipeline
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/scanprofile"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // RunStatus represents the status of a pipeline run.

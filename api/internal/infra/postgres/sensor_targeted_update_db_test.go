@@ -8,9 +8,9 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TestSensorTargetedUpdates_ExecuteAgainstSchema runs the targeted heartbeat and

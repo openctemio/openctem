@@ -3,9 +3,9 @@ package attack
 import (
 	"testing"
 
-	assetapp "github.com/openctemio/api/internal/app/asset"
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TestGraphEnrichment_LightsUpExposureChain is the payoff test: it proves the

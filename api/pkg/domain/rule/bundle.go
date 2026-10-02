@@ -3,7 +3,7 @@ package rule
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // BundleStatus represents the build status of a rule bundle.

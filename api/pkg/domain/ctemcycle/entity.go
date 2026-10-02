@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // CycleStatus represents the lifecycle status of a CTEM cycle.
@@ -158,15 +158,15 @@ func ReconstituteCycle(data CycleData) *Cycle {
 }
 
 // Getters
-func (c *Cycle) ID() shared.ID       { return c.id }
-func (c *Cycle) TenantID() shared.ID  { return c.tenantID }
-func (c *Cycle) Name() string         { return c.name }
-func (c *Cycle) Status() CycleStatus  { return c.status }
+func (c *Cycle) ID() shared.ID         { return c.id }
+func (c *Cycle) TenantID() shared.ID   { return c.tenantID }
+func (c *Cycle) Name() string          { return c.name }
+func (c *Cycle) Status() CycleStatus   { return c.status }
 func (c *Cycle) StartDate() *time.Time { return c.startDate }
-func (c *Cycle) EndDate() *time.Time  { return c.endDate }
-func (c *Cycle) Charter() Charter     { return c.charter }
-func (c *Cycle) CreatedBy() shared.ID { return c.createdBy }
-func (c *Cycle) CreatedAt() time.Time { return c.createdAt }
+func (c *Cycle) EndDate() *time.Time   { return c.endDate }
+func (c *Cycle) Charter() Charter      { return c.charter }
+func (c *Cycle) CreatedBy() shared.ID  { return c.createdBy }
+func (c *Cycle) CreatedAt() time.Time  { return c.createdAt }
 
 // SetCharter updates the cycle charter (only in planning status).
 func (c *Cycle) SetCharter(charter Charter) error {

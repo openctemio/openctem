@@ -6,10 +6,10 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/api/internal/app/pipeline"
-	"github.com/openctemio/api/internal/app/scan"
-	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/pipeline"
+	"github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // =============================================================================

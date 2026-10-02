@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // OAuthHandler handles OAuth authentication requests.

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/assetgroup"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tool"
 )
 
 // FilteringResult represents the result of smart filtering during scan trigger.

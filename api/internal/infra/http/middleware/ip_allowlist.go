@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/apierror"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // CodeIPNotAllowed is the error code for a request refused by an

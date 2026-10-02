@@ -23,8 +23,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Caller is the identity a request acts as.

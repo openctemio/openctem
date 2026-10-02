@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/scimgroup"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scimgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ScimGroupRepository persists SCIM groups and their membership.

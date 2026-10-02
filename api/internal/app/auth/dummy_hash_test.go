@@ -5,8 +5,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/password"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/password"
 )
 
 // The constant-time paths verify against a hash generated at runtime with the

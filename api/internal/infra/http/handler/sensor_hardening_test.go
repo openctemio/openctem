@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // A lost claim / already-finished command is a 409, not a 500.

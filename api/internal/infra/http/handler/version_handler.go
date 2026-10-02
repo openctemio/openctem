@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/api/pkg/version"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 // Version serves the running API build's identity (Help > About).

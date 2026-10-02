@@ -5,7 +5,7 @@ import (
 	"maps"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AssetSource represents the relationship between an asset and a data source.

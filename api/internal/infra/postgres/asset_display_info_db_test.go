@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // GetDisplayInfoByIDs replaces a per-asset GetByID loop on the findings list.

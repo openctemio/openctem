@@ -6,13 +6,13 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/openctemio/api/internal/app/datascope"
-	"github.com/openctemio/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/scope"
 
-	assetgroupdom "github.com/openctemio/api/pkg/domain/assetgroup"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // AssetGroupService handles asset group business logic.

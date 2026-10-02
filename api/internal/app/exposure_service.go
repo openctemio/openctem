@@ -2,7 +2,7 @@ package app
 
 // Compatibility shim — real impl lives in internal/app/exposure/.
 
-import "github.com/openctemio/api/internal/app/exposure"
+import "github.com/openctemio/openctem/api/internal/app/exposure"
 
 type (
 	ExposureService                = exposure.ExposureService

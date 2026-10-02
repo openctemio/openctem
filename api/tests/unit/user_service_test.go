@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/keycloak"
-	"github.com/openctemio/api/pkg/logger"
+
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/keycloak"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // =============================================================================

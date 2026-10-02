@@ -287,7 +287,7 @@ pkg/parsers/ctis/
 
 ### Basic Usage
 ```go
-import "github.com/openctemio/api/pkg/parsers/ctis"
+import "github.com/openctemio/openctem/api/pkg/parsers/ctis"
 
 // Parse CTIS report
 parser := ctis.NewParser(nil)

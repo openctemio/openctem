@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/internal/infra/redis"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // VersionService tracks a per-tenant "module configuration version"
 // in Redis. The counter increments on every mutation (toggle, reset,
 // preset apply). Consumers use the version for:
 //
-//   1. ETag headers → 304 Not Modified when the client's cached
-//      response matches the current version.
-//   2. Redis cache key suffix → old payloads auto-expire rather than
-//      needing active DELETEs.
-//   3. WebSocket "module.updated" payload → clients compare to their
-//      cached version and invalidate their SWR cache accordingly.
+//  1. ETag headers → 304 Not Modified when the client's cached
+//     response matches the current version.
+//  2. Redis cache key suffix → old payloads auto-expire rather than
+//     needing active DELETEs.
+//  3. WebSocket "module.updated" payload → clients compare to their
+//     cached version and invalidate their SWR cache accordingly.
 //
 // The pattern mirrors accesscontrol.PermissionVersionService — same
 // INCR-based atomicity, same TTL refresh. One key per tenant rather

@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
-	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
-	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // Concurrent workflow run limits to prevent resource exhaustion.

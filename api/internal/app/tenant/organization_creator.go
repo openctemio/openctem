@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"strings"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ErrOwnerAccountRequired is returned when the owner email has no account and

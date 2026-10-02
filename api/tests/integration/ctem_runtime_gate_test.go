@@ -25,12 +25,12 @@ import (
 	"testing"
 	"time"
 
-	iocapp "github.com/openctemio/api/internal/app/ioc"
-	iocdom "github.com/openctemio/api/pkg/domain/ioc"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/telemetry"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+	iocapp "github.com/openctemio/openctem/api/internal/app/ioc"
+	iocdom "github.com/openctemio/openctem/api/pkg/domain/ioc"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/telemetry"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Reuse memIOCRepo + reopenerSpy from ctem_ioc_invariant_test.go

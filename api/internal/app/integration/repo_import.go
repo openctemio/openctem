@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/infra/scm"
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	branchdom "github.com/openctemio/api/pkg/domain/branch"
-	integrationdom "github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/infra/scm"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	branchdom "github.com/openctemio/openctem/api/pkg/domain/branch"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 const (

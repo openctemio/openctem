@@ -10,9 +10,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ScannerTemplateRepository implements scannertemplate.Repository using PostgreSQL.

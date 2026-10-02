@@ -18,10 +18,10 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/api/pkg/domain/admin"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/oidc"
-	"github.com/openctemio/api/pkg/totp"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/oidc"
+	"github.com/openctemio/openctem/api/pkg/totp"
 )
 
 // ---- fakes for the revision-4 repository methods ---------------------------

@@ -7,15 +7,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	pipelinesvc "github.com/openctemio/api/internal/app/pipeline"
-	scansvc "github.com/openctemio/api/internal/app/scan"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/pipeline"
-	"github.com/openctemio/api/pkg/domain/scanprofile"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/validator"
+	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // PipelineHandler handles HTTP requests for pipelines.

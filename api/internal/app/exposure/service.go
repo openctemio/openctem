@@ -6,15 +6,16 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/openctemio/api/internal/app/datascope"
-	"github.com/openctemio/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/outbox"
 
 	"github.com/google/uuid"
-	"github.com/openctemio/api/pkg/domain/credential"
-	exposuredom "github.com/openctemio/api/pkg/domain/exposure"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+
+	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ExposureService handles exposure event business operations.

@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/app/ingest"
-	ddimport "github.com/openctemio/api/internal/infra/importer/defectdojo"
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	ddimport "github.com/openctemio/openctem/api/internal/infra/importer/defectdojo"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ErrNoDefectDojoIntegration is returned when the tenant has no connected

@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/internal/app/aitriage"
-	"github.com/openctemio/api/internal/app/finding"
-	"github.com/openctemio/api/internal/app/integration"
-	"github.com/openctemio/api/internal/app/pipeline"
-	scansvc "github.com/openctemio/api/internal/app/scan"
-	"github.com/openctemio/api/pkg/domain/shared"
-	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/aitriage"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/pipeline"
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // TicketRef is the minimal created/linked-ticket info a workflow reports back.

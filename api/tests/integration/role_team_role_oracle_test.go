@@ -14,13 +14,13 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/app/accesscontrol"
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Team-role oracle regression tests (audit F1/H1 and F5).

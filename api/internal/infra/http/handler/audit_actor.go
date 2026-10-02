@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 )
 
 // auditActorEmail is the actor shown on an audit row. Password logins carry

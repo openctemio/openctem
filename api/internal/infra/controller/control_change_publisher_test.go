@@ -6,13 +6,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 type captureQueue struct {
-	mu    sync.Mutex
-	reqs  []ReclassifyRequest
-	err   error
+	mu   sync.Mutex
+	reqs []ReclassifyRequest
+	err  error
 }
 
 func (c *captureQueue) Enqueue(_ context.Context, r ReclassifyRequest) error {

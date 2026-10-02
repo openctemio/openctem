@@ -7,8 +7,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // Re-ingesting an existing fingerprint is a re-sighting and should raise

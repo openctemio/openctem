@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func seedExecFinding(ctx context.Context, t *testing.T, db *sql.DB, tenantID, assetID shared.ID, status, priority, sla string) {

@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	cryptopkg "github.com/openctemio/api/pkg/crypto"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // AuditService handles audit logging operations.

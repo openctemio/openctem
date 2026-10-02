@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/openctemio/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // DefaultRateLimitMaxWait bounds how long a call parks waiting for a token.

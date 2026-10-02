@@ -10,8 +10,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	localjwt "github.com/openctemio/api/pkg/jwt"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	localjwt "github.com/openctemio/openctem/api/pkg/jwt"
 )
 
 // TestSessionTimeout tests the session expiry logic in the unified auth middleware.

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // RoleSyncControllerConfig configures the RoleSyncController.

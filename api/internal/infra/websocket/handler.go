@@ -5,10 +5,10 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Handler handles WebSocket connections.

@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/app/adminconsole"
-	"github.com/openctemio/api/pkg/httpsec"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/oidc"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // newPlatformIdPClient builds the OIDC client for the administrators' identity

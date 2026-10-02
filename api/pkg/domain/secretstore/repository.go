@@ -3,7 +3,7 @@ package secretstore
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ListInput contains parameters for listing credentials.

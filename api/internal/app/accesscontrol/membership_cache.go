@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/internal/infra/redis"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // MembershipCacheService is a thin Redis-backed wrapper around the

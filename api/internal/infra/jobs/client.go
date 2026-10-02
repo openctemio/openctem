@@ -7,7 +7,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Client manages enqueueing background jobs using Asynq.

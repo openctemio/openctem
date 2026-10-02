@@ -59,12 +59,12 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/adminbootstrap"
-	authapp "github.com/openctemio/api/internal/app/auth"
-	tenantapp "github.com/openctemio/api/internal/app/tenant"
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/email"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/adminbootstrap"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/email"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func main() {

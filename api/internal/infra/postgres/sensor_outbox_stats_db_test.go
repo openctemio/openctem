@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // TestUpdateHeartbeat_OutboxStats: a heartbeat with an outbox snapshot stores

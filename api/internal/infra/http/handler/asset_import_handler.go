@@ -6,14 +6,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/app/ingest"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/internal/infra/scanner/nessus"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/scanner/nessus"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // AssetImportHandler handles bulk asset import endpoints.

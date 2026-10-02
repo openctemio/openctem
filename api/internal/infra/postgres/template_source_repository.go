@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/shared"
-	ts "github.com/openctemio/api/pkg/domain/templatesource"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	ts "github.com/openctemio/openctem/api/pkg/domain/templatesource"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // jsonNull is the string representation of JSON null value.

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	branchdom "github.com/openctemio/api/pkg/domain/branch"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	branchdom "github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // BranchService handles branch-related business operations.

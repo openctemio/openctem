@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Provider is the short identifier for a connector. Value is used as

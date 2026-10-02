@@ -10,9 +10,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestUpdateHeartbeat_CapabilityReportIsSanitized(t *testing.T) {

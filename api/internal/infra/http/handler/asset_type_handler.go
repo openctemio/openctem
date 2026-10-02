@@ -7,13 +7,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/assettype"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/assettype"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // AssetTypeHandler handles asset type-related HTTP requests.

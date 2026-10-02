@@ -3,8 +3,9 @@ package unit
 import (
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/openctemio/openctem/api/internal/app"
 )
 
 func TestPromoteKnownProperties_SubType(t *testing.T) {

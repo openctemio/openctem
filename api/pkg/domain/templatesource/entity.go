@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // SourceType represents the type of template source.

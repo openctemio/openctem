@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // =============================================================================
@@ -287,10 +287,10 @@ func (r *TriageResult) ValidationWarnings() []string { return r.validationWarnin
 // NeedsReview is true when the LLM output failed validation in any
 // way and a human should review the triage before it influences
 // finding state. Convenience wrapper around len(ValidationWarnings).
-func (r *TriageResult) NeedsReview() bool { return len(r.validationWarnings) > 0 }
-func (r *TriageResult) Metadata() map[string]any            { return r.metadata }
-func (r *TriageResult) CreatedAt() time.Time                { return r.createdAt }
-func (r *TriageResult) UpdatedAt() time.Time                { return r.updatedAt }
+func (r *TriageResult) NeedsReview() bool        { return len(r.validationWarnings) > 0 }
+func (r *TriageResult) Metadata() map[string]any { return r.metadata }
+func (r *TriageResult) CreatedAt() time.Time     { return r.createdAt }
+func (r *TriageResult) UpdatedAt() time.Time     { return r.updatedAt }
 
 // =============================================================================
 // State Mutations

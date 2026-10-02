@@ -17,7 +17,7 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ListResult is a generic paginated list result.

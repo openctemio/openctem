@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // /auth/token, /auth/refresh, /auth/create-first-team and

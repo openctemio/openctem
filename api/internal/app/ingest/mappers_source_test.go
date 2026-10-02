@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // detectFindingSource used to end in `default: return FindingSourceSAST`. Every

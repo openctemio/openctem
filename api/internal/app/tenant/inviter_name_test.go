@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	userdom "github.com/openctemio/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 )
 
 type nameUsers struct {

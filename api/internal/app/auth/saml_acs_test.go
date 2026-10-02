@@ -18,11 +18,11 @@ import (
 
 	"github.com/crewjam/saml"
 
-	samldom "github.com/openctemio/api/pkg/domain/samlprovider"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/logger"
+	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 type acsTenantRepo struct {

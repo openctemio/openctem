@@ -26,13 +26,13 @@ import (
 	"fmt"
 	"strings"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/password"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/password"
 )
 
 // FirstOwnerStore checks for and creates an organization's first owner

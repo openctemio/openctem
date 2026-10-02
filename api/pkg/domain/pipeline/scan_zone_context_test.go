@@ -3,7 +3,7 @@ package pipeline
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestScanZoneFromContext(t *testing.T) {

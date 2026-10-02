@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/rule"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/rule"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // RuleSyncHistoryRepository implements rule.SyncHistoryRepository using PostgreSQL.

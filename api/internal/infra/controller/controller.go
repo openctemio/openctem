@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Controller defines the interface for a reconciliation loop controller.

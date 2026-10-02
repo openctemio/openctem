@@ -7,10 +7,10 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/api/internal/app/ingest"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Host normalisation moves properties.ip into ip_addresses and deletes ip,

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/internal/metrics"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/metrics"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // chainVerifier is the minimum surface AuditChainVerifyController

@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
 )
 
 // CreateUserInput represents the input for creating a user.

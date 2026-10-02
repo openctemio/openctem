@@ -7,9 +7,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/openctemio/api/internal/app/command"
-	commanddom "github.com/openctemio/api/pkg/domain/command"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/command"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ATTACK: any tenant sensor failing an unclaimed broadcast command (a cheap way

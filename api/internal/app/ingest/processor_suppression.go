@@ -3,9 +3,9 @@ package ingest
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/suppression"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // resolutionSuppressed is the resolution note stamped on a finding that an

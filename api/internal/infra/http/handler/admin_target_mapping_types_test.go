@@ -7,9 +7,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/tool"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // GET /api/v1/admin/target-mappings/types lists exactly what Create accepts,

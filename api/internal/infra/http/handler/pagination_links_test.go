@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // Pagination links took X-Forwarded-Host / X-Forwarded-Proto from any client,

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	infrahttp "github.com/openctemio/api/internal/infra/http"
+	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 )
 
 // The build version is for signed-in users only: the route must sit behind the

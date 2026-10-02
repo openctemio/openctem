@@ -1,8 +1,8 @@
 package ingest
 
 import (
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // FieldOwnership maps a property field name to the source ID that

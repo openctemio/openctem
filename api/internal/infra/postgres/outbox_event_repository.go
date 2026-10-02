@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/openctemio/api/pkg/domain/outbox"
-	"github.com/openctemio/api/pkg/domain/shared"
+
+	"github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // OutboxEventRepository implements the outbox.EventRepository interface.

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/branch"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // =============================================================================

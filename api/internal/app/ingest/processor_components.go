@@ -7,9 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/component"
-	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/pkg/domain/component"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ComponentProcessor handles batch processing of dependencies/components during ingestion.

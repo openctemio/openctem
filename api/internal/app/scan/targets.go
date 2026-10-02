@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/api/internal/app/scope"
-	"github.com/openctemio/api/pkg/domain/scan"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // maxResolvedTargets bounds how many targets one scan run may dispatch. Larger

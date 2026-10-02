@@ -8,8 +8,8 @@ import (
 
 	"github.com/lib/pq"
 
-	sensordom "github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // SensorAPIKeyRepository persists per-sensor API keys in the sensor_api_keys table.

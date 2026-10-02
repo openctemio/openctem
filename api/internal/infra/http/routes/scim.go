@@ -1,8 +1,8 @@
 package routes
 
 import (
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 )
 
 // registerSCIMRoutes wires the SCIM 2.0 provisioning API (per-tenant bearer

@@ -3,7 +3,7 @@ package audit
 import (
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AuditLogNotFoundError returns a not found error for an audit log.

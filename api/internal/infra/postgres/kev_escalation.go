@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/internal/app/threat"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/threat"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // terminalStatusFilter excludes every closed/terminal status (matches

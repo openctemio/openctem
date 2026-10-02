@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tool"
 )
 
 // SuppressionType represents the type of suppression.

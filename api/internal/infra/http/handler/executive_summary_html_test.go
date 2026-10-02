@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app"
 )
 
 func TestRenderExecutiveSummaryHTML_ContainsHeadlineMetrics(t *testing.T) {
@@ -57,8 +57,8 @@ func TestRenderExecutiveSummaryHTML_ContainsHeadlineMetrics(t *testing.T) {
 		"Log4Shell reachable over the internet",
 		"P0",
 		"api-gateway",
-		"0.87",  // EPSS
-		"YES",   // KEV badge
+		"0.87", // EPSS
+		"YES",  // KEV badge
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(out, want) {

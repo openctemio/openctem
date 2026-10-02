@@ -18,10 +18,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 func TestBulkStatus_PentestFindingRefusedLikeSinglePath(t *testing.T) {

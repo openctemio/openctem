@@ -3,8 +3,8 @@ package threatmodel
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	tmdom "github.com/openctemio/api/pkg/domain/threatmodel"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
 )
 
 func threat(t *testing.T, tactic, techniqueID, mitigationID string, status tmdom.ThreatStatus, score float64) *tmdom.ThreatModelThreat {

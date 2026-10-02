@@ -3,10 +3,10 @@ package assignment
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/accesscontrol"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // BatchAssigner routes a batch of freshly-ingested findings to groups by

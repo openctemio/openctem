@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	scanservice "github.com/openctemio/api/internal/app/scan"
-	"github.com/openctemio/api/pkg/domain/pipeline"
-	"github.com/openctemio/api/pkg/domain/scan"
-	"github.com/openctemio/api/pkg/domain/scanzone"
-	"github.com/openctemio/api/pkg/domain/shared"
+	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Scan-zone routing preview and the zone picker (RFC-023 §7, D5), through the

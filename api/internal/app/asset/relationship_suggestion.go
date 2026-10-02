@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	relationshipdom "github.com/openctemio/api/pkg/domain/relationship"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // RelationshipSuggestionService handles relationship suggestion business logic.

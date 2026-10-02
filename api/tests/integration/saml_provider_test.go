@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/samlprovider"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/samlprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func samlTestCertPEM(t *testing.T) string {

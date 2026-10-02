@@ -14,14 +14,14 @@ import (
 	gws "github.com/gorilla/websocket"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/internal/infra/websocket"
-	"github.com/openctemio/api/pkg/domain/notification"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/pkg/domain/notification"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // In-app notifications are pushed over the WebSocket hub. These tests run the

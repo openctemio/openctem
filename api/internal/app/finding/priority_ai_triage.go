@@ -3,7 +3,7 @@ package finding
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AITriageFPThreshold is the false-positive-likelihood at or above which a

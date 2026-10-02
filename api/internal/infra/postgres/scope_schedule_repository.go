@@ -11,9 +11,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/pkg/domain/scope"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ScopeScheduleRepository implements scope.ScheduleRepository using PostgreSQL.

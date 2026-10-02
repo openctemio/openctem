@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	appfinding "github.com/openctemio/api/internal/app/finding"
-	"github.com/openctemio/api/internal/infra/controller"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+
+	appfinding "github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // PriorityRuleHandler handles priority override rule CRUD endpoints.

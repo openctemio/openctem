@@ -3,7 +3,7 @@ package user
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Filter represents criteria for filtering users.

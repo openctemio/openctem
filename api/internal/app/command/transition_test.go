@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	commanddom "github.com/openctemio/api/pkg/domain/command"
-	"github.com/openctemio/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestSameJSON(t *testing.T) {

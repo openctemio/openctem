@@ -4,7 +4,7 @@ package secretstore
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // CredentialType represents the type of credential.

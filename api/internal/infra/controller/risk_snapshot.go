@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // RiskSnapshotController computes daily risk snapshots for all tenants.

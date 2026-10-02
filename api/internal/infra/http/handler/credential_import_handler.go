@@ -8,16 +8,16 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/credential"
-	"github.com/openctemio/api/pkg/domain/exposure"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // queryParamFalse is the expected query parameter value for false

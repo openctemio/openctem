@@ -29,8 +29,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/metrics"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/logger"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )

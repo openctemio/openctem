@@ -8,7 +8,7 @@ import (
 
 	redislib "github.com/redis/go-redis/v9"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // F-7: Cross-pod WebSocket fan-out via Redis pubsub.

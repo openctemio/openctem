@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	notificationclient "github.com/openctemio/api/internal/infra/notifier"
-	"github.com/openctemio/api/pkg/domain/integration"
-	outboxdom "github.com/openctemio/api/pkg/domain/outbox"
-	"github.com/openctemio/api/pkg/domain/shared"
+
+	notificationclient "github.com/openctemio/openctem/api/internal/infra/notifier"
+	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Status constants for notification results.

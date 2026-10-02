@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	moduledom "github.com/openctemio/api/pkg/domain/module"
-	"github.com/openctemio/api/pkg/domain/simulation"
-	"github.com/openctemio/api/pkg/logger"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/simulation"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ControlTestSchedulerController automatically marks control tests as overdue

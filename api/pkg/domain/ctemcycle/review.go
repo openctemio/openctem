@@ -3,7 +3,7 @@ package ctemcycle
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // B5: the cycle "review" phase does actual work, not just a
@@ -62,11 +62,11 @@ func (d ScopeDelta) Size() int {
 // transition into review. Persisting this record gives the reviewer
 // a deterministic view of the cycle outcome.
 type ReviewSnapshot struct {
-	CycleID             shared.ID
-	TenantID            shared.ID
-	Delta               ScopeDelta
+	CycleID              shared.ID
+	TenantID             shared.ID
+	Delta                ScopeDelta
 	FindingsToRevalidate []shared.ID
-	ComputedAt          time.Time
+	ComputedAt           time.Time
 }
 
 // NewReviewSnapshot builds an empty snapshot for a cycle at a given
@@ -74,11 +74,11 @@ type ReviewSnapshot struct {
 // handler's SQL computations.
 func NewReviewSnapshot(cycleID, tenantID shared.ID) ReviewSnapshot {
 	return ReviewSnapshot{
-		CycleID:             cycleID,
-		TenantID:            tenantID,
-		Delta:               ScopeDelta{ComputedAt: time.Now().UTC()},
+		CycleID:              cycleID,
+		TenantID:             tenantID,
+		Delta:                ScopeDelta{ComputedAt: time.Now().UTC()},
 		FindingsToRevalidate: nil,
-		ComputedAt:          time.Now().UTC(),
+		ComputedAt:           time.Now().UTC(),
 	}
 }
 
@@ -90,7 +90,7 @@ const (
 	MetricMTTRHours          = "mttr_hours"
 	MetricFindingsOpened     = "findings_opened"
 	MetricFindingsResolved   = "findings_resolved"
-	MetricPClassChurn        = "p_class_churn"      // count of priority transitions during the cycle
+	MetricPClassChurn        = "p_class_churn"       // count of priority transitions during the cycle
 	MetricValidationCoverage = "validation_coverage" // % of closed findings with validation evidence
 	MetricScopeDriftSize     = "scope_drift_size"
 )

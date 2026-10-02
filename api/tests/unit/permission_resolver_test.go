@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/accesscontrol"
-	"github.com/openctemio/api/pkg/domain/permission"
-	"github.com/openctemio/api/pkg/domain/permissionset"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/permissionset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Helper function to create a test permission set.

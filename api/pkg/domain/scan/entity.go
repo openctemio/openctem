@@ -3,8 +3,9 @@ package scan
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/robfig/cron/v3"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Scan represents a scan definition that binds

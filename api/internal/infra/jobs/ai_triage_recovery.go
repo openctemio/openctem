@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // AITriageRecoveryJob periodically recovers stuck AI triage jobs.

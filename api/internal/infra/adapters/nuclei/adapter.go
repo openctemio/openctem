@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/internal/infra/adapters/core"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/internal/infra/adapters/core"
 )
 
 // Adapter converts Nuclei JSONL output to CTIS.

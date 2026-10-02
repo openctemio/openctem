@@ -3,7 +3,7 @@ package attack
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // A chain is shown to a restricted member only when every hop is in scope,

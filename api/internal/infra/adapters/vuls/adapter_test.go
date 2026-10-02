@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/adapters/core"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/internal/infra/adapters/core"
 )
 
 func buildTestReport() VulsReport {

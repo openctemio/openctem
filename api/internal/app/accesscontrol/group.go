@@ -8,16 +8,16 @@ import (
 	"context"
 	"fmt"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/internal/app/integration"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 
-	accesscontroldom "github.com/openctemio/api/pkg/domain/accesscontrol"
-	"github.com/openctemio/api/pkg/domain/audit"
-	groupdom "github.com/openctemio/api/pkg/domain/group"
-	"github.com/openctemio/api/pkg/domain/notification"
-	permissionsetdom "github.com/openctemio/api/pkg/domain/permissionset"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	accesscontroldom "github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
+	"github.com/openctemio/openctem/api/pkg/domain/notification"
+	permissionsetdom "github.com/openctemio/openctem/api/pkg/domain/permissionset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // teamsSettingsURL is the UI page that in-app notifications about team

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ControlTestStatus defines the test result status.

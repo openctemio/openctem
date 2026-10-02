@@ -14,11 +14,11 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/openctemio/api/internal/config"
-	redisinfra "github.com/openctemio/api/internal/infra/redis"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/httpsec"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	redisinfra "github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Security event constants for logging and metrics.

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/api/pkg/domain/tool"
-	tooldomcat "github.com/openctemio/api/pkg/domain/toolcategory"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
+	tooldomcat "github.com/openctemio/openctem/api/pkg/domain/toolcategory"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // CategoryService handles tool category business operations.

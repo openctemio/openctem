@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app/apikey"
+	"github.com/openctemio/openctem/api/internal/app/apikey"
 
-	"github.com/openctemio/api/pkg/crypto"
-	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // =============================================================================

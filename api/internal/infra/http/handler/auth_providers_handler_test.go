@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func configuredProvider(id string) config.OAuthProviderConfig {

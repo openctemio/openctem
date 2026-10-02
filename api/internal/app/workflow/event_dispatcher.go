@@ -6,12 +6,12 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Dispatcher configuration constants

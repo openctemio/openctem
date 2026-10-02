@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/attachment"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // SettingsStorageResolver resolves per-tenant storage config from the settings table.

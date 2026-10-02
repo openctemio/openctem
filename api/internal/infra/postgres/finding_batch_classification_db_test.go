@@ -7,8 +7,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // The multi-row batch insert header used by scanner ingest omitted the

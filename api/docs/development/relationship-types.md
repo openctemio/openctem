@@ -436,7 +436,7 @@ var RelationshipCategories = []RelationshipCategory{
 To use a relationship type from a Go service:
 
 ```go
-import "github.com/openctemio/api/pkg/domain/asset"
+import "github.com/openctemio/openctem/api/pkg/domain/asset"
 
 // Reference a constant
 asset.RelTypeRunsOn

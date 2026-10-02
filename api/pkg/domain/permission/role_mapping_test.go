@@ -3,8 +3,9 @@ package permission
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // =============================================================================

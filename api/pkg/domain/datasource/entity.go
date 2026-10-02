@@ -4,7 +4,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // DataSource represents a data source that can push or pull assets and findings.

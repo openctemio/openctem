@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/keycloak"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/keycloak"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Auth-related context keys - use logger.ContextKey for consistency.

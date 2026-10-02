@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 )
 
 // The second login step used to share the 5-per-minute per-IP login bucket,

@@ -14,11 +14,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // The data a member without an access group can reach, as status codes.

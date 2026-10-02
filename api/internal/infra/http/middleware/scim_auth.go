@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/scimtoken"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 type scimCtxKey string

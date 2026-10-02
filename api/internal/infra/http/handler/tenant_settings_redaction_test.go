@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // GET /api/v1/tenants and GET /api/v1/tenants/{tenant} are open to every

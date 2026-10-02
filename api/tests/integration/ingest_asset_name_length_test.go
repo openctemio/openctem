@@ -8,12 +8,12 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/api/internal/app/ingest"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/logger"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // assets.name is varchar(255) while ingest accepted names up to 1024 bytes:

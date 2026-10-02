@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ErrPlatformAdminMembership is returned when a platform administrator's

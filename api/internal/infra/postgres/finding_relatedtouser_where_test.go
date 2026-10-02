@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // The flat findings list must support the "assigned to / owned by me" predicate

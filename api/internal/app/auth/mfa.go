@@ -35,15 +35,15 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/pkg/crypto"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/mfa"
-	sessiondom "github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/shared"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/password"
-	"github.com/openctemio/api/pkg/totp"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/mfa"
+	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/password"
+	"github.com/openctemio/openctem/api/pkg/totp"
 )
 
 // DefaultMFAIssuer is the issuer label shown by authenticator apps.

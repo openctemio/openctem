@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	appjira "github.com/openctemio/api/internal/app/jira"
-	"github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	appjira "github.com/openctemio/openctem/api/internal/app/jira"
+	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // stubIntegrationRepo implements integration.Repository by embedding the

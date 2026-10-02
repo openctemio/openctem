@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // TargetType represents the type of scan target.

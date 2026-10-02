@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/ctemid"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func testLogger() *logger.Logger { return logger.NewNop() }

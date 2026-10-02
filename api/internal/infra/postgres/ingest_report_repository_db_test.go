@@ -9,11 +9,11 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/domain/ingestjob"
-	"github.com/openctemio/api/pkg/domain/ingestreport"
-	"github.com/openctemio/api/pkg/domain/shared"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // ingestReportFixture creates a tenant and a sensor of that tenant and removes

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/ctemcycle"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/ctemcycle"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // CTEMCycleMetricsRepository computes, persists and reads per-cycle CTEM

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 const v2TestReportID = "0192a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"

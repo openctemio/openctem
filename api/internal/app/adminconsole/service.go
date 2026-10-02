@@ -22,11 +22,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/admin"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/totp"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/totp"
 )
 
 // Audit actions written to admin_audit_logs.

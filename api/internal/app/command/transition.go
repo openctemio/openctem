@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"reflect"
 
-	commanddom "github.com/openctemio/api/pkg/domain/command"
-	"github.com/openctemio/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Transition is one command state change a sensor requests.

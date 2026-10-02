@@ -3,7 +3,7 @@ package remediation
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TryAutoComplete invariants. The campaign must advance to

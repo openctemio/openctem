@@ -7,24 +7,25 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/openctemio/api/internal/app/template"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/template"
+
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/secretstore"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/templatesource"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/templatesource"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // =============================================================================

@@ -3,7 +3,7 @@ package rule
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Severity represents the rule severity level.

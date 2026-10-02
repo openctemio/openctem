@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Organization SSO trust (SAML config, OIDC identity providers, verified

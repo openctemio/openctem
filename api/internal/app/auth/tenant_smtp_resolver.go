@@ -3,10 +3,10 @@ package auth
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/shared"
-	emaildom "github.com/openctemio/api/pkg/email"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	emaildom "github.com/openctemio/openctem/api/pkg/email"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // IntegrationSMTPResolver resolves per-tenant SMTP config from notification integrations.

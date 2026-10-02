@@ -2,7 +2,7 @@ package app
 
 // Compatibility shim — real impl lives in internal/app/capability/.
 
-import "github.com/openctemio/api/internal/app/capability"
+import "github.com/openctemio/openctem/api/internal/app/capability"
 
 type (
 	CapabilityService          = capability.CapabilityService

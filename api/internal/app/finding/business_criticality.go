@@ -3,8 +3,8 @@ package finding
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AssetBusinessContext is the business-unit / business-service criticality that

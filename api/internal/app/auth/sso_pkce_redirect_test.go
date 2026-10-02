@@ -18,11 +18,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/crypto"
-	identityproviderdom "github.com/openctemio/api/pkg/domain/identityprovider"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func newPKCESSOService(t *testing.T, enc crypto.Encryptor, allow []string) *SSOService {

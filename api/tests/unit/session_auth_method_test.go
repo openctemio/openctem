@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TestSession_FederatedBinding_RoundTrip proves the IdP session binding

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	zonedom "github.com/openctemio/api/pkg/domain/scanzone"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	zonedom "github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 type memRepo struct {

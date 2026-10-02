@@ -3,7 +3,7 @@ package jobs
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Stop must be safe to call more than once — a second close(stopCh) would

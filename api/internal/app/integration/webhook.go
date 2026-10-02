@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/shared"
-	webhookdom "github.com/openctemio/api/pkg/domain/webhook"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	webhookdom "github.com/openctemio/openctem/api/pkg/domain/webhook"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // WebhookService provides business logic for webhook management.

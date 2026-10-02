@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // fakeStateHistory captures CreateBatch calls. It embeds the interface so the

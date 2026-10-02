@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
 )
 
 // userColumns is the list of columns to select for a user.

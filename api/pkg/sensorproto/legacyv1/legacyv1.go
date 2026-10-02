@@ -23,8 +23,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/command"
-	"github.com/openctemio/api/pkg/domain/scansession"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/scansession"
 )
 
 // Protocol v1 mounts. Route registration and the AST-based route tooling

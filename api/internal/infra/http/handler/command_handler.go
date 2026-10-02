@@ -10,22 +10,22 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/command"
 
 	"github.com/go-chi/chi/v5"
 
-	pipelinesvc "github.com/openctemio/api/internal/app/pipeline"
-	"github.com/openctemio/api/internal/app/template"
-	"github.com/openctemio/api/internal/app/validation"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	commanddom "github.com/openctemio/api/pkg/domain/command"
-	pipelinedom "github.com/openctemio/api/pkg/domain/pipeline"
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
-	"github.com/openctemio/api/pkg/validator"
+	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
+	"github.com/openctemio/openctem/api/internal/app/template"
+	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // validationEvidenceIngester records a completed validation job's outcome as

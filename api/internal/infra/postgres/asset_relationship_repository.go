@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AssetRelationshipRepository implements asset.RelationshipRepository using PostgreSQL.

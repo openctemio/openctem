@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	auditapp "github.com/openctemio/api/internal/app/audit"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/secretstore"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+
+	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // SecretStoreService handles credential storage business logic.

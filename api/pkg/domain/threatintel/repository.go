@@ -3,7 +3,7 @@ package threatintel
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // EPSSRepository defines the interface for EPSS score persistence.

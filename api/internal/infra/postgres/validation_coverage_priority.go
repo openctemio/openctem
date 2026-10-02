@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"strconv"
 
-	"github.com/openctemio/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/app/validation"
 )
 
 // Querier is the part of *sql.DB the coverage query needs.

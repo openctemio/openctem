@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	moduledom "github.com/openctemio/api/pkg/domain/module"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // --- fakes ------------------------------------------------------------------

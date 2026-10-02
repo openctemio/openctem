@@ -19,9 +19,9 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/openctemio/api/internal/metrics"
-	"github.com/openctemio/api/pkg/logger"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 func sha256Digest(b []byte) string {

@@ -8,8 +8,8 @@
 // `sla.CreatePolicyInput`. Callers import as:
 //
 //	import (
-//	    sladom "github.com/openctemio/api/pkg/domain/sla"  // when the caller also needs the domain types
-//	    "github.com/openctemio/api/internal/app/sla"
+//	    sladom "github.com/openctemio/openctem/api/pkg/domain/sla"  // when the caller also needs the domain types
+//	    "github.com/openctemio/openctem/api/internal/app/sla"
 //	)
 package sla
 
@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	sladom "github.com/openctemio/api/pkg/domain/sla"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	sladom "github.com/openctemio/openctem/api/pkg/domain/sla"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Service handles SLA policy-related business operations.

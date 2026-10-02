@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	roledom "github.com/openctemio/api/pkg/domain/role"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
+	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 func TestMembershipRoleForRoleIDs(t *testing.T) {

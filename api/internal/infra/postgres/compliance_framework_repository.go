@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/compliance"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/compliance"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ComplianceFrameworkRepository handles compliance framework persistence.

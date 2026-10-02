@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	exposuredom "github.com/openctemio/api/pkg/domain/exposure"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 func testLogger() *logger.Logger { return logger.NewNop() }

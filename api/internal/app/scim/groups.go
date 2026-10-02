@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/scimgroup"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/scimgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // GroupMembershipReader resolves a user's tenant membership (tenant.Repository

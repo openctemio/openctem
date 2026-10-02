@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	notificationdom "github.com/openctemio/api/pkg/domain/notification"
-	"github.com/openctemio/api/pkg/domain/permission"
-	"github.com/openctemio/api/pkg/logger"
+	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 type fakeAccess struct {

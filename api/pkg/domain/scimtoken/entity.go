@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ErrNotFound is returned when no token matches the lookup.

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	scopedom "github.com/openctemio/api/pkg/domain/scope"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // fakeExclusionRepo overrides only ListActive; the embedded interface panics if

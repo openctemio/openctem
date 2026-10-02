@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tenant"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 func newSID(t *testing.T) shared.ID {

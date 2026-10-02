@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // countingProvider records how many times Complete reached the provider — i.e.

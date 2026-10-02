@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 )
 
 // An `oct_` API key reaches the tenant REST routes, bounded by its scopes. A

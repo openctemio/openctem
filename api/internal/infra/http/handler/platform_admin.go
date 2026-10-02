@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // PlatformAdminChecker answers whether a users-table account is linked to an

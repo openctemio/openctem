@@ -2,7 +2,7 @@ package app
 
 // Compatibility shim — real impl lives in internal/app/validation/.
 
-import "github.com/openctemio/api/internal/app/validation"
+import "github.com/openctemio/openctem/api/internal/app/validation"
 
 type (
 	ValidationCoverage = validation.ValidationCoverage

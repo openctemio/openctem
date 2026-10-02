@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AdminTenantParam is the path parameter naming the organization an admin route

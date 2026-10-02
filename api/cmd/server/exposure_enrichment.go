@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 
-	"github.com/openctemio/api/internal/app/exposure"
-	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/app/exposure"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
 )
 
 // exposureEPSSShim adapts the shared EPSS adapter (which speaks the finding

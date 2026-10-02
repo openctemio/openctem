@@ -6,12 +6,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/internal/infra/websocket"
-	"github.com/openctemio/api/pkg/domain/permission"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // registerHealthRoutes registers health check endpoints.

@@ -5,12 +5,12 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/identityprovider"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // SSOHandler handles per-tenant SSO authentication requests.

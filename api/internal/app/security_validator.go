@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tool"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ValidationResult represents the result of a validation.

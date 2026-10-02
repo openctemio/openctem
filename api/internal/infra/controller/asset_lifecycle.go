@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/api/internal/app/asset"
-	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // AssetLifecycleControllerConfig configures the daily stale-detection

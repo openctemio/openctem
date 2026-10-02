@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/remediation"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+
+	"github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // RemediationCampaignRepository implements remediation.CampaignRepository.

@@ -11,7 +11,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Summary is the Scoping overview read model. JSON field names are the API

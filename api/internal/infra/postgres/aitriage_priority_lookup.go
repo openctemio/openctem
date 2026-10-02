@@ -7,8 +7,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/app/finding"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AITriagePriorityLookupRepo resolves the latest COMPLETED AI-triage

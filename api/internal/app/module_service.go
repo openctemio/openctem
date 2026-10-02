@@ -2,7 +2,7 @@ package app
 
 // Compatibility shim — real impl lives in internal/app/module/.
 
-import "github.com/openctemio/api/internal/app/module"
+import "github.com/openctemio/openctem/api/internal/app/module"
 
 type (
 	ModuleService                 = module.ModuleService

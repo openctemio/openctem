@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	emaildom "github.com/openctemio/api/pkg/email"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	emaildom "github.com/openctemio/openctem/api/pkg/email"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // TenantSMTPResolver resolves per-tenant SMTP configuration from integrations.

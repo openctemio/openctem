@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // Test structs

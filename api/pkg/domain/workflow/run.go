@@ -3,7 +3,7 @@ package workflow
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // RunStatus represents the status of a workflow run.

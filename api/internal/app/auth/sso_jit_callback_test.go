@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/crypto"
-	identityproviderdom "github.com/openctemio/api/pkg/domain/identityprovider"
-	sessiondom "github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // End-to-end OIDC callback against a mock identity provider (httptest TLS

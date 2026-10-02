@@ -7,16 +7,16 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scope"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	scopedom "github.com/openctemio/api/pkg/domain/scope"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // ScopeHandler handles scope configuration HTTP requests.

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/internal/app/finding"
-	remediationdom "github.com/openctemio/api/pkg/domain/remediation"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 type mockKeyRepo struct {

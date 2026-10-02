@@ -10,20 +10,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/internal/app/accesscontrol"
-	auditapp "github.com/openctemio/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/crypto"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/mfa"
-	sessiondom "github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/jwt"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/password"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/mfa"
+	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/jwt"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/password"
 )
 
 // AuthService errors.

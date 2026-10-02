@@ -14,9 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 func manifestBody(nucleiVersion string) map[string]any {

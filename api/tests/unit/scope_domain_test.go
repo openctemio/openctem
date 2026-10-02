@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/scope"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // =============================================================================

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/scimtoken"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ScimTokenRepository persists SCIM provisioning bearer tokens.

@@ -31,16 +31,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	appjira "github.com/openctemio/api/internal/app/jira"
-	"github.com/openctemio/api/internal/app/outbox"
-	"github.com/openctemio/api/internal/app/reclassify"
-	appsla "github.com/openctemio/api/internal/app/sla"
-	"github.com/openctemio/api/internal/infra/controller"
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	appjira "github.com/openctemio/openctem/api/internal/app/jira"
+	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/reclassify"
+	appsla "github.com/openctemio/openctem/api/internal/app/sla"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // -----------------------------------------------------------------------------

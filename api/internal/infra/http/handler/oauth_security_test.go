@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/config"
 )
 
 func TestOAuthRedirectValidation(t *testing.T) {

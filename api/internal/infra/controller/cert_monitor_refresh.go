@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	certmonitorapp "github.com/openctemio/api/internal/app/certmonitor"
-	moduledom "github.com/openctemio/api/pkg/domain/module"
-	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // CertMonitorControllerConfig configures the periodic Certificate-Transparency

@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/api/internal/metrics"
-	"github.com/openctemio/api/pkg/domain/ingestjob"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // IngestJobQueue is the slice of the ingest-job repository the worker needs.

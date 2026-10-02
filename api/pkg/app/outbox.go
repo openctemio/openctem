@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/outbox"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // SendNotificationInput represents the input for sending a notification.

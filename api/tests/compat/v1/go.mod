@@ -1,7 +1,7 @@
 // Protocol-v1 compatibility harness (RFC-023 §9.2, C8). A separate module so it
 // can pin the LAST RELEASED sdk-go and prove that sensors already deployed in
 // the field keep working against every new API build.
-module github.com/openctemio/api/tests/compat/v1
+module github.com/openctemio/openctem/api/tests/compat/v1
 
 go 1.26
 

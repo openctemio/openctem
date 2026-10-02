@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/postgres"
-	commanddom "github.com/openctemio/api/pkg/domain/command"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // GetPendingForSensor must not hand a capability-scoped command to a sensor that

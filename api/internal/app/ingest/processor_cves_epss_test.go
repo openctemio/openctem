@@ -6,7 +6,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // CTIS producers disagree on the EPSS percentile scale: nuclei and the sdk-go

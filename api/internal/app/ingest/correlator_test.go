@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 func TestExtractAllIPs(t *testing.T) {

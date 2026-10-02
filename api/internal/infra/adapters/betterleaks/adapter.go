@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/internal/infra/adapters/core"
-	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/internal/infra/adapters/core"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 )
 
 // Adapter converts Betterleaks JSON reports to CTIS.

@@ -3,7 +3,7 @@ package compliance
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // FindingControlMapping represents a link between a finding and a compliance control.
@@ -42,11 +42,11 @@ func ReconstituteFindingControlMapping(
 }
 
 // Getters
-func (m *FindingControlMapping) ID() shared.ID        { return m.id }
-func (m *FindingControlMapping) TenantID() shared.ID  { return m.tenantID }
-func (m *FindingControlMapping) FindingID() shared.ID { return m.findingID }
-func (m *FindingControlMapping) ControlID() shared.ID { return m.controlID }
-func (m *FindingControlMapping) Impact() ImpactType   { return m.impact }
-func (m *FindingControlMapping) Notes() string        { return m.notes }
-func (m *FindingControlMapping) CreatedAt() time.Time { return m.createdAt }
+func (m *FindingControlMapping) ID() shared.ID         { return m.id }
+func (m *FindingControlMapping) TenantID() shared.ID   { return m.tenantID }
+func (m *FindingControlMapping) FindingID() shared.ID  { return m.findingID }
+func (m *FindingControlMapping) ControlID() shared.ID  { return m.controlID }
+func (m *FindingControlMapping) Impact() ImpactType    { return m.impact }
+func (m *FindingControlMapping) Notes() string         { return m.notes }
+func (m *FindingControlMapping) CreatedAt() time.Time  { return m.createdAt }
 func (m *FindingControlMapping) CreatedBy() *shared.ID { return m.createdBy }

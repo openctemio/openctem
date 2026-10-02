@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/audit"
-	sensordom "github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/api/pkg/domain/tool"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // sensorAuditSystemActor is the actor recorded on sensor lifecycle audit events

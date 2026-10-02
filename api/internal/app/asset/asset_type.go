@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	assettypedom "github.com/openctemio/api/pkg/domain/assettype"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	assettypedom "github.com/openctemio/openctem/api/pkg/domain/assettype"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // AssetTypeService handles asset type-related business operations.

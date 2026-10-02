@@ -8,14 +8,14 @@ import (
 	"strings"
 	"sync"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/internal/metrics"
-	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/secretstore"
-	"github.com/openctemio/api/pkg/domain/shared"
-	ts "github.com/openctemio/api/pkg/domain/templatesource"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	ts "github.com/openctemio/openctem/api/pkg/domain/templatesource"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // MaxSourcesPerTenant is the maximum number of template sources a tenant can have.

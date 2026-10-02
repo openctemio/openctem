@@ -16,13 +16,13 @@ import (
 	"github.com/lib/pq"
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/api/internal/app/ingest"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/ingestjob"
-	"github.com/openctemio/api/pkg/domain/ingestreport"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 type v2Rig struct {

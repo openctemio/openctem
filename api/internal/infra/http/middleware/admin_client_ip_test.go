@@ -4,7 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // The admin console records the client IP on sessions and in the admin audit

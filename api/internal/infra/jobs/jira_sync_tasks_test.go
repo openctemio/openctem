@@ -7,7 +7,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 type stubSyncer struct {

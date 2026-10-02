@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/api/internal/config"
-	identityproviderdom "github.com/openctemio/api/pkg/domain/identityprovider"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // regEnabled is the auth config used by findOrCreateUser tests that exercise the

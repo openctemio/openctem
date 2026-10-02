@@ -8,14 +8,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/internal/metrics"
-	moduledom "github.com/openctemio/api/pkg/domain/module"
-	"github.com/openctemio/api/pkg/domain/permission"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/metrics"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // IngestMaxConcurrentPerTenant caps in-flight report-ingest requests per

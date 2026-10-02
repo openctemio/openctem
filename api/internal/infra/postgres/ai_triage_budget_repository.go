@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/internal/app/aitriage"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/aitriage"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AITriageBudgetRepository implements aitriage.BudgetRepository

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 )
 
 // The tool gate (RFC-030 B5) against a real schema: outside zones too, a

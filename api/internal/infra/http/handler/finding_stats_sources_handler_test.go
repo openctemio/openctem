@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 )
 
 // /findings/stats?sources=… validates sources exactly like the list endpoint:

@@ -8,9 +8,9 @@ import (
 	"crypto/subtle"
 	"net/http"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/admin"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Admin auth context keys.

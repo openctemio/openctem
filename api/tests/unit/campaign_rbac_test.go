@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/pentest"
-	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/openctemio/openctem/api/pkg/domain/pentest"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // =============================================================================

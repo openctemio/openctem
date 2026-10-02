@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/tools/lint/openapicontract"
+	"github.com/openctemio/openctem/api/tools/lint/openapicontract"
 )
 
 // repoRoot walks up from this package to the module root.

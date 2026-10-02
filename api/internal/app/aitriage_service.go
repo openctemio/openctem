@@ -2,7 +2,7 @@ package app
 
 // Compatibility shim — real impl lives in internal/app/aitriage/.
 
-import "github.com/openctemio/api/internal/app/aitriage"
+import "github.com/openctemio/openctem/api/internal/app/aitriage"
 
 type (
 	AITriageService                  = aitriage.AITriageService

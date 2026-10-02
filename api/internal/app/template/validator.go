@@ -9,8 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"gopkg.in/yaml.v3"
+
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 )
 
 // =============================================================================

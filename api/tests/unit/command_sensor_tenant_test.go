@@ -6,9 +6,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/internal/app/command"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // POST /api/v1/commands took any sensor_id. Reproduced live on develop

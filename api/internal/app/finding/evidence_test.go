@@ -7,12 +7,12 @@ import (
 	"io"
 	"testing"
 
-	"github.com/openctemio/api/internal/app/integration"
-	attachmentdom "github.com/openctemio/api/pkg/domain/attachment"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/integration"
+	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // stubUserRepo implements only GetByIDs (the sole method the evidence

@@ -7,8 +7,9 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/threatmodel"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/threatmodel"
 )
 
 // AttackerProfileReader reads attacker profiles as neutral generation inputs.

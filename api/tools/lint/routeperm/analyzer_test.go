@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 
-	"github.com/openctemio/api/tools/lint/routeperm"
+	"github.com/openctemio/openctem/api/tools/lint/routeperm"
 )
 
 // analysistest drives two fixture packages.

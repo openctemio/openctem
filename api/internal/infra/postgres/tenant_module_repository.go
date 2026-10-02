@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/module"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TenantModuleRepository handles per-tenant module configuration.

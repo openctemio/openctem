@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	sensordom "github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Errors of RegisterManifest besides the parse errors of

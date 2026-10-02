@@ -25,7 +25,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TechniqueID is the MITRE ATT&CK technique identifier. The API does

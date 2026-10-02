@@ -3,13 +3,14 @@ package command
 import (
 	"context"
 	"encoding/json"
-	"github.com/openctemio/api/internal/app"
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/internal/app/pipeline"
-	commanddom "github.com/openctemio/api/pkg/domain/command"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/pipeline"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // stepFailer is the slice of pipeline.Service this checker needs: a way to tell

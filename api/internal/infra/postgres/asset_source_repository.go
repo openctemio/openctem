@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/datasource"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/datasource"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AssetSourceRepository implements datasource.AssetSourceRepository using PostgreSQL.

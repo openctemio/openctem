@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
-	"github.com/openctemio/api/internal/config"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/logger"
+
+	"github.com/openctemio/openctem/api/internal/config"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func boolPtr(b bool) *bool { return &b }

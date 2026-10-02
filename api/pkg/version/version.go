@@ -3,9 +3,9 @@
 // Release builds set Version, Commit and BuildTime with -ldflags, from the tag
 // (Dockerfile + docker-publish.yml):
 //
-//	-X github.com/openctemio/api/pkg/version.Version=v0.9.0
-//	-X github.com/openctemio/api/pkg/version.Commit=<sha>
-//	-X github.com/openctemio/api/pkg/version.BuildTime=2026-10-02T10:00:00Z
+//	-X github.com/openctemio/openctem/api/pkg/version.Version=v0.9.0
+//	-X github.com/openctemio/openctem/api/pkg/version.Commit=<sha>
+//	-X github.com/openctemio/openctem/api/pkg/version.BuildTime=2026-10-02T10:00:00Z
 //
 // The dev container's air build passes "<highest tag>-dev" and the short HEAD
 // (.air.toml). A binary built with none of them (go run, an air config from

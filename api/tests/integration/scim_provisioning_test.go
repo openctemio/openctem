@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/app/scim"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/scim"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // scimMemberMgr adapts the real TenantService to scim.MembershipManager,

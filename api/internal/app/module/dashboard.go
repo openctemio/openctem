@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/internal/app/datascope"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // DashboardStats represents aggregated dashboard statistics.

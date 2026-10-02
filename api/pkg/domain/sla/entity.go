@@ -5,22 +5,22 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Policy represents an SLA policy for findings remediation.
 type Policy struct {
-	id                  shared.ID
-	tenantID            shared.ID
-	assetID             *shared.ID // nil = tenant default policy
-	name                string
-	description         string
-	isDefault           bool
-	criticalDays        int
-	highDays            int
-	mediumDays          int
-	lowDays             int
-	infoDays            int
+	id           shared.ID
+	tenantID     shared.ID
+	assetID      *shared.ID // nil = tenant default policy
+	name         string
+	description  string
+	isDefault    bool
+	criticalDays int
+	highDays     int
+	mediumDays   int
+	lowDays      int
+	infoDays     int
 	// F3: priority-class-driven SLA days. When a finding has a
 	// PriorityClass (P0..P3), these take precedence over severity-based
 	// days. Columns exist in migration 000142 but were previously
@@ -128,17 +128,17 @@ func Reconstitute(
 		escalationConfig = make(map[string]any)
 	}
 	return &Policy{
-		id:                  id,
-		tenantID:            tenantID,
-		assetID:             assetID,
-		name:                name,
-		description:         description,
-		isDefault:           isDefault,
-		criticalDays:        criticalDays,
-		highDays:            highDays,
-		mediumDays:          mediumDays,
-		lowDays:             lowDays,
-		infoDays:            infoDays,
+		id:           id,
+		tenantID:     tenantID,
+		assetID:      assetID,
+		name:         name,
+		description:  description,
+		isDefault:    isDefault,
+		criticalDays: criticalDays,
+		highDays:     highDays,
+		mediumDays:   mediumDays,
+		lowDays:      lowDays,
+		infoDays:     infoDays,
 		// Priority-class days default to DefaultPriorityDays for rows
 		// persisted by legacy callers. Callers that need custom values
 		// should set them via WithPriorityDays after Reconstitute.

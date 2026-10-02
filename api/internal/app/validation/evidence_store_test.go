@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 type memEvidenceRepo struct {

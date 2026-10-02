@@ -3,8 +3,9 @@ package unit
 import (
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 )
 
 func TestParsePropertiesFilter(t *testing.T) {

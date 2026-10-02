@@ -16,13 +16,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	sessiondom "github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/shared"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/httpsec"
-	"github.com/openctemio/api/pkg/jwt"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/jwt"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // OAuth errors.

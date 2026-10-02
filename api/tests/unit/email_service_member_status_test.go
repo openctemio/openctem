@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
-	emaildom "github.com/openctemio/api/pkg/email"
+	"github.com/openctemio/openctem/api/internal/app"
+	emaildom "github.com/openctemio/openctem/api/pkg/email"
 )
 
 // tenantSMTPResolverMock implements app.TenantSMTPResolver for testing

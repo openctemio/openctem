@@ -4,7 +4,7 @@ package app
 // Covers permission, role, group, membership-cache, permission-cache,
 // permission-version, rule, group-sync services (RBAC bounded context).
 
-import "github.com/openctemio/api/internal/app/accesscontrol"
+import "github.com/openctemio/openctem/api/internal/app/accesscontrol"
 
 type (
 	PermissionService           = accesscontrol.PermissionService

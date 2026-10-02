@@ -4,8 +4,8 @@ package template
 import (
 	"context"
 
-	"github.com/openctemio/api/internal/app/scan"
-	"github.com/openctemio/api/pkg/domain/templatesource"
+	"github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/templatesource"
 )
 
 // Scan adapter — moved from internal/app/adapters.go so the template

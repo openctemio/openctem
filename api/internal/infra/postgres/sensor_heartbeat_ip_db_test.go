@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 )
 
 // TestUpdateHeartbeat_StoresClientIP: the heartbeat writes the caller's address

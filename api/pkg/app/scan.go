@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/scan"
-	"github.com/openctemio/api/pkg/domain/scansession"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scansession"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // CreateScanInput represents the input for creating a scan.

@@ -1,11 +1,11 @@
 package app
 
 import (
-	"github.com/openctemio/api/internal/metrics"
+	"github.com/openctemio/openctem/api/internal/metrics"
 )
 
 // Re-export metrics from the metrics package for backward compatibility.
-// New code should import github.com/openctemio/api/internal/metrics directly.
+// New code should import github.com/openctemio/openctem/api/internal/metrics directly.
 
 // Pipeline metrics
 var (

@@ -4,7 +4,7 @@ package app
 // Covers auth, sso, oauth, session, email, ws-ticket services plus
 // tenant-scoped SMTP + storage resolvers (auth bounded context).
 
-import "github.com/openctemio/api/internal/app/auth"
+import "github.com/openctemio/openctem/api/internal/app/auth"
 
 type (
 	AuthService             = auth.AuthService

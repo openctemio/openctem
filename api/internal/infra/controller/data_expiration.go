@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/scope"
-	"github.com/openctemio/api/pkg/domain/suppression"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // DataExpirationControllerConfig configures the DataExpirationController.

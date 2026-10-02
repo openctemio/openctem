@@ -83,15 +83,15 @@ linters-settings:
           - "**/pkg/domain/relationship/**"
           - "**/pkg/domain/findingsource/**"
         deny:
-          - pkg: github.com/openctemio/api/internal/app
+          - pkg: github.com/openctemio/openctem/api/internal/app
             desc: "core domain must not depend on app services (layering violation)"
-          - pkg: github.com/openctemio/api/pkg/domain/pentest
+          - pkg: github.com/openctemio/openctem/api/pkg/domain/pentest
             desc: "core domain must not import a feature domain"
-          - pkg: github.com/openctemio/api/pkg/domain/remediation
+          - pkg: github.com/openctemio/openctem/api/pkg/domain/remediation
             desc: "core domain must not import a feature domain"
-          - pkg: github.com/openctemio/api/pkg/domain/compliance
+          - pkg: github.com/openctemio/openctem/api/pkg/domain/compliance
             desc: "core domain must not import a feature domain"
-          - pkg: github.com/openctemio/api/pkg/domain/simulation
+          - pkg: github.com/openctemio/openctem/api/pkg/domain/simulation
             desc: "core domain must not import a feature domain"
 
   errcheck:
@@ -168,7 +168,7 @@ linters-settings:
     errorf: false
 
   goimports:
-    local-prefixes: github.com/openctemio/openctem
+    local-prefixes: github.com/openctemio/openctem/api
 
   misspell:
     locale: US

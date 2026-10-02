@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"github.com/openctemio/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 )
 
 // registerUserDashboardRoutes registers the per-user customizable dashboards

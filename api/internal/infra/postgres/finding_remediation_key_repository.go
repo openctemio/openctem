@@ -6,8 +6,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/pkg/domain/remediation"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // FindingRemediationKeyRepository owns the finding_remediation_keys side-table

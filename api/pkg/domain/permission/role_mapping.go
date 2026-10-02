@@ -1,6 +1,6 @@
 package permission
 
-import "github.com/openctemio/api/pkg/domain/tenant"
+import "github.com/openctemio/openctem/api/pkg/domain/tenant"
 
 // RolePermissions defines the default permissions for each role.
 // This mapping can be overridden by configuration if needed.

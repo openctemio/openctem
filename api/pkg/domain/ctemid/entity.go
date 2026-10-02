@@ -3,7 +3,7 @@ package ctemid
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // CTEMID is one entry in the CTEM-ID catalog.

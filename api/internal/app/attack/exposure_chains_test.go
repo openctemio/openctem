@@ -3,7 +3,7 @@ package attack
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 func node(id, exposure, criticality string, crownJewel bool) asset.AssetNode {

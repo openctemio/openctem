@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/scoping"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scoping"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ScopingSummaryRepository computes the Scoping overview in one query.

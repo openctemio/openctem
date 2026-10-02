@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 )
 
 // TestNewS3Storage_EndpointIsSSRFGuarded: the tenant-chosen endpoint went to

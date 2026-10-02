@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	groupdom "github.com/openctemio/api/pkg/domain/group"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // GroupSyncService handles synchronization of groups from external providers

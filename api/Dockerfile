@@ -81,9 +81,9 @@ RUN CGO_ENABLED=0 \
     GOOS=${TARGETOS:-linux} \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
     go build -ldflags="-s -w \
-      -X github.com/openctemio/api/pkg/version.Version=${VERSION} \
-      -X github.com/openctemio/api/pkg/version.Commit=${COMMIT} \
-      -X github.com/openctemio/api/pkg/version.BuildTime=${BUILD_TIME}" \
+      -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
+      -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
+      -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
     -o /app/bin/server ./cmd/server
 
 # Build bootstrap-admin (initial setup: platform administrators and the first

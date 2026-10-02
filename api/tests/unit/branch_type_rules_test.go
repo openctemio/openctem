@@ -3,7 +3,7 @@ package unit
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/branch"
 )
 
 func TestBranchTypeRules_Detect(t *testing.T) {

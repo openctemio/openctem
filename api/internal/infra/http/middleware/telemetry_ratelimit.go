@@ -6,9 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/logger"
 	"golang.org/x/time/rate"
+
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Per-tenant rate limiter for the runtime-telemetry ingest endpoint.

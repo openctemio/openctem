@@ -20,12 +20,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	tenantapp "github.com/openctemio/api/internal/app/tenant"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // AuditActor identifies this command as the actor in the audit log (it runs

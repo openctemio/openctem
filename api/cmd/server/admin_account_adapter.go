@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/app/adminconsole"
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/pkg/domain/admin"
-	sessiondom "github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // adminAccountDirectory lets the admin console (RFC-022) resolve the user

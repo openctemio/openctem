@@ -3,8 +3,8 @@ package asset
 import (
 	"testing"
 
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // edgeKey identifies an inferred edge for assertion lookups.

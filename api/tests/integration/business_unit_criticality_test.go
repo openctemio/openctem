@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	assetapp "github.com/openctemio/api/internal/app/asset"
-	"github.com/openctemio/api/internal/infra/postgres"
-	businessunit "github.com/openctemio/api/pkg/domain/businessunit"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	businessunit "github.com/openctemio/openctem/api/pkg/domain/businessunit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // TestBusinessUnitCriticalityRoundTrip proves that criticality, risk_tolerance

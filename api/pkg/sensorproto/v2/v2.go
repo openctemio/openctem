@@ -11,7 +11,7 @@
 // Import it with an alias (the last path element is a major-version-looking
 // "v2", which tools would otherwise read as the package "sensorproto"):
 //
-//	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+//	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 package v2
 
 import (

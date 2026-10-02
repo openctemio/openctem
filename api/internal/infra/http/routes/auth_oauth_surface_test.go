@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/config"
-	infrahttp "github.com/openctemio/api/internal/infra/http"
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/config"
+	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // oauthTestConfig returns a config with all three social providers fully

@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // SensorHealthChecker periodically checks for stale sensors and marks them as offline (health).

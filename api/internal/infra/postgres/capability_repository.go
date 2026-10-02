@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/capability"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/capability"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // CapabilityRepository implements capability.Repository using PostgreSQL.

@@ -6,12 +6,12 @@ import (
 	"html"
 	"strings"
 
-	authapp "github.com/openctemio/api/internal/app/auth"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/keycloak"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/keycloak"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // UserService handles user-related business operations.

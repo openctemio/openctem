@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ActorType classifies the threat actor.
@@ -76,15 +76,15 @@ type ThreatActorCVE struct {
 }
 
 // Getters
-func (c *ThreatActorCVE) ID() shared.ID            { return c.id }
+func (c *ThreatActorCVE) ID() shared.ID             { return c.id }
 func (c *ThreatActorCVE) TenantID() shared.ID       { return c.tenantID }
 func (c *ThreatActorCVE) ThreatActorID() shared.ID  { return c.threatActorID }
 func (c *ThreatActorCVE) CveID() string             { return c.cveID }
-func (c *ThreatActorCVE) Confidence() string         { return c.confidence }
-func (c *ThreatActorCVE) Source() string             { return c.source }
-func (c *ThreatActorCVE) FirstObserved() *time.Time  { return c.firstObserved }
-func (c *ThreatActorCVE) Notes() string              { return c.notes }
-func (c *ThreatActorCVE) CreatedAt() time.Time       { return c.createdAt }
+func (c *ThreatActorCVE) Confidence() string        { return c.confidence }
+func (c *ThreatActorCVE) Source() string            { return c.source }
+func (c *ThreatActorCVE) FirstObserved() *time.Time { return c.firstObserved }
+func (c *ThreatActorCVE) Notes() string             { return c.notes }
+func (c *ThreatActorCVE) CreatedAt() time.Time      { return c.createdAt }
 
 // NewThreatActorCVE creates a new threat actor CVE link.
 func NewThreatActorCVE(tenantID, actorID shared.ID, cveID, confidence, source string) *ThreatActorCVE {
@@ -143,26 +143,26 @@ func ReconstituteThreatActor(
 		mitreGroupID: mitreGroupID, ttps: ttps,
 		targetIndustries: targetIndustries, targetRegions: targetRegions,
 		externalReferences: externalReferences,
-		tags: tags,
-		createdAt: createdAt, updatedAt: updatedAt,
+		tags:               tags,
+		createdAt:          createdAt, updatedAt: updatedAt,
 	}
 }
 
 // Getters
-func (t *ThreatActor) ID() shared.ID                        { return t.id }
-func (t *ThreatActor) TenantID() shared.ID                   { return t.tenantID }
-func (t *ThreatActor) Name() string                          { return t.name }
-func (t *ThreatActor) Aliases() []string                      { return t.aliases }
-func (t *ThreatActor) Description() string                    { return t.description }
-func (t *ThreatActor) ActorType() ActorType                   { return t.actorType }
-func (t *ThreatActor) Sophistication() string                 { return t.sophistication }
-func (t *ThreatActor) Motivation() string                     { return t.motivation }
-func (t *ThreatActor) CountryOfOrigin() string                { return t.countryOfOrigin }
-func (t *ThreatActor) FirstSeen() *time.Time                  { return t.firstSeen }
-func (t *ThreatActor) LastSeen() *time.Time                   { return t.lastSeen }
-func (t *ThreatActor) IsActive() bool                         { return t.isActive }
-func (t *ThreatActor) MitreGroupID() string                   { return t.mitreGroupID }
-func (t *ThreatActor) TTPs() []TTP                            { return t.ttps }
+func (t *ThreatActor) ID() shared.ID                           { return t.id }
+func (t *ThreatActor) TenantID() shared.ID                     { return t.tenantID }
+func (t *ThreatActor) Name() string                            { return t.name }
+func (t *ThreatActor) Aliases() []string                       { return t.aliases }
+func (t *ThreatActor) Description() string                     { return t.description }
+func (t *ThreatActor) ActorType() ActorType                    { return t.actorType }
+func (t *ThreatActor) Sophistication() string                  { return t.sophistication }
+func (t *ThreatActor) Motivation() string                      { return t.motivation }
+func (t *ThreatActor) CountryOfOrigin() string                 { return t.countryOfOrigin }
+func (t *ThreatActor) FirstSeen() *time.Time                   { return t.firstSeen }
+func (t *ThreatActor) LastSeen() *time.Time                    { return t.lastSeen }
+func (t *ThreatActor) IsActive() bool                          { return t.isActive }
+func (t *ThreatActor) MitreGroupID() string                    { return t.mitreGroupID }
+func (t *ThreatActor) TTPs() []TTP                             { return t.ttps }
 func (t *ThreatActor) TargetIndustries() []string              { return t.targetIndustries }
 func (t *ThreatActor) TargetRegions() []string                 { return t.targetRegions }
 func (t *ThreatActor) ExternalReferences() []ExternalReference { return t.externalReferences }

@@ -3,7 +3,7 @@ package auth
 import (
 	"testing"
 
-	sessiondom "github.com/openctemio/api/pkg/domain/session"
+	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 )
 
 // TestSSOEnforcementDecision exhaustively exercises the pure enforcement

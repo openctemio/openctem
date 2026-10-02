@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/group"
-	"github.com/openctemio/api/pkg/domain/shared"
+
+	"github.com/openctemio/openctem/api/pkg/domain/group"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // GroupRepository implements group.Repository using PostgreSQL.

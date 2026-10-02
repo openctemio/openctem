@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // The charter is stored in the ctem_cycles.charter JSONB column and is

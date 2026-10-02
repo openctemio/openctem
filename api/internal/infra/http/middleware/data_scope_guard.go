@@ -6,8 +6,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // DataScopeAsserter is the slice of the data-scope enforcer the guard needs

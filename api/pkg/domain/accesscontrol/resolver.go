@@ -1,9 +1,9 @@
 package accesscontrol
 
 import (
-	"github.com/openctemio/api/pkg/domain/permission"
-	"github.com/openctemio/api/pkg/domain/permissionset"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/permissionset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // PermissionResolver resolves effective permissions for users and groups.

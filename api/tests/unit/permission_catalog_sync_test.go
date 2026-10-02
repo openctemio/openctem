@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 )
 
 // The permission catalog lives in THREE hand-maintained places that must stay
@@ -31,7 +31,7 @@ var permSeedMigrations = []string{
 	"000093_compliance_seeds.up.sql",
 	"000096_fix_applied_status.up.sql",
 	"000153_ctem_permissions.up.sql",
-	"000231_scan_zones.up.sql", // sensors:zones:* (RFC-023 D16)
+	"000231_scan_zones.up.sql",                    // sensors:zones:* (RFC-023 D16)
 	"000232_credentials_reveal_permission.up.sql", // findings:credentials:reveal
 }
 

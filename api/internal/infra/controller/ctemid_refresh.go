@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	ctemidapp "github.com/openctemio/api/internal/app/ctemid"
-	"github.com/openctemio/api/pkg/logger"
+	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // CTEMIDRefreshController periodically mirrors the CTEM-ID catalog from its

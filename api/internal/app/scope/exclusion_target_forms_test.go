@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	scopedom "github.com/openctemio/api/pkg/domain/scope"
-	"github.com/openctemio/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // A scope exclusion names a host; a scan target may name the same host as a

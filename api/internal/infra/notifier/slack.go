@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // SlackClient implements the Client interface for Slack notifications.

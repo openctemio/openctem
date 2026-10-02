@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	outboxapp "github.com/openctemio/api/internal/app/outbox"
-	"github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/outbox"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+
+	outboxapp "github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // =============================================================================

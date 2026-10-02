@@ -17,14 +17,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/internal/testdb"
-	sensordom "github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/suppression"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 type sensorSuppressionsEnv struct {

@@ -9,7 +9,7 @@ package app
 // to import template/ — so moving it into scan/ would create a cycle.
 // Revisit when the template→scan adapter is refactored.
 
-import "github.com/openctemio/api/internal/app/scan"
+import "github.com/openctemio/openctem/api/internal/app/scan"
 
 type (
 	ScanScheduler            = scan.ScanScheduler

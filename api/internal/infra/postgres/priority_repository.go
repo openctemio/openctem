@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // --- EPSS Adapter (implements app.EPSSRepository) ---

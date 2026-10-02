@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // runSensorUpgradeCheck prints every probe of the agent → sensor upgrade check

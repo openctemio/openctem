@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/ioc"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/ioc"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // IOCRepository implements ioc.Repository using PostgreSQL.

@@ -3,8 +3,8 @@ package templatesource
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ListInput represents the input for listing template sources.

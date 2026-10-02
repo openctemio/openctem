@@ -3,7 +3,7 @@ package postgres
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/ctemid"
+	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
 )
 
 // TestDedupeCTEMID guards the within-batch dedup that keeps UpsertBatch's single

@@ -4,7 +4,7 @@ package app
 // Covers integration + notification + webhook + attachment +
 // credential_import + secretstore (all bounded by "external integrations").
 
-import "github.com/openctemio/api/internal/app/integration"
+import "github.com/openctemio/openctem/api/internal/app/integration"
 
 type (
 	IntegrationService                 = integration.IntegrationService

@@ -3,8 +3,8 @@ package tenant
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // TenantMembershipAdapter adapts the tenantdom.Repository to the TenantMembershipProvider interface.

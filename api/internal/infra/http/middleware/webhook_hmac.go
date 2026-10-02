@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // F-1 / F-314: Generic HMAC-SHA256 verification middleware for public webhook

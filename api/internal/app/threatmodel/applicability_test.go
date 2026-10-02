@@ -3,7 +3,7 @@ package threatmodel
 import (
 	"testing"
 
-	tmdom "github.com/openctemio/api/pkg/domain/threatmodel"
+	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
 )
 
 func cat() []tmdom.TechniqueApplicability {

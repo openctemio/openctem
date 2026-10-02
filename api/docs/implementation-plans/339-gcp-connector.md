@@ -74,8 +74,8 @@ package gcp
 import (
     "context"
 
-    "github.com/openctemio/api/internal/app/connector"
-    "github.com/openctemio/api/pkg/domain/shared"
+    "github.com/openctemio/openctem/api/internal/app/connector"
+    "github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 type Connector struct {

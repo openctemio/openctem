@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // MaxZonesPerTenant bounds how many zones one tenant may define, so routing

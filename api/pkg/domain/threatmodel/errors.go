@@ -6,7 +6,7 @@
 // See docs/rfcs/RFC-continuous-threat-modeling.md.
 package threatmodel
 
-import "github.com/openctemio/api/pkg/domain/shared"
+import "github.com/openctemio/openctem/api/pkg/domain/shared"
 
 // Domain errors.
 var (

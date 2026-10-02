@@ -34,7 +34,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	cryptopkg "github.com/openctemio/api/pkg/crypto"
+	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 )
 
 // legacyMatch reports whether the stored hash is reproducible by the pre-#361

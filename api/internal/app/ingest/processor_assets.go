@@ -11,12 +11,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
-	"github.com/openctemio/api/pkg/validator"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // DedupReviewEnqueuer enqueues a duplicate-asset review for admin approval when

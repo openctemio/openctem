@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"time"
 
-	dashboardapp "github.com/openctemio/api/internal/app/dashboard"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	dashboard "github.com/openctemio/api/pkg/domain/dashboard"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	dashboard "github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // UserDashboardHandler serves the per-user dashboards API (RFC-021), mounted

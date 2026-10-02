@@ -5,7 +5,7 @@ package app
 // it depends on NotificationService + FindingActivityService that have
 // not been extracted yet. Once those move, pentest can rejoin compliance/.
 
-import "github.com/openctemio/api/internal/app/compliance"
+import "github.com/openctemio/openctem/api/internal/app/compliance"
 
 type (
 	ComplianceService             = compliance.ComplianceService

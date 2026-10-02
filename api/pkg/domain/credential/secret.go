@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 )
 
 // A leaked credential's secret (the password, token or key that leaked) is

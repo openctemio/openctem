@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/attachment"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AttachmentRepository handles attachment metadata persistence.

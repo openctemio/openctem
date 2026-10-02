@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	componentdom "github.com/openctemio/api/pkg/domain/component"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ComponentService handles component-related business operations.

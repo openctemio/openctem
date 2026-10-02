@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/validator"
+
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // AssetRelationshipHandler handles asset relationship HTTP requests.
@@ -99,7 +100,7 @@ type BatchCreateRelationshipRequest struct {
 
 // UpdateRelationshipRequest represents the request to update a relationship.
 type UpdateRelationshipRequest struct {
-	Description  *string  `json:"description" validate:"omitempty,max=1000"`
+	Description    *string  `json:"description" validate:"omitempty,max=1000"`
 	Confidence     *string  `json:"confidence" validate:"omitempty"`
 	ImpactWeight   *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
 	IsControlPlane *bool    `json:"is_control_plane" validate:"omitempty"`
@@ -265,7 +266,7 @@ func (h *AssetRelationshipHandler) Update(w http.ResponseWriter, r *http.Request
 	}
 
 	input := app.UpdateRelationshipInput{
-		Description:  req.Description,
+		Description:    req.Description,
 		Confidence:     req.Confidence,
 		ImpactWeight:   req.ImpactWeight,
 		IsControlPlane: req.IsControlPlane,

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ControlType represents the category of compensating control.
@@ -177,16 +177,16 @@ func ReconstituteCompensatingControl(data CompensatingControlData) *Compensating
 // Getters
 func (c *CompensatingControl) ID() shared.ID            { return c.id }
 func (c *CompensatingControl) TenantID() shared.ID      { return c.tenantID }
-func (c *CompensatingControl) Name() string              { return c.name }
-func (c *CompensatingControl) Description() string       { return c.description }
-func (c *CompensatingControl) ControlType() ControlType  { return c.controlType }
-func (c *CompensatingControl) Status() ControlStatus     { return c.status }
-func (c *CompensatingControl) ReductionFactor() float64  { return c.reductionFactor }
-func (c *CompensatingControl) LastTestedAt() *time.Time  { return c.lastTestedAt }
-func (c *CompensatingControl) TestResult() *TestResult   { return c.testResult }
-func (c *CompensatingControl) TestEvidence() string      { return c.testEvidence }
-func (c *CompensatingControl) ExpiresAt() *time.Time     { return c.expiresAt }
-func (c *CompensatingControl) CreatedAt() time.Time      { return c.createdAt }
+func (c *CompensatingControl) Name() string             { return c.name }
+func (c *CompensatingControl) Description() string      { return c.description }
+func (c *CompensatingControl) ControlType() ControlType { return c.controlType }
+func (c *CompensatingControl) Status() ControlStatus    { return c.status }
+func (c *CompensatingControl) ReductionFactor() float64 { return c.reductionFactor }
+func (c *CompensatingControl) LastTestedAt() *time.Time { return c.lastTestedAt }
+func (c *CompensatingControl) TestResult() *TestResult  { return c.testResult }
+func (c *CompensatingControl) TestEvidence() string     { return c.testEvidence }
+func (c *CompensatingControl) ExpiresAt() *time.Time    { return c.expiresAt }
+func (c *CompensatingControl) CreatedAt() time.Time     { return c.createdAt }
 
 // IsEffective returns true if the control is active, tested successfully, and not expired.
 func (c *CompensatingControl) IsEffective() bool {

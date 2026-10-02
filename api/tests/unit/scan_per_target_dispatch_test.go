@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tool"
 )
 
 // RFC-030 B4: outside zones, a scanner that reads one target per job

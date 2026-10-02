@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // F-8: Single-use WebSocket ticket service.

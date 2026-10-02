@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // SimulationType defines the kind of simulation.
@@ -123,28 +123,28 @@ func ReconstituteSimulation(
 }
 
 // Getters
-func (s *Simulation) ID() shared.ID             { return s.id }
-func (s *Simulation) TenantID() shared.ID        { return s.tenantID }
-func (s *Simulation) Name() string               { return s.name }
-func (s *Simulation) Description() string         { return s.description }
+func (s *Simulation) ID() shared.ID                  { return s.id }
+func (s *Simulation) TenantID() shared.ID            { return s.tenantID }
+func (s *Simulation) Name() string                   { return s.name }
+func (s *Simulation) Description() string            { return s.description }
 func (s *Simulation) SimulationType() SimulationType { return s.simulationType }
-func (s *Simulation) Status() SimulationStatus    { return s.status }
-func (s *Simulation) MitreTactic() string         { return s.mitreTactic }
-func (s *Simulation) MitreTechniqueID() string    { return s.mitreTechniqueID }
-func (s *Simulation) MitreTechniqueName() string  { return s.mitreTechniqueName }
-func (s *Simulation) TargetAssets() []string       { return s.targetAssets }
-func (s *Simulation) Config() map[string]any       { return s.config }
-func (s *Simulation) ScheduleCron() string         { return s.scheduleCron }
-func (s *Simulation) LastRunAt() *time.Time        { return s.lastRunAt }
-func (s *Simulation) NextRunAt() *time.Time        { return s.nextRunAt }
-func (s *Simulation) TotalRuns() int               { return s.totalRuns }
-func (s *Simulation) LastResult() string           { return s.lastResult }
-func (s *Simulation) DetectionRate() float64       { return s.detectionRate }
-func (s *Simulation) PreventionRate() float64      { return s.preventionRate }
-func (s *Simulation) Tags() []string               { return s.tags }
-func (s *Simulation) CreatedBy() *shared.ID        { return s.createdBy }
-func (s *Simulation) CreatedAt() time.Time         { return s.createdAt }
-func (s *Simulation) UpdatedAt() time.Time         { return s.updatedAt }
+func (s *Simulation) Status() SimulationStatus       { return s.status }
+func (s *Simulation) MitreTactic() string            { return s.mitreTactic }
+func (s *Simulation) MitreTechniqueID() string       { return s.mitreTechniqueID }
+func (s *Simulation) MitreTechniqueName() string     { return s.mitreTechniqueName }
+func (s *Simulation) TargetAssets() []string         { return s.targetAssets }
+func (s *Simulation) Config() map[string]any         { return s.config }
+func (s *Simulation) ScheduleCron() string           { return s.scheduleCron }
+func (s *Simulation) LastRunAt() *time.Time          { return s.lastRunAt }
+func (s *Simulation) NextRunAt() *time.Time          { return s.nextRunAt }
+func (s *Simulation) TotalRuns() int                 { return s.totalRuns }
+func (s *Simulation) LastResult() string             { return s.lastResult }
+func (s *Simulation) DetectionRate() float64         { return s.detectionRate }
+func (s *Simulation) PreventionRate() float64        { return s.preventionRate }
+func (s *Simulation) Tags() []string                 { return s.tags }
+func (s *Simulation) CreatedBy() *shared.ID          { return s.createdBy }
+func (s *Simulation) CreatedAt() time.Time           { return s.createdAt }
+func (s *Simulation) UpdatedAt() time.Time           { return s.updatedAt }
 
 // Update sets mutable fields.
 func (s *Simulation) Update(name, description string) {

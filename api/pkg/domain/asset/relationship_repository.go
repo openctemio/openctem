@@ -3,7 +3,7 @@ package asset
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // RelationshipRepository defines the interface for asset relationship persistence.

@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 
-	appremediation "github.com/openctemio/api/internal/app/remediation"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/permission"
-	remediationdom "github.com/openctemio/api/pkg/domain/remediation"
-	"github.com/openctemio/api/pkg/domain/shared"
+	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // RemediationGroupHandler exposes remediation groups — the "fix a whole solution

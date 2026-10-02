@@ -4,11 +4,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/severity"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // =============================================================================

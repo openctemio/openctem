@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/role"
+
+	"github.com/openctemio/openctem/api/pkg/domain/role"
 )
 
 // RoleRepository implements role.Repository using PostgreSQL.

@@ -18,8 +18,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 
-	"github.com/openctemio/api/pkg/domain/templatesource"
-	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/domain/templatesource"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // allowLocalRepos lets tests clone from a local path. Production never sets

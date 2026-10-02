@@ -10,11 +10,11 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/assetgroup"
-	"github.com/openctemio/api/pkg/domain/branch"
-	"github.com/openctemio/api/pkg/domain/component"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/component"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // slugRegex validates slugs: lowercase letters, numbers, hyphens

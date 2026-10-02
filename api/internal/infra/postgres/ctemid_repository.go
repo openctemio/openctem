@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/ctemid"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // CTEMIDRepository implements ctemid.Repository using PostgreSQL. The catalog is

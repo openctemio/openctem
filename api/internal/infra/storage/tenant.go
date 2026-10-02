@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/attachment"
-	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // s3HTTPClient builds the HTTP client every S3 request of a tenant-configured

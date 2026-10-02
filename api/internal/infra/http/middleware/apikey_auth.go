@@ -10,10 +10,10 @@ import (
 
 	"golang.org/x/time/rate"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/pkg/apierror"
-	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // API-key context keys. The authenticated key's id and non-secret prefix are

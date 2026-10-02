@@ -8,8 +8,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // TestNewJobWorker_BuiltWithoutEmailService pins the fix for the defect where a

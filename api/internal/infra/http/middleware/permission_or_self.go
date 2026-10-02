@@ -3,8 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 )
 
 // RequirePermissionOrSelf requires perm, except when the path parameter param

@@ -3,7 +3,7 @@ package compliance
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Assessment represents a tenant's assessment of a compliance control.
@@ -46,23 +46,23 @@ func ReconstituteAssessment(
 }
 
 // Getters
-func (a *Assessment) ID() shared.ID            { return a.id }
-func (a *Assessment) TenantID() shared.ID      { return a.tenantID }
-func (a *Assessment) FrameworkID() shared.ID   { return a.frameworkID }
-func (a *Assessment) ControlID() shared.ID     { return a.controlID }
-func (a *Assessment) Status() ControlStatus    { return a.status }
-func (a *Assessment) Priority() Priority       { return a.priority }
-func (a *Assessment) Owner() string            { return a.owner }
-func (a *Assessment) Notes() string            { return a.notes }
+func (a *Assessment) ID() shared.ID              { return a.id }
+func (a *Assessment) TenantID() shared.ID        { return a.tenantID }
+func (a *Assessment) FrameworkID() shared.ID     { return a.frameworkID }
+func (a *Assessment) ControlID() shared.ID       { return a.controlID }
+func (a *Assessment) Status() ControlStatus      { return a.status }
+func (a *Assessment) Priority() Priority         { return a.priority }
+func (a *Assessment) Owner() string              { return a.owner }
+func (a *Assessment) Notes() string              { return a.notes }
 func (a *Assessment) EvidenceType() EvidenceType { return a.evidenceType }
-func (a *Assessment) EvidenceIDs() []string    { return a.evidenceIDs }
-func (a *Assessment) EvidenceCount() int       { return a.evidenceCount }
-func (a *Assessment) FindingCount() int        { return a.findingCount }
-func (a *Assessment) AssessedBy() *shared.ID   { return a.assessedBy }
-func (a *Assessment) AssessedAt() *time.Time   { return a.assessedAt }
-func (a *Assessment) DueDate() *time.Time      { return a.dueDate }
-func (a *Assessment) CreatedAt() time.Time     { return a.createdAt }
-func (a *Assessment) UpdatedAt() time.Time     { return a.updatedAt }
+func (a *Assessment) EvidenceIDs() []string      { return a.evidenceIDs }
+func (a *Assessment) EvidenceCount() int         { return a.evidenceCount }
+func (a *Assessment) FindingCount() int          { return a.findingCount }
+func (a *Assessment) AssessedBy() *shared.ID     { return a.assessedBy }
+func (a *Assessment) AssessedAt() *time.Time     { return a.assessedAt }
+func (a *Assessment) DueDate() *time.Time        { return a.dueDate }
+func (a *Assessment) CreatedAt() time.Time       { return a.createdAt }
+func (a *Assessment) UpdatedAt() time.Time       { return a.updatedAt }
 
 // UpdateStatus updates the assessment status.
 func (a *Assessment) UpdateStatus(status ControlStatus, notes string, assessedBy shared.ID) {

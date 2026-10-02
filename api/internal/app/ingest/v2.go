@@ -22,12 +22,12 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/ingestreport"
-	"github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/api/pkg/domain/tool"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // V2Options are the ingest rules every v2 segment runs with.

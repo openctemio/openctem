@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/dashboard"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // UserDashboardRepository persists per-user dashboards (RFC-021). Every query is

@@ -7,11 +7,11 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/app/finding"
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // fakeEPSSRepo / fakeKEVRepo / fakeRuleRepo / fakeAuditRepo are minimal stand-ins

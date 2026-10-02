@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	businessunitdom "github.com/openctemio/api/pkg/domain/businessunit"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	businessunitdom "github.com/openctemio/openctem/api/pkg/domain/businessunit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // BusinessUnitService manages business units.

@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/api/internal/app/scancoverage"
-	"github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/scancoverage"
+	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // CoverageScheduler is the live controller for RFC-007 license-aware rolling

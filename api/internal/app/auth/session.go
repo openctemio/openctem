@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/internal/app/accesscontrol"
-	"github.com/openctemio/api/pkg/domain/mfa"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 
-	sessiondom "github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // SessionService handles session management operations.

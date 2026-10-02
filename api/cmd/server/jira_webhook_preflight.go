@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // P0-2: startup preflight for Jira webhook HMAC configuration.

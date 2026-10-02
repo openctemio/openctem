@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/threatmodel"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/threatmodel"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ThreatModelRepository implements threatmodel.Repository over PostgreSQL.

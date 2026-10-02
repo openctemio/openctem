@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestMembersWithoutGroupSee(t *testing.T) {

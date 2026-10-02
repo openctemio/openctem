@@ -2,7 +2,7 @@ package app
 
 // Compatibility shim — real impl lives in internal/app/workflow/.
 
-import "github.com/openctemio/api/internal/app/workflow"
+import "github.com/openctemio/openctem/api/internal/app/workflow"
 
 type (
 	WorkflowService             = workflow.WorkflowService

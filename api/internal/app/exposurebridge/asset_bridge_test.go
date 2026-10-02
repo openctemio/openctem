@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app/exposurebridge"
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/exposure"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func newAsset(t *testing.T, tenantID shared.ID, name string, at asset.AssetType, subType string, props map[string]any) *asset.Asset {

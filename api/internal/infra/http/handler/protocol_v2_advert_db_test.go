@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // RFC-026 WP-A7: a v1 sensor discovers v2 results on its heartbeat by asking

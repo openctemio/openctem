@@ -3,7 +3,7 @@ package attachment
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Repository persists attachment metadata (not file content — that's FileStorage).

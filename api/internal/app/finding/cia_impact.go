@@ -1,6 +1,6 @@
 package finding
 
-import "github.com/openctemio/api/pkg/domain/asset"
+import "github.com/openctemio/openctem/api/pkg/domain/asset"
 
 // ciaImpact maps an asset's CIA business-impact rating (Scoping-stage
 // critical-asset register: impact_confidentiality/integrity/availability) into

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // FindingFilter.CVEIDs and FindingTypes must reach the list/count WHERE clause.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // B7: mid-cycle scope delta.
@@ -61,12 +61,12 @@ func (e ScopeChangeEvent) Validate() error {
 // display. The cycle-review endpoint returns this so the UI shows
 // "during this cycle so far: +12 assets, -3 assets".
 type ScopeDeltaRollup struct {
-	CycleID        shared.ID
-	AddedAssets    []shared.ID
-	RemovedAssets  []shared.ID
-	AddedByReason  map[string]int
+	CycleID         shared.ID
+	AddedAssets     []shared.ID
+	RemovedAssets   []shared.ID
+	AddedByReason   map[string]int
 	RemovedByReason map[string]int
-	ComputedAt     time.Time
+	ComputedAt      time.Time
 }
 
 // RollupChanges folds a sequence of ScopeChangeEvents into a

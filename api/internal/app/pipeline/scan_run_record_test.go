@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	pipelinedom "github.com/openctemio/api/pkg/domain/pipeline"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // A pipeline_run reaching a terminal state used to update only the run row; the

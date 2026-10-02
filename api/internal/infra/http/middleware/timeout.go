@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Timeout adds a timeout to each request context.

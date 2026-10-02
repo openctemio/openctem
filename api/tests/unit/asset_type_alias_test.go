@@ -3,7 +3,7 @@ package unit
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 func TestResolveTypeAlias(t *testing.T) {

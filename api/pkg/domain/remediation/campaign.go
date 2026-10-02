@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // CampaignStatus defines lifecycle states.
@@ -34,28 +34,28 @@ const (
 
 // Campaign tracks a remediation effort across multiple findings.
 type Campaign struct {
-	id             shared.ID
-	tenantID       shared.ID
-	name           string
-	description    string
-	status         CampaignStatus
-	priority       CampaignPriority
-	findingFilter  map[string]any
-	findingCount   int
-	resolvedCount  int
-	progress       float64
-	riskBefore     *float64
-	riskAfter      *float64
-	riskReduction  *float64
-	assignedTo     *shared.ID
-	assignedTeam   *shared.ID
-	startDate      *time.Time
-	dueDate        *time.Time
-	completedAt    *time.Time
-	tags           []string
-	createdBy      *shared.ID
-	createdAt      time.Time
-	updatedAt      time.Time
+	id            shared.ID
+	tenantID      shared.ID
+	name          string
+	description   string
+	status        CampaignStatus
+	priority      CampaignPriority
+	findingFilter map[string]any
+	findingCount  int
+	resolvedCount int
+	progress      float64
+	riskBefore    *float64
+	riskAfter     *float64
+	riskReduction *float64
+	assignedTo    *shared.ID
+	assignedTeam  *shared.ID
+	startDate     *time.Time
+	dueDate       *time.Time
+	completedAt   *time.Time
+	tags          []string
+	createdBy     *shared.ID
+	createdAt     time.Time
+	updatedAt     time.Time
 }
 
 // NewCampaign creates a new remediation campaign.
@@ -95,7 +95,7 @@ func ReconstituteCampaign(
 		name: name, description: description,
 		status: status, priority: priority,
 		findingFilter: findingFilter,
-		findingCount: findingCount, resolvedCount: resolvedCount, progress: progress,
+		findingCount:  findingCount, resolvedCount: resolvedCount, progress: progress,
 		riskBefore: riskBefore, riskAfter: riskAfter, riskReduction: riskReduction,
 		assignedTo: assignedTo, assignedTeam: assignedTeam,
 		startDate: startDate, dueDate: dueDate, completedAt: completedAt,
@@ -105,28 +105,28 @@ func ReconstituteCampaign(
 }
 
 // Getters
-func (c *Campaign) ID() shared.ID               { return c.id }
-func (c *Campaign) TenantID() shared.ID          { return c.tenantID }
-func (c *Campaign) Name() string                 { return c.name }
+func (c *Campaign) ID() shared.ID                 { return c.id }
+func (c *Campaign) TenantID() shared.ID           { return c.tenantID }
+func (c *Campaign) Name() string                  { return c.name }
 func (c *Campaign) Description() string           { return c.description }
 func (c *Campaign) Status() CampaignStatus        { return c.status }
 func (c *Campaign) Priority() CampaignPriority    { return c.priority }
-func (c *Campaign) FindingFilter() map[string]any  { return c.findingFilter }
-func (c *Campaign) FindingCount() int              { return c.findingCount }
-func (c *Campaign) ResolvedCount() int             { return c.resolvedCount }
-func (c *Campaign) Progress() float64              { return c.progress }
-func (c *Campaign) RiskBefore() *float64           { return c.riskBefore }
-func (c *Campaign) RiskAfter() *float64            { return c.riskAfter }
-func (c *Campaign) RiskReduction() *float64        { return c.riskReduction }
-func (c *Campaign) AssignedTo() *shared.ID         { return c.assignedTo }
-func (c *Campaign) AssignedTeam() *shared.ID       { return c.assignedTeam }
-func (c *Campaign) StartDate() *time.Time          { return c.startDate }
-func (c *Campaign) DueDate() *time.Time            { return c.dueDate }
-func (c *Campaign) CompletedAt() *time.Time        { return c.completedAt }
-func (c *Campaign) Tags() []string                 { return c.tags }
-func (c *Campaign) CreatedBy() *shared.ID          { return c.createdBy }
-func (c *Campaign) CreatedAt() time.Time           { return c.createdAt }
-func (c *Campaign) UpdatedAt() time.Time           { return c.updatedAt }
+func (c *Campaign) FindingFilter() map[string]any { return c.findingFilter }
+func (c *Campaign) FindingCount() int             { return c.findingCount }
+func (c *Campaign) ResolvedCount() int            { return c.resolvedCount }
+func (c *Campaign) Progress() float64             { return c.progress }
+func (c *Campaign) RiskBefore() *float64          { return c.riskBefore }
+func (c *Campaign) RiskAfter() *float64           { return c.riskAfter }
+func (c *Campaign) RiskReduction() *float64       { return c.riskReduction }
+func (c *Campaign) AssignedTo() *shared.ID        { return c.assignedTo }
+func (c *Campaign) AssignedTeam() *shared.ID      { return c.assignedTeam }
+func (c *Campaign) StartDate() *time.Time         { return c.startDate }
+func (c *Campaign) DueDate() *time.Time           { return c.dueDate }
+func (c *Campaign) CompletedAt() *time.Time       { return c.completedAt }
+func (c *Campaign) Tags() []string                { return c.tags }
+func (c *Campaign) CreatedBy() *shared.ID         { return c.createdBy }
+func (c *Campaign) CreatedAt() time.Time          { return c.createdAt }
+func (c *Campaign) UpdatedAt() time.Time          { return c.updatedAt }
 
 // Update sets mutable fields.
 func (c *Campaign) Update(name, description string, priority CampaignPriority) {

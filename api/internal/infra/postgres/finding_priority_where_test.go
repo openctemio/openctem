@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // RFC-017 P1: the findings list must be filterable by the CTEM prioritization

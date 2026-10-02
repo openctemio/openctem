@@ -14,10 +14,10 @@ import (
 	"fmt"
 	"time"
 
-	iocdom "github.com/openctemio/api/pkg/domain/ioc"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/telemetry"
-	"github.com/openctemio/api/pkg/logger"
+	iocdom "github.com/openctemio/openctem/api/pkg/domain/ioc"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/telemetry"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // FindingReopener is the narrow surface the correlator needs to

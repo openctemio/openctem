@@ -7,12 +7,12 @@ import (
 	"strings"
 	"sync"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
-	"github.com/openctemio/api/pkg/domain/audit"
-	moduledom "github.com/openctemio/api/pkg/domain/module"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ModuleRepository interface for module operations.

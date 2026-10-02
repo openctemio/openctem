@@ -9,14 +9,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	scanapp "github.com/openctemio/api/internal/app/scan"
-	scanzoneapp "github.com/openctemio/api/internal/app/scanzone"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/scanzone"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ScanZoneHandler serves the scan zone management API (RFC-023 Phase 1):

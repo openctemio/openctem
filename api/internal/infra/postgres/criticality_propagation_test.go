@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 // --- Feature 1: multi-hop control-plane walk (walkControlPlane) --------------

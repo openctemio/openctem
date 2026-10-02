@@ -10,9 +10,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/outbox"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+
+	"github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // OutboxRepository implements the outbox.OutboxRepository interface.

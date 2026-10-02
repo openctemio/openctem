@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	integrationdom "github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/shared"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ErrNoGitHubIntegration is returned when a tenant has no GitHub integration to

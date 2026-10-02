@@ -9,7 +9,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // SARIF findings need an asset, and a SARIF log does not have to name one.

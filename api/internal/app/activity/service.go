@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // userCacheEntry stores cached user info with expiration.
@@ -112,11 +112,11 @@ func (s *FindingActivityService) SetUserRepo(repo user.Repository) {
 
 // RecordActivityInput represents the input for recording an activity.
 type RecordActivityInput struct {
-	TenantID       string                 `validate:"required,uuid"`
-	FindingID      string                 `validate:"required,uuid"`
-	ActivityType   string                 `validate:"required"`
-	ActorID        *string                `validate:"omitempty,uuid"`
-	ActorType      string                 `validate:"required"`
+	TenantID       string         `validate:"required,uuid"`
+	FindingID      string         `validate:"required,uuid"`
+	ActivityType   string         `validate:"required"`
+	ActorID        *string        `validate:"omitempty,uuid"`
+	ActorType      string         `validate:"required"`
 	Changes        map[string]any `validate:"required"`
 	Source         string
 	SourceMetadata map[string]any

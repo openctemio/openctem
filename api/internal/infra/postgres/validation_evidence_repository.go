@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openctemio/api/internal/app/validation"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ValidationEvidenceRepository persists CTEM Stage-4 validation evidence

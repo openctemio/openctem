@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/uuid"
 
-	tenantapp "github.com/openctemio/api/internal/app/tenant"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/password"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/password"
 )
 
 // Options are the command-line inputs; call Normalize before Run.

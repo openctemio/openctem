@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	moduledom "github.com/openctemio/api/pkg/domain/module"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/simulation"
-	"github.com/openctemio/api/pkg/logger"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/simulation"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // fakeModuleGuard is a per-tenant disabled-module oracle for the compute-guard

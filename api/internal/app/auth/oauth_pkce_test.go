@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // mockProvider is an OAuth authorization server that enforces PKCE: the

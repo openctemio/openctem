@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/httpsec"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Server represents the HTTP server.
@@ -74,16 +74,16 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 
 	// Apply global middleware (order matters!)
 	s.router.Use(
-		middleware.RecoveryWithConfig(log, cfg.IsProduction()),          // Recover from panics (no stack trace in prod)
-		middleware.ConcurrencyLimit(cfg.Server.MaxConcurrentRequests),   // Limit concurrent requests
-		middleware.RequestID(),                                          // Add request ID early
-		middleware.ContextLogger(log),                                   // Inject request-scoped logger into context
-		middleware.SecurityHeadersWithConfig(securityCfg),               // Security headers with HSTS
-		middleware.CORSWithEnvironment(&cfg.CORS, cfg.App.Env),         // CORS with environment-aware config
-		middleware.BodyLimit(cfg.Server.MaxBodySize),                    // Limit request body size (10MB default)
-		rateLimitMw,                                                    // Rate limiting
+		middleware.RecoveryWithConfig(log, cfg.IsProduction()),        // Recover from panics (no stack trace in prod)
+		middleware.ConcurrencyLimit(cfg.Server.MaxConcurrentRequests), // Limit concurrent requests
+		middleware.RequestID(),                                 // Add request ID early
+		middleware.ContextLogger(log),                          // Inject request-scoped logger into context
+		middleware.SecurityHeadersWithConfig(securityCfg),      // Security headers with HSTS
+		middleware.CORSWithEnvironment(&cfg.CORS, cfg.App.Env), // CORS with environment-aware config
+		middleware.BodyLimit(cfg.Server.MaxBodySize),           // Limit request body size (10MB default)
+		rateLimitMw, // Rate limiting
 		middleware.TimeoutWithLogger(cfg.Server.RequestTimeout, log), // Per-request timeout (+ panic recovery inside its goroutine)
-		middleware.Metrics(),                                           // Prometheus metrics
+		middleware.Metrics(), // Prometheus metrics
 		middleware.LoggerWithConfig(log, middleware.LoggerConfig{
 			SkipPaths:            middleware.DefaultLoggerConfig().SkipPaths,
 			SkipSuccessful:       false, // Log all requests by default

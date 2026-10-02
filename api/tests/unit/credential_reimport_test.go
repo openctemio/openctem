@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/credential"
-	"github.com/openctemio/api/pkg/domain/exposure"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Re-importing a leaked credential must update the stored one. The import

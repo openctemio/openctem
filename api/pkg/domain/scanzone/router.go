@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Resolver looks up the addresses of a hostname. *net.Resolver satisfies it.

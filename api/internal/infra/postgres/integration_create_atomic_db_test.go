@@ -7,12 +7,12 @@ import (
 
 	_ "github.com/lib/pq"
 
-	appintegration "github.com/openctemio/api/internal/app/integration"
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/crypto"
-	integrationdom "github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	appintegration "github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // CreateIntegration used to insert the integration and its SCM extension as two

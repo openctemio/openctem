@@ -3,7 +3,7 @@ package integration
 import (
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Domain errors for integration.

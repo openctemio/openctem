@@ -4,7 +4,7 @@ package tenant
 import (
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Bounds for lifecycle threshold configuration. Mins are there to

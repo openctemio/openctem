@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/role"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // CreateRoleInput represents the input for creating a role.

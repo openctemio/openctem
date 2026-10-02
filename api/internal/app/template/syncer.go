@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/infra/fetchers"
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/secretstore"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/templatesource"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/fetchers"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/templatesource"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // SecretStoreDecryptor is the narrow surface the Syncer needs to decrypt

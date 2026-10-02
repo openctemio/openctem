@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
 )
 
 // Repositories holds all repository instances.

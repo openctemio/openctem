@@ -6,10 +6,10 @@ import (
 	"regexp"
 	"strings"
 
-	compliancedom "github.com/openctemio/api/pkg/domain/compliance"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/pagination"
+	compliancedom "github.com/openctemio/openctem/api/pkg/domain/compliance"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // owaspFrameworkSlug is the seeded OWASP Top 10 (2021) framework.

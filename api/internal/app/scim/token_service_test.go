@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/scimtoken"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 type fakeTokenRepo struct {

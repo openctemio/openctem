@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // chainHandler wraps h in the middlewares the same way the chi router does

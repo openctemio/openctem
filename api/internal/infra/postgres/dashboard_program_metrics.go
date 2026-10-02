@@ -15,8 +15,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // programMetricsMaxDays bounds the window so a hostile ?days= can't turn the

@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/component"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
 	"github.com/openctemio/ctis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/openctemio/openctem/api/pkg/domain/component"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // MockComponentRepository is a mock implementation of component.Repository for testing.

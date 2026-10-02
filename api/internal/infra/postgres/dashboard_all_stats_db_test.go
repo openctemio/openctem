@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func seedDashAsset(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.ID, assetType, subType, status string, risk int) shared.ID {

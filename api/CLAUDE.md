@@ -170,8 +170,8 @@ When a single file imports both, alias the domain side with a `dom` suffix:
 
 ```go
 import (
-    "github.com/openctemio/api/internal/app/audit"
-    auditdom "github.com/openctemio/api/pkg/domain/audit"
+    "github.com/openctemio/openctem/api/internal/app/audit"
+    auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 )
 
 var _ auditdom.Repository = (*audit.Service)(nil)

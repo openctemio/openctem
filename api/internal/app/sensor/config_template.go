@@ -11,8 +11,8 @@ import (
 	"text/template"
 	"time"
 
-	sensordom "github.com/openctemio/api/pkg/domain/sensor"
-	"github.com/openctemio/api/pkg/logger"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // SensorConfigTemplateService renders the snippets that install and configure

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/internal/app/attack"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/attack"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // reachabilityOracle bridges the attack-surface exposure-chain graph to the

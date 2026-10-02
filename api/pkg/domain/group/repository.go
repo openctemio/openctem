@@ -3,7 +3,7 @@ package group
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Repository defines the interface for group persistence.

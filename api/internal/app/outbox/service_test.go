@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	outboxdom "github.com/openctemio/api/pkg/domain/outbox"
-	"github.com/openctemio/api/pkg/domain/shared"
+	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func entryWithStatus(status outboxdom.OutboxStatus) *outboxdom.Outbox {

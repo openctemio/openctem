@@ -8,8 +8,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/pkg/domain/samlprovider"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/samlprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // SAMLProviderRepository persists per-tenant SAML SP config.

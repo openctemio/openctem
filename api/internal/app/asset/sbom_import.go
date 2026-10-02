@@ -7,10 +7,10 @@ import (
 	"io"
 	"strings"
 
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	componentdom "github.com/openctemio/api/pkg/domain/component"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // assetTenantChecker verifies that an asset belongs to a tenant. SBOM import

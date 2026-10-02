@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	pentestdom "github.com/openctemio/api/pkg/domain/pentest"
-	"github.com/openctemio/api/pkg/domain/permission"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // This file implements the MCP `prompts` capability for AI-assisted pentest

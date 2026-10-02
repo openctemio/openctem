@@ -5,7 +5,7 @@ package app
 // asset_type, branch, business_unit, component, sbom_import,
 // relationship_suggestion.
 
-import "github.com/openctemio/api/internal/app/asset"
+import "github.com/openctemio/openctem/api/internal/app/asset"
 
 type (
 	AssetService                  = asset.AssetService

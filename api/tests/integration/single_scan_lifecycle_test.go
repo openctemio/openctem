@@ -8,12 +8,12 @@ import (
 
 	_ "github.com/lib/pq"
 
-	scansvc "github.com/openctemio/api/internal/app/scan"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/internal/testdb"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // A single-scanner scan is the shape essentially every real scan takes, and

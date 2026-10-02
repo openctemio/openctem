@@ -60,8 +60,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // BasePath is the swagger `@BasePath`. Annotations and spec paths are relative

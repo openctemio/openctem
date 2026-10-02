@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	aitriagedom "github.com/openctemio/api/pkg/domain/aitriage"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/stretchr/testify/require"
+
+	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // pwnMarker is the attacker's injected instruction. The prompt is safe only if

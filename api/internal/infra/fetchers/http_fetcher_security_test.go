@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 func TestValidateURL_SSRFPrevention(t *testing.T) {

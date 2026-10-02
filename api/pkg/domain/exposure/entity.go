@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ExposureEvent represents an attack surface change that is NOT a vulnerability.

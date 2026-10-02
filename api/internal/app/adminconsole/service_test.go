@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/admin"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/totp"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/totp"
 )
 
 // ---- in-memory fakes -------------------------------------------------------
@@ -321,17 +321,17 @@ func newHarness(t *testing.T) *harness {
 			userLink:    map[string]string{u.UserID.String(): a.ID().String()},
 			memberUsers: map[string]bool{},
 		},
-		console:  newFakeConsole(),
-		audit:    &fakeAudit{},
+		console: newFakeConsole(),
+		audit:   &fakeAudit{},
 		accounts: &fakeAccounts{
 			sessions:  map[string]*SignedInUser{refresh: u},
 			byEmail:   map[string]shared.ID{"ops@acme.io": u.UserID},
 			suspended: map[string]bool{},
 			passwords: map[string]string{u.UserID.String(): password},
 		},
-		admin:    a,
-		user:     u,
-		clock:    time.Date(2026, 9, 30, 10, 0, 0, 0, time.UTC),
+		admin: a,
+		user:  u,
+		clock: time.Date(2026, 9, 30, 10, 0, 0, 0, time.UTC),
 	}
 	h.svc = NewService(h.admins, h.console, h.audit, cipher, h.accounts, logger.NewNop())
 	h.svc.now = func() time.Time { return h.clock }

@@ -3,8 +3,8 @@ package simulation
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // SimulationFilter defines criteria for filtering simulations.
@@ -79,11 +79,11 @@ type OverdueControlTest struct {
 
 // FrameworkStats holds aggregated control test statistics per framework.
 type FrameworkStats struct {
-	Framework  string `json:"framework"`
-	Total      int64  `json:"total"`
-	Passed     int64  `json:"passed"`
-	Failed     int64  `json:"failed"`
-	Partial    int64  `json:"partial"`
-	Untested   int64  `json:"untested"`
-	NotApplicable int64 `json:"not_applicable"`
+	Framework     string `json:"framework"`
+	Total         int64  `json:"total"`
+	Passed        int64  `json:"passed"`
+	Failed        int64  `json:"failed"`
+	Partial       int64  `json:"partial"`
+	Untested      int64  `json:"untested"`
+	NotApplicable int64  `json:"not_applicable"`
 }

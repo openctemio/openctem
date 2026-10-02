@@ -3,7 +3,7 @@ package sensor
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // APIKeyScope represents a permission scope for API keys.

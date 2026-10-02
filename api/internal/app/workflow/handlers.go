@@ -13,14 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/app/integration"
-	"github.com/openctemio/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/outbox"
 
 	"github.com/google/uuid"
-	"github.com/openctemio/api/pkg/domain/shared"
-	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
-	"github.com/openctemio/api/pkg/httpsec"
-	"github.com/openctemio/api/pkg/logger"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ActionHandler defines the interface for workflow action handlers.

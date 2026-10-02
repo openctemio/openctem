@@ -4,7 +4,7 @@ package app
 // Covers vulnerability + finding + priority + bulk-guard bounded
 // context (11 files, biggest cluster).
 
-import "github.com/openctemio/api/internal/app/finding"
+import "github.com/openctemio/openctem/api/internal/app/finding"
 
 type (
 	VulnerabilityService            = finding.VulnerabilityService

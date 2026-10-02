@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // State is the report lifecycle state. The values are the wire values of the

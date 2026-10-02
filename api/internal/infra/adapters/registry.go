@@ -7,16 +7,17 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/openctemio/api/internal/infra/adapters/betterleaks"
-	"github.com/openctemio/api/internal/infra/adapters/core"
-	"github.com/openctemio/api/internal/infra/adapters/nuclei"
-	"github.com/openctemio/api/internal/infra/adapters/recon"
-	"github.com/openctemio/api/internal/infra/adapters/sarif"
-	"github.com/openctemio/api/internal/infra/adapters/semgrep"
-	"github.com/openctemio/api/internal/infra/adapters/trivy"
-	"github.com/openctemio/api/internal/infra/adapters/vuls"
-	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/internal/infra/adapters/betterleaks"
+	"github.com/openctemio/openctem/api/internal/infra/adapters/core"
+	"github.com/openctemio/openctem/api/internal/infra/adapters/nuclei"
+	"github.com/openctemio/openctem/api/internal/infra/adapters/recon"
+	"github.com/openctemio/openctem/api/internal/infra/adapters/sarif"
+	"github.com/openctemio/openctem/api/internal/infra/adapters/semgrep"
+	"github.com/openctemio/openctem/api/internal/infra/adapters/trivy"
+	"github.com/openctemio/openctem/api/internal/infra/adapters/vuls"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 )
 
 // Registry manages registered scanner adapters.

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	exposuredom "github.com/openctemio/api/pkg/domain/exposure"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Enrichment carries the CTEM signals attached to an exposure event at read

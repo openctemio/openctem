@@ -6,10 +6,10 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // GitHubIssueSink applies an inbound GitHub issue state change (closed/reopened)

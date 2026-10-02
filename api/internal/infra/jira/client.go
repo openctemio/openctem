@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 const maxResponseSize = 10 * 1024 * 1024 // 10MB

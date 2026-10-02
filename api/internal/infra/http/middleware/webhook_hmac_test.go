@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // F-1 / F-314: unit tests for VerifyHMAC. These cover the full threat

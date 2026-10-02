@@ -3,7 +3,7 @@ package accesscontrol
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Repository defines the interface for access control persistence.
@@ -176,7 +176,7 @@ type UserAccessibleAsset struct {
 // OwnerBrief is a lightweight owner representation for asset list responses.
 type OwnerBrief struct {
 	ID    string `json:"id"`
-	Type  string `json:"type"`  // "user" or "group"
+	Type  string `json:"type"` // "user" or "group"
 	Name  string `json:"name"`
 	Email string `json:"email,omitempty"`
 }
@@ -184,9 +184,9 @@ type OwnerBrief struct {
 // AssetOwnerWithNames extends AssetOwner with resolved user/group names.
 type AssetOwnerWithNames struct {
 	*AssetOwner
-	UserName   string
-	UserEmail  string
-	GroupName  string
+	UserName       string
+	UserEmail      string
+	GroupName      string
 	AssignedByName string
 }
 

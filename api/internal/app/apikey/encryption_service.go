@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 )
 
 // EncryptionService handles encryption and decryption of tenant API keys.

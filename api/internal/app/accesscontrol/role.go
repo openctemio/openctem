@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"slices"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
-	"github.com/openctemio/api/pkg/domain/audit"
-	roledom "github.com/openctemio/api/pkg/domain/role"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // roleMembershipReader looks up a user's membership in a tenant. RoleService

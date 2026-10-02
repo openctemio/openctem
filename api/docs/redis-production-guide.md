@@ -171,7 +171,7 @@ The Redis package exports metrics automatically. Ensure your application exposes
 ```go
 import (
     "github.com/prometheus/client_golang/prometheus/promhttp"
-    "github.com/openctemio/api/internal/infra/redis"
+    "github.com/openctemio/openctem/api/internal/infra/redis"
 )
 
 // Start pool stats collector

@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 
-	"github.com/openctemio/api/tools/lint/getbyid"
+	"github.com/openctemio/openctem/api/tools/lint/getbyid"
 )
 
 // F-310: analysistest-driven test for the tenant-scope analyzer.

@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"time"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
-	ruledom "github.com/openctemio/api/pkg/domain/rule"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	ruledom "github.com/openctemio/openctem/api/pkg/domain/rule"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // RuleService handles rule management business operations.

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/permission"
-	"github.com/openctemio/api/pkg/jwt"
-	"github.com/openctemio/api/pkg/keycloak"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/jwt"
+	"github.com/openctemio/openctem/api/pkg/keycloak"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Additional context keys for local auth.

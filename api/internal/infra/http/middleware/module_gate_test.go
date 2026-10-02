@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	moduledom "github.com/openctemio/api/pkg/domain/module"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 )
 
 type fakeDisabledProvider struct {

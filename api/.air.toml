@@ -17,7 +17,7 @@ tmp_dir = "tmp"
   # "dev"/"unknown" and never fails the build. Air reads this file once at
   # start: a running container keeps its old command until it restarts, and
   # until then the binary reads the same facts from .git itself (pkg/version).
-  cmd = '''V=$(git -c safe.directory="$PWD" tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1); C=$(git -c safe.directory="$PWD" rev-parse --short=8 HEAD 2>/dev/null); go build -buildvcs=false -ldflags "-X github.com/openctemio/api/pkg/version.Version=${V:-dev}${V:+-dev} -X github.com/openctemio/api/pkg/version.Commit=${C:-unknown} -X github.com/openctemio/api/pkg/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ./tmp/openctem ./cmd/server'''
+  cmd = '''V=$(git -c safe.directory="$PWD" tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1); C=$(git -c safe.directory="$PWD" rev-parse --short=8 HEAD 2>/dev/null); go build -buildvcs=false -ldflags "-X github.com/openctemio/openctem/api/pkg/version.Version=${V:-dev}${V:+-dev} -X github.com/openctemio/openctem/api/pkg/version.Commit=${C:-unknown} -X github.com/openctemio/openctem/api/pkg/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ./tmp/openctem ./cmd/server'''
 
   # Build delay after file change (milliseconds)
   delay = 1000

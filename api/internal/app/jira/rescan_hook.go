@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app"
 
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // B3 wire: when a Jira "Done" webhook transitions a finding

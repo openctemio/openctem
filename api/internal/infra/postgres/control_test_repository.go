@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/simulation"
-	"github.com/openctemio/api/pkg/pagination"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/simulation"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ControlTestRepository implements simulation.ControlTestRepository.

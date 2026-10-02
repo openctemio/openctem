@@ -6,7 +6,7 @@ package app
 // asset, etc. that aren't extracted yet; activity is self-contained
 // so it ships first.
 
-import "github.com/openctemio/api/internal/app/activity"
+import "github.com/openctemio/openctem/api/internal/app/activity"
 
 type (
 	FindingActivityService = activity.FindingActivityService

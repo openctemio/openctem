@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	assetdom "github.com/openctemio/api/pkg/domain/asset"
-	pentestdom "github.com/openctemio/api/pkg/domain/pentest"
-	"github.com/openctemio/api/pkg/domain/permission"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // toolInputError is a tool argument-validation error whose message is safe to

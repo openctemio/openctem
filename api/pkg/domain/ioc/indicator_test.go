@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestNewIndicator_ValidIP(t *testing.T) {
@@ -65,9 +65,9 @@ func TestNewIndicator_ValidFileHash(t *testing.T) {
 func TestNewIndicator_InvalidFileHash_Rejected(t *testing.T) {
 	cases := []string{
 		"not-hex-at-all!!",
-		strings.Repeat("a", 31),      // wrong length (31 chars)
-		strings.Repeat("a", 33),      // off-by-one
-		strings.Repeat("z", 32),      // non-hex
+		strings.Repeat("a", 31), // wrong length (31 chars)
+		strings.Repeat("a", 33), // off-by-one
+		strings.Repeat("z", 32), // non-hex
 		"",
 	}
 	for _, v := range cases {
@@ -84,7 +84,7 @@ func TestNewIndicator_ValidDomain(t *testing.T) {
 	cases := []string{
 		"example.com",
 		"sub.example.com",
-		"EXAMPLE.COM",       // uppercase — Normalize lowercases
+		"EXAMPLE.COM", // uppercase — Normalize lowercases
 		"deep.sub.example.com",
 		"xn--80akhbyknj4f.com", // IDN-encoded
 	}
@@ -100,8 +100,8 @@ func TestNewIndicator_ValidDomain(t *testing.T) {
 
 func TestNewIndicator_InvalidDomain_Rejected(t *testing.T) {
 	cases := []string{
-		"no-dot",                           // no TLD
-		"has spaces.com",                   // whitespace
+		"no-dot",         // no TLD
+		"has spaces.com", // whitespace
 		"has/slash.com",
 		"-leading-dash.com",
 		"trailing-dash-.com",

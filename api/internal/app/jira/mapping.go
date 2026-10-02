@@ -3,7 +3,7 @@ package jira
 import (
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // MappingConfig holds the configurable severity/status mappings for a ticketing

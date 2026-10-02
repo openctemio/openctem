@@ -10,8 +10,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/pkg/domain/aitriage"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AITriageRepository implements aitriage.Repository using PostgreSQL.

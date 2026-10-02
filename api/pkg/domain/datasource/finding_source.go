@@ -4,7 +4,7 @@ import (
 	"maps"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // FindingDataSource represents the relationship between a finding and a data source.

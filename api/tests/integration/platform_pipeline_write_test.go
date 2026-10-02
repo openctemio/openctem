@@ -11,10 +11,10 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	pipelineapp "github.com/openctemio/api/internal/app/pipeline"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	pipelineapp "github.com/openctemio/openctem/api/internal/app/pipeline"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Tenants could delete the shared system pipeline templates (the fixed Quick

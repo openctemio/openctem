@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/app/ingest"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // A payload the sensor got wrong is the sensor's error, not the server's. These

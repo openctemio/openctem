@@ -21,18 +21,18 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/api/internal/adminbootstrap"
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	authapp "github.com/openctemio/api/internal/app/auth"
-	tenantapp "github.com/openctemio/api/internal/app/tenant"
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/password"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/internal/adminbootstrap"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/password"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // orgBootMailer records the set-password email instead of sending it.

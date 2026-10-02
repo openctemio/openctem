@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // AssetServiceHandler handles asset service-related HTTP requests.
@@ -87,35 +87,35 @@ type PortCountResponse struct {
 
 // CreateAssetServiceRequest represents the request to create an asset service.
 type CreateAssetServiceRequest struct {
-	Name            string `json:"name" validate:"omitempty,max=255"`
-	Protocol        string `json:"protocol" validate:"required,oneof=tcp udp"`
-	Port            int    `json:"port" validate:"required,min=1,max=65535"`
-	ServiceType     string `json:"service_type" validate:"required"`
-	Product         string `json:"product" validate:"omitempty,max=255"`
-	Version         string `json:"version" validate:"omitempty,max=100"`
-	Banner          string `json:"banner" validate:"omitempty,max=4096"`
+	Name            string   `json:"name" validate:"omitempty,max=255"`
+	Protocol        string   `json:"protocol" validate:"required,oneof=tcp udp"`
+	Port            int      `json:"port" validate:"required,min=1,max=65535"`
+	ServiceType     string   `json:"service_type" validate:"required"`
+	Product         string   `json:"product" validate:"omitempty,max=255"`
+	Version         string   `json:"version" validate:"omitempty,max=100"`
+	Banner          string   `json:"banner" validate:"omitempty,max=4096"`
 	CPE             string   `json:"cpe" validate:"omitempty,max=500"`
 	Technologies    []string `json:"technologies" validate:"omitempty,max=50,dive,max=100"`
 	IsPublic        bool     `json:"is_public"`
-	Exposure        string `json:"exposure" validate:"omitempty,oneof=public restricted private"`
-	TLSEnabled      bool   `json:"tls_enabled"`
-	TLSVersion      string `json:"tls_version" validate:"omitempty,max=20"`
-	DiscoverySource string `json:"discovery_source" validate:"omitempty,max=100"`
+	Exposure        string   `json:"exposure" validate:"omitempty,oneof=public restricted private"`
+	TLSEnabled      bool     `json:"tls_enabled"`
+	TLSVersion      string   `json:"tls_version" validate:"omitempty,max=20"`
+	DiscoverySource string   `json:"discovery_source" validate:"omitempty,max=100"`
 }
 
 // UpdateAssetServiceRequest represents the request to update an asset service.
 type UpdateAssetServiceRequest struct {
-	Name       *string `json:"name" validate:"omitempty,max=255"`
-	Product    *string `json:"product" validate:"omitempty,max=255"`
-	Version    *string `json:"version" validate:"omitempty,max=100"`
-	Banner     *string `json:"banner" validate:"omitempty,max=4096"`
+	Name         *string   `json:"name" validate:"omitempty,max=255"`
+	Product      *string   `json:"product" validate:"omitempty,max=255"`
+	Version      *string   `json:"version" validate:"omitempty,max=100"`
+	Banner       *string   `json:"banner" validate:"omitempty,max=4096"`
 	CPE          *string   `json:"cpe" validate:"omitempty,max=500"`
 	Technologies *[]string `json:"technologies" validate:"omitempty,max=50,dive,max=100"`
 	IsPublic     *bool     `json:"is_public"`
-	Exposure   *string `json:"exposure" validate:"omitempty,oneof=public restricted private"`
-	TLSEnabled *bool   `json:"tls_enabled"`
-	TLSVersion *string `json:"tls_version" validate:"omitempty,max=20"`
-	State      *string `json:"state" validate:"omitempty,oneof=active inactive filtered"`
+	Exposure     *string   `json:"exposure" validate:"omitempty,oneof=public restricted private"`
+	TLSEnabled   *bool     `json:"tls_enabled"`
+	TLSVersion   *string   `json:"tls_version" validate:"omitempty,max=20"`
+	State        *string   `json:"state" validate:"omitempty,oneof=active inactive filtered"`
 }
 
 // =============================================================================

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/credential"
+	"github.com/openctemio/openctem/api/pkg/domain/credential"
 )
 
 // credentialSecretBackfillBatch bounds how many rows one transaction rewrites.

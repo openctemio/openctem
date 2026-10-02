@@ -3,8 +3,9 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 func kinds(ids []asset.Identifier) map[asset.IdentifierKind][]string {

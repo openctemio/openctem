@@ -9,9 +9,9 @@ import (
 	"context"
 	"fmt"
 
-	domain "github.com/openctemio/api/pkg/domain/dashboard"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	domain "github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Service provides per-user dashboard CRUD.

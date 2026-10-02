@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/relationship"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/relationship"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // RelationshipSuggestionRepository implements relationship.SuggestionRepository using PostgreSQL.

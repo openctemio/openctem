@@ -3,7 +3,7 @@ package assetgroup
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TestBusinessUnitID_DefaultNil verifies a freshly reconstituted group has no

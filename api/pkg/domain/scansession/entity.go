@@ -4,8 +4,8 @@ package scansession
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/scanprofile"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ScanSession represents an individual scan execution from a sensor.

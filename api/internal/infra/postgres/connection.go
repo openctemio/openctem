@@ -8,7 +8,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/config"
 )
 
 // DB wraps sql.DB with additional functionality.

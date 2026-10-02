@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/internal/testdb"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/testdb"
 )
 
 // The jit=off DSN key must actually reach the server as a session setting

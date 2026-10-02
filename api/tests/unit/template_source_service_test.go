@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app/template"
+	"github.com/openctemio/openctem/api/internal/app/template"
 
-	"github.com/openctemio/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/api/pkg/domain/shared"
-	ts "github.com/openctemio/api/pkg/domain/templatesource"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	ts "github.com/openctemio/openctem/api/pkg/domain/templatesource"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ============================================================================

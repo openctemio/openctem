@@ -3,7 +3,7 @@ package pipeline
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // StepRunStatus represents the status of a step run.

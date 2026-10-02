@@ -11,15 +11,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	pentestdom "github.com/openctemio/api/pkg/domain/pentest"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // fakeFindingReader records the tenant it was called with so tests can assert

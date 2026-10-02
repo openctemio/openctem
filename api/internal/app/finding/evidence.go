@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/app/integration"
-	attachmentdom "github.com/openctemio/api/pkg/domain/attachment"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/internal/app/integration"
+	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // Evidence / remediation-step limits. Kept conservative — this is manual

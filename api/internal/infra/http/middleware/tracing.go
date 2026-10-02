@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/openctemio/api/middleware"
+const tracerName = "github.com/openctemio/openctem/api/middleware"
 
 // Tracing returns an OpenTelemetry tracing middleware that creates spans
 // for each HTTP request and propagates trace context.

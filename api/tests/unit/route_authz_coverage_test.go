@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // Fail-closed by construction: every HTTP route must EITHER carry a permission

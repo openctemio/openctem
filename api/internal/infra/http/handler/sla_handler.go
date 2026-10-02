@@ -6,13 +6,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/api/internal/app/sla"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/shared"
-	sladom "github.com/openctemio/api/pkg/domain/sla"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/internal/app/sla"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	sladom "github.com/openctemio/openctem/api/pkg/domain/sla"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // SLAHandler handles SLA policy-related HTTP requests.

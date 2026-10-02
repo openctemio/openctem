@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scope"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	scopedom "github.com/openctemio/api/pkg/domain/scope"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // =============================================================================

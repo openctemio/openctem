@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/config"
 )
 
 // TenantCookieData represents the tenant info stored in cookie.

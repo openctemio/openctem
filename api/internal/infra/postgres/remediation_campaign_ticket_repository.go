@@ -7,8 +7,9 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/remediation"
-	"github.com/openctemio/api/pkg/domain/shared"
+
+	"github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // RemediationCampaignTicketRepository implements remediation.CampaignTicketRepository.

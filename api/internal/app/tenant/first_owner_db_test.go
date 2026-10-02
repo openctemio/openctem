@@ -12,12 +12,12 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	tenantapp "github.com/openctemio/api/internal/app/tenant"
-	"github.com/openctemio/api/internal/infra/postgres"
-	"github.com/openctemio/api/internal/testdb"
-	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // fakeSetupMailer stands in for the organization's email: deliverable says

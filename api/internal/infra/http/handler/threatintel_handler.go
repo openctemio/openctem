@@ -6,15 +6,15 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/openctemio/api/internal/app/threat"
-	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/app/threat"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/threatintel"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/validator"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // ThreatIntelHandler handles threat intelligence HTTP requests.

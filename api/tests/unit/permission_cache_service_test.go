@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/internal/infra/redis"
 )
 
 // =============================================================================

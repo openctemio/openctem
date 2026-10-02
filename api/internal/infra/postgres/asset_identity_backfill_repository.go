@@ -9,9 +9,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/app/ingest"
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // AssetIdentityBackfillRepository is the identifier backfill's view of the

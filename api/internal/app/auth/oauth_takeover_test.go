@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	userdom "github.com/openctemio/api/pkg/domain/user"
-	"github.com/openctemio/api/pkg/logger"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // fakeUserRepo implements only the three methods findOrCreateUser touches; the

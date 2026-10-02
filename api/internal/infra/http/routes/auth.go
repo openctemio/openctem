@@ -1,10 +1,10 @@
 package routes
 
 import (
-	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/internal/infra/http/handler"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // registerAuthRoutes registers authentication endpoints based on provider.

@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/app/command"
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func (h *ctlHarness) scanCommand(tenantID, scanner string) string {

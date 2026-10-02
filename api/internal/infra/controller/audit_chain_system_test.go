@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	auditdom "github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // The audit hash chain is keyed by tenant, and authentication events have no

@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/internal/infra/controller"
-	"github.com/openctemio/api/internal/testdb"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
+	"github.com/openctemio/openctem/api/internal/testdb"
 )
 
 // The hourly role-sync reconciler used to re-grant the system role named in

@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 )
 
 // A tenant admin could store {"provider":"local","base_path":"/anywhere"}

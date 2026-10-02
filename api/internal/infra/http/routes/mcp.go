@@ -1,6 +1,6 @@
 package routes
 
-import "github.com/openctemio/api/internal/infra/http/handler"
+import "github.com/openctemio/openctem/api/internal/infra/http/handler"
 
 // registerMCPRoutes mounts the read-only Model Context Protocol endpoint. It is
 // authenticated ONLY by a tenant-scoped `oct_` API key (apiKeyAuth) — never the

@@ -445,7 +445,7 @@ import (
     "context"
     "slices"
 
-    "github.com/openctemio/api/internal/domain/agent"
+    "github.com/openctemio/openctem/api/internal/domain/agent"
     "github.com/openctemio/sdk-go/pkg/ctis"
 )
 

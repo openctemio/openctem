@@ -8,8 +8,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/api/internal/infra/adapters/core"
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/internal/infra/adapters/core"
 )
 
 // Adapter converts SARIF (Static Analysis Results Interchange Format) to CTIS.

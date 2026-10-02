@@ -9,8 +9,8 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Task types for email jobs

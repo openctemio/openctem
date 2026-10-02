@@ -9,11 +9,11 @@ import (
 
 	_ "github.com/lib/pq"
 
-	pipelinesvc "github.com/openctemio/api/internal/app/pipeline"
-	scansvc "github.com/openctemio/api/internal/app/scan"
-	"github.com/openctemio/api/internal/infra/postgres"
-	pipelinedom "github.com/openctemio/api/pkg/domain/pipeline"
-	"github.com/openctemio/api/pkg/logger"
+	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // The second half of the scan loop had no test at all.

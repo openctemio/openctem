@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	iocapp "github.com/openctemio/api/internal/app/ioc"
-	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	iocapp "github.com/openctemio/openctem/api/internal/app/ioc"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // RuntimeTelemetryHandler receives EDR/XDR-style runtime events from

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	reportscheduledom "github.com/openctemio/api/pkg/domain/reportschedule"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	reportscheduledom "github.com/openctemio/openctem/api/pkg/domain/reportschedule"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ReportScheduleService handles report schedule business logic.

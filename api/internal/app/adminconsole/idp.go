@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/admin"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/oidc"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // Platform identity provider for administrators (RFC-022 revision 4): one

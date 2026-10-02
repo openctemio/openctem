@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // MetricsAuth gates the Prometheus /metrics endpoint.

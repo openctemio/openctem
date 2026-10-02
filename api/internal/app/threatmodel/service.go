@@ -9,12 +9,12 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/openctemio/api/internal/app/attack"
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
-	tmdom "github.com/openctemio/api/pkg/domain/threatmodel"
-	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/internal/app/attack"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // maxThreats caps the total enumerated threats per model so a large graph ×

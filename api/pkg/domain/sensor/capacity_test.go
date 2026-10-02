@@ -3,7 +3,7 @@ package sensor
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // A sensor with max_concurrent_jobs = 0 is not "unconfigured" — it is

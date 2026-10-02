@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app"
 )
 
 // This guards a defect class this codebase keeps producing: code that runs but

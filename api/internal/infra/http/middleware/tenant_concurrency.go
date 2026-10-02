@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 )
 
 // TenantConcurrencyLimiter caps how many requests a single tenant may have in

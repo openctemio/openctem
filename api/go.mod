@@ -1,4 +1,4 @@
-module github.com/openctemio/api
+module github.com/openctemio/openctem/api
 
 go 1.26.0
 

@@ -16,7 +16,7 @@ package app
 // DO NOT add new types here. New audit types must live in
 // internal/app/audit/.
 
-import "github.com/openctemio/api/internal/app/audit"
+import "github.com/openctemio/openctem/api/internal/app/audit"
 
 // Types.
 type (

@@ -1,6 +1,6 @@
 package postgres
 
-import "github.com/openctemio/api/pkg/domain/asset"
+import "github.com/openctemio/openctem/api/pkg/domain/asset"
 
 // This file holds the pure, DB-free graph walks behind two criticality
 // propagation features (both floor / only-raise, both cycle- and depth-guarded):

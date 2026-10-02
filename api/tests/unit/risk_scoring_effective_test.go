@@ -3,7 +3,7 @@ package unit
 import (
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 // These tests cover the business-aligned criticality seam added to the risk

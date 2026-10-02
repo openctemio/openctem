@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/role"
 )
 
 // GET /roles/{roleId}/members for another tenant's role answered 200 [].

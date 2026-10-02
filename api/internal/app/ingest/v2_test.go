@@ -6,7 +6,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 func TestV2Options(t *testing.T) {

@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/shared"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TelemetryProbeRepository reads runtime_telemetry_events on behalf of

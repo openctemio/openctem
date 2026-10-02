@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // captureController wires an AuditChainVerifyController whose logger writes JSON

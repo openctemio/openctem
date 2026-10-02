@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // F-8: Middleware that authenticates WebSocket upgrade requests via a

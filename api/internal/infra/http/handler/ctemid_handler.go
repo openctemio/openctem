@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	ctemidapp "github.com/openctemio/api/internal/app/ctemid"
-	"github.com/openctemio/api/pkg/apierror"
-	ctemiddom "github.com/openctemio/api/pkg/domain/ctemid"
-	"github.com/openctemio/api/pkg/logger"
+	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	ctemiddom "github.com/openctemio/openctem/api/pkg/domain/ctemid"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // CTEMIDHandler serves the CTEM-ID catalog: standardized, CVE-like exposure

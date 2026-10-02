@@ -13,7 +13,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/openctemio/api/internal/infra/controller"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 )
 
 // MemoryQueue is a minimal in-process ReclassifyQueue. It is

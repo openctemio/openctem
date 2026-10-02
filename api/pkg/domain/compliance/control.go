@@ -3,7 +3,7 @@ package compliance
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Control represents an individual requirement within a compliance framework.
@@ -34,13 +34,13 @@ func ReconstituteControl(
 }
 
 // Getters
-func (c *Control) ID() shared.ID              { return c.id }
+func (c *Control) ID() shared.ID               { return c.id }
 func (c *Control) FrameworkID() shared.ID      { return c.frameworkID }
-func (c *Control) ControlID() string          { return c.controlID }
-func (c *Control) Title() string              { return c.title }
-func (c *Control) Description() string        { return c.description }
-func (c *Control) Category() string           { return c.category }
+func (c *Control) ControlID() string           { return c.controlID }
+func (c *Control) Title() string               { return c.title }
+func (c *Control) Description() string         { return c.description }
+func (c *Control) Category() string            { return c.category }
 func (c *Control) ParentControlID() *shared.ID { return c.parentControlID }
-func (c *Control) SortOrder() int             { return c.sortOrder }
-func (c *Control) Metadata() map[string]any   { return c.metadata }
-func (c *Control) CreatedAt() time.Time       { return c.createdAt }
+func (c *Control) SortOrder() int              { return c.sortOrder }
+func (c *Control) Metadata() map[string]any    { return c.metadata }
+func (c *Control) CreatedAt() time.Time        { return c.createdAt }

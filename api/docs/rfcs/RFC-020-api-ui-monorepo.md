@@ -75,7 +75,7 @@ platform/
    as today. Release tagging becomes "one commit = one deployable api+ui set",
    which is what operators already assume.
 4. **`go.work` stays** for local Go resolution; the api module path is unchanged
-   (`github.com/openctemio/api`) so imports don't churn — the module lives at
+   (`github.com/openctemio/openctem/api`) so imports don't churn — the module lives at
    `platform/api` but keeps its module path. (Alternatively rename to
    `.../platform/api`; deferred — avoid a mass import rewrite in the migration PR.)
 
