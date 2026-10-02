@@ -32,6 +32,11 @@ const (
 	EventCapacityChanged      EventType = "capacity_changed"
 	EventContentUpdated       EventType = "content_updated"
 	EventContentRefreshFailed EventType = "content_refresh_failed"
+	// EventKeyIPChanged: the sensor's key was used from another client
+	// address than the last request (RFC-032 Phase 0).
+	EventKeyIPChanged EventType = "key_ip_changed"
+	// EventIdentityCloned: two live instances use the same key (identity.go).
+	EventIdentityCloned EventType = "identity_cloned"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -58,7 +63,7 @@ func (c ActivityCategory) IsValid() bool {
 // Category is the timeline category of a server-written event.
 func (t EventType) Category() ActivityCategory {
 	switch t {
-	case EventOnline, EventOffline, EventRestarted:
+	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned:
 		return CategoryStatus
 	default:
 		return CategoryUpdates
@@ -68,7 +73,8 @@ func (t EventType) Category() ActivityCategory {
 // EventTypesIn lists the server-written event types of the given categories.
 func EventTypesIn(cats []ActivityCategory) []EventType {
 	all := []EventType{EventOnline, EventOffline, EventRestarted, EventVersionChanged, EventSDKVersionChanged,
-		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed}
+		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
+		EventKeyIPChanged, EventIdentityCloned}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {

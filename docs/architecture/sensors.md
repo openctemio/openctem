@@ -261,7 +261,8 @@ at least 90s, at most the timeout. `GET /sensors/stats` returns both thresholds
 **Health reasons** (`health_reasons[]`: `code`, `severity`, `message`), listed
 whatever the state: `outbox_backlog` (results waiting over an hour),
 `outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
-7 days), `version_unsupported`, `sdk_unsupported` (see "Build information"),
+7 days), `identity_cloned` (two live processes use the key; see "Key use and
+cloned identities"), `version_unsupported`, `sdk_unsupported` (see "Build information"),
 `no_tools` (a scanning daemon with no tools), `error_reported`. A heartbeating
 sensor with any reason is `degraded`.
 
@@ -330,7 +331,7 @@ into another:
 
 | Category | Types | Source |
 |---|---|---|
-| `status` | `online`, `offline`, `restarted` | `sensor_events` |
+| `status` | `online`, `offline`, `restarted`, `key_ip_changed`, `identity_cloned` | `sensor_events` |
 | `updates` | `version_changed`, `sdk_version_changed`, `protocol_changed`, `tools_changed`, `capacity_changed`, `content_updated`, `content_refresh_failed` | `sensor_events` |
 | `jobs` | `job_claimed`, `job_completed`, `job_failed`, `job_canceled`, `job_expired` | `commands` (`acknowledged_at`, `completed_at`) |
 | `people` | `audit` | `audit_logs` |
@@ -403,8 +404,56 @@ compose file):
   the snippets assume a publicly trusted certificate.
 - **Outbox** a named volume / PVC at `/var/lib/openctem/outbox`, so results
   survive a restart or an outage.
+- **State** (daemon sensors) a named volume / PVC at `/var/lib/openctem/state`:
+  the sensor (SDK v0.11+) keeps the API key it renews on its own there, so a
+  recreated container comes back with the renewed key instead of the
+  installed one, which the renewal retired. The Helm snippet sets
+  `sensor.state.persistence.enabled=true`.
 - **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
   `[a-z0-9_-]` are dropped. The name becomes a slug.
+
+## Key use and cloned identities
+
+RFC-032 Phase 0 (`docs/rfcs/RFC-032-sensor-enrollment-and-identity.md`
+§10.2): signals about a sensor key, before key-bound identity (Phase 1)
+replaces bearer keys.
+
+- **Where the key is used from.** Every authenticated request (v1 and v2,
+  inline key or a `sensor_api_keys` row) records the client address under the
+  trusted-proxy rule (`SERVER_TRUSTED_PROXIES`; a forwarding header from an
+  untrusted peer is ignored) and the time: `sensors.api_key_last_used_ip` /
+  `_at` (migration 000256), and `sensor_api_keys.last_used_ip` for a renewed
+  key. A request from another address than the previous one writes a
+  `key_ip_changed` event on the timeline (folded and capped like every
+  event). The response carries `key_last_used_at` and `key_last_used_ip`.
+- **Cloned identity.** The SDK (v0.11+) sends a random per-process
+  `instance_id` on every heartbeat; older SDKs are observed by hostname
+  (`host:<hash>`). A restart replaces the instance once; a key running in two
+  places makes the instances alternate. When replaced instances come back
+  three times within 15 minutes (`pkg/domain/sensor/identity.go`) the sensor
+  is flagged: `identity_cloned_at`, health reason `identity_cloned`
+  (critical), one `identity_cloned` event and one `sensor.identity_cloned`
+  audit entry (severity high). Steady-state heartbeats cost nothing (the
+  instance is compared with the row already read); a change is applied under
+  a row lock. Regenerating the key clears the flag. The sensor is not
+  quarantined automatically in Phase 0.
+- **Key-hash pepper.** Keys are stored as HMAC-SHA256 under
+  `SENSOR_KEY_PEPPER`, or, when unset, a pepper derived from
+  `APP_ENCRYPTION_KEY` with HKDF-SHA256 (label
+  `openctem/sensor-api-key-pepper/v1`), so the MAC key is never the
+  encryption key. Hashes stored under earlier peppers keep verifying: the
+  encryption key itself (before this release), the derived pepper (after
+  `SENSOR_KEY_PEPPER` is set), `SENSOR_KEY_PEPPER_PREVIOUS` (comma-separated,
+  for replacing an explicit pepper) and plain SHA-256 (before any pepper).
+  New, regenerated and renewed keys are stored under the current pepper.
+  Rolling the API back below this release makes keys issued after it
+  unknown to the older server.
+- **Secrets in `scanner_config`.** Scan responses carry
+  `scanner_config_warnings` (`path`, `reason`: `key_name`, `known_format`,
+  `high_entropy`) for values that look like credentials
+  (`pkg/domain/scan/config_secrets.go`). The config travels to the sensor in
+  clear inside every command; the warning never blocks a save and never
+  echoes the value.
 
 ## Protocol v2 results ingest
 

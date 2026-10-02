@@ -217,10 +217,13 @@ type DiscoveredURLResult struct {
 
 // HeartbeatRequest represents the heartbeat payload from sensors.
 type HeartbeatRequest struct {
-	Name          string   `json:"name,omitempty"`
-	Status        string   `json:"status"`
-	Version       string   `json:"version,omitempty"`
-	Hostname      string   `json:"hostname,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Status   string `json:"status"`
+	Version  string `json:"version,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+	// InstanceID is the random id of the sensor process (SDK v0.11+), for
+	// clone detection. Optional; older SDKs do not send it.
+	InstanceID    string   `json:"instance_id,omitempty"`
 	Message       string   `json:"message,omitempty"`
 	Scanners      []string `json:"scanners,omitempty"`
 	Collectors    []string `json:"collectors,omitempty"`
@@ -430,7 +433,7 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 			return
 		}
 
-		id, err := h.sensorService.AuthenticateIdentity(r.Context(), apiKey)
+		id, err := h.sensorService.AuthenticateIdentityFrom(r.Context(), apiKey, getClientIP(r))
 		if err == nil && id.Paused && !(isHeartbeatRequest(r) && sensorHasFeature(r, legacyv1.FeatureDoorbell)) {
 			err = errSensorPaused
 		}

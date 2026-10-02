@@ -170,6 +170,22 @@ type Sensor struct {
 	// every row predating RFC-014 Phase 1b). Self-renewal sets a fresh expiry
 	// when the server is configured with a key TTL.
 	KeyExpiresAt *time.Time
+	// KeyLastUsedAt and KeyLastUsedIP record the last authenticated request
+	// with any of the sensor's keys and the client address it came from
+	// (trusted-proxy rule; never a header the sensor sets). nil = not recorded
+	// yet.
+	KeyLastUsedAt *time.Time
+	KeyLastUsedIP net.IP
+
+	// InstanceID is the process instance of the sensor's last heartbeat that
+	// changed it (identity.go); "" before the first one. InstanceState is the
+	// recent-instances memory clone detection works on.
+	InstanceID    string
+	InstanceState InstanceState
+	// IdentityClonedAt is when two live instances were seen using the same
+	// key (clone detection); nil = not flagged. Cleared when an administrator
+	// regenerates the key.
+	IdentityClonedAt *time.Time
 
 	// Metadata and configuration
 	Labels   map[string]interface{}

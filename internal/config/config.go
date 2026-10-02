@@ -182,6 +182,16 @@ type SensorConfigConfig struct {
 	// expiry: renewed keys never expire. Set AGENT_KEY_TTL (e.g. "24h") to opt
 	// into short-lived, auto-rotating sensor credentials.
 	KeyTTL time.Duration
+	// KeyPepper is the secret the sensor API-key hash (HMAC-SHA256) is keyed
+	// with: SENSOR_KEY_PEPPER. Empty (the default) derives it from
+	// APP_ENCRYPTION_KEY with HKDF, so the MAC key is never the encryption
+	// key itself (RFC-032 Phase 0, G9). Keys stored under the old pepper (the
+	// encryption key) keep verifying.
+	KeyPepper string
+	// KeyPepperPrevious lists earlier explicit peppers (comma-separated
+	// SENSOR_KEY_PEPPER_PREVIOUS) whose hashes keep verifying while keys
+	// rotate onto a new SENSOR_KEY_PEPPER.
+	KeyPepperPrevious []string
 	// KeyRenewBefore is how long before the presented key expires the
 	// heartbeat starts ringing rotate_key. Zero (the default) means half of
 	// KeyTTL, or 24h when no TTL is set. SENSOR_KEY_RENEW_BEFORE.
@@ -812,9 +822,11 @@ func Load() (*Config, error) {
 			URL:   getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
-			TemplatesDir: getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
-			PublicAPIURL: getEnv("SENSOR_PUBLIC_API_URL", ""),
-			KeyTTL:       getEnvDuration("SENSOR_KEY_TTL", 0),
+			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
+			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
+			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", 0),
+			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
+			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
 
 			KeyRenewBefore:          getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
 			HeartbeatInterval:       getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
@@ -1315,6 +1327,12 @@ func (c *Config) validateAuth() error {
 	// override it because the value is publicly known.
 	if !c.IsDevelopment() && c.Encryption.Key != "" && isDevDefaultEncryptionKey(c.Encryption.Key) {
 		return fmt.Errorf("APP_ENCRYPTION_KEY is the docker-compose default and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
+	}
+
+	// A dedicated sensor-key pepper must be a real secret: at least 32
+	// characters (openssl rand -hex 32 gives 64).
+	if p := c.SensorConfig.KeyPepper; p != "" && len(p) < 32 {
+		return fmt.Errorf("SENSOR_KEY_PEPPER must be at least 32 characters, got %d; generate one with `openssl rand -hex 32`", len(p))
 	}
 
 	// Validate OAuth configuration

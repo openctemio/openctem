@@ -33,5 +33,6 @@ helm upgrade openctem openctem/openctem --reuse-values \
 {{- with toolList .Sensor.Tools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
-  --set sensor.outbox.persistence.enabled=true
+  --set sensor.outbox.persistence.enabled=true \
+  --set sensor.state.persistence.enabled=true
 {{- end}}

@@ -521,68 +521,6 @@ func (a *AuthRateLimiter) PasswordMiddleware() func(http.Handler) http.Handler {
 }
 
 // =============================================================================
-// Platform Sensor Registration Rate Limiting
-// =============================================================================
-
-// PlatformRegistrationRateLimiter provides strict rate limiting for platform sensor registration.
-// This prevents brute-force attacks on bootstrap tokens.
-type PlatformRegistrationRateLimiter struct {
-	limiter *RateLimiter
-	log     *logger.Logger
-}
-
-// PlatformRegistrationRateLimitConfig configures platform registration rate limits.
-type PlatformRegistrationRateLimitConfig struct {
-	// RegistrationRatePerMin is the max registration attempts per minute per IP.
-	// Default: 5 (very strict for bootstrap token protection)
-	RegistrationRatePerMin int
-	// CleanupInterval for visitor entries.
-	// Default: 1 minute
-	CleanupInterval time.Duration
-}
-
-// DefaultPlatformRegistrationRateLimitConfig returns secure defaults.
-func DefaultPlatformRegistrationRateLimitConfig() PlatformRegistrationRateLimitConfig {
-	return PlatformRegistrationRateLimitConfig{
-		RegistrationRatePerMin: 5,
-		CleanupInterval:        time.Minute,
-	}
-}
-
-// NewPlatformRegistrationRateLimiter creates a rate limiter for platform sensor registration.
-func NewPlatformRegistrationRateLimiter(cfg PlatformRegistrationRateLimitConfig, log *logger.Logger) *PlatformRegistrationRateLimiter {
-	if cfg.RegistrationRatePerMin == 0 {
-		cfg.RegistrationRatePerMin = 5
-	}
-	if cfg.CleanupInterval == 0 {
-		cfg.CleanupInterval = time.Minute
-	}
-
-	// Convert per-minute rate to per-second for rate.Limit
-	registerRate := float64(cfg.RegistrationRatePerMin) / 60.0
-
-	return &PlatformRegistrationRateLimiter{
-		limiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  registerRate,
-			Burst:           cfg.RegistrationRatePerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
-		log: log,
-	}
-}
-
-// Stop gracefully shuts down the rate limiter.
-func (p *PlatformRegistrationRateLimiter) Stop() {
-	p.limiter.Stop()
-}
-
-// Middleware returns the platform registration rate limiting middleware.
-func (p *PlatformRegistrationRateLimiter) Middleware() func(http.Handler) http.Handler {
-	return p.limiter.Middleware()
-}
-
-// =============================================================================
 // Platform Sensor Auth Failure Rate Limiting
 // =============================================================================
 

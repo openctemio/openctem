@@ -165,43 +165,49 @@ type AssetCompatibilityPreviewResponse struct {
 
 // ScanResponse represents the response for a scan.
 type ScanDetailResponse struct {
-	ID                  string         `json:"id"`
-	TenantID            string         `json:"tenant_id"`
-	Name                string         `json:"name"`
-	Description         string         `json:"description,omitempty"`
-	AssetGroupID        string         `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
-	AssetGroupIDs       []string       `json:"asset_group_ids,omitempty"` // Multiple asset groups
-	Targets             []string       `json:"targets,omitempty"`         // Direct targets
-	ScanType            string         `json:"scan_type"`
-	PipelineID          *string        `json:"pipeline_id,omitempty"`
-	ScannerName         string         `json:"scanner_name,omitempty"`
-	ScannerConfig       map[string]any `json:"scanner_config,omitempty"`
-	TargetsPerJob       int            `json:"targets_per_job"`
-	ScheduleType        string         `json:"schedule_type"`
-	ScheduleCron        string         `json:"schedule_cron,omitempty"`
-	ScheduleDay         *int           `json:"schedule_day,omitempty"`
-	ScheduleTime        *string        `json:"schedule_time,omitempty"`
-	ScheduleTimezone    string         `json:"schedule_timezone"`
-	NextRunAt           *string        `json:"next_run_at,omitempty"`
-	Tags                []string       `json:"tags,omitempty"`
-	RunOnTenantRunner   bool           `json:"run_on_tenant_runner"`
-	SensorPreference    string         `json:"sensor_preference"`
-	ProfileID           *string        `json:"profile_id,omitempty"`
-	ScanZoneID          *string        `json:"scan_zone_id"` // null = Automatic routing
-	TimeoutSeconds      int            `json:"timeout_seconds"`
-	MaxRetries          int            `json:"max_retries"`
-	RetryBackoffSeconds int            `json:"retry_backoff_seconds"`
-	Status              string         `json:"status"`
-	LastRunID           *string        `json:"last_run_id,omitempty"`
-	LastRunAt           *string        `json:"last_run_at,omitempty"`
-	LastRunStatus       string         `json:"last_run_status,omitempty"`
-	TotalRuns           int            `json:"total_runs"`
-	SuccessfulRuns      int            `json:"successful_runs"`
-	FailedRuns          int            `json:"failed_runs"`
-	CreatedBy           *string        `json:"created_by,omitempty"`
-	CreatedByName       *string        `json:"created_by_name,omitempty"`
-	CreatedAt           string         `json:"created_at"`
-	UpdatedAt           string         `json:"updated_at"`
+	ID            string         `json:"id"`
+	TenantID      string         `json:"tenant_id"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description,omitempty"`
+	AssetGroupID  string         `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
+	AssetGroupIDs []string       `json:"asset_group_ids,omitempty"` // Multiple asset groups
+	Targets       []string       `json:"targets,omitempty"`         // Direct targets
+	ScanType      string         `json:"scan_type"`
+	PipelineID    *string        `json:"pipeline_id,omitempty"`
+	ScannerName   string         `json:"scanner_name,omitempty"`
+	ScannerConfig map[string]any `json:"scanner_config,omitempty"`
+	// ScannerConfigWarnings lists scanner_config values that look like
+	// secrets (a token, a password, an Authorization header). The config is
+	// sent to the sensor in clear inside every command, so a secret there
+	// travels and rests unprotected. A warning, never a refusal; the value
+	// itself is never echoed (RFC-032 Phase 0).
+	ScannerConfigWarnings []scan.ConfigSecretWarning `json:"scanner_config_warnings,omitempty"`
+	TargetsPerJob         int                        `json:"targets_per_job"`
+	ScheduleType          string                     `json:"schedule_type"`
+	ScheduleCron          string                     `json:"schedule_cron,omitempty"`
+	ScheduleDay           *int                       `json:"schedule_day,omitempty"`
+	ScheduleTime          *string                    `json:"schedule_time,omitempty"`
+	ScheduleTimezone      string                     `json:"schedule_timezone"`
+	NextRunAt             *string                    `json:"next_run_at,omitempty"`
+	Tags                  []string                   `json:"tags,omitempty"`
+	RunOnTenantRunner     bool                       `json:"run_on_tenant_runner"`
+	SensorPreference      string                     `json:"sensor_preference"`
+	ProfileID             *string                    `json:"profile_id,omitempty"`
+	ScanZoneID            *string                    `json:"scan_zone_id"` // null = Automatic routing
+	TimeoutSeconds        int                        `json:"timeout_seconds"`
+	MaxRetries            int                        `json:"max_retries"`
+	RetryBackoffSeconds   int                        `json:"retry_backoff_seconds"`
+	Status                string                     `json:"status"`
+	LastRunID             *string                    `json:"last_run_id,omitempty"`
+	LastRunAt             *string                    `json:"last_run_at,omitempty"`
+	LastRunStatus         string                     `json:"last_run_status,omitempty"`
+	TotalRuns             int                        `json:"total_runs"`
+	SuccessfulRuns        int                        `json:"successful_runs"`
+	FailedRuns            int                        `json:"failed_runs"`
+	CreatedBy             *string                    `json:"created_by,omitempty"`
+	CreatedByName         *string                    `json:"created_by_name,omitempty"`
+	CreatedAt             string                     `json:"created_at"`
+	UpdatedAt             string                     `json:"updated_at"`
 }
 
 // ScanStatsResponse represents the response for scan statistics.
@@ -1153,34 +1159,35 @@ func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse 
 	}
 
 	resp := &ScanDetailResponse{
-		ID:                  s.ID.String(),
-		TenantID:            s.TenantID.String(),
-		Name:                s.Name,
-		Description:         s.Description,
-		AssetGroupID:        assetGroupID,
-		AssetGroupIDs:       assetGroupIDs,
-		Targets:             s.Targets,
-		ScanType:            string(s.ScanType),
-		ScannerName:         s.ScannerName,
-		ScannerConfig:       s.ScannerConfig,
-		TargetsPerJob:       s.TargetsPerJob,
-		ScheduleType:        string(s.ScheduleType),
-		ScheduleCron:        s.ScheduleCron,
-		ScheduleDay:         s.ScheduleDay,
-		ScheduleTimezone:    s.ScheduleTimezone,
-		Tags:                s.Tags,
-		RunOnTenantRunner:   s.RunOnTenantRunner,
-		SensorPreference:    string(s.SensorPreference),
-		TimeoutSeconds:      s.TimeoutSeconds,
-		MaxRetries:          s.MaxRetries,
-		RetryBackoffSeconds: s.RetryBackoffSeconds,
-		Status:              string(s.Status),
-		LastRunStatus:       s.LastRunStatus,
-		TotalRuns:           s.TotalRuns,
-		SuccessfulRuns:      s.SuccessfulRuns,
-		FailedRuns:          s.FailedRuns,
-		CreatedAt:           s.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:           s.UpdatedAt.Format(time.RFC3339),
+		ID:                    s.ID.String(),
+		TenantID:              s.TenantID.String(),
+		Name:                  s.Name,
+		Description:           s.Description,
+		AssetGroupID:          assetGroupID,
+		AssetGroupIDs:         assetGroupIDs,
+		Targets:               s.Targets,
+		ScanType:              string(s.ScanType),
+		ScannerName:           s.ScannerName,
+		ScannerConfig:         s.ScannerConfig,
+		ScannerConfigWarnings: scan.DetectConfigSecrets(s.ScannerConfig),
+		TargetsPerJob:         s.TargetsPerJob,
+		ScheduleType:          string(s.ScheduleType),
+		ScheduleCron:          s.ScheduleCron,
+		ScheduleDay:           s.ScheduleDay,
+		ScheduleTimezone:      s.ScheduleTimezone,
+		Tags:                  s.Tags,
+		RunOnTenantRunner:     s.RunOnTenantRunner,
+		SensorPreference:      string(s.SensorPreference),
+		TimeoutSeconds:        s.TimeoutSeconds,
+		MaxRetries:            s.MaxRetries,
+		RetryBackoffSeconds:   s.RetryBackoffSeconds,
+		Status:                string(s.Status),
+		LastRunStatus:         s.LastRunStatus,
+		TotalRuns:             s.TotalRuns,
+		SuccessfulRuns:        s.SuccessfulRuns,
+		FailedRuns:            s.FailedRuns,
+		CreatedAt:             s.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:             s.UpdatedAt.Format(time.RFC3339),
 	}
 
 	if s.PipelineID != nil {

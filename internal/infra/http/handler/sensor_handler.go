@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -193,6 +194,17 @@ type SensorResponse struct {
 	VersionStatus string `json:"version_status" enums:"latest,update_available,unsupported,unknown"`
 	// KeyExpiresAt is when the current API key stops working; null = never.
 	KeyExpiresAt *string `json:"key_expires_at"`
+	// KeyLastUsedAt and KeyLastUsedIP are the last authenticated request with
+	// any of the sensor's keys and the client address it came from (behind a
+	// trusted proxy, the forwarded address); null until recorded.
+	KeyLastUsedAt *string `json:"key_last_used_at"`
+	KeyLastUsedIP *string `json:"key_last_used_ip"`
+	// InstanceID is the sensor process of the last heartbeat that changed
+	// it: the SDK's per-process id, or "host:<hash>" for SDKs that send none.
+	InstanceID string `json:"instance_id"`
+	// IdentityClonedAt is when two live processes were seen using this
+	// sensor's key (health reason identity_cloned); null = not flagged.
+	IdentityClonedAt *string `json:"identity_cloned_at"`
 	// LastOfflineAt is when the sensor was last marked offline.
 	LastOfflineAt *string `json:"last_offline_at"`
 	// LastErrorAt is when the sensor last reported an error.
@@ -307,7 +319,7 @@ type SensorProtocolResponse struct {
 // stable (clients map it to their own wording and fix actions); message is a
 // plain-English fallback.
 type SensorHealthReasonResponse struct {
-	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,version_unsupported,sdk_unsupported,no_tools,error_reported,content_stale,content_refresh_failed"`
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_unsupported,no_tools,error_reported,content_stale,content_refresh_failed"`
 	Severity string `json:"severity" enums:"warning,critical"`
 	Message  string `json:"message"`
 }
@@ -853,6 +865,15 @@ func (h *SensorHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.toSensorResponse(r.Context(), a))
 }
 
+// ipStringPtr renders an address, nil when unknown.
+func ipStringPtr(ip net.IP) *string {
+	if ip == nil {
+		return nil
+	}
+	s := ip.String()
+	return &s
+}
+
 // toSensorResponse converts a sensor entity to response, with the state,
 // health reasons and version status computed now under the handler's policy.
 func (h *SensorHandler) toSensorResponse(ctx context.Context, a *sensor.Sensor) *SensorResponse {
@@ -898,6 +919,10 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		HealthReasons:    make([]SensorHealthReasonResponse, 0, len(health.Reasons)),
 		VersionStatus:    string(health.VersionStatus),
 		KeyExpiresAt:     rfc3339Ptr(a.KeyExpiresAt),
+		KeyLastUsedAt:    rfc3339Ptr(a.KeyLastUsedAt),
+		KeyLastUsedIP:    ipStringPtr(a.KeyLastUsedIP),
+		InstanceID:       a.InstanceID,
+		IdentityClonedAt: rfc3339Ptr(a.IdentityClonedAt),
 		LastOfflineAt:    rfc3339Ptr(a.LastOfflineAt),
 		LastErrorAt:      rfc3339Ptr(a.LastErrorAt),
 		StartedAt:        rfc3339Ptr(a.StartedAt),
