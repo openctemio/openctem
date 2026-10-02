@@ -9,13 +9,13 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 
 | Workflow (file) | Triggers | What it does | Gate check |
 |-----------------|----------|--------------|------------|
-| API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | Migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, lint, tests, protocol-v1 compat, build, Docker build | **API CI OK** |
-| Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | Generated API types check, type-check, ESLint, Prettier, palette drift, Vitest, `next build` (push only) | **Web CI OK** |
+| API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, lint), tests, protocol-v1 compat + release binaries, Docker build; see [Tiers](#tiers) | **API CI OK** |
+| Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `Web checks` (one job: generated API types check, type-check, ESLint, Prettier, palette drift, Vitest); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
-| All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. | **All-in-one OK** |
+| All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
 | Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. actionlint over the workflows | **Secret Scanning**, **Workflow Lint** |
-| API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | govulncheck, Trivy (fs), Semgrep, Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
-| Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | npm audit, Trivy (fs), ESLint security rules, Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
+| API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | One job for govulncheck + Trivy (fs) + license check; Semgrep; Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
+| Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | One job for npm audit + Trivy (fs) + ESLint security rules; Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
 | API Fuzz (`api-fuzz.yml`) | Nightly (03:17 UTC), manual | 10 minutes of `FuzzStrictCTIS` (the protocol-v2 results decoder); uploads a crasher artifact on failure | — |
 | Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)) | — |
 | Release (`release.yml`) | Tag `v*` | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
@@ -65,10 +65,10 @@ How each workflow uses the outputs:
 
 | Workflow | Scoping |
 |----------|---------|
-| API CI | always starts; real jobs run when `api` |
+| API CI | always starts; real jobs run when `api` (which ones: [Tiers](#tiers)) |
 | Web CI | always starts; real jobs run when `web` |
-| CodeQL | always starts; Go when `api`, JS/TS when `web` (PR, merge queue); both on push and weekly |
-| All-in-one CI | always starts; runs when `api` or `web` (both images are built from the whole component directory) |
+| CodeQL | Go when `api`, JS/TS when `web` (PR); nothing in the merge queue; both on push and weekly |
+| All-in-one CI | always starts; builds when `api` or `web` (both images are built from the whole component directory), in the merge queue and on pushes only |
 | Repository Security | always runs (secret scan diff-scoped on PR and merge queue) |
 | API Security | `on.paths`: `api/**` + shared files. Does not start at all for a web-only change |
 | Web Security | `on.paths`: `web/**` + shared files. Does not start at all for an API-only change |
@@ -89,15 +89,38 @@ runs are never cancelled.
 2. The queue creates `gh-readonly-queue/<base>/pr-<n>-<sha>`: the base (or the
    group ahead of it in the queue) plus this PR, and fires `merge_group`
    (`checks_requested`).
-3. API CI, Web CI, CodeQL, All-in-one CI and Repository Security run on that ref.
-   `changed.sh` diffs `base_sha..head_sha`, so a queued web-only PR runs only web
-   jobs, as it did on the PR.
+3. API CI, Web CI, All-in-one CI and Repository Security run the full tier (see
+   [Tiers](#tiers)) on that ref; CodeQL only reports `CodeQL OK`. `changed.sh`
+   diffs `base_sha..head_sha`, so a queued web-only PR runs only web jobs, as it
+   did on the PR.
 4. All six required checks report on every queue ref: the four `… OK`
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
 5. When all six pass, the queue fast-forwards the base branch, and the `push` run
    (path-scoped, plus CodeQL on both languages) refreshes the branch's baseline.
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
+
+### Tiers
+
+Every PR is tested twice (on the PR, then in the queue) on the free plan's ~20
+concurrent hosted runners, so the work is split. Self-hosted runners are not
+used: this is a public repository, and a fork PR would run code on the host.
+
+| Tier | Events | API CI | Web CI | All-in-one CI | CodeQL |
+|------|--------|--------|--------|---------------|--------|
+| Fast | `pull_request` | `API static checks` + `Unit tests` (`go test -race`, no database: DB-backed tests skip themselves without `DATABASE_URL`) | `Web checks` | build skipped | changed language(s) |
+| Full | `merge_group`, push to `develop`/`main` | `API static checks` + `Tests (Postgres + Redis)` + `Protocol v1 Compatibility` (+ release binaries); Docker build on `main` | `Web checks`; `next build` on push | images built and smoke-tested | queue: none (the PR head was analysed); push: both |
+
+The `… OK` aggregators pass when a job was skipped because its area did not
+change, but when the area did change they also require that **this event's
+tier ran and passed**. In the queue, `API CI OK` fails unless the integration
+tests and the compat run succeeded, and `All-in-one OK` fails unless the image
+build succeeded. Nothing reaches `develop`/`main` on the fast tier alone.
+
+Concurrency: a newer push to a PR cancels that PR's older run
+(`cancel-in-progress` only for `pull_request`). Merge-queue runs are never
+cancelled, because a cancelled required check ejects the group. Branch pushes,
+tags and schedules are never cancelled either.
 
 PR-only steps (Migration Safety, golangci-lint on new code) are skipped in the
 queue: they already ran on the PR. API Security and Web Security do not run in
@@ -133,15 +156,16 @@ make check            # both contract checks, as CI runs them
 
 | Job | Notes |
 |-----|-------|
+| *All of the rows down to Lint are steps of one job, `API static checks`.* | |
 | Migration Safety | PRs only. Flags destructive migrations against the base. |
 | SQL Schema Drift | `api/scripts/check-sql-schema.sh`: prepares every SQL statement against a migrations-only database. |
 | Security Gates | `api/scripts/security-lint.sh` (checks out `sensor` and `sdk-go` alongside), tenant-scope analyzer, sensor vocabulary guard. |
 | OpenAPI Contract | See above. |
 | Gateway Routing | `api/deploy/gateway/smoke-test.sh` + renders the production compose files. |
 | Lint | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
-| Test | `go test -race -timeout 20m` against Postgres 17 + Redis 7 service containers. |
-| Protocol v1 Compatibility | Runs the pinned, last-released sdk-go against a freshly built server (`api/scripts/compat-v1.sh`). |
-| Build | `cmd/server` and `cmd/bootstrap-admin` binaries. |
+| Unit tests | PRs. `go test -race -timeout 20m ./...` with no database (DB-backed tests skip). |
+| Tests (Postgres + Redis) | Merge queue and pushes. The same suite against Postgres 17 + Redis 7 service containers. |
+| Protocol v1 Compatibility | Merge queue and pushes. Runs the pinned, last-released sdk-go against a freshly built server (`api/scripts/compat-v1.sh`), then builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 | Docker Build | Pushes to `main` only; builds the image, does not push it. |
 
 All Go jobs run with `GOWORK=off` and `working-directory: api`.
