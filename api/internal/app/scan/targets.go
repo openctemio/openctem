@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -41,7 +42,11 @@ type resolvedTargets struct {
 	Targets       []string
 	Excluded      int
 	ExcludedNames []string // the targets scope exclusions removed, in order
-	Warnings      []string
+	// Unconfirmed counts group members skipped because their attribution is
+	// not confirmed (needs review, candidate, dependency, monitor only,
+	// rejected).
+	Unconfirmed int
+	Warnings    []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
@@ -70,6 +75,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	for _, t := range sc.Targets {
 		add(shared.NewID(), t)
 	}
+	// Group members, by asset id, for the attribution gate. A member whose
+	// name is also a direct target was added as the direct target first.
+	memberIDs := map[shared.ID]bool{}
 	if s.assetGroupRepo != nil {
 		listed := make(map[shared.ID]bool)
 		for _, groupID := range sc.GetAllAssetGroupIDs() {
@@ -86,7 +94,11 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 			}
 			for _, m := range members {
 				for _, v := range m.Values {
+					before := len(candidates)
 					add(m.ID, v)
+					if len(candidates) > before {
+						memberIDs[m.ID] = true
+					}
 				}
 			}
 			// Bound the work before the exclusion lookup: exclusions only
@@ -107,6 +119,21 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		}
 	}
 
+	blocked := map[string]attribution.State{}
+	if s.attributionGate != nil && len(memberIDs) > 0 {
+		ids := make([]string, 0, len(memberIDs))
+		for id := range memberIDs {
+			if !excluded[id] {
+				ids = append(ids, id.String())
+			}
+		}
+		var err error
+		blocked, err = s.attributionGate.ActiveCheckBlocked(ctx, sc.TenantID, ids)
+		if err != nil {
+			return nil, fmt.Errorf("attribution check failed, scan not dispatched: %w", err)
+		}
+	}
+
 	out := &resolvedTargets{Targets: make([]string, 0, len(candidates)), Warnings: warnings}
 	for _, c := range candidates {
 		if excluded[c.ID] {
@@ -114,7 +141,17 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 			out.ExcludedNames = append(out.ExcludedNames, names[c.ID])
 			continue
 		}
+		if memberIDs[c.ID] {
+			if _, no := blocked[c.ID.String()]; no {
+				out.Unconfirmed++
+				continue
+			}
+		}
 		out.Targets = append(out.Targets, names[c.ID])
+	}
+	if out.Unconfirmed > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d asset(s) in the group were skipped: their ownership is not confirmed yet (review their attribution)", out.Unconfirmed))
 	}
 	if len(out.Targets) > maxResolvedTargets {
 		return nil, fmt.Errorf("%w: scan resolves to %d targets, more than the %d allowed per run",

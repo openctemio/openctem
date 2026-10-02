@@ -124,9 +124,31 @@ Exclusions always win, as today. An asset is actively scanned only when it is
 attributed `confirmed` and either inside a scope target or derived from a seed.
 Candidates and dependencies get passive (T0) checks only.
 
-## 4. Attribution (planned)
+## 4. Attribution
 
-Each candidate carries **evidence** rows (kind, source, observed value, weight,
+**Built (P0, migration 000271).** `asset_attributions` holds per asset a
+state, a confidence 0–100 and the strongest rule; `easm_evidence` holds one row
+per (asset, rule, source) with the technique, the source and the observed
+datum. It is a side table, not columns on `assets`: the asset write paths each
+list their columns, and a column one of them forgets is silently dropped. An
+asset without a row is a legacy asset and counts as confirmed, so nothing in
+the inventory changed meaning.
+
+| Piece | Where |
+|---|---|
+| Rules, noisy-OR, O4 decision, `Merge` (automation only raises; a human decision stands) | `pkg/domain/attribution` |
+| Storage, tenant-scoped writes (a foreign asset id writes nothing) | `internal/infra/postgres/attribution_repository.go` |
+| First producer: CT promotion (`fqdn_under_verified_root` 0.99 → confirmed; `fqdn_under_asserted_root` 0.85 → needs_review) | `internal/app/certmonitor/promote.go` |
+| Scan gate: asset-group members that are not confirmed are skipped; a group of only unconfirmed assets is refused; a failed lookup stops the dispatch | `internal/app/scan/targets.go` (`WithAttributionGate`) |
+| `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
+
+Deviation from the plan below, on the owner's instruction for P0 (feed CT
+names into the asset pipeline, marked unconfirmed): names found under a domain
+the tenant did not verify enter the inventory as `needs_review` assets rather
+than as candidates outside it. The scan gate keeps them passive. P2's
+`easm_candidates` is still where weak (< 50) names will live.
+
+**Planned (P2).** Each candidate carries **evidence** rows (kind, source, observed value, weight,
 time). Confidence is the noisy-OR of the evidence weights,
 `1 − Π(1 − wᵢ)`, shown as 0–100. Weights start from a rule table (for example:
 name under a verified root ≈ 0.99, IP in a seeded CIDR/ASN ≈ 0.9, resource
@@ -169,8 +191,8 @@ current behaviour and get evidence stamped on them.
   scope targets, rotates through all of them (`ct_monitor_state`), retries
   crt.sh and falls back to Cert Spotter. See
   [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md).
-- CT discoveries stay exposure events; nothing turns them into assets or
-  candidates.
+- ~~CT discoveries stay exposure events.~~ Fixed in RFC-036 P0: CT names
+  become `subdomain` assets with attribution (§4).
 - Sensor images ship no recon binaries. The recon executor is off by default
   but advertises recon capabilities when it is turned on. Pipeline steps do not
   feed one step's output into the next.

@@ -105,6 +105,7 @@ type Handlers struct {
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
+	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
 	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
 	RelationshipSuggestion *handler.RelationshipSuggestionHandler // nil if not initialized (no database)
 
@@ -422,6 +423,9 @@ func Register(
 	}
 
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
+	if h.AssetAttribution != nil {
+		registerAssetAttributionRoutes(router, h.AssetAttribution, authMiddleware, userSync)
+	}
 	if h.AssetIdentifier != nil {
 		registerAssetIdentifierRoutes(router, h.AssetIdentifier, authMiddleware, userSync)
 	}

@@ -2873,6 +2873,7 @@ definitions:
     - RATE_LIMIT_EXCEEDED
     - UPSTREAM_ERROR
     - MFA_ENROLLMENT_REQUIRED
+    - APPROVAL_REQUIRED
     type: string
     x-enum-varnames:
     - CodeBadRequest
@@ -2888,6 +2889,7 @@ definitions:
     - CodeRateLimitExceeded
     - CodeUpstreamError
     - CodeMFAEnrollmentRequired
+    - CodeApprovalRequired
   github_com_openctemio_openctem_api_pkg_apierror.Error:
     properties:
       code:
@@ -4288,6 +4290,58 @@ definitions:
       introduced:
         type: string
       package:
+        type: string
+    type: object
+  internal_infra_http_handler.AssetAttributionDecisionRequest:
+    properties:
+      state:
+        description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
+        type: string
+    type: object
+  internal_infra_http_handler.AssetAttributionEvidence:
+    properties:
+      first_observed_at:
+        type: string
+      last_observed_at:
+        type: string
+      observed:
+        additionalProperties: {}
+        type: object
+      rule:
+        type: string
+      source:
+        type: string
+      technique:
+        type: string
+      weight:
+        type: number
+    type: object
+  internal_infra_http_handler.AssetAttributionResponse:
+    properties:
+      active_checks_allowed:
+        description: 'ActiveChecksAllowed: whether a scan may touch the asset.'
+        type: boolean
+      confidence:
+        type: integer
+      decided_at:
+        type: string
+      evidence:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AssetAttributionEvidence'
+        type: array
+      human_decided:
+        description: 'HumanDecided: a person set the state; automation will not change
+          it.'
+        type: boolean
+      reason:
+        type: string
+      recorded:
+        type: boolean
+      state:
+        description: |-
+          State: confirmed, needs_review, candidate, dependency, monitor_only,
+          rejected. An asset with no record is a legacy asset and reports
+          confirmed with recorded=false.
         type: string
     type: object
   internal_infra_http_handler.AssetBriefResponse:
@@ -16022,6 +16076,85 @@ paths:
       security:
       - BearerAuth: []
       summary: Archive asset
+      tags:
+      - Assets
+  /assets/{id}/attribution:
+    get:
+      description: Whether the asset is believed to be the organization's, how confident
+        the platform is, and the evidence (rule, technique, source, observed datum).
+        Assets discovered passively under a domain the organization did not verify
+        wait for review and are skipped by scans until confirmed.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAttributionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Asset attribution
+      tags:
+      - Assets
+    put:
+      consumes:
+      - application/json
+      description: Record whether the asset is the organization's. confirmed lets
+        scans reach it; rejected, dependency (the organization's name on someone else's
+        infrastructure) and monitor_only keep it passive. Automation never changes
+        a decided state. Audited.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Decision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AssetAttributionDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAttributionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Decide asset attribution
       tags:
       - Assets
   /assets/{id}/components:

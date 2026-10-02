@@ -256,6 +256,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
+		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
@@ -682,4 +683,14 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
 	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+}
+
+// newAssetAttributionHandler builds the attribution handler with its audit
+// trail (RFC-036: every human attribution decision is audited).
+func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AssetAttributionHandler {
+	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
+	if svc.Audit != nil {
+		h.SetAuditService(svc.Audit)
+	}
+	return h
 }

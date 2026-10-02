@@ -5009,6 +5009,133 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/assets/{id}/attribution': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Asset attribution
+     * @description Whether the asset is believed to be the organization's, how confident the platform is, and the evidence (rule, technique, source, observed datum). Assets discovered passively under a domain the organization did not verify wait for review and are skipped by scans until confirmed.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Decide asset attribution
+     * @description Record whether the asset is the organization's. confirmed lets scans reach it; rejected, dependency (the organization's name on someone else's infrastructure) and monitor_only keep it passive. Automation never changes a decided state. Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Decision */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionDecisionRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/assets/{id}/components': {
     parameters: {
       query?: never
@@ -30791,6 +30918,7 @@ export interface components {
       | 'RATE_LIMIT_EXCEEDED'
       | 'UPSTREAM_ERROR'
       | 'MFA_ENROLLMENT_REQUIRED'
+      | 'APPROVAL_REQUIRED'
     'github_com_openctemio_openctem_api_pkg_apierror.Error': {
       /** @description Machine-readable error code */
       code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
@@ -31557,6 +31685,38 @@ export interface components {
       fixed?: string
       introduced?: string
       package?: string
+    }
+    'internal_infra_http_handler.AssetAttributionDecisionRequest': {
+      /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
+      state?: string
+    }
+    'internal_infra_http_handler.AssetAttributionEvidence': {
+      first_observed_at?: string
+      last_observed_at?: string
+      observed?: {
+        [key: string]: unknown
+      }
+      rule?: string
+      source?: string
+      technique?: string
+      weight?: number
+    }
+    'internal_infra_http_handler.AssetAttributionResponse': {
+      /** @description ActiveChecksAllowed: whether a scan may touch the asset. */
+      active_checks_allowed?: boolean
+      confidence?: number
+      decided_at?: string
+      evidence?: components['schemas']['internal_infra_http_handler.AssetAttributionEvidence'][]
+      /** @description HumanDecided: a person set the state; automation will not change it. */
+      human_decided?: boolean
+      reason?: string
+      recorded?: boolean
+      /**
+       * @description State: confirmed, needs_review, candidate, dependency, monitor_only,
+       *     rejected. An asset with no record is a legacy asset and reports
+       *     confirmed with recorded=false.
+       */
+      state?: string
     }
     'internal_infra_http_handler.AssetBriefResponse': {
       id?: string

@@ -526,6 +526,21 @@ func registerAssetIdentifierRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerAssetAttributionRoutes registers the asset attribution endpoint
+// (RFC-036 §6.4).
+func registerAssetAttributionRoutes(
+	router Router,
+	h *handler.AssetAttributionHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/assets/{id}/attribution", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.AssetsRead))
+		r.PUT("/", h.Decide, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerAssetImportRoutes registers bulk asset import endpoints.
 func registerAssetImportRoutes(
 	router Router,

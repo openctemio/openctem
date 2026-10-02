@@ -179,6 +179,7 @@ type Repositories struct {
 	// Domain-ownership verification (SSO P1, migration 000191)
 	VerifiedDomain *postgres.VerifiedDomainRepository
 	CTMonitorState *postgres.CTMonitorStateRepository
+	Attribution    *postgres.AttributionRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -398,6 +399,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
 		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
+		Attribution:      postgres.NewAttributionRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

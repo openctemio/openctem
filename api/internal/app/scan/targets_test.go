@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -403,4 +404,74 @@ type errSelector struct{ stubSelector }
 
 func (errSelector) SelectSensor(context.Context, SelectSensorRequest) (*SelectSensorResult, error) {
 	return nil, errors.New("selector down")
+}
+
+// stubGate blocks the given asset ids.
+type stubGate struct {
+	blocked map[string]attribution.State
+	err     error
+	asked   []string
+}
+
+func (g *stubGate) ActiveCheckBlocked(_ context.Context, _ shared.ID, ids []string) (map[string]attribution.State, error) {
+	g.asked = append(g.asked, ids...)
+	if g.err != nil {
+		return nil, g.err
+	}
+	out := map[string]attribution.State{}
+	for _, id := range ids {
+		if s, ok := g.blocked[id]; ok {
+			out[id] = s
+		}
+	}
+	return out, nil
+}
+
+// RFC-036 §6.3 / O4: a group member whose ownership is not confirmed (for
+// example a name found only in CT under an unverified domain) is never
+// scanned; a direct target the tenant typed is its own assertion and is.
+func TestResolveScanTargets_SkipsUnconfirmedGroupMembers(t *testing.T) {
+	confirmed := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "www.proven.com"}
+	review := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "www.listed.com"}
+	typed := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "api.listed.com"}
+	gate := &stubGate{blocked: map[string]attribution.State{
+		review.ID.String(): attribution.StateNeedsReview,
+		typed.ID.String():  attribution.StateNeedsReview,
+	}}
+	svc := &Service{
+		assetGroupRepo:  &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{confirmed, review, typed}},
+		attributionGate: gate,
+		logger:          logger.NewNop(),
+	}
+	sc := testScan("nuclei", "api.listed.com")
+	sc.AssetGroupID = shared.NewID()
+
+	got, err := svc.resolveScanTargets(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Targets, []string{"api.listed.com", "www.proven.com"}) || got.Unconfirmed != 1 {
+		t.Fatalf("targets=%v unconfirmed=%d", got.Targets, got.Unconfirmed)
+	}
+	if len(got.Warnings) != 1 {
+		t.Fatalf("warnings = %v", got.Warnings)
+	}
+
+	// Only unconfirmed members: refused, nothing dispatched.
+	svc.assetGroupRepo = &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{review}}
+	only := testScan("nuclei")
+	only.AssetGroupID = shared.NewID()
+	r, err := svc.resolveScanTargets(context.Background(), only)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recordResolvedTargets(only, r, map[string]any{}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("all-unconfirmed run not refused: %v", err)
+	}
+
+	// The gate failing stops the dispatch (fail closed).
+	svc.attributionGate = &stubGate{err: errors.New("db down")}
+	if _, err := svc.resolveScanTargets(context.Background(), only); err == nil {
+		t.Fatal("attribution lookup failure must fail the dispatch")
+	}
 }

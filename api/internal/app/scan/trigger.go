@@ -967,6 +967,14 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if len(r.Warnings) > 0 {
 		runContext["dispatch_warnings"] = r.Warnings
 	}
+	if r.Unconfirmed > 0 {
+		runContext["unconfirmed_target_count"] = r.Unconfirmed
+	}
+	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
+		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
+			fmt.Sprintf("Every target of scan %q is an asset whose ownership is not confirmed yet; nothing to scan. Review their attribution first.", sc.Name),
+			shared.ErrValidation)
+	}
 	if len(r.Targets) == 0 && r.Excluded > 0 {
 		return shared.NewDomainError("ALL_TARGETS_EXCLUDED",
 			fmt.Sprintf("Every target of scan %q is excluded by scope; nothing to scan.", sc.Name),

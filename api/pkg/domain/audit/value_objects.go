@@ -35,6 +35,9 @@ const (
 	ActionAssetReactivated        Action = "asset.reactivated"
 	ActionAssetLifecycleSnoozed   Action = "asset.lifecycle_snoozed"
 	ActionAssetLifecycleUnsnoozed Action = "asset.lifecycle_unsnoozed"
+	// ActionAssetAttributionDecided: a person set whether an asset is the
+	// organization's (RFC-036 attribution review).
+	ActionAssetAttributionDecided Action = "asset.attribution_decided"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -333,7 +336,7 @@ func (a Action) IsValid() bool {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
-		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -633,7 +636,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
-		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,
