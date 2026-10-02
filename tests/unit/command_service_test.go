@@ -251,6 +251,10 @@ func (m *cmdMockRepo) GetPlatformJobsBySensor(_ context.Context, _ shared.ID, _ 
 	return nil, nil
 }
 
+func (m *cmdMockRepo) ReleasePendingFromUnavailableSensors(_ context.Context) (int64, error) {
+	return 0, nil
+}
+
 func (m *cmdMockRepo) RecoverStuckTenantCommands(_ context.Context, _ int, _ int) (int64, error) {
 	if m.recoverTenantErr != nil {
 		return 0, m.recoverTenantErr

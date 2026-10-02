@@ -566,6 +566,9 @@ func (m *mockCommandRepo) ListPlatformJobsAdmin(_ context.Context, _, _ *shared.
 func (m *mockCommandRepo) GetPlatformJobsBySensor(_ context.Context, _ shared.ID, _ *commanddom.CommandStatus) ([]*commanddom.Command, error) {
 	return nil, nil
 }
+func (m *mockCommandRepo) ReleasePendingFromUnavailableSensors(_ context.Context) (int64, error) {
+	return 0, nil
+}
 func (m *mockCommandRepo) RecoverStuckTenantCommands(_ context.Context, _, _ int) (int64, error) {
 	return 0, nil
 }
