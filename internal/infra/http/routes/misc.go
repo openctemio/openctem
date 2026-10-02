@@ -297,12 +297,15 @@ func registerBootstrapRoutes(
 // WebSocket replaces SSE for real-time features (activities, scans, notifications).
 // Authentication is handled by the UnifiedAuth middleware (JWT token in Authorization header).
 //
-// Channels follow the format: {type}:{id}
-//   - finding:{id}       - Activity updates for a finding
-//   - scan:{id}          - Scan progress updates
-//   - tenant:{id}        - Tenant-wide notifications
-//   - notification:{id}  - Notification delivery
-//   - triage:{finding_id} - AI triage progress updates
+// Channels follow the format: {type}:{id}. The hub authorizes every
+// subscription against the connection's own user and tenant
+// (websocket.Hub.defaultAuthorize):
+//   - user:{tenant_id}:{user_id} - the connected user's in-app notifications (own channel only)
+//   - tenant:{id}         - events for every tenant member (module toggles); never notifications
+//   - finding:{id}        - Activity updates for a finding (findings:read)
+//   - triage:{finding_id} - AI triage progress updates (findings:read)
+//   - scan:{id}           - Scan progress updates (scans:read)
+//   - group:{id}          - Scope-rule changes (group member or team:groups:read)
 func registerWebSocketRoutes(
 	router Router,
 	h *websocket.Handler,

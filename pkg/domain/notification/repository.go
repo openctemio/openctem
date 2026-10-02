@@ -28,6 +28,14 @@ type Repository interface {
 	// Group membership is resolved via subquery internally, eliminating an extra DB roundtrip.
 	UnreadCount(ctx context.Context, tenantID, userID shared.ID) (int, error)
 
+	// ListRecipients returns the users who should receive a real-time push of
+	// the notification: the members of its audience (the addressed user, the
+	// members of the addressed group, or every active tenant member for
+	// audience "all"). It applies the same audience rule as List and
+	// UnreadCount, so a push never reaches someone whose inbox would not show
+	// the notification.
+	ListRecipients(ctx context.Context, n *Notification) ([]shared.ID, error)
+
 	// MarkAsRead marks a single notification as read for a user.
 	MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID ID, userID shared.ID) error
 

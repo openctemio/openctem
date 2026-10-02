@@ -34,23 +34,23 @@ const (
 
 // Notification types
 const (
-	TypeFindingNew          = "finding_new"
-	TypeFindingAssigned     = "finding_assigned"
-	TypeFindingStatusChange = "finding_status_change"
-	TypeFindingComment      = "finding_comment"
-	TypeFindingMention      = "finding_mention"
-	TypeScanStarted         = "scan_started"
-	TypeScanCompleted       = "scan_completed"
-	TypeScanFailed          = "scan_failed"
-	TypeAssetDiscovered     = "asset_discovered"
-	TypeMemberInvited           = "member_invited"
-	TypeMemberJoined            = "member_joined"
-	TypeRoleChanged             = "role_changed"
-	TypeCampaignMemberAdded     = "campaign_member_added"
-	TypeCampaignMemberRemoved   = "campaign_member_removed"
+	TypeFindingNew               = "finding_new"
+	TypeFindingAssigned          = "finding_assigned"
+	TypeFindingStatusChange      = "finding_status_change"
+	TypeFindingComment           = "finding_comment"
+	TypeFindingMention           = "finding_mention"
+	TypeScanStarted              = "scan_started"
+	TypeScanCompleted            = "scan_completed"
+	TypeScanFailed               = "scan_failed"
+	TypeAssetDiscovered          = "asset_discovered"
+	TypeMemberInvited            = "member_invited"
+	TypeMemberJoined             = "member_joined"
+	TypeRoleChanged              = "role_changed"
+	TypeCampaignMemberAdded      = "campaign_member_added"
+	TypeCampaignMemberRemoved    = "campaign_member_removed"
 	TypeCampaignMemberRoleChange = "campaign_member_role_change"
-	TypeSLABreach               = "sla_breach"
-	TypeSystemAlert             = "system_alert"
+	TypeSLABreach                = "sla_breach"
+	TypeSystemAlert              = "system_alert"
 )
 
 // Notification represents an in-app notification.
@@ -151,18 +151,18 @@ func Reconstitute(
 // Getters
 func (n *Notification) ID() ID                   { return n.id }
 func (n *Notification) TenantID() shared.ID      { return n.tenantID }
-func (n *Notification) Audience() string          { return n.audience }
-func (n *Notification) AudienceID() *shared.ID    { return n.audienceID }
-func (n *Notification) NotificationType() string  { return n.notificationType }
-func (n *Notification) Title() string             { return n.title }
-func (n *Notification) Body() string              { return n.body }
-func (n *Notification) Severity() string          { return n.severity }
-func (n *Notification) ResourceType() string      { return n.resourceType }
-func (n *Notification) ResourceID() *shared.ID    { return n.resourceID }
-func (n *Notification) URL() string               { return n.url }
-func (n *Notification) ActorID() *shared.ID       { return n.actorID }
-func (n *Notification) CreatedAt() time.Time      { return n.createdAt }
-func (n *Notification) IsRead() bool              { return n.isRead }
+func (n *Notification) Audience() string         { return n.audience }
+func (n *Notification) AudienceID() *shared.ID   { return n.audienceID }
+func (n *Notification) NotificationType() string { return n.notificationType }
+func (n *Notification) Title() string            { return n.title }
+func (n *Notification) Body() string             { return n.body }
+func (n *Notification) Severity() string         { return n.severity }
+func (n *Notification) ResourceType() string     { return n.resourceType }
+func (n *Notification) ResourceID() *shared.ID   { return n.resourceID }
+func (n *Notification) URL() string              { return n.url }
+func (n *Notification) ActorID() *shared.ID      { return n.actorID }
+func (n *Notification) CreatedAt() time.Time     { return n.createdAt }
+func (n *Notification) IsRead() bool             { return n.isRead }
 
 // Preferences represents user notification preferences.
 type Preferences struct {
@@ -277,3 +277,13 @@ func severityRank(s string) int {
 		return 0
 	}
 }
+
+// UserChannel is the WebSocket channel that carries one user's in-app
+// notifications within one tenant: "user:{tenant_id}:{user_id}". Only a
+// connection authenticated as that user in that tenant may subscribe to it.
+func UserChannel(tenantID, userID string) string {
+	return UserChannelPrefix + tenantID + ":" + userID
+}
+
+// UserChannelPrefix is the channel-type prefix of UserChannel.
+const UserChannelPrefix = "user:"

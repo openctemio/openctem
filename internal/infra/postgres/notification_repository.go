@@ -155,6 +155,53 @@ func (r *NotificationRepository) UnreadCount(
 	return count, nil
 }
 
+// ListRecipients returns the active tenant members in the notification's
+// audience: the users a real-time push goes to. The audience rule is the one
+// List and UnreadCount apply,
+// so a push never reaches anyone whose inbox would not show the notification.
+func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notification.Notification) ([]shared.ID, error) {
+	var audienceID *string
+	if n.AudienceID() != nil {
+		s := n.AudienceID().String()
+		audienceID = &s
+	}
+
+	// $1 tenant, $2 audience, $3 audience_id.
+	query := `
+		SELECT tm.user_id
+		FROM tenant_members tm
+		WHERE tm.tenant_id = $1
+		  AND tm.status = 'active'
+		  AND (
+			$2::text = 'all'
+			OR ($2::text = 'user' AND tm.user_id = $3::uuid)
+			OR ($2::text = 'group' AND tm.user_id IN (
+				SELECT gm.user_id FROM group_members gm
+				INNER JOIN groups g ON g.id = gm.group_id
+				WHERE g.id = $3::uuid AND g.tenant_id = $1 AND g.is_active = true
+			))
+		  )`
+
+	rows, err := r.db.QueryContext(ctx, query, n.TenantID(), n.Audience(), audienceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list notification recipients: %w", err)
+	}
+	defer rows.Close()
+
+	var recipients []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan notification recipient: %w", err)
+		}
+		recipients = append(recipients, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notification recipient rows error: %w", err)
+	}
+	return recipients, nil
+}
+
 // MarkAsRead marks a single notification as read, verifying tenant ownership.
 func (r *NotificationRepository) MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID notification.ID, userID shared.ID) error {
 	query := `

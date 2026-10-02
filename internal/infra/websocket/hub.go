@@ -4,7 +4,10 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
+	notificationdom "github.com/openctemio/api/pkg/domain/notification"
+	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -43,6 +46,9 @@ type Hub struct {
 	// Authorization function
 	authorizeFn AuthorizeFunc
 
+	// Permission/membership resolver for permission-scoped channels.
+	access ChannelAccessChecker
+
 	// Mutex for concurrent access
 	mu sync.RWMutex
 
@@ -76,9 +82,20 @@ type BroadcastMessage struct {
 // Returns true if authorized, false otherwise.
 type AuthorizeFunc func(client *Client, channel string) bool
 
+// ChannelAccessChecker answers the permission and membership questions that
+// decide who may watch a permission-scoped channel. The server wires it to the
+// RBAC and group services; without one, those channels are refused.
+type ChannelAccessChecker interface {
+	HasPermission(ctx context.Context, tenantID, userID, permission string) (bool, error)
+	IsGroupMember(ctx context.Context, tenantID, groupID, userID string) (bool, error)
+}
+
+// channelAccessTimeout bounds the permission lookup made on a subscribe.
+const channelAccessTimeout = 5 * time.Second
+
 // NewHub creates a new Hub.
 func NewHub(log *logger.Logger) *Hub {
-	return &Hub{
+	h := &Hub{
 		clients:        make(map[*Client]bool),
 		userConnCounts: make(map[string]int),
 		channels:       make(map[string]map[*Client]bool),
@@ -86,47 +103,88 @@ func NewHub(log *logger.Logger) *Hub {
 		register:       make(chan *Client),
 		unregister:     make(chan *Client),
 		logger:         log,
-		authorizeFn:    defaultAuthorize,
 		done:           make(chan struct{}),
+	}
+	h.authorizeFn = h.defaultAuthorize
+	return h
+}
+
+// SetChannelAccessChecker attaches the permission/membership resolver used to
+// authorize finding, triage, scan and group channels. Must be called before
+// clients connect.
+func (h *Hub) SetChannelAccessChecker(c ChannelAccessChecker) {
+	h.access = c
+}
+
+// defaultAuthorize decides whether a client may subscribe to a channel. The
+// client names the channel, so every rule here is checked against the
+// identity the connection authenticated as, never against the channel text
+// alone. Unknown channel types are refused.
+func (h *Hub) defaultAuthorize(client *Client, channel string) bool {
+	if client.TenantID == "" || client.UserID == "" {
+		return false
+	}
+	channelType, id := ParseChannel(channel)
+	if id == "" {
+		return false
+	}
+
+	switch channelType {
+	case ChannelTypeUser:
+		// A user's own notifications: user:{tenant}:{user}. Exactly the
+		// authenticated user in the authenticated tenant, nobody else.
+		return channel == notificationdom.UserChannel(client.TenantID, client.UserID)
+
+	case ChannelTypeTenant:
+		// Tenant-wide events meant for every member (module toggles).
+		return client.TenantID == id
+
+	case ChannelTypeFinding, ChannelTypeTriage:
+		// Finding activity (actor, changes) and AI triage progress: the same
+		// permission the finding endpoints require.
+		return h.hasPermission(client, permission.FindingsRead)
+
+	case ChannelTypeScan:
+		return h.hasPermission(client, permission.ScansRead)
+
+	case ChannelTypeGroup:
+		// Scope-rule changes of one group: its members, or anyone allowed to
+		// read groups.
+		return h.isGroupMember(client, id) || h.hasPermission(client, permission.GroupsRead)
+
+	default:
+		// Unknown channel type (including the retired notification:{id}),
+		// deny by default.
+		return false
 	}
 }
 
-// defaultAuthorize is the default authorization function.
-// It checks tenant isolation for channel subscriptions.
-func defaultAuthorize(client *Client, channel string) bool {
-	channelType, id := ParseChannel(channel)
-
-	switch channelType {
-	case ChannelTypeFinding:
-		// Finding channel requires access to the finding
-		// For now, allow any authenticated user in the same tenant
-		// In production, should check if user has access to this finding
-		return client.TenantID != "" && id != ""
-
-	case ChannelTypeScan:
-		// Scan channel requires tenant access
-		return client.TenantID != "" && id != ""
-
-	case ChannelTypeTriage:
-		// Triage channel requires tenant access (id = finding_id)
-		return client.TenantID != "" && id != ""
-
-	case ChannelTypeTenant:
-		// Tenant channel: client must be in the tenant
-		return client.TenantID == id
-
-	case ChannelTypeNotification:
-		// Notification channel: client must be in the tenant
-		return client.TenantID == id
-
-	case ChannelTypeGroup:
-		// Group channel: requires tenant access (id = group_id)
-		return client.TenantID != "" && id != ""
-
-	default:
-		// Unknown channel type, deny by default
+func (h *Hub) hasPermission(client *Client, perm permission.Permission) bool {
+	if h.access == nil {
 		return false
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), channelAccessTimeout)
+	defer cancel()
+	ok, err := h.access.HasPermission(ctx, client.TenantID, client.UserID, perm.String())
+	if err != nil {
+		h.logger.Warn("ws channel permission check failed", "user_id", client.UserID, "permission", perm.String(), "error", err)
+		return false
+	}
+	return ok
+}
+
+func (h *Hub) isGroupMember(client *Client, groupID string) bool {
+	if h.access == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), channelAccessTimeout)
+	defer cancel()
+	ok, err := h.access.IsGroupMember(ctx, client.TenantID, groupID, client.UserID)
+	if err != nil {
+		h.logger.Debug("ws group membership check failed", "user_id", client.UserID, "group_id", groupID, "error", err)
+		return false
+	}
+	return ok
 }
 
 // SetAuthorizeFunc sets a custom authorization function.
@@ -325,6 +383,8 @@ func (h *Hub) broadcastToChannel(msg *BroadcastMessage) {
 		return
 	}
 
+	userChannel := strings.HasPrefix(msg.Channel, notificationdom.UserChannelPrefix)
+
 	h.mu.RLock()
 	clients, ok := h.channels[msg.Channel]
 	if !ok || len(clients) == 0 {
@@ -337,6 +397,11 @@ func (h *Hub) broadcastToChannel(msg *BroadcastMessage) {
 	for client := range clients {
 		// SECURITY: Strict tenant isolation — client must belong to the same tenant
 		if client.TenantID != msg.TenantID {
+			continue
+		}
+		// SECURITY: a user channel is delivered only to that user's own
+		// connections, even if a subscription slipped past authorization.
+		if userChannel && msg.Channel != notificationdom.UserChannel(client.TenantID, client.UserID) {
 			continue
 		}
 		clientList = append(clientList, client)
