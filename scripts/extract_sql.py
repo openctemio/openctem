@@ -31,7 +31,8 @@ SKIP_DIRS = {"vendor", "node_modules", ".git", "docs", "tests", ".claude"}
 def candidates(path):
     """Yield (line_number, sql) for each backtick-quoted SQL literal in a file."""
     try:
-        src = open(path, encoding="utf-8", errors="replace").read()
+        with open(path, encoding="utf-8", errors="replace") as f:
+            src = f.read()
     except OSError:
         return
 
