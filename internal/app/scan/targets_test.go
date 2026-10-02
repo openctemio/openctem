@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -119,14 +120,30 @@ func TestRecordResolvedTargets_AllExcludedRefused(t *testing.T) {
 	}
 }
 
-func TestResolveScanTargets_WarnsForSingleTargetScanner(t *testing.T) {
+// A single-target scanner now gets one command per target (perTargetPlan),
+// so the old "only the first target is scanned" warning is gone; the per-run
+// job cap is enforced here instead.
+func TestResolveScanTargets_SingleTargetScanner(t *testing.T) {
 	svc := &Service{logger: logger.NewNop()}
 	got, err := svc.resolveScanTargets(context.Background(), testScan("semgrep", "a", "b", "c"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "2 other target(s)") {
-		t.Fatalf("warnings = %v", got.Warnings)
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", got.Warnings)
+	}
+
+	many := make([]string, maxZoneJobsPerRun+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("repo-%d", i)
+	}
+	if _, err := svc.resolveScanTargets(context.Background(), testScan("semgrep", many...)); err == nil ||
+		!strings.Contains(err.Error(), "one target per job") {
+		t.Fatalf("err = %v, want the per-run job cap", err)
+	}
+	// A list scanner is not bound by the job cap.
+	if _, err := svc.resolveScanTargets(context.Background(), testScan("nuclei", many...)); err != nil {
+		t.Fatalf("nuclei with %d targets: %v", len(many), err)
 	}
 }
 

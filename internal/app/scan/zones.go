@@ -44,6 +44,9 @@ const (
 
 	runContextKeyZoneRouting = "zone_routing"
 	runContextKeyUncovered   = "uncovered_targets"
+	// runContextKeyPerTarget records an unzoned run fanned out one command
+	// per target (perTargetPlan).
+	runContextKeyPerTarget = "per_target_dispatch"
 )
 
 // zoneBatch is one command of a zoned run.
@@ -203,9 +206,7 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 		plan.Batches = append(plan.Batches, zoneBatch{Targets: chunk})
 	}
 	if len(plan.Batches) > maxZoneJobsPerRun {
-		return nil, shared.NewDomainError("TOO_MANY_JOBS", fmt.Sprintf(
-			"scan %q would create %d jobs, more than the %d allowed per run; raise targets_per_job or split the scan",
-			sc.Name, len(plan.Batches), maxZoneJobsPerRun), shared.ErrValidation)
+		return nil, tooManyJobsError(sc, len(plan.Batches))
 	}
 
 	plan.Warnings = append(plan.Warnings, uncoveredWarnings(plan.Uncovered)...)
@@ -220,6 +221,49 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 		plan.Summary["selected_zone_id"] = sc.ScanZoneID.String()
 	}
 	return plan, nil
+}
+
+// tooManyJobsError refuses a run that would create more than
+// maxZoneJobsPerRun commands. A scanner that reads one target per job cannot
+// be batched, so the advice differs.
+func tooManyJobsError(sc *scan.Scan, jobs int) error {
+	advice := "raise targets_per_job or split the scan"
+	if !scannerAcceptsTargetList(sc.ScannerName) {
+		advice = fmt.Sprintf("%q scans one target per job; split the scan into runs of at most %d targets", sc.ScannerName, maxZoneJobsPerRun)
+	}
+	return shared.NewDomainError("TOO_MANY_JOBS", fmt.Sprintf(
+		"scan %q would create %d jobs, more than the %d allowed per run; %s",
+		sc.Name, jobs, maxZoneJobsPerRun, advice), shared.ErrValidation)
+}
+
+// perTargetPlan is the dispatch plan of an unzoned run of a scanner that
+// reads one target per job (trivy, semgrep, betterleaks, ...): one unzoned
+// batch per target, created like zone batches (createZoneCommands) so the
+// step completes with the last one (checkStepBatches). nil when the run is a
+// single command: one target, or a scanner that reads the whole list.
+//
+// Before this, such a run sent every target in one command and the sensor
+// scanned only the first (RFC-030 B4).
+func perTargetPlan(sc *scan.Scan, targets []string) (*zonePlan, error) {
+	if len(targets) < 2 || scannerAcceptsTargetList(sc.ScannerName) {
+		return nil, nil
+	}
+	if len(targets) > maxZoneJobsPerRun {
+		return nil, tooManyJobsError(sc, len(targets))
+	}
+	plan := &zonePlan{Batches: make([]zoneBatch, 0, len(targets))}
+	for _, chunk := range chunkTargets(targets, 1) {
+		plan.Batches = append(plan.Batches, zoneBatch{Targets: chunk})
+	}
+	return plan, nil
+}
+
+// recordPerTargetPlan writes a per-target fan-out into the run context.
+func recordPerTargetPlan(plan *zonePlan, runContext map[string]any) {
+	runContext[runContextKeyPerTarget] = map[string]any{
+		"jobs":            len(plan.Batches),
+		"targets_per_job": 1,
+	}
 }
 
 // zoneBatchSize is how many targets go in one command of a zoned run.

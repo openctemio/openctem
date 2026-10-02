@@ -20,8 +20,8 @@ const maxResolvedTargets = 10000
 // listTargetScanners are the scanners whose executors on deployed sensors read
 // the full `targets` list from the payload (nuclei via the vulnscan executor,
 // the Tenable bridge). Every other scanner reads only the single `target`
-// field, so a multi-target scan sent to it can only ever cover the first
-// target until per-target commands land (RFC-023 Phase 1).
+// field, so a run of such a scanner gets one command per target, zoned or not
+// (RFC-030 B4; zones did this already).
 var listTargetScanners = map[string]bool{
 	"nuclei":  true,
 	"tenable": true,
@@ -120,7 +120,14 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		return nil, fmt.Errorf("%w: scan resolves to %d targets, more than the %d allowed per run",
 			shared.ErrValidation, len(out.Targets), maxResolvedTargets)
 	}
-	if len(out.Targets) > 1 && !scannerAcceptsTargetList(sc.ScannerName) {
+	if sc.ScannerName != "" && !scannerAcceptsTargetList(sc.ScannerName) {
+		// A single-scanner run of a one-target scanner dispatches one
+		// command per target (perTargetPlan, or the zone batches); refuse
+		// up front what would exceed the per-run job cap.
+		if len(out.Targets) > maxZoneJobsPerRun {
+			return nil, tooManyJobsError(sc, len(out.Targets))
+		}
+	} else if len(out.Targets) > 1 && !scannerAcceptsTargetList(sc.ScannerName) {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			singleTargetWarningPrefix+"%q takes one target per job: only %q is scanned in this run, %d other target(s) are not",
 			sc.ScannerName, out.Targets[0], len(out.Targets)-1))
