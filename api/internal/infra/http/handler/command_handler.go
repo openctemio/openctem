@@ -172,6 +172,16 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Custom templates are trusted code (owner decision 2026-10-02): a template
+	// decides which hosts the sensor contacts and what it sends, so only owners
+	// and administrators may author one, here as in /scanner-templates. A
+	// member with commands:write still queues commands, and scans pick
+	// approved templates by id (scanner_config.custom_template_ids).
+	if payloadEmbedsCustomTemplates(req.Payload) && !middleware.IsAdmin(r.Context()) {
+		apierror.Forbidden("Only owners and administrators can send custom templates").WriteJSON(w)
+		return
+	}
+
 	tenantID := middleware.GetTenantID(r.Context())
 
 	cmd, err := h.service.Create(r.Context(), command.CreateInput{
@@ -248,6 +258,23 @@ func validateInlineScanTemplates(payload json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+// payloadEmbedsCustomTemplates reports whether a command payload carries
+// inline template content. A payload that mentions custom_templates but does
+// not parse into the expected shape counts as embedding them: the sensor
+// decodes whatever it can, so an unreadable mention is not assumed harmless.
+func payloadEmbedsCustomTemplates(payload json.RawMessage) bool {
+	if len(payload) == 0 || !bytes.Contains(payload, []byte(`"custom_templates"`)) {
+		return false
+	}
+	var p struct {
+		CustomTemplates []json.RawMessage `json:"custom_templates"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return true
+	}
+	return len(p.CustomTemplates) > 0
 }
 
 // Get handles GET /api/v1/commands/{id}

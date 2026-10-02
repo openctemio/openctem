@@ -1150,13 +1150,13 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScansExecute,
     Permission.ScanProfilesRead,
     Permission.ScanProfilesWrite,
+    // Template sources and scanner templates: read only (custom templates
+    // are code the sensors run; writing one is owner/admin only)
     Permission.SourcesRead,
-    Permission.SourcesWrite,
     Permission.ToolsRead,
     Permission.TenantToolsRead,
     Permission.TenantToolsWrite,
     Permission.ScannerTemplatesRead,
-    Permission.ScannerTemplatesWrite,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     // Sensors: read only (creating sensors and their keys is owner/admin only)

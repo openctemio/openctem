@@ -299,10 +299,12 @@ the billing page in the UI.
 
 > **A stored credential goes only where someone entitled to it pointed it.**
 > A sync decrypts the source's `credential_id` and sends it to the source's
-> URL (bearer/basic/API key, git token or SSH key, S3 keys). Members hold
-> `scans:sources:write` and `scans:secret_store:write`, so the route gates
-> alone would let any member send any stored secret to a server they run.
-> `template.SourceService` therefore checks, on create and update:
+> URL (bearer/basic/API key, git token or SSH key, S3 keys). Members used to
+> hold `scans:sources:write` (removed by migration `000262`, see rule 10) and
+> still hold `scans:secret_store:write`; a custom role may carry both. The
+> route gates alone would then let its holder send any stored secret to a
+> server they run. `template.SourceService` therefore checks, on create and
+> update:
 > - **Binding** a credential (a new `credential_id`, or keeping one while the
 >   destination changes) is allowed to tenant owners/admins and to the user who
 >   stored that credential (`credentials.created_by`). Anyone else gets 403
@@ -1026,6 +1028,24 @@ Tenable.sc's RBAC.
    |------|---------|
    | member | `sensors:write`, `audit:read`, `settings:billing:read` |
    | viewer | `audit:read`, `settings:billing:read` |
+
+10. **Custom templates are trusted code (owner decision 2026-10-02).** A
+    custom scanner template (nuclei especially) decides which hosts the sensor
+    contacts and what it sends, so only owners and administrators author one:
+    `scans:templates:write` (scanner templates) and `scans:sources:write`
+    (template sources, which pull templates from a URL) are owner/admin only;
+    migration `000262` removed both from member. Members and viewers keep
+    `scans:templates:read` / `scans:sources:read` and pick approved templates
+    for a scan by id (`scanner_config.custom_template_ids`). `POST
+    /api/v1/commands` refuses a payload that embeds `custom_templates`
+    unless the caller is an owner or administrator (403), even though members
+    hold `commands:write`. Templates are still validated as above. The
+    sensor-side half (custom-template traffic through the RFC-034
+    scope-enforcing forwarder) is an RFC-034 follow-up.
+
+    | Role | Removed |
+    |------|---------|
+    | member | `scans:templates:write`, `scans:sources:write` |
 
 ### Known, deliberate gaps (do not "fix" without a decision)
 
