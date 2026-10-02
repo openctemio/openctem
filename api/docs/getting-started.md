@@ -6,13 +6,18 @@
 - Docker & Docker Compose
 - Make (optional but recommended)
 
+The API is the `api/` directory of the
+[`openctemio/openctem`](https://github.com/openctemio/openctem) monorepo (the web
+console is `web/`); run the commands below in `api/`. To install both
+components and the git hooks at once, run `make setup` at the repository root.
+
 ## Quick Start with Docker (Recommended)
 
 ### 1. Clone Repository
 
 ```bash
 git clone https://github.com/openctemio/openctem.git
-cd openctem
+cd openctem/api   # the API lives in api/ of the openctem monorepo
 ```
 
 ### 2. Setup Environment

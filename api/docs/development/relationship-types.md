@@ -69,7 +69,7 @@ from it.** You edit one file, run one command, commit three.
                                   │
                 ┌─────────────────┴────────────────────┐
                 ▼                                      ▼
- api/pkg/domain/asset/                  ui/src/features/assets/types/
+ api/pkg/domain/asset/                  web/src/features/assets/types/
  relationship_types_generated.go        relationship.types.generated.ts
  (Go enum + Registry + categories)      (TS union + LABELS + CONSTRAINTS)
 ```
@@ -109,17 +109,17 @@ cd api
 make generate-relationships
 # → ✓ Generated 19 relationship types into:
 #       pkg/domain/asset/relationship_types_generated.go
-#       ../ui/src/features/assets/types/relationship.types.generated.ts
+#       ../web/src/features/assets/types/relationship.types.generated.ts
 
 # 3. Verify build is clean on both sides
 GOWORK=off go build ./...
-cd ../ui && npx tsc --noEmit
+cd ../web && npx tsc --noEmit
 
 # 4. Commit all three files together
 cd ..
 git add api/configs/relationship-types.yaml \
         api/pkg/domain/asset/relationship_types_generated.go \
-        ui/src/features/assets/types/relationship.types.generated.ts
+        web/src/features/assets/types/relationship.types.generated.ts
 
 git commit -m "feat(assets): add audited_by relationship type"
 ```
@@ -149,7 +149,7 @@ api/
 │   └── relationship_types_generated.go      ← Go: constants + Registry (GENERATED)
 └── Makefile                                 ← contains `generate-relationships` target
 
-ui/
+web/
 └── src/features/assets/types/
     ├── relationship.types.ts                ← TS: helpers + ExtendedAssetType (manual)
     └── relationship.types.generated.ts      ← TS: union + LABELS + CONSTRAINTS (GENERATED)
@@ -243,7 +243,7 @@ See the [Quickstart](#quickstart) above. The full procedure:
 5. **Build to verify:**
    ```bash
    GOWORK=off go build ./...
-   cd ../ui && npx tsc --noEmit
+   cd ../web && npx tsc --noEmit
    ```
 6. **Run the relationship tests:**
    ```bash
@@ -258,7 +258,7 @@ See the [Quickstart](#quickstart) above. The full procedure:
    ```bash
    git add api/configs/relationship-types.yaml \
            api/pkg/domain/asset/relationship_types_generated.go \
-           ui/src/features/assets/types/relationship.types.generated.ts
+           web/src/features/assets/types/relationship.types.generated.ts
    ```
 8. **Conventional commit message** (`feat(assets): ...`).
 
@@ -313,7 +313,7 @@ The safe procedure:
    ```
 2. **Find every reference** to the type ID in the TS codebase:
    ```bash
-   cd ../ui
+   cd ../web
    grep -rn "'foo'" src --include="*.ts" --include="*.tsx" \
      | grep -v "lib/clipboard.ts"   # exclude noise
    ```
@@ -577,7 +577,7 @@ targets when the user picks the type.
 
 **Mitigation**: when adding a type, manually verify each source/target
 ID against the `ExtendedAssetType` union in
-`ui/src/features/assets/types/relationship.types.ts`. A future codegen
+`web/src/features/assets/types/relationship.types.ts`. A future codegen
 improvement could load the asset type list from the Go side and
 cross-validate; for now this is a manual responsibility.
 
@@ -758,10 +758,10 @@ the commit.
 $EDITOR api/configs/relationship-types.yaml
 cd api && make generate-relationships
 GOWORK=off go build ./...
-cd ../ui && npx tsc --noEmit
+cd ../web && npx tsc --noEmit
 git add api/configs/relationship-types.yaml \
         api/pkg/domain/asset/relationship_types_generated.go \
-        ui/src/features/assets/types/relationship.types.generated.ts
+        web/src/features/assets/types/relationship.types.generated.ts
 git commit -m "feat(assets): <conventional message>"
 
 # See what types are actually used
@@ -773,5 +773,5 @@ cd api && GOWORK=off go test ./tests/unit/ -run TestAssetRelationship -count=1
 
 # Find references to a constant before removing it
 grep -rn "RelTypeFoo" --include="*.go" .
-grep -rn "'foo'" ui/src --include="*.ts" --include="*.tsx"
+grep -rn "'foo'" web/src --include="*.ts" --include="*.tsx"
 ```

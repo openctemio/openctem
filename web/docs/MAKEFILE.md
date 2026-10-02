@@ -79,21 +79,27 @@ make dev
 
 ## Git Hooks
 
-This project uses **Husky** for git hooks (different from API which uses pre-commit).
+Git hooks live in the repository root's `.githooks/` and are shared with the API
+(there is no Husky any more). They are enabled by `git config core.hooksPath .githooks`,
+which `make hooks` / `make setup` at the repository root run, and which `npm ci` /
+`npm install` here also run (the `prepare` script).
 
-| Command                   | Description                 |
-| ------------------------- | --------------------------- |
-| `make husky-install`      | Install Husky git hooks     |
-| `make pre-commit-install` | Info about pre-commit setup |
+| Command                   | Description                                                 |
+| ------------------------- | ----------------------------------------------------------- |
+| `make hooks` (root)       | Enable the repository hooks                                 |
+| `make husky-install`      | Kept for compatibility: `npm install`, which runs `prepare` |
+| `make pre-commit-install` | Same as `make hooks` at the root                            |
 
-**Note**: Husky hooks are automatically installed when you run `npm install` or `make install`.
+When `web/` files are staged, `.githooks/pre-commit` runs `npm run type-check` and
+`lint-staged` (ESLint `--fix` + Prettier on staged files). `.githooks/commit-msg`
+rejects AI attribution lines.
 
 ## Common Workflows
 
 ### First-time Setup
 
 ```bash
-# 1. Install dependencies (also installs Husky hooks)
+# 1. Install dependencies (also enables the repository git hooks)
 make install
 
 # 2. Copy environment file
@@ -123,7 +129,7 @@ make validate
 # Run tests
 make test
 
-# Husky will automatically run lint-staged on commit
+# The pre-commit hook runs type-check + lint-staged on commit
 git commit -m "Your message"
 ```
 

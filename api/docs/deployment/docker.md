@@ -88,7 +88,7 @@ a missing column. Do **not** set `SKIP_SCHEMA_CHECK=true` in production — it i
 the last-line safety net.
 
 `docker-compose.prod.yml` therefore includes a one-shot **`migrate`** service
-(built from `Dockerfile.migrations` / published as `openctemio/migrations:<VERSION>`)
+(built from `Dockerfile.migrations` / published as `ghcr.io/openctemio/migrations:<VERSION>`)
 that runs `migrate ... up` and exits. The `app` service declares
 `depends_on: migrate: { condition: service_completed_successfully }`, so the API
 only starts **after migrations succeed**:

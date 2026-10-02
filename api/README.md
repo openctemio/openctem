@@ -3,7 +3,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql)](https://www.postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis)](https://redis.io)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Built with Go, PostgreSQL, and Redis using Clean Architecture (DDD).
 
@@ -292,23 +292,17 @@ See `/docs` endpoint for complete OpenAPI documentation.
 ### Docker Compose
 
 ```bash
-# 1. Go to setup directory
-cd ../setup
+# 1. Go to the production stack (api/deploy/ in the openctem repository)
+cd deploy
 
-# 2. Initialize environment files
-make init-prod
+# 2. Create the environment file: OPENCTEM_VERSION, OPENCTEM_HOSTNAME,
+#    OPENCTEM_PUBLIC_URL, OPENCTEM_TLS_MODE and every secret marked required
+cp .env.example .env
 
-# 3. Generate secrets and update .env files
-make generate-secrets
-# Update all <CHANGE_ME> values in .env.*.prod files
+# 3. Start the gateway (443), web, API, Postgres and Redis
+docker compose up -d
 
-# 4. Setup SSL (self-signed or Let's Encrypt)
-make auto-ssl
-
-# 5. Start production
-make prod-up
-
-# 6. Create the first admin, its break-glass backup and the first organization
+# 4. Create the first admin, its break-glass backup and the first organization
 #    (see Bootstrap Admin below)
 docker compose exec api /app/bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com \
   -org-name="Example Corp" -org-owner-email=owner@example.com
@@ -462,9 +456,9 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE).
 
 ## Legal
 
-- [Terms of Service](../docs/legal/terms-of-service.md)
-- [Privacy Policy](../docs/legal/privacy-policy.md)
+- [Terms of Service](https://github.com/openctemio/docs/blob/main/legal/terms-of-service.md)
+- [Privacy Policy](https://github.com/openctemio/docs/blob/main/legal/privacy-policy.md)

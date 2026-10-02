@@ -168,7 +168,7 @@ Recently-added route gates include `/settings/scanning/credentials` (was `/secre
 ### Feature Location
 
 ```
-ui/src/features/access-control/
+web/src/features/access-control/
 ├── types/
 │   ├── group.types.ts          # Group-related types
 │   ├── permission-set.types.ts # Permission set types
@@ -187,7 +187,7 @@ ui/src/features/access-control/
 ### Pages Location
 
 ```
-ui/src/app/(dashboard)/settings/access-control/
+web/src/app/(dashboard)/settings/access-control/
 ├── groups/
 │   └── page.tsx                # Groups management page
 └── permission-sets/
@@ -334,7 +334,7 @@ The Access Control feature has a solid foundation with proper structure, type sa
   - Show which permissions failed vs succeeded
 
 - [ ] **Extract shared utilities**
-  - Create `ui/src/features/access-control/lib/utils.ts`
+  - Create `web/src/features/access-control/lib/utils.ts`
   - Move `getGroupType()`, `generateSlug()` to shared location
   - Update imports in pages and components
 
@@ -406,20 +406,20 @@ The Access Control feature has a solid foundation with proper structure, type sa
 ### File Reference
 
 **Types:**
-- `ui/src/features/access-control/types/group.types.ts`
-- `ui/src/features/access-control/types/permission-set.types.ts`
+- `web/src/features/access-control/types/group.types.ts`
+- `web/src/features/access-control/types/permission-set.types.ts`
 
 **API Hooks:**
-- `ui/src/features/access-control/api/use-groups.ts`
-- `ui/src/features/access-control/api/use-permission-sets.ts`
+- `web/src/features/access-control/api/use-groups.ts`
+- `web/src/features/access-control/api/use-permission-sets.ts`
 
 **Components:**
-- `ui/src/features/access-control/components/group-detail-sheet.tsx`
-- `ui/src/features/access-control/components/permission-set-detail-sheet.tsx`
+- `web/src/features/access-control/components/group-detail-sheet.tsx`
+- `web/src/features/access-control/components/permission-set-detail-sheet.tsx`
 
 **Pages:**
-- `ui/src/app/(dashboard)/settings/teams/page.tsx` (tabs: `features/access-control/components/teams-section.tsx`, `assignment-rules-section.tsx`)
-- `ui/src/app/(dashboard)/settings/access-control/permission-sets/page.tsx`
+- `web/src/app/(dashboard)/settings/teams/page.tsx` (tabs: `features/access-control/components/teams-section.tsx`, `assignment-rules-section.tsx`)
+- `web/src/app/(dashboard)/settings/access-control/permission-sets/page.tsx`
 
 ---
 

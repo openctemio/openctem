@@ -391,9 +391,10 @@ Runs on: push/PR to main/develop + weekly (Monday 00:00 UTC)
 | Unit tests   | Vitest + coverage | Yes       |
 | Build        | `next build`      | Push only |
 
-### 10.3 Pre-commit Hooks (Husky + lint-staged)
+### 10.3 Pre-commit Hooks (`.githooks/` + lint-staged)
 
-Automatically run on `git commit`:
+Automatically run on `git commit` when `web/` files are staged (repository root
+`.githooks/pre-commit`, enabled by `make hooks` or `npm ci`):
 
 - TypeScript type checking on all staged files.
 - ESLint auto-fix on staged `.ts`/`.tsx` files.

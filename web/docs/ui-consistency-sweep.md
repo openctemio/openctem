@@ -7,7 +7,7 @@ the single source of truth for what's done / pending. Keep it updated.
 ## Branch / PRs
 
 - `chore/ui-consistency-sweep` → develop (this work)
-- Related (separate, in review): remediation rework — ui #280, api #310.
+- Related (separate, in review): remediation rework — openctemio/ui#280, api #310.
 
 ---
 

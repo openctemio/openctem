@@ -336,7 +336,7 @@ Update this table as items land. **An item is not started until it appears here.
 | P2.1 | CI gate: `logger.Warn` on a repo-write error branch | P2 | — | not started |
 | P3.1 | Emit + consume `scan_progress`, drop the 10s/30s polling | P3 | — | not started |
 | 0 | `GET /scans/{id}/runs` snake_case contract | 0 | api#366 | merged |
-| 1+2 | Run history + Cancel on the scan detail page | 0 | ui#335 | in review |
+| 1+2 | Run history + Cancel on the scan detail page | 0 | openctemio/ui#335 | in review |
 | 3 | `step_runs.started_at` | 0 | — | **blocked on P0.3** |
 | 4 | Run display name | 0 | — | not started |
 | 5 | Findings: tags + scanned-by columns | 1 | — | not started |
