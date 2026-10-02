@@ -673,7 +673,12 @@ results an out-of-scope id is reported exactly like an unknown id.
   key repository (`ListGroups`, `OpenFindingIDs`). Do not set
   `FindingFilter.DataScopeUserID` by hand in new code: use the enforcer
   (`Resolve` + `WithDataScope`), which knows who is an administrator and the
-  organization's policy.
+  organization's policy. Inside the finding package every filter-driven path
+  goes through one helper (`visibleFilter`: `visibleTo`, `ListFindingIDs`).
+  Three older paths still set the field themselves with the caller's admin
+  flag and `DataScopeStrict` from the same policy — the findings list/search,
+  the asset list and `/findings/stats`; their SQL gives the same answer as a
+  resolved scope (fail-open bypass only when the policy is `everything`).
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
@@ -698,6 +703,8 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `POST /findings/remediation-groups/{key}/resolve` | partly (out-of-scope members not changed, but counted against the abuse guard and reported as `failed`) | only in-scope findings are counted, changed and reported |
 | `POST /findings/actions/assign-to-owners` | **bypass (write)**: fail-open for members without a group even under policy `nothing`; pentest findings of other campaigns assigned; admins with a scope row restricted | enforcer scope + pentest rule; admins unrestricted |
 | `GET /findings/stats` under policy `nothing` when the scope lookup fails | fell through to tenant-wide counts | error (fail closed) |
+| `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
+| `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list filtered per page |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |

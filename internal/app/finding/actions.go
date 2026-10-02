@@ -247,13 +247,23 @@ func (s *FindingActionsService) ListFindingGroups(
 func (s *FindingActionsService) visibleTo(
 	ctx context.Context, tid shared.ID, filter vulnerability.FindingFilter,
 ) (vulnerability.FindingFilter, error) {
+	return visibleFilter(ctx, s.dataScope, tid, filter)
+}
+
+// visibleFilter pins filter to tid and narrows it to what the request's
+// caller may see: the enforcer's data scope and the findings list's
+// pentest-membership rule. Shared by every filter-driven finding path so none
+// sets the scope fields by hand.
+func visibleFilter(
+	ctx context.Context, e *datascope.Enforcer, tid shared.ID, filter vulnerability.FindingFilter,
+) (vulnerability.FindingFilter, error) {
 	filter.TenantID = &tid
-	scope, err := s.dataScope.Resolve(ctx, tid)
+	scope, err := e.Resolve(ctx, tid)
 	if err != nil {
 		return filter, fmt.Errorf("failed to resolve data scope: %w", err)
 	}
 	filter = filter.WithDataScope(scope)
-	if c := s.dataScope.CallerOf(ctx); !c.IsAdmin && c.UserID != "" {
+	if c := e.CallerOf(ctx); !c.IsAdmin && c.UserID != "" {
 		if uid, err := shared.IDFromString(c.UserID); err == nil {
 			filter = filter.WithPentestMemberOrNonPentest(uid)
 		}

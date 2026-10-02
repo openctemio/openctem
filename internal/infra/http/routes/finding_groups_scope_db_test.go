@@ -49,6 +49,7 @@ type gsHarness struct {
 	findingB2, findingP          shared.ID // FB2: B1 sharing A's component; FP: pentest on A1
 	cveA, cveB, cveB2, cveP      string
 	componentA, componentB, camp shared.ID
+	vuln                         *app.VulnerabilityService
 }
 
 func newGroupScopeHarness(t *testing.T) *gsHarness {
@@ -84,6 +85,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	vulnSvc.SetDataScopePolicy(dsStrictPolicy{ds})
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
+	h.vuln = vulnSvc
 
 	actionsSvc := app.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
 	actionsSvc.SetDataScope(enforcer)
