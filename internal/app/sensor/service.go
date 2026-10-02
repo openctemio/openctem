@@ -668,9 +668,17 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 				events = append(events, e)
 			}
 		}
-		events = append(events, sensordom.DiffHeartbeat(a, sensordom.HeartbeatObservation{
+		for _, e := range sensordom.DiffHeartbeat(a, sensordom.HeartbeatObservation{
 			At: now, Version: version, Protocol: data.Protocol, StartedAt: startedAt, Report: report, Build: build,
-		})...)
+		}) {
+			// A sensor that registers its manifest records tool and
+			// capacity changes as manifest_changed when it registers them
+			// (RFC-033 §6.12); its heartbeat would only say it twice.
+			if data.ManifestDigest != "" && (e.Type == sensordom.EventToolsChanged || e.Type == sensordom.EventCapacityChanged) {
+				continue
+			}
+			events = append(events, e)
+		}
 		s.recordEvents(ctx, events)
 	}
 

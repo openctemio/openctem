@@ -181,3 +181,20 @@ func TestSensorManifestPhase2_ManifestChangedEvent(t *testing.T) {
 		t.Fatalf("details %s", details)
 	}
 }
+
+// A registering sensor's heartbeat that disagrees with the stored manifest
+// (before it registers the new one) records no tools_changed: the
+// manifest_changed of the registration says it once.
+func TestSensorManifestPhase2_NoHeartbeatToolEventsForRegisteringSensors(t *testing.T) {
+	h := newCtlHarness(t)
+	h.sensors.SetEventRepository(postgres.NewSensorEventRepository(&postgres.DB{DB: h.db}), sensor.DefaultEventLimits())
+	s := h.newLimitedSensor(h.tenantID, "no-dup", nil, nil, 5)
+	ack := h.putManifest(s, phase2Manifest("v3.11.1", []string{"sast"}))
+	h.heartbeatV2(s, map[string]any{"status": "running", "manifest_digest": ack.ManifestDigest,
+		"tools": []any{map[string]any{"name": "nuclei", "version": "v3.12.0", "installed": true}}})
+	var n int
+	if err := h.db.QueryRowContext(context.Background(),
+		`SELECT count(*) FROM sensor_events WHERE sensor_id = $1 AND type IN ('tools_changed', 'capacity_changed')`, s.id).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("%d heartbeat tool events (%v), want 0", n, err)
+	}
+}

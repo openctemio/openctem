@@ -800,7 +800,12 @@ digest in the row the heartbeat already reads.
   added and removed, versions, installed, per-tool and sensor-wide
   capabilities, other members) and both digests. Content versions keep
   `content_updated`. Heartbeat-derived manifests keep the heartbeat's diff
-  events. No re-approval (O1).
+  events. A heartbeat that carries `manifest_digest` writes no
+  `tools_changed` or `capacity_changed`: for a registering sensor, the
+  manifest records those. No re-approval (O1).
+- **Size.** On the official sensor, a slim heartbeat is about 2.1 KB against
+  2.6 KB for a full one. The load report (resources, per-tool cost, queue)
+  makes up the rest and stays.
 
 **Reads.**
 
