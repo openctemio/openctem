@@ -295,8 +295,13 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 		result.AddError("requests", "missing execution block (requests, http, dns, etc.)", "MISSING_EXECUTION")
 	}
 
-	// Check for potentially dangerous patterns
-	if v.hasDangerousPatterns(content) {
+	// Protocols that run code on the scanner host are refused on the parsed
+	// document, so the surface syntax (block YAML, flow YAML, JSON, escaped
+	// or differently-cased keys) cannot hide them.
+	if key, found := execProtocolKey(tpl); found {
+		result.AddError(key, fmt.Sprintf("the %q protocol runs code on the scanner and is not allowed", key), "DANGEROUS_PATTERN")
+	} else if v.hasDangerousPatterns(content) {
+		// Check for potentially dangerous patterns
 		result.AddError("content", "potentially dangerous patterns detected", "DANGEROUS_PATTERN")
 	}
 
@@ -309,6 +314,27 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 
 	result.RuleCount = 1 // Nuclei templates are typically single templates
 	return result
+}
+
+// nucleiExecProtocols are the Nuclei protocol blocks that execute code on the
+// scanner host: code (shell/python/... source), javascript (in-template JS
+// with network access) and headless (a browser driven by template scripts).
+var nucleiExecProtocols = []string{"code", "javascript", "headless"}
+
+// execProtocolKey reports the first top-level key of a parsed Nuclei
+// template that names an exec protocol. Keys are compared with Unicode case
+// folding because nuclei also loads JSON templates, and encoding/json matches
+// field names case-insensitively ("CODE" and "ſ"-for-"s" variants included).
+func execProtocolKey(tpl map[string]any) (string, bool) {
+	for key := range tpl {
+		k := strings.TrimSpace(key)
+		for _, p := range nucleiExecProtocols {
+			if strings.EqualFold(k, p) {
+				return p, true
+			}
+		}
+	}
+	return "", false
 }
 
 // validateMatcherRegexes walks every matcher block in a Nuclei

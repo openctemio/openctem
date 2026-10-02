@@ -433,6 +433,9 @@ func setupTemplateTestHandlers(t *testing.T) *templateTestHandlers {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// GetTenantID expects string, not shared.ID
 			ctx := context.WithValue(r.Context(), middleware.TenantIDKey, tenantID.String())
+			// Acting as a tenant admin: binding a stored credential to a
+			// template source is an owner/admin action.
+			ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	})

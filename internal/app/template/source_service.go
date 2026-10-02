@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/metrics"
+	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/api/pkg/domain/secretstore"
 	"github.com/openctemio/api/pkg/domain/shared"
 	ts "github.com/openctemio/api/pkg/domain/templatesource"
 	"github.com/openctemio/api/pkg/logger"
@@ -16,12 +21,40 @@ import (
 // MaxSourcesPerTenant is the maximum number of template sources a tenant can have.
 const MaxSourcesPerTenant = 50
 
+// CredentialReader looks up a stored credential in the tenant's secret store.
+// *integration.SecretStoreService satisfies it.
+type CredentialReader interface {
+	GetCredential(ctx context.Context, tenantID shared.ID, credentialID string) (*secretstore.Credential, error)
+}
+
+// AuditLogger records tenant audit events. *audit.AuditService satisfies it.
+type AuditLogger interface {
+	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
+}
+
+// ErrCredentialBindForbidden is returned when the caller may not attach a
+// stored credential to a template source, or point a source that carries one
+// somewhere else.
+var ErrCredentialBindForbidden = shared.NewDomainError("CREDENTIAL_BIND_FORBIDDEN",
+	"only an owner or admin, or the user who stored the credential, can attach a stored credential to a template source or change where such a source points",
+	shared.ErrForbidden)
+
 // SourceService handles template source business operations.
 type SourceService struct {
 	repo           ts.Repository
 	templateSyncer *Syncer
 	syncingMap     sync.Map // Tracks currently syncing sources
+	credentials    CredentialReader
+	audit          AuditLogger
 	logger         *logger.Logger
+}
+
+// SetCredentialGuard wires the secret store lookup used to authorize binding a
+// stored credential to a source, and the audit log the binding is recorded
+// in. Without a credential reader only owners/admins can bind credentials.
+func (s *SourceService) SetCredentialGuard(creds CredentialReader, audit AuditLogger) {
+	s.credentials = creds
+	s.audit = audit
 }
 
 // NewSourceService creates a new SourceService.
@@ -52,6 +85,12 @@ type CreateSourceInput struct {
 	S3Config        *ts.S3SourceConfig   `json:"s3_config,omitempty"`
 	HTTPConfig      *ts.HTTPSourceConfig `json:"http_config,omitempty"`
 	CredentialID    string               `json:"credential_id" validate:"omitempty,uuid"`
+
+	// ActorIsAdmin is true when the caller is a tenant owner/admin. Only
+	// they, or the user who stored the credential, can bind CredentialID.
+	ActorIsAdmin bool `json:"-"`
+	// Audit attributes the credential-binding audit event.
+	Audit auditapp.AuditContext `json:"-"`
 }
 
 // CreateSource creates a new template source.
@@ -136,11 +175,19 @@ func (s *SourceService) CreateSource(ctx context.Context, input CreateSourceInpu
 		}
 	}
 
-	// Set credential if provided
+	// Set credential if provided. The server decrypts it and sends it to the
+	// source's URL on every sync, so only someone entitled to that secret may
+	// choose the destination.
+	var boundCred *secretstore.Credential
 	if input.CredentialID != "" {
 		credID, err := shared.IDFromString(input.CredentialID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
+		}
+		boundCred, err = s.authorizeCredentialBinding(ctx, tenantID, credID, input.UserID, input.ActorIsAdmin)
+		if err != nil {
+			s.auditCredentialDenied(ctx, input.Audit, tenantID, source, credID, err)
+			return nil, err
 		}
 		source.SetCredential(credID)
 	}
@@ -154,8 +201,139 @@ func (s *SourceService) CreateSource(ctx context.Context, input CreateSourceInpu
 		return nil, err
 	}
 
+	if source.CredentialID != nil {
+		s.auditCredentialAttached(ctx, input.Audit, tenantID, source, boundCred, false)
+	}
+
 	s.logger.Info("created template source", "id", source.ID.String(), "name", source.Name)
 	return source, nil
+}
+
+// authorizeCredentialBinding decides whether the caller may bind credID to a
+// source (or keep it bound while changing the source's destination). Owners
+// and admins may; so may the user who stored the credential. Everyone else is
+// refused — scans:secret_store:write and scans:sources:write are member
+// permissions, and together they would otherwise let any member send any
+// stored secret to a URL of their choosing.
+func (s *SourceService) authorizeCredentialBinding(ctx context.Context, tenantID, credID shared.ID, actorID string, actorIsAdmin bool) (*secretstore.Credential, error) {
+	if s.credentials == nil {
+		if actorIsAdmin {
+			return nil, nil
+		}
+		return nil, ErrCredentialBindForbidden
+	}
+	cred, err := s.credentials.GetCredential(ctx, tenantID, credID.String())
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, shared.NewDomainError("VALIDATION", "credential not found", shared.ErrValidation)
+		}
+		return nil, fmt.Errorf("look up credential: %w", err)
+	}
+	if actorIsAdmin {
+		return cred, nil
+	}
+	if actorID != "" && cred.CreatedBy != nil && cred.CreatedBy.String() == actorID {
+		return cred, nil
+	}
+	return nil, ErrCredentialBindForbidden
+}
+
+// sourceDestination identifies where a sync sends the source's credential.
+// Two sources with the same destination receive the same secret.
+func sourceDestination(src *ts.TemplateSource) string {
+	switch src.SourceType {
+	case ts.SourceTypeGit:
+		if src.GitConfig != nil {
+			return "git|" + strings.TrimSpace(src.GitConfig.URL)
+		}
+	case ts.SourceTypeHTTP:
+		if src.HTTPConfig != nil {
+			return "http|" + strings.TrimSpace(src.HTTPConfig.URL)
+		}
+	case ts.SourceTypeS3:
+		if c := src.S3Config; c != nil {
+			return strings.Join([]string{"s3", c.Endpoint, c.Region, c.Bucket, c.RoleArn}, "|")
+		}
+	}
+	return ""
+}
+
+// destinationHost is the host part of the source's destination, for audit
+// metadata. It never includes userinfo or a path.
+func destinationHost(src *ts.TemplateSource) string {
+	switch src.SourceType {
+	case ts.SourceTypeGit:
+		if src.GitConfig != nil {
+			if h, err := ts.GitURLHost(src.GitConfig.URL); err == nil {
+				return h
+			}
+		}
+	case ts.SourceTypeHTTP:
+		if src.HTTPConfig != nil {
+			if u, err := url.Parse(src.HTTPConfig.URL); err == nil {
+				return u.Host
+			}
+		}
+	case ts.SourceTypeS3:
+		if c := src.S3Config; c != nil {
+			if c.Endpoint != "" {
+				if u, err := url.Parse(c.Endpoint); err == nil && u.Host != "" {
+					return u.Host + "/" + c.Bucket
+				}
+				return c.Endpoint + "/" + c.Bucket
+			}
+			return "s3:" + c.Region + "/" + c.Bucket
+		}
+	}
+	return ""
+}
+
+func (s *SourceService) logAudit(ctx context.Context, actx auditapp.AuditContext, tenantID shared.ID, event auditapp.AuditEvent) {
+	if s.audit == nil {
+		return
+	}
+	actx.TenantID = tenantID.String()
+	if err := s.audit.LogEvent(ctx, actx, event); err != nil {
+		s.logger.Error("failed to log template source audit event", "error", err, "action", event.Action)
+	}
+}
+
+func (s *SourceService) auditCredentialAttached(ctx context.Context, actx auditapp.AuditContext, tenantID shared.ID, src *ts.TemplateSource, cred *secretstore.Credential, repointed bool) {
+	event := auditapp.NewSuccessEvent(audit.ActionTemplateSourceCredentialAttached, audit.ResourceTypeTemplateSource, src.ID.String()).
+		WithResourceName(src.Name).
+		WithMessage(fmt.Sprintf("Stored credential attached to template source '%s' (sent to %s on sync)", src.Name, destinationHost(src))).
+		WithMetadata("credential_id", src.CredentialID.String()).
+		WithMetadata("destination_host", destinationHost(src)).
+		WithMetadata("source_type", string(src.SourceType)).
+		WithMetadata("repointed", repointed).
+		WithSeverity(audit.SeverityHigh)
+	if cred != nil {
+		event = event.WithMetadata("credential_name", cred.Name)
+	}
+	s.logAudit(ctx, actx, tenantID, event)
+}
+
+func (s *SourceService) auditCredentialDetached(ctx context.Context, actx auditapp.AuditContext, tenantID shared.ID, src *ts.TemplateSource, credID shared.ID, reason string) {
+	event := auditapp.NewSuccessEvent(audit.ActionTemplateSourceCredentialDetached, audit.ResourceTypeTemplateSource, src.ID.String()).
+		WithResourceName(src.Name).
+		WithMessage(fmt.Sprintf("Stored credential detached from template source '%s' (%s)", src.Name, reason)).
+		WithMetadata("credential_id", credID.String()).
+		WithMetadata("destination_host", destinationHost(src)).
+		WithMetadata("reason", reason).
+		WithSeverity(audit.SeverityMedium)
+	s.logAudit(ctx, actx, tenantID, event)
+}
+
+func (s *SourceService) auditCredentialDenied(ctx context.Context, actx auditapp.AuditContext, tenantID shared.ID, src *ts.TemplateSource, credID shared.ID, cause error) {
+	if !errors.Is(cause, shared.ErrForbidden) {
+		return
+	}
+	event := auditapp.NewDeniedEvent(audit.ActionTemplateSourceCredentialAttached, audit.ResourceTypeTemplateSource, src.ID.String(), "caller may not bind this stored credential").
+		WithResourceName(src.Name).
+		WithMetadata("credential_id", credID.String()).
+		WithMetadata("destination_host", destinationHost(src)).
+		WithSeverity(audit.SeverityHigh)
+	s.logAudit(ctx, actx, tenantID, event)
 }
 
 // GetSource retrieves a template source by ID.
@@ -237,6 +415,13 @@ type UpdateSourceInput struct {
 	S3Config        *ts.S3SourceConfig   `json:"s3_config,omitempty"`
 	HTTPConfig      *ts.HTTPSourceConfig `json:"http_config,omitempty"`
 	CredentialID    *string              `json:"credential_id" validate:"omitempty,uuid"`
+
+	// UserID and ActorIsAdmin identify the caller for the credential-binding
+	// check (see CreateSourceInput).
+	UserID       string `json:"-"`
+	ActorIsAdmin bool   `json:"-"`
+	// Audit attributes the credential-binding audit events.
+	Audit auditapp.AuditContext `json:"-"`
 }
 
 // UpdateSource updates an existing template source.
@@ -280,6 +465,11 @@ func (s *SourceService) UpdateSource(ctx context.Context, input UpdateSourceInpu
 		}
 	}
 
+	// Snapshot where the bound credential is sent today, before the config
+	// changes below.
+	prevCred := source.CredentialID
+	prevDestination := sourceDestination(source)
+
 	// Update source-specific config
 	switch source.SourceType {
 	case ts.SourceTypeGit:
@@ -302,17 +492,42 @@ func (s *SourceService) UpdateSource(ctx context.Context, input UpdateSourceInpu
 		}
 	}
 
-	// Update credential
-	if input.CredentialID != nil {
-		if *input.CredentialID == "" {
-			source.ClearCredential()
-		} else {
-			credID, err := shared.IDFromString(*input.CredentialID)
+	// Update credential. A stored credential follows the source's
+	// destination, so binding one, or keeping one while the destination
+	// changes, needs the same right as attaching it in the first place. A
+	// destination change that does not re-bind the credential drops it.
+	moved := sourceDestination(source) != prevDestination
+	type pendingAudit struct {
+		attached  bool
+		cred      *secretstore.Credential
+		detachID  shared.ID
+		reason    string
+		repointed bool
+	}
+	var pending *pendingAudit
+	switch {
+	case input.CredentialID != nil && *input.CredentialID == "":
+		source.ClearCredential()
+		if prevCred != nil {
+			pending = &pendingAudit{detachID: *prevCred, reason: "removed"}
+		}
+	case input.CredentialID != nil:
+		credID, err := shared.IDFromString(*input.CredentialID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
+		}
+		if prevCred == nil || !prevCred.Equals(credID) || moved {
+			cred, err := s.authorizeCredentialBinding(ctx, tenantID, credID, input.UserID, input.ActorIsAdmin)
 			if err != nil {
-				return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
+				s.auditCredentialDenied(ctx, input.Audit, tenantID, source, credID, err)
+				return nil, err
 			}
 			source.SetCredential(credID)
+			pending = &pendingAudit{attached: true, cred: cred, repointed: prevCred != nil && moved}
 		}
+	case moved && prevCred != nil:
+		source.ClearCredential()
+		pending = &pendingAudit{detachID: *prevCred, reason: "destination changed"}
 	}
 
 	// An S3 source signs with the tenant's own keys only; refuse an edit
@@ -327,6 +542,14 @@ func (s *SourceService) UpdateSource(ctx context.Context, input UpdateSourceInpu
 
 	if err := s.repo.Update(ctx, source); err != nil {
 		return nil, err
+	}
+
+	if pending != nil {
+		if pending.attached {
+			s.auditCredentialAttached(ctx, input.Audit, tenantID, source, pending.cred, pending.repointed)
+		} else {
+			s.auditCredentialDetached(ctx, input.Audit, tenantID, source, pending.detachID, pending.reason)
+		}
 	}
 
 	return source, nil
