@@ -14,9 +14,7 @@ vi.mock('@/hooks/use-build-versions', () => ({
       ? {
           web: { version: 'v0.8.0-dev', commit: '4d2f4b02', channel: 'dev' },
           api:
-            shell === 'app'
-              ? { version: 'v0.8.0-dev', commit: 'a0a14db0', channel: 'dev' }
-              : null,
+            shell === 'app' ? { version: 'v0.8.0-dev', commit: 'a0a14db0', channel: 'dev' } : null,
         }
       : { web: undefined, api: undefined },
 }))
