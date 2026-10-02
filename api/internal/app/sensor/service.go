@@ -53,6 +53,12 @@ type SensorService struct {
 	// SetKeyTTL at boot. Only self-renewal honors it; created and
 	// admin-regenerated keys never expire regardless.
 	keyTTL time.Duration
+	// renewGrace is how long the key a sensor presented to renew keeps
+	// authenticating after the renewal (in-flight requests), before it
+	// expires: SENSOR_KEY_RENEW_GRACE, default DefaultRenewGrace. Every other
+	// credential the sensor still held is capped to the same moment, so a
+	// renewal leaves exactly one long-lived key.
+	renewGrace time.Duration
 	// slimHeartbeatOff is the kill switch of slim heartbeats (RFC-033
 	// §6.12, SENSOR_SLIM_HEARTBEAT=false): sensors whose manifest is
 	// acknowledged may leave their tool inventory out of heartbeats unless
@@ -177,6 +183,7 @@ func NewSensorService(repo sensordom.Repository, auditService *auditapp.AuditSer
 		logger:       log.With("service", "sensor"),
 		lbWeights:    sensordom.DefaultLoadBalancingWeights(),
 		eventLimits:  sensordom.DefaultEventLimits(),
+		renewGrace:   DefaultRenewGrace,
 		now:          time.Now,
 	}
 }
@@ -259,6 +266,21 @@ func (s *SensorService) rehashKey(ctx context.Context, store any, kind string, i
 // at boot before the service handles traffic.
 func (s *SensorService) SetKeyTTL(ttl time.Duration) {
 	s.keyTTL = ttl
+}
+
+// DefaultRenewGrace is how long a renewed-away key keeps working when
+// SENSOR_KEY_RENEW_GRACE is not set.
+const DefaultRenewGrace = 15 * time.Minute
+
+// SetRenewGrace configures how long the key a sensor renewed with keeps
+// authenticating after the renewal. Zero retires it at once; a negative value
+// is ignored (the default stays). Call once at boot.
+func (s *SensorService) SetRenewGrace(d time.Duration) {
+	if d < 0 {
+		s.logger.Warn("ignoring negative sensor key renewal grace; keeping the default", "grace", d.String())
+		return
+	}
+	s.renewGrace = d
 }
 
 // SetAPIKeyRepository wires the multi-key store (RFC-014 Phase 3). Optional;
@@ -1080,8 +1102,9 @@ func (s *SensorService) revokeAllKeyRows(ctx context.Context, sensorID shared.ID
 //
 // Unlike RegenerateAPIKey (an admin action, tenant+id scoped), this is the
 // self-service, kubelet-style renewal a sensor drives itself: it presents its
-// current key, gets authenticated by AuthenticateByAPIKey upstream, and calls
-// this to mint a fresh one. The building block for auto-rotating credentials.
+// current key, gets authenticated by AuthenticateIdentity upstream, and calls
+// this with that identity to mint a fresh one. The identity says which
+// credential was presented (the inline key or a sensor_api_keys row).
 //
 // The passed sensor is the one resolved from the presented key. We re-read it by
 // ID so a concurrent admin status change (disable/revoke) is not clobbered by a
@@ -1089,11 +1112,19 @@ func (s *SensorService) revokeAllKeyRows(ctx context.Context, sensorID shared.ID
 // sensor that was disabled/revoked in the auth→renew window. Works for both
 // tenant and platform (nil-tenant) sensors since the lookup/update key on ID.
 //
+// A renewal has exactly one successor: the presented key, and every other
+// credential the sensor still held, stops authenticating once the renewal
+// grace (SetRenewGrace) has passed. A copied key therefore cannot renew itself
+// a parallel line of long-lived keys: the next renewal by either holder retires
+// the other's keys, and the sensor that lost its key has to be re-enrolled,
+// which an administrator sees.
+//
 // When a key TTL is configured (SetKeyTTL), the new key carries a fresh expiry
 // and the sensor is expected to renew again before it lapses; otherwise the key
 // never expires (today's behavior). Returns the new key and its expiry (nil =
 // never expires) so the sensor can schedule its next renewal.
-func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (string, *time.Time, error) {
+func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (string, *time.Time, error) {
+	a := id.Sensor
 	if a == nil {
 		return "", nil, shared.NewDomainError("UNAUTHORIZED", "no authenticated sensor", shared.ErrUnauthorized)
 	}
@@ -1114,29 +1145,36 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (s
 		return "", nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
+	now := s.now()
 	var expiresAt *time.Time
 	if s.keyTTL > 0 {
-		t := time.Now().Add(s.keyTTL)
+		t := now.Add(s.keyTTL)
 		expiresAt = &t
+	}
+	retireAt := now.Add(s.renewGrace)
+	if expiresAt != nil && retireAt.After(*expiresAt) {
+		retireAt = *expiresAt
 	}
 
 	// Rotation overlap (RFC-014 Phase 3): with the multi-key store wired AND a
 	// TTL configured, issue the new key as its own sensor_api_keys row so the key
-	// it supersedes stays valid until that key's own expiry — zero-downtime
+	// it supersedes keeps working through the renewal grace — zero-downtime
 	// rotation. Without both, fall back to replacing the single inline hash.
 	if s.apiKeyRepo != nil && expiresAt != nil {
-		if err := s.issueOverlappingKey(ctx, fresh, hash, prefix, *expiresAt); err != nil {
+		if err := s.issueOverlappingKey(ctx, fresh, id, hash, prefix, *expiresAt, retireAt); err != nil {
 			return "", nil, err
 		}
 		s.logger.Info("sensor renewed its API key (overlap)",
-			"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor, "expires_at", expiresAt)
+			"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
+			"presented", id.presentedKeyLabel(), "expires_at", expiresAt, "previous_keys_expire_at", retireAt)
 		s.auditKeyRenewed(ctx, fresh, expiresAt, true)
 		return apiKey, expiresAt, nil
 	}
 
 	// Targeted, status-guarded write of the key columns only: a full-row
 	// Update would also write back the status read above and could revive an
-	// sensor an admin revoked in the meantime.
+	// sensor an admin revoked in the meantime. The replaced inline key stops
+	// authenticating at once.
 	updated, err := s.repo.UpdateAPIKey(ctx, fresh.ID, hash, prefix, expiresAt, true)
 	if err != nil {
 		return "", nil, err
@@ -1144,9 +1182,17 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (s
 	if !updated {
 		return "", nil, shared.NewDomainError("FORBIDDEN", "sensor is not active", shared.ErrForbidden)
 	}
+	// Rotating keys issued while a TTL was configured (the presented key may
+	// be one) must not outlive the renewal either.
+	if s.apiKeyRepo != nil {
+		if _, err := s.apiKeyRepo.RetireKeys(ctx, fresh.ID, nil, retireAt); err != nil {
+			return "", nil, fmt.Errorf("retire superseded keys: %w", err)
+		}
+	}
 
 	s.logger.Info("sensor renewed its API key",
-		"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor, "expires_at", expiresAt)
+		"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
+		"presented", id.presentedKeyLabel(), "expires_at", expiresAt)
 	s.auditKeyRenewed(ctx, fresh, expiresAt, false)
 	return apiKey, expiresAt, nil
 }
@@ -1163,16 +1209,24 @@ func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor
 	}, a.ID.String(), a.Name, expiresAt, overlap), "LogSensorKeyRenewed", a.ID.String())
 }
 
-// overlapGrace is how long the superseded static (inline) key stays valid after
-// an overlapping renewal, covering in-flight requests before it is retired.
-const overlapGrace = 15 * time.Minute
-
-// issueOverlappingKey issues the renewed key as a new sensor_api_keys row so the
-// key it supersedes keeps working during the overlap window (rotation overlap).
-// It also retires the long-lived inline bootstrap key (a short grace, so the
-// static credential doesn't linger valid forever after the first renewal) and
-// prunes already-expired key rows to bound accumulation.
-func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordom.Sensor, hash, prefix string, expiresAt time.Time) error {
+// issueOverlappingKey issues the renewed key as a new sensor_api_keys row and
+// retires every credential it supersedes at retireAt (the renewal grace):
+//
+//   - every active key row older than the new one, the presented key among
+//     them. "Older than the new row" (not "other than") is what makes two
+//     concurrent renewals end with one successor: the newer row is never in
+//     the older one's set, so it survives, and the older one is in the
+//     newer's set, so it is capped whichever renewal finishes last;
+//   - the inline key on the sensor row, guarded by its hash — the presented
+//     key's (any pepper variant), or the one read above when a key row was
+//     presented — so an admin regeneration landing in between is not cut
+//     short.
+//
+// Both writes only ever bring an expiry earlier (never extend one) and touch
+// only the expiry column, so they cannot undo a concurrent admin revoke or
+// regeneration. A failure fails the renewal: the sensor keeps its old key and
+// retries, rather than receive a new key while the old one stays long-lived.
+func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordom.Sensor, id SensorIdentity, hash, prefix string, expiresAt, retireAt time.Time) error {
 	key, err := sensordom.NewAPIKey(fresh.ID, "renewed", scopesForSensor(fresh.Type))
 	if err != nil {
 		return err
@@ -1183,27 +1237,20 @@ func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordo
 		return fmt.Errorf("issue overlapping key: %w", err)
 	}
 
-	// Retire the static inline key (best-effort): schedule it to lapse a short
-	// grace from now, so the original never-expiring bootstrap credential does
-	// not remain valid after the sensor has switched to rotating keys.
-	//
-	// Guard on KeyExpiresAt == nil (NOT !IsKeyExpired): retirement must happen
-	// exactly once, on the first overlap renewal while the key is still
-	// never-expiring. Using !IsKeyExpired would re-run on every renewal that
-	// lands before the grace lapses and keep pushing the grace forward — under a
-	// short TTL that would keep the static bootstrap key alive forever.
-	//
-	// UpdateKeyExpiry writes only key_expires_at under a status='active' guard,
-	// so it cannot clobber a concurrent admin revoke back to active (and a
-	// revoked sensor's stale inline key is moot — auth rejects the sensor anyway).
-	if fresh.InlineKeyExpiresAt == nil {
-		grace := time.Now().Add(overlapGrace)
-		if grace.After(expiresAt) {
-			grace = expiresAt
+	if _, err := s.apiKeyRepo.RetireKeys(ctx, fresh.ID, &key.ID, retireAt); err != nil {
+		return fmt.Errorf("retire superseded keys: %w", err)
+	}
+
+	inlineHashes := id.keyHashes
+	if id.KeyID != nil || len(inlineHashes) == 0 {
+		inlineHashes = nil
+		if fresh.APIKeyHash != "" {
+			inlineHashes = []string{fresh.APIKeyHash}
 		}
-		if err := s.repo.UpdateKeyExpiry(ctx, fresh.ID, &grace); err != nil {
-			s.logger.Warn("failed to retire inline key after overlap renewal",
-				"sensor_id", fresh.ID.String(), "error", err)
+	}
+	if len(inlineHashes) > 0 {
+		if _, err := s.repo.RetireInlineKey(ctx, fresh.ID, inlineHashes, retireAt); err != nil {
+			return fmt.Errorf("retire inline key: %w", err)
 		}
 	}
 
@@ -1270,6 +1317,29 @@ type SensorIdentity struct {
 	// reversible, so a disabled sensor may still learn over the heartbeat
 	// that it is paused; every other route keeps rejecting its key.
 	Paused bool
+	// KeyID is the sensor_api_keys row the presented key matched; nil when
+	// it matched the inline key on the sensor row. Renewal retires the
+	// presented key, so it has to know which one that was.
+	KeyID *shared.ID
+	// keyHashes are the hashes the presented inline key can be stored under
+	// (current pepper, earlier peppers, plain SHA-256): authentication may
+	// re-hash the stored value onto the current pepper, so renewal matches
+	// the inline row on any of them. All derive from the presented key, so
+	// a key an administrator regenerated meanwhile never matches. Set only
+	// by authentication, only for the inline key.
+	keyHashes []string
+}
+
+// presentedKeyLabel names the presented credential for logs.
+func (id SensorIdentity) presentedKeyLabel() string {
+	switch {
+	case id.KeyID != nil:
+		return "key:" + id.KeyID.String()
+	case len(id.keyHashes) > 0:
+		return "inline"
+	default:
+		return "unknown"
+	}
 }
 
 // AuthenticateIdentity authenticates a sensor key like AuthenticateByAPIKey,
@@ -1338,7 +1408,7 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 		s.recordKeyUseAsync(a, clientIP, nil)
 	}
 
-	return SensorIdentity{Sensor: a, KeyExpiresAt: a.InlineKeyExpiresAt, Paused: paused}, nil
+	return SensorIdentity{Sensor: a, KeyExpiresAt: a.InlineKeyExpiresAt, Paused: paused, keyHashes: hashes}, nil
 }
 
 // recordKeyUseAsync marks the sensor seen and records where the key was
@@ -1425,17 +1495,17 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 	if matched != hashes[0] {
 		s.rehashKey(ctx, s.apiKeyRepo, "row", key.ID, matched, hashes[0])
 	}
+	keyID := key.ID
 	if paused {
-		return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, Paused: true}, nil
+		return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, Paused: true, KeyID: &keyID}, nil
 	}
 
 	// Async per-key usage (count, time, client address) + sensor liveness.
-	keyID := key.ID
 	s.recordKeyUseAsync(a, clientIP, func(bg context.Context, ip string) {
 		_ = s.apiKeyRepo.RecordUsage(bg, keyID, ip)
 	})
 
-	return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt}, nil
+	return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, KeyID: &keyID}, nil
 }
 
 // ActivateSensor activates a sensor (admin action).

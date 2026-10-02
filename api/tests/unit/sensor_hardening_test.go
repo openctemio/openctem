@@ -152,7 +152,7 @@ func TestRenewAPIKey_RevokedDuringRenewIsRejected(t *testing.T) {
 	repo := &revokeOnKeyWriteRepo{sensorSvcMockRepo: base}
 	svc := app.NewSensorService(repo, nil, logger.NewNop())
 
-	if _, _, err := svc.RenewAPIKey(context.Background(), a); err == nil {
+	if _, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a}); err == nil {
 		t.Fatal("expected renewal to fail for a sensor revoked mid-renewal")
 	}
 	stored := base.sensors[a.ID.String()]
@@ -198,7 +198,7 @@ func TestRegenerateAPIKey_RevokesRenewedKeyRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	renewed, _, err := svc.RenewAPIKey(context.Background(), out.Sensor)
+	renewed, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: out.Sensor})
 	if err != nil {
 		t.Fatalf("renew: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestRenewAPIKey_WritesAuditEvent(t *testing.T) {
 	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
 	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeRunner)
 
-	if _, _, err := svc.RenewAPIKey(context.Background(), a); err != nil {
+	if _, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a}); err != nil {
 		t.Fatalf("renew: %v", err)
 	}
 	if auditRepo.createCalls != 1 {

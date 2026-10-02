@@ -163,6 +163,10 @@ expiring key on its first start, and one that does not keeps it. A sensor
 that renewed while the TTL was off recorded its key as non-expiring and keeps
 it until the key is regenerated (no `rotate_key` is rung for keys without an
 expiry: sensors that cannot renew would log it on every heartbeat).
+`SENSOR_KEY_RENEW_GRACE` (default 15m) is how long the key a sensor renewed
+with keeps working after the renewal; every other key the sensor held stops
+at the same moment, so a renewal leaves one long-lived key (see
+[agent-identity.md](agent-identity.md#renewal-retires-the-presented-key)).
 
 ### What a sensor does with it
 

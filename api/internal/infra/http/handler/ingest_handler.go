@@ -936,7 +936,8 @@ func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newKey, expiresAt, err := h.sensorService.RenewAPIKey(r.Context(), agt)
+	// The identity says which key was presented; renewal retires that key.
+	newKey, expiresAt, err := h.sensorService.RenewAPIKey(r.Context(), sensorIdentityFromContext(r.Context()))
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) {
 			// Disabled/revoked in the auth→renew window. Generic message; log specifics.

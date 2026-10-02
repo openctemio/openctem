@@ -52,8 +52,8 @@ func (m *mockSensorRepository) List(_ context.Context, _ sensor.Filter, _ pagina
 func (m *mockSensorRepository) Update(_ context.Context, _ *sensor.Sensor) error {
 	return nil
 }
-func (m *mockSensorRepository) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
-	return nil
+func (m *mockSensorRepository) RetireInlineKey(_ context.Context, _ shared.ID, _ []string, _ time.Time) (bool, error) {
+	return false, nil
 }
 func (m *mockSensorRepository) UpdateHeartbeat(_ context.Context, _ shared.ID, _ sensor.HeartbeatUpdate) (bool, error) {
 	return true, nil

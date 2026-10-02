@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -189,6 +190,44 @@ func (r *SensorAPIKeyRepository) CountActiveBySensorID(ctx context.Context, sens
 	if err != nil {
 		return 0, fmt.Errorf("count active sensor api keys: %w", err)
 	}
+	return n, nil
+}
+
+// RetireKeys brings the expiry of the sensor's active, non-revoked keys
+// forward to at — never later than an expiry they already have. With newest
+// set, only keys created before that key are touched, compared on
+// (created_at, id) as stored, so of two concurrent renewals the newer key is
+// never retired by the older one. It writes expires_at alone, so a
+// concurrent revoke is not undone.
+func (r *SensorAPIKeyRepository) RetireKeys(ctx context.Context, sensorID shared.ID, newest *shared.ID, at time.Time) (int64, error) {
+	var (
+		res sql.Result
+		err error
+	)
+	if newest != nil {
+		res, err = r.db.ExecContext(ctx, `
+			UPDATE sensor_api_keys k
+			SET expires_at = $3
+			FROM sensor_api_keys n
+			WHERE n.id = $2 AND n.sensor_id = $1
+			  AND k.sensor_id = $1
+			  AND k.is_active AND k.revoked_at IS NULL
+			  AND (k.created_at, k.id) < (n.created_at, n.id)
+			  AND (k.expires_at IS NULL OR k.expires_at > $3)`,
+			sensorID.String(), newest.String(), at)
+	} else {
+		res, err = r.db.ExecContext(ctx, `
+			UPDATE sensor_api_keys
+			SET expires_at = $2
+			WHERE sensor_id = $1
+			  AND is_active AND revoked_at IS NULL
+			  AND (expires_at IS NULL OR expires_at > $2)`,
+			sensorID.String(), at)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("retire sensor api keys: %w", err)
+	}
+	n, _ := res.RowsAffected()
 	return n, nil
 }
 
