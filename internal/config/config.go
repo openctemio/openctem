@@ -178,9 +178,11 @@ type SensorConfigConfig struct {
 	// If empty, falls back to App.URL.
 	PublicAPIURL string
 	// KeyTTL is how long a self-renewed sensor API key stays valid before it
-	// must be renewed again (RFC-014 Phase 1b). Zero (the default) disables
-	// expiry: renewed keys never expire. Set AGENT_KEY_TTL (e.g. "24h") to opt
-	// into short-lived, auto-rotating sensor credentials.
+	// must be renewed again (RFC-014 Phase 1b, RFC-032 Phase 0):
+	// SENSOR_KEY_TTL, default DefaultSensorKeyTTL (90 days). "0" disables
+	// expiry: renewed keys never expire. Only renewal applies it: a key an
+	// administrator creates or regenerates never expires, and a sensor that
+	// does not renew keeps its key.
 	KeyTTL time.Duration
 	// KeyPepper is the secret the sensor API-key hash (HMAC-SHA256) is keyed
 	// with: SENSOR_KEY_PEPPER. Empty (the default) derives it from
@@ -242,6 +244,13 @@ type SensorConfigConfig struct {
 	// openctem-root-ca.crt. Empty: the certificate is publicly trusted.
 	CACertFile string
 }
+
+// DefaultSensorKeyTTL is how long a renewed sensor API key stays valid when
+// SENSOR_KEY_TTL is not set: 90 days, renewed at half-life (45 days before
+// expiry, SENSOR_KEY_RENEW_BEFORE). The install snippets and the Helm chart
+// keep the renewed key on a persistent volume, and the sensor renews on its
+// own only when that volume persists (RFC-032 Phase 0).
+const DefaultSensorKeyTTL = 90 * 24 * time.Hour
 
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
@@ -824,7 +833,7 @@ func Load() (*Config, error) {
 		SensorConfig: SensorConfigConfig{
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
-			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", 0),
+			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
 			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
 
