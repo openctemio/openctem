@@ -1,6 +1,6 @@
 # RFC-038 — Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back
 
-> Status: **Proposed** (2026-10-02).
+> Status: **Proposed** (2026-10-02, api#826).
 > Scope: sdk-go (schema types, registration, delivery and verification) +
 > sensor (`openctemio/sensor`: one schema per tool, typed option → flag
 > mapping) + api (storage, validation, policy, audit, push) + web (forms).
