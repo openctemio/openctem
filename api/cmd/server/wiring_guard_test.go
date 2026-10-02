@@ -209,3 +209,43 @@ func TestPriorityClassificationSeams_AreWiredOrExplicitlyOptional(t *testing.T) 
 		}
 	}
 }
+
+// TestTenantRebuild_KeepsEveryInitServicesSetter guards the split-brain
+// composition root: main.go rebuilds services.Tenant after initServices, so
+// every Set* collaborator initServices attached to the first tenant service is
+// lost unless main.go attaches it again. SetDataScopePolicyStore was dropped
+// this way, which made GET/PATCH /tenants/{t}/settings/data-scope return 500.
+func TestTenantRebuild_KeepsEveryInitServicesSetter(t *testing.T) {
+	settersIn := func(file, recv string) map[string]bool {
+		t.Helper()
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		out := map[string]bool{}
+		ast.Inspect(f, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok || !strings.HasPrefix(sel.Sel.Name, "Set") {
+				return true
+			}
+			var buf bytes.Buffer
+			if err := printer.Fprint(&buf, fset, sel.X); err == nil && buf.String() == recv {
+				out[sel.Sel.Name] = true
+			}
+			return true
+		})
+		return out
+	}
+
+	initSetters := settersIn("services.go", "s.Tenant")
+	if len(initSetters) == 0 {
+		t.Fatal("found no s.Tenant.Set* calls in services.go; the guard is not guarding anything")
+	}
+	mainSetters := settersIn("main.go", "services.Tenant")
+	for setter := range initSetters {
+		if !mainSetters[setter] {
+			t.Errorf("services.go wires s.Tenant.%s but main.go rebuilds services.Tenant without it; re-wire it after app.NewTenantService in main.go", setter)
+		}
+	}
+}

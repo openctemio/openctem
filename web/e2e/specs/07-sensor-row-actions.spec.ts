@@ -7,7 +7,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * Regression: the activate/deactivate mutations were bound to the sheet's
  * selected sensor. A row action selects its sensor and triggers in the same
  * handler, before React re-renders, so it hit the PREVIOUSLY selected sensor
- * (after viewing A, "Deactivate" on B disabled A while the toast named B),
+ * (after viewing A, "Disable" on B disabled A while the toast named B),
  * or no sensor at all ("Can't trigger the mutation: missing key").
  *
  * Needs a tenant with at least two active sensors. The test restores what it
@@ -23,7 +23,7 @@ async function openSensors(page: Page) {
   await expect(page.getByRole('row').nth(1)).toBeVisible({ timeout: 30_000 })
 }
 
-/** Names of up to `n` sensors whose row offers "Deactivate" (status active). */
+/** Names of up to `n` sensors whose row offers "Disable" (status active). */
 async function activeSensorNames(page: Page, n: number): Promise<string[]> {
   const names: string[] = []
   const rows = page.getByRole('row')
@@ -31,7 +31,7 @@ async function activeSensorNames(page: Page, n: number): Promise<string[]> {
   for (let i = 1; i < count && names.length < n; i++) {
     const row = rows.nth(i)
     if ((await row.getByText(/^(Disabled|Revoked)$/).count()) > 0) continue
-    const name = (await row.locator('p.font-medium').first().innerText()).trim()
+    const name = (await row.locator('[data-slot="sensor-name"]').innerText()).trim()
     if (name) names.push(name)
   }
   return names
@@ -49,7 +49,7 @@ async function expectStatus(page: Page, name: string, disabled: boolean) {
 }
 
 test.describe('Sensor row actions', () => {
-  test('Deactivate from the row menu acts on that row, not the last viewed sensor', async ({
+  test('Disable from the row menu acts on that row, not the last viewed sensor', async ({
     page,
   }) => {
     await openSensors(page)
@@ -62,57 +62,58 @@ test.describe('Sensor row actions', () => {
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toBeHidden()
 
-    await rowAction(page, b, 'Deactivate')
-    await expect(page.getByText(`Sensor "${b}" deactivated`)).toBeVisible()
+    await rowAction(page, b, 'Disable')
+    await expect(page.getByText(`Sensor "${b}" disabled`)).toBeVisible()
 
     await page.reload()
     await expect(page.getByRole('row').nth(1)).toBeVisible({ timeout: 30_000 })
     await expectStatus(page, b, true)
     await expectStatus(page, a, false)
 
-    // Activate B back from its row (A is still the selection).
-    await rowAction(page, b, 'Activate')
-    await expect(page.getByText(`Sensor "${b}" activated`)).toBeVisible()
+    // Enable B again from its row (A is still the selection).
+    await rowAction(page, b, 'Enable')
+    await expect(page.getByText(`Sensor "${b}" enabled`)).toBeVisible()
     await page.reload()
     await expect(page.getByRole('row').nth(1)).toBeVisible({ timeout: 30_000 })
     await expectStatus(page, b, false)
     await expectStatus(page, a, false)
   })
 
-  test('Deactivate works with nothing selected yet', async ({ page }) => {
+  test('Disable works with nothing selected yet', async ({ page }) => {
     await openSensors(page)
     const [b] = await activeSensorNames(page, 1)
     test.skip(!b, 'Needs an active sensor')
 
-    await rowAction(page, b, 'Deactivate')
-    await expect(page.getByText(`Sensor "${b}" deactivated`)).toBeVisible()
+    await rowAction(page, b, 'Disable')
+    await expect(page.getByText(`Sensor "${b}" disabled`)).toBeVisible()
     await expect(page.getByText(/missing key/i)).toHaveCount(0)
 
     await page.reload()
     await expect(page.getByRole('row').nth(1)).toBeVisible({ timeout: 30_000 })
     await expectStatus(page, b, true)
 
-    await rowAction(page, b, 'Activate')
-    await expect(page.getByText(`Sensor "${b}" activated`)).toBeVisible()
+    await rowAction(page, b, 'Enable')
+    await expect(page.getByText(`Sensor "${b}" enabled`)).toBeVisible()
   })
 
   test('the new sensor key is labelled, and so are its show and copy buttons', async ({ page }) => {
     const name = `e2e-key-a11y-${Date.now()}`
     await openSensors(page)
-    await page.getByRole('button', { name: 'Add sensor' }).first().click()
-    const dialog = page.getByRole('dialog')
-    await dialog.getByLabel('Name').fill(name)
-    await dialog.getByRole('button', { name: 'Next' }).click()
-    await dialog.getByRole('button', { name: 'Create Sensor' }).click()
+    await page.getByRole('button', { name: 'Install sensor' }).first().click()
+    const dialog = page.getByRole('dialog', { name: 'Install a sensor' })
+    await dialog.getByRole('textbox', { name: 'Name' }).fill(name)
+    await dialog.getByRole('button', { name: 'Create and show the command' }).click()
 
-    const key = dialog.getByLabel('API key', { exact: true })
-    await expect(key).toBeVisible()
+    // Step 2 shows the one-time key, masked, with labelled show/copy buttons.
+    const key = dialog.getByRole('textbox', { name: 'API key', exact: true })
+    await expect(key).toBeVisible({ timeout: 15_000 })
     await expect(key).toHaveAttribute('type', 'password')
     await dialog.getByRole('button', { name: 'Show API key' }).click()
     await expect(key).toHaveAttribute('type', 'text')
     await expect(dialog.getByRole('button', { name: 'Hide API key' })).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Copy API key' })).toBeVisible()
-    await dialog.getByRole('button', { name: 'Done' }).click()
+    await dialog.getByRole('button', { name: 'Close' }).first().click()
+    await expect(dialog).toBeHidden()
 
     // Clean up the sensor this test created.
     await expect(rowFor(page, name)).toBeVisible({ timeout: 30_000 })
