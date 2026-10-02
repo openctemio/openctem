@@ -878,6 +878,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
 	s.AttackSurface.SetDataScope(s.DataScope)
+	s.AttackSurface.SetStateHistory(repos.AssetStateHistory) // recent changes: real removals + exposure changes
 	// Continuous threat modeling: composes exposure chains + attacker profiles +
 	// ATT&CK catalog + live findings into a per-scope threat model.
 	s.ThreatModel = threatmodel.NewService(
