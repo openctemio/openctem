@@ -290,11 +290,13 @@ func withoutLaterPermissions(access map[string]string, known map[string]bool) ma
 
 // laterRevocations are system-role grants that a migration after 000230
 // removes on purpose (000246: sensors:write, audit:read and
-// settings:billing:read are owner/admin only). They are not part of the
-// rename, so they are taken out of the "before" map too; any other grant the
-// upgrade lost is still caught.
+// settings:billing:read are owner/admin only; 000261: scanner templates and
+// template sources are written by owners and admins only). They are not part
+// of the rename, so they are taken out of the "before" map too; any other
+// grant the upgrade lost is still caught.
 var laterRevocations = map[string][]string{
-	"role:member": {"sensors:write", "audit:read", "settings:billing:read"},
+	"role:member": {"sensors:write", "audit:read", "settings:billing:read",
+		"scans:templates:write", "scans:sources:write"},
 	"role:viewer": {"audit:read", "settings:billing:read"},
 }
 
