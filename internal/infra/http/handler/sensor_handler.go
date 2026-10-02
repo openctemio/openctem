@@ -141,11 +141,20 @@ type SensorResponse struct {
 	CPUPercent    float64 `json:"cpu_percent"`
 	MemoryPercent float64 `json:"memory_percent"`
 	Region        string  `json:"region,omitempty"`
-	// Load balancing
+	// Load balancing. current_jobs is the number of commands the sensor
+	// holds now (acknowledged or running), counted by the platform;
+	// available_slots is what dispatch may still hand it: its effective
+	// capacity minus current_jobs, and no more than the free slots of a
+	// fresh load report (RFC-030 §5.8).
 	MaxConcurrentJobs int     `json:"max_concurrent_jobs"`
 	CurrentJobs       int     `json:"current_jobs"`
 	AvailableSlots    int     `json:"available_slots"`
 	LoadFactor        float64 `json:"load_factor"` // 0.0 to 1.0
+	// Load is the load the sensor last reported on its heartbeat
+	// (resources, capacity, local queue); null when it never reported one.
+	// fresh is false once it is older than 3 minutes (dispatch then ignores
+	// it).
+	Load *SensorLoadResponse `json:"load"`
 	// Statistics
 	LastSeenAt    *string `json:"last_seen_at,omitempty"`
 	TotalFindings int64   `json:"total_findings"`
@@ -239,6 +248,16 @@ type SensorContentResponse struct {
 	Stale         bool   `json:"stale"`
 	PinnedVersion string `json:"pinned_version"`
 	PinMismatch   bool   `json:"pin_mismatch"`
+}
+
+// SensorLoadResponse is a sensor's last load report. A part is null when the
+// sensor never reported it.
+type SensorLoadResponse struct {
+	Resources  *sensor.ReportedResources `json:"resources"`
+	Capacity   *sensor.ReportedCapacity  `json:"capacity"`
+	Queue      *sensor.ReportedQueue     `json:"queue"`
+	ReportedAt *string                   `json:"reported_at"`
+	Fresh      bool                      `json:"fresh"`
 }
 
 // SensorReportedResponse is a sensor's last capability report. A list is
@@ -817,7 +836,7 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		// Load balancing
 		MaxConcurrentJobs: a.MaxConcurrentJobs,
 		CurrentJobs:       a.CurrentJobs,
-		AvailableSlots:    a.AvailableSlots(),
+		AvailableSlots:    a.FreeSlots(now),
 		LoadFactor:        a.LoadFactor(),
 		// Statistics
 		TotalFindings: a.TotalFindings,
@@ -862,6 +881,16 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 			ReportedAt:       ob.ReportedAt.UTC().Format(time.RFC3339),
 		}
 		resp.OutboxWarning = ob.Warning()
+	}
+
+	if !a.Load.IsEmpty() {
+		resp.Load = &SensorLoadResponse{
+			Resources:  a.Load.Resources,
+			Capacity:   a.Load.Capacity,
+			Queue:      a.Load.Queue,
+			ReportedAt: rfc3339Ptr(a.Load.ReportedAt),
+			Fresh:      a.Load.IsFresh(now),
+		}
 	}
 
 	if p := a.Protocol; p != nil {

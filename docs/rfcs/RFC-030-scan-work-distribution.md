@@ -455,6 +455,44 @@ stays as an admission limit; it no longer has to double as a fairness tool.
 | `targets_per_job` | an upper bound (`n_max`) when set; otherwise D4 |
 | `maxResolvedTargets` 10,000, `maxZoneJobsPerRun` 1,000 | 200,000 targets per run (bounded by the planner insert, ~30 MB); no job cap (chunks are cut lazily) |
 
+#### 5.8.1 The sensor's load report (owner decision 2026-10-02: "the SDK computes resources, nothing hard-coded")
+
+The SDK, not each sensor, measures the machine it runs on and derives its
+own job slots; the sensor only registers executors. On every heartbeat
+(feature `load`, additive, all optional):
+
+| Block | Fields | Source in the SDK |
+|---|---|---|
+| `resources` | `cpu_cores`, `cpu_used_pct`, `mem_total_bytes`, `mem_available_bytes`, `load1`, `disk_free_bytes` | cgroup-aware (v2 `cpu.max`/`memory.max`, v1 CFS quota/`memory.limit_in_bytes`, cpuset), not host totals; disk free on the work dir |
+| `capacity` | `slots_total`, `slots_free`, `active_jobs`, `per_tool.<tool>.{est_cpu_s, est_mem_bytes, throughput_targets_per_min}` | `slots = clamp(min(configured cap, ⌊cpu_avail / est_cpu_per_job⌋, ⌊mem_avail / est_mem_per_job⌋), 1, hard_max)`, per-tool estimates learned from completed jobs (persisted locally), AIMD on OOM/timeout/throttling |
+| `queue` | `claimed`, `running`, `queued_local`, `oldest_age_seconds` | the SDK's local work queue (§5.12) |
+
+The API clamps every value (NaN/negative → 0, bounded sizes, at most 64
+`per_tool` entries with tool-like names) and stores the latest snapshot
+(`sensors.reported_resources/_capacity/_queue`, `load_reported_at`,
+migration 000254). It is shown on the sensor API (`load`, with `fresh`) and
+used for dispatch while **fresh (3 minutes)**:
+
+- **free slots** = `effective_max_jobs − commands the sensor holds`
+  (acknowledged or running, counted from `commands`: the server truth, D5),
+  and no more than a fresh `capacity.slots_free`. The report can only
+  lower it. The command poll never offers more **scan** commands than the
+  free slots (Phase 1.2, shipped with Phase 0); selection skips sensors with
+  no free slot and orders by free slots, then by the reported
+  `throughput_targets_per_min` for the tool.
+- `resources.cpu_used_pct` and memory in use feed the existing load score
+  when the sensor does not send the legacy percentages.
+- `per_tool` throughput and cost are the **prior for `ĉ(t, s)`** (§5.2):
+  Phase 2's chunk sizing starts from what the sensor measured instead of a
+  fleet-wide guess, and its own EWMA takes over after three samples.
+
+`sensors.current_jobs` (never written, B1) is no longer read; `ClaimJob` /
+`ReleaseJob` (no callers) are deleted. "Is there a capable sensor" gates (the
+trigger's `NO_SENSOR_AVAILABLE`, the validation gate) still ask for an
+online capable sensor, not a free one, so a busy fleet queues work instead
+of refusing it; a tenant whose capable sensors are all busy keeps the job
+(`TenantBusy`), it never moves to shared sensors.
+
 ### 5.9 Protocol (v2, additive; v1 unchanged)
 
 `GET /hello` features: `leases`, `capacity`, `limits`, `cancel`, `progress`.
@@ -495,6 +533,31 @@ the run.
   expiries in the last 24 h.
 - Scan form: priority class; `targets_per_job` moves to "Advanced: max
   targets per job".
+
+### 5.12 Two queues: the platform's and the sensor's (owner decision 2026-10-02)
+
+"The sensor must manage its queue — or is it the platform? It must be from
+the SDK." Two layers, with one owner each:
+
+| | Platform queue (authoritative) | Sensor local queue (sdk-go) |
+|---|---|---|
+| Holds | every run's work: priority classes, fair share, chunks, leases, retries (this RFC) | only what this sensor has claimed: at most its free dynamic slots, no prefetch |
+| Decides | **what** runs and **where** | **when** a claimed command starts on this machine |
+| Ordering | class → fair share (§5.3) | the command's priority/class among what it holds |
+| Politeness | `per_host` eligibility across the fleet (§5.6) | per-target-host limits from the command's `limits`, on this machine |
+| Failure | lease expiry → re-queue (§5.4) | renews leases of queued + running items on the heartbeat (`running`); on cancel stops the command; on drain stops claiming, finishes within a grace period, and **releases** the rest |
+
+A sensor implements executors; the SDK owns the local queue, slots,
+leases and reporting (sdk-go README "Writing a sensor").
+
+**Release** (feature `release`): `POST /api/v2/sensor/commands/{id}/release`
+`{"reason": "draining"}` hands a command the sensor holds (acknowledged or
+running) back to the queue at once: pending, unpinned, zone kept, the reason
+stored, not counted as a dispatch attempt. Only the holding sensor may
+release it (else 404); a repeat answers the command as it is; a finished
+command answers 409. Without it a draining sensor's work waited for the
+10-minute acknowledged reaper (or, with leases, the lease). A v1 sensor has
+no release; the SDK falls back to `fail` with `released: <reason>`.
 
 ## 6. Simulation
 

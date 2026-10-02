@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/command"
@@ -183,7 +184,8 @@ func TestReportedCaps_MaliciousReportIsBounded(t *testing.T) {
 	}
 }
 
-// The reported concurrency caps what dispatch claims.
+// The reported concurrency caps what dispatch hands the sensor: free slots
+// are the effective capacity minus the commands it holds (RFC-030 D5).
 func TestReportedCaps_CapacityIsTheSmaller(t *testing.T) {
 	h := newCtlHarness(t)
 	ctx := context.Background()
@@ -192,14 +194,27 @@ func TestReportedCaps_CapacityIsTheSmaller(t *testing.T) {
 	h.heartbeatV2(s, map[string]any{"status": "running", "max_concurrent_jobs": 1,
 		"tools": []map[string]any{{"name": "nuclei", "installed": true}}})
 	id := shared.MustIDFromString(s.id)
-	if err := h.repo.ClaimJob(ctx, id); err != nil {
-		t.Fatalf("first claim: %v", err)
+	if got, _ := h.repo.FindAvailableWithTool(ctx, tid, "nuclei"); got == nil || got.ID != id {
+		t.Fatalf("an idle sensor with one slot was not picked: %v", got)
 	}
-	if err := h.repo.ClaimJob(ctx, id); err == nil {
-		t.Fatal("second claim accepted beyond the reported concurrency of 1")
+	cmd, err := h.cmds.Create(ctx, command.CreateInput{TenantID: h.tenantID, Type: "scan", Priority: "normal",
+		Payload: json.RawMessage(`{"scanner":"nuclei"}`), ExpiresIn: 3600})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if c, _ := h.repo.FindAvailableWithCapacity(ctx, tid, nil, "nuclei"); len(c) != 0 {
-		t.Fatalf("a full sensor is still a candidate: %v", ids(c))
+	if _, err := h.db.ExecContext(ctx, `UPDATE commands SET status = 'acknowledged', sensor_id = $2 WHERE id = $1`,
+		cmd.ID.String(), s.id); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.repo.GetByID(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CurrentJobs != 1 || got.FreeSlots(time.Now()) != 0 {
+		t.Fatalf("holding one command at a concurrency of 1: current %d, free %d; want 1, 0", got.CurrentJobs, got.FreeSlots(time.Now()))
+	}
+	if picked, _ := h.repo.FindAvailableWithTool(ctx, tid, "nuclei"); picked != nil {
+		t.Fatalf("a full sensor was picked: %v", picked.ID)
 	}
 }
 

@@ -1424,3 +1424,27 @@ func (r *CommandRepository) ClaimStepFinalization(ctx context.Context, stepRunID
 	}
 	return n == 1, nil
 }
+
+// ReleaseForSensor hands a command the sensor holds back to the queue
+// (RFC-030 §5.12): pending, unpinned, acknowledged/started times cleared, the
+// reason kept in error_message, scan_zone_id untouched. Only an acknowledged
+// or running command held by sensorID is released; a voluntary release does
+// not count as a dispatch attempt.
+func (r *CommandRepository) ReleaseForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID, reason string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET status = 'pending', sensor_id = NULL,
+		    acknowledged_at = NULL, started_at = NULL,
+		    error_message = $4
+		WHERE id = $1 AND tenant_id = $2 AND sensor_id = $3
+		  AND status IN ('acknowledged', 'running')`,
+		commandID.String(), tenantID.String(), sensorID, reason)
+	if err != nil {
+		return false, fmt.Errorf("failed to release command: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	return n > 0, nil
+}

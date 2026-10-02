@@ -185,6 +185,13 @@ type PollInput struct {
 	// command.Repository.GetPendingForSensor). Empty = only unscoped commands.
 	Capabilities []string `json:"capabilities,omitempty"`
 	Limit        int      `json:"limit" validate:"min=1,max=100"`
+	// MaxScanCommands caps how many scan commands the poll returns: the
+	// sensor's free slots (sensor.FreeSlots), so a sensor is never offered
+	// more scans than it can run — an SDK that claims everything it polls
+	// cannot pile up acknowledged commands for the reaper to re-dispatch
+	// (RFC-030 B6, D5). Other commands (validate, collect, config) are not
+	// capped. nil: no cap.
+	MaxScanCommands *int `json:"-"`
 }
 
 // Poll retrieves pending commands for a sensor.
@@ -211,7 +218,27 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 		limit = 100
 	}
 
-	return s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, limit)
+	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, limit)
+	if err != nil || input.MaxScanCommands == nil {
+		return cmds, err
+	}
+	return capScanCommands(cmds, *input.MaxScanCommands), nil
+}
+
+// capScanCommands keeps every non-scan command and at most n scan commands,
+// in poll order.
+func capScanCommands(cmds []*commanddom.Command, n int) []*commanddom.Command {
+	out := cmds[:0:0]
+	for _, c := range cmds {
+		if c.Type == commanddom.CommandTypeScan {
+			if n <= 0 {
+				continue
+			}
+			n--
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // Acknowledge marks a command as acknowledged.

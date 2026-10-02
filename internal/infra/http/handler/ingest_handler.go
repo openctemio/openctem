@@ -257,6 +257,24 @@ type HeartbeatRequest struct {
 	MaxConcurrentJobs int             `json:"max_concurrent_jobs,omitempty"`
 	OS                string          `json:"os,omitempty"`
 	Arch              string          `json:"arch,omitempty"`
+
+	// The sensor's load, computed by the SDK (RFC-030 §5.8), all optional:
+	// the machine's resources (container limits when it runs in one), its
+	// job slots and per-tool cost, and its local work queue. Untrusted:
+	// clamped before it is stored, and it can only lower what dispatch
+	// hands the sensor.
+	Resources *sensor.ReportedResources `json:"resources,omitempty"`
+	Capacity  *sensor.ReportedCapacity  `json:"capacity,omitempty"`
+	Queue     *sensor.ReportedQueue     `json:"queue,omitempty"`
+}
+
+// loadReport returns the heartbeat's load report, nil when it carried none.
+func (req *HeartbeatRequest) loadReport() *sensor.LoadReport {
+	l := &sensor.LoadReport{Resources: req.Resources, Capacity: req.Capacity, Queue: req.Queue}
+	if l.IsEmpty() {
+		return nil
+	}
+	return l
 }
 
 // HeartbeatTool is one tool of a heartbeat's tool inventory.

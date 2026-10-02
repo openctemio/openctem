@@ -248,6 +248,27 @@ paths:
               properties:
                 error_message: { type: string, description: Stored up to 4 KiB. }
       responses: *transitionResponses
+  /api/v2/sensor/commands/{command_id}/release:
+    parameters:
+      - $ref: "#/components/parameters/TransitionCommandID"
+    post:
+      summary: Hand a claimed or running command back to the queue (acknowledged/running → pending, unpinned; feature "release", RFC-030 §5.12)
+      description: >-
+        Only the sensor that holds the command may release it. The command
+        returns to the queue at once (its scan zone kept) instead of waiting
+        for the stuck-command reaper; a draining sensor releases what it will
+        not finish. A repeat after the release answers the command as it is
+        now. A finished command answers 409 invalid-transition.
+      operationId: sensorV2ReleaseCommand
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, description: "Why (draining, shutdown, canceled, politeness, ...). Stored up to 200 bytes." }
+      responses: *transitionResponses
   /api/v2/sensor/suppressions:
     get:
       summary: Active suppression rules of the sensor's tenant
@@ -525,6 +546,39 @@ components:
             oldest_age_seconds: { type: integer }
             dead_letter_count: { type: integer }
             evicted_count: { type: integer }
+        resources:
+          description: The machine as the SDK measured it (container limits when in one); feature "load", RFC-030 §5.8. Clamped; display and selection input.
+          type: object
+          properties:
+            cpu_cores: { type: number }
+            cpu_used_pct: { type: number }
+            mem_total_bytes: { type: integer }
+            mem_available_bytes: { type: integer }
+            load1: { type: number }
+            disk_free_bytes: { type: integer }
+        capacity:
+          description: The sensor's job slots and per-tool cost; while fresh (3 min) slots_free can only lower what dispatch offers.
+          type: object
+          properties:
+            slots_total: { type: integer }
+            slots_free: { type: integer }
+            active_jobs: { type: integer }
+            per_tool:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  est_cpu_s: { type: number }
+                  est_mem_bytes: { type: integer }
+                  throughput_targets_per_min: { type: number }
+        queue:
+          description: The sensor's local work queue (display only).
+          type: object
+          properties:
+            claimed: { type: integer }
+            running: { type: integer }
+            queued_local: { type: integer }
+            oldest_age_seconds: { type: integer }
     HeartbeatResponse:
       type: object
       required: [sensor_id, tenant_id, status, pending_jobs, next_heartbeat_seconds, actions, config_version]

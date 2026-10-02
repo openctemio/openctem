@@ -203,11 +203,17 @@ const (
 	FeatureFingerprints = "fingerprints"
 	// FeatureKeys: POST /keys, key renewal (RFC-029 §4.7).
 	FeatureKeys = "keys"
+	// FeatureLoad: the heartbeat accepts the sensor's load report
+	// (resources, capacity, queue) and dispatch uses it (RFC-030 §5.8).
+	FeatureLoad = "load"
+	// FeatureRelease: POST /commands/{id}/release hands a claimed command
+	// back to the queue at once (a draining sensor, RFC-030 §5.12).
+	FeatureRelease = "release"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease}
 }
 
 // Deprecation announces a deprecated protocol on hello.
