@@ -192,6 +192,13 @@ it:**
 | capabilities | reported ∩ the sensor's `capabilities` (likewise) |
 | concurrency | min(reported, `max_concurrent_jobs`) |
 
+`max_concurrent_jobs` in the report is the sensor's **configured cap**: the
+most jobs it ever runs at once. Live free slots are separate. RFC-030's
+`capacity` block reports them and bounds dispatch further (≤ the cap), so the
+platform's capacity is min(admin limit, reported cap, live slots). The member
+names here (`tools`, `capabilities`, `max_concurrent_jobs`, `os`, `arch`) are
+stable.
+
 - **A sensor that reports nothing keeps the administrator's values.** An absent
   list is "not reported". `[]` is "reported none", so that sensor gets no
   jobs for any tool.
@@ -209,6 +216,13 @@ it:**
 - **Never widens.** Reporting cannot add a tool or capability the
   administrator excluded, raise the concurrency above the administrator's
   limit, or bypass scan-zone pinning (`zoneClaimPredicate` does not read it).
+- **Unpinned scans go only to sensors that have the tool.** Once a sensor
+  reports its inventory, the command poll and the doorbell count offer it an
+  unpinned command that names a tool (`scanner`, or a pipeline step's
+  `preferred_tool`) only if that tool is in its effective tools
+  (`reportedToolClaimPredicate`). A sensor that never reported is offered
+  every command, as before. Zone routing and the zone claim check also use
+  the effective tools.
 - **Where it applies:** the selector (`FindAvailableWithCapacity`,
   `FindAvailableWithTool`, `FindByCapabilities`), `ClaimJob`, tool and
   capability availability (`GetAvailableToolsForTenant`, `HasSensorForTool`,

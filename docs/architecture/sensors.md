@@ -538,6 +538,14 @@ gate and the API use `Sensor.EffectiveCapabilities()` and the other
 `sensor_reported_caps_db_test.go` (postgres) checks that the columns and the
 methods agree across a matrix of inputs.
 
+The command poll (v1 and v2) and the doorbell count also gate unpinned
+commands that name a tool (`scanner` / `preferred_tool`). A sensor that
+reports its inventory is offered only the commands whose tool is in its
+effective tools (`reportedToolClaimPredicate` in `command_repository.go`). A
+sensor that never reported is offered every command, as before. The reported
+`max_concurrent_jobs` is the sensor's configured cap. RFC-030's live slots
+(its `capacity` block) bound dispatch further.
+
 Ingest (`SensorService.UpdateHeartbeat` → `sanitizeReport`): one catalog
 lookup (`KnownCapabilityNames`: active platform tools and the tenant's own,
 plus the capability registry), then `CapabilityReportInput.Sanitize`. Unknown
