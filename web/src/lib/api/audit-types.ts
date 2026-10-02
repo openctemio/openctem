@@ -12,7 +12,7 @@
 // ----------------------------------------------------------------------------
 // Sensor events before and after the sensor rename
 //
-// RFC-023 §9.5 (openctemio/api, docs/rfcs/RFC-023-sensor-rename-contract.md §5).
+// RFC-023 §9.5 (api/docs/rfcs/RFC-023-sensor-rename-contract.md §5).
 // New events are sensor.* on resource type "sensor" with sensor_* metadata.
 // Rows written before the upgrade keep the old action prefix, resource type and
 // metadata keys (the HISTORICAL_SENSOR_* constants below) for good:

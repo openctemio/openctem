@@ -18,7 +18,7 @@ import type {
 } from '@/lib/api/generated'
 
 /**
- * NOT YET GENERATED — openctemio/api#591 changes CredentialItem: it drops
+ * NOT YET GENERATED — openctemio/openctem#591 changes CredentialItem: it drops
  * `secret_value` (reads never carry the plaintext) and adds the three fields
  * below. The vendored spec is re-vendored from api's develop by the Sync API
  * spec workflow once #591 merges; this intersection then adds nothing and can
@@ -34,7 +34,7 @@ export type ApiCredential = CredentialItem & {
 }
 
 /**
- * NOT YET GENERATED — POST /credentials/{id}/reveal (openctemio/api#591):
+ * NOT YET GENERATED — POST /credentials/{id}/reveal (openctemio/openctem#591):
  * the plaintext secret, returned only to holders of
  * findings:credentials:reveal and audited server-side.
  */

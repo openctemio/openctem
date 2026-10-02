@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { isPrivateRange, parseRanges, rangesContain, splitRangeInput } from './ranges'
 
-// Cases mirror openctemio/api pkg/domain/scanzone/zone_test.go (ParseRanges).
+// Cases mirror api/pkg/domain/scanzone/zone_test.go (ParseRanges).
 describe('parseRanges', () => {
   it('normalises addresses, CIDRs and ranges like the API', () => {
     const r = parseRanges(['10.1.2.3/16', '10.1.0.5', '192.168.1.0/24', 'fd00:230::/48'])

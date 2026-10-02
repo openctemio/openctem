@@ -1,6 +1,6 @@
 /**
  * One-time browser-storage migration for the agent -> sensor rename
- * (RFC-023 §9.5; openctemio/api docs/rfcs/RFC-023-sensor-rename-contract.md §11).
+ * (RFC-023 §9.5; api/docs/rfcs/RFC-023-sensor-rename-contract.md §11).
  *
  * Installations ran under the "agent" vocabulary for a long time, so browsers
  * hold state written before the rename. It is migrated on the first load of

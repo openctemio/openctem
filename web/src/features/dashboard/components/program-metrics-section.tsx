@@ -2,8 +2,8 @@
  * CTEM program metrics: the ctem.org program KPIs that can be computed
  * honestly from stored data (GET /api/v1/dashboard/program-metrics).
  *
- * The exact definitions are owned by the API (openctemio/api
- * internal/app/module/dashboard.go, docs/architecture/program-metrics.md); the
+ * The exact definitions are owned by the API (api/internal/app/module/dashboard.go,
+ * api/docs/architecture/program-metrics.md); the
  * tooltips below restate them in plain words. A metric with no qualifying
  * sample comes back null and renders "—" — never 0 or 100%. No value is ever
  * coloured: ctem.org sets no universal target for these, so any red/green
