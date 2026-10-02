@@ -431,14 +431,15 @@ export async function logoutAction(postLogoutRedirectUri?: string): Promise<neve
     await removeServerCookie('oauth_state')
     await removeServerCookie(env.cookies.tenant)
     await removeServerCookie(env.cookies.pendingTenants)
-
-    // Redirect to login page
-    redirect(postLogoutRedirectUri || '/login')
   } catch (error) {
     console.error('Logout action error:', error)
     // Fallback: redirect to login even if cleanup fails
     redirect('/login')
   }
+  // Outside the try: redirect() throws, and the catch above used to swallow
+  // it and always land on /login. The target comes from the client, so only
+  // a same-origin path is followed.
+  redirect(validateRedirectUrl(postLogoutRedirectUri, '/login'))
 }
 
 // ============================================
