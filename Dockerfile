@@ -28,6 +28,11 @@ RUN chmod +x /usr/local/bin/dev-entrypoint.sh
 EXPOSE 8080 9090 2345
 
 # Run entrypoint (migrations + air)
+# Development only, never published: it runs as root so the bind-mounted
+# source tree, tmp/ and the go module/build cache volumes stay writable on any
+# host uid. Published images are the `production` stage, which sets
+# USER openctem.
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["/usr/local/bin/dev-entrypoint.sh"]
 
 # -----------------------------------------------------------------------------

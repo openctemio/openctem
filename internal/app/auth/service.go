@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openctemio/api/internal/app/accesscontrol"
@@ -26,10 +27,6 @@ import (
 )
 
 // AuthService errors.
-// dummyLoginPasswordHash is a valid bcrypt (cost 12) hash used only to spend
-// constant time on the user-not-found login path, so account existence cannot
-// be inferred from response latency.
-const dummyLoginPasswordHash = "$2a$12$odsIwJ3GzB7hgHr/gUWeiOYuDSW0mzDtq.CWaifNmuy7t9vmuKaoW"
 
 var (
 	ErrInvalidCredentials   = errors.New("invalid email or password")
@@ -86,12 +83,17 @@ type AuthService struct {
 	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tenantRepo       tenantdom.Repository
 	passwordHasher   *password.Hasher
-	tokenGenerator   *jwt.Generator
-	config           config.AuthConfig
-	logger           *logger.Logger
-	auditService     *auditapp.AuditService
-	roleService      *accesscontrol.RoleService // Optional: for database-driven role permissions
-	smtpChecker      SMTPAvailabilityCheck      // Optional: enables smart email verification
+	// dummyHash is a hash of a random secret, made once with passwordHasher
+	// (same algorithm and cost as real passwords), for the constant-time
+	// paths: see dummyPasswordHash.
+	dummyHash      string
+	dummyHashOnce  sync.Once
+	tokenGenerator *jwt.Generator
+	config         config.AuthConfig
+	logger         *logger.Logger
+	auditService   *auditapp.AuditService
+	roleService    *accesscontrol.RoleService // Optional: for database-driven role permissions
+	smtpChecker    SMTPAvailabilityCheck      // Optional: enables smart email verification
 	// permVersionSvc, when set, stamps issued tenant-scoped access tokens with
 	// the user's current permission version so the permission-sync middleware
 	// can reject stale tokens after a role revocation/demotion (AUTHZ-3).
@@ -387,7 +389,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		// Constant-time defense: spend the same bcrypt cost the real
 		// registration path pays when hashing the new password, so account
 		// existence cannot be inferred from response latency (AUTHZ-6).
-		_ = s.passwordHasher.Verify(input.Password, dummyLoginPasswordHash)
+		_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
 		// Return a fake successful result to prevent email enumeration
 		// The UI should always show "Check your email for verification"
 		return &RegisterResult{
@@ -544,7 +546,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 			// Constant-time defense: run a dummy bcrypt verify so the
 			// user-not-found path costs the same as a real (wrong-password)
 			// login, preventing account enumeration via response timing.
-			_ = s.passwordHasher.Verify(input.Password, dummyLoginPasswordHash)
+			_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -2063,4 +2065,22 @@ func (s *AuthService) generateTenantScopedAccessToken(
 // The token is valid for 30 seconds - just enough time to establish the connection.
 func (s *AuthService) GenerateWSToken(ctx context.Context, userID, tenantID string) (string, error) {
 	return s.tokenGenerator.GenerateShortLivedToken(userID, tenantID, 30*time.Second)
+}
+
+// dummyPasswordHash returns a hash of a random secret, made with the same
+// hasher (and cost) as real passwords. Verifying a login password against it
+// costs what a real wrong-password check costs, so the user-not-found and
+// existing-email paths cannot be told apart by latency. It is generated on
+// first use (no hash literal in the source, and it follows any cost change).
+func (s *AuthService) dummyPasswordHash() string {
+	s.dummyHashOnce.Do(func() {
+		secret, err := password.GenerateSecureToken(32)
+		if err == nil {
+			s.dummyHash, err = s.passwordHasher.Hash(secret)
+		}
+		if err != nil {
+			s.logger.Error("could not create the constant-time dummy password hash", "error", err)
+		}
+	})
+	return s.dummyHash
 }
