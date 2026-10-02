@@ -2,7 +2,9 @@ name: API CI
 
 # The Go API lives in api/. This workflow ALWAYS starts (no `paths:` filter, which
 # would leave required checks Pending); the `changes` job decides whether the
-# real jobs run, and `API CI OK` is the single required check.
+# real jobs run, and `API CI OK` is the single required check. The real jobs run
+# for api/ and shared files only (rules: .github/scripts/changed.sh), so a
+# web-only change costs this workflow two ~10 s jobs and nothing else.
 # Job bodies are carried over from openctemio/api's ci.yml; see git log for the
 # reasoning behind each gate.
 
@@ -46,7 +48,7 @@ jobs:
         working-directory: .
         env:
           EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh api api/ .github/workflows/api- .github/scripts/
+        run: bash .github/scripts/changed.sh
 
   migrations:
     name: Migration Safety

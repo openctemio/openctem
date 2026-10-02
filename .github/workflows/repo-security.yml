@@ -3,10 +3,16 @@ name: Repository Security
 # Whole-repository checks that do not belong to one component, so they run on
 # every PR and push with no path filter.
 #
-# Betterleaks scans the full git history (api's original history, ui's
-# imported history and everything after). It reads .betterleaks.toml and
-# .gitleaksignore from the repository root, which is where they were in
-# openctemio/api; the cutover copies them to the root for exactly that reason.
+# Betterleaks reads .betterleaks.toml and .gitleaksignore from the repository
+# root, which is where they were in openctemio/api; the cutover copies them to
+# the root for exactly that reason.
+#
+# Scope: a pull request (or merge-queue group) scans only the commits it adds
+# (base..HEAD), which is all it can introduce. A push to develop/main and the
+# weekly schedule scan the FULL history (api's, ui's imported one and
+# everything after): code scanning closes any alert missing from the latest
+# analysis of a category on a branch, so a diff-scoped upload on a branch push
+# would silently close every existing betterleaks alert.
 
 on:
   push:
@@ -46,10 +52,35 @@ jobs:
           echo "${BETTERLEAKS_SHA256}  betterleaks.tgz" | sha256sum -c -
           tar -xzf betterleaks.tgz betterleaks
 
+      - name: Scan scope
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$EVENT" in
+            pull_request)
+              git fetch --no-tags --quiet origin "$BASE_REF"
+              range="origin/${BASE_REF}..HEAD" ;;
+            merge_group) range="${MG_BASE}..HEAD" ;;
+            *) range="" ;;
+          esac
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          if [ -n "$range" ]; then
+            echo "Scanning the $(git rev-list --count "$range") commit(s) in $range"
+          else
+            echo "Scanning the full history ($(git rev-list --count HEAD) commits)"
+          fi
+
       - name: Run Betterleaks
-        run: >-
-          ./betterleaks git --redact --no-banner --exit-code 0
-          --report-format sarif --report-path betterleaks.sarif .
+        env:
+          RANGE: ${{ steps.scope.outputs.range }}
+        run: |
+          args=()
+          if [ -n "$RANGE" ]; then args=(--log-opts "$RANGE"); fi
+          ./betterleaks git --redact --no-banner --exit-code 0 \
+            --report-format sarif --report-path betterleaks.sarif "${args[@]}" .
 
       - name: Upload Betterleaks results
         uses: github/codeql-action/upload-sarif@v4

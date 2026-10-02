@@ -1,11 +1,18 @@
 name: CodeQL
 
-# Advanced setup, one matrix for both languages. Default setup is NOT used:
+# Advanced setup, one matrix over the languages to analyse. Default setup is NOT used:
 # it is undocumented whether it finds a go.mod in a subdirectory, and Go has
 # no build-mode `none`, so the Go leg builds explicitly inside api/.
 # `category` keeps the two languages' results separate (the documented
 # monorepo pattern). '/language:go' is the category openctemio/api already
 # used, so existing Go alerts keep matching after the move.
+#
+# Which languages: on a pull request (and merge_group) only the side that
+# changed (api/ -> go, web/ -> javascript-typescript, shared files -> both;
+# rules in .github/scripts/changed.sh). On a push to develop/main and on the
+# weekly schedule, ALWAYS both: code scanning compares each PR against the
+# latest analysis of every category on the base branch, so the base needs a
+# fresh baseline for both languages.
 
 on:
   push:
@@ -30,58 +37,60 @@ jobs:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      api: ${{ steps.api.outputs.api }}
-      web: ${{ steps.web.outputs.web }}
+      languages: ${{ steps.lang.outputs.languages }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - id: api
+      - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh api api/ .github/workflows/codeql.yml
-      - id: web
+        run: bash .github/scripts/changed.sh
+      - id: lang
         env:
-          EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh web web/ .github/workflows/codeql.yml
+          EVENT: ${{ github.event_name }}
+          API: ${{ steps.f.outputs.api }}
+          WEB: ${{ steps.f.outputs.web }}
+        run: |
+          if [[ "$EVENT" == push || "$EVENT" == schedule ]]; then API=true WEB=true; fi
+          langs=()
+          [[ "$API" == true ]] && langs+=('"go"')
+          [[ "$WEB" == true ]] && langs+=('"javascript-typescript"')
+          languages="[$(IFS=,; echo "${langs[*]}")]"
+          echo "languages=$languages" | tee -a "$GITHUB_OUTPUT"
 
-  # Job-level `if:` cannot see the matrix, so one job per language.
-  go:
-    name: CodeQL (go)
+  analyze:
+    name: CodeQL (${{ matrix.language }})
     needs: changes
-    if: needs.changes.outputs.api == 'true'
+    if: needs.changes.outputs.languages != '[]'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.changes.outputs.languages) }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@v7
         with:
           go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
-      - name: Initialize CodeQL
+      - name: Initialize CodeQL (go)
+        if: matrix.language == 'go'
         uses: github/codeql-action/init@v4
         with:
           languages: go
           build-mode: manual
           queries: security-and-quality
-      - name: Build
+      - name: Build (go)
+        if: matrix.language == 'go'
         working-directory: api
         env:
           GOWORK: "off"
         run: go build ./...
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: /language:go
-
-  javascript-typescript:
-    name: CodeQL (javascript-typescript)
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Initialize CodeQL
+      - name: Initialize CodeQL (javascript-typescript)
+        if: matrix.language == 'javascript-typescript'
         uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
@@ -96,12 +105,12 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
-          category: /language:javascript-typescript
+          category: /language:${{ matrix.language }}
 
   codeql-ok:
     name: CodeQL OK
     if: always()
-    needs: [changes, go, javascript-typescript]
+    needs: [changes, analyze]
     runs-on: ubuntu-latest
     steps:
       - env:

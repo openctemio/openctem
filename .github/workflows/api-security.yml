@@ -4,11 +4,30 @@ name: API Security
 # (one workflow, both languages) and secret scanning to repo-security.yml (it
 # scans the whole repository history, not one component).
 
+# No required check lives here, so this workflow uses `paths:` and does not
+# start at all for a web-only change. Same routing as .github/scripts/changed.sh
+# (api/ + shared files); keep the two in step. The weekly schedule and
+# merge_group ignore `paths:` and scan everything.
+
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'api/**'
+      - 'Makefile'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/**'
+      - 'deploy/**'
   pull_request:
     branches: [main, develop]
+    paths:
+      - 'api/**'
+      - 'Makefile'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/**'
+      - 'deploy/**'
   merge_group:
   schedule:
     - cron: '0 0 * * 1' # Monday 00:00 UTC; schedules run from the default branch (main)
@@ -33,25 +52,8 @@ defaults:
     working-directory: api
 
 jobs:
-  changes:
-    name: Detect API changes
-    runs-on: ubuntu-latest
-    outputs:
-      api: ${{ steps.f.outputs.api }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - id: f
-        working-directory: .
-        env:
-          EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh api api/ .github/workflows/api- .github/scripts/
-
   govulncheck:
     name: Go Vulnerability Check
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,8 +69,6 @@ jobs:
 
   trivy:
     name: Trivy Vulnerability Scanner (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -91,8 +91,6 @@ jobs:
 
   semgrep:
     name: Semgrep (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     container:
       image: semgrep/semgrep:1.178.0
@@ -118,8 +116,7 @@ jobs:
 
   snyk:
     name: Snyk Security Scan (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true' && vars.ENABLE_SNYK == 'true'
+    if: vars.ENABLE_SNYK == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -138,8 +135,6 @@ jobs:
 
   license-check:
     name: License Compliance (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -158,12 +153,10 @@ jobs:
   # PR: building the image costs minutes and the fs scan covers dependencies.
   docker-scan:
     name: Docker Image Scan (api)
-    needs: changes
     if: >-
-      needs.changes.outputs.api == 'true' && (
       github.event_name == 'schedule'
       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || (github.event_name == 'pull_request' && github.base_ref == 'main'))
+      || (github.event_name == 'pull_request' && github.base_ref == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

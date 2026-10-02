@@ -3,11 +3,30 @@ name: Web Security
 # Carried over from openctemio/ui's security.yml. CodeQL moved to codeql.yml and
 # secret scanning to repo-security.yml.
 
+# No required check lives here, so this workflow uses `paths:` and does not
+# start at all for an API-only change. Same routing as .github/scripts/changed.sh
+# (web/ + shared files); keep the two in step. The weekly schedule and
+# merge_group ignore `paths:` and scan everything.
+
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'web/**'
+      - 'Makefile'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/**'
+      - 'deploy/**'
   pull_request:
     branches: [main, develop]
+    paths:
+      - 'web/**'
+      - 'Makefile'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/**'
+      - 'deploy/**'
   merge_group:
   schedule:
     - cron: '0 0 * * 1'
@@ -29,25 +48,8 @@ defaults:
     working-directory: web
 
 jobs:
-  changes:
-    name: Detect web changes
-    runs-on: ubuntu-latest
-    outputs:
-      web: ${{ steps.f.outputs.web }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - id: f
-        working-directory: .
-        env:
-          EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh web web/ .github/workflows/web- .github/scripts/
-
   npm-audit:
     name: NPM Audit
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -72,8 +74,6 @@ jobs:
 
   trivy:
     name: Trivy Vulnerability Scanner (web)
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -94,8 +94,6 @@ jobs:
 
   eslint-security:
     name: ESLint Security
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -121,8 +119,7 @@ jobs:
 
   snyk:
     name: Snyk Security Scan (web)
-    needs: changes
-    if: needs.changes.outputs.web == 'true' && vars.ENABLE_SNYK == 'true'
+    if: vars.ENABLE_SNYK == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -143,12 +140,10 @@ jobs:
 
   docker-scan:
     name: Docker Image Scan (web)
-    needs: changes
     if: >-
-      needs.changes.outputs.web == 'true' && (
       github.event_name == 'schedule'
       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || (github.event_name == 'pull_request' && github.base_ref == 'main'))
+      || (github.event_name == 'pull_request' && github.base_ref == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
