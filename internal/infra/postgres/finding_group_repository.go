@@ -134,9 +134,54 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 			)
 		)`, argOffset))
 		args = append(args, filter.RelatedToUserID.String())
+		argOffset++
 	}
 
+	// The two visibility rules the findings list applies (buildWhereClause),
+	// with the same meaning, so a FindingFilter narrows a group listing, a
+	// related-CVE lookup or a bulk update exactly as it narrows the list.
+	visibility, visibilityArgs := findingVisibilityWhere(filter, argOffset)
+	clauses = append(clauses, visibility...)
+	args = append(args, visibilityArgs...)
+
 	return strings.Join(clauses, " AND "), args
+}
+
+// findingVisibilityWhere builds the pentest-membership and data-scope
+// predicates of a FindingFilter for queries over `findings f`, numbering
+// placeholders from argOffset.
+//
+// A filter that asks for either rule without a tenant cannot be resolved and
+// matches nothing (the list builder skipped the rule instead).
+func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) ([]string, []any) {
+	var clauses []string
+	var args []any
+	if (filter.PentestMemberOrNonPentestUserID != nil || filter.DataScopeUserID != nil) && filter.TenantID == nil {
+		return []string{"FALSE"}, nil
+	}
+
+	// Pentest findings only to members of their campaign; others to everyone.
+	if filter.PentestMemberOrNonPentestUserID != nil {
+		clauses = append(clauses, fmt.Sprintf(`(f.source != 'pentest' OR f.pentest_campaign_id IN (
+			SELECT campaign_id FROM pentest_campaign_members WHERE user_id = $%d AND tenant_id = $%d
+		))`, argOffset, argOffset+1))
+		args = append(args, filter.PentestMemberOrNonPentestUserID.String(), filter.TenantID.String())
+		argOffset += 2
+	}
+
+	// Layer 2 data scope. A resolved scope (WithDataScope) is strict; the
+	// legacy non-strict form keeps the list's fail-open "no scope row ⇒ all".
+	if filter.DataScopeUserID != nil {
+		scope := &shared.DataScope{TenantID: *filter.TenantID, UserID: *filter.DataScopeUserID}
+		cond, scopeArgs := dataScopeCondAt("f.asset_id", scope, argOffset)
+		if !filter.DataScopeStrict {
+			cond = fmt.Sprintf(`(NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d) OR %s)`,
+				argOffset, argOffset+1, cond)
+		}
+		clauses = append(clauses, cond)
+		args = append(args, scopeArgs...)
+	}
+	return clauses, args
 }
 
 func (r *FindingRepository) groupByCVE(
@@ -642,12 +687,20 @@ func (r *FindingRepository) FindRelatedCVEs(
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
 	}
+	// The source CVE's components come only from findings the caller may
+	// see, so an out-of-scope CVE does not reveal which in-scope CVEs share
+	// its components.
+	sourceVisible, sourceArgs := findingVisibilityWhere(filter, 3+len(filterArgs))
+	sourceWhere := ""
+	if len(sourceVisible) > 0 {
+		sourceWhere = "AND " + strings.Join(sourceVisible, " AND ")
+	}
 
 	query := fmt.Sprintf(`
 		WITH source_components AS (
-			SELECT DISTINCT component_id
-			FROM findings
-			WHERE tenant_id = $1 AND cve_id = $2 AND component_id IS NOT NULL
+			SELECT DISTINCT f.component_id
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.cve_id = $2 AND f.component_id IS NOT NULL %s
 		)
 		SELECT f.cve_id, COALESCE(v.title, f.cve_id), COALESCE(f.severity, v.severity), COUNT(*) as finding_count
 		FROM findings f
@@ -667,9 +720,10 @@ func (r *FindingRepository) FindRelatedCVEs(
 			END,
 			COUNT(*) DESC
 		LIMIT 10
-	`, extraWhere)
+	`, sourceWhere, extraWhere)
 
 	args := append([]any{tenantID.String(), cveID}, filterArgs...)
+	args = append(args, sourceArgs...)
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("find related cves: %w", err)

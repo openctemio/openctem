@@ -123,9 +123,16 @@ func dataScopeCond(assetExpr string, scope *shared.DataScope, args []any) (strin
 	if scope == nil {
 		return "TRUE", args
 	}
-	args = append(args, scope.UserID.String(), scope.TenantID.String())
-	n := len(args)
+	cond, scopeArgs := dataScopeCondAt(assetExpr, scope, len(args)+1)
+	return cond, append(args, scopeArgs...)
+}
+
+// dataScopeCondAt is dataScopeCond for builders that number their own
+// placeholders: the predicate uses $first and $first+1, and the two
+// arguments are returned for the caller to append. scope must not be nil.
+func dataScopeCondAt(assetExpr string, scope *shared.DataScope, first int) (string, []any) {
 	return fmt.Sprintf(
-		"%s IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $%d AND uaa.tenant_id = $%d)",
-		assetExpr, n-1, n), args
+			"%s IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $%d AND uaa.tenant_id = $%d)",
+			assetExpr, first, first+1),
+		[]any{scope.UserID.String(), scope.TenantID.String()}
 }
