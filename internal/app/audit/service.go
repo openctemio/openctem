@@ -118,6 +118,13 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 	for k, v := range event.Metadata {
 		log.WithMetadata(k, v)
 	}
+	// Attribute the action to the API key that performed it (the actor is the
+	// key's user). Stamped after the event metadata so it cannot be overwritten.
+	if k, ok := apiKeyActorFrom(ctx); ok {
+		log.WithMetadata("auth_method", "api_key")
+		log.WithMetadata("api_key_id", k.id)
+		log.WithMetadata("api_key_prefix", k.prefix)
+	}
 
 	// Persist
 	if err := s.auditRepo.Create(ctx, log); err != nil {

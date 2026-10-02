@@ -14,6 +14,10 @@ The API supports multiple authentication providers:
 Authorization: Bearer <access_token>
 ```
 
+Scripts can use a tenant API key instead (`Authorization: Bearer oct_…` or
+`X-API-Key: oct_…`). On these routes a key is read-only (GET/HEAD) and limited
+to its scopes; see [API keys](../architecture/api-keys.md).
+
 ### Local Authentication Flow
 
 1. **Register** - Create a new account

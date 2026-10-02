@@ -42,7 +42,7 @@ import (
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description JWT Bearer token. Format: "Bearer {token}"
+// @description JWT access token, or a tenant oct_ API key (read-only: GET/HEAD on tenant routes, within the key's scopes). Format: "Bearer {token}". An oct_ key may instead be sent as X-API-Key.
 
 // @externalDocs.description  OpenAPI
 // @externalDocs.url          https://swagger.io/resources/open-api/

@@ -15,6 +15,8 @@
 #     /api/v1/ws                                              browser WebSocket (ticket auth)
 #     /health  /openapi.yaml  /docs                           liveness, API reference
 #     /api/* with Authorization: Bearer oct_*  or  X-API-Key  API-key clients
+#                                                           (tenant REST routes, read-only;
+#                                                           see docs/architecture/api-keys.md)
 #     /api/* with Authorization: Bearer * and no session cookie
 #                                                           other token clients
 #   blocked here (404): /metrics  /ready  /debug/*

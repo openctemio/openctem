@@ -13,18 +13,24 @@ import (
 
 type fakeAuthenticator struct {
 	key    *apikeydom.APIKey
+	perms  []string // effective permissions; nil → the key's scopes
 	err    error
 	gotRaw string
 	gotIP  string
+	calls  int
 }
 
-func (f *fakeAuthenticator) Authenticate(_ context.Context, raw, ip string) (*apikeydom.APIKey, error) {
+func (f *fakeAuthenticator) AuthenticateWithPermissions(_ context.Context, raw, ip string) (*apikeydom.APIKey, []string, error) {
+	f.calls++
 	f.gotRaw = raw
 	f.gotIP = ip
 	if f.err != nil {
-		return nil, f.err
+		return nil, nil, f.err
 	}
-	return f.key, nil
+	if f.perms != nil {
+		return f.key, f.perms, nil
+	}
+	return f.key, f.key.Scopes(), nil
 }
 
 func newTestKey(tenantID shared.ID, scopes []string) *apikeydom.APIKey {

@@ -43,7 +43,11 @@ type Handlers struct {
 	MCP              *handler.MCPHandler              // read-only MCP server; nil if not initialized
 	// MCPAuth is the tenant-scoped `oct_` API-key auth middleware guarding the
 	// MCP endpoint. Set alongside MCP; nil disables the endpoint.
-	MCPAuth         Middleware
+	MCPAuth Middleware
+	// APIKeyAuth authenticates `oct_` API keys on the tenant REST routes (the
+	// token-tenant chains), read-only. Share the instance behind MCPAuth so a
+	// key has one rate-limit budget. nil leaves the REST API JWT-only.
+	APIKeyAuth      *middleware.APIKeyAuthMiddleware
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
@@ -268,6 +272,14 @@ func Register(
 	}
 	authMiddleware := middleware.UnifiedAuth(unifiedAuthCfg)
 
+	// `oct_` API keys on the tenant REST routes. Only buildTokenTenantMiddlewares
+	// uses it, so routes outside those chains (account, auth, admin console,
+	// /tenants/{tenant}) stay JWT-only. Reset on every Register so a previous
+	// router's setting can't leak into this one.
+	apiKeyOrJWT = nil
+	if h.APIKeyAuth != nil {
+		apiKeyOrJWT = h.APIKeyAuth.OrJWT
+	}
 	// Health routes: /health and /ready are public; /metrics is gated by a
 	// bearer token unless METRICS_PUBLIC=true (see MetricsConfig).
 	registerHealthRoutes(router, h.Health, middleware.MetricsAuth(cfg.Metrics.Public, cfg.Metrics.Token, log))
@@ -837,7 +849,7 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	if ssoEnforcementMiddleware != nil {
 		middlewares = append(middlewares, ssoEnforcementMiddleware)
 	}
-	// Organization IP allowlist for user sessions (no-op for API keys/agents).
+	// Organization IP allowlist for user sessions and API keys (no-op for sensors).
 	if ipAllowlistMiddleware != nil {
 		middlewares = append(middlewares, ipAllowlistMiddleware)
 	}
@@ -850,6 +862,12 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 // unaffected; cookie-authenticated requests must send X-CSRF-Token (also
 // enforced, for every route, by UnifiedAuth).
 var csrfProtectionMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// apiKeyOrJWT wraps the JWT auth middleware so that a request presenting an
+// `oct_` API key is authenticated by the key instead (see
+// middleware.APIKeyAuthMiddleware.OrJWT). Set during Register when the API-key
+// service is wired; nil keeps the token-tenant chains JWT-only.
+var apiKeyOrJWT func(func(http.Handler) http.Handler) func(http.Handler) http.Handler //nolint:gochecknoglobals // set once during init
 
 // readRateLimitMiddleware is the per-user read endpoint rate limiter,
 // set during Register() if rate limiting is enabled. Applied automatically
@@ -929,6 +947,13 @@ func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID st
 // Best practice: tenant-scoped access tokens eliminate IDOR by design.
 // Includes per-user read rate limiting when enabled.
 func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
+	// These are the routes an `oct_` API key may reach (read-only, its scopes
+	// only, never the APIKeyRouteDenied areas). The key request then runs the
+	// same chain as a session: the key's user is loaded by UserSync and must
+	// still be an active member, and the organization's IP allowlist applies.
+	if apiKeyOrJWT != nil {
+		authMiddleware = apiKeyOrJWT(authMiddleware)
+	}
 	middlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
 	middlewares = append(middlewares, middleware.RequireTenant())
 	// Membership status check — must run AFTER RequireTenant (which

@@ -42,6 +42,7 @@
 - [Access Control Rules](architecture/access-control-rules.md) - Scope rules + assignment rules (who sees which data, how roles are assigned)
 - [User Two-Factor Authentication](architecture/user-two-factor-authentication.md) - TOTP 2FA for organization users (RFC-024): login challenge → `/auth/mfa/verify`, forced enrollment under "Require MFA", token-mint policy gate, recovery codes, immediate session revocation, My account API
 - [Permission Real-time Sync](architecture/permission-realtime-sync.md) - Effective-permission cache, per-user version bump, 0-second revocation, 409-on-stale-write
+- [Tenant API Keys (`oct_`)](architecture/api-keys.md) - What a key carries, read-only REST access next to MCP, scopes narrowed to what the key's user holds now, refused routes, CSRF, rate limit, audit attribution, and the open write-access decision
 - [Authorization Audit (2026-09)](authz-audit.md) - End-to-end review that produced the standardization: AUTHZ-01..17 findings, endpoint inventory, and the deferred/behavior-changing items awaiting signoff
 
 ### Architecture Decision Records (ADR)

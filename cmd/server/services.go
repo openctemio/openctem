@@ -343,20 +343,6 @@ func (a moduleBundleStore) SetSubscribedBundles(ctx context.Context, tenantID st
 	return nil
 }
 
-// apikeyMembershipAdapter adapts the tenant repository to apikey.MembershipChecker
-// so a user-scoped API key stops authenticating the moment its owner's membership
-// is suspended or removed. Fails closed: a missing membership or lookup error is
-// reported as "not active" (the caller rejects the key).
-type apikeyMembershipAdapter struct{ tenants tenant.Repository }
-
-func (a apikeyMembershipAdapter) IsActiveMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
-	m, err := a.tenants.GetMembership(ctx, userID, tenantID)
-	if err != nil {
-		return false, err
-	}
-	return m.Status() == tenant.MemberStatusActive, nil
-}
-
 // pentestTenantMemberAdapter adapts the tenant repository to
 // compliance.TenantMemberChecker so PentestService can reject adding a campaign
 // member who does not belong to the tenant (the DB FK only checks users.id, not
@@ -1158,7 +1144,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
 	// Gate user-scoped keys on active membership so member offboarding revokes
 	// them immediately (the key's own status can't reflect member lifecycle).
-	s.APIKey.SetMembershipChecker(apikeyMembershipAdapter{tenants: repos.Tenant})
+	// The account must be active too. Fails closed on a lookup error.
+	s.APIKey.SetMembershipChecker(apikey.NewMembershipChecker(repos.Tenant, repos.User))
 	// Audit oct_ key create / revoke / delete.
 	s.APIKey.SetAuditService(s.Audit)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
@@ -1610,6 +1597,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithRolePermissionCacheService(s.PermCache),
 		app.WithRoleMembershipReader(s.MembershipCache),
 	)
+
+	// Bound every oct_ key by what its user holds now, not at mint time.
+	if s.APIKey != nil {
+		s.APIKey.SetHolderPermissions(apikey.NewHolderPermissions(repos.Tenant, s.PermCache))
+	}
 
 	// Wire permission services to tenant service
 	s.Tenant.SetPermissionServices(s.PermCache, s.PermVersion)

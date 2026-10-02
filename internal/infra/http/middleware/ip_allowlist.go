@@ -103,12 +103,18 @@ func (g *IPAllowlistGate) Enforce(next http.Handler) http.Handler {
 			return
 		}
 		claims := GetLocalClaims(r.Context())
-		if claims == nil {
-			// Not a user access token (API key, agent, OIDC provider mode).
+		var tenantID, subject string
+		switch {
+		case claims != nil:
+			tenantID, subject = claims.TenantID, claims.UserID
+		case IsAPIKeyAuthenticated(r.Context()):
+			// An organization's network policy binds its API keys too.
+			tenantID, subject = GetTenantID(r.Context()), GetUserID(r.Context())
+		default:
+			// Not a user access token or API key (sensor, OIDC provider mode).
 			next.ServeHTTP(w, r)
 			return
 		}
-		tenantID := claims.TenantID
 		if urlTenant := GetTeamID(r.Context()); !urlTenant.IsZero() {
 			tenantID = urlTenant.String()
 		}
@@ -125,7 +131,7 @@ func (g *IPAllowlistGate) Enforce(next http.Handler) http.Handler {
 		}
 		if !p.IPAllowed(g.clientIP(r)) {
 			g.logger.Info("request blocked by organization IP allowlist",
-				"tenant_id", tenantID, "user_id", claims.UserID)
+				"tenant_id", tenantID, "user_id", subject, "api_key_id", GetAPIKeyID(r.Context()))
 			apierror.New(http.StatusForbidden, CodeIPNotAllowed,
 				"Access to this organization from your network is not allowed").WriteJSON(w)
 			return

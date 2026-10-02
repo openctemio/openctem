@@ -117,6 +117,14 @@ Handler
 
 These routes use the tenant ID embedded in the JWT access token.
 
+They also accept a tenant `oct_` API key (`Authorization: Bearer oct_…` or
+`X-API-Key`), **read-only** (GET/HEAD): the tenant comes from the key, the
+permissions are the key's scopes narrowed to what its user holds now, the key
+is never admin, and credential/account areas (`/api-keys`, `/scim-tokens`,
+`/me`, `/notifications`, `/ws`, `/platform`, `/users`, …) refuse keys. Every
+ungated route must refuse keys (`tests/unit/apikey_route_policy_test.go`).
+Details: [api-keys.md](./api-keys.md).
+
 #### Assets (`/api/v1/assets`)
 
 | Endpoint | Permission Required |
@@ -428,9 +436,9 @@ owner-managed) are enforced, not just stored. See
   `AddMember`/SCIM, and SSO just-in-time provisioning.
 - **IP allowlist**: `middleware.IPAllowlistGate` runs on every user-token
   request (in `buildBaseMiddlewares` for the token's organization and after
-  `RequireMembership` on `/tenants/{tenant}` for the URL organization). Not
-  applied to sensor/agent or tenant API keys, the admin console, or public
-  routes. 403 `IP_NOT_ALLOWED`; lookup errors fail closed; client IP from
+  `RequireMembership` on `/tenants/{tenant}` for the URL organization), and on
+  every tenant `oct_` API-key request on the REST API. Not applied to sensor
+  keys, the MCP endpoint, the admin console, or public routes. 403 `IP_NOT_ALLOWED`; lookup errors fail closed; client IP from
   `httpsec.ClientIP` (trusted proxies only).
 - **Self-registration** (`POST /auth/register`) is off unless
   `AUTH_ALLOW_REGISTRATION=true`; a pending invitation for the same email opens
