@@ -3079,7 +3079,7 @@ func (m *ruleSvcMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (
 func (m *ruleSvcMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error {
 	return nil
 }
-func (m *ruleSvcMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+func (m *ruleSvcMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int64, _ int) ([]audit.ChainEntry, error) {
 	return nil, nil
 }
 

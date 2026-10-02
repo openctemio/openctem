@@ -3,11 +3,13 @@ package unit
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -1150,10 +1152,20 @@ func (m *mockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string,
 }
 func (m *mockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error { return nil }
 
-func (m *mockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+func (m *mockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, afterPosition int64, limit int) ([]audit.ChainEntry, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.chainStore, nil
+	out := make([]audit.ChainEntry, 0, len(m.chainStore))
+	for _, e := range m.chainStore {
+		if e.ChainPosition <= afterPosition {
+			continue
+		}
+		out = append(out, e)
+		if limit > 0 && len(out) == limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (m *mockAuditRepo) ApplyChainRebaseline(_ context.Context, rb audit.ChainRebaseline) error {
@@ -1369,5 +1381,97 @@ func TestAuditService_RebaselineChain_ApplyFailureIsNotReportedAsSuccess(t *test
 	events := repo.eventsWithAction(audit.ActionAuditChainRebaselined)
 	if len(events) != 1 || events[0].Result() != audit.ResultFailure {
 		t.Fatalf("expected one failed %s event, got %d", audit.ActionAuditChainRebaselined, len(events))
+	}
+}
+
+// seedValidChain builds n audit logs and a correctly hashed, correctly linked
+// chain over them, exactly as appendChainEntry would.
+func seedValidChain(t *testing.T, repo *mockAuditRepo, tenantID shared.ID, n int) {
+	t.Helper()
+	repo.chainLogs = make(map[shared.ID]*audit.AuditLog, n)
+	repo.chainStore = make([]audit.ChainEntry, 0, n)
+	prev := ""
+	for i := 0; i < n; i++ {
+		log, err := audit.NewAuditLog(audit.ActionUserUpdated, audit.ResourceTypeUser, "user-1", audit.ResultSuccess)
+		if err != nil {
+			t.Fatalf("NewAuditLog[%d]: %v", i, err)
+		}
+		repo.chainLogs[log.ID()] = log
+		payload := log.Action().String() + "|" + log.ResourceType().String() + "|" + log.ResourceID() + "|" + log.Result().String()
+		hash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
+		repo.chainStore = append(repo.chainStore, audit.ChainEntry{
+			AuditLogID:    log.ID(),
+			TenantID:      tenantID,
+			PrevHash:      prev,
+			Hash:          hash,
+			ChainPosition: int64(i + 1),
+		})
+		prev = hash
+	}
+}
+
+// TestAuditService_VerifyChain_WalksPastTenThousandEntries is the regression
+// for the verifier only ever reading the OLDEST 10,000 chain rows: a tamper on
+// any newer entry was never detected, however many times the hourly verifier ran.
+func TestAuditService_VerifyChain_WalksPastTenThousandEntries(t *testing.T) {
+	const n = 10_050
+	repo := newMockAuditRepo()
+	tenantID := shared.NewID()
+	seedValidChain(t, repo, tenantID, n)
+
+	svc := app.NewAuditService(repo, logger.NewNop())
+	ctx := context.Background()
+
+	clean, err := svc.VerifyChain(ctx, tenantID, 0)
+	if err != nil {
+		t.Fatalf("VerifyChain (clean): %v", err)
+	}
+	if !clean.OK || clean.Total != n || clean.Verified != n {
+		t.Fatalf("clean chain: ok=%v total=%d verified=%d, want ok with %d/%d", clean.OK, clean.Total, clean.Verified, n, n)
+	}
+
+	// Tamper with the newest entry — the one an intruder would edit.
+	repo.chainStore[n-1].Hash = strings.Repeat("0", 64)
+
+	res, err := svc.VerifyChain(ctx, tenantID, 0)
+	if err != nil {
+		t.Fatalf("VerifyChain (tampered): %v", err)
+	}
+	if res.OK || len(res.Breaks) != 1 || res.Breaks[0].ChainPosition != n {
+		t.Fatalf("tamper at position %d not reported: ok=%v breaks=%+v", n, res.OK, res.Breaks)
+	}
+
+	// An explicit limit still caps the walk.
+	capped, err := svc.VerifyChain(ctx, tenantID, 100)
+	if err != nil {
+		t.Fatalf("VerifyChain (capped): %v", err)
+	}
+	if capped.Total != 100 || !capped.OK {
+		t.Fatalf("capped walk: total=%d ok=%v, want 100 entries, ok", capped.Total, capped.OK)
+	}
+}
+
+// TestAuditService_RebaselineChain_CoversWholeLongChain: rebaseline used the same
+// 10,000-row read, so re-signing a longer chain rewrote only its head and left the
+// next entry linked to a hash that no longer existed.
+func TestAuditService_RebaselineChain_CoversWholeLongChain(t *testing.T) {
+	const n = 10_050
+	repo := newMockAuditRepo()
+	tenantID := shared.NewID()
+	seedValidChain(t, repo, tenantID, n)
+	for i := range repo.chainStore {
+		repo.chainStore[i].Hash = strings.Repeat("a", 64)
+	}
+
+	svc := app.NewAuditService(repo, logger.NewNop())
+	res, err := svc.RebaselineChain(context.Background(), tenantID, app.AuditContext{ActorID: shared.NewID().String()})
+	if err != nil {
+		t.Fatalf("RebaselineChain: %v", err)
+	}
+	if res.EntriesTotal != n || res.EntriesRewritten != n {
+		t.Fatalf("rebaseline covered %d/%d entries, want %d/%d", res.EntriesRewritten, res.EntriesTotal, n, n)
+	}
+	if got := repo.rebaselines[0].LastChainPosition; got != n {
+		t.Fatalf("LastChainPosition = %d, want %d", got, n)
 	}
 }

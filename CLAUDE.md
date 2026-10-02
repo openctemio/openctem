@@ -16,5 +16,10 @@ CLAUDE.md — read the one for the directory you are changing:
   `web/src/lib/api/generated/api.types.ts` does not match `api/api/openapi/swagger.yaml`.
 - Go: run tools from `api/` with `GOWORK=off`; module path is
   `github.com/openctemio/openctem/api`.
-- Release: one `vX.Y.Z` tag on `main` publishes both images.
+- Release: one `vX.Y.Z` tag on `main` publishes all six images from one commit
+  (`openctem-api`, `openctem-web`, all-in-one `openctem`, `migrations`, `seed`,
+  `admin-cli`). `ui/v*` tags are imported history from `openctemio/ui`; never create one.
+- Cite old web PRs as `openctemio/ui#NNN`: a bare `#NNN` means this repository.
+- CI, required checks and images: `api/docs/development/ci-cd.md`; repo map:
+  `api/docs/development/repositories.md`.
 - No AI attribution lines in commits or PRs (enforced by `.githooks/commit-msg`).

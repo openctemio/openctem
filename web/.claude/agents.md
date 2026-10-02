@@ -37,7 +37,7 @@ Agents Page
 ## File Structure
 
 ```
-ui/src/features/agents/
+web/src/features/agents/
 ├── components/
 │   ├── agents-section.tsx        # Main container component
 │   ├── agent-table.tsx           # Data table with monitoring
@@ -466,12 +466,12 @@ The Activity tab displays security-related events from SDK agents:
 | `lease.expired`         | Agent's lease expired, jobs canceled      |
 
 > **Note**: SDK v1.1+ includes credential encryption, job validation, and lease security features.
-> See [SDK Security Guide](../../sdk/docs/SECURITY.md) for details.
+> See [SDK Security Guide](https://github.com/openctemio/sdk-go/blob/main/docs/SECURITY.md) for details.
 
 ## Related Documentation
 
-- [Scan Orchestration](../api/docs/architecture/scan-orchestration.md)
-- [Architecture Overview](../api/docs/architecture/overview.md)
-- [Agent Key Management](../../docs/architecture/agent-key-management.md)
-- [SDK Security Guide](../../sdk/docs/SECURITY.md)
+- [Scan Orchestration](../../api/docs/architecture/scan-orchestration.md)
+- [Architecture Overview](../../api/docs/architecture/overview.md)
+- [Agent Key Management](https://github.com/openctemio/docs/blob/main/architecture/agent-key-management.md)
+- [SDK Security Guide](https://github.com/openctemio/sdk-go/blob/main/docs/SECURITY.md)
 - [API Patterns](patterns.md)

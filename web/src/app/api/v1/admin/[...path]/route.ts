@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
+import { proxyBackendPath } from '@/lib/api/proxy-path'
 
 /** Backend cookie name the admin API reads the /login refresh token from. */
 const BACKEND_REFRESH_COOKIE = 'refresh_token'
@@ -35,6 +36,14 @@ const FORWARD_HEADERS = ['x-csrf-token', 'x-request-id', 'user-agent'] as const
 const MAX_BODY_BYTES = 1024 * 1024
 
 async function proxy(request: NextRequest, path: string[]): Promise<NextResponse> {
+  // Each segment is re-encoded below, but refuse dot segments outright too so
+  // both proxies apply the same rule.
+  if (proxyBackendPath(path) === null) {
+    return NextResponse.json(
+      { error: 'INVALID_PATH', message: 'Invalid request path' },
+      { status: 400 }
+    )
+  }
   const url = new URL(request.url)
   const backendUrl = `${env.api.url}/api/v1/admin/${path.map(encodeURIComponent).join('/')}${url.search}`
 

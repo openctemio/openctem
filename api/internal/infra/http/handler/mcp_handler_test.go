@@ -416,7 +416,7 @@ func (m *fakeAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string,
 func (m *fakeAuditRepo) AppendChainEntry(_ context.Context, _ auditdom.ChainEntry) error {
 	return nil
 }
-func (m *fakeAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]auditdom.ChainEntry, error) {
+func (m *fakeAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int64, _ int) ([]auditdom.ChainEntry, error) {
 	return nil, nil
 }
 func (m *fakeAuditRepo) ApplyChainRebaseline(_ context.Context, _ auditdom.ChainRebaseline) error {

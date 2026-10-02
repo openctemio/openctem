@@ -102,7 +102,7 @@ These hold across every phase. If any is violated, the design is wrong — stop 
 
 **Goal**: capture trust-level intent at the moment the user creates a source, not hidden in Settings. This phase is **UI-only** — writes to the backend from Phase 1a.
 
-**Deliverables (UI repo, new branch off develop)**
+**Deliverables (`web/`, new branch off develop)**
 
 - `src/features/agents/components/agent-create-dialog.tsx` — add `TrustLevel` dropdown (`Primary | High | Medium | Low`), default `Medium`
 - `src/features/integrations/components/integration-create-dialog.tsx` — same dropdown

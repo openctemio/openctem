@@ -21,10 +21,27 @@ Released separately, in their own repositories:
 [helm-charts](https://github.com/openctemio/helm-charts),
 [docs](https://github.com/openctemio/docs) (public documentation).
 
-> This repository was `openctemio/api` until the merge; old links to it redirect
-> here. The web console's earlier history lives in the archived
-> [openctemio/ui](https://github.com/openctemio/ui) and is imported under `web/`
-> (its tags as `ui/v*`).
+## Repository layout & history
+
+The monorepo was formed on 2026-10-02
+([RFC-020](api/docs/rfcs/RFC-020-api-ui-monorepo.md)):
+
+- **`openctemio/api` → this repository.** It was renamed, so its issues, pull
+  requests, releases (v0.1.x–v0.8.0) and old links carry over and redirect here.
+  Its Go code moved to `api/`; the module path is now
+  `github.com/openctemio/openctem/api`.
+- **`openctemio/ui` → `web/`.** Its full history was imported under `web/`, and
+  [openctemio/ui](https://github.com/openctemio/ui) is archived (read-only); its
+  old releases stay there. Cite its PRs as `openctemio/ui#NNN`: a bare `#NNN`
+  means this repository.
+- **`ui/vX.Y.Z` tags** are the ui repository's tags, imported for history only.
+  They release nothing; only `vX.Y.Z` tags do (see [Releases](#releases)).
+- **Images** moved from `ghcr.io/openctemio/api` / `ui` to `openctem-api` /
+  `openctem-web`; the old names are mirrored for a transition window.
+- `openctemio/agent` had already become [openctemio/sensor](https://github.com/openctemio/sensor) (RFC-023).
+
+More: [repository map](api/docs/development/repositories.md),
+[CI/CD and releases](api/docs/development/ci-cd.md).
 
 ## Quick start (development)
 

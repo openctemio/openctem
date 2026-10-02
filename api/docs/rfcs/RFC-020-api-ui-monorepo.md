@@ -1,10 +1,47 @@
 # RFC-020 — Consolidate `api` + `ui` into one repository (with generated contract)
 
-> Status: **Proposed** (decision required before any migration)
+> Status: **Implemented** (cutover merged 2026-10-02, [openctemio/openctem#684](https://github.com/openctemio/openctem/pull/684))
 > Scope: merge the two tightly-coupled, co-released repos `openctemio/api` (Go) and
-> `openctemio/ui` (Next.js) into one. **Do NOT** merge `agent`, `sdk-go`, `ctis`,
+> `openctemio/ui` (Next.js) into one. **Do NOT** merge `agent` (now `sensor`), `sdk-go`, `ctis`,
 > `helm-charts` — they have genuinely independent release lifecycles.
 > Origin: recurring cross-repo pain observed while shipping the 2026-09 authz work.
+> The sections from "Problem" on are the proposal as approved; read
+> [Outcome](#outcome-as-shipped) first for what was actually built.
+
+## Outcome (as shipped)
+
+The repository `openctemio/api` was **renamed** to
+[`openctemio/openctem`](https://github.com/openctemio/openctem) (old URLs, issues,
+PRs and releases carry over), the Go code moved to `api/`, and `openctemio/ui` was
+imported under `web/` with its full history. `openctemio/ui` is being archived.
+
+```
+openctem/
+  api/              # Go module github.com/openctemio/openctem/api (own go.mod, Dockerfiles)
+  web/              # Next.js console (own package.json, Dockerfile)
+  deploy/allinone/  # all-in-one image: API + web + api/deploy/gateway
+  .github/          # one set of workflows, path-gated per component; CODEOWNERS; dependabot
+  .githooks/        # repository git hooks (make hooks)
+  Makefile          # thin root targets: setup, hooks, dev-api, dev-web, lint, test, check, allinone
+```
+
+Deviations from the proposal below:
+
+| Proposal | As shipped | Why |
+|----------|-----------|-----|
+| New repo `openctemio/platform` | Rename `openctemio/api` → `openctemio/openctem` | Keeps the API's issues, PRs, releases, stars and GHCR package links; old URLs redirect. Name matches the product. |
+| `ui/` directory | `web/` | Names what it is (the web console), not a generic "UI". |
+| `contract/` directory with `permissions.yaml` + `openapi.yaml` | No `contract/`. The spec stays where the API generates it, `api/api/openapi/swagger.yaml`; `web/scripts/generate-api-types.sh` derives `web/src/lib/api/generated/api.types.ts` from it, and Web CI's `check:api-types` fails on drift | One source of truth with no copy; the vendored spec, `check:spec-vendored` and the `sync-api-spec` workflow were deleted. Permission constants are **not** generated yet (`web/src/lib/permissions/constants.ts` is still hand-maintained). |
+| `go.work` at the root | No `go.work`; Go runs from `api/` with `GOWORK=off` | Nothing else to resolve: `ctis`/`sdk-go` are ordinary versioned dependencies. |
+| Module path unchanged | Module path **is** `github.com/openctemio/openctem/api` (one mechanical commit, listed in `.git-blame-ignore-revs`) | Matches the new repository URL. |
+| `paths:` filters + `dorny/paths-filter` | Every workflow always starts; a `changes` job runs `.github/scripts/changed.sh`; one aggregator check per workflow (`API CI OK`, `Web CI OK`, `CodeQL OK`, `All-in-one OK`) plus `Secret Scanning` and `Workflow Lint` are the required checks | `on.paths` leaves skipped required checks Pending forever; one less third-party action. |
+| Keep independent image builds + tags; image names unchanged | **One `vX.Y.Z` tag releases everything** from one commit: `openctem-api`, `openctem-web`, a new all-in-one `openctem`, `migrations`, `seed`, `admin-cli` (multi-arch, cosign-signed, SBOMs). The old `ghcr.io/openctemio/api` / `ui` names receive identical copies for a two-release transition window | API and web were always deployed as a pair; one version removes the version-matrix question. |
+| ui tags kept as-is | ui tags imported as `ui/vX.Y.Z`; they are history only (`v*` does not match them) | Avoids collisions with the API's `vX.Y.Z` tags. |
+| — | Imported ui commit messages rewrite `#NNN` → `openctemio/ui#NNN` | A bare `#NNN` now resolves to this repository. |
+
+Phases: P1 (migrate + path-gated CI) is done; P2 is done for API types and still
+open for permission constants; P3 (archive `openctemio/ui`) is in progress. Current layout and CI:
+[Repositories](../development/repositories.md), [CI/CD](../development/ci-cd.md).
 
 ## Problem
 
@@ -20,9 +57,9 @@ recurring cost — every item below was hit in a single week of work:
    - `ctis` field parity (a whole CI job, `ctis-parity`, exists for this class).
 2. **Full-stack changes are not atomic.** Almost every CTEM feature touches both
    sides and needs ordered, cross-repo merges + deploys:
-   - SIEM: `api#498` + `api#499` had to merge and deploy **before** `ui#429`
+   - SIEM: `api#498` + `api#499` had to merge and deploy **before** `openctemio/ui#429`
      ("works end-to-end only after api is deployed").
-   - Detections: `api#504` (feed) + `ui#449` (view) as two separate PRs/reviews.
+   - Detections: `api#504` (feed) + `openctemio/ui#449` (view) as two separate PRs/reviews.
    There is no single PR that a reviewer can read to see a feature whole, and no
    single CI run that verifies the api/ui contract together.
 3. **Develop-wide breaks fan out across repos and PRs.** A new `x/crypto` CVE broke
@@ -111,7 +148,7 @@ verifying path filters).
 | CI misconfiguration runs everything on every PR | Start with explicit `paths:` filters + a dashboard check that the right jobs skip. |
 | History/tag loss during import | `git filter-repo` preserves history; verify blame on a sample before cutover; keep old repos archived. |
 | Secrets/branch-protection missed on new repo | Checklist + a dry-run PR that exercises every workflow before archiving the old repos. |
-| Two release streams collapse awkwardly | Keep independent image builds + tags; only the *repo* merges, not the artifacts. |
+| Two release streams collapse awkwardly | *(Proposed)* Keep independent image builds + tags. *(Shipped)* One `v*` tag for both, see Outcome. |
 
 ## Alternatives considered
 
@@ -132,12 +169,11 @@ converts a whole class of "compiles-but-drifted" bugs into build/CI errors — t
 same philosophy as the AUTHZ-02/AUTHZ-17 gates just shipped, applied to the
 api↔ui seam itself. Keep the other four repos separate.
 
-## Decision required
+## Decision
 
-- [ ] Approve consolidating **api + ui** into `openctemio/platform` (history-preserving).
-- [ ] Confirm the four repos to keep separate (agent, sdk-go, ctis, helm-charts).
-- [ ] Approve the contract-codegen approach (generate TS permission/API types from
-      the Go/OpenAPI source of truth, replacing the AUTHZ-17 sync test).
+- [x] Consolidate **api + ui**, history-preserving: approved, shipped as `openctemio/openctem` (owner decisions D1–D10, 2026-10-02).
+- [x] Keep separate: sensor (formerly agent), sdk-go, ctis, helm-charts (and docs).
+- [x] Contract codegen: API wire types generated from the spec; permission constants still to do.
 
 Once approved, implementation is phased: (P1) migrate + path-filtered CI green on a
 dry-run; (P2) add `contract/` codegen and delete the manual sync; (P3) archive old

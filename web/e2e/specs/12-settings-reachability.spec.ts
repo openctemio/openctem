@@ -89,16 +89,24 @@ test('moved settings URLs answer 308 with the query kept', async ({ e2eConfig })
 
 test('Cmd+K finds settings pages', async ({ page }) => {
   await page.goto('/')
+  // The shortcut listener is attached after hydration: wait until the header's
+  // search button is interactive, and retry the key press until the palette
+  // opens rather than pressing once into a page that is not ready yet.
+  await expect(page.getByRole('button', { name: /^Search/ })).toBeEnabled({ timeout: 30_000 })
+  const input = page.getByPlaceholder('Type a command or search...')
   for (const [query, label] of [
     ['api keys', 'API keys'],
     ['audit', 'Audit log'],
     ['members', 'Members'],
   ]) {
-    await page.keyboard.press('Control+k')
-    const input = page.getByPlaceholder('Type a command or search...')
+    await expect(async () => {
+      await page.keyboard.press('Control+k')
+      await expect(input).toBeVisible({ timeout: 2_000 })
+    }).toPass({ timeout: 20_000 })
     await input.fill(query)
     await expect(page.locator('[cmdk-item]').first(), query).toContainText(label)
     await page.keyboard.press('Escape')
+    await expect(input).toBeHidden()
   }
 })
 

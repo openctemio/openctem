@@ -383,9 +383,13 @@ install-tools:
 # PRE-COMMIT & SECURITY
 # =============================================================================
 
-## pre-commit-install: Install pre-commit hooks
+# Commit-time hooks are the repository's .githooks/ (root Makefile: `make hooks`).
+# `pre-commit install` refuses to run while core.hooksPath is set, and would
+# expect a .pre-commit-config.yaml at the repository root; the config in api/
+# runs on demand with `make pre-commit-run`.
+## pre-commit-install: Install the security tools and enable the repository git hooks (.githooks)
 pre-commit-install:
-	@echo "Installing pre-commit hooks..."
+	@echo "Installing security tools (pre-commit, betterleaks, trivy, hadolint)..."
 	@if ! command -v pre-commit >/dev/null 2>&1; then \
 		echo "Installing pre-commit..."; \
 		if command -v apt-get >/dev/null 2>&1; then \
@@ -430,8 +434,8 @@ pre-commit-install:
 			brew install hadolint; \
 		fi; \
 	fi
-	pre-commit install
-	@echo "Pre-commit hooks installed successfully!"
+	git config core.hooksPath .githooks
+	@echo "Tools installed; git hooks enabled (.githooks). Run the full hook set with: make pre-commit-run"
 
 ## pre-commit-run: Run all pre-commit hooks on all files
 pre-commit-run:

@@ -2,7 +2,7 @@
 
 > Status: **Accepted** (2026-10-02; owner decisions in §10.2). Proposed
 > 2026-10-02 in api#718.
-> - Phase 0 (defect fixes) is live: api#714, sdk-go#106, ui#589, sensor v0.6.3.
+> - Phase 0 (defect fixes) is live: api#714, sdk-go#106, openctemio/ui#589, sensor v0.6.3.
 > - Phase 1 is merged: api#718 (migration 000258, live) and sdk-go#108.
 > - Phase 2 is designed in §6.12 and in implementation.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
@@ -80,15 +80,15 @@ sensor (RFC-032 E3). Routing reads it to pick the tool that can run a job
   for the activity timeline (`DiffHeartbeat`, migration 000255).
 - Dispatch reads the generated `effective_*` columns: the report narrowed by
   the administrator's settings.
-- No history of reports is kept. The first-heartbeat tool review (ui#583)
+- No history of reports is kept. The first-heartbeat tool review (openctemio/ui#583)
   reads whatever the latest heartbeat left.
 
 ### 3.2 Defects found while answering (fixed in Phase 0)
 
 | # | Defect (live) | Root cause | Fix |
 |---|---|---|---|
-| D1 | `reported_max_jobs` 64 next to `reported_capacity.slots_total` 4 on a 4-core sensor; `effective_max_jobs` = LEAST(64, admin 5) = **5**, more than it runs; UI "sensor reports 64 · limit 5". | With no `SENSOR_MAX_JOBS`, sensorkit sizes the poller to `resource.Manager.MaxSlots()`, which is `HardMax` (64) when no cap is set (`pkg/resource/manager.go`). `BaseSensor.withCapabilities` then reported the poller's `MaxJobs()` as `max_concurrent_jobs` (`pkg/core/base_sensor.go:128`). The platform's rule ignored the slots. | sdk-go#106: `max_concurrent_jobs` is only the operator's cap (`Manager.Cap`). api#714: migration 000257, `effective_max_jobs` = the smallest of admin, ceiling and `slots_total`. ui#589: "Runs 4 at once now · operator cap 64 · your limit 5". |
-| D2 | Every reported tool had `capabilities: null`, `kind: null`; the flat list said `dast`, `sast`, … with no tool behind them. | The registry knew each tool's capabilities (`ToolSpec.Capabilities`), but `core.ToolInfo` had no field for them. The SDK did send `kind` (sdk-go#99), but the API's `HeartbeatTool` and `ReportedTool` had no `kind` either, so ingest dropped it. | sdk-go#106 `ToolInfo.Capabilities`; api#714 parses, sanitizes and stores `kind` and `capabilities` per tool; ui#589 shows them on the tool chips and in the first-heartbeat review. |
+| D1 | `reported_max_jobs` 64 next to `reported_capacity.slots_total` 4 on a 4-core sensor; `effective_max_jobs` = LEAST(64, admin 5) = **5**, more than it runs; UI "sensor reports 64 · limit 5". | With no `SENSOR_MAX_JOBS`, sensorkit sizes the poller to `resource.Manager.MaxSlots()`, which is `HardMax` (64) when no cap is set (`pkg/resource/manager.go`). `BaseSensor.withCapabilities` then reported the poller's `MaxJobs()` as `max_concurrent_jobs` (`pkg/core/base_sensor.go:128`). The platform's rule ignored the slots. | sdk-go#106: `max_concurrent_jobs` is only the operator's cap (`Manager.Cap`). api#714: migration 000257, `effective_max_jobs` = the smallest of admin, ceiling and `slots_total`. openctemio/ui#589: "Runs 4 at once now · operator cap 64 · your limit 5". |
+| D2 | Every reported tool had `capabilities: null`, `kind: null`; the flat list said `dast`, `sast`, … with no tool behind them. | The registry knew each tool's capabilities (`ToolSpec.Capabilities`), but `core.ToolInfo` had no field for them. The SDK did send `kind` (sdk-go#99), but the API's `HeartbeatTool` and `ReportedTool` had no `kind` either, so ingest dropped it. | sdk-go#106 `ToolInfo.Capabilities`; api#714 parses, sanitizes and stores `kind` and `capabilities` per tool; openctemio/ui#589 shows them on the tool chips and in the first-heartbeat review. |
 | D3 | `nuclei` installed with an empty version. | nuclei v3 prints `[INF] Nuclei Engine Version: v3.11.1` only to **stderr**, in ANSI color; `core.CheckBinaryInstalled` read stdout only (`cmd.Output()`), so the parser got "". The ProjectDiscovery recon tools behave the same (`[INF] Current Version:`). | sdk-go#106 `core.VersionOutput` (stdout, else stderr, ANSI stripped, whole text); nuclei parses `Engine Version:`, the recon tools `Current Version:`. |
 
 The three defects share a shape: what the sensor knows about itself loses
@@ -460,7 +460,7 @@ The Activity timeline renders `manifest_changed` with its diff.
   names that digest.
 - A later manifest that **adds** a tool does not widen anything by itself,
   because the token's tool ceiling and the administrator's limits still
-  narrow it. It is shown as "installed but not allowed" (ui#583 already
+  narrow it. It is shown as "installed but not allowed" (openctemio/ui#583 already
   does) and raises a `tools_changed` event. Whether it should also need
   re-approval is owner decision O1.
 
@@ -490,12 +490,12 @@ nothing else.
 ### 6.11 UI
 
 - Sensor drawer:
-  - "Tools & capacity" shows each tool's capabilities (ui#589) and, from
+  - "Tools & capacity" shows each tool's capabilities (openctemio/ui#589) and, from
     Phase 3, its target types.
   - A new "Manifest" section shows the current digest (short), source
     (sensor / derived), received time, the ignored items, and the version
     history with a diff between two versions.
-- The first-heartbeat review (ui#583) becomes the manifest review: it reads
+- The first-heartbeat review (openctemio/ui#583) becomes the manifest review: it reads
   the current manifest, so it works the same before the first heartbeat when
   the sensor registered first.
 - Approval (RFC-032 Phase 2) shows the manifest and records its digest.
@@ -519,7 +519,7 @@ nothing else.
 
 | Phase | Scope | Effort | Risk |
 |---|---|---|---|
-| **P0** (done, in review) | D1–D3 fixes (§3.2): ceiling vs slots in SDK and API, per-tool kind and capabilities end to end, nuclei and recon version parsing, UI wording and chips. api#714, sdk-go#106, ui#589, sensor#99. | S (done) | low |
+| **P0** (done, in review) | D1–D3 fixes (§3.2): ceiling vs slots in SDK and API, per-tool kind and capabilities end to end, nuclei and recon version parsing, UI wording and chips. api#714, sdk-go#106, openctemio/ui#589, sensor#99. | S (done) | low |
 | **P1** | API: migration (`sensor_manifests`, `sensors.manifest_digest`, `manifest_at`, `manifest_source`), `PUT /api/v2/sensor/manifest` with `accepted`/`ignored`, `manifest` feature, heartbeat `manifest_digest` + `send_manifest`, derived manifests, version-diff events, management reads `GET /api/v1/sensors/{id}/manifest` and `/manifests`. SDK: `core.Manifest`, `BuildManifest`, digest, `client.PutManifest`, `BaseSensor` register / echo / re-send. Sensor: SDK bump. Docs. | M (api ≈ 3 d, sdk ≈ 2 d) | low: additive, the heartbeat stays full |
 | **P2** | §6.12: slim heartbeat after acknowledgement with a `content` freshness block, `policy` + `heartbeat.omit_inventory` in the answer + `GET /api/v2/sensor/manifest`, SDK refuses disallowed tools (`tool-not-allowed`), `manifest_changed` event, UI manifest section with history diff. | M | medium: slimming must be exact, so it is gated on `omit_inventory` acknowledged per sensor and kill-switchable (`SENSOR_SLIM_HEARTBEAT`) |
 | **P3** | `core.TargetTyper` + target types for the bundled scanners; target-type registry check; RFC-030 selection by capability × target type with the chosen tool written into the command. | M–L | medium: routing change, behind the RFC-030 rollout |

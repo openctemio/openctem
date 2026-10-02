@@ -3,7 +3,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 Frontend dashboard for the OpenCTEM Continuous Threat Exposure Management platform. Implements the complete Gartner 5-stage CTEM framework: Scoping, Discovery, Prioritization, Validation, and Mobilization.
 
@@ -53,7 +53,7 @@ Frontend dashboard for the OpenCTEM Continuous Threat Exposure Management platfo
 ## Project Structure
 
 ```
-ui/src/
+web/src/
 ├── app/                          # Next.js App Router
 │   ├── (auth)/                   # Login, register, forgot password
 │   └── (dashboard)/              # Protected dashboard (144 of 154 page.tsx)
@@ -86,6 +86,12 @@ ui/src/
 ```
 
 ## Quick Start
+
+This is `web/` in the [`openctemio/openctem`](https://github.com/openctemio/openctem)
+monorepo (formerly the `openctemio/ui` repository, now archived); the Go API it
+talks to is [`../api/`](../api/). From the repository root, `make setup`
+installs both components and enables the git hooks, and `make dev-web` runs
+this app. The commands below run in `web/`.
 
 ### Prerequisites
 
@@ -200,4 +206,4 @@ export default function Page() {
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE).

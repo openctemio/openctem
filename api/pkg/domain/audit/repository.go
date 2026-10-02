@@ -79,9 +79,12 @@ type Repository interface {
 	// tenant's rows. This one can only ever return rows with no tenant.
 	GetSystemByID(ctx context.Context, id shared.ID) (*AuditLog, error)
 
-	// ListChainEntries returns chain rows for verification. Ordered by
-	// chain_position ASC.
-	ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]ChainEntry, error)
+	// ListChainEntries returns up to limit chain rows whose chain_position is
+	// greater than afterPosition, ordered by chain_position ASC. It is a
+	// keyset page: callers walk a whole chain by passing the last position
+	// they saw (0 to start). A single unpaged call is NOT a whole chain —
+	// that is how the verifier stopped looking past the first 10,000 rows.
+	ListChainEntries(ctx context.Context, tenantID shared.ID, afterPosition int64, limit int) ([]ChainEntry, error)
 
 	// ApplyChainRebaseline re-signs a tenant's chain in ONE transaction: it
 	// records the rebaseline header, archives the old and new hashes of every

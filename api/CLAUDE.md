@@ -4,10 +4,26 @@
 
 ## Project Context
 
-OpenCTEM Platform monorepo: `api/` (this), `ui/` (Next.js), `agent/` (Go), `sdk-go/`, `docs/` (GitHub Pages).
+This is `api/` in the `openctemio/openctem` monorepo (formerly the `openctemio/api`
+repository, renamed 2026-10-02; RFC-020). The repository holds two components:
 
-- **Local docs**: `./docs/` — API-specific documentation (architecture, development guides)
-- **Global docs**: `../docs/` — Workspace-level GitHub Pages docs
+- `api/` (this): the Go API, module `github.com/openctemio/openctem/api`.
+- `web/`: the Next.js web console (formerly `openctemio/ui`, now archived). See `../web/CLAUDE.md`.
+
+Separate repositories: [sensor](https://github.com/openctemio/sensor) (formerly
+agent), [sdk-go](https://github.com/openctemio/sdk-go),
+[ctis](https://github.com/openctemio/ctis),
+[helm-charts](https://github.com/openctemio/helm-charts) and the public
+[docs](https://github.com/openctemio/docs) site. Map:
+`docs/development/repositories.md`.
+
+- **Docs**: `./docs/`: architecture, RFCs, development guides, user guide.
+- **Root**: `../Makefile` (`make setup`, `make hooks`, `make check`, …), `../.github/workflows/`
+  (all CI; see `docs/development/ci-cd.md`), `../.githooks/`, `../CLAUDE.md` (rules that span both).
+- **Contract**: after changing a handler's request/response run `make swagger` here, then
+  `make api-types` at the root, and commit both (Web CI fails on drift).
+- **Release**: one `vX.Y.Z` tag on `main` releases API + web together (`ghcr.io/openctemio/openctem-api`,
+  `openctem-web`, all-in-one `openctem`, `migrations`, `seed`, `admin-cli`).
 
 ---
 
@@ -873,10 +889,10 @@ git commit -m "fix(security): add input validation
 
 ### Local builds: `GOWORK=off`
 
-The repo ships a `go.work` that lists the `sdk-go` submodule, but that submodule
-path is frequently not populated in a fresh checkout. When it isn't, `go build` /
-`go test` / `golangci-lint` fail with `cannot load module sdk-go listed in
-go.work`. **Prefix local Go commands with `GOWORK=off`** (which is what CI does):
+The monorepo has no `go.work`, but a `go.work` in a parent directory (for example
+a workspace checkout that lists `sdk-go` or `sensor`) would still be picked up and
+can fail with `cannot load module … listed in go.work`. **Run Go from `api/` with
+`GOWORK=off`**, which is what CI does (and what the root `Makefile` does):
 
 ```bash
 GOWORK=off go build ./...
@@ -884,4 +900,4 @@ GOWORK=off go test ./...
 GOWORK=off golangci-lint run ./...
 ```
 
-**Last Updated**: 2026-06-06
+**Last Updated**: 2026-10-02

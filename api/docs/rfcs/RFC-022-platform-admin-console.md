@@ -1,6 +1,6 @@
 # RFC-022 — Platform administration console (Tenable-style system admin)
 
-> Status: **Accepted** (2026-09-30) — Phases 1-3 implemented (api#547, api#548, ui#505).
+> Status: **Accepted** (2026-09-30) — Phases 1-3 implemented (api#547, api#548, openctemio/ui#505).
 > **Revision 2** (2026-09-30): the administrator is a user account signing in on
 > the normal `/login` (see [Revision 2](#revision-2-administrators-are-user-accounts)).
 > **Revision 3** (2026-10-01): administrators have no API keys (see
@@ -362,7 +362,7 @@ the organization's SSO in the console.
   tenant owner's `settings/security`); `TENANT_CREATION_MODE`; delete the dead
   `sso_enabled` / `sso_provider` / `sso_config_url` security fields (written,
   never read by the login path).
-- **Phase 3 (ui) — console shell** (implemented, ui#505; sign-in reworked for
+- **Phase 3 (ui) — console shell** (implemented, openctemio/ui#505; sign-in reworked for
   rev. 2). A Tenable-style sidebar: Overview · Organizations · Users · Scanning
   (target mappings, platform tools) · System (Configuration, Diagnostics, Job
   queue, System logs, Keys). Replaces the transitional `(dashboard)/admin` pages.

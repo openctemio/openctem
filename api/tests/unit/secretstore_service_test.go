@@ -1249,7 +1249,7 @@ func (m *secretMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (s
 func (m *secretMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error {
 	return nil
 }
-func (m *secretMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+func (m *secretMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int64, _ int) ([]audit.ChainEntry, error) {
 	return nil, nil
 }
 

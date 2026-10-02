@@ -35,6 +35,31 @@ export function sanitizeCsvCell(value: unknown): string {
 }
 
 /**
+ * Build CSV text from a header row and data rows, every cell (headers too)
+ * passed through sanitizeCsvCell. Use this instead of joining cells with ','
+ * by hand: names, titles and versions come from scanners and SBOMs, so a cell
+ * like `=HYPERLINK(...)` must not reach a spreadsheet as a formula, and a
+ * comma or quote must not shift the columns.
+ */
+export function buildCsv(
+  headers: readonly unknown[],
+  rows: readonly (readonly unknown[])[]
+): string {
+  return [headers, ...rows].map((row) => row.map(sanitizeCsvCell).join(',')).join('\n')
+}
+
+/** Download CSV text as a file (UTF-8 BOM for Excel) and release the blob URL. */
+export function downloadCsv(csv: string, filename: string): void {
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/**
  * Generic, reusable CSV export hook.
  *
  * Generates a sanitized CSV (formula-injection safe) with a UTF-8 BOM for
@@ -62,26 +87,16 @@ export function exportToCsv<T>(
   // Sanitize headers too, not just cells: a header sourced from user-defined
   // data (e.g. a custom field name) starting with =/+/-/@ would otherwise be
   // a formula-injection vector when the CSV is opened in a spreadsheet.
-  const headers = fields.map((f) => sanitizeCsvCell(f.header)).join(',')
-  const rows = data.map((item) =>
-    fields
-      .map((f) => {
+  const csv = buildCsv(
+    fields.map((f) => f.header),
+    data.map((item) =>
+      fields.map((f) => {
         const raw = f.accessor(item)
-        const value = f.transform ? f.transform(raw) : raw
-        return sanitizeCsvCell(value)
+        return f.transform ? f.transform(raw) : raw
       })
-      .join(',')
+    )
   )
-  const csv = [headers, ...rows].join('\n')
-
-  // BOM prefix for Excel to correctly detect UTF-8
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${filename}-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url) // Prevent memory leak
+  downloadCsv(csv, `${filename}-${new Date().toISOString().slice(0, 10)}.csv`)
   toast.success(`Exported ${data.length} row${data.length === 1 ? '' : 's'}`)
   return true
 }
