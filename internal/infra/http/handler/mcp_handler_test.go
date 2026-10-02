@@ -419,7 +419,7 @@ func (m *fakeAuditRepo) AppendChainEntry(_ context.Context, _ auditdom.ChainEntr
 func (m *fakeAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]auditdom.ChainEntry, error) {
 	return nil, nil
 }
-func (m *fakeAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
+func (m *fakeAuditRepo) ApplyChainRebaseline(_ context.Context, _ auditdom.ChainRebaseline) error {
 	return nil
 }
 

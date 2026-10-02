@@ -262,35 +262,101 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 	return res, nil
 }
 
+// RebaselineResult is the outcome of a RebaselineChain call.
+type RebaselineResult struct {
+	// RebaselineID identifies the archived record (audit_chain_rebaselines)
+	// holding the hashes this rebaseline overwrote.
+	RebaselineID     string `json:"rebaseline_id"`
+	EntriesTotal     int    `json:"entries_total"`
+	EntriesRewritten int    `json:"entries_rewritten"`
+}
+
 // RebaselineChain re-signs a tenant's entire audit hash-chain from the current
 // audit_logs data, recomputing prev_hash + hash for every entry in position
 // order. It exists to clear breaks caused by a known-benign hashing change (the
 // timestamp-precision fix, migration-era rows whose sub-microsecond digits are
-// unrecoverable) — NOT to dismiss tampering.
+// unrecoverable) — NOT to dismiss tampering. Run `go run ./cmd/chainaudit`
+// first; it should report 0 UNEXPLAINED breaks.
 //
 // SECURITY: this overwrites the tamper-evident chain, so it accepts the current
-// DB state as authoritative and therefore MUST be an explicit, admin-gated,
-// audited action. It aborts (without partial changes beyond those already
-// applied) if an underlying audit_log is missing, since that is a genuine
-// tamper signal it must not paper over. Returns the number of entries rewritten.
-func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, actorID string) (int, error) {
+// DB state as authoritative. To keep that reviewable:
+//   - the old and new hashes of every rewritten entry are archived in the same
+//     transaction as the rewrite, which is all-or-nothing;
+//   - the action is recorded as a critical audit.chain_rebaselined event (and
+//     a failed attempt as a failure event);
+//   - it refuses, changing nothing, if an underlying audit_log is missing,
+//     since that is a genuine tamper signal it must not paper over.
+func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, actx AuditContext) (*RebaselineResult, error) {
+	// The event must land on the chain that was rebaselined.
+	actx.TenantID = tenantID.String()
+
+	// rebaselineLocked holds chainMu; it is released before the audit event
+	// is written because LogEvent -> appendChainEntry takes chainMu itself.
+	res, err := s.rebaselineLocked(ctx, tenantID, actx.ActorID)
+	if err != nil {
+		event := NewFailureEvent(auditdom.ActionAuditChainRebaselined, auditdom.ResourceTypeAuditChain, tenantID.String(), err).
+			WithSeverity(auditdom.SeverityCritical).
+			WithMessage("Audit hash-chain rebaseline refused or failed; nothing was rewritten")
+		if logErr := s.LogEvent(ctx, actx, event); logErr != nil {
+			s.logger.Error("failed to audit a failed chain rebaseline",
+				"tenant_id", tenantID.String(), "error", logErr)
+		}
+		return nil, err
+	}
+
+	s.logger.Warn("audit chain re-baselined",
+		"tenant_id", tenantID.String(),
+		"actor_id", actx.ActorID,
+		"rebaseline_id", res.RebaselineID,
+		"entries_total", res.EntriesTotal,
+		"entries_rewritten", res.EntriesRewritten,
+		"alert", "audit_chain_rebaselined",
+	)
+
+	event := NewSuccessEvent(auditdom.ActionAuditChainRebaselined, auditdom.ResourceTypeAuditChain, res.RebaselineID).
+		WithSeverity(auditdom.SeverityCritical).
+		WithMessage(fmt.Sprintf("Audit hash-chain rebaselined: %d of %d entries re-signed; old hashes archived",
+			res.EntriesRewritten, res.EntriesTotal)).
+		WithMetadata("rebaseline_id", res.RebaselineID).
+		WithMetadata("entries_total", res.EntriesTotal).
+		WithMetadata("entries_rewritten", res.EntriesRewritten).
+		WithMetadata("actor_id", actx.ActorID)
+	if err := s.LogEvent(ctx, actx, event); err != nil {
+		// The rewrite is committed and its archive row names the actor, so
+		// the evidence survives; this only loses the audit_logs copy.
+		s.logger.Error("chain rebaselined but its audit event was not written",
+			"tenant_id", tenantID.String(), "rebaseline_id", res.RebaselineID, "error", err)
+	}
+	return res, nil
+}
+
+func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID, actorID string) (*RebaselineResult, error) {
 	s.chainMu.Lock()
 	defer s.chainMu.Unlock()
 
 	const maxRebaselineLimit = 10_000
 	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, maxRebaselineLimit)
 	if err != nil {
-		return 0, fmt.Errorf("list chain entries: %w", err)
+		return nil, fmt.Errorf("list chain entries: %w", err)
+	}
+
+	rb := auditdom.ChainRebaseline{
+		ID:           shared.NewID(),
+		TenantID:     tenantID,
+		EntriesTotal: len(entries),
+	}
+	if id, err := shared.IDFromString(actorID); err == nil && !id.IsZero() {
+		rb.ActorID = &id
 	}
 
 	prev := ""
-	rewritten := 0
 	for _, e := range entries {
 		log, err := s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
-		if err != nil {
+		if err != nil || log == nil {
 			// A missing source row is a real tamper signal — refuse to
-			// re-baseline over it.
-			return rewritten, fmt.Errorf("cannot re-baseline: audit log %s missing (position %d)", e.AuditLogID.String(), e.ChainPosition)
+			// re-baseline over it. Nothing has been written yet.
+			return nil, fmt.Errorf("cannot re-baseline: %w: audit log %s (position %d)",
+				auditdom.ErrChainSourceMissing, e.AuditLogID.String(), e.ChainPosition)
 		}
 		payload := fmt.Sprintf("%s|%s|%s|%s",
 			log.Action().String(),
@@ -300,22 +366,27 @@ func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, 
 		)
 		newHash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
 		if e.PrevHash != prev || e.Hash != newHash {
-			if err := s.auditRepo.UpdateChainEntryHashes(ctx, e.AuditLogID, prev, newHash); err != nil {
-				return rewritten, fmt.Errorf("rewrite chain entry %s: %w", e.AuditLogID.String(), err)
-			}
-			rewritten++
+			rb.Rewrites = append(rb.Rewrites, auditdom.ChainRewrite{
+				AuditLogID:    e.AuditLogID,
+				ChainPosition: e.ChainPosition,
+				OldPrevHash:   e.PrevHash,
+				OldHash:       e.Hash,
+				NewPrevHash:   prev,
+				NewHash:       newHash,
+			})
 		}
 		prev = newHash
+		rb.LastChainPosition = e.ChainPosition
 	}
 
-	s.logger.Warn("audit chain re-baselined",
-		"tenant_id", tenantID.String(),
-		"actor_id", actorID,
-		"entries_total", len(entries),
-		"entries_rewritten", rewritten,
-		"alert", "audit_chain_rebaselined",
-	)
-	return rewritten, nil
+	if err := s.auditRepo.ApplyChainRebaseline(ctx, rb); err != nil {
+		return nil, fmt.Errorf("apply rebaseline: %w", err)
+	}
+	return &RebaselineResult{
+		RebaselineID:     rb.ID.String(),
+		EntriesTotal:     len(entries),
+		EntriesRewritten: len(rb.Rewrites),
+	}, nil
 }
 
 // appendChainEntry computes the next hash in the per-tenant chain and

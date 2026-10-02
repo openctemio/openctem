@@ -1253,6 +1253,6 @@ func (m *secretMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _
 	return nil, nil
 }
 
-func (m *secretMockAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
+func (m *secretMockAuditRepo) ApplyChainRebaseline(_ context.Context, _ audit.ChainRebaseline) error {
 	return nil
 }

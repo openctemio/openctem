@@ -284,6 +284,11 @@ const (
 	// section template pre-filled with campaign/finding context. Audited because
 	// it reads the same gated pentest data a tools/call does.
 	ActionMCPPromptGotten Action = "mcp.prompt_gotten"
+
+	// ActionAuditChainRebaselined records an admin re-signing the tenant's
+	// tamper-evident audit hash-chain (POST /audit-logs/rebaseline). The
+	// overwritten hashes are archived in audit_chain_rebaseline_entries.
+	ActionAuditChainRebaselined Action = "audit.chain_rebaselined"
 )
 
 // String returns the string representation of the action.
@@ -354,7 +359,8 @@ func (a Action) IsValid() bool {
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
-		ActionMCPToolCalled, ActionMCPPromptGotten:
+		ActionMCPToolCalled, ActionMCPPromptGotten,
+		ActionAuditChainRebaselined:
 		return true
 	}
 	return false
@@ -426,6 +432,8 @@ func (a Action) Category() string {
 		return "pentest_campaign"
 	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
+	case ActionAuditChainRebaselined:
+		return "audit"
 	}
 	return "unknown"
 }
@@ -471,6 +479,9 @@ const (
 	ResourceTypeMCPTool          ResourceType = "mcp_tool"
 	ResourceTypeMCPPrompt        ResourceType = "mcp_prompt"
 	ResourceTypeAPIKey           ResourceType = "api_key"
+	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
+	// of a rebaseline event is the rebaseline (archive) id.
+	ResourceTypeAuditChain ResourceType = "audit_chain"
 )
 
 // String returns the string representation of the resource type.
@@ -491,7 +502,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
-		ResourceTypeCredential:
+		ResourceTypeCredential, ResourceTypeAuditChain:
 		return true
 	}
 	return false
@@ -551,7 +562,8 @@ func SeverityForAction(a Action) Severity {
 	case ActionUserDeleted, ActionTenantDeleted, ActionTokenRevoked,
 		ActionAuthFailed, ActionPermissionDenied,
 		ActionSensorRevoked, ActionSensorDeleted,
-		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess:
+		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
+		ActionAuditChainRebaselined:
 		return SeverityCritical
 
 	// High - privilege changes and pipeline failures

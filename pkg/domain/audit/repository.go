@@ -83,11 +83,47 @@ type Repository interface {
 	// chain_position ASC.
 	ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]ChainEntry, error)
 
-	// UpdateChainEntryHashes overwrites prev_hash + hash of an existing chain
-	// entry. Used ONLY by the admin re-baseline operation (re-signing the chain
-	// after a known-benign hashing change, e.g. the timestamp-precision fix). It
-	// is intentionally not part of the normal append flow.
-	UpdateChainEntryHashes(ctx context.Context, auditLogID shared.ID, prevHash, hash string) error
+	// ApplyChainRebaseline re-signs a tenant's chain in ONE transaction: it
+	// records the rebaseline header, archives the old and new hashes of every
+	// rewritten entry, and overwrites prev_hash + hash. Used ONLY by the admin
+	// re-baseline operation (re-signing the chain after a known-benign hashing
+	// change, e.g. the timestamp-precision fix); it is not part of the normal
+	// append flow.
+	//
+	// It returns ErrChainRebaselineConflict, and changes nothing, when the chain
+	// no longer matches what the rebaseline was computed from: an entry's
+	// stored hashes differ from Old*, or the chain's last position is not
+	// LastChainPosition (an entry was appended, or the chain is longer than
+	// the rebaseline walked).
+	ApplyChainRebaseline(ctx context.Context, rb ChainRebaseline) error
+}
+
+// ChainRewrite is one audit_log_chain row a rebaseline re-signs: the hashes it
+// had and the hashes it gets.
+type ChainRewrite struct {
+	AuditLogID    shared.ID
+	ChainPosition int64
+	OldPrevHash   string
+	OldHash       string
+	NewPrevHash   string
+	NewHash       string
+}
+
+// ChainRebaseline is one admin rebaseline of a tenant's chain. It is archived
+// in audit_chain_rebaselines / audit_chain_rebaseline_entries so the hashes it
+// overwrote can be reviewed afterwards.
+type ChainRebaseline struct {
+	ID       shared.ID
+	TenantID shared.ID
+	// ActorID is the admin who ran it; nil when unknown.
+	ActorID *shared.ID
+	// EntriesTotal is how many chain entries were walked.
+	EntriesTotal int
+	// LastChainPosition is the position of the last entry walked (0 for an
+	// empty chain). The apply refuses if the chain's tail has moved.
+	LastChainPosition int64
+	// Rewrites holds only the entries whose hashes change.
+	Rewrites []ChainRewrite
 }
 
 // SystemChainTenantID is the chain that tenant-less audit events are

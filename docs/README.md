@@ -25,6 +25,7 @@
 - [Scan Coverage (Tenable)](architecture/scan-coverage.md) - License-aware rolling coverage, Nessus Pro + Tenable.sc, .nessus→CTIS converter
 - [Sensors](architecture/sensors.md) - Sensor vocabulary (scanner/agent/collector roles), code layout, frozen protocol v1 and the legacy package (RFC-023)
 - [Scan Zones](architecture/scan-zones.md) - Tenant address ranges → zone sensors: narrowest-zone routing and batching at trigger time, the zone claim predicate, run completion over batches, coverage view, UI contract (RFC-023 Phase 1)
+- [Audit Hash Chain](architecture/audit-hash-chain.md) - Tamper-evident per-tenant SHA-256 chain over audit_logs: append, verify, the hourly verifier, and rebaselining (when it is allowed, what is archived in the same transaction, how to review overwritten hashes)
 - [Shift-Left CI Scanning](architecture/shift-left-ci-scanning.md) - Agent-first SAST/SCA/secrets in CI: structure + dataflow diagrams, branch-aware findings, risk-aware gate, PR decoration (RFC-008)
 - [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
 - [Tenable — User & Data Flow](architecture/tenable-user-and-data-flow.md) - How operators interact with Tenable on the UI + end-to-end data flow (agent/direct/upload)

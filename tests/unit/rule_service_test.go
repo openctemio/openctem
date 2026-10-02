@@ -3083,6 +3083,6 @@ func (m *ruleSvcMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, 
 	return nil, nil
 }
 
-func (m *ruleSvcMockAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
+func (m *ruleSvcMockAuditRepo) ApplyChainRebaseline(_ context.Context, _ audit.ChainRebaseline) error {
 	return nil
 }

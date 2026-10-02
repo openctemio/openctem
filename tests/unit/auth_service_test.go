@@ -2818,7 +2818,7 @@ func (m *mockAuthAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ i
 	return nil, nil
 }
 
-func (m *mockAuthAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
+func (m *mockAuthAuditRepo) ApplyChainRebaseline(_ context.Context, _ audit.ChainRebaseline) error {
 	return nil
 }
 

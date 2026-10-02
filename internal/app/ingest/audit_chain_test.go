@@ -159,7 +159,7 @@ func (r *chainAuditRepo) CountByAction(context.Context, *shared.ID, audit.Action
 	return 0, nil
 }
 
-func (r *chainAuditRepo) UpdateChainEntryHashes(context.Context, shared.ID, string, string) error {
+func (r *chainAuditRepo) ApplyChainRebaseline(context.Context, audit.ChainRebaseline) error {
 	return nil
 }
 
