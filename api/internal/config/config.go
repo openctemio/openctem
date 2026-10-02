@@ -220,6 +220,13 @@ type SensorConfigConfig struct {
 	// (default 250ms).
 	HeartbeatSlowQuery time.Duration
 
+	// CommandLease is how long a sensor holds a claimed command without
+	// renewing its lease (every heartbeat that lists the command renews
+	// it). A command whose lease runs out goes back to the queue, and the
+	// sensor that held it can no longer complete it (RFC-035 D6).
+	// SENSOR_COMMAND_LEASE, default 3m, clamped to 1m-30m.
+	CommandLease time.Duration
+
 	// LatestVersion is the newest sensor release (SENSOR_LATEST_VERSION,
 	// default DefaultSensorLatestVersion). The Sensors page compares each
 	// sensor's version with it ("update available"), and the install
@@ -851,6 +858,7 @@ func Load() (*Config, error) {
 			HeartbeatMinInterval:    getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
 			HeartbeatMaxInterval:    getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
 			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
+			CommandLease:            getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
 			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
 			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", "")),
 			SDKMinVersion:           sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", "")),

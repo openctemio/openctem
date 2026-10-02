@@ -925,6 +925,46 @@ A sensor hands a command it holds back with
 command returns to `pending`, unpinned, zone kept, so another sensor takes
 it at once (a draining sensor). See RFC-030 §5.8.1 and §5.12.
 
+### Command leases (RFC-035 D6)
+
+A sensor holds every command it claims under a **lease** (migration 000260:
+`commands.lease_epoch`, `commands.lease_expires_at`).
+
+- **Claim.** A claim starts a new lease epoch (`lease_epoch + 1`) and a lease
+  of `SENSOR_COMMAND_LEASE` (default 3 min, clamped to 1–30 min). That is
+  longer than the 90 s after which a silent sensor is marked offline, so a
+  sensor whose heartbeats are only late keeps its work.
+- **Renewal.**
+  - Every accepted heartbeat (v1 and v2) renews the leases of the commands
+    the sensor lists in `running`.
+  - An SDK that sends the load report (`queue`) always lists what it holds,
+    leaving the list out when it holds nothing.
+  - A sensor that sends no load report has every command it holds renewed:
+    older SDKs keep their work.
+  - `start` renews the lease too.
+- **Re-queue.** The job-recovery controller (every 60 s) takes back every
+  tenant command whose lease ran out: `pending`, unpinned, zone kept,
+  `dispatch_attempts + 1`, `error_message` saying why.
+  `fail_exhausted_commands` still ends a command after the maximum number of
+  attempts. A dead sensor's running scans are back in the queue within about
+  lease + 60 s, not at the 1 h run timeout (RFC-035 B5).
+- **Fencing.**
+  - **Guarded writes.** `start`, `complete` and `fail` from a sensor are
+    guarded UPDATEs. They apply only if the command is still held by that
+    sensor, in the state and lease epoch it was read in.
+  - **Lost commands.** A sensor whose command was re-queued, or claimed again
+    by another sensor, gets `invalid-transition` (state `pending`) or
+    `command-not-found`. Its result is never stored: **no duplicate
+    completion**.
+  - **Epoch header.** v2 commands carry `lease_epoch` and
+    `lease_expires_at`. A sensor may send the epoch back in
+    `X-OpenCTEM-Lease-Epoch` on `complete` and `fail`; a different current
+    epoch refuses the change.
+  - **Duplicate ids.** The SDK never runs the same command id twice at once.
+- **Legacy reaper.** The 10-minute reaper for `acknowledged` commands
+  (`recover_stuck_tenant_commands`) only handles commands without a lease
+  (claimed before migration 000260).
+
 ## Network egress and proxies (RFC-034, proposed)
 
 > Design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md). Status:

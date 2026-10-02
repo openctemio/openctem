@@ -286,12 +286,45 @@ func (s *Service) Start(ctx context.Context, tenantID, sensorID, commandID strin
 		return nil, shared.NewDomainError("INVALID_STATE", "command must be acknowledged before starting", shared.ErrValidation)
 	}
 
+	fence := fenceOf(cmd, sensorID)
 	cmd.Start()
-	if err := s.repo.Update(ctx, cmd); err != nil {
+	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
 
 	return cmd, nil
+}
+
+// fenceOf is what a sensor-side change of cmd, as just read, expects to
+// still hold when it is written.
+func fenceOf(cmd *commanddom.Command, sensorID string) commanddom.Fence {
+	return commanddom.Fence{SensorID: sensorID, Status: cmd.Status, Epoch: cmd.LeaseEpoch}
+}
+
+// ErrLeaseLost: the command changed hands between the read and the write of
+// a sensor-side change (its lease ran out and it was re-queued, maybe
+// claimed again). The change is not applied.
+var ErrLeaseLost = shared.NewDomainError("CONFLICT", "the command is no longer held under this lease", shared.ErrConflict)
+
+// saveSensorChange writes a sensor-side state change (start, complete,
+// fail) of a command the sensor holds, under the fence: with a repository
+// that supports it, the write applies only if the command is still held by
+// that sensor in the state and lease epoch that were read. A command
+// re-queued after its lease ran out can therefore never be completed by the
+// sensor that lost it (RFC-035 D6). Commands nobody holds use Update.
+func (s *Service) saveSensorChange(ctx context.Context, cmd *commanddom.Command, fence commanddom.Fence) error {
+	f, ok := s.repo.(commanddom.FencedUpdater)
+	if !ok || cmd.SensorID == nil {
+		return s.repo.Update(ctx, cmd)
+	}
+	applied, err := f.FencedUpdate(ctx, cmd, fence)
+	if err != nil {
+		return err
+	}
+	if !applied {
+		return ErrLeaseLost
+	}
+	return nil
 }
 
 // ensureSensorOwnsCommand rejects lifecycle operations on a command assigned to
@@ -313,6 +346,9 @@ type CompleteInput struct {
 	SensorID  string          `json:"sensor_id" validate:"required,uuid"`
 	CommandID string          `json:"command_id" validate:"required,uuid"`
 	Result    json.RawMessage `json:"result,omitempty"`
+	// LeaseEpoch, when the sensor sent it, is the lease epoch it ran the
+	// command under; a different current epoch refuses the change.
+	LeaseEpoch *int `json:"-"`
 }
 
 // Complete marks a command as completed.
@@ -328,9 +364,13 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 	if cmd.Status != commanddom.CommandStatusRunning {
 		return nil, shared.NewDomainError("INVALID_STATE", "command must be running to complete", shared.ErrValidation)
 	}
+	if input.LeaseEpoch != nil && *input.LeaseEpoch != cmd.LeaseEpoch {
+		return nil, ErrLeaseLost
+	}
 
+	fence := fenceOf(cmd, input.SensorID)
 	cmd.Complete(input.Result)
-	if err := s.repo.Update(ctx, cmd); err != nil {
+	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
 
@@ -343,6 +383,8 @@ type FailInput struct {
 	SensorID     string `json:"sensor_id" validate:"required,uuid"`
 	CommandID    string `json:"command_id" validate:"required,uuid"`
 	ErrorMessage string `json:"error_message"`
+	// LeaseEpoch: see CompleteInput.LeaseEpoch.
+	LeaseEpoch *int `json:"-"`
 }
 
 // MaxFailErrorMessageBytes caps the sensor-supplied error message stored on a
@@ -375,8 +417,13 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 		return nil, shared.NewDomainError("INVALID_STATE", "command is already finished", shared.ErrConflict)
 	}
 
+	if input.LeaseEpoch != nil && *input.LeaseEpoch != cmd.LeaseEpoch {
+		return nil, ErrLeaseLost
+	}
+
+	fence := fenceOf(cmd, input.SensorID)
 	cmd.Fail(truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes))
-	if err := s.repo.Update(ctx, cmd); err != nil {
+	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
 

@@ -1329,6 +1329,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// with the sensor's jobs and audit rows.
 	s.Sensor.SetEventRepository(repos.SensorEvent, sensordom.DefaultEventLimits())
 	s.Sensor.SetActivityReader(repos.SensorEvent)
+	// Command leases (RFC-035 D6): a claim holds for SENSOR_COMMAND_LEASE
+	// and every heartbeat renews what the sensor holds; job recovery takes
+	// back what runs out, fenced against a late completion.
+	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
+	s.Sensor.SetLeaseRenewer(repos.Command)
 	s.Command = command.NewService(repos.Command, log, command.WithSensorLookup(repos.Sensor))
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 

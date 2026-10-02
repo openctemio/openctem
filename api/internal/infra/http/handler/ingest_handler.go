@@ -270,6 +270,11 @@ type HeartbeatRequest struct {
 	Resources *sensor.ReportedResources `json:"resources,omitempty"`
 	Capacity  *sensor.ReportedCapacity  `json:"capacity,omitempty"`
 	Queue     *sensor.ReportedQueue     `json:"queue,omitempty"`
+	// Running is the ids of the commands the sensor holds (claimed or
+	// running). The SDK that sends the queue always lists them (an empty
+	// list is left out); the heartbeat renews their leases (RFC-035 D6).
+	// Sensor wire only: not part of the management API's documented types.
+	Running []string `json:"running,omitempty" swaggerignore:"true"`
 
 	// Build information, optional (docs/architecture/sensors.md "Build
 	// information"): sdk {name, version} and sensor {name, version, commit,
