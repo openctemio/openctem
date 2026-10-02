@@ -538,11 +538,10 @@ gate and the API use `Sensor.EffectiveCapabilities()` and the other
 `sensor_reported_caps_db_test.go` (postgres) checks that the columns and the
 methods agree across a matrix of inputs.
 
-The command poll (v1 and v2) and the doorbell count also gate unpinned
-commands that name a tool (`scanner` / `preferred_tool`). A sensor that
-reports its inventory is offered only the commands whose tool is in its
-effective tools (`reportedToolClaimPredicate` in `command_repository.go`). A
-sensor that never reported is offered every command, as before. The reported
+RFC-030's tool gate on the command poll, the claim, the doorbell count and
+the zone predicate (`sensorDispatchTools` in `command_repository.go`) reads
+`effective_tools`. A command that names a tool reaches only sensors whose
+effective tools include it. The reported
 `max_concurrent_jobs` is the sensor's configured cap. RFC-030's live slots
 (its `capacity` block) bound dispatch further.
 
@@ -556,8 +555,7 @@ be read, the report is skipped and the heartbeat still succeeds.
 
 `GET /api/v1/sensors[/{id}]` returns `reported` (null before the first
 report), `effective`, and `capability_mismatch` (`tools_not_installed`,
-`capabilities_not_reported`, `max_jobs_above_reported`; omitted when there is
-nothing to show). `PUT` with `tools: []` / `capabilities: []` removes the
+`capabilities_not_reported`; omitted when there is nothing to show). `PUT` with `tools: []` / `capabilities: []` removes the
 limit.
 
 ## History written in the old vocabulary
