@@ -389,6 +389,10 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 				return fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is disabled",
 					shared.ErrValidation, step.StepKey, step.Tool)
 			}
+			if stepTool.IsCollector() {
+				return fmt.Errorf("%w: pipeline step '%s' uses '%s', an asset collector: collectors run on their collector sensor's own schedule and cannot be scanned with",
+					shared.ErrValidation, step.StepKey, step.Tool)
+			}
 		}
 	}
 
@@ -407,6 +411,9 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 	}
 	if !scannerTool.IsActive {
 		return fmt.Errorf("%w: scanner '%s' is disabled", shared.ErrValidation, scannerName)
+	}
+	if scannerTool.IsCollector() {
+		return fmt.Errorf("%w: '%s' is an asset collector, not a scanner: collectors run on their collector sensor's own schedule and cannot be scanned with", shared.ErrValidation, scannerName)
 	}
 
 	tpj := max(targetsPerJob, 1)

@@ -2256,3 +2256,51 @@ func TestScanService_CreateScan_CronSecurityValidationFails(t *testing.T) {
 		t.Fatal("expected error for security validation failure")
 	}
 }
+
+// Asset collectors are in the tool catalog (metadata.kind = "collector") so
+// collector sensors can report them, but a scan must refuse them.
+func TestScanService_CreateScan_CollectorToolRefused(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+
+	ag, _ := assetgroup.NewAssetGroupWithTenant(tenantID, "test-group", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
+	deps.assetGroupRepo.groups[ag.ID().String()] = ag
+
+	deps.toolRepo.addTool("vcenter", true)
+	deps.toolRepo.tools["vcenter"].Metadata = map[string]any{"kind": tool.KindCollector}
+
+	_, err := svc.CreateScan(context.Background(), scanservice.CreateScanInput{
+		TenantID:     tenantID.String(),
+		Name:         "Collector Scan",
+		AssetGroupID: ag.ID().String(),
+		ScanType:     "single",
+		ScannerName:  "vcenter",
+	})
+	if err == nil {
+		t.Fatal("expected error for a collector tool")
+	}
+	if !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "asset collector") {
+		t.Errorf("err = %v, want a validation error naming the asset collector", err)
+	}
+}
+
+func TestScanService_TriggerScan_CollectorToolRefused(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+
+	deps.toolRepo.addTool("ldap", true)
+	s := createTestScanInRepo(deps, tenantID, "Collector Scan", scan.ScanTypeSingle)
+	s.ScannerName = "ldap"
+	deps.toolRepo.tools["ldap"].Metadata = map[string]any{"kind": tool.KindCollector}
+
+	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(),
+		ScanID:   s.ID.String(),
+	})
+	if err == nil {
+		t.Fatal("expected error when the scan's tool is a collector")
+	}
+	if !strings.Contains(err.Error(), "asset collector") {
+		t.Errorf("err = %v, want it to name the asset collector", err)
+	}
+}
