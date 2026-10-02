@@ -43,6 +43,7 @@ var (
 	// Sensor manifest (RFC-033).
 	ErrManifestUnavailable    = sensor.ErrManifestUnavailable
 	ErrManifestSensorInactive = sensor.ErrManifestSensorInactive
+	ErrManifestNotRegistered  = sensor.ErrManifestNotRegistered
 )
 
 // Selection-mode constants re-exported for legacy callers.

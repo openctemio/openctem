@@ -22,7 +22,8 @@ type SensorActivityItemResponse struct {
 	Category string `json:"category" enums:"people,status,updates,jobs"`
 	// Type: online, offline, restarted (status); version_changed,
 	// sdk_version_changed, protocol_changed, tools_changed,
-	// capacity_changed, content_updated, content_refresh_failed (updates);
+	// capacity_changed, content_updated, content_refresh_failed,
+	// manifest_changed (updates; details.diff, RFC-033 §6.12);
 	// job_claimed, job_completed, job_failed, job_canceled, job_expired
 	// (jobs); audit (people).
 	Type        string         `json:"type"`

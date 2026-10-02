@@ -166,8 +166,8 @@ func TestSensorManifest_RegisterProjectAndAnswer(t *testing.T) {
 	}
 	var details []byte
 	if err := h.db.QueryRowContext(context.Background(),
-		`SELECT details FROM sensor_events WHERE sensor_id = $1 AND type = 'tools_changed' ORDER BY at DESC LIMIT 1`, s.id).Scan(&details); err != nil {
-		t.Fatalf("no tools_changed event: %v", err)
+		`SELECT details FROM sensor_events WHERE sensor_id = $1 AND type = 'manifest_changed' ORDER BY at DESC LIMIT 1`, s.id).Scan(&details); err != nil {
+		t.Fatalf("no manifest_changed event: %v", err)
 	}
 	if !strings.Contains(string(details), second.ManifestDigest) || !strings.Contains(string(details), first.ManifestDigest) {
 		t.Fatalf("event details miss the digests: %s", details)

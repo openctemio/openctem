@@ -96,6 +96,7 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 			r.POST(protov2.BaselineDiffPath, ctl.BaselineDiff, controlWrite...)
 			r.POST(protov2.KeysPath, ctl.RenewKey, keys...)
 			r.PUT(protov2.ManifestPath, ctl.PutManifest, controlWrite...)
+			r.GET(protov2.ManifestPath, ctl.GetManifest, controlRead...)
 		}
 		if ctl.HasCommands() {
 			r.GET(protov2.CommandsPath, ctl.PollCommands, controlRead...)

@@ -190,8 +190,11 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 	}
 	// RFC-033: a sensor that registers manifests and echoes a digest the
 	// platform does not have as current is asked to send it again.
-	if d := manifestDigestFor(&req, 2); !id.Paused && d != "" && d != s.ManifestDigest &&
-		h.ingest.sensorService.SupportsManifests() {
+	// With slim heartbeats switched off (SENSOR_SLIM_HEARTBEAT=false), a
+	// slim one is asked for the manifest too: the answer says
+	// omit_inventory false and the sensor goes back to full heartbeats.
+	if d := manifestDigestFor(&req, 2); !id.Paused && d != "" && h.ingest.sensorService.SupportsManifests() &&
+		(d != s.ManifestDigest || (req.Tools == nil && !h.ingest.sensorService.SlimHeartbeat())) {
 		resp.Actions = append(resp.Actions, protov2.ActionSendManifest)
 	}
 	writeV2JSON(w, http.StatusOK, resp)
@@ -249,6 +252,8 @@ func (h *SensorControlV2Handler) PutManifest(w http.ResponseWriter, r *http.Requ
 	out := protov2.ManifestResponse{
 		ManifestDigest: res.Digest,
 		Changed:        res.Changed,
+		Policy:         manifestPolicyOut(res.Policy),
+		Heartbeat:      protov2.ManifestHeartbeat{OmitInventory: res.OmitInventory},
 		Accepted: protov2.ManifestAccepted{
 			Tools:        nonNilStrings(res.AcceptedTools),
 			Capabilities: nonNilStrings(res.AcceptedCapabilities),
@@ -259,6 +264,35 @@ func (h *SensorControlV2Handler) PutManifest(w http.ResponseWriter, r *http.Requ
 		out.Ignored = append(out.Ignored, protov2.ManifestIgnored{Path: i.Path, Value: i.Value, Reason: i.Reason})
 	}
 	writeV2JSON(w, http.StatusOK, out)
+}
+
+// GetManifest handles GET /api/v2/sensor/manifest (RFC-033 §6.12): the
+// current manifest digest and the policy as it stands now, which the sensor
+// re-reads when its heartbeat's config_version changes. 404
+// manifest-not-found when it registered none.
+func (h *SensorControlV2Handler) GetManifest(w http.ResponseWriter, r *http.Request) {
+	s := sensorForV2(w, r)
+	if s == nil {
+		return
+	}
+	res, err := h.ingest.sensorService.ManifestState(s)
+	if err != nil {
+		protov2.NewProblem(protov2.ProblemManifestNotFound).Write(w)
+		return
+	}
+	writeV2JSON(w, http.StatusOK, protov2.ManifestStateResponse{
+		ManifestDigest: res.Digest,
+		Policy:         manifestPolicyOut(res.Policy),
+		Heartbeat:      protov2.ManifestHeartbeat{OmitInventory: res.OmitInventory},
+	})
+}
+
+func manifestPolicyOut(p sensor.ManifestPolicy) protov2.ManifestPolicy {
+	return protov2.ManifestPolicy{
+		AllowedTools:        nonNilStrings(p.AllowedTools),
+		AllowedCapabilities: nonNilStrings(p.AllowedCapabilities),
+		MaxJobs:             p.MaxJobs,
+	}
 }
 
 func nonNilStrings(s []string) []string {
@@ -305,7 +339,16 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		Build:         req.buildReport(),
 		// v1 has no manifest: its heartbeat is always the source.
 		ManifestDigest: manifestDigestFor(req, protocol),
+		Content:        slimContentFor(req, protocol),
 	}
+}
+
+// slimContentFor is a v2 heartbeat's content block, bounded; nil on v1.
+func slimContentFor(req *HeartbeatRequest, protocol int) []sensor.ReportedContent {
+	if protocol < 2 || req.Content == nil {
+		return nil
+	}
+	return req.Content[:min(len(req.Content), sensor.MaxReportedTools*sensor.MaxReportedContentPerTool)]
 }
 
 // manifestDigestFor is the manifest digest a v2 heartbeat echoes, bounded;

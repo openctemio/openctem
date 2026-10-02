@@ -8277,6 +8277,14 @@ definitions:
         items:
           type: string
         type: array
+      content:
+        description: |-
+          Content is a slim heartbeat's content freshness (RFC-033 §6.12): a
+          sensor whose manifest is acknowledged leaves tools out and sends each
+          tool's content here, with "tool" set. Merged into the stored tools.
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedContent'
+        type: array
       cpu_percent:
         type: number
       disk_read_mbps:
@@ -10776,7 +10784,8 @@ definitions:
         description: |-
           Type: online, offline, restarted (status); version_changed,
           sdk_version_changed, protocol_changed, tools_changed,
-          capacity_changed, content_updated, content_refresh_failed (updates);
+          capacity_changed, content_updated, content_refresh_failed,
+          manifest_changed (updates; details.diff, RFC-033 §6.12);
           job_claimed, job_completed, job_failed, job_canceled, job_expired
           (jobs); audit (people).
         type: string

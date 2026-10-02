@@ -52,6 +52,11 @@ type SensorService struct {
 	// SetKeyTTL at boot. Only self-renewal honors it; created and
 	// admin-regenerated keys never expire regardless.
 	keyTTL time.Duration
+	// slimHeartbeatOff is the kill switch of slim heartbeats (RFC-033
+	// §6.12, SENSOR_SLIM_HEARTBEAT=false): sensors whose manifest is
+	// acknowledged may leave their tool inventory out of heartbeats unless
+	// it is set.
+	slimHeartbeatOff bool
 	// apiKeyRepo is the optional multi-key store (RFC-014 Phase 3). When wired,
 	// AuthenticateByAPIKey also accepts keys from sensor_api_keys, and self-renewal
 	// under a key TTL issues a NEW key row (rotation overlap) instead of replacing
@@ -467,6 +472,12 @@ type SensorHeartbeatData struct {
 	// members), untrusted. Parts it leaves empty are read from UserAgent.
 	Build sensordom.BuildReport
 
+	// Content is the content freshness of a slim heartbeat (RFC-033 §6.12):
+	// a sensor whose manifest is acknowledged leaves its tools out and sends
+	// each tool's content (with Tool set) here, untrusted. It is merged into
+	// the stored tools' content. nil: none.
+	Content []sensordom.ReportedContent
+
 	// ManifestDigest is the manifest digest the sensor echoes (RFC-033); ""
 	// from a sensor that registers no manifest, whose manifest is then
 	// derived from this heartbeat's report.
@@ -580,12 +591,14 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	userAgent := sensordom.SanitizeUserAgent(data.UserAgent)
 	build, version := sensordom.ResolveBuild(data.Build, data.Version, userAgent, now)
 	uptime := sensordom.ClampUptime(data.UptimeSeconds)
-	report := s.sanitizeReport(ctx, a, data.Report)
+	carriedTools := data.Report != nil && data.Report.Tools != nil
+	report := s.sanitizeReport(ctx, a, withSlimContent(a, data.Report, data.Content))
 	// An SDK that reports its slots but no ceiling has none (sdk-go v0.13+:
 	// max_concurrent_jobs is only the operator's cap). Older SDKs with a
 	// load report always sent max_concurrent_jobs, so this clears exactly
-	// the upper bound (64) they stored (RFC-033 §6.1).
-	if report != nil && report.Tools != nil && report.MaxConcurrentJobs == 0 &&
+	// the upper bound (64) they stored (RFC-033 §6.1). A slim heartbeat
+	// carries no tools and says nothing about the ceiling.
+	if carriedTools && report != nil && report.MaxConcurrentJobs == 0 &&
 		load != nil && load.Capacity != nil && load.Capacity.SlotsTotal > 0 {
 		report.NoCeiling = true
 	}

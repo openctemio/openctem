@@ -198,6 +198,12 @@ type SensorConfigConfig struct {
 	// heartbeat starts ringing rotate_key. Zero (the default) means half of
 	// KeyTTL, or 24h when no TTL is set. SENSOR_KEY_RENEW_BEFORE.
 	KeyRenewBefore time.Duration
+	// SlimHeartbeat lets a sensor whose manifest is acknowledged leave its
+	// tool inventory out of heartbeats (RFC-033 §6.12, owner decision O3):
+	// SENSOR_SLIM_HEARTBEAT, default true. false is the kill switch: manifest
+	// answers say omit_inventory false and a slim heartbeat is asked for the
+	// manifest again, so the sensor goes back to full heartbeats.
+	SlimHeartbeat bool
 
 	// Heartbeat doorbell (RFC-023 §9.2a): the intervals the heartbeat
 	// response advises in next_heartbeat_seconds. Every value is clamped to
@@ -838,6 +844,7 @@ func Load() (*Config, error) {
 			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
 
 			KeyRenewBefore:          getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
+			SlimHeartbeat:           getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
 			HeartbeatInterval:       getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
 			HeartbeatBusyInterval:   getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
 			HeartbeatLoadedInterval: getEnvDuration("SENSOR_HEARTBEAT_LOADED_INTERVAL", 2*time.Minute),

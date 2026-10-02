@@ -71,6 +71,7 @@ const (
 	// RFC-033 (ProblemTypeBaseSensor).
 	ProblemManifestInvalid           ProblemType = "manifest-invalid"
 	ProblemManifestSchemaUnsupported ProblemType = "manifest-schema-unsupported"
+	ProblemManifestNotFound          ProblemType = "manifest-not-found"
 )
 
 type problemDef struct {
@@ -131,6 +132,7 @@ var problemDefs = map[ProblemType]problemDef{
 	ProblemTooManyItems:       {http.StatusUnprocessableEntity, "Too many items", "The request lists more items than the limit; split it into several requests.", false, ProblemTypeBaseSensor},
 
 	ProblemManifestInvalid:           {http.StatusUnprocessableEntity, "Manifest invalid", "The manifest is not a JSON object with a schema member of the documented shape.", false, ProblemTypeBaseSensor},
+	ProblemManifestNotFound:          {http.StatusNotFound, "Manifest not found", "This sensor has no registered manifest; PUT it first.", false, ProblemTypeBaseSensor},
 	ProblemManifestSchemaUnsupported: {http.StatusUnprocessableEntity, "Manifest schema unsupported", "The manifest's schema version is not one this server reads; send schema 1.", false, ProblemTypeBaseSensor},
 }
 

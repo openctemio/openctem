@@ -464,3 +464,171 @@ func truncate(s string, n int) string {
 	}
 	return s
 }
+
+// ManifestPolicy is what the platform lets the sensor run (RFC-033 §6.12,
+// owner decision O2): its effective tools, capabilities and capacity, the
+// report narrowed by the administrator's settings. The SDK refuses commands
+// for tools outside AllowedTools.
+type ManifestPolicy struct {
+	AllowedTools        []string `json:"allowed_tools"`
+	AllowedCapabilities []string `json:"allowed_capabilities"`
+	MaxJobs             int      `json:"max_jobs"`
+}
+
+// ManifestPolicy returns the sensor's policy as it stands.
+func (a *Sensor) ManifestPolicy() ManifestPolicy {
+	return ManifestPolicy{
+		AllowedTools:        a.EffectiveTools(),
+		AllowedCapabilities: a.EffectiveCapabilities(),
+		MaxJobs:             a.EffectiveMaxConcurrentJobs(),
+	}
+}
+
+// ManifestDiff is what changed between two manifests (RFC-033 §6.12). Content
+// versions are left out: they have their own content_updated events.
+type ManifestDiff struct {
+	ToolsAdded   []string          `json:"tools_added,omitempty"`
+	ToolsRemoved []string          `json:"tools_removed,omitempty"`
+	Versions     []ManifestChange  `json:"versions,omitempty"`
+	Installed    []ManifestChange  `json:"installed,omitempty"`
+	Capabilities []ManifestCapDiff `json:"capabilities,omitempty"`
+	// SensorWide is the change of the sensor-wide capabilities.
+	SensorWide *ManifestCapDiff `json:"sensor_wide,omitempty"`
+	// Other names other members that changed: "build", "sdk", "platform",
+	// "resources", "concurrency".
+	Other []string `json:"other,omitempty"`
+}
+
+// ManifestChange is a tool whose value changed.
+type ManifestChange struct {
+	Tool string `json:"tool"`
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// ManifestCapDiff is the capabilities a tool (or the sensor) gained and lost.
+type ManifestCapDiff struct {
+	Tool    string   `json:"tool,omitempty"`
+	Added   []string `json:"added,omitempty"`
+	Removed []string `json:"removed,omitempty"`
+}
+
+// IsEmpty reports whether nothing worth an event changed.
+func (d ManifestDiff) IsEmpty() bool {
+	return len(d.ToolsAdded) == 0 && len(d.ToolsRemoved) == 0 && len(d.Versions) == 0 &&
+		len(d.Installed) == 0 && len(d.Capabilities) == 0 && d.SensorWide == nil && len(d.Other) == 0
+}
+
+// DiffManifests compares two manifests.
+func DiffManifests(prev, next Manifest) ManifestDiff {
+	var d ManifestDiff
+	before := make(map[string]ManifestTool, len(prev.Tools))
+	for _, t := range prev.Tools {
+		before[t.Name] = t
+	}
+	after := make(map[string]bool, len(next.Tools))
+	for _, t := range next.Tools {
+		after[t.Name] = true
+		p, ok := before[t.Name]
+		if !ok {
+			d.ToolsAdded = append(d.ToolsAdded, t.Name)
+			continue
+		}
+		if p.Version != t.Version {
+			d.Versions = append(d.Versions, ManifestChange{Tool: t.Name, From: p.Version, To: t.Version})
+		}
+		if p.Installed != t.Installed {
+			d.Installed = append(d.Installed, ManifestChange{Tool: t.Name, From: installedWord(p.Installed), To: installedWord(t.Installed)})
+		}
+		if added, removed := listDiff(p.Capabilities, t.Capabilities); len(added)+len(removed) > 0 {
+			d.Capabilities = append(d.Capabilities, ManifestCapDiff{Tool: t.Name, Added: added, Removed: removed})
+		}
+	}
+	for _, t := range prev.Tools {
+		if !after[t.Name] {
+			d.ToolsRemoved = append(d.ToolsRemoved, t.Name)
+		}
+	}
+	if added, removed := listDiff(prev.Capabilities, next.Capabilities); len(added)+len(removed) > 0 {
+		d.SensorWide = &ManifestCapDiff{Added: added, Removed: removed}
+	}
+	for _, o := range []struct {
+		name string
+		a, b any
+	}{
+		{"build", prev.Sensor, next.Sensor}, {"sdk", prev.SDK, next.SDK}, {"platform", prev.Platform, next.Platform},
+		{"resources", prev.Resources, next.Resources}, {"concurrency", prev.Concurrency, next.Concurrency},
+	} {
+		if !jsonEqual(o.a, o.b) {
+			d.Other = append(d.Other, o.name)
+		}
+	}
+	return d
+}
+
+// Summary is a plain-English line for the activity timeline.
+func (d ManifestDiff) Summary() string {
+	parts := make([]string, 0, len(d.ToolsAdded)+len(d.Versions)+len(d.Installed)+4)
+	if len(d.ToolsAdded) > 0 {
+		parts = append(parts, "added "+strings.Join(d.ToolsAdded, ", "))
+	}
+	if len(d.ToolsRemoved) > 0 {
+		parts = append(parts, "removed "+strings.Join(d.ToolsRemoved, ", "))
+	}
+	for _, v := range d.Versions {
+		parts = append(parts, fmt.Sprintf("%s %s → %s", v.Tool, orNone(v.From), orNone(v.To)))
+	}
+	for _, i := range d.Installed {
+		parts = append(parts, fmt.Sprintf("%s %s", i.Tool, i.To))
+	}
+	if n := len(d.Capabilities); n > 0 || d.SensorWide != nil {
+		if d.SensorWide != nil {
+			n++
+		}
+		parts = append(parts, fmt.Sprintf("capabilities of %d changed", n))
+	}
+	if len(d.Other) > 0 {
+		parts = append(parts, strings.Join(d.Other, ", ")+" changed")
+	}
+	if len(parts) == 0 {
+		return "Manifest changed"
+	}
+	// sensor_events.summary is VARCHAR(500); the details carry everything.
+	return truncate("Manifest changed: "+strings.Join(parts, "; "), maxManifestSummaryLen)
+}
+
+const maxManifestSummaryLen = 480
+
+func listDiff(prev, next []string) (added, removed []string) {
+	for _, c := range next {
+		if !slices.Contains(prev, c) {
+			added = append(added, c)
+		}
+	}
+	for _, c := range prev {
+		if !slices.Contains(next, c) {
+			removed = append(removed, c)
+		}
+	}
+	return added, removed
+}
+
+func jsonEqual(a, b any) bool {
+	ra, errA := json.Marshal(a)
+	rb, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(ra, rb)
+}
+
+func installedWord(installed bool) string {
+	if installed {
+		return "installed"
+	}
+	return "not installed"
+}
+
+func orNone(v string) string {
+	if v == "" {
+		return "none"
+	}
+	return v
+}

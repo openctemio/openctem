@@ -58,6 +58,10 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/sensor/manifest-invalid","title":"Manifest invalid","status":422,"detail":"The manifest is not a JSON object with a schema member of the documented shape.","retryable":false}
+## manifest-not-found
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/manifest-not-found","title":"Manifest not found","status":404,"detail":"This sensor has no registered manifest; PUT it first.","retryable":false}
 ## manifest-schema-unsupported
 Content-Type: application/problem+json
 Openctem-Protocol: 2
