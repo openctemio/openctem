@@ -218,8 +218,7 @@ export function PermissionSetDetailSheet({
   }
 
   // Get current permission keys
-  const currentPermissionKeys =
-    permissionSet?.items?.map((p: { permission: string }) => p.permission) || []
+  const currentPermissionKeys = permissionSet?.permissions ?? []
 
   // Get available permissions (not already in set)
   const availablePermissions = PermissionCategories.map((category) => ({
