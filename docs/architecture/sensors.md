@@ -5,8 +5,8 @@
 > Protocol v2: [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (results) and
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; v1 deprecated).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
-> Proxies and network egress (proposed): [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
-> section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
+> Proxies and network egress: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
+> section [Network egress and proxies](#network-egress-and-proxies-rfc-034).
 
 ## Glossary
 
@@ -895,29 +895,64 @@ A sensor hands a command it holds back with
 command returns to `pending`, unpinned, zone kept, so another sensor takes
 it at once (a draining sensor). See RFC-030 §5.8.1 and §5.12.
 
-## Network egress and proxies (RFC-034, proposed)
+## Network egress and proxies (RFC-034)
 
 > Design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md). Status:
-> **Proposed**. Only "Today" below is implemented.
+> **Accepted** (owner decisions O1–O10, 2026-10-02).
+> - Phase 0 (the sensor-local settings below) is in sdk-go#111 and
+>   sensor#102, and is live once a sensor runs a release containing them.
+> - Phase 1+ (the platform-managed scan path, per zone) is not built.
 
 A sensor sends three kinds of traffic, and RFC-034 configures each one
 separately:
 
-| Class | Today | Proposed |
-|---|---|---|
-| **Control**: sensor → platform | `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` on the sensor host (`httpsec.NewAPIClient`, `http.ProxyFromEnvironment`). `SENSOR_CA_CERT_FILE` trusts an inspecting proxy's or a private CA. | Unchanged, sensor-local only. `SENSOR_CONTROL_PROXY` (a URL or `direct`) overrides the environment for this channel alone. |
-| **Content**: templates, DBs, rules, KEV/EPSS | Upstream sources use `httpsec.SafeHTTPClient`, which has **no proxy**: they fail on proxy-only networks. Mirrors and trivy's DB download use the environment. | Sensor-local. `SENSOR_CONTENT_PROXY`, else the control proxy. `SafeHTTPClient` checks the request URL before it hands the request to the proxy. |
-| **Scan**: scanner → target | Scanner processes inherit the proxy variables (`core/scanner_env.go`), so internal targets can be sent to the corporate egress proxy unless `NO_PROXY` lists them. Tools that ignore the variables go direct. Nothing records the path. | Per scan zone (and optionally per tool), configured on the platform as an **egress profile**. Without a profile a zone keeps `inherit`, which is today's behaviour. |
+| Class | Setting (Phase 0) | When unset | Later phases |
+|---|---|---|---|
+| **Control**: sensor → platform (API client, heartbeat, key renewal) | `SENSOR_CONTROL_PROXY`: a proxy URL (`http`, `https`, `socks5`, `socks5h`, optional `user:password@`) or `direct`. | `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` (before Phase 0, the only option). | Unchanged: always sensor-local. |
+| **Content**: templates, DBs, rules, KEV/EPSS | `SENSOR_CONTENT_PROXY` (same values). | The control setting. | Unchanged: always sensor-local. |
+| **Scan**: scanner → target | `SENSOR_SCAN_PROXY`: `inherit` or `direct`. | `inherit`. | Per scan zone (and optionally per tool), configured on the platform as an **egress profile**. Without a profile, a zone keeps `inherit`. |
 
-**Today's advice.** If a sensor reaches the platform through a corporate
-proxy and also scans internal ranges, list those ranges and domains in
-`NO_PROXY`. Go matches a CIDR entry only when the target is an IP literal, so
-also list domains (`.corp.example`). Each tool parses `NO_PROXY` its own way,
-and Go reads the environment once per process. A segment
-that the sensor can reach only through a proxy should get its own sensor
-inside it. Use one zone per segment (scan-zones.md).
+- **Control and content**
+  - With a URL, `NO_PROXY` is the bypass list. A value the sensor cannot
+    use stops it at start (exit 2, naming the setting).
+  - `SENSOR_CA_CERT_FILE` is trusted on both paths, so a TLS-inspecting
+    egress proxy works for both. Scanners still read `SSL_CERT_FILE`.
+  - The SDK helpers are `httpsec.ProxySetting`, `SetAPIProxy` /
+    `APIProxy().Func()` and `SetContentProxy`, plus
+    `sensorkit.ResolveProxies`. A client built after `sensorkit.New` (for
+    example a dedicated heartbeat client) installs `APIProxy().Func()` as
+    its `Transport.Proxy`.
+- **Content behind a proxy (G2, fixed in Phase 0)**
+  - `httpsec.SafeHTTPClient` used to ignore every proxy. Upstream content
+    therefore failed on networks whose only way out is a proxy; a released
+    v0.6.4 sensor could not refresh nuclei templates through
+    `HTTPS_PROXY`.
+  - It now uses the content setting, and checks the **target** before it
+    uses the proxy: dangerous names, IP literals, every resolved address,
+    every redirect hop. A dial-time check would only see the proxy's
+    address. The proxy itself is dialed under the operator policy, the same
+    as the platform's address.
+  - A name that does not resolve locally is refused, unless the program
+    hard-codes it (`httpsec.TrustUpstreamHosts`: GitHub and semgrep.dev in
+    the sensor, the KEV and EPSS feeds in the SDK). Then the proxy resolves
+    it.
+  - Content tools (trivy's DB download) get their proxy variables from the
+    content setting (`core.ContentEnviron`).
+- **Scanners inheriting the proxy (G1)**
+  - With `inherit`, scanner processes get the sensor's `HTTP(S)_PROXY`,
+    `ALL_PROXY` and `NO_PROXY`, as before. The sensor logs one line with
+    all three paths, and warns, with credentials removed, while scanners
+    inherit proxy variables the operator did not choose explicitly.
+  - With `direct`, scanners get none, apart from variables a caller passes
+    explicitly.
+  - If you keep `inherit`, list internal ranges and domains in `NO_PROXY`.
+    Go matches a CIDR entry only when the target is an IP literal, so also
+    list domains (`.corp.example`). Each tool parses `NO_PROXY` its own way.
+- **Segments.** A segment the sensor can reach only through a proxy should
+  get its own sensor inside it, with one zone per segment (scan-zones.md).
+  Per-zone proxies are Phase 1.
 
-**Proposed model, in brief.**
+**Phases 1–3, in brief (not built).**
 
 - **Profiles.** An `egress_profile` is an ordered list of proxy endpoints:
   `http`, `https`, `socks5` or `socks5h`, with host and port.

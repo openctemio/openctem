@@ -1,7 +1,9 @@
 # RFC-034 — Sensor network egress: proxies per scan zone
 
-> Status: **Proposed** (2026-10-02). Research and design only; nothing here is
-> implemented.
+> Status: **Accepted** (2026-10-02; owner decisions O1–O10 in §10.2, all as
+> recommended). Proposed 2026-10-02 in api#723.
+> - Phase 0 is in implementation: sdk-go#111 and sensor#102 (tracking in §10.3).
+> - Phases 1–4 are not started.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on [RFC-023](RFC-023-scan-zones-and-scanners.md) (scan zones, the three
 > enforcement layers D7, the operator allow-list D8, credential tiers D12),
@@ -675,7 +677,7 @@ always the better answer.
 
 | Phase | Work | Repos | Effort | Risk |
 |---|---|---|---|---|
-| **0 — make today's behaviour explicit** | Proxy-aware `SafeHTTPClient` for the content path, with the URL check moved before the proxy (G2). `SENSOR_CONTROL_PROXY` and `SENSOR_CONTENT_PROXY`. The manifest reports `egress.control` (mode only). A doc section on proxies (control, content, the G1 trap with `NO_PROXY`). | sdk-go, sensor, docs | S | Low: additive; the guard change has unit tests for the "proxy hides the target" case |
+| **0 — make today's behaviour explicit** | Proxy-aware `SafeHTTPClient` for the content path, with the URL check moved before the proxy (G2). `SENSOR_CONTROL_PROXY` and `SENSOR_CONTENT_PROXY`. `SENSOR_SCAN_PROXY=inherit\|direct` with a start-up warning (G1, O2). A doc section on proxies (control, content, the G1 trap with `NO_PROXY`). Reporting `egress.control` in the manifest moved to Phase 1, because it needs the api side. | sdk-go, sensor, docs | S | Low: additive; the guard change has unit tests for the "proxy hides the target" case |
 | **1 — profiles and the forwarder** | Migration: `egress_profiles`, `scan_zones.egress_profile_id`, `scan_zone_tool_egress`. CRUD, permissions and audit. Policy echo carries profiles. Command `egress` reference. Eligibility on `egress.supports`. SDK forwarder (HTTP CONNECT and SOCKS5 upstream; `auth=none` and `local`); destination check; tool wiring for nuclei, httpx, katana, naabu and trivy image; `SENSOR_SCAN_EGRESS` veto; path recorded on results. UI: profiles tab, zone "Network path", run path. | api, sdk-go, sensor, ui | L | Medium: new data path on the sensor. It is limited to zones that opt in, and old sensors are excluded by eligibility. |
 | **2 — health and failover** | Health checks, circuit breaker, heartbeat `egress` member, activity events and health flag, dispatch skips `down`, `ZONE_UNREACHABLE`, Test button, throttle/block reporting (`target_throttled`, `target_blocked`), forwarder-enforced RFC-030 `limits`. | api, sdk-go, ui | M | Medium: eligibility change; behind the `egress` feature |
 | **3 — stored credentials and HTTPS proxies** | T2 credentials (needs RFC-032 Phase 3 sealing), `https://` proxy endpoints with a CA bundle, per-tool overrides in the UI, `dns=local`, path provenance on findings and assets (RFC-023 D21). | api, sdk-go, ui | M | Medium: secrets custody; reuses the RFC-032 sealing path |
@@ -706,7 +708,25 @@ always the better answer.
   endpoint only (§6.8).
 - Proxied jobs are offered only to sensors that declare support (§6.3).
 
-### 10.2 Owner decisions
+### 10.2 Owner decisions (2026-10-02)
+
+The owner accepted every recommendation below as written, and asked for
+Phase 0 to start at once.
+
+| # | Decision |
+|---|---|
+| O1 | **Split.** Control and content proxies are sensor-local. The scan path is set on the platform per zone (and per tool). The host operator can veto it (`SENSOR_SCAN_EGRESS`). |
+| O2 | **`inherit` stays the default** for zones without a profile, so scanners keep today's environment. It is made explicit and logged, and the UI warns when a private zone inherits a control proxy. `direct` as the default is reconsidered at sensor v1.0. |
+| O3 | **Proxied jobs run through the in-sensor forwarder**, not per-tool proxy flags. |
+| O4 | **Credentials are sensor-local until RFC-032 Phase 3.** After that they may also be stored on the platform, HPKE-sealed per command to approved key-bound sensors. |
+| O5 | **Basic and SOCKS5 user/password** on the scan path. NTLM/Negotiate only for the control proxy, on demand (Phase 4). |
+| O6 | **Never WPAD. No PAC on the scan path.** PAC for the control channel only on demand. |
+| O7 | **SSH jump hosts in Phase 4, on demand.** |
+| O8 | **New `sensors:egress:read`, `sensors:egress:write` and `sensors:egress:delete`, admin and owner only.** |
+| O9 | **A tool that cannot use the zone's proxy is refused visibly**, never run direct. |
+| O10 | **The default (public) zone may use a profile**, such as the corporate egress proxy. |
+
+The questions as they were put, with the recommendation:
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
@@ -720,6 +740,21 @@ always the better answer.
 | O8 | Who may manage egress profiles | (a) reuse `sensors:zones:write`; (b) new `sensors:egress:*`, admin and owner only | **(b).** A proxy decides where scan traffic and credentials go. This matches the owner's 2026-10 decision that sensor administration is admin-only. |
 | O9 | A tool that cannot use a zone's proxy (raw SYN, UDP, ICMP, DNS templates) | (a) refuse that tool or part, visibly; (b) run it direct with a warning | **(a).** Going direct would scan from a path the administrator did not choose, possibly into a segment with a different policy. |
 | O10 | May the default (public) zone use a profile (the corporate egress proxy for external scans)? | yes / no | **Yes.** It is the supported way to scan the internet from a sensor whose only egress is the corporate proxy. Inspection caveats (§6.8) are shown. |
+
+### 10.3 Phase 0 tracking
+
+| Item | Where | State |
+|---|---|---|
+| `httpsec.ProxySetting` and its parser; `SetAPIProxy` / `SetContentProxy`; `NewAPIClient` uses the API setting | sdk-go#111 | open |
+| G2: `SafeHTTPClient` uses the content proxy. The target is checked before the proxy (names, IP literals, every resolved address, every redirect hop), and the proxy is dialed with the operator policy. `TrustUpstreamHosts` covers hard-coded hosts on networks without public DNS. | sdk-go#111 | open |
+| G1: `SENSOR_SCAN_PROXY` / `OPENCTEM_SDK_SCANNER_PROXY` = `inherit` (default) or `direct`. The kit logs one line with all three paths, and warns while scanners inherit a proxy the operator did not choose explicitly. `core.ContentEnviron` lets content tools follow the content proxy. | sdk-go#111 | open |
+| `SENSOR_CONTROL_PROXY` / `SENSOR_CONTENT_PROXY` with precedence; `SENSOR_CA_CERT_FILE` trusted on both paths | sdk-go#111 (sensorkit) | open |
+| Sensor: content tools use `ContentEnviron`; its content hosts are registered; `-content-*` commands apply the settings; QUICK_START | sensor#102 (pins the #111 commit; bump to the tag before merge) | open |
+| Functional run: tinyproxy on an internal Docker network without DNS. The released v0.6.4 binary fails to refresh nuclei templates through `HTTPS_PROXY`; the branch refreshes them through it. Private, IMDS and unresolvable targets are refused before the proxy. | sdk-go#111, sensor#102 | done |
+
+A dedicated control-channel client (RFC-035, heartbeat isolation) takes
+`httpsec.APIProxy().Func()` as its `Transport.Proxy`, so
+`SENSOR_CONTROL_PROXY` covers it too.
 
 ## 11. Sources
 

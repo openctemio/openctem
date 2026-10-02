@@ -175,7 +175,7 @@ Warnings: `no_sensors_assigned`, `private_ranges_without_healthy_sensor`,
   directly, or through whatever proxy their environment sets. Per-zone proxies
   (egress profiles) are proposed in
   [RFC-034](../rfcs/RFC-034-sensor-network-egress.md); see
-  [sensors.md](sensors.md#network-egress-and-proxies-rfc-034-proposed).
+  [sensors.md](sensors.md#network-egress-and-proxies-rfc-034).
 
 ## UI contract
 
