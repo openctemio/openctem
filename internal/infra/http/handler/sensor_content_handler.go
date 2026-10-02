@@ -252,7 +252,7 @@ func (h *SensorContentHandler) fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
-		h.logger.Error("sensor content request failed", "error", err)
+		h.logger.Error("sensor content request failed", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }
