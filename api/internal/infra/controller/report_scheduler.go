@@ -128,9 +128,11 @@ func (c *ReportScheduler) Reconcile(ctx context.Context) (int, error) {
 	return processed, nil
 }
 
-// nextRun parses the cron expression and returns the next fire after now.
-// Falls back to +24h on a bad expression (logged) so the schedule keeps moving
-// rather than busy-looping or stalling.
+// nextRun parses the cron expression and returns the next fire after now,
+// evaluated in the schedule's own timezone ("0 9 * * 1" means 09:00 Monday where
+// the schedule's owner is, not on the server's clock). Falls back to +24h on a
+// bad expression and to UTC on an unloadable zone (both logged) so the schedule
+// keeps moving rather than busy-looping or stalling.
 func (c *ReportScheduler) nextRun(s *reportschedule.ReportSchedule, now time.Time) *time.Time {
 	sched, err := c.cronspec.Parse(s.CronExpression())
 	if err != nil {
@@ -139,7 +141,17 @@ func (c *ReportScheduler) nextRun(s *reportschedule.ReportSchedule, now time.Tim
 		t := now.Add(24 * time.Hour)
 		return &t
 	}
-	t := sched.Next(now)
+	loc := time.UTC
+	if tz := s.Timezone(); tz != "" {
+		if l, lerr := time.LoadLocation(tz); lerr == nil {
+			loc = l
+		} else {
+			c.logger.Warn("invalid schedule timezone; evaluating cron in UTC",
+				"schedule_id", s.ID().String(), "timezone", tz, "error", lerr)
+		}
+	}
+	// robfig/cron evaluates the spec in the location of the time it is given.
+	t := sched.Next(now.In(loc)).UTC()
 	return &t
 }
 

@@ -212,3 +212,36 @@ func TestReportScheduler_BadCron_FallsBackTo24h(t *testing.T) {
 		t.Errorf("bad cron should default next run ~+24h, got %v", nr)
 	}
 }
+
+// TestReportScheduler_NextRunHonoursScheduleTimezone: the schedule's timezone is
+// validated and stored (the UI pre-fills the browser's zone), but the cron used
+// to be evaluated in the server's zone (UTC), so "0 9 * * *" for an
+// Asia/Ho_Chi_Minh tenant fired at 16:00 local instead of 09:00.
+func TestReportScheduler_NextRunHonoursScheduleTimezone(t *testing.T) {
+	now := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC) // 07:00 in Ho Chi Minh City
+	mk := func(tz string) *reportschedule.ReportSchedule {
+		return reportschedule.ReconstituteReportSchedule(
+			shared.NewID(), shared.NewID(), "Daily", "executive_summary", "html",
+			map[string]any{}, nil, "email", nil,
+			"0 9 * * *", tz, true, nil, nil, "", 0, nil, now, now,
+		)
+	}
+	c := newTestScheduler(&fakeStore{}, &fakeEmailer{configured: true})
+
+	cases := []struct {
+		tz   string
+		want time.Time
+	}{
+		{"Asia/Ho_Chi_Minh", time.Date(2026, 10, 2, 2, 0, 0, 0, time.UTC)},  // 09:00 +07
+		{"America/New_York", time.Date(2026, 10, 2, 13, 0, 0, 0, time.UTC)}, // 09:00 EDT (-04)
+		{"UTC", time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)},
+		{"", time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)},          // unset = UTC
+		{"Not/AZone", time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)}, // unloadable = UTC, not a stall
+	}
+	for _, tc := range cases {
+		got := c.nextRun(mk(tc.tz), now)
+		if got == nil || !got.Equal(tc.want) {
+			t.Errorf("tz=%q: next run = %v, want %v", tc.tz, got, tc.want)
+		}
+	}
+}
