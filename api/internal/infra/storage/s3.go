@@ -43,6 +43,27 @@ func NewS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Sto
 			return nil, fmt.Errorf("S3 endpoint blocked: %w", err)
 		}
 	}
+	return newS3Storage(bucket, region, endpoint, accessKey, secretKey, s3HTTPClient()), nil
+}
+
+// NewOperatorS3Storage creates the server-wide attachment storage the operator
+// configured (STORAGE_PROVIDER=s3|minio, STORAGE_BUCKET, STORAGE_REGION,
+// STORAGE_ENDPOINT, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY). Unlike a tenant
+// bucket, the endpoint is the operator's own configuration, so it may be a
+// private address (an in-cluster MinIO) and is not run through the SSRF guard.
+// Static keys are required: nothing is taken from the ambient AWS environment.
+func NewOperatorS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Storage, error) {
+	if bucket == "" {
+		return nil, fmt.Errorf("STORAGE_BUCKET is required for STORAGE_PROVIDER=s3/minio")
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY are required for STORAGE_PROVIDER=s3/minio")
+	}
+	return newS3Storage(bucket, region, endpoint, accessKey, secretKey, nil), nil
+}
+
+// newS3Storage builds the client. httpClient nil = the SDK's default client.
+func newS3Storage(bucket, region, endpoint, accessKey, secretKey string, httpClient aws.HTTPClient) *S3Storage {
 	if region == "" {
 		region = "us-east-1"
 	}
@@ -50,7 +71,9 @@ func NewS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Sto
 	cfg := aws.Config{
 		Region:      region,
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
-		HTTPClient:  s3HTTPClient(),
+	}
+	if httpClient != nil {
+		cfg.HTTPClient = httpClient
 	}
 
 	clientOpts := []func(*s3.Options){}
@@ -62,9 +85,7 @@ func NewS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Sto
 		})
 	}
 
-	client := s3.NewFromConfig(cfg, clientOpts...)
-
-	return &S3Storage{client: client, bucket: bucket}, nil
+	return &S3Storage{client: s3.NewFromConfig(cfg, clientOpts...), bucket: bucket}
 }
 
 func (s *S3Storage) Upload(ctx context.Context, tenantID, filename, contentType string, reader io.Reader) (string, error) {

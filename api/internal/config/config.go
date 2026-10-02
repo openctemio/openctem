@@ -152,7 +152,8 @@ type StorageConfig struct {
 	// Default: ./data/attachments
 	// In Docker: mount a volume to persist across container rebuilds.
 	LocalPath string
-	// S3/MinIO settings (future)
+	// S3/MinIO settings (STORAGE_PROVIDER=s3 or minio): the server-wide bucket.
+	// Endpoint empty = AWS S3; set it for MinIO or another S3-compatible store.
 	Bucket    string
 	Region    string
 	Endpoint  string
@@ -1197,6 +1198,26 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// validateStorage checks the server-wide attachment storage settings, so a
+// typo fails at start-up instead of the API quietly keeping files on the
+// container disk.
+func (c *Config) validateStorage() error {
+	switch c.Storage.Provider {
+	case "", "local":
+		return nil
+	case "s3", "minio":
+		if c.Storage.Bucket == "" {
+			return fmt.Errorf("STORAGE_BUCKET is required when STORAGE_PROVIDER=%s", c.Storage.Provider)
+		}
+		if c.Storage.AccessKey == "" || c.Storage.SecretKey == "" {
+			return fmt.Errorf("STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY are required when STORAGE_PROVIDER=%s", c.Storage.Provider)
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid STORAGE_PROVIDER: %q (must be local, s3 or minio)", c.Storage.Provider)
+	}
+}
+
 // validateBasic validates basic configuration regardless of environment.
 func (c *Config) validateBasic() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
@@ -1215,6 +1236,9 @@ func (c *Config) validateBasic() error {
 		return err
 	}
 	if err := c.validateAdminAuditRetention(); err != nil {
+		return err
+	}
+	if err := c.validateStorage(); err != nil {
 		return err
 	}
 	return nil
