@@ -107,6 +107,7 @@ export const DEV_USER: AuthUser & {
     // Attack Surface
     'attack_surface:scope:read',
     'attack_surface:scope:write',
+    'attack_surface:scope:exclusions:approve',
     // Validation
     'validation:read',
     'validation:write',
