@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -432,6 +433,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	// Batch-resolve creator names in one query to avoid an N+1 (previously each
 	// row triggered its own users lookup inside toScanResponse).
 	nameByID := h.resolveScanCreatorNames(ctx, result.Data)
+	reveal := canSeeScanConfigSecrets(ctx)
 	items := make([]*ScanDetailResponse, len(result.Data))
 	for i, s := range result.Data {
 		var name *string
@@ -440,7 +442,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 				name = &n
 			}
 		}
-		items[i] = buildScanResponse(s, name)
+		items[i] = buildScanResponse(s, name, reveal)
 	}
 
 	resp := map[string]any{
@@ -1046,7 +1048,25 @@ func (h *ScanHandler) toScanResponse(ctx context.Context, s *scan.Scan) *ScanDet
 			createdByName = &name
 		}
 	}
-	return buildScanResponse(s, createdByName)
+	return buildScanResponse(s, createdByName, canSeeScanConfigSecrets(ctx))
+}
+
+// scannerConfigFor returns the stored config, or its redacted copy.
+func scannerConfigFor(cfg map[string]any, revealSecrets bool) map[string]any {
+	if revealSecrets {
+		return cfg
+	}
+	return scan.RedactConfigSecrets(cfg)
+}
+
+// canSeeScanConfigSecrets reports whether the caller is shown scanner_config
+// values that look like credentials. Only callers who may edit scans
+// (scans:write; owners and admins always) see them, because they are the
+// ones who type and change them. Everyone else who can read a scan sees
+// those values replaced by scan.RedactedSecretValue, with the
+// scanner_config_warnings still saying which paths hold one.
+func canSeeScanConfigSecrets(ctx context.Context) bool {
+	return middleware.HasPermission(ctx, permission.ScansWrite.String())
 }
 
 // resolveScanCreatorNames batch-loads creator display names for a page of scans
@@ -1142,8 +1162,11 @@ func withTriggerName(resp *RunResponse, names map[string]string) *RunResponse {
 }
 
 // buildScanResponse converts a domain scan to API response using a pre-resolved
-// creator name (nil = unknown/omitted). Pure — no DB access.
-func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse {
+// creator name (nil = unknown/omitted). Pure — no DB access. Unless
+// revealSecrets is set, secret-looking scanner_config values are masked (see
+// canSeeScanConfigSecrets); the warnings are always computed from the stored
+// values.
+func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) *ScanDetailResponse {
 	// Handle nullable AssetGroupID
 	assetGroupID := ""
 	if !s.AssetGroupID.IsZero() {
@@ -1168,7 +1191,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse 
 		Targets:               s.Targets,
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
-		ScannerConfig:         s.ScannerConfig,
+		ScannerConfig:         scannerConfigFor(s.ScannerConfig, revealSecrets),
 		ScannerConfigWarnings: scan.DetectConfigSecrets(s.ScannerConfig),
 		TargetsPerJob:         s.TargetsPerJob,
 		ScheduleType:          string(s.ScheduleType),
@@ -1473,7 +1496,9 @@ func (h *ScanHandler) ExportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := h.service.ExportConfig(r.Context(), tid, sid)
+	data, err := h.service.ExportConfigWithOptions(r.Context(), tid, sid, scansvc.ExportOptions{
+		RedactSecrets: !canSeeScanConfigSecrets(r.Context()),
+	})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

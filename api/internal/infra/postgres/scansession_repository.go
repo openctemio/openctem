@@ -306,7 +306,9 @@ func (r *ScanSessionRepository) GetStats(ctx context.Context, tenantID shared.ID
 			COUNT(*) FILTER (WHERE status = 'canceled') as canceled,
 			COALESCE(SUM(findings_total), 0) as total_findings,
 			COALESCE(SUM(findings_new), 0) as total_findings_new,
-			COALESCE(AVG(duration_ms) FILTER (WHERE status = 'completed'), 0) as avg_duration_ms
+			-- AVG returns numeric ("7.5"); round it to the bigint the Stats
+			-- field holds, or the scan fails as soon as one run completed.
+			COALESCE(ROUND(AVG(duration_ms) FILTER (WHERE status = 'completed')), 0)::bigint as avg_duration_ms
 		FROM scan_sessions
 		WHERE tenant_id = $1 AND created_at >= $2
 	`
