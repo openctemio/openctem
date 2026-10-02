@@ -108,6 +108,11 @@ func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id s
 
 // GetPendingForSensor retrieves pending commands for a sensor.
 //
+// A command that names a tool (payload "scanner", else "preferred_tool") is
+// only returned to a sensor that has that tool (toolClaimPredicate), zoned or
+// not: a sensor never receives a scan it would fail with "scanner not found"
+// (RFC-030 B5).
+//
 // A command whose payload carries a non-empty required_capabilities array is
 // only returned when every one of those capabilities is present in the polling
 // sensor's capabilities. This is the claim-time mirror of the dispatch-time
@@ -124,11 +129,13 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 	args := []any{tenantID.String()}
 
 	if sensorID != nil {
-		query += " AND (sensor_id = $2 OR sensor_id IS NULL) AND " + zoneClaimPredicate("$2")
+		query += " AND (sensor_id = $2 OR sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +
+			" AND " + toolClaimPredicate("$2")
 		args = append(args, sensorID.String())
 	} else {
-		// No sensor identity: nothing pinned, and no zone membership to prove.
-		query += " AND sensor_id IS NULL AND scan_zone_id IS NULL"
+		// No sensor identity: nothing pinned, no zone membership and no tools
+		// to prove.
+		query += " AND sensor_id IS NULL AND scan_zone_id IS NULL AND " + commandToolSQL + " IS NULL"
 	}
 
 	query += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1))
@@ -194,8 +201,8 @@ func capabilityClaimPredicate(capsParam string) string {
 // fingerprint of its zone assignments, in one statement.
 //
 // "Could claim" is exactly what the poll (GetPendingForSensor) would offer:
-// pinned to the sensor or unpinned, ready, zone claim predicate, capability
-// gate. The query only splits the poll's (sensor_id = $2 OR sensor_id IS NULL)
+// pinned to the sensor or unpinned, ready, zone claim predicate, tool gate,
+// capability gate. The query only splits the poll's (sensor_id = $2 OR sensor_id IS NULL)
 // into two counts so each half is an index range on idx_commands_pending_poll
 // / idx_commands_pending_unassigned instead of a filter over every pending row
 // of the tenant, and pre-filters unpinned zone commands to the sensor's zones
@@ -207,6 +214,7 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 	}
 	claimable := pendingReadyPredicate + `
 		AND ` + zoneClaimPredicate("$2") + `
+		AND ` + toolClaimPredicate("$2") + `
 		AND ` + capabilityClaimPredicate("$3")
 	query := `
 		SELECT
@@ -259,10 +267,42 @@ func zoneClaimPredicate(sensorParam string) string {
 			WHERE zs.zone_id = commands.scan_zone_id
 			  AND zs.tenant_id = commands.tenant_id
 			  AND zs.sensor_id = ` + sensorParam + `
-			  AND (
-				COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLIF(commands.payload->>'preferred_tool', '')) IS NULL
-				OR COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLIF(commands.payload->>'preferred_tool', '')) = ANY(zsn.tools)
-			  )
+			  AND (` + commandToolSQL + ` IS NULL OR ` + commandToolSQL + ` = ANY(` + sensorDispatchTools("zsn") + `))
+		)
+	)`
+}
+
+// commandToolSQL is the tool a command asks for: payload "scanner", else
+// "preferred_tool" (a workflow step), NULL when it names none (collect,
+// validate and other tool-less commands). The v2 results receiver reads the
+// same keys (ingest commandTool).
+const commandToolSQL = `COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLIF(commands.payload->>'preferred_tool', ''))`
+
+// sensorDispatchTools is the SQL for the tools dispatch may send the sensor
+// aliased alias work for. It is the one place that decides it, for the poll,
+// the claim, the heartbeat doorbell and the zone predicate.
+//
+// Today that is the tools set on the sensor (sensors.tools), the same list
+// the trigger checks (HasSensorForTool) before it creates a scan. When the
+// sensor-reported capabilities land (RFC-029 §4.3.1: reported ∩ allowed),
+// this returns alias + ".effective_tools" and nothing else changes.
+func sensorDispatchTools(alias string) string {
+	return alias + ".tools"
+}
+
+// toolClaimPredicate is the tool gate (RFC-030 B5): keep a command only if it
+// names no tool, or the sensor bound to sensorParam (same tenant as the
+// command) has that tool. Unlike the zone predicate it applies to every
+// command, so an unzoned nuclei scan is never offered to a sensor without
+// nuclei, and a sensor cannot claim one by id either.
+func toolClaimPredicate(sensorParam string) string {
+	return `(
+		` + commandToolSQL + ` IS NULL
+		OR EXISTS (
+			SELECT 1 FROM sensors ts
+			WHERE ts.id = ` + sensorParam + `
+			  AND ts.tenant_id = commands.tenant_id
+			  AND ` + commandToolSQL + ` = ANY(` + sensorDispatchTools("ts") + `)
 		)
 	)`
 }
@@ -317,8 +357,9 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 // poller already acknowledged it, so two sensors polling the same unassigned
 // command can't both proceed (double dispatch).
 //
-// The zone predicate is the same as the poll's (RFC-023 layer 2): a sensor
-// cannot acknowledge, by id, a zone command it would never have been offered.
+// The zone predicate and the tool gate are the same as the poll's (RFC-023
+// layer 2, RFC-030 B5): a sensor cannot acknowledge, by id, a command it would
+// never have been offered.
 func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID string) (bool, error) {
 	query := `
 		UPDATE commands
@@ -326,6 +367,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 		  AND (sensor_id IS NULL OR sensor_id = $3)
 		  AND ` + zoneClaimPredicate("$3") + `
+		  AND ` + toolClaimPredicate("$3") + `
 	`
 	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID)
 	if err != nil {
