@@ -654,7 +654,7 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 				  AND f.component_id IS NOT NULL
 				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 			) as total_vulnerabilities,
-			COUNT(DISTINCT ac.component_id) FILTER (WHERE ac.dependency_type IN ('deprecated', 'end_of_life')) as outdated_components
+			COUNT(DISTINCT ac.component_id) FILTER (WHERE ac.status IN ('deprecated', 'end_of_life')) as outdated_components
 		FROM asset_components ac
 		JOIN components c ON ac.component_id = c.id
 		WHERE ac.tenant_id = $1
@@ -764,14 +764,15 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 
 // GetEcosystemStats returns per-ecosystem statistics for a tenant.
 func (r *ComponentRepository) GetEcosystemStats(ctx context.Context, tenantID shared.ID) ([]component.EcosystemStats, error) {
-	// Note: "outdated" is calculated based on dependency_type being deprecated/end_of_life
-	// In a real scenario, this would check against latest available versions
+	// "outdated" = the dependency's lifecycle status (asset_components.status) is
+	// deprecated or end_of_life. It used to test dependency_type, whose CHECK
+	// only allows direct/transitive/dev/optional/peer/build, so it was always 0.
 	query := `
 		SELECT
 			c.ecosystem,
 			COUNT(DISTINCT c.id) as total,
 			COUNT(DISTINCT c.id) FILTER (WHERE c.vulnerability_count > 0) as vulnerable,
-			COUNT(DISTINCT c.id) FILTER (WHERE ac.dependency_type IN ('deprecated', 'end_of_life')) as outdated
+			COUNT(DISTINCT c.id) FILTER (WHERE ac.status IN ('deprecated', 'end_of_life')) as outdated
 		FROM asset_components ac
 		JOIN components c ON ac.component_id = c.id
 		WHERE ac.tenant_id = $1

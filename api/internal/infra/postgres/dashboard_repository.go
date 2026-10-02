@@ -980,9 +980,12 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 			SELECT
 				COUNT(*) AS total,
 				COUNT(*) FILTER(WHERE owner_id IS NOT NULL) AS with_owner,
+				-- Internet-exposed = exposure 'public' or flagged internet-accessible,
+				-- the same definition the program metrics use. assets.exposure has no
+				-- 'internet' value; filtering on it made this median a constant 0.
 				COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP(
 					ORDER BY EXTRACT(epoch FROM NOW() - last_seen) / 86400.0
-				) FILTER(WHERE exposure = 'internet' AND last_seen IS NOT NULL), 0) AS median_last_seen_days,
+				) FILTER(WHERE (exposure = 'public' OR is_internet_accessible) AND last_seen IS NOT NULL), 0) AS median_last_seen_days,
 				COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP(
 					ORDER BY EXTRACT(epoch FROM NOW() - last_seen) / 3600.0
 				) FILTER(WHERE last_seen IS NOT NULL), 0) AS median_last_seen_age_hours,
