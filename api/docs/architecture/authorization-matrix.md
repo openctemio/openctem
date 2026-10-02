@@ -432,6 +432,29 @@ cannot fingerprint the build. Release images stamp it with `-ldflags` from the
 tag; the dev container's air build stamps `<highest tag>-dev`; an unstamped
 binary reads the checkout's `.git` (`pkg/version`).
 
+### Real-time WebSocket (`/api/v1/auth/ws-token`, `/api/v1/ws`)
+
+A WebSocket ticket opens the tenant's real-time stream, so it is held to the
+same tenant gates as any JWT-tenant route.
+
+| Endpoint | Required Auth |
+|----------|---------------|
+| `GET /api/v1/auth/ws-token` | JWT session (no `oct_` keys) + tenant chain: SSO enforcement, organization IP allowlist, `RequireTenant`, active membership (`wsTokenMiddlewares`) |
+| `GET /api/v1/ws/?ticket=…` | Single-use ticket (Redis `GETDEL`, 30 s), bound to the user + tenant it was issued for; **active membership re-checked at upgrade** (`WSTicketAuth`) |
+
+- A suspended member, a user who is not a member of the token's tenant, a
+  caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`) and a
+  password session in an SSO-enforced tenant get no ticket.
+- A member suspended or removed between issue and upgrade gets 403 on the
+  upgrade. The upgrade does not re-run the IP allowlist (the ticket is
+  single-use and lives 30 s).
+- Without Redis (no ticket service) `/ws` falls back to a short-lived JWT and
+  the full `buildTokenTenantMiddlewares` chain.
+- After the upgrade, every channel subscription is authorized by
+  `websocket.Hub.defaultAuthorize` against the connection's user and tenant
+  (own `user:{tenant}:{user}` only, own `tenant:{id}` only, permission +
+  data scope for `finding:`/`triage:`, `scans:read` for `scan:`).
+
 ### Platform Admin Routes (`/api/v1/admin/*`)
 
 Platform admin routes are for OpenCTEM operators, NOT tenant users. They
