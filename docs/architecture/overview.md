@@ -336,5 +336,6 @@ Hexagonal / Ports & Adapters
 - [Audit Hash Chain](audit-hash-chain.md)
 - [CTEM-ID Catalog](ctem-id-catalog.md)
 - [Certificate-Transparency Monitoring](certificate-transparency-monitoring.md)
+- [External Attack Surface Management (EASM)](easm.md)
 - [Criticality Propagation](criticality-propagation.md)
 - [ADR-001: Use Standard net/http](decisions/001-use-stdlib-http.md)

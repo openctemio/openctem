@@ -52,3 +52,6 @@ first-class asset are scoped but not implemented.
 
 - `data-sources.md` — the exposure-discovery model this plugs into.
 - RFC-019 (`docs/rfcs/RFC-019-certificate-transparency-discovery.md`).
+- [easm.md](easm.md) and RFC-036: where CT fits in the EASM pipeline, and the
+  known limit that only the first 50 domain assets per tenant are queried
+  (no rotation cursor yet; RFC-036 P0).
