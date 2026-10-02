@@ -5472,6 +5472,24 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.CTEMScopeSnapshotResponse:
+    properties:
+      asset_criticality:
+        type: string
+      asset_id:
+        type: string
+      asset_name:
+        description: Asset fields, empty when the asset has since been deleted.
+        type: string
+      asset_type:
+        type: string
+      id:
+        type: string
+      included_at:
+        type: string
+      scope_target_id:
+        type: string
+    type: object
   internal_infra_http_handler.CTISIngestRequest:
     properties:
       report:
@@ -18680,6 +18698,37 @@ paths:
       security:
       - BearerAuth: []
       summary: Unlink an attacker profile from a cycle
+      tags:
+      - CTEM Cycles
+  /ctem-cycles/{id}/scope:
+    get:
+      parameters:
+      - description: Cycle ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_infra_http_handler.CTEMScopeSnapshotResponse'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a cycle's scope snapshot
       tags:
       - CTEM Cycles
   /custom-tools:

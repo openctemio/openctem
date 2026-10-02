@@ -126,7 +126,6 @@ GET /api/v1/control-tests/stats
 GET /api/v1/ctem-cycles
 GET /api/v1/ctem-cycles/metrics/trend
 GET /api/v1/ctem-cycles/{}/metrics
-GET /api/v1/ctem-cycles/{}/scope
 GET /api/v1/ctem-ids
 GET /api/v1/dashboard/data-quality
 GET /api/v1/dashboard/executive-summary

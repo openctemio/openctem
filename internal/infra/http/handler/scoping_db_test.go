@@ -364,3 +364,74 @@ func TestBusinessService_AssetCount(t *testing.T) {
 		t.Errorf("get body = %s", w.Body.String())
 	}
 }
+
+// TestCTEMCycleHandler_GetScopeCarriesAssetFields: each snapshot item names
+// its asset, a row whose asset was deleted is kept with empty fields, another
+// tenant gets 404, and malformed ids are 404 rather than 500.
+func TestCTEMCycleHandler_GetScopeCarriesAssetFields(t *testing.T) {
+	db, ctx := openScopingTestDB(t)
+	tenantID := seedHandlerTenant(ctx, t, db)
+	otherTenant := seedHandlerTenant(ctx, t, db)
+
+	kept := mustID(ctx, t, db,
+		`INSERT INTO assets (tenant_id, name, asset_type, criticality) VALUES ($1,'db-prod','host','critical') RETURNING id`, tenantID)
+	gone := seedAssetRow(ctx, t, db, tenantID, "to-delete", "active", false)
+	cycle := mustID(ctx, t, db, `INSERT INTO ctem_cycles (tenant_id, name, status, created_by) VALUES ($1,'c','active',$2) RETURNING id`,
+		tenantID, shared.NewID().String())
+	mustExec(ctx, t, db, `INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id, included_at) VALUES ($1,$2,NOW()-interval '1 minute'),($1,$3,NOW())`,
+		cycle, kept, gone)
+	mustExec(ctx, t, db, `DELETE FROM assets WHERE id=$1`, gone)
+
+	h := NewCTEMCycleHandler(db, nil, logger.NewNop())
+	get := func(tenant, id string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h.GetScope(w, cycleRequest(http.MethodGet, "/api/v1/ctem-cycles/"+id+"/scope", tenant, id))
+		return w
+	}
+
+	w := get(tenantID, cycle)
+	t.Logf("scope: %s", w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("scope = %d %s", w.Code, w.Body.String())
+	}
+	var items []CTEMScopeSnapshotResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &items); err != nil {
+		t.Fatalf("decode (must stay a plain array): %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+	if items[0].AssetID != kept || items[0].AssetName != "db-prod" || items[0].AssetType != "host" || items[0].AssetCriticality != "critical" {
+		t.Errorf("kept item = %+v", items[0])
+	}
+	if items[1].AssetID != gone || items[1].AssetName != "" || items[1].AssetType != "" || items[1].AssetCriticality != "" {
+		t.Errorf("deleted-asset item = %+v", items[1])
+	}
+
+	if w := get(otherTenant, cycle); w.Code != http.StatusNotFound {
+		t.Errorf("foreign scope = %d, want 404", w.Code)
+	}
+	if w := get(tenantID, "not-a-uuid"); w.Code != http.StatusNotFound {
+		t.Errorf("malformed scope = %d, want 404", w.Code)
+	}
+	w = httptest.NewRecorder()
+	h.Get(w, cycleRequest(http.MethodGet, "/api/v1/ctem-cycles/x", tenantID, "x"))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("malformed get = %d, want 404", w.Code)
+	}
+	w = httptest.NewRecorder()
+	req := cycleRequest(http.MethodPost, "/api/v1/ctem-cycles/x/profiles", tenantID, "x")
+	req.Body = io.NopCloser(strings.NewReader(`{"profile_ids":[]}`))
+	h.LinkProfile(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("malformed link = %d, want 404", w.Code)
+	}
+	// A malformed profile id is skipped, not a 500.
+	w = httptest.NewRecorder()
+	req = cycleRequest(http.MethodPost, "/api/v1/ctem-cycles/"+cycle+"/profiles", tenantID, cycle)
+	req.Body = io.NopCloser(strings.NewReader(`{"profile_ids":["nope"]}`))
+	h.LinkProfile(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Errorf("malformed profile id link = %d, want 204", w.Code)
+	}
+}
