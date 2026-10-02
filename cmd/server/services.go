@@ -1309,6 +1309,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Wire up template syncer to source service for force sync API
 	s.TemplateSource.SetTemplateSyncer(s.TemplateSyncer)
+	// Binding a stored credential to a source is restricted to owners/admins
+	// and the credential's creator, and audited.
+	s.TemplateSource.SetCredentialGuard(s.SecretStore, s.Audit)
 
 	s.Tool = tool.NewService(repos.Tool, repos.TenantToolConfig, repos.ToolExecution, log)
 	s.Tool.SetSensorRepo(repos.Sensor)         // Enable tool availability checking

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
@@ -30,6 +31,18 @@ func NewTemplateSourceHandler(service *template.SourceService, v *validator.Vali
 		service:   service,
 		validator: v,
 		logger:    log.With("handler", "template_source"),
+	}
+}
+
+// buildAuditContext attributes template-source audit events to the caller.
+func (h *TemplateSourceHandler) buildAuditContext(r *http.Request) auditapp.AuditContext {
+	return auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
 	}
 }
 
@@ -151,6 +164,8 @@ func (h *TemplateSourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		S3Config:        req.S3Config,
 		HTTPConfig:      req.HTTPConfig,
 		CredentialID:    req.CredentialID,
+		ActorIsAdmin:    middleware.IsAdmin(r.Context()),
+		Audit:           h.buildAuditContext(r),
 	}
 
 	source, err := h.service.CreateSource(r.Context(), input)
@@ -328,6 +343,9 @@ func (h *TemplateSourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		S3Config:        req.S3Config,
 		HTTPConfig:      req.HTTPConfig,
 		CredentialID:    req.CredentialID,
+		UserID:          middleware.GetUserID(r.Context()),
+		ActorIsAdmin:    middleware.IsAdmin(r.Context()),
+		Audit:           h.buildAuditContext(r),
 	}
 
 	source, err := h.service.UpdateSource(r.Context(), input)

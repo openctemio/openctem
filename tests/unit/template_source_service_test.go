@@ -228,6 +228,7 @@ func TestTemplateSourceService_CreateSource_S3(t *testing.T) {
 			AuthType: ts.S3AuthKeys,
 		},
 		CredentialID: shared.NewID().String(),
+		ActorIsAdmin: true, // binding a stored credential is an owner/admin action
 	}
 
 	source, err := svc.CreateSource(ctx, input)
@@ -465,6 +466,7 @@ func TestTemplateSourceService_CreateSource_WithCredential(t *testing.T) {
 
 	input := tmplSrcValidGitInput(tenantID.String())
 	input.CredentialID = credID.String()
+	input.ActorIsAdmin = true // binding a stored credential is an owner/admin action
 
 	source, err := svc.CreateSource(ctx, input)
 	if err != nil {
@@ -863,6 +865,7 @@ func TestTemplateSourceService_UpdateSource_SetCredential(t *testing.T) {
 		TenantID:     tenantID.String(),
 		SourceID:     src.ID.String(),
 		CredentialID: &credID,
+		ActorIsAdmin: true, // binding a stored credential is an owner/admin action
 	}
 
 	result, err := svc.UpdateSource(ctx, input)

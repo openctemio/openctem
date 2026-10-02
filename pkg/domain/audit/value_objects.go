@@ -163,6 +163,12 @@ const (
 	// credential's plaintext secret (POST /credentials/{id}/reveal).
 	ActionCredentialRevealed Action = "credential.revealed"
 
+	// Template source credential binding: a stored credential is attached to
+	// (or detached from) a template source, whose sync sends it to the
+	// source's URL.
+	ActionTemplateSourceCredentialAttached Action = "template_source.credential_attached"
+	ActionTemplateSourceCredentialDetached Action = "template_source.credential_detached"
+
 	// Group actions
 	ActionGroupCreated Action = "group.created"
 	ActionGroupUpdated Action = "group.updated"
@@ -331,6 +337,7 @@ func (a Action) IsValid() bool {
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
 		ActionCredentialRevealed,
+		ActionTemplateSourceCredentialAttached, ActionTemplateSourceCredentialDetached,
 		ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
@@ -481,7 +488,8 @@ const (
 	ResourceTypeAPIKey           ResourceType = "api_key"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
-	ResourceTypeAuditChain ResourceType = "audit_chain"
+	ResourceTypeAuditChain     ResourceType = "audit_chain"
+	ResourceTypeTemplateSource ResourceType = "template_source"
 )
 
 // String returns the string representation of the resource type.
@@ -502,7 +510,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
-		ResourceTypeCredential, ResourceTypeAuditChain:
+		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource:
 		return true
 	}
 	return false
@@ -575,6 +583,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted, ActionCredentialRevealed,
+		ActionTemplateSourceCredentialAttached,
 		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled:
 		return SeverityHigh
 

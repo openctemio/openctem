@@ -202,6 +202,43 @@ Details: [api-keys.md](./api-keys.md).
 > `APP_ENCRYPTION_KEY` (`details.secret_value_enc`); the server seals legacy
 > plaintext rows on start, and `cmd/encrypt-credentials` does the same offline.
 
+#### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
+| `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
+| `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
+| Secret store `GET` / `POST`,`PUT` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+
+> **A stored credential goes only where someone entitled to it pointed it.**
+> A sync decrypts the source's `credential_id` and sends it to the source's
+> URL (bearer/basic/API key, git token or SSH key, S3 keys). Members hold
+> `scans:sources:write` and `scans:secret_store:write`, so the route gates
+> alone would let any member send any stored secret to a server they run.
+> `template.SourceService` therefore checks, on create and update:
+> - **Binding** a credential (a new `credential_id`, or keeping one while the
+>   destination changes) is allowed to tenant owners/admins and to the user who
+>   stored that credential (`credentials.created_by`). Anyone else gets 403
+>   `CREDENTIAL_BIND_FORBIDDEN`, and the attempt is audited as
+>   `template_source.credential_attached` with result `denied`.
+> - **Re-pointing** a source that carries a credential (git URL, HTTP URL, or
+>   S3 endpoint/region/bucket/role ARN) without re-binding it in the same request
+>   **drops the credential**, audited as `template_source.credential_detached`
+>   (`reason: destination changed`). An S3 source cannot exist without its
+>   keys, so re-pointing one needs the owner/admin to re-bind.
+> - Every successful bind is audited as `template_source.credential_attached`
+>   (severity high) with the credential id/name and the destination host.
+>
+> The secret store has no per-credential host allowlist; the binding check
+> above is the control. Sources bound before this check existed keep their
+> credential until they are next re-pointed.
+>
+> Templates synced or uploaded are validated before use. For Nuclei, the
+> `code`, `javascript` and `headless` protocols are refused on the **parsed**
+> document (`execProtocolKey`), so JSON, flow-style YAML, escaped or
+> differently-cased keys cannot hide them.
+
 #### Vulnerabilities (`/api/v1/vulnerabilities`) - Global
 
 | Endpoint | Permission Required |
