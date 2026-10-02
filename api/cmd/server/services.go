@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -61,6 +60,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
@@ -1227,10 +1227,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.APIKey.SetMembershipChecker(apikey.NewMembershipChecker(repos.Tenant, repos.User))
 	// Audit oct_ key create / revoke / delete.
 	s.APIKey.SetAuditService(s.Audit)
+	// During an encryption-key rotation, keys hashed under the old key
+	// (APP_ENCRYPTION_KEY_PREVIOUS) keep authenticating.
+	s.APIKey.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
 	s.SCIMToken = scim.NewTokenService(repos.ScimToken, cfg.Encryption.Key, log)
+	s.SCIMToken.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
 	s.SCIMProvisioning = scim.NewProvisioningService(
 		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
@@ -1311,7 +1315,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// previous pepper (APP_ENCRYPTION_KEY itself) and plain-SHA256 rows from
 	// before any pepper keep authenticating; new and renewed keys are stored
 	// under the current pepper.
-	sensorPepper, sensorLegacyPeppers := sensorapp.SensorKeyPeppers(cfg.SensorConfig.KeyPepper, cfg.Encryption.Key, cfg.SensorConfig.KeyPepperPrevious...)
+	// During an encryption-key rotation the peppers derived from the old key
+	// (and the old key itself, the pepper before RFC-032 Phase 0) keep
+	// verifying the keys sensors already hold.
+	sensorPrevious := append(append([]string(nil), cfg.SensorConfig.KeyPepperPrevious...),
+		sensorapp.RotatedEncryptionKeyPeppers(cfg.Encryption.PreviousKeys)...)
+	sensorPepper, sensorLegacyPeppers := sensorapp.SensorKeyPeppers(cfg.SensorConfig.KeyPepper, cfg.Encryption.Key, sensorPrevious...)
 	s.Sensor.SetPepper(sensorPepper)
 	s.Sensor.SetLegacyPeppers(sensorLegacyPeppers...)
 	// Optional short-lived sensor credentials (RFC-014 Phase 1b). Zero =
@@ -1372,18 +1381,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize credential service for template sources
 	// Decode hex key to bytes (64 hex chars -> 32 bytes for AES-256)
 	var encryptionKey []byte
+	var previousSecretStoreKeys [][]byte
 	if cfg.Encryption.IsConfigured() {
-		encryptionKey, err = hex.DecodeString(cfg.Encryption.Key)
-		if err != nil {
-			// Fallback to raw bytes if not hex encoded
-			encryptionKey = []byte(cfg.Encryption.Key)
+		// Hex-decoded, else the raw bytes (secretstore.KeyFromConfig).
+		encryptionKey = secretstore.KeyFromConfig(cfg.Encryption.Key)
+		for _, prev := range cfg.Encryption.PreviousKeys {
+			previousSecretStoreKeys = append(previousSecretStoreKeys, secretstore.KeyFromConfig(prev))
 		}
 	} else {
 		// Use a zero key for development (secret store will still work but is not secure)
 		log.Warn("APP_ENCRYPTION_KEY not configured - secret store using zero key (development only)")
 		encryptionKey = make([]byte, 32)
 	}
-	s.SecretStore, err = app.NewSecretStoreService(repos.SecretStore, encryptionKey, s.Audit, log)
+	s.SecretStore, err = app.NewSecretStoreService(repos.SecretStore, encryptionKey, s.Audit, log, previousSecretStoreKeys...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize secret store service: %w", err)
 	}
@@ -1957,24 +1967,28 @@ func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, er
 		return crypto.NewNoOpEncryptor(), nil
 	}
 
-	var encryptor crypto.Encryptor
-	var err error
-
-	switch cfg.Encryption.KeyFormat {
-	case "hex":
-		encryptor, err = crypto.NewCipherFromHex(cfg.Encryption.Key)
-	case "base64":
-		encryptor, err = crypto.NewCipherFromBase64(cfg.Encryption.Key)
-	default:
-		encryptor, err = crypto.NewCipher([]byte(cfg.Encryption.Key))
-	}
-
+	current, err := crypto.NewCipherFromKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize credentials encryptor: %w", err)
 	}
+	if len(cfg.Encryption.PreviousKeys) == 0 {
+		log.Info("credentials encryption enabled")
+		return current, nil
+	}
 
-	log.Info("credentials encryption enabled")
-	return encryptor, nil
+	// Key rotation in progress: encrypt with the new key, still decrypt
+	// values written under the previous ones until cmd/rekey re-encrypts them.
+	previous := make([]*crypto.Cipher, 0, len(cfg.Encryption.PreviousKeys))
+	for i, k := range cfg.Encryption.PreviousKeys {
+		c, perr := crypto.NewCipherFromKey(k, "")
+		if perr != nil {
+			return nil, fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d: %w", i+1, perr)
+		}
+		previous = append(previous, c)
+	}
+	log.Warn("credentials encryption enabled with previous keys (rotation in progress); run cmd/rekey, then remove APP_ENCRYPTION_KEY_PREVIOUS",
+		"previous_keys", len(previous))
+	return crypto.NewKeyRing(current, previous...), nil
 }
 
 // NewJobClient creates a new job client for background processing.

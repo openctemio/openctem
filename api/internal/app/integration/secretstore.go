@@ -27,8 +27,9 @@ func NewSecretStoreService(
 	encryptionKey []byte,
 	auditService *auditapp.AuditService,
 	log *logger.Logger,
+	previousKeys ...[]byte,
 ) (*SecretStoreService, error) {
-	encryptor, err := secretstore.NewEncryptor(encryptionKey)
+	encryptor, err := secretstore.NewEncryptor(encryptionKey, previousKeys...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encryptor: %w", err)
 	}

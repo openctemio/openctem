@@ -1996,3 +1996,26 @@ func TestAuthenticateWithPermissions_RevokedKeyRejected(t *testing.T) {
 		t.Errorf("holder consulted for a revoked key")
 	}
 }
+
+// Encryption-key rotation: a key hashed under the old pepper keeps
+// authenticating while the old key is listed as previous, and stops once it
+// is removed.
+func TestAuthenticate_PreviousPepperDuringKeyRotation(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	old := apikey.NewService(repo, "old-pepper", logger.NewNop())
+	created, err := old.Create(context.Background(), apikey.CreateInput{
+		TenantID: shared.NewID().String(), Name: "pre-rotation", Scopes: []string{"findings:read"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	rotated := apikey.NewService(repo, "new-pepper", logger.NewNop())
+	if _, err := rotated.Authenticate(context.Background(), created.Plaintext, ""); err == nil {
+		t.Fatal("without the previous pepper the old key must not authenticate")
+	}
+	rotated.SetLegacyPeppers("old-pepper")
+	if _, err := rotated.Authenticate(context.Background(), created.Plaintext, ""); err != nil {
+		t.Fatalf("with the previous pepper listed the old key must authenticate: %v", err)
+	}
+}

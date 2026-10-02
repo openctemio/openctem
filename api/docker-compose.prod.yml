@@ -148,6 +148,8 @@ services:
       # Encryption (required in production)
       # Generate with: openssl rand -hex 32
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required}
+      # Old key(s) while rotating APP_ENCRYPTION_KEY (docs/deployment/encryption-key-rotation.md).
+      APP_ENCRYPTION_KEY_PREVIOUS: ${APP_ENCRYPTION_KEY_PREVIOUS:-}
       # SMTP (optional)
       SMTP_ENABLED: ${SMTP_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-}
