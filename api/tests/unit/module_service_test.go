@@ -1452,7 +1452,7 @@ func (m *moduleAuditMockRepo) LatestChainHash(_ context.Context, _ shared.ID) (s
 func (m *moduleAuditMockRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error {
 	return nil
 }
-func (m *moduleAuditMockRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+func (m *moduleAuditMockRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int64, _ int) ([]audit.ChainEntry, error) {
 	return nil, nil
 }
 

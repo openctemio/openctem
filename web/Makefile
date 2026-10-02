@@ -145,30 +145,15 @@ docker-clean:
 # PRE-COMMIT & LINTING
 # =============================================================================
 
-## pre-commit-install: Install pre-commit hooks
+## pre-commit-install: Enable the repository git hooks (.githooks, same as `make hooks` at the root)
 pre-commit-install:
-	@echo "Installing pre-commit hooks..."
-	@if ! command -v pre-commit >/dev/null 2>&1; then \
-		echo "Installing pre-commit..."; \
-		if command -v apt-get >/dev/null 2>&1; then \
-			if ! command -v pip >/dev/null 2>&1; then \
-				echo "Installing pip first..."; \
-				sudo apt-get update && sudo apt-get install -y python3-pip; \
-			fi; \
-			pip install --break-system-packages pre-commit; \
-		else \
-			brew install pre-commit; \
-		fi; \
-	fi
-	@echo "Note: This project uses Husky for git hooks."
-	@echo "Run 'npm install' to set up Husky hooks automatically."
-	@echo "If you want to use pre-commit instead, create a .pre-commit-config.yaml file."
+	git config core.hooksPath .githooks
+	@echo "Git hooks enabled: .githooks/ at the repository root (pre-commit: type-check + lint-staged for web/)."
 
-## husky-install: Install Husky git hooks
+## husky-install: Kept for compatibility; installs deps, whose prepare script enables .githooks
 husky-install:
-	@echo "Installing Husky hooks..."
 	$(NPM) install
-	@echo "Husky hooks installed"
+	@echo "Git hooks enabled: .githooks/ at the repository root (no Husky)."
 
 ## pre-commit-run: Run all pre-commit hooks (if configured)
 pre-commit-run:

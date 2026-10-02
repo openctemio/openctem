@@ -97,7 +97,8 @@ RUN CGO_ENABLED=0 \
 # -----------------------------------------------------------------------------
 # Production stage
 # -----------------------------------------------------------------------------
-FROM alpine:3.20 AS production
+# Alpine 3.20 reached end of support on 2026-04-01 (no more security fixes).
+FROM alpine:3.22 AS production
 
 # Set working directory
 WORKDIR /app

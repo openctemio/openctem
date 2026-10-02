@@ -1,7 +1,7 @@
 # =============================================================================
 # Docker Compose - Production Configuration
 # =============================================================================
-# Option 1: Pull from Docker Hub (recommended for deployment):
+# Option 1: Pull the published image from GHCR (recommended for deployment):
 #   docker compose -f docker-compose.prod.yml up -d
 #
 # Option 2: Build locally:
@@ -82,8 +82,11 @@ services:
   # Next.js Production Application
   # ---------------------------------------------------------------------------
   nextjs:
-    # Pull from Docker Hub by default, build locally if --build flag is used
-    image: openctemio/ui:${UI_VERSION:-latest}
+    # Pull from GHCR by default, build locally if --build flag is used.
+    # Releases from the monorepo are ghcr.io/openctemio/openctem-web; the legacy
+    # name below gets identical copies during the transition window and is the
+    # only one with v0.8.0 and earlier. Set UI_IMAGE to switch.
+    image: ${UI_IMAGE:-ghcr.io/openctemio/ui}:${UI_VERSION:-latest}
     build:
       context: .
       dockerfile: Dockerfile

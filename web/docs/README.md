@@ -2,10 +2,16 @@
 
 Complete documentation for the Next.js 16 application with local-JWT / OAuth social / SAML SSO authentication and backend API integration.
 
+> These docs moved with the web console from `openctemio/ui` (archived) into
+> `web/docs/` of the `openctemio/openctem` monorepo on 2026-10-02. In documents
+> written before that date, a bare `#NNN` refers to an `openctemio/ui` pull
+> request (now `openctemio/ui#NNN`), not to this repository. Platform-wide docs
+> (architecture, RFCs, CI/CD) are in [`api/docs/`](../../api/docs/README.md).
+
 ## 📁 Documentation Structure
 
 ```
-ui/docs/
+web/docs/
 ├── README.md                        # This file
 ├── ARCHITECTURE.md                  # System architecture
 ├── ROADMAP.md                       # Future plans

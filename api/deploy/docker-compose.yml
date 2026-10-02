@@ -76,6 +76,10 @@ services:
   # ---------------------------------------------------------------------------
   # Web UI (Next.js): internal only
   # ---------------------------------------------------------------------------
+  # Image names: releases from the monorepo publish ghcr.io/openctemio/openctem-web
+  # and ghcr.io/openctemio/openctem-api; the legacy names used below receive
+  # identical copies during the transition window and are the only names that
+  # hold v0.8.0 and earlier. Set UI_IMAGE / API_IMAGE to switch.
   web:
     image: ${UI_IMAGE:-ghcr.io/openctemio/ui}:${UI_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is required, e.g. v0.8.0}}
     expose:

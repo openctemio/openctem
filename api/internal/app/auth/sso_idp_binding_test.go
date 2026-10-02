@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -263,4 +264,58 @@ func jitRP(p identityproviderdom.Provider) *resolvedProvider {
 // organization, the precondition for SSO to create a brand-new account.
 func corpVerified() *fakeDomainVerifier {
 	return &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}
+}
+
+// Cross-tenant takeover through an unbound account: every Okta/generic OIDC IdP
+// maps to the same provider type, so for an account with no recorded issuer
+// the type match proves nothing. An organization that has not DNS-verified the
+// email domain must not get to adopt (and bind) the account with its own IdP.
+func TestSSOFindOrCreate_UnboundAccountUnverifiedDomainRefused(t *testing.T) {
+	legacy, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim") // no federated issuer
+	repo := &ssoFakeUserRepo{byEmail: legacy}
+	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled(),
+		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"attacker.io": true}}}
+
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: victimMail, Issuer: evilOkta, Subject: "evil-sub", EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta))
+	if !errors.Is(err, ErrAccountLinkRequiresVerification) {
+		t.Fatalf("expected ErrAccountLinkRequiresVerification, got %v", err)
+	}
+	if got != nil || repo.updated != nil {
+		t.Fatal("a refused login must not return or bind the account")
+	}
+	if legacy.FederatedIssuer() != nil {
+		t.Fatal("the attacker's issuer must not be bound")
+	}
+}
+
+// A login without an id_token (issuer unknown) cannot be matched to the bound
+// IdP, so it also needs the organization's DNS-verified domain.
+func TestSSOFindOrCreate_NoIssuerUnverifiedDomainRefused(t *testing.T) {
+	u, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
+	u.BindFederatedIdentity(corpOkta, "corp-sub")
+	s := &SSOService{userRepo: &ssoFakeUserRepo{byEmail: u}, logger: logger.NewNop(), authConfig: regEnabled(),
+		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{}}}
+
+	_, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: victimMail, EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta))
+	if !errors.Is(err, ErrAccountLinkRequiresVerification) {
+		t.Fatalf("expected ErrAccountLinkRequiresVerification, got %v", err)
+	}
+}
+
+// A login that matches the bound issuer needs no domain proof.
+func TestSSOFindOrCreate_BoundIssuerMatchNeedsNoDomainProof(t *testing.T) {
+	u, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
+	u.BindFederatedIdentity(corpOkta, "corp-sub")
+	s := &SSOService{userRepo: &ssoFakeUserRepo{byEmail: u}, logger: logger.NewNop(), authConfig: regEnabled(),
+		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{}}}
+
+	if _, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub", EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta)); err != nil {
+		t.Fatalf("bound-issuer login should succeed without domain proof, got %v", err)
+	}
 }

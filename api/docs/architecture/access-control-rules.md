@@ -522,13 +522,13 @@ Every query includes `WHERE tenant_id = ?` to prevent cross-tenant data access:
 
 | File | Purpose |
 |------|---------|
-| `ui/src/features/access-control/api/use-scope-rules.ts` | Scope rule SWR hooks |
-| `ui/src/features/access-control/api/use-assignment-rules.ts` | Assignment rule SWR hooks |
-| `ui/src/features/access-control/types/scope-rule.types.ts` | Scope rule TypeScript types |
-| `ui/src/features/access-control/types/assignment-rule.types.ts` | Assignment rule TypeScript types |
-| `ui/src/features/access-control/components/group-detail-sheet/scope-rules-tab.tsx` | Scope rules UI (within group detail) |
-| `ui/src/features/access-control/components/assignment-rule-detail-sheet.tsx` | Assignment rule detail view |
-| `ui/src/app/(dashboard)/settings/access-control/assignment-rules/page.tsx` | Assignment rules listing page |
+| `web/src/features/access-control/api/use-scope-rules.ts` | Scope rule SWR hooks |
+| `web/src/features/access-control/api/use-assignment-rules.ts` | Assignment rule SWR hooks |
+| `web/src/features/access-control/types/scope-rule.types.ts` | Scope rule TypeScript types |
+| `web/src/features/access-control/types/assignment-rule.types.ts` | Assignment rule TypeScript types |
+| `web/src/features/access-control/components/group-detail-sheet/scope-rules-tab.tsx` | Scope rules UI (within group detail) |
+| `web/src/features/access-control/components/assignment-rule-detail-sheet.tsx` | Assignment rule detail view |
+| `web/src/app/(dashboard)/settings/access-control/assignment-rules/page.tsx` | Assignment rules listing page |
 
 ### Tests
 

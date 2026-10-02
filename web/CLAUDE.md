@@ -4,6 +4,14 @@
 
 ## Project Overview
 
+This is `web/` in the `openctemio/openctem` monorepo (imported 2026-10-02 from
+`openctemio/ui`, now archived; its tags are kept as `ui/v*`, history only). The
+Go API is `../api/` (see `../api/CLAUDE.md`); rules that span both are in
+`../CLAUDE.md`. API wire types are generated, not hand-written:
+`src/lib/api/generated/api.types.ts` comes from `../api/api/openapi/swagger.yaml`
+(`npm run generate:api-types`, or `make api-types` at the root); Web CI fails
+if it is stale. API and web release together on one `vX.Y.Z` tag.
+
 Next.js 16 dashboard with locale/RTL **direction** support (en/vi/ar locales are
 detected and drive `dir`; a translation layer is NOT yet wired — UI strings are
 currently English), Zustand auth, and shadcn/ui.
@@ -68,7 +76,12 @@ npm run validate    # type-check + lint (run before every commit)
 npm run build       # Full build to catch remaining issues
 ```
 
-Pre-commit hooks (Husky + lint-staged) run automatically on staged files.
+Git hooks live in the repository root's `.githooks/` (there is no Husky). They are
+enabled by `make hooks` / `make setup` at the root, and also by `npm ci` here
+(the `prepare` script sets `core.hooksPath`). When `web/` files are staged,
+`.githooks/pre-commit` runs `npm run type-check` and `lint-staged` (ESLint
+`--fix` + Prettier on staged files); `.githooks/commit-msg` rejects AI
+attribution lines.
 
 ---
 
@@ -158,7 +171,7 @@ Rendered markdown (notes, finding descriptions, etc.) goes through `src/lib/sani
 The customer-side runtimes are **sensors**: route `/sensors` (Discovery → Sensors,
 tabs by role), `src/features/sensors`, `src/lib/api/sensor-*`, API
 `/api/v1/sensors`, permissions `sensors:*`, module `sensors`. Contract:
-openctemio/api `docs/rfcs/RFC-023-sensor-rename-contract.md`.
+[`api/docs/rfcs/RFC-023-sensor-rename-contract.md`](../api/docs/rfcs/RFC-023-sensor-rename-contract.md).
 
 - Never name a sensor concept "agent". `src/config/__tests__/sensor-vocabulary.test.ts`
   fails on the word outside `src/config/sensor-vocabulary-allowlist.json`
