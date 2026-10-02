@@ -86,6 +86,8 @@ services:
       # Encryption (optional in dev - credentials stored in plaintext if not set)
       # Generate with: openssl rand -hex 32
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      # Old key(s) while rotating APP_ENCRYPTION_KEY (docs/deployment/encryption-key-rotation.md).
+      APP_ENCRYPTION_KEY_PREVIOUS: ${APP_ENCRYPTION_KEY_PREVIOUS:-}
       # SMTP (optional - use env vars from host)
       SMTP_ENABLED: ${SMTP_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-}

@@ -26,6 +26,7 @@ const tokenPlaintextPrefix = "oct_scim_"
 type TokenService struct {
 	repo   scimtoken.Repository
 	pepper string
+	legacy []string // earlier peppers that still verify (key rotation)
 	logger *logger.Logger
 	now    func() time.Time
 }
@@ -37,6 +38,18 @@ func NewTokenService(repo scimtoken.Repository, pepper string, log *logger.Logge
 		pepper: pepper,
 		logger: log.With("service", "scim-token"),
 		now:    func() time.Time { return time.Now().UTC() },
+	}
+}
+
+// SetLegacyPeppers sets earlier peppers whose token hashes keep verifying
+// while APP_ENCRYPTION_KEY rotates (APP_ENCRYPTION_KEY_PREVIOUS). New tokens
+// are always hashed with the current pepper.
+func (s *TokenService) SetLegacyPeppers(peppers ...string) {
+	s.legacy = s.legacy[:0]
+	for _, p := range peppers {
+		if p != "" && p != s.pepper {
+			s.legacy = append(s.legacy, p)
+		}
 	}
 }
 
@@ -98,6 +111,12 @@ func (s *TokenService) Authenticate(ctx context.Context, plaintext string) (*sci
 	}
 	hash := crypto.HashTokenPeppered(plaintext, s.pepper)
 	tok, err := s.repo.GetByHash(ctx, hash)
+	for _, p := range s.legacy {
+		if err == nil {
+			break
+		}
+		tok, err = s.repo.GetByHash(ctx, crypto.HashTokenPeppered(plaintext, p))
+	}
 	if err != nil || !tok.IsActive() {
 		return nil, scimtoken.ErrNotFound
 	}
