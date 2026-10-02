@@ -3,8 +3,10 @@ package httpsec
 import (
 	"context"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Most tests assert the production posture. TestMain pins
@@ -221,5 +223,21 @@ func TestValidateHost(t *testing.T) {
 		}
 	} else if err == nil {
 		t.Errorf("without allow-private, ValidateHost(%q) = nil, want blocked", rfc1918)
+	}
+}
+
+// The slow-upstream variant keeps the SSRF guard and only changes the
+// response-header wait.
+func TestSafeHTTPClientWithHeaderTimeout(t *testing.T) {
+	c := SafeHTTPClientWithHeaderTimeout(60*time.Second, 50*time.Second)
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok || tr.ResponseHeaderTimeout != 50*time.Second || c.Timeout != 60*time.Second {
+		t.Fatalf("client = %+v", c)
+	}
+	if _, err := c.Get("http://localhost:9/"); err == nil || !strings.Contains(err.Error(), "ssrf guard") {
+		t.Fatalf("localhost not refused: %v", err)
+	}
+	if d := SafeHTTPClientWithHeaderTimeout(time.Second, 0).Transport.(*http.Transport).ResponseHeaderTimeout; d != 15*time.Second {
+		t.Fatalf("default header timeout lost: %s", d)
 	}
 }

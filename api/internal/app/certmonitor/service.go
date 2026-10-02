@@ -207,15 +207,7 @@ func NewService(
 // newCTHTTPClient is the SSRF-guarded client with a response-header timeout
 // long enough for crt.sh.
 func newCTHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: httpTimeout,
-		Transport: &http.Transport{
-			DialContext:           httpsec.SafeDialContext,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: responseHeaderTimeout,
-			IdleConnTimeout:       30 * time.Second,
-		},
-	}
+	return httpsec.SafeHTTPClientWithHeaderTimeout(httpTimeout, responseHeaderTimeout)
 }
 
 // SetDomainSources adds verified domains and active domain scope targets to
