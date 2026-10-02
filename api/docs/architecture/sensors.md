@@ -508,6 +508,20 @@ replaces bearer keys.
   (`pkg/domain/scan/config_secrets.go`). The config travels to the sensor in
   clear inside every command; the warning never blocks a save and never
   echoes the value.
+  Callers without `scans:write` (viewers, custom read-only roles) get exactly
+  the warned values replaced by `********` (`scan.RedactConfigSecrets`,
+  `pkg/domain/scan/config_redact.go`) in every user-facing response that
+  carries the config: `GET /scans`, `GET /scans/{id}`,
+  `GET /scans/{id}/export`, and the `payload` of `GET /commands` and
+  `GET /commands/{id}` (which embeds the config as `scanner_config`,
+  `config` and `context.scanner_config`). The structure, the non-secret
+  values and `scanner_config_warnings` stay. Owners, admins and members with
+  `scans:write` see the real values, because they edit them. Sensors claim
+  the stored command and are unaffected. As a guard, a `PUT /scans/{id}`
+  whose `scanner_config` has `********` where the stored value would be
+  masked keeps the stored value instead of saving the mask. An export taken
+  by a reader holds the masks and must have its secrets re-entered before it
+  is imported.
 
 ## Protocol v2 results ingest
 

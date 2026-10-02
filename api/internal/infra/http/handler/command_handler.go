@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -93,6 +94,20 @@ type CommandResponse struct {
 	StartedAt      *time.Time      `json:"started_at,omitempty"`
 	CompletedAt    *time.Time      `json:"completed_at,omitempty"`
 	Result         json.RawMessage `json:"result,omitempty"`
+}
+
+// commandResponseFor converts a command for a user-facing response. The
+// payload of a scan command embeds the scan's scanner_config (as
+// scanner_config, config and context.scanner_config), so a caller who may not
+// see those values on the scan itself (canSeeScanConfigSecrets) gets the
+// payload with secret-looking values masked. Sensors are served by Poll and
+// the claim paths, which never go through here.
+func commandResponseFor(ctx context.Context, c *commanddom.Command) CommandResponse {
+	resp := toCommandResponse(c)
+	if !canSeeScanConfigSecrets(ctx) {
+		resp.Payload = scan.RedactPayloadSecrets(resp.Payload)
+	}
+	return resp
 }
 
 // toCommandResponse converts a domain command to API response.
@@ -199,7 +214,7 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
 }
 
 // validateInlineScanTemplates rejects a scan command that embeds custom scanner
@@ -301,7 +316,7 @@ func (h *CommandHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
 }
 
 // List handles GET /api/v1/commands
@@ -342,7 +357,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	commands := make([]CommandResponse, len(result.Data))
 	for i, c := range result.Data {
-		commands[i] = toCommandResponse(c)
+		commands[i] = commandResponseFor(r.Context(), c)
 	}
 
 	resp := ListResponse[CommandResponse]{
@@ -858,7 +873,7 @@ func (h *CommandHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
 }
 
 // Delete handles DELETE /api/v1/commands/{id}

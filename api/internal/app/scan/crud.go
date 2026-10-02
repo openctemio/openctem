@@ -668,7 +668,10 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		if input.TargetsPerJob != nil {
 			targetsPerJob = *input.TargetsPerJob
 		}
-		if err := sc.SetSingleScanner(input.ScannerName, input.ScannerConfig, targetsPerJob); err != nil {
+		// A config saved back as it was shown masked keeps the stored
+		// secrets instead of storing the mask (scan.RedactConfigSecrets).
+		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
+		if err := sc.SetSingleScanner(input.ScannerName, cfg, targetsPerJob); err != nil {
 			return nil, err
 		}
 	}
