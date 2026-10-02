@@ -125,6 +125,11 @@ type Limits struct {
 	MaxSegmentsInFlight     int     `json:"max_segments_in_flight"`
 	MaxItemErrors           int     `json:"max_item_errors"`
 	UncommittedTTLSeconds   int     `json:"uncommitted_ttl_seconds"`
+	// MaxControlBodyBytes caps a control-plane request body (RFC-029 §4.1);
+	// a command completion may carry up to MaxCompleteBodyBytes.
+	MaxControlBodyBytes int64 `json:"max_control_body_bytes"`
+	// MaxFingerprintsPerRequest caps the fingerprint queries (RFC-029 §4.6).
+	MaxFingerprintsPerRequest int `json:"max_fingerprints_per_request"`
 }
 
 // Limit defaults (RFC-026 §3.6).
@@ -142,6 +147,12 @@ const (
 	DefaultMaxOpenReports       = 8
 	DefaultMaxSegmentsInFlight  = 4
 	DefaultUncommittedTTL       = 60 * time.Minute
+	// DefaultMaxControlBodyBytes caps a control-plane request body.
+	DefaultMaxControlBodyBytes = 1 << 20
+	// MaxCompleteBodyBytes caps a command completion (its result).
+	MaxCompleteBodyBytes = 4 << 20
+	// DefaultMaxFingerprintsPerRequest caps a fingerprint query.
+	DefaultMaxFingerprintsPerRequest = 50000
 	// CommandGraceAfterFinish is how long after a command finished its
 	// results are still accepted (RFC-023 C-8).
 	CommandGraceAfterFinish = 15 * time.Minute
@@ -168,34 +179,77 @@ func DefaultLimits() Limits {
 		MaxSegmentsInFlight:     DefaultMaxSegmentsInFlight,
 		MaxItemErrors:           MaxItemErrors,
 		UncommittedTTLSeconds:   int(DefaultUncommittedTTL / time.Second),
+
+		MaxControlBodyBytes:       DefaultMaxControlBodyBytes,
+		MaxFingerprintsPerRequest: DefaultMaxFingerprintsPerRequest,
 	}
 }
 
-// Features a v2 server can advertise on hello.
+// Features a v2 server can advertise on hello. A sensor uses v2 for a
+// listed feature and protocol v1 for one that is not listed (RFC-029 D6).
+// The set is closed and append-only.
 const (
-	// FeatureResults: the results resource of this RFC.
+	// FeatureResults: the results resource (RFC-026).
 	FeatureResults = "results"
+	// FeatureHeartbeat: POST /heartbeat (RFC-029 §4.3).
+	FeatureHeartbeat = "heartbeat"
+	// FeatureCommands: GET /commands and the claim/start/complete/fail
+	// transitions (RFC-029 §4.4).
+	FeatureCommands = "commands"
+	// FeatureSuppressions: GET /suppressions (RFC-029 §4.5).
+	FeatureSuppressions = "suppressions"
+	// FeatureFingerprints: POST /fingerprints/check and
+	// /fingerprints/baseline-diff (RFC-029 §4.6).
+	FeatureFingerprints = "fingerprints"
+	// FeatureKeys: POST /keys, key renewal (RFC-029 §4.7).
+	FeatureKeys = "keys"
 )
 
-// Hello is GET /api/v2/sensor/hello: what this server speaks and its limits
-// (RFC-023 C3).
-type Hello struct {
-	Protocol   int      `json:"protocol"`
-	Features   []string `json:"features"`
-	MediaTypes []string `json:"media_types"`
-	Encodings  []string `json:"encodings"`
-	Digests    []string `json:"digests"`
-	Limits     Limits   `json:"limits"`
+// ControlFeatures are the RFC-029 features, in hello order.
+func ControlFeatures() []string {
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys}
 }
 
-// NewHello builds the hello document for the given limits.
-func NewHello(l Limits) Hello {
+// Deprecation announces a deprecated protocol on hello.
+type Deprecation struct {
+	DeprecatedAt time.Time `json:"deprecated_at"`
+	SunsetAt     time.Time `json:"sunset_at"`
+}
+
+// DeprecationProtocolV1 is the hello key of protocol v1's deprecation.
+const DeprecationProtocolV1 = "protocol_v1"
+
+// Hello is GET /api/v2/sensor/hello: what this server speaks and its limits
+// (RFC-023 C3, RFC-029 §4.2).
+type Hello struct {
+	Protocol     int                    `json:"protocol"`
+	Features     []string               `json:"features"`
+	MediaTypes   []string               `json:"media_types"`
+	Encodings    []string               `json:"encodings"`
+	Digests      []string               `json:"digests"`
+	Limits       Limits                 `json:"limits"`
+	Deprecations map[string]Deprecation `json:"deprecations,omitempty"`
+}
+
+// NewHello builds the hello document for the given limits. Results are always
+// listed; extra names the other features this server mounted.
+func NewHello(l Limits, extra ...string) Hello {
+	features := append([]string{FeatureResults}, extra...)
 	return Hello{
 		Protocol:   ProtocolVersion,
-		Features:   []string{FeatureResults},
+		Features:   features,
 		MediaTypes: []string{MediaTypeCTIS},
 		Encodings:  []string{EncodingGzip, EncodingZstd},
 		Digests:    []string{DigestSHA256, DigestSHA512},
 		Limits:     l,
 	}
+}
+
+// WithDeprecation adds a deprecation announcement.
+func (h Hello) WithDeprecation(name string, d Deprecation) Hello {
+	if h.Deprecations == nil {
+		h.Deprecations = map[string]Deprecation{}
+	}
+	h.Deprecations[name] = d
+	return h
 }

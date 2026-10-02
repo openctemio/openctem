@@ -86,6 +86,54 @@
     "max_open_reports_per_sensor": 8,
     "max_segments_in_flight": 4,
     "max_item_errors": 100,
-    "uncommitted_ttl_seconds": 3600
+    "uncommitted_ttl_seconds": 3600,
+    "max_control_body_bytes": 1048576,
+    "max_fingerprints_per_request": 50000
+  }
+}
+{
+  "protocol": 2,
+  "features": [
+    "results",
+    "heartbeat",
+    "commands",
+    "suppressions",
+    "fingerprints",
+    "keys"
+  ],
+  "media_types": [
+    "application/vnd.openctem.ctis.v1+json"
+  ],
+  "encodings": [
+    "gzip",
+    "zstd"
+  ],
+  "digests": [
+    "sha-256",
+    "sha-512"
+  ],
+  "limits": {
+    "max_content_bytes": 16777216,
+    "max_decompressed_bytes": 67108864,
+    "max_compression_ratio": 100,
+    "max_zstd_window_bytes": 8388608,
+    "max_json_depth": 64,
+    "max_findings_per_segment": 10000,
+    "max_assets_per_segment": 10000,
+    "max_segments_per_report": 256,
+    "max_findings_per_report": 100000,
+    "max_assets_per_report": 100000,
+    "max_open_reports_per_sensor": 8,
+    "max_segments_in_flight": 4,
+    "max_item_errors": 100,
+    "uncommitted_ttl_seconds": 3600,
+    "max_control_body_bytes": 1048576,
+    "max_fingerprints_per_request": 50000
+  },
+  "deprecations": {
+    "protocol_v1": {
+      "deprecated_at": "2026-10-01T00:00:00Z",
+      "sunset_at": "2027-04-01T00:00:00Z"
+    }
   }
 }

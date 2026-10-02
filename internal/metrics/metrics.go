@@ -313,7 +313,7 @@ var (
 	IngestV2RequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "ingest_v2_requests_total",
-			Help: "Sensor protocol v2 results requests, by route, method, outcome and problem type",
+			Help: "Sensor protocol v2 requests (results and, since RFC-029, the control plane), by route, method, outcome and problem type",
 		},
 		[]string{"route", "method", "outcome", "problem"},
 	)
@@ -348,6 +348,17 @@ var (
 			Help: "Sensor protocol v2 results reports reaching a final state, by state and auto-resolve outcome",
 		},
 		[]string{"state", "auto_resolve"},
+	)
+
+	// SensorProtocolRequestsTotal counts sensor requests by protocol ("1",
+	// "2") and route name, both from closed sets: the fleet view of who
+	// still speaks the deprecated protocol v1 (RFC-029 §5.3).
+	SensorProtocolRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_protocol_requests_total",
+			Help: "Sensor protocol requests, by protocol version and route",
+		},
+		[]string{"protocol", "route"},
 	)
 
 	// IngestV1RequestsTotal counts protocol v1 ingest requests per route, to

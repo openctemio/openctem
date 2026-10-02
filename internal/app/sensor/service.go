@@ -339,6 +339,12 @@ type SensorHeartbeatData struct {
 	// carry one. It is clamped here, at the ingest boundary. nil leaves the
 	// stored snapshot untouched (see sensordom.HeartbeatUpdate.Outbox).
 	Outbox *sensordom.OutboxStats
+
+	// Protocol is the sensor protocol the heartbeat arrived on (1 or 2) and
+	// UserAgent the client's User-Agent, for the fleet's protocol telemetry
+	// (RFC-029 §5.3). Protocol 0 leaves the stored values untouched.
+	Protocol  int
+	UserAgent string
 }
 
 // UpdateHeartbeat updates sensor metrics from heartbeat.
@@ -405,6 +411,8 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		NetworkTxMBPS: data.NetworkTxMBPS,
 		LoadScore:     snapshot.LoadScore,
 		Outbox:        outbox,
+		Protocol:      data.Protocol,
+		UserAgent:     sensordom.SanitizeUserAgent(data.UserAgent),
 	})
 	if err != nil {
 		return err

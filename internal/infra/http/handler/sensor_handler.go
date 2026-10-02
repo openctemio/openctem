@@ -100,6 +100,20 @@ type SensorResponse struct {
 	// results: dead_letter_count > 0, evicted_count > 0, or
 	// oldest_age_seconds > 3600. False when there is no snapshot.
 	OutboxWarning bool `json:"outbox_warning"`
+	// Protocol is what the platform last saw of the sensor's protocol
+	// (RFC-029 §5.3); null before the first heartbeat that recorded it.
+	// deprecated is true for protocol v1: the sensor needs an upgrade.
+	Protocol *SensorProtocolResponse `json:"protocol"`
+}
+
+// SensorProtocolResponse is the protocol telemetry of a sensor's last
+// heartbeat. user_agent is reported by the sensor (sanitized) and is display
+// data only.
+type SensorProtocolResponse struct {
+	Version    int    `json:"version"`
+	UserAgent  string `json:"user_agent"`
+	SeenAt     string `json:"seen_at"`
+	Deprecated bool   `json:"deprecated"`
 }
 
 // SensorOutboxResponse is a sensor's last reported outbox state. Values are
@@ -599,6 +613,15 @@ func toSensorResponse(a *sensor.Sensor) *SensorResponse {
 			ReportedAt:       ob.ReportedAt.UTC().Format(time.RFC3339),
 		}
 		resp.OutboxWarning = ob.Warning()
+	}
+
+	if p := a.Protocol; p != nil {
+		resp.Protocol = &SensorProtocolResponse{
+			Version:    p.Version,
+			UserAgent:  p.UserAgent,
+			SeenAt:     p.SeenAt.UTC().Format(time.RFC3339),
+			Deprecated: p.Deprecated(),
+		}
 	}
 
 	return resp

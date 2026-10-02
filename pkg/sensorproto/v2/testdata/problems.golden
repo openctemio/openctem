@@ -2,6 +2,10 @@
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/binding-mismatch","title":"Binding mismatch","status":409,"detail":"All segments and the commit of a report must use the same form and command.","retryable":false}
+## command-claimed
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/command-claimed","title":"Command claimed","status":409,"detail":"Another sensor claimed this command first.","retryable":false}
 ## command-not-found
 Content-Type: application/problem+json
 Openctem-Protocol: 2
@@ -42,6 +46,10 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/invalid-request","title":"Invalid request","status":400,"detail":"The request body does not match the documented shape.","retryable":false}
+## invalid-transition
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/invalid-transition","title":"Invalid transition","status":409,"detail":"The command's current state does not allow this transition; see state.","retryable":false}
 ## length-required
 Content-Type: application/problem+json
 Openctem-Protocol: 2
@@ -56,6 +64,10 @@ Content-Type: application/problem+json
 Openctem-Protocol: 2
 Retry-After: 30
 {"type":"https://openctem.io/problems/ingest/rate-limited","title":"Rate limited","status":429,"detail":"Too many requests; retry after the advised delay.","retryable":true}
+## renewal-refused
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/renewal-refused","title":"Renewal refused","status":403,"detail":"This sensor may not renew its key.","retryable":false}
 ## report-committed
 Content-Type: application/problem+json
 Openctem-Protocol: 2
@@ -92,6 +104,10 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/segment-set-mismatch","title":"Segment set mismatch","status":409,"detail":"The committed segment count or digests do not match the received segments.","retryable":false}
+## too-many-items
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/too-many-items","title":"Too many items","status":422,"detail":"The request lists more items than the limit; split it into several requests.","retryable":false}
 ## too-many-open-reports
 Content-Type: application/problem+json
 Openctem-Protocol: 2
@@ -101,6 +117,10 @@ Retry-After: 30
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/tool-not-permitted","title":"Tool not permitted","status":422,"detail":"The report's tool is not declared by this sensor, or is not the tool of the bound command.","retryable":false}
+## transition-conflict
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/transition-conflict","title":"Transition conflict","status":409,"detail":"The command already reached this state with a different result or message.","retryable":false}
 ## unauthenticated
 Content-Type: application/problem+json
 Openctem-Protocol: 2

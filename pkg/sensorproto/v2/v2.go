@@ -43,6 +43,12 @@ var Paths = map[string]string{
 	"ResultsPath":  ResultsPath,
 	"CommandsPath": CommandsPath,
 	"HelloPath":    HelloPath,
+
+	"HeartbeatPath":         HeartbeatPath,
+	"SuppressionsPath":      SuppressionsPath,
+	"FingerprintsCheckPath": FingerprintsCheckPath,
+	"BaselineDiffPath":      BaselineDiffPath,
+	"KeysPath":              KeysPath,
 }
 
 // ReportLocation is the status resource of a report: the Location header of a

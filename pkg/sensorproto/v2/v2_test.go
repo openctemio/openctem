@@ -249,7 +249,9 @@ func TestStatusAndHelloGolden(t *testing.T) {
 	receiving := Status{ReportID: st.ReportID, State: StateReceiving, Segments: SegmentCounts{Received: 1},
 		Errors: []ItemError{}, ReceivedAt: at, UpdatedAt: at}
 	var buf bytes.Buffer
-	for _, v := range []any{st, receiving, NewHello(DefaultLimits())} {
+	full := NewHello(DefaultLimits(), ControlFeatures()...).WithDeprecation(DeprecationProtocolV1, Deprecation{
+		DeprecatedAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), SunsetAt: time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)})
+	for _, v := range []any{st, receiving, NewHello(DefaultLimits()), full} {
 		b, err := json.MarshalIndent(v, "", "  ")
 		if err != nil {
 			t.Fatal(err)

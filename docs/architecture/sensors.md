@@ -2,6 +2,8 @@
 
 > RFC: [RFC-023](../rfcs/RFC-023-scan-zones-and-scanners.md) §4 (D18) and §9.5.
 > Contract of the rename: [RFC-023-sensor-rename-contract.md](../rfcs/RFC-023-sensor-rename-contract.md).
+> Protocol v2: [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (results) and
+> [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; v1 deprecated).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
 
 ## Glossary
@@ -31,9 +33,15 @@ log fields (`sensor_id`), metrics and API environment variables (`SENSOR_*`).
 | HTTP | `internal/infra/http/handler/sensor_handler.go` (management), `ingest_handler.go` / `command_handler.go` / `scansession_handler.go` (protocol v1) |
 | Health | `internal/infra/controller/sensor_health.go`, `internal/infra/jobs/sensor_health_checker.go`, `internal/infra/redis/sensor_state.go` |
 | Legacy vocabulary | `pkg/sensorproto/legacyv1` |
+| Protocol v2 control plane | `pkg/sensorproto/v2/control.go` (wire), `internal/infra/http/handler/sensor_control_v2_handler.go`, `internal/app/command/transition.go` (idempotent transitions), mounted by `routes/sensor_v2.go` |
 | Protocol v2 results | `pkg/sensorproto/v2` (wire), `internal/infra/http/middleware/ingest_v2.go` (edge), `internal/infra/http/handler/sensor_results_v2_handler.go`, `internal/infra/http/routes/sensor_v2.go`, `internal/app/ingest/v2*.go`, `strictjson.go`, `pkg/domain/ingestreport` |
 
 ## Protocol v1 and the legacy package
+
+**Deprecated** (RFC-029 §5): served unchanged, but every v1 route with a v2
+successor answers with `Deprecation: @1790812800`, `Sunset: Thu, 01 Apr 2027
+00:00:00 GMT` and `Link: <successor>; rel="successor-version"` (see
+[Protocol v2 control plane](#protocol-v2-control-plane) for the mapping).
 
 Sensors and SDKs already deployed speak protocol v1: `/api/v1/agent/*`,
 `agent_id` in responses, `agent_preference` in job payloads. That vocabulary
@@ -352,6 +360,69 @@ Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239
 `ingest_v2_reports_total{state,auto_resolve}` and
 `ingest_v1_requests_total{route}` (who still uses which v1 ingest route,
 RFC-026 §8.3). Every label comes from a closed set.
+
+## Protocol v2 control plane
+
+[RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md). Every
+other sensor resource under `/api/v2/sensor`, in the same route group and
+behind the same sensor-key authenticator as the results. Identity is the key
+only: no `X-Agent-ID` (the API never read it). A tenant-less (platform)
+sensor gets `403 scope-denied`. Each handler calls the service its v1 route
+calls; only the wire differs. Bodies are JSON, decoded leniently (unknown
+members ignored; at most 1 MiB, 4 MiB for `complete`, 8 MiB for the
+fingerprint queries); errors are RFC 9457 problems; every response carries
+`OpenCTEM-Protocol: 2`.
+
+| v1 (deprecated) | v2 | Notes |
+|---|---|---|
+| `POST /api/v1/agent/heartbeat` | `POST /api/v2/sensor/heartbeat` | Same body. The doorbell is always on: `sensor_id`, `tenant_id`, `status` (`ok`/`paused`), `pending_jobs`, `next_heartbeat_seconds`, `actions`, `config_version` are always present. A disabled sensor gets `200` `paused` + `["pause"]` here, can still read `GET /hello`, and gets `401` everywhere else. |
+| `GET /api/v1/agent/commands?limit=n` | `GET /api/v2/sensor/commands?limit=n` | `{"commands": [...]}`; a command carries `sensor_id` (null while unassigned). |
+| `POST …/commands/{id}/acknowledge` | `POST /api/v2/sensor/commands/{id}/claim` | |
+| `POST …/commands/{id}/start` | `POST /api/v2/sensor/commands/{id}/start` | |
+| `POST …/commands/{id}/complete` | `POST /api/v2/sensor/commands/{id}/complete` | `{"result": …}` |
+| `POST …/commands/{id}/fail` | `POST /api/v2/sensor/commands/{id}/fail` | `{"error_message": "…"}` |
+| `GET /api/v1/agent/suppressions` | `GET /api/v2/sensor/suppressions` | Strong `ETag`; `If-None-Match` → `304`. |
+| `POST /api/v1/agent/ingest/check` | `POST /api/v2/sensor/fingerprints/check` | ≤ 50,000 fingerprints (`422 too-many-items`). |
+| `POST /api/v1/agent/ingest/baseline-diff` | `POST /api/v2/sensor/fingerprints/baseline-diff` | ≤ 50,000 fingerprints. |
+| `POST /api/v1/agent/renew` | `POST /api/v2/sensor/keys` | `201`, `Cache-Control: no-store`; v1's per-sensor renewal budget. |
+| `POST /api/v1/agent/ingest`, `/ingest/ctis`, `/ingest/chunk`, `GET /ingest/jobs/{id}` | `/api/v2/sensor/results/…` | RFC-026. |
+
+Not deprecated (no successor yet): `/ingest/sarif`, `/ingest/recon`,
+`/ingest/scan`, `/ingest/scanners`, `/scans`, `/telemetry-events`,
+`/credentials/ingest`, `/api/v1/validation/evidence`.
+
+**Transitions are idempotent** (`command.Service.Transition`). Repeating the
+transition that produced the command's current state, by the same sensor
+with the same body (a semantically equal `result`, the same stored
+`error_message`), answers `200` with the command and runs no side effect
+(pipeline progression, validation evidence, simulation finalisation run on
+the real transition only). A different body is `409 transition-conflict`.
+Any other state is `409 invalid-transition` with `"state"` (a pending
+command past its expiry reads `expired`); a lost claim race is `409
+command-claimed`; another sensor's or tenant's command is `404
+command-not-found`. The state rules and the atomic claim are the v1 service's.
+
+**Hello** lists `results` plus the control features (`heartbeat`,
+`commands`, `suppressions`, `fingerprints`, `keys`) and
+`deprecations.protocol_v1` (`deprecated_at`, `sunset_at`). An SDK uses v2
+for a listed feature and v1 for the rest.
+
+### Protocol telemetry
+
+Every heartbeat records the protocol it arrived on and the client's
+`User-Agent` (printable ASCII, ≤ 256 bytes) in `sensors.protocol_version`,
+`protocol_client` and `protocol_seen_at` (migration 000248), in the
+heartbeat update that already runs. `GET /api/v1/sensors` and
+`GET /api/v1/sensors/{id}` return
+
+```json
+"protocol": {"version": 1, "user_agent": "openctem-sdk-go/0.8.1", "seen_at": "2026-10-02T09:00:00Z", "deprecated": true}
+```
+
+or `null` before the first heartbeat that recorded it. A sensor on sdk-go
+0.8.x (v2 results, v1 heartbeat) reads `1`: it still needs the upgrade.
+`sensor_protocol_requests_total{protocol, route}` counts every sensor request
+by protocol and route name (closed sets).
 
 ## History written in the old vocabulary
 

@@ -3,7 +3,10 @@ package routes
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -12,6 +15,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
+	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
 
 // IngestMaxConcurrentPerTenant caps in-flight report-ingest requests per
@@ -80,6 +84,36 @@ func countV1Ingest(route string) Middleware {
 	}
 }
 
+// v1Sensor is the middleware of a protocol v1 sensor route: it counts the
+// request (sensor_protocol_requests_total{protocol="1"}) and, when the route
+// has a protocol v2 successor, adds the deprecation headers naming it
+// (RFC-029 §5.2). successor nil: no successor yet, so not deprecated.
+func v1Sensor(route string, successor func(*http.Request) string) []Middleware {
+	count := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			metrics.SensorProtocolRequestsTotal.WithLabelValues("1", route).Inc()
+			next.ServeHTTP(w, r)
+		})
+	}
+	if successor == nil {
+		return []Middleware{count}
+	}
+	return []Middleware{count, legacyv1.DeprecatedRoute(successor)}
+}
+
+// v2Path is the successor function of a fixed protocol v2 path.
+func v2Path(path string) func(*http.Request) string {
+	return legacyv1.Successor(protov2.PathPrefix + path)
+}
+
+// v2CommandAction is the successor of a v1 command transition: the same
+// command's v2 action.
+func v2CommandAction(action string) func(*http.Request) string {
+	return func(r *http.Request) string {
+		return protov2.CommandActionPath(url.PathEscape(chi.URLParam(r, "id")), action)
+	}
+}
+
 // registerSensorRoutes registers sensor API endpoints.
 // These endpoints are authenticated using source API keys (not JWT).
 //
@@ -142,13 +176,13 @@ func registerSensorRoutes(
 	// its pre-sensor name: deployed sensors and SDKs call it (RFC-023 §9.2 C1).
 	router.Group(legacyv1.PathPrefix, func(r Router) {
 		// Heartbeat - essential for sensor health monitoring
-		r.POST("/heartbeat", ingestHandler.Heartbeat)
+		r.POST("/heartbeat", ingestHandler.Heartbeat, v1Sensor("heartbeat", v2Path(protov2.HeartbeatPath))...)
 
 		// Self-service credential renewal: the sensor rotates its own key by
 		// presenting the current one. Authenticated by AuthenticateSource like
 		// every other endpoint in this group; the building block for
 		// auto-rotating credentials (RFC-014).
-		r.POST("/renew", ingestHandler.RenewKey, renewMW)
+		r.POST("/renew", ingestHandler.RenewKey, append(v1Sensor("renew", v2Path(protov2.KeysPath)), renewMW)...)
 
 		// Ingest findings/assets
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
@@ -156,27 +190,30 @@ func registerSensorRoutes(
 		// Ingest endpoints use a 50MB body limit (vs 10MB default) for large scan reports
 		// Each v1 ingest route is counted (ingest_v1_requests_total{route}) so
 		// it can be retired on evidence (RFC-026 §8.3). Counting adds no byte.
-		v1 := func(route string) []Middleware { return append([]Middleware{countV1Ingest(route)}, ingestMW...) }
-		r.POST("/ingest", ingestHandler.IngestCTIS, v1("ingest")...) // Primary CTIS ingest endpoint
-		r.POST("/ingest/check", ingestHandler.CheckFingerprints, v1("ingest_check")...)
-		r.POST("/ingest/baseline-diff", ingestHandler.BaselineDiff, v1("ingest_baseline_diff")...) // RFC-008 Phase 3: PR new-vs-target
-		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, v1("ingest_sarif")...)
-		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, v1("ingest_ctis")...)
-		r.POST("/ingest/recon", ingestHandler.IngestReconReport, v1("ingest_recon")...)
-		r.POST("/ingest/scan", ingestHandler.IngestScan, v1("ingest_scan")...)
-		r.POST("/ingest/chunk", ingestHandler.IngestChunk, v1("ingest_chunk")...)
-		r.GET("/ingest/scanners", ingestHandler.ListScanners)
+		v1 := func(route string, successor func(*http.Request) string) []Middleware {
+			return append(append(v1Sensor(route, successor), countV1Ingest(route)), ingestMW...)
+		}
+		results := v2Path(protov2.ResultsPath)
+		r.POST("/ingest", ingestHandler.IngestCTIS, v1("ingest", results)...) // Primary CTIS ingest endpoint
+		r.POST("/ingest/check", ingestHandler.CheckFingerprints, v1("ingest_check", v2Path(protov2.FingerprintsCheckPath))...)
+		r.POST("/ingest/baseline-diff", ingestHandler.BaselineDiff, v1("ingest_baseline_diff", v2Path(protov2.BaselineDiffPath))...) // RFC-008 Phase 3: PR new-vs-target
+		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, v1("ingest_sarif", nil)...)
+		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, v1("ingest_ctis", results)...)
+		r.POST("/ingest/recon", ingestHandler.IngestReconReport, v1("ingest_recon", nil)...)
+		r.POST("/ingest/scan", ingestHandler.IngestScan, v1("ingest_scan", nil)...)
+		r.POST("/ingest/chunk", ingestHandler.IngestChunk, v1("ingest_chunk", results)...)
+		r.GET("/ingest/scanners", ingestHandler.ListScanners, v1Sensor("ingest_scanners", nil)...)
 
 		// Async ingest job status poll (RFC-005). No-op store returns 404 when
 		// async mode is disabled.
-		r.GET("/ingest/jobs/{id}", ingestHandler.GetIngestJob)
+		r.GET("/ingest/jobs/{id}", ingestHandler.GetIngestJob, v1Sensor("ingest_jobs", results)...)
 
 		// Command polling and status updates
-		r.GET("/commands", commandHandler.Poll)
-		r.POST("/commands/{id}/acknowledge", commandHandler.Acknowledge)
-		r.POST("/commands/{id}/start", commandHandler.Start)
-		r.POST("/commands/{id}/complete", commandHandler.Complete)
-		r.POST("/commands/{id}/fail", commandHandler.Fail)
+		r.GET("/commands", commandHandler.Poll, v1Sensor("commands", v2Path(protov2.CommandsPath))...)
+		r.POST("/commands/{id}/acknowledge", commandHandler.Acknowledge, v1Sensor("acknowledge", v2CommandAction(protov2.ClaimAction))...)
+		r.POST("/commands/{id}/start", commandHandler.Start, v1Sensor("start", v2CommandAction(protov2.StartAction))...)
+		r.POST("/commands/{id}/complete", commandHandler.Complete, v1Sensor("complete", v2CommandAction(protov2.CompleteAction))...)
+		r.POST("/commands/{id}/fail", commandHandler.Fail, v1Sensor("fail", v2CommandAction(protov2.FailAction))...)
 
 		// Active suppression rules of the sensor's tenant, for the sensor-side
 		// security gate (additive v1 route, legacyv1.SuppressionsPath). Tenant
@@ -185,14 +222,14 @@ func registerSensorRoutes(
 		if suppressionHandler != nil {
 			r.GET("/suppressions", suppressionHandler.SensorActiveRules(func(ctx context.Context, tenantID string) bool {
 				return moduleGate.IsEnabled(ctx, tenantID, moduledom.ModuleSuppressions)
-			}))
+			}), v1Sensor("suppressions", v2Path(protov2.SuppressionsPath))...)
 		}
 
 		// Scan session management
 		if scanSessionHandler != nil {
-			r.POST("/scans", scanSessionHandler.RegisterScan)
-			r.PATCH("/scans/{id}", scanSessionHandler.UpdateScan)
-			r.GET("/scans/{id}", scanSessionHandler.GetScan)
+			r.POST("/scans", scanSessionHandler.RegisterScan, v1Sensor("scans", nil)...)
+			r.PATCH("/scans/{id}", scanSessionHandler.UpdateScan, v1Sensor("scans", nil)...)
+			r.GET("/scans/{id}", scanSessionHandler.GetScan, v1Sensor("scans", nil)...)
 		}
 
 		// Runtime telemetry — batched EDR/XDR events from endpoint
@@ -206,7 +243,7 @@ func registerSensorRoutes(
 			// compatible.
 			// Rate limiter first, for the same reason as ingestMW above.
 			telemetryMW := ingestMiddlewareChain(telemetryRateLimiter, nil, ingestBodyLimit, decompressMiddleware)
-			r.POST("/telemetry-events", runtimeTelemetryHandler.Ingest, telemetryMW...)
+			r.POST("/telemetry-events", runtimeTelemetryHandler.Ingest, append(v1Sensor("telemetry_events", nil), telemetryMW...)...)
 		}
 	}, baseMiddleware)
 }
