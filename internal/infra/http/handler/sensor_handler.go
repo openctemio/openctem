@@ -247,6 +247,14 @@ type SensorResponse struct {
 	SensorProduct   string  `json:"sensor_product"`
 	SensorCommit    string  `json:"sensor_commit"`
 	SensorBuildTime *string `json:"sensor_build_time"`
+
+	// The current manifest (RFC-033): its digest, when it became current
+	// and where it came from (sensor: registered; heartbeat: derived by the
+	// platform). "" / null before the first one. The document itself is
+	// GET /sensors/{id}/manifest.
+	ManifestDigest string  `json:"manifest_digest"`
+	ManifestAt     *string `json:"manifest_at"`
+	ManifestSource string  `json:"manifest_source" enums:",sensor,heartbeat"`
 }
 
 // SensorContentResponse is one piece of scanner content on a sensor. The
@@ -1005,6 +1013,8 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 	if m := a.CapabilityMismatch(); !m.IsEmpty() {
 		resp.CapabilityMismatch = &m
 	}
+	resp.ManifestDigest, resp.ManifestSource = a.ManifestDigest, a.ManifestSource
+	resp.ManifestAt = rfc3339Ptr(a.ManifestAt)
 
 	return resp
 }

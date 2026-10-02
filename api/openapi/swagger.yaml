@@ -3352,6 +3352,113 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_openctemio_api_pkg_domain_sensor.Manifest:
+    properties:
+      capabilities:
+        items:
+          type: string
+        type: array
+      concurrency:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ManifestConcurrency'
+      platform:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ManifestPlatform'
+      resources:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ManifestResources'
+      schema:
+        type: integer
+      sdk:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ManifestSDK'
+      sensor:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ManifestBuild'
+      tools:
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ManifestTool'
+        type: array
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ManifestBuild:
+    properties:
+      build_time:
+        type: string
+      commit:
+        type: string
+      name:
+        type: string
+      version:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ManifestConcurrency:
+    properties:
+      ceiling:
+        type: integer
+      model:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ManifestContent:
+    properties:
+      digest:
+        type: string
+      managed:
+        type: boolean
+      name:
+        type: string
+      source:
+        type: string
+      version:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ManifestIgnored:
+    properties:
+      path:
+        type: string
+      reason:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ManifestPlatform:
+    properties:
+      arch:
+        type: string
+      os:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ManifestResources:
+    properties:
+      cpu_cores:
+        type: number
+      mem_total_bytes:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ManifestSDK:
+    properties:
+      name:
+        type: string
+      version:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ManifestTool:
+    properties:
+      capabilities:
+        items:
+          type: string
+        type: array
+      content:
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ManifestContent'
+        type: array
+      installed:
+        type: boolean
+      kind:
+        type: string
+      name:
+        type: string
+      target_types:
+        items:
+          type: string
+        type: array
+      version:
+        type: string
+    type: object
   github_com_openctemio_api_pkg_domain_sensor.ReportedCapacity:
     properties:
       active_jobs:
@@ -3445,7 +3552,8 @@ definitions:
       installed:
         type: boolean
       kind:
-        description: 'Kind is "scanner" or "collector"; "" when the sensor did not say.'
+        description: Kind is "scanner" or "collector"; "" when the sensor did not
+          say.
         type: string
       name:
         type: string
@@ -8170,6 +8278,14 @@ definitions:
           InstanceID is the random id of the sensor process (sdk-go v0.12+), for
           clone detection. Optional; older SDKs do not send it.
         type: string
+      manifest_digest:
+        description: |-
+          ManifestDigest is the digest of the sensor's registered manifest, as
+          the platform returned it (RFC-033, protocol v2 feature "manifest").
+          When it is not the stored one the v2 answer asks for the manifest
+          (action send_manifest). Absent: the platform derives the manifest
+          from this heartbeat.
+        type: string
       max_concurrent_jobs:
         type: integer
       memory_percent:
@@ -8256,7 +8372,7 @@ definitions:
       installed:
         type: boolean
       kind:
-        description: 'Kind is "scanner" or "collector" (sdk-go v0.10+).'
+        description: Kind is "scanner" or "collector" (sdk-go v0.10+).
         type: string
       name:
         type: string
@@ -10806,6 +10922,37 @@ definitions:
       resources:
         $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedResources'
     type: object
+  internal_infra_http_handler.SensorManifestListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorManifestResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.SensorManifestResponse:
+    properties:
+      current:
+        type: boolean
+      current_since:
+        type: string
+      digest:
+        type: string
+      first_seen_at:
+        type: string
+      ignored:
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ManifestIgnored'
+        type: array
+      last_seen_at:
+        type: string
+      manifest:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.Manifest'
+      source:
+        enum:
+        - sensor
+        - heartbeat
+        type: string
+    type: object
   internal_infra_http_handler.SensorOutboxResponse:
     properties:
       dead_letter_count:
@@ -10965,6 +11112,21 @@ definitions:
       load_factor:
         description: 0.0 to 1.0
         type: number
+      manifest_at:
+        type: string
+      manifest_digest:
+        description: |-
+          The current manifest (RFC-033): its digest, when it became current
+          and where it came from (sensor: registered; heartbeat: derived by the
+          platform). "" / null before the first one. The document itself is
+          GET /sensors/{id}/manifest.
+        type: string
+      manifest_source:
+        enum:
+        - ""
+        - sensor
+        - heartbeat
+        type: string
       max_concurrent_jobs:
         description: |-
           Load balancing. current_jobs is the number of commands the sensor
@@ -26468,6 +26630,81 @@ paths:
       security:
       - BearerAuth: []
       summary: Disable sensor
+      tags:
+      - Sensors
+  /sensors/{id}/manifest:
+    get:
+      description: 'The sensor''s current manifest (RFC-033): build, platform, resources,
+        concurrency ceiling, and its tools with their kind, version, capabilities
+        and content, as the platform kept them, plus what it ignored. 404 when the
+        sensor has none yet.'
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorManifestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Sensor manifest
+      tags:
+      - Sensors
+  /sensors/{id}/manifests:
+    get:
+      description: The sensor's manifest versions, most recently current first (RFC-033).
+        The newest 50 are kept, older ones for 90 days.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 50
+        description: Versions (1-50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorManifestListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Sensor manifest history
       tags:
       - Sensors
   /sensors/{id}/regenerate-key:

@@ -209,11 +209,14 @@ const (
 	// FeatureRelease: POST /commands/{id}/release hands a claimed command
 	// back to the queue at once (a draining sensor, RFC-030 §5.12).
 	FeatureRelease = "release"
+	// FeatureManifest: PUT /manifest registers the sensor manifest and the
+	// heartbeat accepts manifest_digest (RFC-033).
+	FeatureManifest = "manifest"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest}
 }
 
 // Deprecation announces a deprecated protocol on hello.

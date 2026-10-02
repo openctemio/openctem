@@ -95,6 +95,7 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 			r.POST(protov2.FingerprintsCheckPath, ctl.CheckFingerprints, controlWrite...)
 			r.POST(protov2.BaselineDiffPath, ctl.BaselineDiff, controlWrite...)
 			r.POST(protov2.KeysPath, ctl.RenewKey, keys...)
+			r.PUT(protov2.ManifestPath, ctl.PutManifest, controlWrite...)
 		}
 		if ctl.HasCommands() {
 			r.GET(protov2.CommandsPath, ctl.PollCommands, controlRead...)
@@ -130,6 +131,7 @@ var v2RouteNames = map[string]string{
 	protov2.PathPrefix + protov2.FingerprintsCheckPath:     "fingerprints_check",
 	protov2.PathPrefix + protov2.BaselineDiffPath:          "baseline_diff",
 	protov2.PathPrefix + protov2.KeysPath:                  "keys",
+	protov2.PathPrefix + protov2.ManifestPath:              "manifest",
 }
 
 // v2RouteName is the closed-set route label of a v2 request ("other" for no

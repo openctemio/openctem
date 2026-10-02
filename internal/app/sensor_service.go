@@ -28,6 +28,7 @@ type (
 	Doorbell                          = sensor.Doorbell
 	DoorbellConfig                    = sensor.DoorbellConfig
 	DoorbellRequest                   = sensor.DoorbellRequest
+	SensorManifestResult              = sensor.ManifestResult
 )
 
 var (
@@ -39,6 +40,9 @@ var (
 	ErrNoSensorAvailable    = sensor.ErrNoSensorAvailable
 	NewDoorbell             = sensor.NewDoorbell
 	DefaultDoorbellConfig   = sensor.DefaultDoorbellConfig
+	// Sensor manifest (RFC-033).
+	ErrManifestUnavailable    = sensor.ErrManifestUnavailable
+	ErrManifestSensorInactive = sensor.ErrManifestSensorInactive
 )
 
 // Selection-mode constants re-exported for legacy callers.

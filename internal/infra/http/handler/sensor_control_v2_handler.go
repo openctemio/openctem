@@ -73,6 +73,9 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.commands != nil {
 		out = append(out, protov2.FeatureRelease)
 	}
+	if h.ingest != nil && h.ingest.sensorService.SupportsManifests() {
+		out = append(out, protov2.FeatureManifest)
+	}
 	return out
 }
 
@@ -185,7 +188,84 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 			resp.Actions = append(resp.Actions, string(a))
 		}
 	}
+	// RFC-033: a sensor that registers manifests and echoes a digest the
+	// platform does not have as current is asked to send it again.
+	if d := manifestDigestFor(&req, 2); !id.Paused && d != "" && d != s.ManifestDigest &&
+		h.ingest.sensorService.SupportsManifests() {
+		resp.Actions = append(resp.Actions, protov2.ActionSendManifest)
+	}
 	writeV2JSON(w, http.StatusOK, resp)
+}
+
+// PutManifest handles PUT /api/v2/sensor/manifest (RFC-033): the sensor
+// registers what it is. The body is a JSON manifest (schema 1, at most
+// sensor.MaxManifestBytes); unknown members and unknown tools or
+// capabilities are ignored and listed, never an error.
+func (h *SensorControlV2Handler) PutManifest(w http.ResponseWriter, r *http.Request) {
+	s := sensorForV2(w, r)
+	if s == nil {
+		return
+	}
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		mt, _, err := mime.ParseMediaType(ct)
+		if err != nil || mt != protov2.MediaTypeJSON {
+			protov2.NewProblem(protov2.ProblemUnsupportedMediaType).WithAccept(protov2.MediaTypeJSON).Write(w)
+			return
+		}
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, sensor.MaxManifestBytes+1))
+	if err != nil {
+		protov2.NewProblem(protov2.ProblemInvalidRequest).Write(w)
+		return
+	}
+	if len(raw) > sensor.MaxManifestBytes {
+		protov2.NewProblem(protov2.ProblemContentTooLarge).WithLimit(sensor.MaxManifestBytes).Write(w)
+		return
+	}
+	res, err := h.ingest.sensorService.RegisterManifest(r.Context(), s, raw)
+	switch {
+	case err == nil:
+	case errors.Is(err, sensor.ErrManifestTooLarge):
+		protov2.NewProblem(protov2.ProblemContentTooLarge).WithLimit(sensor.MaxManifestBytes).Write(w)
+		return
+	case errors.Is(err, sensor.ErrManifestSchemaUnsupported):
+		protov2.NewProblem(protov2.ProblemManifestSchemaUnsupported).Write(w)
+		return
+	case errors.Is(err, sensor.ErrManifestInvalid):
+		protov2.NewProblem(protov2.ProblemManifestInvalid).Write(w)
+		return
+	case errors.Is(err, app.ErrManifestSensorInactive):
+		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
+		return
+	case errors.Is(err, app.ErrManifestUnavailable):
+		h.logger.Warn("sensor manifest not stored", "sensor_id", s.ID, "error", err)
+		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
+		return
+	default:
+		h.logger.Error("failed to register sensor manifest", "sensor_id", s.ID, "error", err)
+		protov2.NewProblem(protov2.ProblemInternal).Write(w)
+		return
+	}
+	out := protov2.ManifestResponse{
+		ManifestDigest: res.Digest,
+		Changed:        res.Changed,
+		Accepted: protov2.ManifestAccepted{
+			Tools:        nonNilStrings(res.AcceptedTools),
+			Capabilities: nonNilStrings(res.AcceptedCapabilities),
+		},
+		Ignored: make([]protov2.ManifestIgnored, 0, len(res.Ignored)),
+	}
+	for _, i := range res.Ignored {
+		out.Ignored = append(out.Ignored, protov2.ManifestIgnored{Path: i.Path, Value: i.Value, Reason: i.Reason})
+	}
+	writeV2JSON(w, http.StatusOK, out)
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // freeSlotsNow is how many scan commands the poll may offer the sensor: its
@@ -223,8 +303,22 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		Report:        req.capabilityReport(),
 		Load:          req.loadReport(),
 		Build:         req.buildReport(),
+		// v1 has no manifest: its heartbeat is always the source.
+		ManifestDigest: manifestDigestFor(req, protocol),
 	}
 }
+
+// manifestDigestFor is the manifest digest a v2 heartbeat echoes, bounded;
+// "" on v1.
+func manifestDigestFor(req *HeartbeatRequest, protocol int) string {
+	if protocol < 2 || len(req.ManifestDigest) > maxManifestDigestLen {
+		return ""
+	}
+	return req.ManifestDigest
+}
+
+// maxManifestDigestLen is "sha256:" + 64 hex characters.
+const maxManifestDigestLen = 71
 
 // =============================================================================
 // Commands

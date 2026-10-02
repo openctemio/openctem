@@ -54,6 +54,14 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/length-required","title":"Length required","status":411,"detail":"Send a Content-Length; chunked transfer coding is not accepted.","retryable":false}
+## manifest-invalid
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/manifest-invalid","title":"Manifest invalid","status":422,"detail":"The manifest is not a JSON object with a schema member of the documented shape.","retryable":false}
+## manifest-schema-unsupported
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/manifest-schema-unsupported","title":"Manifest schema unsupported","status":422,"detail":"The manifest's schema version is not one this server reads; send schema 1.","retryable":false}
 ## queue-full
 Content-Type: application/problem+json
 Openctem-Protocol: 2

@@ -101,7 +101,8 @@
     "fingerprints",
     "keys",
     "load",
-    "release"
+    "release",
+    "manifest"
   ],
   "media_types": [
     "application/vnd.openctem.ctis.v1+json"

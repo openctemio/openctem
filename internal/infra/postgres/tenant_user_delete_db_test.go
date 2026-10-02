@@ -234,6 +234,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
+	// digest has a format CHECK; manifest and ignored have type CHECKs.
+	"sensor_manifests": func(*schemaSeeder) map[string]any {
+		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "manifest": "{}", "ignored": "[]"}
+	},
 }
 
 var (
