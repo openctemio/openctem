@@ -757,7 +757,7 @@ func (s *AssetService) correlateByIPOrHostname(ctx context.Context, tenantID sha
 	if !looksLikeIP(name) && name != "" {
 		found, err := s.repo.FindByHostname(ctx, tenantID, name)
 		if err != nil {
-			s.logger.Warn("hostname correlation lookup failed", "hostname", name, "error", err)
+			s.logger.Warn("hostname correlation lookup failed", "hostname", logger.SanitizeValue(name), "error", logger.SanitizeError(err))
 			return nil
 		}
 		if found != nil {
@@ -765,7 +765,7 @@ func (s *AssetService) correlateByIPOrHostname(ctx context.Context, tenantID sha
 			if looksLikeIP(found.Name()) {
 				_ = found.UpdateName(name)
 				s.logger.Info("asset correlated by hostname, renamed from IP",
-					"hostname", name, "old_name", logger.SanitizeValue(found.Name()), "id", found.ID().String())
+					"hostname", logger.SanitizeValue(name), "old_name", logger.SanitizeValue(found.Name()), "id", found.ID().String())
 			}
 			return found
 		}
@@ -1780,7 +1780,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 		return nil, nil, fmt.Errorf("failed to create repository extension: %w", err)
 	}
 
-	s.logger.Info("repository asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()), "fullName", input.FullName)
+	s.logger.Info("repository asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()), "fullName", logger.SanitizeValue(input.FullName))
 	return a, repoExt, nil
 }
 
