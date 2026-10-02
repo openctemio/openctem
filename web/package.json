@@ -25,8 +25,7 @@
     "generate-secret": "npx tsx scripts/generate-secret.ts",
     "generate:api-types": "bash scripts/generate-api-types.sh",
     "check:api-types": "bash scripts/generate-api-types.sh --check",
-    "check:spec-vendored": "bash scripts/check-spec-vendored.sh",
-    "prepare": "husky"
+    "prepare": "cd .. && git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

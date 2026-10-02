@@ -13,7 +13,7 @@
 # So the shapes are generated now, from the same file the server generates from.
 #
 # Pipeline:
-#   src/lib/api/openapi/swagger.yaml   (vendored from openctemio/api, Swagger 2.0)
+#   ../api/api/openapi/swagger.yaml    (the API's own generated spec, Swagger 2.0)
 #     -> swagger2openapi                (2.0 has no discriminated schemas / nullable)
 #     -> openapi-typescript             -> src/lib/api/generated/api.types.ts
 #
@@ -29,7 +29,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SPEC="$REPO_ROOT/src/lib/api/openapi/swagger.yaml"
+SPEC="$REPO_ROOT/../api/api/openapi/swagger.yaml"
 OUT_REL="src/lib/api/generated/api.types.ts"
 OUT="$REPO_ROOT/$OUT_REL"
 
@@ -37,7 +37,7 @@ CHECK=0
 [ "${1:-}" = "--check" ] && CHECK=1
 
 if [ ! -f "$SPEC" ]; then
-  echo "generate-api-types: vendored spec missing at src/lib/api/openapi/swagger.yaml" >&2
+  echo "generate-api-types: API spec missing at api/api/openapi/swagger.yaml" >&2
   exit 2
 fi
 
@@ -68,9 +68,8 @@ fi
 /**
  * GENERATED FILE — DO NOT EDIT.
  *
- * Derived from src/lib/api/openapi/swagger.yaml, which is vendored from
- * openctemio/api (where it is itself generated from the handler annotations and
- * gated by scripts/check-openapi.sh).
+ * Derived from api/api/openapi/swagger.yaml in this repository (generated from
+ * the Go handler annotations and gated by api/scripts/check-openapi.sh).
  *
  * Regenerate:  npm run generate:api-types
  * Verify:      npm run check:api-types   (also runs in CI)

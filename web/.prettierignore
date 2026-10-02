@@ -21,4 +21,3 @@ coverage
 # Prettier reformats YAML block sequences (`- $ref` indentation) and rewrote
 # 6,665 lines of it on the first commit, which would have made every future
 # re-vendor look like a contract change.
-src/lib/api/openapi/swagger.yaml

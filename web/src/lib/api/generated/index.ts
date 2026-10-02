@@ -64,7 +64,7 @@ export type ApiQuery<P extends keyof paths, M extends keyof paths[P]> = paths[P]
 // ---------------------------------------------------------------------------
 
 // Errors
-export type ApiError = Schemas['github_com_openctemio_api_pkg_apierror.Error']
+export type ApiError = Schemas['github_com_openctemio_openctem_api_pkg_apierror.Error']
 
 // Asset types
 export type AssetTypeResponse = Schemas['internal_infra_http_handler.AssetTypeResponse']
@@ -79,32 +79,34 @@ export type GroupFindingResponse = Schemas['internal_infra_http_handler.GroupFin
 // Components (SBOM)
 export type ComponentResponse = Schemas['internal_infra_http_handler.ComponentResponse']
 export type ComponentStats =
-  Schemas['github_com_openctemio_api_pkg_domain_component.ComponentStats']
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats']
 export type EcosystemStats =
-  Schemas['github_com_openctemio_api_pkg_domain_component.EcosystemStats']
-export type LicenseStats = Schemas['github_com_openctemio_api_pkg_domain_component.LicenseStats']
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.EcosystemStats']
+export type LicenseStats =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.LicenseStats']
 export type VulnerableComponent =
-  Schemas['github_com_openctemio_api_pkg_domain_component.VulnerableComponent']
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.VulnerableComponent']
 
 // CTEM cycles — the close-time verdict on each charter success criterion.
 export type CtemCycleResponse = Schemas['internal_infra_http_handler.CTEMCycleResponse']
 export type CharterEvaluation =
-  Schemas['github_com_openctemio_api_pkg_domain_ctemcycle.CharterEvaluation']
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CharterEvaluation']
 export type CriterionEvaluation =
-  Schemas['github_com_openctemio_api_pkg_domain_ctemcycle.CriterionEvaluation']
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CriterionEvaluation']
 export type CriterionOutcome =
-  Schemas['github_com_openctemio_api_pkg_domain_ctemcycle.CriterionOutcome']
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CriterionOutcome']
 
 // Credentials (leaked-credential inventory)
-export type CredentialItem = Schemas['github_com_openctemio_api_internal_app.CredentialItem']
+export type CredentialItem =
+  Schemas['github_com_openctemio_openctem_api_internal_app.CredentialItem']
 export type CredentialListResult =
-  Schemas['github_com_openctemio_api_internal_app.CredentialListResult']
+  Schemas['github_com_openctemio_openctem_api_internal_app.CredentialListResult']
 export type IdentityListResult =
-  Schemas['github_com_openctemio_api_internal_app.IdentityListResult']
+  Schemas['github_com_openctemio_openctem_api_internal_app.IdentityListResult']
 export type IdentityExposure =
-  Schemas['github_com_openctemio_api_internal_app_integration.IdentityExposure']
+  Schemas['github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure']
 export type CredentialImportResult =
-  Schemas['github_com_openctemio_api_pkg_domain_credential.ImportResult']
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_credential.ImportResult']
 
 // Findings / vulnerabilities.
 //

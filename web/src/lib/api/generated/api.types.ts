@@ -1,9 +1,8 @@
 /**
  * GENERATED FILE — DO NOT EDIT.
  *
- * Derived from src/lib/api/openapi/swagger.yaml, which is vendored from
- * openctemio/api (where it is itself generated from the handler annotations and
- * gated by scripts/check-openapi.sh).
+ * Derived from api/api/openapi/swagger.yaml in this repository (generated from
+ * the Go handler annotations and gated by api/scripts/check-openapi.sh).
  *
  * Regenerate:  npm run generate:api-types
  * Verify:      npm run check:api-types   (also runs in CI)
@@ -61,7 +60,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Already an administrator, or the account belongs to an organization */
@@ -70,7 +69,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -139,7 +138,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -148,7 +147,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -199,7 +198,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -208,7 +207,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -217,7 +216,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -267,7 +266,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -276,7 +275,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -370,7 +369,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Single sign-on failed */
@@ -379,7 +378,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -427,7 +426,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -517,7 +516,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Invalid or expired verification code */
@@ -526,7 +525,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -577,7 +576,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description No console session */
@@ -586,7 +585,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -634,7 +633,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not a platform administrator, or not a password sign-in */
@@ -643,7 +642,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -718,7 +717,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description require_idp without a break-glass super admin */
@@ -727,7 +726,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -759,7 +758,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -850,7 +849,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -889,7 +888,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -935,7 +934,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1015,7 +1014,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1360,15 +1359,15 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
     put?: never
     /**
-     * Create a user in an organization (platform admin)
-     * @description Same as the organization administrator's POST /tenants/{tenant}/users, with a built-in role. The one-time set-password link is emailed when SMTP is configured, otherwise setup_token is returned once.
+     * Create the first owner of an organization (platform admin)
+     * @description Bootstrap only: creates the owner of an organization that has no active owner, and nothing else (409 when it has one: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log.
      */
     post: {
       parameters: {
@@ -1380,7 +1379,7 @@ export interface paths {
         }
         cookie?: never
       }
-      /** @description User */
+      /** @description First owner */
       requestBody: {
         content: {
           'application/json': components['schemas']['internal_infra_http_handler.AdminCreateOrgUserRequest']
@@ -1402,16 +1401,16 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
-        /** @description Account exists */
+        /** @description Organization already has an owner, or the account exists */
         409: {
           headers: {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1491,7 +1490,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1551,7 +1550,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1598,7 +1597,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -1607,7 +1606,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1657,7 +1656,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1705,7 +1704,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -1714,7 +1713,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -1723,11 +1722,50 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/admin/version': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * API version
+     * @description The running API build: release tag (or "<tag>-dev" on a development build), short commit, build time and channel.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_version.Info']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -1763,7 +1801,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_sensorproto_legacyv1.Command'][]
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command'][]
           }
         }
         /** @description Unauthorized */
@@ -1772,7 +1810,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -1781,7 +1819,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1825,7 +1863,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_sensorproto_legacyv1.Command']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command']
           }
         }
         /** @description Bad Request */
@@ -1834,7 +1872,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -1843,7 +1881,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -1852,7 +1890,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1899,7 +1937,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_sensorproto_legacyv1.Command']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command']
           }
         }
         /** @description Bad Request */
@@ -1908,7 +1946,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -1917,7 +1955,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -1926,7 +1964,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -1973,7 +2011,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_sensorproto_legacyv1.Command']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command']
           }
         }
         /** @description Bad Request */
@@ -1982,7 +2020,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -1991,7 +2029,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -2000,7 +2038,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2042,7 +2080,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_sensorproto_legacyv1.Command']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command']
           }
         }
         /** @description Bad Request */
@@ -2051,7 +2089,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2060,7 +2098,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -2069,7 +2107,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2116,7 +2154,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_sensorproto_legacyv1.Heartbeat']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Heartbeat']
           }
         }
         /** @description Unauthorized */
@@ -2125,7 +2163,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2171,7 +2209,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app_ingest.BaselineDiffOutput']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput']
           }
         }
       }
@@ -2224,7 +2262,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2233,7 +2271,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2242,7 +2280,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2295,7 +2333,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2304,7 +2342,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2313,7 +2351,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2366,7 +2404,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2375,7 +2413,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2384,7 +2422,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2437,7 +2475,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2446,7 +2484,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2455,7 +2493,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2515,7 +2553,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2524,7 +2562,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2533,7 +2571,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2581,7 +2619,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -2590,7 +2628,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2599,7 +2637,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2652,7 +2690,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2661,7 +2699,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2670,7 +2708,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2710,7 +2748,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_sensorproto_legacyv1.ScanSession']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.ScanSession']
           }
         }
         /** @description Bad Request */
@@ -2719,7 +2757,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2728,7 +2766,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -2737,7 +2775,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2746,7 +2784,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2794,7 +2832,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -2803,7 +2841,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -2812,7 +2850,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -2854,7 +2892,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -2863,7 +2901,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3344,7 +3382,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -3353,7 +3391,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3362,7 +3400,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3401,7 +3439,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -3410,7 +3448,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3419,7 +3457,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3468,7 +3506,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -3477,7 +3515,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3486,7 +3524,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3527,7 +3565,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -3536,7 +3574,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3545,7 +3583,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3580,7 +3618,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -3589,7 +3627,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3598,7 +3636,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3651,7 +3689,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -3660,7 +3698,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3669,7 +3707,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3711,7 +3749,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -3720,7 +3758,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3729,7 +3767,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3770,7 +3808,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -3779,7 +3817,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3788,7 +3826,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3841,7 +3879,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -3850,7 +3888,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3859,7 +3897,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3917,7 +3955,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3926,7 +3964,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -3968,7 +4006,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -3977,7 +4015,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -4019,7 +4057,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -4028,7 +4066,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -4105,7 +4143,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -4114,7 +4152,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -4123,7 +4161,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -4174,7 +4212,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -4183,7 +4221,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -4192,7 +4230,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -4201,7 +4239,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -4264,7 +4302,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -4273,7 +4311,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -4282,7 +4320,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -4333,7 +4371,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -4342,7 +4380,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -4351,7 +4389,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -4360,7 +4398,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -5328,7 +5366,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -5337,7 +5375,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -5346,7 +5384,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -5647,7 +5685,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -5656,7 +5694,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -5665,7 +5703,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -5674,7 +5712,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -5716,7 +5754,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -5725,7 +5763,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -5734,7 +5772,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Service already exists for this port */
@@ -5743,7 +5781,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -5752,7 +5790,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -5883,7 +5921,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -5892,7 +5930,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -5901,7 +5939,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -5910,7 +5948,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -6352,7 +6390,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -6361,7 +6399,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -6370,7 +6408,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -6418,7 +6456,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -6427,7 +6465,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -6436,7 +6474,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -7803,7 +7841,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -7812,7 +7850,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -7851,7 +7889,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -7860,7 +7898,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -7909,7 +7947,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -7918,7 +7956,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -7927,7 +7965,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -7963,7 +8001,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -7972,7 +8010,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -7981,7 +8019,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -8031,7 +8069,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -8040,7 +8078,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -8049,7 +8087,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -8538,7 +8576,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_domain_component.EcosystemStats'][]
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_component.EcosystemStats'][]
           }
         }
         /** @description Bad Request */
@@ -8599,7 +8637,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_domain_component.LicenseStats'][]
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_component.LicenseStats'][]
           }
         }
         /** @description Unauthorized */
@@ -8649,7 +8687,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_domain_component.ComponentStats']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats']
           }
         }
         /** @description Bad Request */
@@ -8715,7 +8753,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-github_com_openctemio_api_pkg_domain_component_VulnerableComponent']
+            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-github_com_openctemio_openctem_api_pkg_domain_component_VulnerableComponent']
           }
         }
         /** @description Bad Request */
@@ -8791,7 +8829,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.CredentialListResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialListResult']
           }
         }
         /** @description Unauthorized */
@@ -8800,7 +8838,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -8842,7 +8880,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
           }
         }
         /** @description Unauthorized */
@@ -8851,7 +8889,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -8860,7 +8898,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -8909,7 +8947,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
           }
         }
         /** @description Bad Request */
@@ -8918,7 +8956,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -8927,7 +8965,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -8974,7 +9012,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
           }
         }
         /** @description Bad Request */
@@ -8983,7 +9021,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -8992,7 +9030,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9034,7 +9072,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
           }
         }
         /** @description Bad Request */
@@ -9043,7 +9081,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -9052,7 +9090,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9092,7 +9130,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.CredentialItem'][]
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem'][]
           }
         }
         /** @description Unauthorized */
@@ -9101,7 +9139,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -9110,7 +9148,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9159,7 +9197,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
           }
         }
         /** @description Bad Request */
@@ -9168,7 +9206,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -9177,7 +9215,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9228,7 +9266,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -9237,7 +9275,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -9246,7 +9284,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -9255,7 +9293,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Service Unavailable */
@@ -9264,7 +9302,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9351,7 +9389,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.IdentityListResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.IdentityListResult']
           }
         }
         /** @description Unauthorized */
@@ -9360,7 +9398,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9407,7 +9445,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.CredentialListResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialListResult']
           }
         }
         /** @description Unauthorized */
@@ -9416,7 +9454,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9462,7 +9500,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_domain_credential.ImportResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_credential.ImportResult']
           }
         }
         /** @description Bad Request */
@@ -9471,7 +9509,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -9480,7 +9518,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9534,7 +9572,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_domain_credential.ImportResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_credential.ImportResult']
           }
         }
         /** @description Bad Request */
@@ -9543,7 +9581,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -9552,7 +9590,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9639,7 +9677,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9780,6 +9818,177 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ctem-cycles/{id}/profiles': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List a cycle's attacker profiles */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Cycle ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CTEMCycleProfilesResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ctem-cycles/{id}/profiles/{profileId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Unlink an attacker profile from a cycle */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Cycle ID */
+          id: string
+          /** @description Profile ID */
+          profileId: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ctem-cycles/{id}/scope': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a cycle's scope snapshot */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Cycle ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CTEMScopeSnapshotResponse'][]
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/custom-tools': {
     parameters: {
       query?: never
@@ -9830,7 +10039,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -9839,7 +10048,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9873,7 +10082,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -9882,7 +10091,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -9891,7 +10100,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9940,7 +10149,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -9949,7 +10158,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -9958,7 +10167,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -9994,7 +10203,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -10003,7 +10212,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10012,7 +10221,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10021,7 +10230,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10056,7 +10265,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -10065,7 +10274,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10074,7 +10283,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10083,7 +10292,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10133,7 +10342,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -10142,7 +10351,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10151,7 +10360,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10160,7 +10369,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10211,7 +10420,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -10220,7 +10429,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10229,7 +10438,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10238,7 +10447,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10278,7 +10487,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.ProgramMetrics']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.ProgramMetrics']
           }
         }
         /** @description Bad Request */
@@ -10287,7 +10496,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -10296,7 +10505,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10305,7 +10514,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10501,7 +10710,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10510,7 +10719,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10549,7 +10758,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -10558,7 +10767,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10567,7 +10776,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10616,7 +10825,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10625,7 +10834,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10634,7 +10843,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10670,7 +10879,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10679,7 +10888,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10688,7 +10897,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10743,7 +10952,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10752,7 +10961,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10761,7 +10970,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10817,7 +11026,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10826,7 +11035,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10835,7 +11044,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10886,7 +11095,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10895,7 +11104,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10904,7 +11113,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -10957,7 +11166,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -10966,7 +11175,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -10975,7 +11184,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -11031,7 +11240,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -11040,7 +11249,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -11049,7 +11258,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -11104,7 +11313,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -11113,7 +11322,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -11161,7 +11370,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -11170,7 +11379,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -11245,7 +11454,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -11254,7 +11463,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -11263,7 +11472,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -11314,7 +11523,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -11323,7 +11532,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -11332,7 +11541,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -11341,7 +11550,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -11404,7 +11613,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -11413,7 +11622,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -11422,7 +11631,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -11473,7 +11682,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -11482,7 +11691,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -11491,7 +11700,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -11500,7 +11709,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -11551,7 +11760,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -11560,7 +11769,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -11569,7 +11778,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -11578,7 +11787,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -12798,7 +13007,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -12807,7 +13016,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -12816,7 +13025,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -12865,7 +13074,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -12906,7 +13115,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -12915,7 +13124,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -12950,7 +13159,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13005,7 +13214,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13045,7 +13254,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -13054,7 +13263,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13109,7 +13318,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -13118,7 +13327,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13155,7 +13364,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13210,7 +13419,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13252,7 +13461,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -13261,7 +13470,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13318,7 +13527,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -13327,7 +13536,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13364,7 +13573,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -13373,7 +13582,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13421,7 +13630,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13461,7 +13670,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -13470,7 +13679,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13522,7 +13731,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -13571,7 +13780,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -14396,7 +14605,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.GetNotificationEventsResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.GetNotificationEventsResult']
           }
         }
         /** @description Bad request */
@@ -15260,7 +15469,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -15269,7 +15478,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -15329,7 +15538,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -15338,7 +15547,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -15425,7 +15634,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -15434,7 +15643,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -15519,7 +15728,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_pagination.Result-internal_infra_http_handler_OutboxEntryResponse']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_pagination.Result-internal_infra_http_handler_OutboxEntryResponse']
           }
         }
         /** @description Internal Server Error */
@@ -15528,7 +15737,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -15579,7 +15788,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -15588,7 +15797,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -15624,7 +15833,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -15633,7 +15842,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -15683,7 +15892,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Not Found */
@@ -15692,7 +15901,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -15701,7 +15910,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -15747,7 +15956,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -15797,7 +16006,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_pagination.Result-internal_infra_http_handler_NotificationResponse']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_pagination.Result-internal_infra_http_handler_NotificationResponse']
           }
         }
         /** @description Unauthorized */
@@ -15806,7 +16015,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -15815,7 +16024,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -15870,7 +16079,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
@@ -15879,7 +16088,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Not Found */
@@ -15888,7 +16097,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -15897,7 +16106,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -15939,7 +16148,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -15948,7 +16157,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -15986,7 +16195,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
@@ -15995,7 +16204,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unprocessable Entity */
@@ -16004,7 +16213,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -16013,7 +16222,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -16060,7 +16269,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -16069,7 +16278,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -16115,7 +16324,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Internal Server Error */
@@ -16124,7 +16333,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Response']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
       }
@@ -16213,7 +16422,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -16222,7 +16431,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -16231,7 +16440,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -16280,7 +16489,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -16321,7 +16530,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -16330,7 +16539,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -16365,7 +16574,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -16374,7 +16583,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -16427,7 +16636,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -16436,7 +16645,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -16488,7 +16697,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -16497,7 +16706,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17099,7 +17308,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17108,7 +17317,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17147,7 +17356,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -17156,7 +17365,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17165,7 +17374,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17214,7 +17423,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17223,7 +17432,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17232,7 +17441,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17273,7 +17482,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -17282,7 +17491,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17291,7 +17500,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17300,7 +17509,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17335,7 +17544,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -17344,7 +17553,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17353,7 +17562,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17362,7 +17571,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17417,7 +17626,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17426,7 +17635,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -17435,7 +17644,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17444,7 +17653,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17500,7 +17709,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17509,7 +17718,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17518,7 +17727,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17573,7 +17782,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -17582,7 +17791,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17591,7 +17800,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17600,7 +17809,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17652,7 +17861,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17661,7 +17870,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17670,7 +17879,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17716,7 +17925,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17725,7 +17934,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17784,7 +17993,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17793,7 +18002,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17844,7 +18053,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17853,7 +18062,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17862,7 +18071,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17898,7 +18107,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -17907,7 +18116,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17916,7 +18125,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -17966,7 +18175,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -17975,7 +18184,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18023,7 +18232,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18032,7 +18241,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -18041,7 +18250,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18080,7 +18289,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -18089,7 +18298,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18098,7 +18307,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description name taken, or a default zone already exists */
@@ -18107,7 +18316,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18153,7 +18362,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18162,7 +18371,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18171,7 +18380,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18207,7 +18416,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18216,7 +18425,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18225,7 +18434,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -18234,7 +18443,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18277,7 +18486,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -18286,7 +18495,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18295,7 +18504,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18304,7 +18513,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -18313,7 +18522,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18361,7 +18570,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18370,7 +18579,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18379,7 +18588,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18416,7 +18625,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18425,7 +18634,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18434,7 +18643,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            '*/*': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18479,7 +18688,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18488,7 +18697,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18534,7 +18743,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app_scan.ZoneRoutingPreview']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.ZoneRoutingPreview']
           }
         }
         /** @description Bad Request */
@@ -18543,7 +18752,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -18552,7 +18761,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18561,7 +18770,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description scan zone or asset group not in this tenant */
@@ -18570,7 +18779,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18629,7 +18838,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -18638,7 +18847,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18677,7 +18886,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -18686,7 +18895,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Request Entity Too Large */
@@ -18695,7 +18904,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -18704,7 +18913,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18753,7 +18962,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18762,7 +18971,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -18771,7 +18980,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18812,7 +19021,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18821,7 +19030,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18830,7 +19039,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Request Entity Too Large */
@@ -18839,7 +19048,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -18848,7 +19057,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18883,7 +19092,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18892,7 +19101,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18901,7 +19110,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -18910,7 +19119,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18960,7 +19169,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -18969,7 +19178,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -18978,7 +19187,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -18987,7 +19196,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19036,7 +19245,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/octet-stream': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/octet-stream': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19045,7 +19254,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/octet-stream': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/octet-stream': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19054,7 +19263,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/octet-stream': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/octet-stream': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19102,7 +19311,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19111,7 +19320,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19166,7 +19375,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Request Entity Too Large */
@@ -19175,7 +19384,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19184,7 +19393,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19247,7 +19456,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19256,7 +19465,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19295,7 +19504,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -19304,7 +19513,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19313,7 +19522,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19362,7 +19571,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19371,7 +19580,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19380,7 +19589,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19421,7 +19630,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19430,7 +19639,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19439,7 +19648,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19474,7 +19683,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19483,7 +19692,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19492,7 +19701,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19542,7 +19751,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19551,7 +19760,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19560,7 +19769,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19612,7 +19821,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'text/plain': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'text/plain': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19621,7 +19830,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'text/plain': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'text/plain': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19630,7 +19839,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'text/plain': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'text/plain': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19688,7 +19897,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19697,7 +19906,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19706,7 +19915,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19757,7 +19966,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19766,7 +19975,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19775,7 +19984,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19824,7 +20033,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19833,7 +20042,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19842,7 +20051,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19895,7 +20104,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19904,7 +20113,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19913,7 +20122,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -19967,7 +20176,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -19976,7 +20185,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -19985,7 +20194,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20040,7 +20249,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -20049,7 +20258,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20058,7 +20267,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20111,7 +20320,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -20120,7 +20329,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20129,7 +20338,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20187,7 +20396,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -20196,7 +20405,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20205,7 +20414,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20258,7 +20467,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -20267,7 +20476,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20276,7 +20485,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20329,7 +20538,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -20338,7 +20547,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20347,7 +20556,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20400,7 +20609,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -20409,7 +20618,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20418,7 +20627,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20471,7 +20680,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -20480,7 +20689,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20489,7 +20698,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20531,7 +20740,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app_scancoverage.CoverageStats']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_scancoverage.CoverageStats']
           }
         }
       }
@@ -20586,7 +20795,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20595,7 +20804,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20641,7 +20850,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20650,7 +20859,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20705,7 +20914,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -20714,7 +20923,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20723,7 +20932,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20782,7 +20991,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -20791,7 +21000,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20800,7 +21009,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20839,7 +21048,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -20848,7 +21057,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20857,7 +21066,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20906,7 +21115,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -20915,7 +21124,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20924,7 +21133,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -20965,7 +21174,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -20974,7 +21183,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -20983,7 +21192,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21018,7 +21227,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21027,7 +21236,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21036,7 +21245,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21086,7 +21295,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21095,7 +21304,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21104,7 +21313,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21155,7 +21364,16 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description The caller requested this exclusion (separation of duties) */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21164,7 +21382,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21173,7 +21391,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21224,7 +21442,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21233,7 +21451,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21242,7 +21460,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21295,7 +21513,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -21304,7 +21522,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21313,7 +21531,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21372,7 +21590,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -21381,7 +21599,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21390,7 +21608,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21429,7 +21647,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -21438,7 +21656,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21447,7 +21665,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21496,7 +21714,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21505,7 +21723,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21514,7 +21732,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21555,7 +21773,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21564,7 +21782,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21573,7 +21791,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21608,7 +21826,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21617,7 +21835,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21626,7 +21844,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21676,7 +21894,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21685,7 +21903,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21694,7 +21912,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21745,7 +21963,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21754,7 +21972,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21763,7 +21981,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21814,7 +22032,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -21823,7 +22041,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21832,7 +22050,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21885,7 +22103,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -21894,7 +22112,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21903,7 +22121,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -21949,7 +22167,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -21958,7 +22176,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22019,7 +22237,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -22028,7 +22246,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22037,7 +22255,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22076,7 +22294,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -22085,7 +22303,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22094,7 +22312,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22143,7 +22361,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22152,7 +22370,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22161,7 +22379,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22202,7 +22420,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22211,7 +22429,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22220,7 +22438,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22255,7 +22473,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22264,7 +22482,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22273,7 +22491,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22323,7 +22541,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22332,7 +22550,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22341,7 +22559,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22392,7 +22610,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22401,7 +22619,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22410,7 +22628,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22463,7 +22681,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -22472,7 +22690,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22481,11 +22699,68 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scoping/summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Scoping overview
+     * @description Tenant-wide readiness counts for CTEM scoping: the cycle in focus and its charter, crown jewels and their owners, business services and units, the boundary, attacker profiles, threat models and cycles.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.Summary']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -22534,7 +22809,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22543,7 +22818,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22582,7 +22857,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -22591,7 +22866,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22600,7 +22875,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22649,7 +22924,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22658,7 +22933,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22667,7 +22942,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22708,7 +22983,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22717,7 +22992,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22726,7 +23001,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22761,7 +23036,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22770,7 +23045,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22779,7 +23054,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22845,7 +23120,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -22854,7 +23129,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22863,7 +23138,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22902,7 +23177,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -22911,7 +23186,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22920,7 +23195,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -22969,7 +23244,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -22978,7 +23253,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -22987,7 +23262,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23028,7 +23303,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23037,7 +23312,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23046,7 +23321,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23081,7 +23356,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23090,7 +23365,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23099,7 +23374,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23149,7 +23424,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -23158,7 +23433,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23167,7 +23442,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23176,11 +23451,87 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/{id}/activity': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Sensor activity timeline
+     * @description What happened to a sensor, newest first: status changes (online, offline, restarts), updates (version, SDK, protocol, tools, capacity, content), jobs it claimed and finished, and administrator actions from the audit log. Audit items are included only when the caller holds audit:read.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Categories, comma-separated: people, status, updates, jobs (default all) */
+          types?: string
+          /** @description next_cursor of the previous page */
+          cursor?: string
+          /** @description Page size (1-100) */
+          limit?: number
+        }
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorActivityResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -23196,7 +23547,7 @@ export interface paths {
     }
     /**
      * Get sensor configuration templates
-     * @description Returns rendered config templates for a sensor in multiple formats
+     * @description Returns the install and configuration snippets for a sensor: docker run, Compose, Kubernetes, Helm, YAML, env and CLI, pinned to the sensor image of SENSOR_LATEST_VERSION, pointed at the public platform URL, and installing the platform's private CA when SENSOR_CA_CERT_FILE is set.
      */
     get: {
       parameters: {
@@ -23222,13 +23573,22 @@ export interface paths {
             'application/json': components['schemas']['internal_infra_http_handler.SensorConfigTemplatesResponse']
           }
         }
+        /** @description X-Sensor-API-Key is malformed */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Not Found */
         404: {
           headers: {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23237,7 +23597,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Template service not configured */
@@ -23246,13 +23606,82 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/{id}/content/refresh': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Refresh a sensor's scanner content
+     * @description Queue a refresh_content command for the sensor (trivy DB, nuclei templates, semgrep rules). 409 when the sensor manages no content (an older sensor) or is disabled. A refresh already queued is returned instead of a new one.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: components['requestBodies']['internal_infra_http_handler.RefreshContentRequest']
+      responses: {
+        /** @description Accepted */
+        202: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.RefreshContentResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -23304,7 +23733,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23313,7 +23742,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23322,11 +23751,152 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/{id}/manifest': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Sensor manifest
+     * @description The sensor's current manifest (RFC-033): build, platform, resources, concurrency ceiling, and its tools with their kind, version, capabilities and content, as the platform kept them, plus what it ignored. 404 when the sensor has none yet.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorManifestResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/{id}/manifests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Sensor manifest history
+     * @description The sensor's manifest versions, most recently current first (RFC-033). The newest 50 are kept, older ones for 90 days.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Versions (1-50) */
+          limit?: number
+        }
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorManifestListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -23373,7 +23943,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23382,7 +23952,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23391,7 +23961,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23447,7 +24017,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23456,7 +24026,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23465,7 +24035,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23511,7 +24081,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal server error */
@@ -23520,13 +24090,155 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/content-policy': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get the scanner content policy
+     * @description The tenant's scanner content policy (RFC-031): refresh interval, and per content the maximum age, a pinned version and semgrep rulesets. Defaults are filled in.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ContentPolicyResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update the scanner content policy
+     * @description Replace the tenant's scanner content policy. With apply_now every sensor that manages content gets a refresh_content command carrying it.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Policy */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateContentPolicyRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ContentPolicyResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/content/refresh': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Refresh scanner content on every sensor
+     * @description Queue a refresh_content command for every sensor of the tenant that manages content and has none queued.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: components['requestBodies']['internal_infra_http_handler.RefreshContentRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FleetRefreshContentResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -23568,7 +24280,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23577,7 +24289,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23649,7 +24361,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -23658,7 +24370,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23667,7 +24379,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23718,7 +24430,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -23727,7 +24439,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23736,7 +24448,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23745,7 +24457,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23786,7 +24498,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -23795,7 +24507,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23804,7 +24516,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23813,7 +24525,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23848,7 +24560,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -23857,7 +24569,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -23866,7 +24578,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23875,7 +24587,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23931,7 +24643,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23940,7 +24652,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -23988,7 +24700,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -23997,7 +24709,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24406,7 +25118,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24415,7 +25127,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24466,7 +25178,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Unauthorized */
@@ -24475,7 +25187,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -24484,7 +25196,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24493,7 +25205,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24560,7 +25272,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24569,7 +25281,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24628,7 +25340,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24637,7 +25349,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24704,7 +25416,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24713,7 +25425,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24780,7 +25492,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24789,7 +25501,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24854,7 +25566,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24863,7 +25575,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24929,7 +25641,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24938,7 +25650,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -24989,7 +25701,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -24998,7 +25710,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25055,7 +25767,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25064,7 +25776,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25127,7 +25839,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25136,7 +25848,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25175,7 +25887,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -25184,7 +25896,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25193,7 +25905,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25242,7 +25954,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25251,7 +25963,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25260,7 +25972,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25301,7 +26013,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25310,7 +26022,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25319,7 +26031,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25354,7 +26066,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25363,7 +26075,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25372,7 +26084,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25422,7 +26134,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25431,7 +26143,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25440,7 +26152,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25491,7 +26203,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25500,7 +26212,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25509,7 +26221,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25564,7 +26276,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25573,7 +26285,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25624,7 +26336,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25633,7 +26345,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25642,7 +26354,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25683,7 +26395,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25692,7 +26404,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25701,7 +26413,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25736,7 +26448,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25745,7 +26457,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25754,7 +26466,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25804,7 +26516,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25813,7 +26525,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25822,7 +26534,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25873,7 +26585,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -25882,7 +26594,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25891,7 +26603,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -25952,7 +26664,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -25961,7 +26673,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26009,7 +26721,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26018,7 +26730,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26064,7 +26776,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26073,7 +26785,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26122,7 +26834,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26131,7 +26843,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26185,7 +26897,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -26194,7 +26906,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26203,7 +26915,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26254,7 +26966,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26265,6 +26977,142 @@ export interface paths {
     options?: never
     head?: never
     patch?: never
+    trace?: never
+  }
+  '/tenants/{tenant}/settings/data-scope': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get the data scope of members without an access group
+     * @description Returns what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Tenant ID or slug */
+          tenant: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.DataScopePolicyResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /**
+     * Set the data scope of members without an access group
+     * @description Sets what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything. The change is audited.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Tenant ID or slug */
+          tenant: string
+        }
+        cookie?: never
+      }
+      /** @description Policy */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateDataScopePolicyRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.DataScopePolicyResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     trace?: never
   }
   '/tenants/{tenant}/users': {
@@ -26312,7 +27160,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -26321,7 +27169,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -26330,7 +27178,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26352,7 +27200,7 @@ export interface paths {
     put?: never
     /**
      * Issue a new set-password link for a pending account
-     * @description Replaces the one-time set-password link of an account an administrator created that has never been used and belongs to this organization only. Owner/admin only. 400 for any other account (its owner recovers it with forgot-password).
+     * @description Replaces the one-time set-password link of an account an administrator created that has never been used and belongs to this organization only. Owner/admin only; an owner or administrator account, or one holding a role the caller could not grant, needs an owner (403). 400 for any other account (its owner recovers it with forgot-password).
      */
     post: {
       parameters: {
@@ -26383,7 +27231,16 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -26392,7 +27249,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26431,7 +27288,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26477,7 +27334,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26536,7 +27393,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26545,7 +27402,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26579,7 +27436,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Conflict */
@@ -26588,7 +27445,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26597,7 +27454,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26646,7 +27503,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -26655,7 +27512,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26664,7 +27521,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26700,7 +27557,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -26709,7 +27566,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26718,7 +27575,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26753,7 +27610,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Forbidden */
@@ -26762,7 +27619,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -26771,7 +27628,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26780,7 +27637,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26830,7 +27687,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -26839,7 +27696,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26848,7 +27705,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26899,7 +27756,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -26908,7 +27765,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26917,7 +27774,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -26966,7 +27823,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -26975,7 +27832,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -26984,7 +27841,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -27047,7 +27904,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -27056,7 +27913,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -27192,7 +28049,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_internal_app.MFAStatus']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.MFAStatus']
           }
         }
         /** @description Unauthorized */
@@ -27848,6 +28705,45 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/version': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * API version
+     * @description The running API build: release tag (or "<tag>-dev" on a development build), short commit, build time and channel.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_version.Info']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/vulnerabilities': {
     parameters: {
       query?: never
@@ -27933,7 +28829,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -28022,7 +28918,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -28050,7 +28946,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_apierror.Error']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -28220,7 +29116,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.ActiveCVEStats']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.ActiveCVEStats']
           }
         }
       }
@@ -29694,7 +30590,7 @@ export interface components {
       /** @description Vulnerable code pattern */
       vulnerable_pattern?: string
     }
-    'github_com_openctemio_api_internal_app.CredentialItem': {
+    'github_com_openctemio_openctem_api_internal_app.CredentialItem': {
       credential_type?: string
       details?: {
         [key: string]: unknown
@@ -29712,27 +30608,27 @@ export interface components {
       source?: string
       state?: string
     }
-    'github_com_openctemio_api_internal_app.CredentialListResult': {
-      items?: components['schemas']['github_com_openctemio_api_internal_app_integration.CredentialItem'][]
+    'github_com_openctemio_openctem_api_internal_app.CredentialListResult': {
+      items?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'][]
       page?: number
       page_size?: number
       total?: number
       total_pages?: number
     }
-    'github_com_openctemio_api_internal_app.GetNotificationEventsResult': {
-      data?: components['schemas']['github_com_openctemio_api_internal_app_integration.NotificationEventEntry'][]
+    'github_com_openctemio_openctem_api_internal_app.GetNotificationEventsResult': {
+      data?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.NotificationEventEntry'][]
       limit?: number
       offset?: number
       total?: number
     }
-    'github_com_openctemio_api_internal_app.IdentityListResult': {
-      items?: components['schemas']['github_com_openctemio_api_internal_app_integration.IdentityExposure'][]
+    'github_com_openctemio_openctem_api_internal_app.IdentityListResult': {
+      items?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure'][]
       page?: number
       page_size?: number
       total?: number
       total_pages?: number
     }
-    'github_com_openctemio_api_internal_app.MFAStatus': {
+    'github_com_openctemio_openctem_api_internal_app.MFAStatus': {
       enabled?: boolean
       enabled_at?: string
       recovery_codes_remaining?: number
@@ -29744,7 +30640,7 @@ export interface components {
       /** @description Supported is false for federated accounts (2FA is the IdP's job). */
       supported?: boolean
     }
-    'github_com_openctemio_api_internal_app.ProgramMetrics': {
+    'github_com_openctemio_openctem_api_internal_app.ProgramMetrics': {
       /**
        * @description MTTDInternetFacing — mean time to detect new internet-facing assets.
        *
@@ -29768,7 +30664,7 @@ export interface components {
        *     that flapped public → private → public is measured to the later flip
        *     unless an earlier history row / exposure / finding exists.
        */
-      mttd_internet_facing?: components['schemas']['github_com_openctemio_api_internal_app_module.DurationMetric']
+      mttd_internet_facing?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
       /**
        * @description MTTRValidated — mean time to remediate VALIDATED exposures only.
        *
@@ -29783,20 +30679,20 @@ export interface components {
        *     false_positive / accepted / validated_fixed are not remediation and are
        *     excluded.
        */
-      mttr_validated?: components['schemas']['github_com_openctemio_api_internal_app_module.DurationMetric']
+      mttr_validated?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
       /**
        * @description OwnerAcceptance — share of assignments the assignee acted on within the
        *     SLA window. See OwnerAcceptanceMetric.
        */
-      owner_acceptance?: components['schemas']['github_com_openctemio_api_internal_app_module.OwnerAcceptanceMetric']
+      owner_acceptance?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.OwnerAcceptanceMetric']
       period_days?: number
     }
-    'github_com_openctemio_api_internal_app.ProviderInfo': {
+    'github_com_openctemio_openctem_api_internal_app.ProviderInfo': {
       enabled?: boolean
       id?: string
       name?: string
     }
-    'github_com_openctemio_api_internal_app.SessionInfo': {
+    'github_com_openctemio_openctem_api_internal_app.SessionInfo': {
       created_at?: string
       id?: string
       ip_address?: string
@@ -29804,7 +30700,7 @@ export interface components {
       last_activity_at?: string
       user_agent?: string
     }
-    'github_com_openctemio_api_internal_app_ingest.BaselineDiffOutput': {
+    'github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput': {
       /**
        * @description BaseBranchKnown is false when the base branch has no scan history yet
        *     (then everything is treated as new).
@@ -29815,7 +30711,7 @@ export interface components {
       /** @description PreExisting are fingerprints already open on the base branch (tech debt). */
       pre_existing_fingerprints?: string[]
     }
-    'github_com_openctemio_api_internal_app_integration.CredentialItem': {
+    'github_com_openctemio_openctem_api_internal_app_integration.CredentialItem': {
       credential_type?: string
       details?: {
         [key: string]: unknown
@@ -29833,7 +30729,7 @@ export interface components {
       source?: string
       state?: string
     }
-    'github_com_openctemio_api_internal_app_integration.IdentityExposure': {
+    'github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure': {
       credential_types?: string[]
       exposure_count?: number
       first_seen_at?: string
@@ -29849,7 +30745,7 @@ export interface components {
         [key: string]: number
       }
     }
-    'github_com_openctemio_api_internal_app_integration.NotificationEventEntry': {
+    'github_com_openctemio_openctem_api_internal_app_integration.NotificationEventEntry': {
       aggregate_id?: string
       aggregate_type?: string
       body?: string
@@ -29863,13 +30759,13 @@ export interface components {
       last_error?: string
       processed_at?: string
       retry_count?: number
-      send_results?: components['schemas']['github_com_openctemio_api_internal_app_integration.NotificationEventSendResult'][]
+      send_results?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.NotificationEventSendResult'][]
       severity?: string
       status?: string
       title?: string
       url?: string
     }
-    'github_com_openctemio_api_internal_app_integration.NotificationEventSendResult': {
+    'github_com_openctemio_openctem_api_internal_app_integration.NotificationEventSendResult': {
       error?: string
       integration_id?: string
       message_id?: string
@@ -29878,7 +30774,7 @@ export interface components {
       sent_at?: string
       status?: string
     }
-    'github_com_openctemio_api_internal_app_module.DurationMetric': {
+    'github_com_openctemio_openctem_api_internal_app_module.DurationMetric': {
       mean_hours?: number
       median_hours?: number
       sample_size?: number
@@ -29888,18 +30784,18 @@ export interface components {
        */
       unmeasured?: number
     }
-    'github_com_openctemio_api_internal_app_module.OwnerAcceptanceMetric': {
+    'github_com_openctemio_openctem_api_internal_app_module.OwnerAcceptanceMetric': {
       accepted?: number
       excluded?: number
       missed?: number
       pending?: number
       rate_pct?: number
     }
-    'github_com_openctemio_api_internal_app_scan.PreviewError': {
+    'github_com_openctemio_openctem_api_internal_app_scan.PreviewError': {
       code?: string
       message?: string
     }
-    'github_com_openctemio_api_internal_app_scan.PreviewTarget': {
+    'github_com_openctemio_openctem_api_internal_app_scan.PreviewTarget': {
       /** @description what a hostname resolved to */
       addresses?: string[]
       reason?: string
@@ -29911,7 +30807,7 @@ export interface components {
       zone_id?: string
       zone_name?: string
     }
-    'github_com_openctemio_api_internal_app_scan.PreviewZone': {
+    'github_com_openctemio_openctem_api_internal_app_scan.PreviewZone': {
       jobs?: number
       /** @description jobs with no online sensor yet: they wait in the zone */
       queued_jobs?: number
@@ -29920,8 +30816,8 @@ export interface components {
       zone_id?: string
       zone_name?: string
     }
-    'github_com_openctemio_api_internal_app_scan.ZoneRoutingPreview': {
-      error?: components['schemas']['github_com_openctemio_api_internal_app_scan.PreviewError']
+    'github_com_openctemio_openctem_api_internal_app_scan.ZoneRoutingPreview': {
+      error?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.PreviewError']
       excluded?: string[]
       excluded_targets?: number
       jobs?: number
@@ -29929,15 +30825,15 @@ export interface components {
       resolved_targets?: number
       routed?: boolean
       selected_zone_id?: string
-      targets?: components['schemas']['github_com_openctemio_api_internal_app_scan.PreviewTarget'][]
+      targets?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.PreviewTarget'][]
       targets_per_job?: number
       uncovered_targets?: number
       unzoned_targets?: number
       warnings?: string[]
-      zones?: components['schemas']['github_com_openctemio_api_internal_app_scan.PreviewZone'][]
+      zones?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.PreviewZone'][]
       zones_enabled?: boolean
     }
-    'github_com_openctemio_api_internal_app_scancoverage.CoverageStats': {
+    'github_com_openctemio_openctem_api_internal_app_scancoverage.CoverageStats': {
       /** @description CoveragePercent = CoveredInWindow / TotalScannable * 100 (0 when none). */
       coverage_percent?: number
       /** @description CoveredInWindow were dispatched within WindowDays. */
@@ -29961,7 +30857,7 @@ export interface components {
       window_days?: number
     }
     /** @enum {string} */
-    'github_com_openctemio_api_pkg_apierror.Code':
+    'github_com_openctemio_openctem_api_pkg_apierror.Code':
       | 'BAD_REQUEST'
       | 'UNAUTHORIZED'
       | 'FORBIDDEN'
@@ -29975,22 +30871,22 @@ export interface components {
       | 'RATE_LIMIT_EXCEEDED'
       | 'UPSTREAM_ERROR'
       | 'MFA_ENROLLMENT_REQUIRED'
-    'github_com_openctemio_api_pkg_apierror.Error': {
+    'github_com_openctemio_openctem_api_pkg_apierror.Error': {
       /** @description Machine-readable error code */
-      code?: components['schemas']['github_com_openctemio_api_pkg_apierror.Code']
+      code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
       /** @description Additional error details (optional) */
       details?: unknown
       /** @description Human-readable error message */
       message?: string
     }
-    'github_com_openctemio_api_pkg_apierror.Response': {
-      code?: components['schemas']['github_com_openctemio_api_pkg_apierror.Code']
+    'github_com_openctemio_openctem_api_pkg_apierror.Response': {
+      code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
       details?: unknown
       error?: string
       message?: string
       request_id?: string
     }
-    'github_com_openctemio_api_pkg_domain_audit.Changes': {
+    'github_com_openctemio_openctem_api_pkg_domain_audit.Changes': {
       after?: {
         [key: string]: unknown
       }
@@ -29998,7 +30894,7 @@ export interface components {
         [key: string]: unknown
       }
     }
-    'github_com_openctemio_api_pkg_domain_component.ComponentStats': {
+    'github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats': {
       cisa_kev_components?: number
       direct_dependencies?: number
       /** @description critical, high, medium, low */
@@ -30016,14 +30912,14 @@ export interface components {
       }
       vulnerable_components?: number
     }
-    'github_com_openctemio_api_pkg_domain_component.EcosystemStats': {
+    'github_com_openctemio_openctem_api_pkg_domain_component.EcosystemStats': {
       ecosystem?: string
       manifest_file?: string
       outdated?: number
       total?: number
       vulnerable?: number
     }
-    'github_com_openctemio_api_pkg_domain_component.LicenseStats': {
+    'github_com_openctemio_openctem_api_pkg_domain_component.LicenseStats': {
       /** @description permissive, copyleft, weak-copyleft, proprietary, public-domain, unknown */
       category?: string
       /** @description Number of components using this license */
@@ -30037,7 +30933,7 @@ export interface components {
       /** @description Link to license text (SPDX URL) */
       url?: string
     }
-    'github_com_openctemio_api_pkg_domain_component.VulnerableComponent': {
+    'github_com_openctemio_openctem_api_pkg_domain_component.VulnerableComponent': {
       /** @description Vulnerability breakdown */
       critical_count?: number
       ecosystem?: string
@@ -30052,12 +30948,12 @@ export interface components {
       total_count?: number
       version?: string
     }
-    'github_com_openctemio_api_pkg_domain_credential.ImportError': {
+    'github_com_openctemio_openctem_api_pkg_domain_credential.ImportError': {
       error?: string
       identifier?: string
       index?: number
     }
-    'github_com_openctemio_api_pkg_domain_credential.ImportItemResult': {
+    'github_com_openctemio_openctem_api_pkg_domain_credential.ImportItemResult': {
       /** @description imported, updated, reactivated, skipped, error */
       action?: string
       /** @description Exposure event ID if created/updated */
@@ -30066,35 +30962,35 @@ export interface components {
       index?: number
       reason?: string
     }
-    'github_com_openctemio_api_pkg_domain_credential.ImportResult': {
-      details?: components['schemas']['github_com_openctemio_api_pkg_domain_credential.ImportItemResult'][]
-      errors?: components['schemas']['github_com_openctemio_api_pkg_domain_credential.ImportError'][]
+    'github_com_openctemio_openctem_api_pkg_domain_credential.ImportResult': {
+      details?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_credential.ImportItemResult'][]
+      errors?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_credential.ImportError'][]
       imported?: number
       reactivated?: number
       skipped?: number
-      summary?: components['schemas']['github_com_openctemio_api_pkg_domain_credential.ImportSummary']
+      summary?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_credential.ImportSummary']
       updated?: number
     }
-    'github_com_openctemio_api_pkg_domain_credential.ImportSummary': {
+    'github_com_openctemio_openctem_api_pkg_domain_credential.ImportSummary': {
       critical_count?: number
       error_count?: number
       reactivated_alert_sent?: boolean
       success_count?: number
       total_processed?: number
     }
-    'github_com_openctemio_api_pkg_domain_ctemcycle.CharterEvaluation': {
+    'github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CharterEvaluation': {
       /**
        * @description CompletionRate is met / (met + unmet) × 100, rounded to 2 decimals.
        *     Nil when no criterion was measurable.
        */
       completion_rate?: number
-      criteria?: components['schemas']['github_com_openctemio_api_pkg_domain_ctemcycle.CriterionEvaluation'][]
+      criteria?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CriterionEvaluation'][]
       evaluated_at?: string
       met?: number
       not_measurable?: number
       unmet?: number
     }
-    'github_com_openctemio_api_pkg_domain_ctemcycle.CriterionEvaluation': {
+    'github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CriterionEvaluation': {
       /** @description Actual is the measured value in Unit (nil when there was no data). */
       actual?: number
       /**
@@ -30109,7 +31005,7 @@ export interface components {
        */
       metric_key?: string
       name?: string
-      outcome?: components['schemas']['github_com_openctemio_api_pkg_domain_ctemcycle.CriterionOutcome']
+      outcome?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CriterionOutcome']
       /** @description Reason explains a not_measurable outcome. */
       reason?: string
       target?: string
@@ -30118,14 +31014,14 @@ export interface components {
       unit?: string
     }
     /** @enum {string} */
-    'github_com_openctemio_api_pkg_domain_ctemcycle.CriterionOutcome':
+    'github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CriterionOutcome':
       'met' | 'unmet' | 'not_measurable'
-    'github_com_openctemio_api_pkg_domain_group.GroupSettings': {
+    'github_com_openctemio_openctem_api_pkg_domain_group.GroupSettings': {
       allow_self_join?: boolean
       max_members?: number
       require_approval?: boolean
     }
-    'github_com_openctemio_api_pkg_domain_group.NotificationConfig': {
+    'github_com_openctemio_openctem_api_pkg_domain_group.NotificationConfig': {
       notify_critical?: boolean
       notify_high?: boolean
       notify_low?: boolean
@@ -30135,7 +31031,7 @@ export interface components {
       slack_channel?: string
       weekly_digest?: boolean
     }
-    'github_com_openctemio_api_pkg_domain_remediation.Group': {
+    'github_com_openctemio_openctem_api_pkg_domain_remediation.Group': {
       asset_count?: number
       finding_count?: number
       fix_available?: boolean
@@ -30145,7 +31041,19 @@ export interface components {
       }
       title?: string
     }
-    'github_com_openctemio_api_pkg_domain_scanprofile.FindingCounts': {
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_scan.ConfigSecretReason':
+      'key_name' | 'known_format' | 'high_entropy'
+    'github_com_openctemio_openctem_api_pkg_domain_scan.ConfigSecretWarning': {
+      /**
+       * @description Path locates the value: dotted keys, [n] for list items
+       *     ("headers.Authorization", "args[2]").
+       */
+      path?: string
+      /** @description Reason is why it was flagged. */
+      reason?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scan.ConfigSecretReason']
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scanprofile.FindingCounts': {
       critical?: number
       high?: number
       info?: number
@@ -30153,19 +31061,216 @@ export interface components {
       medium?: number
       total?: number
     }
-    'github_com_openctemio_api_pkg_domain_scanprofile.GateBreach': {
+    'github_com_openctemio_openctem_api_pkg_domain_scanprofile.GateBreach': {
       actual?: number
       limit?: number
       /** @description "critical", "high", "medium", "total" */
       metric?: string
     }
-    'github_com_openctemio_api_pkg_domain_scanprofile.QualityGateResult': {
-      breaches?: components['schemas']['github_com_openctemio_api_pkg_domain_scanprofile.GateBreach'][]
-      counts?: components['schemas']['github_com_openctemio_api_pkg_domain_scanprofile.FindingCounts']
+    'github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult': {
+      breaches?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.GateBreach'][]
+      counts?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.FindingCounts']
       passed?: boolean
       reason?: string
     }
-    'github_com_openctemio_api_pkg_domain_templatesource.GitSourceConfig': {
+    'github_com_openctemio_openctem_api_pkg_domain_scoping.AssetSummary': {
+      in_business_unit?: number
+      total?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scoping.BoundarySummary': {
+      exclusions?: number
+      targets?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scoping.CountSummary': {
+      total?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scoping.CrownJewelSummary': {
+      total?: number
+      with_owner?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scoping.CycleSummary': {
+      /** @description AttackerProfiles is the number of profiles linked to the cycle. */
+      attacker_profiles?: number
+      end_date?: string
+      exclusions?: number
+      id?: string
+      in_scope_services?: number
+      name?: string
+      /** @description Charter array lengths. */
+      objectives?: number
+      /**
+       * @description ScopeAssets is the number of rows in the cycle's scope snapshot (zero
+       *     until the cycle is activated).
+       */
+      scope_assets?: number
+      start_date?: string
+      status?: string
+      success_criteria?: number
+      threat_scenarios?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scoping.ServiceSummary': {
+      total?: number
+      with_assets?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scoping.Summary': {
+      /**
+       * @description ActiveCycle is the cycle the scope is being written for: the tenant's
+       *     active cycle, else the most recent one in review, else the most recent
+       *     one in planning. Nil when there is none of those.
+       */
+      active_cycle?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.CycleSummary']
+      assets?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.AssetSummary']
+      attacker_profiles?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.CountSummary']
+      boundary?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.BoundarySummary']
+      business_services?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.ServiceSummary']
+      business_units?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.CountSummary']
+      crown_jewels?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.CrownJewelSummary']
+      cycles?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.CountSummary']
+      threat_models?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scoping.ThreatModelSummary']
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scoping.ThreatModelSummary': {
+      crown_jewels_covered?: number
+      total?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.CapabilityMismatch': {
+      /**
+       * @description CapabilitiesNotReported are capabilities the administrator set that
+       *     the sensor does not report.
+       */
+      capabilities_not_reported?: string[]
+      /**
+       * @description ToolsNotInstalled are tools the administrator set that the sensor
+       *     reports as not installed or does not report at all.
+       */
+      tools_not_installed?: string[]
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.Manifest': {
+      capabilities?: string[]
+      concurrency?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestConcurrency']
+      platform?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestPlatform']
+      resources?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestResources']
+      schema?: number
+      sdk?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestSDK']
+      sensor?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestBuild']
+      tools?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestTool'][]
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestBuild': {
+      build_time?: string
+      commit?: string
+      name?: string
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestConcurrency': {
+      ceiling?: number
+      model?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestContent': {
+      digest?: string
+      managed?: boolean
+      name?: string
+      source?: string
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestIgnored': {
+      path?: string
+      reason?: string
+      value?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestPlatform': {
+      arch?: string
+      os?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestResources': {
+      cpu_cores?: number
+      mem_total_bytes?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestSDK': {
+      name?: string
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestTool': {
+      capabilities?: string[]
+      content?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestContent'][]
+      installed?: boolean
+      kind?: string
+      name?: string
+      target_types?: string[]
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity': {
+      active_jobs?: number
+      per_tool?: {
+        [
+          key: string
+        ]: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ToolCost']
+      }
+      slots_free?: number
+      slots_total?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedContent': {
+      /**
+       * @description CheckedAt is when the sensor last confirmed with its source that this
+       *     is still the newest (or pinned) version: old content is not stale
+       *     while it keeps being confirmed (sdk-go ContentInfo.Stale).
+       */
+      checked_at?: string
+      digest?: string
+      /** @description Error is the last refresh failure (the sensor keeps the old version). */
+      error?: string
+      fetched_at?: string
+      /**
+       * @description Managed is true when the sensor controls the content (it refreshes,
+       *     verifies and swaps it); false when the tool fetches it by itself.
+       */
+      managed?: boolean
+      name?: string
+      source?: string
+      /**
+       * @description Tool is the tool the content belongs to ("trivy", "nuclei"). Empty
+       *     while stored inside its ReportedTool; set by Sensor.ReportedContent.
+       */
+      tool?: string
+      updated_at?: string
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedQueue': {
+      claimed?: number
+      oldest_age_seconds?: number
+      queued_local?: number
+      running?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedResources': {
+      cpu_cores?: number
+      cpu_used_pct?: number
+      disk_free_bytes?: number
+      load1?: number
+      mem_available_bytes?: number
+      mem_total_bytes?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedTool': {
+      /**
+       * @description Capabilities are what this tool serves besides its own name ("dast",
+       *     "validate:nuclei"), known names only; nil when the sensor did not say
+       *     (sdk-go before v0.13 reports only the sensor's flat list).
+       */
+      capabilities?: string[]
+      /**
+       * @description Content is the scanner content the tool scans with (RFC-031,
+       *     content.go); nil when the sensor reported none for it.
+       */
+      content?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedContent'][]
+      installed?: boolean
+      /** @description Kind is "scanner" or "collector"; "" when the sensor did not say. */
+      kind?: string
+      name?: string
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ToolCost': {
+      est_cpu_s?: number
+      est_mem_bytes?: number
+      throughput_targets_per_min?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_templatesource.GitSourceConfig': {
       /** @description none, ssh, token, oauth */
       auth_type?: string
       /** @description main, develop */
@@ -30175,7 +31280,7 @@ export interface components {
       /** @description https://github.com/org/repo */
       url?: string
     }
-    'github_com_openctemio_api_pkg_domain_templatesource.HTTPSourceConfig': {
+    'github_com_openctemio_openctem_api_pkg_domain_templatesource.HTTPSourceConfig': {
       /** @description none, bearer, basic, api_key */
       auth_type?: string
       headers?: {
@@ -30185,7 +31290,7 @@ export interface components {
       timeout?: number
       url?: string
     }
-    'github_com_openctemio_api_pkg_domain_templatesource.S3SourceConfig': {
+    'github_com_openctemio_openctem_api_pkg_domain_templatesource.S3SourceConfig': {
       /** @description keys, sts_role */
       auth_type?: string
       bucket?: string
@@ -30199,13 +31304,13 @@ export interface components {
       /** @description For cross-account */
       role_arn?: string
     }
-    'github_com_openctemio_api_pkg_domain_tenant.RiskLevelConfig': {
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.RiskLevelConfig': {
       critical_min?: number
       high_min?: number
       low_min?: number
       medium_min?: number
     }
-    'github_com_openctemio_api_pkg_domain_vulnerability.ActiveCVEStats': {
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.ActiveCVEStats': {
       by_severity?: {
         [key: string]: number
       }
@@ -30213,32 +31318,32 @@ export interface components {
       kev_count?: number
       total?: number
     }
-    'github_com_openctemio_api_pkg_domain_vulnerability.ArtifactLocation': {
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.ArtifactLocation': {
       uri?: string
       uri_base_id?: string
     }
-    'github_com_openctemio_api_pkg_domain_vulnerability.Attachment': {
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.Attachment': {
       /** @description Location of the artifact */
-      artifact_location?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.ArtifactLocation']
+      artifact_location?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.ArtifactLocation']
       /** @description Human-readable description */
       description?: string
       /** @description Highlight areas (for images) */
-      rectangles?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.Rectangle'][]
+      rectangles?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.Rectangle'][]
       /** @description Relevant regions in the artifact */
-      regions?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.FindingLocation'][]
+      regions?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.FindingLocation'][]
       /** @description Attachment type for UI categorization */
-      type?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.AttachmentType']
+      type?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.AttachmentType']
     }
     /** @enum {string} */
-    'github_com_openctemio_api_pkg_domain_vulnerability.AttachmentType':
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.AttachmentType':
       'evidence' | 'screenshot' | 'document' | 'reference' | 'code' | 'other'
-    'github_com_openctemio_api_pkg_domain_vulnerability.FindingLocation': {
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.FindingLocation': {
       branch?: string
       commit_sha?: string
       context_snippet?: string
       end_column?: number
       end_line?: number
-      logical_location?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.LogicalLocation']
+      logical_location?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.LogicalLocation']
       /** @description Optional description of why this location is relevant */
       message?: string
       path?: string
@@ -30246,43 +31351,43 @@ export interface components {
       start_column?: number
       start_line?: number
     }
-    'github_com_openctemio_api_pkg_domain_vulnerability.LogicalLocation': {
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.LogicalLocation': {
       fully_qualified_name?: string
       /** @description function, method, class, module, etc. */
       kind?: string
       name?: string
     }
-    'github_com_openctemio_api_pkg_domain_vulnerability.Rectangle': {
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.Rectangle': {
       bottom?: number
       left?: number
       right?: number
       top?: number
     }
-    'github_com_openctemio_api_pkg_domain_vulnerability.StackFrame': {
-      location?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.FindingLocation']
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.StackFrame': {
+      location?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.FindingLocation']
       module?: string
       parameters?: string[]
       thread_id?: number
     }
-    'github_com_openctemio_api_pkg_domain_vulnerability.StackTrace': {
-      frames?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.StackFrame'][]
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.StackTrace': {
+      frames?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.StackFrame'][]
       message?: string
     }
-    'github_com_openctemio_api_pkg_pagination.Result-internal_infra_http_handler_NotificationResponse': {
+    'github_com_openctemio_openctem_api_pkg_pagination.Result-internal_infra_http_handler_NotificationResponse': {
       data?: components['schemas']['internal_infra_http_handler.NotificationResponse'][]
       page?: number
       per_page?: number
       total?: number
       total_pages?: number
     }
-    'github_com_openctemio_api_pkg_pagination.Result-internal_infra_http_handler_OutboxEntryResponse': {
+    'github_com_openctemio_openctem_api_pkg_pagination.Result-internal_infra_http_handler_OutboxEntryResponse': {
       data?: components['schemas']['internal_infra_http_handler.OutboxEntryResponse'][]
       page?: number
       per_page?: number
       total?: number
       total_pages?: number
     }
-    'github_com_openctemio_api_pkg_sensorproto_legacyv1.Command': {
+    'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command': {
       acknowledged_at?: string
       agent_id?: string
       completed_at?: string
@@ -30298,7 +31403,7 @@ export interface components {
       tenant_id?: string
       type?: string
     }
-    'github_com_openctemio_api_pkg_sensorproto_legacyv1.Heartbeat': {
+    'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Heartbeat': {
       /**
        * @description Actions are typed control directives from a closed set: pause,
        *     resume, drain, rotate_key, update. Never free-form text.
@@ -30324,7 +31429,7 @@ export interface components {
       status?: string
       tenant_id?: string
     }
-    'github_com_openctemio_api_pkg_sensorproto_legacyv1.ScanSession': {
+    'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.ScanSession': {
       agent_id?: string
       asset_id?: string
       asset_type?: string
@@ -30349,6 +31454,19 @@ export interface components {
       started_at?: string
       status?: string
       tenant_id?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_version.Info': {
+      /** @example 2026-10-02T10:00:00Z */
+      build_time?: string
+      /**
+       * @example release
+       * @enum {string}
+       */
+      channel?: 'release' | 'development'
+      /** @example 4d2f4b02 */
+      commit?: string
+      /** @example v0.9.0 */
+      version?: string
     }
     'internal_infra_http_handler.APIKeyDataRequest': {
       key: string
@@ -30412,7 +31530,7 @@ export interface components {
       email: string
       name?: string
       /** @enum {string} */
-      role: 'admin' | 'member' | 'viewer'
+      role?: 'owner'
     }
     'internal_infra_http_handler.AdminCreateOrganizationRequest': {
       description?: string
@@ -30897,6 +32015,20 @@ export interface components {
        */
       total_assets_change?: number
     }
+    'internal_infra_http_handler.AttackerProfileResponse': {
+      assumptions?: string
+      capabilities?: {
+        [key: string]: unknown
+      }
+      created_at?: string
+      created_by?: string
+      description?: string
+      id?: string
+      is_default?: boolean
+      name?: string
+      profile_type?: string
+      updated_at?: string
+    }
     'internal_infra_http_handler.AuditLogListResponse': {
       data?: components['schemas']['internal_infra_http_handler.AuditLogResponse'][]
       page?: number
@@ -30909,7 +32041,7 @@ export interface components {
       actor_email?: string
       actor_id?: string
       actor_ip?: string
-      changes?: components['schemas']['github_com_openctemio_api_pkg_domain_audit.Changes']
+      changes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_audit.Changes']
       id?: string
       message?: string
       metadata?: {
@@ -30986,7 +32118,7 @@ export interface components {
     'internal_infra_http_handler.BootstrapResponse': {
       modules?: components['schemas']['internal_infra_http_handler.TenantModulesResponse']
       permissions?: components['schemas']['internal_infra_http_handler.BootstrapPermissions']
-      risk_levels?: components['schemas']['github_com_openctemio_api_pkg_domain_tenant.RiskLevelConfig']
+      risk_levels?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RiskLevelConfig']
     }
     'internal_infra_http_handler.BranchResponse': {
       created_at?: string
@@ -31097,6 +32229,9 @@ export interface components {
       notes?: string
       ransomware_use?: string
     }
+    'internal_infra_http_handler.CTEMCycleProfilesResponse': {
+      data?: components['schemas']['internal_infra_http_handler.AttackerProfileResponse'][]
+    }
     'internal_infra_http_handler.CTEMCycleResponse': {
       charter?: {
         [key: string]: unknown
@@ -31106,7 +32241,7 @@ export interface components {
        *     criterion (met / unmet / not_measurable, with the measured value).
        *     Absent until the cycle is closed with at least one criterion.
        */
-      charter_evaluation?: components['schemas']['github_com_openctemio_api_pkg_domain_ctemcycle.CharterEvaluation']
+      charter_evaluation?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CharterEvaluation']
       closed_at?: string
       closed_by?: string
       created_at?: string
@@ -31117,6 +32252,16 @@ export interface components {
       start_date?: string
       status?: string
       updated_at?: string
+    }
+    'internal_infra_http_handler.CTEMScopeSnapshotResponse': {
+      asset_criticality?: string
+      asset_id?: string
+      /** @description Asset fields, empty when the asset has since been deleted. */
+      asset_name?: string
+      asset_type?: string
+      id?: string
+      included_at?: string
+      scope_target_id?: string
     }
     'internal_infra_http_handler.CTISIngestRequest': {
       report?: components['schemas']['ctis.Report']
@@ -31251,6 +32396,29 @@ export interface components {
       version?: string
       vulnerability_count?: number
     }
+    'internal_infra_http_handler.ContentPinBody': {
+      max_age_hours?: number
+      rulesets?: string[]
+      version?: string
+    }
+    'internal_infra_http_handler.ContentPolicyBody': {
+      content?: {
+        [key: string]: components['schemas']['internal_infra_http_handler.ContentPinBody']
+      }
+      refresh_interval_hours?: number
+    }
+    'internal_infra_http_handler.ContentPolicyResponse': {
+      /** @description CommandsCreated / Skipped: only on PUT with apply_now. */
+      commands_created?: number
+      /** @description Defaults is the platform default. */
+      defaults?: components['schemas']['internal_infra_http_handler.ContentPolicyBody']
+      /** @description Policy is the effective policy (defaults filled in). */
+      policy?: components['schemas']['internal_infra_http_handler.ContentPolicyBody']
+      skipped?: number
+      /** @description UpdatedAt / UpdatedBy are null while the tenant uses the defaults. */
+      updated_at?: string
+      updated_by?: string
+    }
     'internal_infra_http_handler.CreateAssetGroupRequest': {
       business_unit?: string
       criticality: string
@@ -31383,8 +32551,8 @@ export interface components {
       /** @enum {string} */
       group_type: 'security_team' | 'team' | 'department' | 'project' | 'external'
       name: string
-      notification_config?: components['schemas']['github_com_openctemio_api_pkg_domain_group.NotificationConfig']
-      settings?: components['schemas']['github_com_openctemio_api_pkg_domain_group.GroupSettings']
+      notification_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_group.NotificationConfig']
+      settings?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_group.GroupSettings']
       slug: string
     }
     /** @description Request body for creating a new integration */
@@ -31623,10 +32791,10 @@ export interface components {
       credential_id?: string
       description?: string
       enabled?: boolean
-      git_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.GitSourceConfig']
-      http_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.HTTPSourceConfig']
+      git_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.GitSourceConfig']
+      http_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.HTTPSourceConfig']
       name: string
-      s3_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.S3SourceConfig']
+      s3_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.S3SourceConfig']
       /** @enum {string} */
       source_type: 'git' | 's3' | 'http'
       /** @enum {string} */
@@ -31807,6 +32975,14 @@ export interface components {
       message?: string
       /** @description Ordered steps from source to sink */
       steps?: components['schemas']['internal_infra_http_handler.DataFlowStepResponse'][]
+    }
+    'internal_infra_http_handler.DataScopePolicyResponse': {
+      /**
+       * @description MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
+       *     (fail-closed). Owners and admins always see everything.
+       * @enum {string}
+       */
+      members_without_group_see?: 'everything' | 'nothing'
     }
     'internal_infra_http_handler.DedupKeyRequest': {
       branch?: string
@@ -32008,7 +33184,7 @@ export interface components {
       assigned_to?: string
       /** @description Full user info */
       assigned_to_user?: components['schemas']['internal_infra_http_handler.FindingAssignedUser']
-      attachments?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.Attachment'][]
+      attachments?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.Attachment'][]
       attack_prerequisites?: string
       baseline_state?: string
       branch_id?: string
@@ -32104,7 +33280,7 @@ export interface components {
       rank?: number
       reachable_from_count?: number
       recommendation?: string
-      related_locations?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.FindingLocation'][]
+      related_locations?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.FindingLocation'][]
       /** @description Full remediation JSONB */
       remediation?: components['schemas']['internal_infra_http_handler.FindingRemediationResponse']
       remediation_type?: string
@@ -32136,7 +33312,7 @@ export interface components {
       sla_status?: string
       snippet?: string
       source?: string
-      stacks?: components['schemas']['github_com_openctemio_api_pkg_domain_vulnerability.StackTrace'][]
+      stacks?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.StackTrace'][]
       start_column?: number
       start_line?: number
       status?: string
@@ -32247,6 +33423,14 @@ export interface components {
       /** @description Replacement string */
       replacement?: string
     }
+    'internal_infra_http_handler.FleetRefreshContentResponse': {
+      commands_created?: number
+      /**
+       * @description Skipped: sensors that do not manage content, are disabled or revoked,
+       *     or already have a refresh queued.
+       */
+      skipped?: number
+    }
     'internal_infra_http_handler.ForgotPasswordRequest': {
       email: string
     }
@@ -32322,8 +33506,8 @@ export interface components {
       is_active?: boolean
       member_count?: number
       name?: string
-      notification_config?: components['schemas']['github_com_openctemio_api_pkg_domain_group.NotificationConfig']
-      settings?: components['schemas']['github_com_openctemio_api_pkg_domain_group.GroupSettings']
+      notification_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_group.NotificationConfig']
+      settings?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_group.GroupSettings']
       slug?: string
       tenant_id?: string
       updated_at?: string
@@ -32338,9 +33522,9 @@ export interface components {
       joined_at?: string
       member_count?: number
       name?: string
-      notification_config?: components['schemas']['github_com_openctemio_api_pkg_domain_group.NotificationConfig']
+      notification_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_group.NotificationConfig']
       role?: string
-      settings?: components['schemas']['github_com_openctemio_api_pkg_domain_group.GroupSettings']
+      settings?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_group.GroupSettings']
       slug?: string
       tenant_id?: string
       updated_at?: string
@@ -32366,7 +33550,16 @@ export interface components {
     }
     'internal_infra_http_handler.HeartbeatRequest': {
       active_jobs?: number
+      arch?: string
+      capabilities?: string[]
+      capacity?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity']
       collectors?: string[]
+      /**
+       * @description Content is a slim heartbeat's content freshness (RFC-033 §6.12): a
+       *     sensor whose manifest is acknowledged leaves tools out and sends each
+       *     tool's content here, with "tool" set. Merged into the stored tools.
+       */
+      content?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedContent'][]
       cpu_percent?: number
       /**
        * @description Disk/network throughput in MB/s. Optional — sensors that omit them leave
@@ -32377,11 +33570,26 @@ export interface components {
       disk_write_mbps?: number
       errors?: number
       hostname?: string
+      /**
+       * @description InstanceID is the random id of the sensor process (sdk-go v0.12+), for
+       *     clone detection. Optional; older SDKs do not send it.
+       */
+      instance_id?: string
+      /**
+       * @description ManifestDigest is the digest of the sensor's registered manifest, as
+       *     the platform returned it (RFC-033, protocol v2 feature "manifest").
+       *     When it is not the stored one the v2 answer asks for the manifest
+       *     (action send_manifest). Absent: the platform derives the manifest
+       *     from this heartbeat.
+       */
+      manifest_digest?: string
+      max_concurrent_jobs?: number
       memory_percent?: number
       message?: string
       name?: string
       network_rx_mbps?: number
       network_tx_mbps?: number
+      os?: string
       /**
        * @description Outbox is the state of the sensor's durable outbox (results queued on
        *     disk, waiting to be delivered). Optional: SDKs without an outbox omit
@@ -32389,11 +33597,52 @@ export interface components {
        *     Display data only; values are clamped before they are stored.
        */
       outbox?: components['schemas']['internal_infra_http_handler.HeartbeatOutbox']
+      queue?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedQueue']
       region?: string
+      /**
+       * @description The sensor's load, computed by the SDK (RFC-030 §5.8), all optional:
+       *     the machine's resources (container limits when it runs in one), its
+       *     job slots and per-tool cost, and its local work queue. Untrusted:
+       *     clamped before it is stored, and it can only lower what dispatch
+       *     hands the sensor.
+       */
+      resources?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedResources']
       scanners?: string[]
+      /**
+       * @description Build information, optional (docs/architecture/sensors.md "Build
+       *     information"): sdk {name, version} and sensor {name, version, commit,
+       *     build_time}. Kept raw and read leniently: a member of an unexpected
+       *     shape is ignored rather than failing the heartbeat. Untrusted; sensors
+       *     that omit it are read from their User-Agent.
+       */
+      sdk?: Record<string, never>
+      sensor?: Record<string, never>
       status?: string
+      /**
+       * @description What the sensor reports it can do (RFC-029 §4.3.1), all optional:
+       *     its tool inventory, the capabilities it serves, how many jobs it runs
+       *     at once, and its platform. An absent list is "not reported" (the
+       *     administrator's settings apply); [] is "none". Untrusted: sanitized
+       *     against the tool catalog before it is stored, and it can only narrow
+       *     what the administrator allows.
+       */
+      tools?: components['schemas']['internal_infra_http_handler.HeartbeatTool'][]
       total_scans?: number
       uptime_seconds?: number
+      version?: string
+    }
+    'internal_infra_http_handler.HeartbeatTool': {
+      /**
+       * @description Capabilities are what the tool serves besides its name (sdk-go
+       *     v0.13+); sanitized against the capability registry like the flat list.
+       */
+      capabilities?: string[]
+      /** @description Content is the scanner content the tool scans with (RFC-031). */
+      content?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedContent'][]
+      installed?: boolean
+      /** @description Kind is "scanner" or "collector" (sdk-go v0.10+). */
+      kind?: string
+      name?: string
       version?: string
     }
     'internal_infra_http_handler.ImportMetadataRequest': {
@@ -32581,8 +33830,8 @@ export interface components {
       page_size?: number
       total_count?: number
     }
-    'internal_infra_http_handler.ListResponse-github_com_openctemio_api_pkg_domain_component_VulnerableComponent': {
-      data?: components['schemas']['github_com_openctemio_api_pkg_domain_component.VulnerableComponent'][]
+    'internal_infra_http_handler.ListResponse-github_com_openctemio_openctem_api_pkg_domain_component_VulnerableComponent': {
+      data?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_component.VulnerableComponent'][]
       links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
       page?: number
       per_page?: number
@@ -33034,7 +34283,7 @@ export interface components {
       updated_at?: string
     }
     'internal_infra_http_handler.ProvidersResponse': {
-      providers?: components['schemas']['github_com_openctemio_api_internal_app.ProviderInfo'][]
+      providers?: components['schemas']['github_com_openctemio_openctem_api_internal_app.ProviderInfo'][]
     }
     'internal_infra_http_handler.ProvisionedUserInfo': {
       email?: string
@@ -33042,6 +34291,12 @@ export interface components {
       name?: string
     }
     'internal_infra_http_handler.ProvisionedUserResponse': {
+      /**
+       * @description EmailFailed: the organization can send email but the send failed, and
+       *     the link is deliberately not returned (platform administrator's
+       *     first-owner bootstrap). The person uses forgot-password.
+       */
+      email_failed?: boolean
       email_sent?: boolean
       membership_id?: string
       role?: string
@@ -33111,6 +34366,18 @@ export interface components {
     'internal_infra_http_handler.ReferenceResponse': {
       type?: string
       url?: string
+    }
+    'internal_infra_http_handler.RefreshContentRequest': {
+      content?: string[]
+      force?: boolean
+    }
+    'internal_infra_http_handler.RefreshContentResponse': {
+      /**
+       * @description AlreadyPending: a refresh was already queued for the sensor; that
+       *     command is returned and no new one was created.
+       */
+      already_pending?: boolean
+      command_id?: string
     }
     'internal_infra_http_handler.RefreshTokenRequest': {
       /** @description Optional if cookie is present */
@@ -33236,7 +34503,7 @@ export interface components {
       filtering_result?: components['schemas']['internal_infra_http_handler.FilteringResultResponse']
       id?: string
       pipeline_id?: string
-      quality_gate_result?: components['schemas']['github_com_openctemio_api_pkg_domain_scanprofile.QualityGateResult']
+      quality_gate_result?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult']
       scan_id?: string
       scan_profile_id?: string
       skipped_steps?: number
@@ -33370,6 +34637,14 @@ export interface components {
       scanner_config?: {
         [key: string]: unknown
       }
+      /**
+       * @description ScannerConfigWarnings lists scanner_config values that look like
+       *     secrets (a token, a password, an Authorization header). The config is
+       *     sent to the sensor in clear inside every command, so a secret there
+       *     travels and rests unprotected. A warning, never a refusal; the value
+       *     itself is never echoed (RFC-032 Phase 0).
+       */
+      scanner_config_warnings?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scan.ConfigSecretWarning'][]
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
@@ -33602,14 +34877,147 @@ export interface components {
       tenant_id?: string
       updated_at?: string
     }
+    'internal_infra_http_handler.SensorActivityItemResponse': {
+      action?: string
+      actor?: string
+      at?: string
+      /** @enum {string} */
+      category?: 'people' | 'status' | 'updates' | 'jobs'
+      details?: {
+        [key: string]: unknown
+      }
+      id?: string
+      last_at?: string
+      repeat_count?: number
+      result?: string
+      /** @enum {string} */
+      source?: 'sensor' | 'audit' | 'job'
+      summary?: string
+      /**
+       * @description Type: online, offline, restarted (status); version_changed,
+       *     sdk_version_changed, protocol_changed, tools_changed,
+       *     capacity_changed, content_updated, content_refresh_failed,
+       *     manifest_changed (updates; details.diff, RFC-033 §6.12);
+       *     job_claimed, job_completed, job_failed, job_canceled, job_expired
+       *     (jobs); audit (people).
+       */
+      type?: string
+    }
+    'internal_infra_http_handler.SensorActivityResponse': {
+      /**
+       * @description AuditIncluded is false when the caller cannot read the audit log:
+       *     administrator actions (people) are then left out.
+       */
+      audit_included?: boolean
+      items?: components['schemas']['internal_infra_http_handler.SensorActivityItemResponse'][]
+      /** @description NextCursor fetches the next (older) page; "" when there is none. */
+      next_cursor?: string
+    }
     'internal_infra_http_handler.SensorConfigTemplatesResponse': {
+      /**
+       * @description APIKeyIncluded is true when the snippets carry the key passed in
+       *     X-Sensor-API-Key; otherwise they read it from OPENCTEM_API_KEY.
+       */
+      api_key_included?: boolean
+      /** @description APIURL is the platform URL the snippets point the sensor at. */
+      api_url?: string
+      /**
+       * @description CACertificate is the PEM of the platform's private CA the snippets
+       *     install (SENSOR_CA_CERT_FILE); "" when none is configured.
+       */
+      ca_certificate?: string
+      /** @description CAFingerprintSHA256 is the SHA-256 fingerprint of that CA, colon hex. */
+      ca_fingerprint_sha256?: string
       cli?: string
+      /**
+       * @description Compose is a compose.yaml for the sensor; Kubernetes a Secret, PVC and
+       *     Deployment (a Job for a one-shot sensor); Helm the commands that turn
+       *     on the sensor bundled with the openctem chart.
+       */
+      compose?: string
       docker?: string
       env?: string
+      helm?: string
+      /** @description Image is the sensor image the snippets run, with its pinned tag. */
+      image?: string
+      kubernetes?: string
       yaml?: string
+    }
+    'internal_infra_http_handler.SensorContentResponse': {
+      age_seconds?: number
+      /**
+       * @description CheckedAt is when the sensor last confirmed this is still the newest
+       *     (or pinned) version; stale needs both an age and a confirmation
+       *     older than max_age_hours.
+       */
+      checked_at?: string
+      digest?: string
+      /** @description Error is the last refresh failure ("" when the last refresh worked). */
+      error?: string
+      fetched_at?: string
+      /**
+       * @description Managed: the sensor refreshes, verifies and pins it; false when the
+       *     tool fetches its content itself (never stale-flagged).
+       */
+      managed?: boolean
+      max_age_hours?: number
+      /** @enum {string} */
+      name?: 'trivy-db' | 'trivy-java-db' | 'nuclei-templates' | 'semgrep-rules'
+      pin_mismatch?: boolean
+      pinned_version?: string
+      source?: string
+      stale?: boolean
+      tool?: string
+      updated_at?: string
+      version?: string
     }
     'internal_infra_http_handler.SensorDisableRequest': {
       reason?: string
+    }
+    'internal_infra_http_handler.SensorEffectiveResponse': {
+      capabilities?: string[]
+      max_concurrent_jobs?: number
+      tools?: string[]
+    }
+    'internal_infra_http_handler.SensorHealthReasonResponse': {
+      /** @enum {string} */
+      code?:
+        | 'outbox_backlog'
+        | 'outbox_dead_letters'
+        | 'outbox_evicted'
+        | 'key_expired'
+        | 'key_expiring'
+        | 'identity_cloned'
+        | 'version_unsupported'
+        | 'sdk_unsupported'
+        | 'no_tools'
+        | 'error_reported'
+        | 'content_stale'
+        | 'content_refresh_failed'
+      message?: string
+      /** @enum {string} */
+      severity?: 'warning' | 'critical'
+    }
+    'internal_infra_http_handler.SensorLoadResponse': {
+      capacity?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity']
+      fresh?: boolean
+      queue?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedQueue']
+      reported_at?: string
+      resources?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedResources']
+    }
+    'internal_infra_http_handler.SensorManifestListResponse': {
+      items?: components['schemas']['internal_infra_http_handler.SensorManifestResponse'][]
+    }
+    'internal_infra_http_handler.SensorManifestResponse': {
+      current?: boolean
+      current_since?: string
+      digest?: string
+      first_seen_at?: string
+      ignored?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestIgnored'][]
+      last_seen_at?: string
+      manifest?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.Manifest']
+      /** @enum {string} */
+      source?: 'sensor' | 'heartbeat'
     }
     'internal_infra_http_handler.SensorOutboxResponse': {
       dead_letter_count?: number
@@ -33619,33 +35027,118 @@ export interface components {
       pending_count?: number
       reported_at?: string
     }
+    'internal_infra_http_handler.SensorProtocolResponse': {
+      deprecated?: boolean
+      seen_at?: string
+      user_agent?: string
+      version?: number
+    }
     'internal_infra_http_handler.SensorRegenerateAPIKeyResponse': {
       api_key?: string
+    }
+    'internal_infra_http_handler.SensorReportedResponse': {
+      arch?: string
+      capabilities?: string[]
+      max_concurrent_jobs?: number
+      os?: string
+      reported_at?: string
+      tools?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedTool'][]
     }
     'internal_infra_http_handler.SensorResponse': {
       api_key_prefix?: string
       available_slots?: number
       capabilities?: string[]
+      /**
+       * @description CapabilityMismatch lists settings the sensor's report contradicts
+       *     (a tool set here that the sensor does not have); omitted when none.
+       */
+      capability_mismatch?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.CapabilityMismatch']
+      /**
+       * @description Content is the scanner content the sensor reports (trivy DB, nuclei
+       *     templates, semgrep rules; RFC-031), one entry per tool and content,
+       *     judged against the tenant's content policy. Never null.
+       */
+      content?: components['schemas']['internal_infra_http_handler.SensorContentResponse'][]
+      /**
+       * @description ContentRefreshSupported: the sensor manages content, so it accepts
+       *     POST /sensors/{id}/content/refresh.
+       */
+      content_refresh_supported?: boolean
       /** @description System metrics */
       cpu_percent?: number
       created_at?: string
       current_jobs?: number
       description?: string
+      effective?: components['schemas']['internal_infra_http_handler.SensorEffectiveResponse']
       error_count?: number
       execution_mode?: string
       /** @description Automatic: unknown, online, offline, error */
       health?: string
+      /**
+       * @description HealthReasons lists the problems found (never null): an outbox backlog
+       *     or lost results, an expired or expiring key, a version below the
+       *     minimum, no scan tools, an error the sensor reported.
+       */
+      health_reasons?: components['schemas']['internal_infra_http_handler.SensorHealthReasonResponse'][]
       hostname?: string
       id?: string
+      /**
+       * @description IdentityClonedAt is when two live processes were seen using this
+       *     sensor's key (health reason identity_cloned); null = not flagged.
+       */
+      identity_cloned_at?: string
+      /**
+       * @description InstanceID is the sensor process of the last heartbeat that changed
+       *     it: the SDK's per-process id, or "host:<hash>" for SDKs that send none.
+       */
+      instance_id?: string
       ip_address?: string
+      /** @description IsPlatformSensor marks shared platform infrastructure. */
+      is_platform_sensor?: boolean
+      /** @description KeyExpiresAt is when the current API key stops working; null = never. */
+      key_expires_at?: string
+      /**
+       * @description KeyLastUsedAt and KeyLastUsedIP are the last authenticated request with
+       *     any of the sensor's keys and the client address it came from (behind a
+       *     trusted proxy, the forwarded address); null until recorded.
+       */
+      key_last_used_at?: string
+      key_last_used_ip?: string
       labels?: {
         [key: string]: unknown
       }
+      /** @description LastErrorAt is when the sensor last reported an error. */
+      last_error_at?: string
+      /** @description LastOfflineAt is when the sensor was last marked offline. */
+      last_offline_at?: string
       /** @description Statistics */
       last_seen_at?: string
+      /**
+       * @description Load is the load the sensor last reported on its heartbeat
+       *     (resources, capacity, local queue); null when it never reported one.
+       *     fresh is false once it is older than 3 minutes (dispatch then ignores
+       *     it).
+       */
+      load?: components['schemas']['internal_infra_http_handler.SensorLoadResponse']
       /** @description 0.0 to 1.0 */
       load_factor?: number
-      /** @description Load balancing */
+      manifest_at?: string
+      /**
+       * @description The current manifest (RFC-033): its digest, when it became current
+       *     and where it came from (sensor: registered; heartbeat: derived by the
+       *     platform). "" / null before the first one. The document itself is
+       *     GET /sensors/{id}/manifest.
+       */
+      manifest_digest?: string
+      /** @enum {string} */
+      manifest_source?: '' | 'sensor' | 'heartbeat'
+      /**
+       * @description Load balancing. current_jobs is the number of commands the sensor
+       *     holds now (acknowledged or running), counted by the platform;
+       *     available_slots is what dispatch may still hand it: its effective
+       *     capacity minus current_jobs, and no more than the free slots of a
+       *     fresh load report (RFC-030 §5.8).
+       */
       max_concurrent_jobs?: number
       memory_percent?: number
       name?: string
@@ -33660,7 +35153,59 @@ export interface components {
        *     oldest_age_seconds > 3600. False when there is no snapshot.
        */
       outbox_warning?: boolean
+      /**
+       * @description Protocol is what the platform last saw of the sensor's protocol
+       *     (RFC-029 §5.3); null before the first heartbeat that recorded it.
+       *     deprecated is true for protocol v1: the sensor needs an upgrade.
+       */
+      protocol?: components['schemas']['internal_infra_http_handler.SensorProtocolResponse']
       region?: string
+      /**
+       * @description capabilities, tools and max_concurrent_jobs above are the
+       *     administrator's settings (limits). Reported is what the sensor last
+       *     reported it has (RFC-029 §4.3.1), null when it never reported;
+       *     Effective is what dispatch uses: the report narrowed by the
+       *     administrator's settings (the settings alone without a report).
+       */
+      reported?: components['schemas']['internal_infra_http_handler.SensorReportedResponse']
+      /**
+       * @description Build information the sensor reported on its heartbeat, or that was
+       *     read from its User-Agent (older sensors). "" / null when unknown.
+       */
+      sdk_name?: string
+      /**
+       * @description SDKStatus compares sdk_version with SENSOR_SDK_MIN_VERSION and
+       *     SENSOR_SDK_LATEST_VERSION.
+       * @enum {string}
+       */
+      sdk_status?: 'current' | 'outdated' | 'unsupported' | 'unknown'
+      sdk_version?: string
+      sensor_build_time?: string
+      sensor_commit?: string
+      sensor_product?: string
+      /**
+       * @description StartedAt is when the sensor process started (from the uptime its
+       *     heartbeat reports); null when it never reported one.
+       */
+      started_at?: string
+      /**
+       * @description State is the computed operational state: online, degraded, stale,
+       *     offline, idle (a CI sensor between runs), never_connected, disabled or
+       *     revoked. Online means a heartbeat within the online window (see
+       *     GET /sensors/stats online_window_seconds); stale is older than that but
+       *     within the heartbeat timeout; degraded is heartbeating with at least
+       *     one health reason.
+       * @enum {string}
+       */
+      state?:
+        | 'online'
+        | 'degraded'
+        | 'stale'
+        | 'offline'
+        | 'idle'
+        | 'never_connected'
+        | 'disabled'
+        | 'revoked'
       /** @description Admin-controlled: active, disabled, revoked */
       status?: string
       status_message?: string
@@ -33670,7 +35215,17 @@ export interface components {
       total_scans?: number
       type?: string
       updated_at?: string
+      /**
+       * @description UptimeSeconds is the process uptime at the last heartbeat; null unless
+       *     the sensor is heartbeating and reports its uptime.
+       */
+      uptime_seconds?: number
       version?: string
+      /**
+       * @description VersionStatus compares the version with the release channel.
+       * @enum {string}
+       */
+      version_status?: 'latest' | 'update_available' | 'unsupported' | 'unknown'
     }
     'internal_infra_http_handler.SensorRevokeRequest': {
       reason?: string
@@ -33683,13 +35238,67 @@ export interface components {
       by_health?: {
         [key: string]: number
       }
+      /** @description BySDKStatus counts sensors per SDK status (every status present). */
+      by_sdk_status?: {
+        [key: string]: number
+      }
+      /**
+       * @description BySDKVersion counts sensors per reported SDK version ("unknown" when
+       *     none); its keys are the values GET /sensors?sdk_version= accepts.
+       */
+      by_sdk_version?: {
+        [key: string]: number
+      }
+      /**
+       * @description ByState counts sensors per computed state (every state is present,
+       *     zeros included); the same state GET /sensors returns per sensor.
+       */
+      by_state?: {
+        [key: string]: number
+      }
       by_status?: {
         [key: string]: number
       }
       by_type?: {
         [key: string]: number
       }
+      /** @description ByVersionStatus counts sensors per version status. */
+      by_version_status?: {
+        [key: string]: number
+      }
+      /**
+       * @description CanTakeJobs counts sensors that can be dispatched work now: enabled,
+       *     long-running (not one-shot CI) and online or degraded.
+       */
+      can_take_jobs?: number
+      job_slots?: number
+      /**
+       * @description JobsRunning is the sum of current jobs on those sensors, JobSlots the
+       *     sum of their max concurrent jobs.
+       */
+      jobs_running?: number
+      /**
+       * @description LatestVersion and MinVersion are the release channel
+       *     (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION); "" when not configured.
+       */
+      latest_version?: string
+      min_version?: string
+      /** @description NeedsAttention counts enabled sensors with at least one health reason. */
+      needs_attention?: number
+      offline_after_seconds?: number
       online_active?: number
+      /**
+       * @description OnlineWindowSeconds and OfflineAfterSeconds are the thresholds of the
+       *     state ladder: a heartbeat at most online_window_seconds old is online,
+       *     one older than offline_after_seconds is offline, stale in between.
+       */
+      online_window_seconds?: number
+      sdk_latest_version?: string
+      /**
+       * @description SDKMinVersion and SDKLatestVersion are the SDK policy
+       *     (SENSOR_SDK_MIN_VERSION, SENSOR_SDK_LATEST_VERSION); "" when not set.
+       */
+      sdk_min_version?: string
       total?: number
     }
     'internal_infra_http_handler.SensorSuppressionRule': {
@@ -33704,7 +35313,7 @@ export interface components {
       rules?: components['schemas']['internal_infra_http_handler.SensorSuppressionRule'][]
     }
     'internal_infra_http_handler.SessionsResponse': {
-      sessions?: components['schemas']['github_com_openctemio_api_internal_app.SessionInfo'][]
+      sessions?: components['schemas']['github_com_openctemio_openctem_api_internal_app.SessionInfo'][]
     }
     'internal_infra_http_handler.SetSyncEnabledRequest': {
       enabled?: boolean
@@ -33810,8 +35419,8 @@ export interface components {
       credential_id?: string
       description?: string
       enabled?: boolean
-      git_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.GitSourceConfig']
-      http_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.HTTPSourceConfig']
+      git_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.GitSourceConfig']
+      http_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.HTTPSourceConfig']
       id?: string
       last_sync_at?: string
       last_sync_count?: number
@@ -33819,7 +35428,7 @@ export interface components {
       last_sync_hash?: string
       last_sync_status?: string
       name?: string
-      s3_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.S3SourceConfig']
+      s3_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.S3SourceConfig']
       source_type?: string
       template_type?: string
       tenant_id?: string
@@ -34124,10 +35733,23 @@ export interface components {
       version?: string
       vulnerability_count?: number
     }
+    'internal_infra_http_handler.UpdateContentPolicyRequest': {
+      /**
+       * @description ApplyNow sends the policy to every sensor that manages content now (a
+       *     refresh_content command each, not forced). Otherwise sensors get it
+       *     with their next refresh request.
+       */
+      apply_now?: boolean
+      policy?: components['schemas']['internal_infra_http_handler.ContentPolicyBody']
+    }
     'internal_infra_http_handler.UpdateCredentialRequest': {
       description?: string
       expires_at?: string
       name?: string
+    }
+    'internal_infra_http_handler.UpdateDataScopePolicyRequest': {
+      /** @enum {string} */
+      members_without_group_see: 'everything' | 'nothing'
     }
     'internal_infra_http_handler.UpdateFindingStatusRequest': {
       resolution?: string
@@ -34141,8 +35763,8 @@ export interface components {
       description?: string
       is_active?: boolean
       name?: string
-      notification_config?: components['schemas']['github_com_openctemio_api_pkg_domain_group.NotificationConfig']
-      settings?: components['schemas']['github_com_openctemio_api_pkg_domain_group.GroupSettings']
+      notification_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_group.NotificationConfig']
+      settings?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_group.GroupSettings']
       slug?: string
     }
     /** @description Request body for updating an existing integration */
@@ -34358,10 +35980,10 @@ export interface components {
       credential_id?: string
       description?: string
       enabled?: boolean
-      git_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.GitSourceConfig']
-      http_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.HTTPSourceConfig']
+      git_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.GitSourceConfig']
+      http_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.HTTPSourceConfig']
       name?: string
-      s3_config?: components['schemas']['github_com_openctemio_api_pkg_domain_templatesource.S3SourceConfig']
+      s3_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.S3SourceConfig']
     }
     'internal_infra_http_handler.UpdateToolRequest': {
       capabilities?: string[]
@@ -34487,7 +36109,7 @@ export interface components {
       token?: string
     }
     'internal_infra_http_handler.remediationGroupsResponse': {
-      groups?: components['schemas']['github_com_openctemio_api_pkg_domain_remediation.Group'][]
+      groups?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_remediation.Group'][]
     }
   }
   responses: never
@@ -34497,6 +36119,12 @@ export interface components {
     'internal_infra_http_handler.UpdateToolRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.UpdateToolRequest']
+      }
+    }
+    /** @description Content to refresh */
+    'internal_infra_http_handler.RefreshContentRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.RefreshContentRequest']
       }
     }
     /** @description Tool data */

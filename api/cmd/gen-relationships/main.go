@@ -66,7 +66,7 @@ type constraint struct {
 const (
 	yamlPath = "configs/relationship-types.yaml"
 	goPath   = "pkg/domain/asset/relationship_types_generated.go"
-	tsPath   = "../ui/src/features/assets/types/relationship.types.generated.ts"
+	tsPath   = "../web/src/features/assets/types/relationship.types.generated.ts"
 )
 
 // =============================================================================
