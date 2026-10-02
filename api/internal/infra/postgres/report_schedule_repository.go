@@ -32,8 +32,8 @@ func (r *ReportScheduleRepository) Create(ctx context.Context, s *reportschedule
 		INSERT INTO report_schedules (
 			id, tenant_id, name, report_type, format, options, recipients,
 			delivery_channel, integration_id, cron_expression, timezone,
-			is_active, created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			is_active, created_by, created_at, updated_at, next_run_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 	_, err := r.db.ExecContext(ctx, query,
 		s.ID().String(), s.TenantID().String(), s.Name(), s.ReportType(), s.Format(),
@@ -42,6 +42,9 @@ func (r *ReportScheduleRepository) Create(ctx context.Context, s *reportschedule
 		s.CronExpression(), s.Timezone(),
 		s.IsActive(), nullIDPtr(s.CreatedBy()),
 		s.CreatedAt(), s.UpdatedAt(),
+		// The first cron slot. Leaving it NULL made ListDue (NULLS FIRST)
+		// deliver every new schedule on the next tick.
+		s.NextRunAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("create report schedule: %w", err)
