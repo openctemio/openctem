@@ -1,7 +1,9 @@
 # RFC-036 — External Attack Surface Management (EASM)
 
-> Status: **Proposed** (2026-10-02). Research and design only; nothing here is
-> implemented.
+> Status: **Accepted** (2026-10-02). The owner approved decisions O1–O10 as
+> recommended (§12.3). Nothing here is implemented yet. Implementation (P0 →
+> P1) starts once the api + ui monorepo cutover merges, and is written in the
+> monorepo (`api/` + `web/`).
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on [RFC-019](RFC-019-certificate-transparency-discovery.md) (CT
 > monitoring), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones, default
@@ -715,8 +717,12 @@ Effort is engineer-weeks across all repos.
 | **P5 — Sources and connectors** | `discovery_source` integrations (Cert Spotter, Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, GitHub) with quota + cache; cloud connectors AWS (Route 53, public IPs, ELB, S3), Azure Resource Graph, GCP CAI as authoritative evidence; "cloud public IPs not in inventory" coverage metric | 6–8 (S per source, M per cloud) | Medium (credentials, terms) | P2 | Each source is per-tenant (`ListByProvider`) and isolation-tested. Quota exhaustion degrades to skip + warning. A connector-only asset auto-confirms with w = 1.0 |
 | **P6 — Optional modes** (each its own owner decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
 
-P0 and P1 can start immediately and need no owner input beyond accepting this
-RFC. P2 should not start before P1's attribution columns ship. P3's daily
+**When and where.** The RFC is accepted (§12.3). Implementation of P0, then
+P1, starts right after the api + ui monorepo cutover merges. It is written
+directly in the monorepo: `api/` for the backend and `web/` for the UI, which
+replaces the separate ui repository. sdk-go and sensor changes (E2–E5, P3
+tools) stay in their own repositories. P2 should not start before P1's
+attribution columns ship. P3's daily
 cadence waits on RFC-030 P4.
 
 ## 10. Metrics
@@ -781,6 +787,24 @@ Health page.
 | **O8** | Should results of tenant-triggered sensor scans under **unverified** roots go to the review queue instead of straight into the inventory? | Keep / change | **Keep for now** (today's behaviour, the tenant chose the target), with evidence stamped. Revisit after P2 precision data |
 | **O9** | Cadence floors on shared resources | — | Tier A daily light / weekly nuclei is the fastest a tenant can set on shared sensors; own sensors are free to go faster within RFC-030 politeness |
 | **O10** | Packaging | EASM in the existing `attack_surface` module / a new `easm` module | **Existing `attack_surface` module.** It already gates `/attack-surface/*` and the CT monitor; a new module would split one feature across two toggles |
+
+### 12.3 Decisions (approved 2026-10-02)
+
+The owner approved O1–O10 **as recommended** on 2026-10-02. These are now the
+design; §12.2 keeps the options that were considered.
+
+| # | Decision (approved 2026-10-02) |
+|---|---|
+| **O1** | Data sources: free sources on by default (crt.sh, Cert Spotter free tier, RDAP, RIPEstat, Team Cymru, our own DNS); paid sources (Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, VirusTotal premium …) only with **tenant-supplied keys**, per tenant. No platform-wide licensed dataset |
+| **O2** | No shared platform sensors for the external view in OSS now; tenants use their own sensor in the default (public) zone. A hosted offering may add them in P6: opt-in per tenant, public targets only, published stable egress ranges with rDNS, an information page and an abuse contact. Never on by default (RFC-023 D14) |
+| **O3** | Default tier **T1 (safe-active)** for confirmed assets, T0 for all others. **T2 intrusive is opt-in** per scope target and needs a verified seed, a named approver and an expiry |
+| **O4** | Auto-confirm only at confidence **≥ 90 with at least one strong rule** (verified root, seeded CIDR/ASN, connector, tenant-scanned); everything else goes to the review queue |
+| **O5** | Lookalike / brand monitoring **in**, passive only (T0), in P6; no probes of lookalike hosts; no takedown service |
+| **O6** | Third-party / vendor-risk mode **out**. If ever revisited: separate register, passive public data only, no packets to vendor hosts (§7) |
+| **O7** | Retention: changed observation rows 13 months; raw collector responses not stored; evidence kept while its subject exists; rejected tombstones 12 months; screenshots 30 days; state history unchanged |
+| **O8** | Results of tenant-triggered scans under unverified roots **keep going straight into the inventory**, with evidence stamped; revisit after P2 precision data |
+| **O9** | Fastest cadence on shared sensors: Tier A daily light checks and weekly nuclei; the tenant's own sensors may go faster within RFC-030 politeness |
+| **O10** | EASM ships in the existing **`attack_surface`** module; no new module |
 
 ## 13. Compatibility
 

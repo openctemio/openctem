@@ -1,6 +1,8 @@
 # External Attack Surface Management (EASM)
 
-> **Status: design (RFC-036 Proposed, 2026-10-02).** This document describes
+> **Status: design (RFC-036 Accepted 2026-10-02, owner decisions O1–O10 as
+> recommended; implementation starts in the monorepo after the api + ui
+> cutover).** This document describes
 > how EASM works in OpenCTEM today and the architecture RFC-036 builds towards.
 > Each section marks what is **built**, what is **partial** and what is
 > **planned**. The reasoning, the industry survey, the ranked gap list and the
