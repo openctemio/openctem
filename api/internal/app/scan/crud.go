@@ -680,8 +680,15 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		}
 	}
 
-	// Update schedule if provided
+	// Update schedule if provided. SetSchedule refuses what the scheduler
+	// cannot honor (unparseable cron, unknown timezone); the security check
+	// on the cron string is the one CreateScan runs, which updates skipped.
 	if input.ScheduleType != "" {
+		if input.ScheduleCron != "" && s.securityValidator != nil {
+			if err := s.securityValidator.ValidateCronExpression(input.ScheduleCron); err != nil {
+				return nil, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+			}
+		}
 		scheduleType := scan.ScheduleType(input.ScheduleType)
 		timezone := input.Timezone
 		if timezone == "" {

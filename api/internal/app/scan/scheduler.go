@@ -2,11 +2,13 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
 
+	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -176,29 +178,22 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Acquire distributed advisory lock to prevent double-trigger across multiple
-	// API replicas. If another instance is already triggering this scan, skip it.
-	acquired, err := s.scanRepo.TryLockScanForScheduler(ctx, sc.ID)
-	if err != nil {
-		s.logger.Error("failed to acquire scheduler lock", "scan_id", sc.ID.String(), "error", err)
-		return
+	if sc.NextRunAt == nil {
+		return // not due; ListDueForExecution never returns this
 	}
-	if !acquired {
-		s.logger.Debug("scan locked by another scheduler instance, skipping", "scan_id", sc.ID.String())
-		return
-	}
-	defer func() {
-		if unlockErr := s.scanRepo.UnlockScanForScheduler(ctx, sc.ID); unlockErr != nil {
-			s.logger.Error("failed to release scheduler lock", "scan_id", sc.ID.String(), "error", unlockErr)
-		}
-	}()
 
-	// Update next_run_at immediately to prevent re-trigger on the next polling cycle.
-	// (The advisory lock prevents concurrent triggers; this update prevents the same
-	// instance from picking it up again on the next cycle.)
+	// Claim this occurrence: move next_run_at forward only if it still holds
+	// the value we were handed. Exactly one scheduler (on any replica) wins;
+	// the move also keeps the next polling cycle from picking it up again.
 	nextRunAt := sc.CalculateNextRunAt()
-	if err := s.scanRepo.UpdateNextRunAt(ctx, sc.ID, nextRunAt); err != nil {
-		s.logger.Error("failed to update next_run_at", "scan_id", sc.ID.String(), "error", err)
+	claimed, err := s.scanRepo.ClaimScheduledRun(ctx, sc.ID, *sc.NextRunAt, nextRunAt)
+	if err != nil {
+		s.logger.Error("failed to claim scheduled run", "scan_id", sc.ID.String(), "error", err)
+		return
+	}
+	if !claimed {
+		s.logger.Debug("scheduled run already claimed (another instance, or the scan changed)", "scan_id", sc.ID.String())
+		return
 	}
 
 	// Trigger the scan
@@ -209,13 +204,25 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			"triggered_by": "scheduler",
 			"scheduled_at": time.Now().Unix(),
 		},
+		TriggerType:   pipeline.TriggerTypeSchedule,
+		SkipIfRunning: true,
 	})
+	if errors.Is(err, ErrScanRunInProgress) {
+		// Overlap policy (D4): skip this occurrence and say so. Not recorded in
+		// last_run_status, which belongs to the run that is still going.
+		metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "skipped_overlap").Inc()
+		s.logger.Info("scheduled run skipped: the previous run is still active",
+			"scan_id", sc.ID.String(), "scan_name", sc.Name, "next_run_at", nextRunAt)
+		s.scanService.recordScheduledOutcome(ctx, sc, "Scheduled run skipped: the previous run is still active", err)
+		return
+	}
 	if err != nil {
 		s.logger.Error("failed to trigger scan",
 			"scan_id", sc.ID.String(),
 			"scan_name", sc.Name,
 			"error", err,
 		)
+		metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "failed").Inc()
 		// Record the failure in the scan's own state. next_run_at was already
 		// advanced above (to avoid re-trigger storms), so without this a scan
 		// that can never start — e.g. NO_SENSOR_AVAILABLE, which recurred silently
@@ -226,11 +233,15 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			s.logger.Error("failed to record scan trigger failure",
 				"scan_id", sc.ID.String(), "error", recErr)
 		}
+		// And in the audit log, with the reason: the scan's state only says
+		// "failed", and the server log is not where a tenant looks.
+		s.scanService.recordScheduledOutcome(ctx, sc, "Scheduled run could not start: "+err.Error(), err)
 		return
 	}
 
 	// Record metric
 	metrics.ScansScheduled.WithLabelValues(sc.TenantID.String()).Inc()
+	metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "triggered").Inc()
 
 	s.logger.Info("scan triggered by scheduler",
 		"scan_id", sc.ID.String(),

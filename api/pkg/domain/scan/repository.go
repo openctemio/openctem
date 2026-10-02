@@ -120,12 +120,8 @@ type Repository interface {
 
 	// Distributed Locking (for multi-instance schedulers)
 
-	// TryLockScanForScheduler attempts to acquire a session-level advisory lock
-	// for the given scan ID. Returns true if the lock was acquired, false if
-	// another instance already holds it. The lock must be released with
-	// UnlockScanForScheduler when the trigger completes.
-	TryLockScanForScheduler(ctx context.Context, id shared.ID) (bool, error)
-
-	// UnlockScanForScheduler releases a previously acquired scheduler lock for the given scan ID.
-	UnlockScanForScheduler(ctx context.Context, id shared.ID) error
+	// ClaimScheduledRun atomically moves next_run_at from dueAt to next if it
+	// still equals dueAt and the scan is active. It returns true for exactly
+	// one caller per due occurrence, across replicas.
+	ClaimScheduledRun(ctx context.Context, id shared.ID, dueAt time.Time, next *time.Time) (bool, error)
 }

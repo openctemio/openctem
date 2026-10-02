@@ -123,12 +123,8 @@ func (m *ciMockScanRepository) UpdateStatusByAssetGroupID(_ context.Context, _ s
 	return nil
 }
 
-func (m *ciMockScanRepository) TryLockScanForScheduler(_ context.Context, _ shared.ID) (bool, error) {
+func (m *ciMockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
-}
-
-func (m *ciMockScanRepository) UnlockScanForScheduler(_ context.Context, _ shared.ID) error {
-	return nil
 }
 
 func (m *ciMockScanRepository) addScan(s *scan.Scan) {

@@ -147,6 +147,16 @@ var (
 		[]string{"tenant_id", "scan_type", "status"},
 	)
 
+	// ScanScheduleOutcomes counts what each due scheduled occurrence became:
+	// triggered, skipped_overlap (previous run still active), failed.
+	ScanScheduleOutcomes = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scan_schedule_outcomes_total",
+			Help: "Scheduled scan occurrences by outcome (triggered, skipped_overlap, failed)",
+		},
+		[]string{"tenant_id", "outcome"},
+	)
+
 	// ScansScheduled tracks scheduled scan triggers
 	ScansScheduled = promauto.NewCounterVec(
 		prometheus.CounterOpts{

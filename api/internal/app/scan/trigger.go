@@ -28,7 +28,19 @@ type TriggerScanExecInput struct {
 	ScanID      string         `json:"scan_id" validate:"required,uuid"`
 	TriggeredBy string         `json:"triggered_by" validate:"omitempty,uuid"`
 	Context     map[string]any `json:"context"`
+	// TriggerType is recorded on the run; empty means manual. The scheduler
+	// sends schedule (every run used to be recorded as manual).
+	TriggerType pipeline.TriggerType `json:"-"`
+	// SkipIfRunning refuses the trigger with ErrScanRunInProgress while the
+	// scan has an active run (overlap policy for scheduled runs, D4: skip the
+	// occurrence and record that it was skipped, never pile runs up).
+	SkipIfRunning bool `json:"-"`
 }
+
+// ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
+// the scan's previous run still active.
+var ErrScanRunInProgress = shared.NewDomainError("SCAN_RUN_IN_PROGRESS",
+	"the scan's previous run is still active", shared.ErrConflict)
 
 // TriggerScan triggers a scan execution.
 func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (*pipeline.Run, error) {
@@ -55,6 +67,19 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// NOTE: Concurrent run limits are now checked atomically in CreateRunIfUnderLimit
 	// to prevent race conditions where multiple triggers bypass the limit.
+	if input.SkipIfRunning {
+		active, err := s.runRepo.CountActiveByScanID(ctx, sc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check active runs: %w", err)
+		}
+		if active > 0 {
+			return nil, ErrScanRunInProgress
+		}
+	}
+	triggerType := input.TriggerType
+	if triggerType == "" {
+		triggerType = pipeline.TriggerTypeManual
+	}
 
 	// Validate tools are still available and active before triggering
 	// (Tools may have been disabled or removed since scan was created)
@@ -80,9 +105,9 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		run, err = s.triggerWorkflow(ctx, sc, input.TriggeredBy, input.Context)
+		run, err = s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context)
 	} else {
-		run, err = s.triggerSingleScan(ctx, sc, input.TriggeredBy, input.Context)
+		run, err = s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context)
 	}
 
 	if err != nil {
@@ -108,7 +133,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 }
 
 // triggerWorkflow triggers a workflow pipeline execution.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any) (*pipeline.Run, error) {
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any) (*pipeline.Run, error) {
 	if sc.PipelineID == nil {
 		return nil, fmt.Errorf("%w: pipeline_id is required for workflow", shared.ErrValidation)
 	}
@@ -184,7 +209,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	}
 
 	// Create pipeline run
-	run, err := pipeline.NewRun(template.ID, sc.TenantID, nil, pipeline.TriggerTypeManual, triggeredBy, runContext)
+	run, err := pipeline.NewRun(template.ID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pipeline run: %w", err)
 	}
@@ -227,7 +252,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 const QuickScanTemplateID = "00000000-0000-0000-0000-000000000001"
 
 // triggerSingleScan triggers a single scanner execution.
-func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any) (*pipeline.Run, error) {
+func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any) (*pipeline.Run, error) {
 	// Build context
 	if runContext == nil {
 		runContext = make(map[string]any)
@@ -312,7 +337,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
 
 	// Create a pipeline run using the system template
-	run, err := pipeline.NewRun(quickScanTemplateID, sc.TenantID, nil, pipeline.TriggerTypeManual, triggeredBy, runContext)
+	run, err := pipeline.NewRun(quickScanTemplateID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
