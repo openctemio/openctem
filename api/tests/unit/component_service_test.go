@@ -48,6 +48,8 @@ type mockComponentRepo struct {
 	getExistingDepByPURLResult *component.AssetDependency
 	getExistingDepByPURLErr    error
 
+	getAssetDepResult            *component.AssetDependency
+	getAssetDepErr               error
 	getExistingDepByCompIDResult *component.AssetDependency
 	getExistingDepByCompIDErr    error
 
@@ -175,6 +177,10 @@ func (m *mockComponentRepo) GetExistingDependencyByPURL(_ context.Context, _ sha
 
 func (m *mockComponentRepo) GetExistingDependencyByComponentID(_ context.Context, _ shared.ID, _ shared.ID, _ string) (*component.AssetDependency, error) {
 	return m.getExistingDepByCompIDResult, m.getExistingDepByCompIDErr
+}
+
+func (m *mockComponentRepo) GetAssetDependency(_ context.Context, _, _, _ shared.ID) (*component.AssetDependency, error) {
+	return m.getAssetDepResult, m.getAssetDepErr
 }
 
 func (m *mockComponentRepo) UpdateAssetDependencyParent(_ context.Context, _ shared.ID, _ shared.ID, _ int) error {
