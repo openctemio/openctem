@@ -368,6 +368,10 @@ tool gate (`commandToolSQL`), and the name goes through
 **failed** with `tool-not-allowed: <tool> is not allowed on this sensor by the
 platform's policy`. It never runs it. A command that names no tool (a
 validation, a collection) and a sensor that has no policy yet are not gated.
+Before refusing, the SDK re-reads a policy that is stale (a newer
+`config_version` was announced). The heartbeat that announces the
+administrator's change also rings the doorbell for the command the change
+allowed, so without the re-read that command would be refused.
 The failure is visible on the job and in the activity timeline. Silently
 leaving the command pending would hide the platform bug that dispatched it.
 
@@ -394,6 +398,9 @@ leaving the command pending would hide the platform bug that dispatched it.
   interval.
 - A platform from before Phase 2 never says `omit_inventory: true`, so a newer
   SDK never slims against it.
+- **Savings.** Measured on the official sensor, a slim heartbeat is about
+  2.1 KB against 2.6 KB for a full one, roughly 20 %. The load report
+  (resources, per-tool cost, queue) is most of a heartbeat, and it stays.
 
 **Re-approval (O1).** None. When a registered manifest replaces the previous
 one, the platform records one **`manifest_changed`** event (category
@@ -406,7 +413,9 @@ one, the platform records one **`manifest_changed`** event (category
 - ceiling, platform and build
 
 Both digests go in its details. Content versions keep their own
-`content_updated` events. What a new tool may do is still decided by the
+`content_updated` events. A heartbeat that carries `manifest_digest` writes no
+`tools_changed` or `capacity_changed`: for a registering sensor the manifest
+records those. What a new tool may do is still decided by the
 administrator's tool limit: a tool outside it shows as "installed but not
 allowed". Manifests derived from heartbeats keep the heartbeat's
 `tools_changed` and `capacity_changed` events (§6.6), so nothing is recorded
@@ -591,7 +600,7 @@ The questions as they were put, with the recommendation:
 |---|---|---|
 | O1 | When an **approved** sensor's manifest adds a tool, or changes its build, should the sensor need **re-approval** before it receives jobs for it? | **No re-approval.** Narrowing already prevents widening: the token's tool ceiling and the admin's tool list still apply, and a new tool outside them shows as "installed but not allowed" with one-click Allow. Record a `tools_changed` event, and offer an optional tenant setting "notify me when a sensor's tools change". Re-approval on every template release or version bump would train admins to click through. |
 | O2 | Should the SDK **refuse** commands for tools outside the platform's policy (M10), turning a platform-side dispatch bug into a failed job rather than a run? | **Yes**, in Phase 2. It is cheap and visible, and it matches RFC-023's "enforced on the sensor too" principle. The failure carries the typed reason, so it is not a silent drop. |
-| O3 | **Slim heartbeats** (Phase 2): drop the inventory from heartbeats once the manifest is acknowledged? It saves most of the heartbeat's bytes. | **Yes**, gated per sensor on an answer that says so (a platform from before Phase 2 never does), with a server kill switch. |
+| O3 | **Slim heartbeats** (Phase 2): drop the inventory from heartbeats once the manifest is acknowledged? It saves the inventory's bytes (measured later: about 20 % of a heartbeat). | **Yes**, gated per sensor on an answer that says so (a platform from before Phase 2 never does), with a server kill switch. |
 | O4 | Should the manifest's `resources` (cores, memory) be **shown to tenant users** with `sensors:read`, or only to administrators? It is host sizing information, comparable to the hostname and IP already shown. | Show to `sensors:read`, as hostname and IP are today. |
 
 ## 11. Sources
