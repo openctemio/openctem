@@ -285,6 +285,18 @@ func (s *TenantService) invalidateMembershipCache(ctx context.Context, tenantID,
 	s.membershipCache.Invalidate(ctx, tenantID, userID)
 }
 
+// bumpPermissionVersion drops the user's cached permissions and bumps their
+// permission version, which makes every token minted before now stale. No-op
+// for whichever service is unset.
+func (s *TenantService) bumpPermissionVersion(ctx context.Context, tenantID, userID string) {
+	if s.permCacheSvc != nil {
+		s.permCacheSvc.Invalidate(ctx, tenantID, userID)
+	}
+	if s.permVersionSvc != nil {
+		s.permVersionSvc.Increment(ctx, tenantID, userID)
+	}
+}
+
 // logAudit logs an audit event if audit service is configured.
 func (s *TenantService) logAudit(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) {
 	if s.auditService == nil {
@@ -629,11 +641,12 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, fmt.Errorf("failed to update member role: %w", err)
 	}
 
-	// Drop the membership cache so the next request reads the new
-	// role instead of the cached old one. The permission cache is
-	// already invalidated separately by the role service when
-	// effective permissions change.
+	// The change swaps the user's system role in user_roles: drop the cached
+	// membership and permissions and bump the permission version, so a token
+	// minted before the change is stale on its next request (its admin flag
+	// and role are then re-read from the database, audit H2).
 	s.invalidateMembershipCache(ctx, membership.TenantID().String(), membership.UserID().String())
+	s.bumpPermissionVersion(ctx, membership.TenantID().String(), membership.UserID().String())
 
 	s.logger.Info("member role updated", "membership_id", membershipID, "new_role", role)
 

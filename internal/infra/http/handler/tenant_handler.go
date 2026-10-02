@@ -1120,6 +1120,8 @@ func (h *TenantHandler) handleProvisioningError(w http.ResponseWriter, err error
 		apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("User").WriteJSON(w)
+	case errors.Is(err, app.ErrSetupLinkForbidden):
+		apierror.Forbidden("You cannot issue a set-password link for this account").WriteJSON(w)
 	default:
 		h.handleServiceError(w, err)
 	}
@@ -1184,13 +1186,14 @@ func (h *TenantHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 // ReissueSetupLink handles POST /api/v1/tenants/{tenant}/users/{userId}/setup-link
 // @Summary      Issue a new set-password link for a pending account
-// @Description  Replaces the one-time set-password link of an account an administrator created that has never been used and belongs to this organization only. Owner/admin only. 400 for any other account (its owner recovers it with forgot-password).
+// @Description  Replaces the one-time set-password link of an account an administrator created that has never been used and belongs to this organization only. Owner/admin only; an owner or administrator account, or one holding a role the caller could not grant, needs an owner (403). 400 for any other account (its owner recovers it with forgot-password).
 // @Tags         Tenants
 // @Produce      json
 // @Param        tenant  path  string  true  "Tenant ID or slug"
 // @Param        userId  path  string  true  "User ID"
 // @Success      200  {object}  ProvisionedUserResponse
 // @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /tenants/{tenant}/users/{userId}/setup-link [post]
@@ -1209,7 +1212,12 @@ func (h *TenantHandler) ReissueSetupLink(w http.ResponseWriter, r *http.Request)
 		apierror.BadRequest("Invalid user ID").WriteJSON(w)
 		return
 	}
-	result, err := h.provisioning.ReissueSetupLink(r.Context(), tenantID.String(), userID.String(), h.buildAuditContext(r))
+	callerID := middleware.GetLocalUserID(r.Context())
+	if callerID.IsZero() {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	result, err := h.provisioning.ReissueSetupLink(r.Context(), tenantID.String(), userID.String(), callerID.String(), h.buildAuditContext(r))
 	if err != nil {
 		h.handleProvisioningError(w, err)
 		return

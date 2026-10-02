@@ -252,7 +252,7 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
-| `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only) |
+| `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console issues a new organization's owner link without this check. |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** (refuses an IP allowlist that excludes the caller's IP) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** |
 
@@ -562,11 +562,28 @@ viewer (1) ┴─ Can only view resources
 2. **Permission Validation**: The access token carries the user's full permission
    array, so the hot path checks permissions in-token with no per-request DB read.
    To close the stale-token window, a per-user **permission version** (Redis `INCR`)
-   is bumped on any grant/revoke; a version mismatch makes `EnrichPermissions`
-   re-resolve the effective permission set **from the database** and overwrite the
-   request context, and a stale-version **write** is rejected with `409` rather than
-   run on old permissions. `RevokeAllSessions` forces immediate re-auth. So the
-   token is the fast path, but the database is the source of truth — see
+   is bumped on any grant/revoke — every `RoleService` role-set change and the
+   member-role update (`PATCH /tenants/{t}/members/{id}`). On every token-tenant
+   request `EnrichPermissions` resolves the effective permission set from
+   Redis/DB, and:
+   - `HasPermission` then answers **only from that fresh set**; the token's
+     embedded array is never consulted again on that request, so a revoked
+     permission stops working on the next request, **reads included**;
+   - when the token's version is confirmed **stale**, a **write** is rejected
+     with `409 permissions_stale`; a **read** proceeds only after the token's
+     `admin` flag and `role` are **re-derived from the database** (the team role,
+     read from `tenant_members`/`user_roles` without the membership cache), so a
+     demoted admin loses the admin bypass on the next request. If the team role
+     or the permission set cannot be read for a stale token, the read gets the
+     same `409` (fail closed);
+   - when the token is **not** stale and the permission lookup fails
+     (Redis/DB outage), the token's own permissions are used: they are current,
+     and an outage is not a revocation.
+
+   Role-set changes also drop the user's cached membership, so
+   `RequireTeamAdmin/Owner` see the new team role on the next request.
+   `RevokeAllSessions` forces immediate re-auth. So the token is the fast path,
+   but the database is the source of truth — see
    [permission-realtime-sync.md](./permission-realtime-sync.md).
 
 3. **IDOR Prevention**: JWT-based tenant routes eliminate IDOR by design - users can only access their current tenant's data.
@@ -671,10 +688,14 @@ Tenable.sc's RBAC.
 ### Known, deliberate gaps (do not "fix" without a decision)
 
 - **Two admin oracles.** Permission-based `IsAdmin` (from the token) and live-DB
-  team-role (`RequireTeamAdmin/Owner`) are separate mechanisms and can, in edge
-  cases, disagree. Unifying them onto live membership (which would also fix
-  `IsOwner` under OIDC) is a phased refactor — **deferred** because a missing
-  membership middleware on any chain would 403 a whole route group.
+  team-role (`RequireTeamAdmin/Owner`) are separate mechanisms. They read the
+  same team role, and a role change makes the token stale, after which
+  `EnrichPermissions` re-derives `IsAdmin`/`role` from the database (see Security
+  Consideration #2), so they no longer disagree after a demotion on the
+  token-tenant chains. Unifying them onto live membership on every request
+  (which would also fix `IsOwner` under OIDC) is a phased refactor —
+  **deferred** because a missing membership middleware on any chain would 403 a
+  whole route group.
 - **Data-scope is fail-open.** `user_accessible_assets` narrows assets/findings for
   non-admins, but an *empty* assignment means "see all", and `GetByID` is unscoped.
   Flipping to fail-closed (Tenable's default "No Access") is behavior-changing —

@@ -40,6 +40,7 @@ var (
 	ErrAccountExists                = tenant.ErrAccountExists
 	ErrEmailDomainNotAllowed        = tenant.ErrEmailDomainNotAllowed
 	ErrNotPendingSetup              = tenant.ErrNotPendingSetup
+	ErrSetupLinkForbidden           = tenant.ErrSetupLinkForbidden
 	ErrIPAllowlistExcludesRequester = tenant.ErrIPAllowlistExcludesRequester
 )
 

@@ -53,11 +53,17 @@ type AccountSetupMailer interface {
 
 // RoleGranter makes a role set the user's complete RBAC role set in a tenant,
 // and checks up front that every role is one the tenant may grant (a system
-// role or one of its own).
+// role or one of its own). AuthorizeAccountAction checks that an actor may
+// take over a user's account (see ReissueSetupLink).
 type RoleGranter interface {
 	ValidateRolesForTenant(ctx context.Context, tenantID string, roleIDs []string) error
 	GrantExactRoles(ctx context.Context, tenantID, userID string, roleIDs []string, grantedBy string, actx auditapp.AuditContext) error
+	AuthorizeAccountAction(ctx context.Context, tenantID, actorID, targetUserID string) error
 }
+
+// ErrSetupLinkForbidden is returned when the caller may not issue a
+// set-password link for the target account.
+var ErrSetupLinkForbidden = fmt.Errorf("%w: you cannot issue a set-password link for this account", shared.ErrForbidden)
 
 // UserProvisioningService creates accounts on behalf of administrators.
 type UserProvisioningService struct {
@@ -243,7 +249,14 @@ func (s *UserProvisioningService) DiscardAccount(ctx context.Context, id shared.
 // organization too: those accounts belong to their owner, and handing a
 // set-password link for them to an organization administrator would let that
 // administrator take them over.
-func (s *UserProvisioningService) ReissueSetupLink(ctx context.Context, tenantIDStr, userIDStr string, actx auditapp.AuditContext) (*ProvisionedUser, error) {
+//
+// The link itself takes the account over before its first sign-in, so it is
+// also refused for a target the caller could not manage (audit M1): an owner
+// or administrator target needs an owner caller, and the caller must be able
+// to grant every role the target holds. callerIDStr is the organization user
+// asking; "" means the platform console, which creates organizations and
+// issues their owner's first link.
+func (s *UserProvisioningService) ReissueSetupLink(ctx context.Context, tenantIDStr, userIDStr, callerIDStr string, actx auditapp.AuditContext) (*ProvisionedUser, error) {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -265,6 +278,9 @@ func (s *UserProvisioningService) ReissueSetupLink(ctx context.Context, tenantID
 	}
 	if !u.IsPendingSetup() {
 		return nil, ErrNotPendingSetup
+	}
+	if err := s.authorizeSetupLinkCaller(ctx, tenantID, callerIDStr, membership); err != nil {
+		return nil, err
 	}
 	memberships, err := s.tenants.GetUserMembershipsWithStatus(ctx, userID)
 	if err != nil {
@@ -293,6 +309,46 @@ func (s *UserProvisioningService) ReissueSetupLink(ctx context.Context, tenantID
 		WithMetadata("setup_link_emailed", result.EmailSent).
 		WithSeverity(audit.SeverityHigh))
 	return result, nil
+}
+
+// authorizeSetupLinkCaller applies the M1 rule of ReissueSetupLink. The
+// target's team role and its RBAC roles are both checked, so neither an
+// owner/admin membership nor an owner/admin role slips through.
+func (s *UserProvisioningService) authorizeSetupLinkCaller(ctx context.Context, tenantID shared.ID, callerIDStr string, target *tenantdom.Membership) error {
+	if callerIDStr == "" {
+		return nil // platform console
+	}
+	callerID, err := shared.IDFromString(callerIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid caller id", shared.ErrValidation)
+	}
+	caller, err := s.tenants.GetMembership(ctx, callerID, tenantID)
+	if err != nil {
+		if shared.IsNotFound(err) {
+			return ErrSetupLinkForbidden
+		}
+		return fmt.Errorf("look up caller membership: %w", err)
+	}
+	if caller.IsSuspended() || !isOwnerOrAdmin(caller.Role()) {
+		return ErrSetupLinkForbidden
+	}
+	if isOwnerOrAdmin(target.Role()) && caller.Role() != tenantdom.RoleOwner {
+		return ErrSetupLinkForbidden
+	}
+	if s.roles == nil {
+		return ErrSetupLinkForbidden
+	}
+	if err := s.roles.AuthorizeAccountAction(ctx, tenantID.String(), callerIDStr, target.UserID().String()); err != nil {
+		if errors.Is(err, shared.ErrForbidden) {
+			return ErrSetupLinkForbidden
+		}
+		return fmt.Errorf("check caller's grants: %w", err)
+	}
+	return nil
+}
+
+func isOwnerOrAdmin(r tenantdom.Role) bool {
+	return r == tenantdom.RoleOwner || r == tenantdom.RoleAdmin
 }
 
 // issueSetupLink stores a fresh single-use token (hash only) on the account,

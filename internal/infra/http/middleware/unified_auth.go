@@ -404,10 +404,18 @@ func HasTenantRole(ctx context.Context, tenantID string, requiredRole string) bo
 // Owner/Admin (IsAdmin flag in JWT) bypass permission checks - they have almost all permissions.
 // Member/Viewer/Custom roles: permissions fetched from DB (not in JWT).
 // For owner-only operations, use IsOwner() or RequireOwner() middleware.
+//
+// When the permission-sync middleware ran (FetchedPermissionsKey set), its
+// fresh set is the only answer: the token's embedded array is not consulted,
+// so a revoked permission stops working on the next request, reads included.
 func HasPermission(ctx context.Context, permission string) bool {
 	// Owner and Admin bypass permission checks
 	if IsAdmin(ctx) {
 		return true
+	}
+
+	if fresh, ok := ctx.Value(FetchedPermissionsKey).([]string); ok {
+		return slices.Contains(fresh, permission)
 	}
 
 	// For local auth, check permissions array from JWT

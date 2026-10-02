@@ -30,7 +30,17 @@ type RoleService struct {
 	permVersionSvc   *PermissionVersionService
 	permCacheSvc     *PermissionCacheService
 	membershipReader roleMembershipReader
-	logger           *logger.Logger
+	// membershipCache is dropped for a user whose role set changes, so the
+	// team-role gates (RequireTeamAdmin/Owner) see the new role on the next
+	// request instead of after the cache TTL.
+	membershipCache membershipCacheInvalidator
+	logger          *logger.Logger
+}
+
+// membershipCacheInvalidator drops a user's cached membership in a tenant.
+// MembershipCacheService satisfies it.
+type membershipCacheInvalidator interface {
+	Invalidate(ctx context.Context, tenantID, userID string)
 }
 
 // NewRoleService creates a new RoleService.
@@ -74,6 +84,15 @@ func WithRolePermissionVersionService(svc *PermissionVersionService) RoleService
 func WithRolePermissionCacheService(svc *PermissionCacheService) RoleServiceOption {
 	return func(s *RoleService) {
 		s.permCacheSvc = svc
+	}
+}
+
+// WithRoleMembershipCacheInvalidator sets the membership cache to drop when a
+// user's role set changes. Without it, a demoted administrator keeps passing
+// RequireTeamAdmin until the cached membership expires.
+func WithRoleMembershipCacheInvalidator(c membershipCacheInvalidator) RoleServiceOption {
+	return func(s *RoleService) {
+		s.membershipCache = c
 	}
 }
 
@@ -130,6 +149,10 @@ func (s *RoleService) invalidateUserPermissions(ctx context.Context, tenantID, u
 	if s.permCacheSvc != nil {
 		s.permCacheSvc.Invalidate(ctx, tenantID, userID)
 	}
+	// The team role is derived from the role set too.
+	if s.membershipCache != nil {
+		s.membershipCache.Invalidate(ctx, tenantID, userID)
+	}
 
 	// Increment version to trigger frontend refresh
 	if s.permVersionSvc != nil {
@@ -152,6 +175,11 @@ func (s *RoleService) invalidateUsersPermissions(ctx context.Context, tenantID s
 	// Invalidate cache for all users
 	if s.permCacheSvc != nil {
 		s.permCacheSvc.InvalidateForUsers(ctx, tenantID, userIDs)
+	}
+	if s.membershipCache != nil {
+		for _, userID := range userIDs {
+			s.membershipCache.Invalidate(ctx, tenantID, userID)
+		}
 	}
 
 	// Increment versions for all users
