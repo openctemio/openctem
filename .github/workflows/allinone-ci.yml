@@ -113,7 +113,9 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null
+          if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
+            echo "::error::a job failed or was cancelled"; exit 1
+          fi
           r="$(echo "$NEEDS" | jq -r '.changes.result')"
           if [ "$r" != success ]; then echo "::error::changes must pass, got: $r"; exit 1; fi
           if [ "$IMAGES" = true ] && [ "$EVENT" != pull_request ]; then
