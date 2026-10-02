@@ -34,6 +34,14 @@ func registerHealthRoutes(router Router, h *handler.HealthHandler, metricsAuth M
 	}
 }
 
+// registerVersionRoute registers GET /api/v1/version: the running build, for
+// Help > About. Any signed-in user, nothing more: it is not tenant data, and it
+// stays off the public /health so an unauthenticated client cannot fingerprint
+// the build. authMiddleware is the JWT/session chain, which takes no oct_ keys.
+func registerVersionRoute(router Router, authMiddleware Middleware) {
+	router.GET("/api/v1/version", handler.Version, authMiddleware)
+}
+
 // registerDocsRoutes registers API documentation endpoints (public).
 func registerDocsRoutes(router Router, h *handler.DocsHandler) {
 	// OpenAPI spec (YAML)

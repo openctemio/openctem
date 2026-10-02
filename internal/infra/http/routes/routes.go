@@ -374,6 +374,9 @@ func Register(
 		userSync = middleware.UserSync(userService, log)
 	}
 
+	// Build identity for Help > About (any signed-in user).
+	registerVersionRoute(router, authMiddleware)
+
 	// User routes (protected with user sync for OIDC)
 	if h.User != nil {
 		registerUserRoutes(router, h.User, h.LocalAuth, authMiddleware, userSync, authCfg.Provider)

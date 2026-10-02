@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/admin"
 )
@@ -90,6 +91,9 @@ func registerAdminRoutes(
 			}
 		})
 	}
+
+	// Build identity for the console's Help > About (any admin role).
+	router.GET("/api/v1/admin/version", handler.Version, adminMiddlewares...)
 
 	// Provisioning a platform administrator (links or creates the users-table
 	// account they sign in with). Super admin only; the service writes the

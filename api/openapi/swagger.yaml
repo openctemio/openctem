@@ -3567,6 +3567,24 @@ definitions:
       tenant_id:
         type: string
     type: object
+  github_com_openctemio_api_pkg_version.Info:
+    properties:
+      build_time:
+        example: "2026-10-02T10:00:00Z"
+        type: string
+      channel:
+        enum:
+        - release
+        - development
+        example: release
+        type: string
+      commit:
+        example: 4d2f4b02
+        type: string
+      version:
+        example: v0.9.0
+        type: string
+    type: object
   internal_infra_http_handler.APIKeyDataRequest:
     properties:
       key:
@@ -12987,6 +13005,22 @@ paths:
       summary: Reset another administrator's two-step verification
       tags:
       - Admin Users
+  /admin/version:
+    get:
+      description: 'The running API build: release tag (or "<tag>-dev" on a development
+        build), short commit, build time and channel.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_version.Info'
+      security:
+      - BearerAuth: []
+      summary: API version
+      tags:
+      - System
   /agent/commands:
     get:
       consumes:
@@ -27262,9 +27296,9 @@ paths:
     post:
       description: Replaces the one-time set-password link of an account an administrator
         created that has never been used and belongs to this organization only. Owner/admin
-        only; an owner or administrator account, or one holding a role the caller could
-        not grant, needs an owner (403). 400 for any other account (its owner recovers
-        it with forgot-password).
+        only; an owner or administrator account, or one holding a role the caller
+        could not grant, needs an owner (403). 400 for any other account (its owner
+        recovers it with forgot-password).
       parameters:
       - description: Tenant ID or slug
         in: path
@@ -28123,6 +28157,22 @@ paths:
       summary: Get user's tenants
       tags:
       - Users
+  /version:
+    get:
+      description: 'The running API build: release tag (or "<tag>-dev" on a development
+        build), short commit, build time and channel.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_version.Info'
+      security:
+      - BearerAuth: []
+      summary: API version
+      tags:
+      - System
   /vulnerabilities:
     get:
       description: Retrieves a paginated list of CVE vulnerabilities
