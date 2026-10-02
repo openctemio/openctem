@@ -1,0 +1,73 @@
+# RFC-036 Appendix: use cases, edge cases and threat model
+
+> Part of [RFC-036](RFC-036-easm.md). A living document: every EASM pull
+> request updates the rows it implements, and a row is only marked **tested**
+> when the named test exists on `develop`. Rows marked *planned* describe the
+> acceptance test the implementing PR must add.
+
+The owner's quality bar (2026-10-02): cover the realistic use cases and edge
+cases, and give every security control of the EASM feature its own test.
+EASM here means **authorized, in-scope monitoring of the tenant's own
+internet-facing assets**. Nothing in this appendix describes probing anyone
+else's infrastructure.
+
+Test locations: `internal/app/certmonitor` (unit, fake HTTP sources),
+`internal/infra/postgres/*_db_test.go` (real schema, `DATABASE_URL`), and the
+scratch-stack e2e described under each phase (real API binary, scratch
+Postgres/Redis, fake data sources on a private address, never live, never a
+real third-party target).
+
+## 1. Use cases
+
+| # | Use case | Phase | Acceptance test | Status |
+|---|---|---|---|---|
+| U1 | A tenant with many domains gets **every** domain checked against CT, not just the first 50 | P0 | `TestMonitorTenant_RotatesThroughAllDomains` (120 domains, cap 50, all queried within 3 runs); scratch e2e (121 domains) | tested |
+| U2 | Verified domains and domain scope targets are monitored even when no domain asset exists for them | P0 | `TestMonitorTenant_QueriesVerifiedAndScopeDomains` | tested |
+| U3 | crt.sh is overloaded (502/503/timeout): the sweep retries, then uses Cert Spotter, and the tenant still gets results | P0 | `TestMonitorTenant_RetriesCRTSHThenSucceeds`, `TestMonitorTenant_FallsBackToCertSpotter`; scratch e2e (`flaky*` domain served by Cert Spotter) | tested |
+| U4 | A certificate about to expire, or one that just expired with no replacement, raises an exposure | P0 | `TestCollectDiscoveries_ExpiryUsesNewestCert`, `TestCollectDiscoveries_ExpiredEmitsEvent` | tested |
+| U5 | A subdomain first seen in CT becomes an inventory asset with its provenance and an attribution state (auto-confirmed only under a verified domain, otherwise awaiting review) | P0/P1 | *planned* (CT promotion PR) | planned |
+| U6 | Recon jobs (subfinder, dnsx, httpx, naabu, katana) run only on sensors that actually ship the tool | P0 | *planned* (sensor image + dispatch PRs) | planned |
+| U7 | Attack-surface cards show real counts or say there is no data, never a healthy-looking zero | P0 | *planned* (UI honesty PR) | planned |
+| U8 | A CNAME pointing at an unclaimed cloud resource is flagged (dangling DNS / takeover candidate) | P1 | *planned*: fixture zone with a CNAME to an unclaimed provider → medium exposure; confirmed → high | planned |
+| U9 | Weak email posture (no SPF, `p=none` DMARC, missing DKIM selector) on a tenant domain is flagged; correct domains are not | P1 | *planned*: fixture DNS answers per case | planned |
+| U10 | Every discovered asset says how and why it is attributed to the tenant (seed, technique, evidence, confidence) | P1 | *planned* | planned |
+| U11 | The EASM overview shows the surface, what is new since the last cycle and the top risks, with numbers equal to the list counts | P1 | *planned* | planned |
+
+## 2. Edge cases
+
+| # | Case | Handling | Test |
+|---|---|---|---|
+| E-1 | Tenant has more domains than the per-run cap | Rotation cursor: never-succeeded first, then oldest success, then oldest attempt; cap `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (50) | `TestMonitorTenant_RotatesThroughAllDomains` |
+| E-2 | API restarts several times a day (hot reload, deploys) | A domain queried successfully within 5/6 of the sweep interval is not due; restarts do not re-query | `TestMonitorTenant_RestartDoesNotRequery` |
+| E-3 | Two API replicas run the controller at the same time | Per-tenant session advisory lock on a dedicated connection; the second replica skips the tenant | `TestMonitorTenant_SkipsWhenTenantLocked`, `TestCTMonitorStateRepository_TenantLock` |
+| E-4 | crt.sh answers 502/503/429 or times out | Up to 3 attempts, exponential back-off with jitter (2 s → 30 s cap), `Retry-After` honored up to 60 s; response-header timeout 50 s (the shared client's 15 s was below crt.sh's normal latency) | `TestMonitorTenant_RetriesCRTSHThenSucceeds`, `TestRetryDelay` |
+| E-5 | crt.sh answers 4xx other than 408/429, or a non-JSON body | Not retried; goes to the fallback | `TestMonitorTenant_NotFoundIsNotRetried` |
+| E-6 | Both sources fail for a domain | Recorded in `ct_monitor_state`; back-off 12 h, 24 h, 48 h … 7 days, so a permanently failing domain never takes a slot every run; recovery resets it | `TestMonitorTenant_BothSourcesFail_BacksOffAndSkips`, `TestFailureBackoff` |
+| E-7 | Cert Spotter free tier exhausted (429) | The rest of that sweep stops asking Cert Spotter | `TestMonitorTenant_BothSourcesFail_BacksOffAndSkips` |
+| E-8 | Cert Spotter only lists unexpired certificates | A domain served by the fallback never raises `certificate_expired` from missing history (documented, by construction) | `TestMonitorTenant_FallsBackToCertSpotter` |
+| E-9 | A child domain and its parent are both watched (`api.example.com` and `example.com`) | Only the parent is queried (its wildcard query covers the child); a **verified** child under an unverified parent stays its own root so its names keep the verified origin | `TestMergeRoots` |
+| E-10 | Names that cannot have public certificates (`.local`, `.internal`, `.test`, bare suffixes like `co.uk`) | Dropped before querying (ICANN public-suffix check) | `TestMergeRoots`, `TestMonitorTenant_QueriesVerifiedAndScopeDomains` |
+| E-11 | Wildcard patterns in scope targets (`*.example.com`) | Normalised to the base name | `TestMonitorTenant_QueriesVerifiedAndScopeDomains` |
+| E-12 | Pending / failed domain verification | Not a monitored root (only `verified` rows) | `TestMonitorTenant_QueriesVerifiedAndScopeDomains` |
+| E-13 | Years of historical certificates for one host | Expiry uses the newest `not_after` per host; `certificate_expired` only if the newest lapsed within 30 days | `TestCollectDiscoveries_ExpiryUsesNewestCert` |
+| E-14 | A domain with thousands of CT names (CDN, wildcard) | At most 500 `subdomain_discovered` per domain per run; body capped at 48 MiB; Cert Spotter at 10 pages | existing `collectDiscoveries` cap; *planned*: truncated-body test |
+| E-15 | One tenant's sweep takes very long (many failing domains) | Per-tenant time budget (30 min); unreached domains are not marked and lead the next run | `TestMonitorTenant_SweepBudget` |
+| E-16 | Same discovery on every run | Exposure fingerprint dedupe (re-sighting, not a new row) | `TestMonitorTenant_IdempotentOnRepoll` |
+| E-17 | IDN names | CT logs carry the punycode (`xn--`) form, which is accepted as-is; Unicode forms are not produced by the sources | `TestCollectDiscoveries_DropsInvalidHostnames` |
+
+## 3. Threat model of the EASM feature
+
+Assets protected: tenant data (which domains a tenant watches is itself
+sensitive), the platform's egress reputation, third parties' infrastructure,
+and the platform itself against hostile data from external sources.
+
+| # | Threat | Control | Test |
+|---|---|---|---|
+| T-1 | Cross-tenant leak: tenant A's discoveries stamped on tenant B, or B seeing A's monitoring state | The tenant comes from the asset/verified domain/scope target being queried, never from the CT answer; state rows keyed by `tenant_id` and read per tenant | `TestMonitorTenant_EmitsExposuresAndIsolatesTenant`, `TestCTMonitorStateRepository_RoundTripAndIsolation`; scratch e2e (second tenant's rows) |
+| T-2 | SSRF through the configurable source URLs (DNS rebinding of `CERT_MONITOR_FEED_URL` / `CERT_MONITOR_CERTSPOTTER_URL`) | All CT traffic dials through `httpsec.SafeDialContext` (private/link-local/metadata refused unless the operator sets `OPENCTEM_HTTPSEC_ALLOW_PRIVATE`) | `TestQueryCRTSH_SSRFGuardBlocksInternal` |
+| T-3 | Hostile data in CT answers (markup, control characters, over-long labels, names outside the tenant's domain) | Strict hostname syntax check; only the queried domain and names below it are accepted; the CT answer never chooses a tenant or an asset | `TestCollectDiscoveries_DropsInvalidHostnames`, `TestCollectDiscoveries_Subdomains`; scratch e2e (`junk*` domain) |
+| T-4 | Resource exhaustion from a large or endless answer | 48 MiB body cap, 60 s request timeout, 10-page cap on Cert Spotter, 500 names per domain, 30-minute tenant budget | `TestMonitorTenant_SweepBudget`; *planned*: oversized-body test |
+| T-5 | We hammer a public source (politeness) or get the platform's egress blocked | 1 s between queries, capped retries with jitter, `Retry-After` honored, failure back-off, 429 stops the fallback for the sweep, re-check age stops restart storms, one replica per tenant | `TestRetryDelay`, `TestMonitorTenant_BothSourcesFail_BacksOffAndSkips`, `TestMonitorTenant_RestartDoesNotRequery`, `TestMonitorTenant_SkipsWhenTenantLocked` |
+| T-6 | A tenant uses EASM to probe infrastructure it does not own | CT monitoring is passive (T0): it only reads public logs and never contacts the names it finds. Active checks are gated by attribution state and tier (O3/O4, §6.3) | P0: by construction (no outbound call to discovered names); *planned* for active steps: `active_allowed` tests in P1/P3 |
+| T-7 | A tenant disables the attack-surface module but its domains are still sent to third parties | The controller skips tenants with `attack_surface` disabled | existing controller module-guard tests |
+| T-8 | Disclosure of the tenant's domains to third-party sources | Only crt.sh and Cert Spotter (O1 free sources) receive domain names, over HTTPS by default; paid sources need tenant keys (P5). Recorded as a data-source decision in RFC-036 §12 | documented; no test |

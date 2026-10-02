@@ -1,31 +1,33 @@
 // Package certmonitor implements OpenCTEM's Certificate-Transparency (CT)
-// discovery source: a scheduled, per-tenant poller that queries the PUBLIC
-// crt.sh CT-log aggregator for the tenant's own registered domains and emits
-// first-class ExposureEvents.
+// discovery source: a scheduled, per-tenant poller that queries public CT data
+// (crt.sh, with SSLMate Cert Spotter as the fallback) for the tenant's own
+// domains and emits first-class ExposureEvents.
 //
 // This is CTEM Discovery breadth ("exposure != vulnerability") that needs no
-// credentials, no sensor, and no customer consent — it reads only public CT-log
-// data. It complements the sensor-side subfinder recon (which enumerates
-// subdomains on demand during a scan job): CT monitoring runs continuously
-// server-side and, crucially, surfaces cert-expiry exposures and certs issued
-// for domains the tenant never scanned. See docs/rfcs/RFC-019.
+// credentials, no sensor and no traffic to the tenant's hosts: it reads only
+// public CT-log data. See docs/rfcs/RFC-019 and RFC-036 (P0: rotation through
+// every watched domain, retries, fallback, back-off).
 //
-// The outbound query goes through httpsec.SafeHTTPClient (SSRF-guarded: it
-// refuses RFC1918 / link-local addresses even though crt.sh is public — defense
-// against DNS rebinding of the configurable feed URL), is body-bounded, and is
-// politeness-rate-limited between domains so we never hammer crt.sh.
+// The watched domains are the tenant's domain assets, verified domains and
+// active domain scope targets. Each run picks the ones due, oldest-queried
+// first, up to a per-run cap (selection.go); per-domain state lives in
+// ct_monitor_state so the rotation survives restarts.
 //
-// Tenant isolation: the tenant is taken from the asset being queried, never from
-// the CT response. Every emitted exposure is stamped with that tenant. A failure
-// on one domain or one tenant is logged and skipped (fail-open); it never
-// aborts the whole sweep.
+// Outbound queries dial through httpsec.SafeDialContext (SSRF-guarded: private,
+// link-local and metadata addresses are refused even though the sources are
+// public — defense against DNS rebinding of the configurable URLs), are
+// body-bounded, retried with jittered back-off and politeness-delayed.
+//
+// Tenant isolation: the tenant is taken from the domain being queried, never
+// from the CT response. Every emitted exposure is stamped with that tenant. A
+// failure on one domain or one tenant is recorded and skipped (fail-open); it
+// never aborts the whole sweep.
 package certmonitor
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -34,7 +36,9 @@ import (
 
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -47,21 +51,26 @@ const (
 	// Source is the exposure source tag for everything this connector emits.
 	Source = "cert_transparency"
 
-	// httpTimeout bounds a single crt.sh query. crt.sh can be slow for busy
-	// domains, so this is generous.
-	httpTimeout = 45 * time.Second
+	// httpTimeout bounds a single CT query end to end. crt.sh can be slow for
+	// busy domains, so this is generous.
+	httpTimeout = 60 * time.Second
 
-	// maxBodyBytes bounds a single crt.sh JSON response.
+	// responseHeaderTimeout is how long we wait for crt.sh to start answering.
+	// The shared SSRF-guarded client waits 15 s, which crt.sh's database
+	// routinely exceeds for any domain with a few thousand certificates.
+	responseHeaderTimeout = 50 * time.Second
+
+	// maxBodyBytes bounds a single CT JSON response.
 	maxBodyBytes = 48 << 20 // 48 MiB
 
-	// userAgent identifies OpenCTEM to crt.sh.
+	// userAgent identifies OpenCTEM to the CT sources.
 	userAgent = "OpenCTEM/1.0 (+https://github.com/openctemio)"
 
-	// defaultMaxDomainsPerRun caps how many of a tenant's domain assets we query
-	// per sweep, so a tenant with thousands of domains cannot make us hammer
-	// crt.sh. When a tenant has more, the overflow is logged and picked up on a
-	// later run (ordering is stable by asset name).
-	defaultMaxDomainsPerRun = 50
+	// DefaultMaxDomainsPerRun caps how many of a tenant's domains one sweep
+	// queries, so a tenant with thousands of domains cannot make us hammer
+	// crt.sh. The rest are picked up on later runs: the rotation order
+	// (selectDue) puts never-queried and longest-unqueried domains first.
+	DefaultMaxDomainsPerRun = 50
 
 	// defaultMaxSubdomainsPerDomain caps subdomain_discovered exposures emitted
 	// for a single domain in one run (a wildcard/CDN domain can have thousands of
@@ -72,12 +81,32 @@ const (
 	// certificate_expiring exposure.
 	defaultExpiryWindow = 30 * 24 * time.Hour
 
-	// defaultRequestDelay is the politeness delay between crt.sh queries within a
+	// defaultExpiredLookback is how recently a host's newest certificate must
+	// have lapsed to raise certificate_expired. Older lapses are almost always
+	// decommissioned hosts, and raising them would flood a tenant with years
+	// of CT history.
+	defaultExpiredLookback = 30 * 24 * time.Hour
+
+	// defaultRequestDelay is the politeness delay between CT queries within a
 	// single tenant sweep.
 	defaultRequestDelay = 1 * time.Second
 
-	// assetPageSize is how many domain assets we page per DB round-trip.
-	assetPageSize = 200
+	// DefaultRecheckAfter is how long a successfully queried domain is left
+	// alone. Slightly under the daily sweep interval so a daily run always
+	// re-queries it, while an API restart in between does not.
+	DefaultRecheckAfter = 20 * time.Hour
+
+	// DefaultSweepBudget bounds one tenant's sweep in wall-clock time. With
+	// retries and the fallback a single bad domain can take minutes; past the
+	// budget the sweep stops and the domains it did not reach stay first in
+	// line for the next run.
+	DefaultSweepBudget = 30 * time.Minute
+
+	// assetPageSize is how many domain assets we page per DB round-trip. It
+	// must not exceed pagination's 100-row clamp: at 200 the loop below
+	// believed it had read two pages' worth after the first (clamped) page
+	// and stopped, so a tenant's domain assets past the 100th were never seen.
+	assetPageSize = 100
 )
 
 // AssetLister is the narrow slice of the asset repository the CT sweep needs:
@@ -94,23 +123,61 @@ type ExposureUpserter interface {
 	BulkUpsert(ctx context.Context, events []*exposuredom.ExposureEvent) error
 }
 
+// VerifiedDomainLister lists a tenant's DNS-TXT-verified domains. Satisfied by
+// *postgres.VerifiedDomainRepository.
+type VerifiedDomainLister interface {
+	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*verifieddomain.VerifiedDomain, error)
+}
+
+// ScopeTargetLister lists a tenant's active scope targets. Satisfied by
+// *postgres.ScopeTargetRepository.
+type ScopeTargetLister interface {
+	ListActive(ctx context.Context, tenantID shared.ID) ([]*scope.Target, error)
+}
+
+// StateStore keeps the per-domain rotation record between sweeps. Satisfied
+// by *postgres.CTMonitorStateRepository.
+type StateStore interface {
+	ListStates(ctx context.Context, tenantID shared.ID) (map[string]DomainState, error)
+	SaveState(ctx context.Context, tenantID shared.ID, st DomainState) error
+}
+
+// TenantLocker is optionally implemented by the StateStore: it serializes
+// sweeps of one tenant across API replicas. ok=false means another replica is
+// sweeping that tenant now.
+type TenantLocker interface {
+	TryLockTenant(ctx context.Context, tenantID shared.ID) (release func(), ok bool, err error)
+}
+
 // Service is the CT discovery source.
 type Service struct {
 	assetRepo    AssetLister
 	exposureRepo ExposureUpserter
+	verified     VerifiedDomainLister
+	scopeTargets ScopeTargetLister
+	state        StateStore
 	httpClient   *http.Client
 	feedBaseURL  string
 
-	maxDomains   int
-	maxSubs      int
-	expiryWindow time.Duration
-	requestDelay time.Duration
+	// certSpotterBaseURL is the fallback source; empty disables it.
+	certSpotterBaseURL string
+
+	maxDomains      int
+	maxSubs         int
+	expiryWindow    time.Duration
+	expiredLookback time.Duration
+	requestDelay    time.Duration
+	recheckAfter    time.Duration
+	sweepBudget     time.Duration
+	noSleep         bool
+	now             func() time.Time
 
 	logger *logger.Logger
 }
 
 // NewService constructs the CT discovery service. An empty feedBaseURL defaults
-// to crt.sh.
+// to crt.sh. Without SetDomainSources and SetStateStore it queries only domain
+// assets and keeps no rotation state (the test and minimal wiring).
 func NewService(
 	assetRepo AssetLister,
 	exposureRepo ExposureUpserter,
@@ -121,35 +188,87 @@ func NewService(
 		feedBaseURL = DefaultFeedBaseURL
 	}
 	return &Service{
-		assetRepo:    assetRepo,
-		exposureRepo: exposureRepo,
-		httpClient:   httpsec.SafeHTTPClient(httpTimeout),
-		feedBaseURL:  strings.TrimRight(feedBaseURL, "/"),
-		maxDomains:   defaultMaxDomainsPerRun,
-		maxSubs:      defaultMaxSubdomainsPerDomain,
-		expiryWindow: defaultExpiryWindow,
-		requestDelay: defaultRequestDelay,
-		logger:       log.With("service", "cert_monitor"),
+		assetRepo:       assetRepo,
+		exposureRepo:    exposureRepo,
+		httpClient:      newCTHTTPClient(),
+		feedBaseURL:     strings.TrimRight(feedBaseURL, "/"),
+		maxDomains:      DefaultMaxDomainsPerRun,
+		maxSubs:         defaultMaxSubdomainsPerDomain,
+		expiryWindow:    defaultExpiryWindow,
+		expiredLookback: defaultExpiredLookback,
+		requestDelay:    defaultRequestDelay,
+		recheckAfter:    DefaultRecheckAfter,
+		sweepBudget:     DefaultSweepBudget,
+		now:             func() time.Time { return time.Now().UTC() },
+		logger:          log.With("service", "cert_monitor"),
+	}
+}
+
+// newCTHTTPClient is the SSRF-guarded client with a response-header timeout
+// long enough for crt.sh.
+func newCTHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: httpTimeout,
+		Transport: &http.Transport{
+			DialContext:           httpsec.SafeDialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: responseHeaderTimeout,
+			IdleConnTimeout:       30 * time.Second,
+		},
+	}
+}
+
+// SetDomainSources adds verified domains and active domain scope targets to
+// the names the sweep queries, next to domain assets.
+func (s *Service) SetDomainSources(verified VerifiedDomainLister, targets ScopeTargetLister) {
+	s.verified = verified
+	s.scopeTargets = targets
+}
+
+// SetStateStore enables the persisted rotation cursor and failure back-off.
+func (s *Service) SetStateStore(st StateStore) { s.state = st }
+
+// SetCertSpotterFallback sets the Cert Spotter base URL used when crt.sh keeps
+// failing. An empty string or "off" disables the fallback.
+func (s *Service) SetCertSpotterFallback(baseURL string) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if strings.EqualFold(baseURL, "off") {
+		baseURL = ""
+	}
+	s.certSpotterBaseURL = baseURL
+}
+
+// SetLimits sets the per-run domain cap and the re-check age. Zero or negative
+// values keep the defaults.
+func (s *Service) SetLimits(maxDomainsPerRun int, recheckAfter time.Duration) {
+	if maxDomainsPerRun > 0 {
+		s.maxDomains = maxDomainsPerRun
+	}
+	if recheckAfter > 0 {
+		s.recheckAfter = recheckAfter
 	}
 }
 
 // FeedBaseURL returns the configured crt.sh base URL (for diagnostics).
 func (s *Service) FeedBaseURL() string { return s.feedBaseURL }
 
-// setHTTPClient overrides the outbound client and disables the politeness delay.
-// Test-only: production always uses the SSRF-guarded SafeHTTPClient built in
-// NewService, which (correctly) refuses the loopback address an httptest server
-// listens on.
+// setHTTPClient overrides the outbound client and disables the politeness delay
+// and retry waits. Test-only: production always uses the SSRF-guarded client
+// built in NewService, which (correctly) refuses the loopback address an
+// httptest server listens on.
 func (s *Service) setHTTPClient(c *http.Client) {
 	s.httpClient = c
 	s.requestDelay = 0
+	s.noSleep = true
 }
 
-// MonitorTenant runs one CT sweep for a single tenant: it lists the tenant's
-// domain assets, queries crt.sh for each (bounded + rate-limited), and upserts
-// the resulting ExposureEvents (deduped by fingerprint). Returns the number of
-// exposures emitted (created or re-sighted). Fail-open per domain: a crt.sh
-// error on one domain is logged and the sweep continues.
+// MonitorTenant runs one CT sweep for a single tenant: it gathers the tenant's
+// domains (domain assets, verified domains, active domain scope targets),
+// picks the ones due this run in rotation order, queries CT for each (crt.sh
+// with retries, Cert Spotter as the fallback) and upserts the resulting
+// ExposureEvents (deduped by fingerprint). Returns the number of exposures
+// emitted (created or re-sighted). Fail-open per domain: a failure on one
+// domain is recorded in its state, backs it off, and the sweep continues.
 func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, error) {
 	if s == nil || s.assetRepo == nil || s.exposureRepo == nil {
 		return 0, nil
@@ -158,108 +277,217 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		return 0, fmt.Errorf("%w: tenant ID is required", shared.ErrValidation)
 	}
 
-	domains, capped, err := s.listDomains(ctx, tenantID)
+	if locker, ok := s.state.(TenantLocker); ok {
+		release, got, err := locker.TryLockTenant(ctx, tenantID)
+		if err != nil {
+			return 0, err
+		}
+		if !got {
+			s.logger.Info("ct sweep: another instance is sweeping this tenant; skipping", "tenant_id", tenantID.String())
+			return 0, nil
+		}
+		defer release()
+	}
+
+	roots, assetsByName, err := s.gatherRoots(ctx, tenantID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to list domain assets: %w", err)
+		return 0, err
 	}
-	if capped {
-		s.logger.Warn("tenant has more domains than the per-run cap; remainder deferred to next sweep",
-			"tenant_id", tenantID.String(), "cap", s.maxDomains)
-	}
-	if len(domains) == 0 {
+	if len(roots) == 0 {
 		return 0, nil
 	}
 
+	states := map[string]DomainState{}
+	if s.state != nil {
+		states, err = s.state.ListStates(ctx, tenantID)
+		if err != nil {
+			return 0, fmt.Errorf("failed to load CT monitor state: %w", err)
+		}
+	}
+	now := s.now()
+	due, deferred := selectDue(roots, states, now, s.recheckAfter, s.maxDomains)
+	if deferred > 0 {
+		s.logger.Info("ct sweep: more domains due than the per-run cap; the rest rotate in on later runs",
+			"tenant_id", tenantID.String(), "cap", s.maxDomains, "deferred", deferred)
+	}
+	if len(due) == 0 {
+		return 0, nil
+	}
+
+	client := &sweepClient{s: s}
 	var events []*exposuredom.ExposureEvent
-	for i, da := range domains {
+	failed, queried := 0, 0
+	started := s.now()
+	for i, root := range due {
 		if err := ctx.Err(); err != nil {
 			return len(events), err
 		}
-		// Politeness delay between crt.sh queries (not before the first one).
+		if s.sweepBudget > 0 && s.now().Sub(started) > s.sweepBudget {
+			s.logger.Warn("ct sweep: time budget spent; the remaining domains go first next run",
+				"tenant_id", tenantID.String(), "budget", s.sweepBudget.String(), "remaining", len(due)-i)
+			break
+		}
+		queried++
+		// Politeness delay between queries (not before the first one).
 		if i > 0 && s.requestDelay > 0 {
-			select {
-			case <-ctx.Done():
-				return len(events), ctx.Err()
-			case <-time.After(s.requestDelay):
+			if err := s.sleep(ctx, s.requestDelay); err != nil {
+				return len(events), err
 			}
 		}
 
-		entries, err := s.queryCRTSH(ctx, da.name)
+		st := states[root.name]
+		st.Domain = root.name
+		attempted := s.now()
+		st.LastCheckedAt = &attempted
+
+		res, err := client.fetch(ctx, root.name)
 		if err != nil {
-			// Fail-open: one domain's crt.sh outage must not abort the sweep.
-			s.logger.Warn("crt.sh query failed; skipping domain",
-				"tenant_id", tenantID.String(), "domain", da.name, "error", err)
+			if ctx.Err() != nil {
+				return len(events), ctx.Err()
+			}
+			failed++
+			st.ConsecutiveFailures++
+			st.LastError = truncate(err.Error(), 500)
+			next := attempted.Add(failureBackoff(st.ConsecutiveFailures))
+			st.NextAttemptAt = &next
+			s.saveState(ctx, tenantID, st)
+			s.logger.Warn("CT query failed; domain backed off",
+				"tenant_id", tenantID.String(), "domain", root.name,
+				"failures", st.ConsecutiveFailures, "next_attempt_at", next.Format(time.RFC3339), "error", err)
 			continue
 		}
 
-		subs, expiring := collectDiscoveries(da.name, entries, time.Now().UTC(), s.expiryWindow, s.maxSubs)
-		events = append(events, s.buildEvents(tenantID, da, subs, expiring)...)
+		d := collectDiscoveries(root.name, res.entries, attempted, s.expiryWindow, s.expiredLookback, s.maxSubs)
+		events = append(events, s.buildEvents(tenantID, root, assetsByName, d)...)
+
+		st.LastSuccessAt = &attempted
+		st.LastSource = res.source
+		st.LastError = ""
+		st.ConsecutiveFailures = 0
+		st.NextAttemptAt = nil
+		st.SubdomainsSeen = len(d.subdomains)
+		s.saveState(ctx, tenantID, st)
 	}
 
-	if len(events) == 0 {
-		return 0, nil
-	}
-	if err := s.exposureRepo.BulkUpsert(ctx, events); err != nil {
-		return 0, fmt.Errorf("failed to upsert CT exposures: %w", err)
+	if len(events) > 0 {
+		if err := s.exposureRepo.BulkUpsert(ctx, events); err != nil {
+			return 0, fmt.Errorf("failed to upsert CT exposures: %w", err)
+		}
 	}
 
 	s.logger.Info("ct sweep complete",
 		"tenant_id", tenantID.String(),
-		"domains", len(domains),
+		"domains_known", len(roots),
+		"domains_queried", queried,
+		"domains_failed", failed,
 		"exposures", len(events))
 	return len(events), nil
 }
 
-// domainAsset is the minimal projection of a domain asset the sweep needs.
-type domainAsset struct {
-	id   shared.ID
-	name string
+func (s *Service) saveState(ctx context.Context, tenantID shared.ID, st DomainState) {
+	if s.state == nil {
+		return
+	}
+	if err := s.state.SaveState(ctx, tenantID, st); err != nil {
+		s.logger.Warn("failed to save CT monitor state", "tenant_id", tenantID.String(), "domain", st.Domain, "error", err)
+	}
 }
 
-// listDomains returns the tenant's domain-type assets (up to the per-run cap).
-// The bool reports whether the cap truncated the list.
-func (s *Service) listDomains(ctx context.Context, tenantID shared.ID) ([]domainAsset, bool, error) {
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
+// gatherRoots collects every domain the tenant asked us to watch: all domain
+// assets (paged, no cap), verified domains and active domain scope targets.
+// It also returns the domain assets by name so a discovered host can be tied
+// to its nearest known domain asset.
+func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDomain, map[string]shared.ID, error) {
+	var in []rootDomain
+	assetsByName := map[string]shared.ID{}
+
 	filter := assetdom.NewFilter().
 		WithTenantID(tenantID.String()).
 		WithTypes(assetdom.AssetTypeDomain)
-
-	out := make([]domainAsset, 0, s.maxDomains)
+	seen := 0
 	for pageNum := 1; ; pageNum++ {
-		page := pagination.New(pageNum, assetPageSize)
-		res, err := s.assetRepo.List(ctx, filter, assetdom.NewListOptions(), page)
+		res, err := s.assetRepo.List(ctx, filter, assetdom.NewListOptions(), pagination.New(pageNum, assetPageSize))
 		if err != nil {
-			return nil, false, err
+			return nil, nil, fmt.Errorf("failed to list domain assets: %w", err)
 		}
-		if len(res.Data) == 0 {
-			break
-		}
+		seen += len(res.Data)
 		for _, a := range res.Data {
 			name := normalizeDomain(a.Name())
 			if name == "" {
 				continue
 			}
-			out = append(out, domainAsset{id: a.ID(), name: name})
-			if len(out) >= s.maxDomains {
-				// Truncated only if there is more data beyond what we collected.
-				more := len(res.Data) > 0 && res.Total > int64(len(out))
-				return out, more, nil
+			id := a.ID()
+			if _, ok := assetsByName[name]; !ok {
+				assetsByName[name] = id
 			}
+			in = append(in, rootDomain{name: name, origin: OriginAsset, assetID: &id})
 		}
-		if int64(pageNum*assetPageSize) >= res.Total {
+		// Stop on an empty page or once every row is read; never on page
+		// arithmetic, which the repository's clamp can make wrong.
+		if len(res.Data) == 0 || int64(seen) >= res.Total {
 			break
 		}
 	}
-	return out, false, nil
+
+	if s.verified != nil {
+		vds, err := s.verified.ListByTenant(ctx, tenantID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list verified domains: %w", err)
+		}
+		for _, vd := range vds {
+			if vd.IsVerified() {
+				in = append(in, rootDomain{name: vd.Domain(), origin: OriginVerified})
+			}
+		}
+	}
+
+	if s.scopeTargets != nil {
+		targets, err := s.scopeTargets.ListActive(ctx, tenantID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list scope targets: %w", err)
+		}
+		for _, t := range targets {
+			switch t.TargetType() {
+			case scope.TargetTypeDomain, scope.TargetTypeSubdomain, scope.TargetTypeEmailDomain:
+				in = append(in, rootDomain{name: t.Pattern(), origin: OriginScope})
+			}
+		}
+	}
+
+	roots := mergeRoots(in)
+	for i := range roots {
+		if id, ok := assetsByName[roots[i].name]; ok && roots[i].assetID == nil {
+			roots[i].assetID = &id
+		}
+	}
+	return roots, assetsByName, nil
+}
+
+// nearestAsset returns the domain asset for host or its closest parent, or
+// the root's own asset, or nil.
+func nearestAsset(host string, root rootDomain, assetsByName map[string]shared.ID) *shared.ID {
+	for h := host; h != "" && h != root.name; h = parentOf(h) {
+		if id, ok := assetsByName[h]; ok {
+			return &id
+		}
+	}
+	return root.assetID
 }
 
 // buildEvents converts the pure discovery results into ExposureEvents for the
-// given tenant/domain. Events that fail construction are skipped (defensive;
+// given tenant/root. Events that fail construction are skipped (defensive;
 // inputs are already validated).
-func (s *Service) buildEvents(tenantID shared.ID, da domainAsset, subs []string, expiring []expiringCert) []*exposuredom.ExposureEvent {
-	events := make([]*exposuredom.ExposureEvent, 0, len(subs)+len(expiring))
-	assetID := da.id
+func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName map[string]shared.ID, d discoveries) []*exposuredom.ExposureEvent {
+	events := make([]*exposuredom.ExposureEvent, 0, len(d.subdomains)+len(d.expiring)+len(d.expired))
 
-	for _, host := range subs {
+	for _, host := range d.subdomains {
 		ev, err := exposuredom.NewExposureEvent(
 			tenantID,
 			exposuredom.EventTypeSubdomainDiscovered,
@@ -268,7 +496,8 @@ func (s *Service) buildEvents(tenantID shared.ID, da domainAsset, subs []string,
 			Source,
 			map[string]any{
 				"domain":           host,
-				"parent_domain":    da.name,
+				"parent_domain":    root.name,
+				"root_origin":      root.origin,
 				"discovery_source": Source,
 			},
 		)
@@ -277,27 +506,21 @@ func (s *Service) buildEvents(tenantID shared.ID, da domainAsset, subs []string,
 		}
 		ev.UpdateDescription(fmt.Sprintf(
 			"A TLS certificate for %q (under your monitored domain %q) was found in public Certificate Transparency logs. "+
-				"Confirm this host is known and intended to be internet-facing.", host, da.name))
-		id := assetID
-		ev.SetAssetID(&id)
+				"Confirm this host is known and intended to be internet-facing.", host, root.name))
+		if id := nearestAsset(host, root, assetsByName); id != nil {
+			ev.SetAssetID(id)
+		}
 		events = append(events, ev)
 	}
 
-	for _, ec := range expiring {
+	for _, ec := range d.expiring {
 		ev, err := exposuredom.NewExposureEvent(
 			tenantID,
 			exposuredom.EventTypeCertificateExpiring,
 			expirySeverity(ec.DaysLeft),
 			fmt.Sprintf("TLS certificate expiring soon: %s", ec.Host),
 			Source,
-			map[string]any{
-				"domain":         ec.Host,
-				"parent_domain":  da.name,
-				"not_after":      ec.NotAfter.Format(time.RFC3339),
-				"days_remaining": ec.DaysLeft,
-				"issuer":         ec.Issuer,
-				"serial_number":  ec.Serial,
-			},
+			certDetails(root, ec),
 		)
 		if err != nil {
 			continue
@@ -306,15 +529,50 @@ func (s *Service) buildEvents(tenantID shared.ID, da domainAsset, subs []string,
 			"The most recent public TLS certificate for %q expires on %s (%d day(s) away). "+
 				"An expired certificate breaks TLS for this host — renew before it lapses.",
 			ec.Host, ec.NotAfter.Format("2006-01-02"), ec.DaysLeft))
-		id := assetID
-		ev.SetAssetID(&id)
+		if id := nearestAsset(ec.Host, root, assetsByName); id != nil {
+			ev.SetAssetID(id)
+		}
+		events = append(events, ev)
+	}
+
+	for _, ec := range d.expired {
+		ev, err := exposuredom.NewExposureEvent(
+			tenantID,
+			exposuredom.EventTypeCertificateExpired,
+			exposuredom.SeverityMedium,
+			fmt.Sprintf("TLS certificate expired: %s", ec.Host),
+			Source,
+			certDetails(root, ec),
+		)
+		if err != nil {
+			continue
+		}
+		ev.UpdateDescription(fmt.Sprintf(
+			"The most recent public TLS certificate for %q expired on %s (%d day(s) ago) and no newer certificate "+
+				"appears in Certificate Transparency logs. If the host still serves TLS, clients now reject it; "+
+				"if it was retired, remove its DNS records.",
+			ec.Host, ec.NotAfter.Format("2006-01-02"), -ec.DaysLeft))
+		if id := nearestAsset(ec.Host, root, assetsByName); id != nil {
+			ev.SetAssetID(id)
+		}
 		events = append(events, ev)
 	}
 
 	return events
 }
 
-// queryCRTSH fetches and parses crt.sh JSON for one domain.
+func certDetails(root rootDomain, ec expiringCert) map[string]any {
+	return map[string]any{
+		"domain":         ec.Host,
+		"parent_domain":  root.name,
+		"not_after":      ec.NotAfter.Format(time.RFC3339),
+		"days_remaining": ec.DaysLeft,
+		"issuer":         ec.Issuer,
+		"serial_number":  ec.Serial,
+	}
+}
+
+// queryCRTSH fetches and parses crt.sh JSON for one domain (one attempt).
 func (s *Service) queryCRTSH(ctx context.Context, domain string) ([]crtEntry, error) {
 	u, err := url.Parse(s.feedBaseURL)
 	if err != nil {
@@ -326,30 +584,20 @@ func (s *Service) queryCRTSH(ctx context.Context, domain string) ([]crtEntry, er
 	// url.Values.Encode percent-encodes the leading '%' to %25 as crt.sh expects.
 	q.Set("q", "%."+domain)
 	q.Set("output", "json")
+	// One row per certificate instead of a precertificate + certificate pair:
+	// halves the answer and the time crt.sh spends building it.
+	q.Set("deduplicate", "Y")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	body, err := s.get(ctx, u.String(), SourceCRTSH)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build crt.sh request: %w", err)
+		return nil, err
 	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := s.httpClient.Do(req)
+	entries, err := parseCRTSH(body)
 	if err != nil {
-		return nil, fmt.Errorf("crt.sh request failed: %w", err)
+		return nil, fmt.Errorf("%w: %w", errNotRetryable, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("crt.sh returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read crt.sh response: %w", err)
-	}
-	return parseCRTSH(body)
+	return entries, nil
 }
 
 // crtEntry is one certificate record from crt.sh's JSON output.
@@ -388,18 +636,27 @@ type expiringCert struct {
 	Serial   string
 }
 
-// collectDiscoveries is the pure core: from the crt.sh entries for a domain it
-// derives (a) the set of distinct subdomains observed and (b) the hosts whose
-// most-recent certificate expires within the window.
+// discoveries is what one domain's CT entries yield.
+type discoveries struct {
+	subdomains []string
+	expiring   []expiringCert
+	expired    []expiringCert
+}
+
+// collectDiscoveries is the pure core: from the CT entries for a domain it
+// derives (a) the set of distinct subdomains observed, (b) the hosts whose
+// most-recent certificate expires within the window and (c) the hosts whose
+// most-recent certificate lapsed within the look-back.
 //
-// Expiry uses the MAX not_after per host so a long tail of historical/expired
-// certs never raises a false "expiring" alert when the host actually has a
-// current cert — and a host whose newest cert already lapsed is treated as
-// "expired, not expiring" and dropped (avoids flooding on long-dead hosts).
-func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window time.Duration, maxSubs int) (subdomains []string, expiring []expiringCert) {
+// Expiry uses the MAX not_after per host, so a long tail of historical certs
+// never raises a false alert when the host has a current cert. A host whose
+// newest cert lapsed longer ago than the look-back is dropped (a retired host,
+// and raising it would flood the tenant with years of CT history).
+func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window, expiredLookback time.Duration, maxSubs int) discoveries {
+	var d discoveries
 	domain = normalizeDomain(domain)
 	if domain == "" {
-		return nil, nil
+		return d
 	}
 	suffix := "." + domain
 
@@ -417,16 +674,20 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 
 		for _, host := range hostsFromEntry(e) {
 			host = normalizeDomain(host)
-			if host == "" {
+			// CT names are third-party data: anything that is not a plain
+			// DNS hostname (control characters, markup, over-long labels)
+			// is dropped before it reaches an exposure title or the UI.
+			if !validHostname(host) {
 				continue
 			}
-			// Only accept the queried domain and its subdomains. crt.sh's LIKE
-			// query is broad; this is the authoritative scope check.
+			// Only accept the queried domain and its subdomains. The CT
+			// sources' wildcard queries are broad; this is the authoritative
+			// scope check.
 			if host != domain && !strings.HasSuffix(host, suffix) {
 				continue
 			}
 			// subdomain_discovered is for hosts BELOW the apex (the apex is the
-			// already-known domain asset).
+			// already-known domain).
 			if host != domain {
 				subSet[host] = struct{}{}
 			}
@@ -439,36 +700,32 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 		}
 	}
 
-	subdomains = make([]string, 0, len(subSet))
+	d.subdomains = make([]string, 0, len(subSet))
 	for h := range subSet {
-		subdomains = append(subdomains, h)
+		d.subdomains = append(d.subdomains, h)
 	}
-	sort.Strings(subdomains)
-	if maxSubs > 0 && len(subdomains) > maxSubs {
-		subdomains = subdomains[:maxSubs]
+	sort.Strings(d.subdomains)
+	if maxSubs > 0 && len(d.subdomains) > maxSubs {
+		d.subdomains = d.subdomains[:maxSubs]
 	}
 
 	cutoff := now.Add(window)
 	for host, l := range newest {
-		// Newest cert already expired -> not "expiring soon".
-		if !l.notAfter.After(now) {
-			continue
-		}
-		// Newest cert expires beyond the window -> healthy.
-		if l.notAfter.After(cutoff) {
-			continue
-		}
 		days := int(l.notAfter.Sub(now).Hours() / 24)
-		expiring = append(expiring, expiringCert{
-			Host:     host,
-			NotAfter: l.notAfter,
-			DaysLeft: days,
-			Issuer:   l.issuer,
-			Serial:   l.serial,
-		})
+		ec := expiringCert{Host: host, NotAfter: l.notAfter, DaysLeft: days, Issuer: l.issuer, Serial: l.serial}
+		switch {
+		case !l.notAfter.After(now):
+			// Newest cert already lapsed: expired, if recently enough to matter.
+			if expiredLookback > 0 && now.Sub(l.notAfter) <= expiredLookback {
+				d.expired = append(d.expired, ec)
+			}
+		case !l.notAfter.After(cutoff):
+			d.expiring = append(d.expiring, ec)
+		}
 	}
-	sort.Slice(expiring, func(i, j int) bool { return expiring[i].Host < expiring[j].Host })
-	return subdomains, expiring
+	sort.Slice(d.expiring, func(i, j int) bool { return d.expiring[i].Host < d.expiring[j].Host })
+	sort.Slice(d.expired, func(i, j int) bool { return d.expired[i].Host < d.expired[j].Host })
+	return d
 }
 
 // hostsFromEntry pulls the certificate's subject hosts: the common_name plus

@@ -937,6 +937,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
+	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
+	s.CertMonitor.SetStateStore(repos.CTMonitorState)
+	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
+	// Re-check a little under the sweep interval: the next scheduled run
+	// re-queries, an API restart in between does not.
+	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, cfg.Worker.CertMonitorInterval*5/6)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
