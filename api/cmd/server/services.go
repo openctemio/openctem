@@ -1380,6 +1380,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// back what runs out, fenced against a late completion.
 	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
 	s.Sensor.SetLeaseRenewer(repos.Command)
+	s.Sensor.SetCancelFinder(repos.Command)
 	s.Command = command.NewService(repos.Command, log, command.WithSensorLookup(repos.Sensor))
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	s.SensorPlatformHealth = sensorapp.NewPlatformHealth(sensorapp.PlatformHealthConfig{
