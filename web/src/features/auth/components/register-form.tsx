@@ -8,7 +8,9 @@
 
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { loginErrorMessage } from '@/features/auth/lib/login-error'
+import { useTranslation } from '@/context/i18n-provider'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -100,11 +102,15 @@ export function RegisterForm({
     ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
     : []
 
-  // Check for error from OAuth callback
+  // Error code from an OAuth callback. Only a known code's message is shown,
+  // never the raw parameter, and once per value (this ran on every render).
   const errorParam = searchParams.get('error')
-  if (errorParam) {
-    toast.error(errorParam)
-  }
+  const { t } = useTranslation()
+  const loginError = errorParam ? loginErrorMessage(errorParam) : null
+  const errorMessage = loginError ? t(loginError.key, loginError.fallback) : null
+  useEffect(() => {
+    if (errorMessage) toast.error(errorMessage)
+  }, [errorMessage])
 
   // Pre-fill the email field when the user arrives from an invitation
   // link. The invitation page redirects to /login?email=alice@co.com&
