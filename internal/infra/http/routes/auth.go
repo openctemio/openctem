@@ -36,8 +36,12 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
-		// Login-provider capability snapshot (public, no auth)
-		providersHandler := ChainFunc(authProvidersHandler.GetProviders, loginRL)
+		// Login-provider capability snapshot (public, no auth). A cheap,
+		// cacheable config read the UI makes on many screens: it gets the
+		// general API limiter, NOT loginRL (5/min per IP), which it used to
+		// share — reading it spent the caller's login budget, so a user who
+		// opened a few pages got 429 on the login itself.
+		providersHandler := ChainFunc(authProvidersHandler.GetProviders, middleware.RateLimit(&cfg.RateLimit, log))
 		r.GET("/providers", providersHandler.ServeHTTP)
 
 		// Provider info endpoint

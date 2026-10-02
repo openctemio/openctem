@@ -115,6 +115,9 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Server configuration, the same for every caller and rarely changed:
+	// browsers may reuse it for a minute instead of asking on every screen.
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		h.logger.Error("failed to encode auth providers response", "error", err)
