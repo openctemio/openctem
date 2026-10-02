@@ -210,7 +210,9 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	// Canonical before the checks and the header digest, so every segment
 	// of a report, and ingest_reports.tool_name, carry one name.
 	report.Tool.Name = tooldom.CanonicalName(report.Tool.Name)
-	if !SensorDeclaresTool(t.Sensor.Tools, report.Tool.Name) {
+	// The sensor's effective tools: what it reports installed, narrowed by
+	// its tool limit; its declared tools when it never reported.
+	if !SensorDeclaresTool(t.Sensor.EffectiveTools(), report.Tool.Name) {
 		return nil, problem(protov2.ProblemToolNotPermitted)
 	}
 	if ct := commandTool(cmd); ct != "" && !tooldom.SameTool(ct, report.Tool.Name) {

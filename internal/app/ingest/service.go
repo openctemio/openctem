@@ -737,8 +737,10 @@ var reservedAutoResolveTools = map[string]struct{}{
 //   - Server-side ingests (synthetic sensor, zero ID: tenant uploads, platform
 //     imports) are trusted — the server chose the tool name.
 //   - Reserved non-scanner tool names are never auto-resolved by a sensor.
-//   - A sensor that declares its tools may only auto-resolve those tools.
-//   - A legacy sensor that declares no tools keeps the previous behavior
+//   - A sensor may only auto-resolve its effective tools: what it reports
+//     installed narrowed by its tool limit, or its declared tools when it
+//     never reported (RFC-029 §4.3.1).
+//   - A legacy sensor that declares no tools and reports none keeps the previous behavior
 //     (backward compatibility with old SDKs / unconfigured sensors), with a
 //     warning so operators can see which sensors should declare their tools.
 func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sensor, toolName string) bool {
@@ -751,16 +753,18 @@ func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sens
 		return false
 	}
 
-	tools := agt.Tools
+	tools := agt.EffectiveTools()
+	reported := agt.Reported.Tools != nil
 	// The async ingest worker rebuilds a minimal sensor from the job (ID +
-	// tenant only); load the declared tools from the sensor row in that case.
-	if len(tools) == 0 && s.sensorRepo != nil {
+	// tenant only); load the sensor row in that case.
+	if len(tools) == 0 && !reported && s.sensorRepo != nil {
 		if stored, err := s.sensorRepo.GetByID(ctx, agt.ID); err == nil && stored != nil {
-			tools = stored.Tools
+			tools = stored.EffectiveTools()
+			reported = stored.Reported.Tools != nil
 		}
 	}
 
-	if len(tools) == 0 {
+	if len(tools) == 0 && !reported {
 		s.logger.Warn("auto-resolve allowed for legacy sensor with no declared tools; declare the sensor's tools to scope auto-resolve",
 			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
 		return true

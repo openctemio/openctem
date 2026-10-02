@@ -144,3 +144,18 @@ func TestUpdateSensor_ToolLimits(t *testing.T) {
 		t.Fatalf("[] did not clear the limit: %#v %#v", got.Tools, got.Capabilities)
 	}
 }
+
+func TestCreateSensor_ToolLimitsAreCanonical(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: shared.NewID().String(), Name: "s", Type: "worker",
+		Tools: []string{" Nuclei ", "gitleaks", "nuclei"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(out.Sensor.Tools, []string{"nuclei", "betterleaks"}) {
+		t.Fatalf("tools = %v", out.Sensor.Tools)
+	}
+}

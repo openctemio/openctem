@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strings"
 	"time"
 
 	auditapp "github.com/openctemio/api/internal/app/audit"
@@ -15,6 +16,7 @@ import (
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/audit"
 	sensordom "github.com/openctemio/api/pkg/domain/sensor"
+	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -135,7 +137,7 @@ func (s *SensorService) CreateSensor(ctx context.Context, input CreateSensorInpu
 		executionMode = sensorType.DefaultExecutionMode()
 	}
 
-	a, err := sensordom.NewSensor(tenantID, input.Name, sensorType, input.Description, input.Capabilities, input.Tools, executionMode)
+	a, err := sensordom.NewSensor(tenantID, input.Name, sensorType, input.Description, input.Capabilities, canonicalToolNames(input.Tools), executionMode)
 	if err != nil {
 		return nil, err
 	}
@@ -284,9 +286,9 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		a.Capabilities = append([]string{}, input.Capabilities...)
 	}
 
-	if input.Tools != nil && !slices.Equal(input.Tools, a.Tools) {
-		changes.Set("tools", a.Tools, input.Tools)
-		a.Tools = append([]string{}, input.Tools...)
+	if tools := canonicalToolNames(input.Tools); tools != nil && !slices.Equal(tools, a.Tools) {
+		changes.Set("tools", a.Tools, tools)
+		a.Tools = tools
 	}
 
 	// Revocation is permanent (ActivateSensor refuses it too). Without this a
@@ -365,6 +367,24 @@ type SensorHeartbeatData struct {
 	// when it carried none. It is sanitized here against the tool catalog
 	// before it is stored (sensordom.CapabilityReportInput.Sanitize).
 	Report *sensordom.CapabilityReportInput
+}
+
+// canonicalToolNames writes tool limits the way sensors report tools:
+// lowercase catalog names, a retired name as its replacement ("gitleaks" is
+// "betterleaks"), so the narrowing (reported ∩ limit) compares like with
+// like. nil stays nil (no change on update).
+func canonicalToolNames(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, t := range in {
+		t = strings.ToLower(tooldom.CanonicalName(strings.TrimSpace(t)))
+		if t != "" && !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // sanitizeReport turns a heartbeat's capability report into what may be
