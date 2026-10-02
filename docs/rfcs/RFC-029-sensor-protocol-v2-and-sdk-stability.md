@@ -167,6 +167,67 @@ is always present (`pending_jobs` 0 and `actions` `[]` when there is nothing).
 `resume`, `drain`, `rotate_key`, `update`; a client ignores one it does not
 know. Errors: `401`, `403 scope-denied`, `413`, `415`, `429`.
 
+#### 4.3.1 Sensor-reported capabilities (amendment, 2026-10-02)
+
+Before this, a sensor's tools, capabilities and concurrency came only from
+what an administrator typed when creating it. Dispatch then sent jobs to
+sensors that lacked the tool, never sent jobs to sensors that had a tool
+nobody declared, and could exceed the sensor's own concurrency. The heartbeat
+(v1 and v2, same body) now carries the sensor's own report. All members are
+optional and additive (§4.11 rule 1):
+
+```json
+{ "tools": [ {"name": "nuclei", "version": "3.3.0", "installed": true},
+             {"name": "semgrep", "installed": false} ],
+  "capabilities": ["nuclei", "dast", "validate"],
+  "max_concurrent_jobs": 5, "os": "linux", "arch": "amd64" }
+```
+
+**The sensor's report is the truth, and the administrator can only narrow
+it:**
+
+| | effective (what dispatch uses) |
+|---|---|
+| tools | reported *installed* tools ∩ the sensor's `tools` (an empty `tools` allows every reported tool) |
+| capabilities | reported ∩ the sensor's `capabilities` (likewise) |
+| concurrency | min(reported, `max_concurrent_jobs`) |
+
+- **A sensor that reports nothing keeps the administrator's values.** An absent
+  list is "not reported". `[]` is "reported none", so that sensor gets no
+  jobs for any tool.
+- **Absent parts keep the stored report.** A heartbeat without the members, for
+  example from an older SDK or a connection test, changes nothing. A
+  downgraded sensor keeps its last report, and `reported_at` shows how old it is.
+- **Untrusted input.** The server keeps only tool names that are in the tool
+  catalog: active platform tools, or the sensor's tenant's own tools. It keeps
+  only capabilities that are in the capability registry, name a known tool, or
+  are `validate` / `validate:<known tool>`. Lists are capped at 64 entries and
+  deduplicated. Names are lowercase `[a-z0-9._-]` (capabilities also allow
+  `:`). Versions and the platform are reduced to safe tokens. Concurrency is
+  clamped to 1..100. If the catalog cannot be read, the report is skipped and
+  the heartbeat still succeeds.
+- **Never widens.** Reporting cannot add a tool or capability the
+  administrator excluded, raise the concurrency above the administrator's
+  limit, or bypass scan-zone pinning (`zoneClaimPredicate` does not read it).
+- **Where it applies:** the selector (`FindAvailableWithCapacity`,
+  `FindAvailableWithTool`, `FindByCapabilities`), `ClaimJob`, tool and
+  capability availability (`GetAvailableToolsForTenant`, `HasSensorForTool`,
+  `…Capabilities…`), the command poll's capability gate (v1 and v2), the
+  sensor list filters and the platform capacity stats. The database computes
+  the rule in generated columns `effective_tools`, `effective_capabilities`
+  and `effective_max_jobs` (migration 000250). The domain computes it in
+  `Sensor.Effective*`, and a DB test keeps the two in step.
+- **Management API:** `GET /api/v1/sensors[/{id}]` keeps `tools`,
+  `capabilities` and `max_concurrent_jobs` as the administrator's settings (the
+  limits). It adds `reported` (null before the first report), `effective`, and
+  `capability_mismatch` (`tools_not_installed`, `capabilities_not_reported`,
+  `max_jobs_above_reported`; omitted when there is nothing to show). On
+  `PUT /api/v1/sensors/{id}`, a `tools` or `capabilities` list that is present
+  replaces the limit, `[]` removes it, and an absent list leaves it as it is.
+  Before this change, `[]` was ignored.
+- **SDK:** sdk-go `core.CapabilityReporter` / `BaseSensor.SetCapabilityReporter`
+  (asked on every heartbeat). `BaseSensor` always sends `os` and `arch`.
+
 ### 4.4 Commands
 
 Representation (v2 `Command`; `sensor_id` replaces v1's `agent_id`):

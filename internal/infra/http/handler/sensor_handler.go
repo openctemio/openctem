@@ -164,6 +164,35 @@ type SensorResponse struct {
 	UptimeSeconds *int64 `json:"uptime_seconds"`
 	// IsPlatformSensor marks shared platform infrastructure.
 	IsPlatformSensor bool `json:"is_platform_sensor"`
+
+	// capabilities, tools and max_concurrent_jobs above are the
+	// administrator's settings (limits). Reported is what the sensor last
+	// reported it has (RFC-029 §4.3.1), null when it never reported;
+	// Effective is what dispatch uses: the report narrowed by the
+	// administrator's settings (the settings alone without a report).
+	Reported  *SensorReportedResponse `json:"reported"`
+	Effective SensorEffectiveResponse `json:"effective"`
+	// CapabilityMismatch lists settings the sensor's report contradicts
+	// (a tool set here that the sensor does not have); omitted when none.
+	CapabilityMismatch *sensor.CapabilityMismatch `json:"capability_mismatch,omitempty"`
+}
+
+// SensorReportedResponse is a sensor's last capability report. A list is
+// null when that part was never reported, [] when the sensor reported none.
+type SensorReportedResponse struct {
+	Tools             []sensor.ReportedTool `json:"tools"`
+	Capabilities      []string              `json:"capabilities"`
+	MaxConcurrentJobs *int                  `json:"max_concurrent_jobs"`
+	OS                string                `json:"os,omitempty"`
+	Arch              string                `json:"arch,omitempty"`
+	ReportedAt        *string               `json:"reported_at"`
+}
+
+// SensorEffectiveResponse is what dispatch uses for a sensor.
+type SensorEffectiveResponse struct {
+	Tools             []string `json:"tools"`
+	Capabilities      []string `json:"capabilities"`
+	MaxConcurrentJobs int      `json:"max_concurrent_jobs"`
 }
 
 // SensorProtocolResponse is the protocol telemetry of a sensor's last
@@ -777,6 +806,30 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 			SeenAt:     p.SeenAt.UTC().Format(time.RFC3339),
 			Deprecated: p.Deprecated(),
 		}
+	}
+
+	resp.Effective = SensorEffectiveResponse{
+		Tools:             a.EffectiveTools(),
+		Capabilities:      a.EffectiveCapabilities(),
+		MaxConcurrentJobs: a.EffectiveMaxConcurrentJobs(),
+	}
+	if rep := a.Reported; rep.ReportedAt != nil || rep.HasReport() {
+		out := &SensorReportedResponse{
+			Tools: rep.Tools, Capabilities: rep.Capabilities,
+			OS: rep.OS, Arch: rep.Arch,
+		}
+		if rep.MaxConcurrentJobs > 0 {
+			n := rep.MaxConcurrentJobs
+			out.MaxConcurrentJobs = &n
+		}
+		if rep.ReportedAt != nil {
+			ts := rep.ReportedAt.UTC().Format(time.RFC3339)
+			out.ReportedAt = &ts
+		}
+		resp.Reported = out
+	}
+	if m := a.CapabilityMismatch(); !m.IsEmpty() {
+		resp.CapabilityMismatch = &m
 	}
 
 	return resp

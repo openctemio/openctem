@@ -44,6 +44,12 @@ type sensorSvcMockRepo struct {
 	hasSensorForCapabilityErr   error
 	getPlatformSensorStatsErr   error
 
+	// Capability catalog (KnownCapabilityNames) and the last heartbeat write.
+	knownTools    map[string]bool
+	knownCaps     map[string]bool
+	knownErr      error
+	lastHeartbeat sensor.HeartbeatUpdate
+
 	// Return overrides
 	availableSensors    []*sensor.Sensor
 	availableCapSensors []*sensor.Sensor
@@ -214,6 +220,7 @@ func (m *sensorSvcMockRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.updateHeartbeatCalls++
+	m.lastHeartbeat = hb
 	if m.updateErr != nil {
 		return false, m.updateErr
 	}
@@ -2539,4 +2546,22 @@ func TestSensorService_AuthenticateByAPIKey_ExpiredKeyRow(t *testing.T) {
 func hashForTest(_ *app.SensorService, plaintext string) string {
 	sum := sha256.Sum256([]byte(plaintext))
 	return hex.EncodeToString(sum[:])
+}
+
+func (m *sensorSvcMockRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, tools, caps []string) (map[string]bool, map[string]bool, error) {
+	if m.knownErr != nil {
+		return nil, nil, m.knownErr
+	}
+	kt, kc := map[string]bool{}, map[string]bool{}
+	for _, t := range tools {
+		if m.knownTools[t] {
+			kt[t] = true
+		}
+	}
+	for _, c := range caps {
+		if m.knownCaps[c] {
+			kc[c] = true
+		}
+	}
+	return kt, kc, nil
 }

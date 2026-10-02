@@ -207,6 +207,7 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		UptimeSeconds: req.Uptime,
 		Protocol:      protocol,
 		UserAgent:     r.UserAgent(),
+		Report:        req.capabilityReport(),
 	}
 }
 
@@ -224,7 +225,7 @@ func (h *SensorControlV2Handler) PollCommands(w http.ResponseWriter, r *http.Req
 	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
 	cmds, err := h.commands.service.Poll(r.Context(), command.PollInput{
 		TenantID: s.TenantID.String(), SensorID: s.ID.String(),
-		Capabilities: s.Capabilities, Limit: limit,
+		Capabilities: s.EffectiveCapabilities(), Limit: limit,
 	})
 	if err != nil {
 		h.internal(w, "commands", err)

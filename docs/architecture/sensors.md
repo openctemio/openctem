@@ -512,6 +512,46 @@ or `null` before the first heartbeat that recorded it. A sensor on sdk-go
 `sensor_protocol_requests_total{protocol, route}` counts every sensor request
 by protocol and route name (closed sets).
 
+## Sensor-reported capabilities
+
+[RFC-029 §4.3.1](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md).
+The heartbeat (v1 and v2) can carry what the sensor really has: `tools`
+(`[{name, version, installed}]`), `capabilities`, `max_concurrent_jobs`, `os`
+and `arch`. The sensor's report is the truth. The administrator's `tools`,
+`capabilities` and `max_concurrent_jobs` on the sensor are **limits** that can
+only narrow it:
+
+- effective tools = reported installed tools ∩ `tools` (empty `tools`: all reported)
+- effective capabilities = reported ∩ `capabilities` (likewise)
+- effective concurrency = min(reported, `max_concurrent_jobs`)
+- not reported (old SDK): the administrator's values, unchanged
+
+Storage (migration 000250): `reported_tools` (jsonb), `reported_tool_names`,
+`reported_capabilities`, `reported_max_jobs`, `reported_os`, `reported_arch`,
+`reported_at`, and the generated columns `effective_tools`,
+`effective_capabilities`, `effective_max_jobs`, built with
+`sensor_effective_list(declared, reported)`. Every dispatch query reads the
+`effective_*` columns: selector, `ClaimJob`, tool and capability
+availability, list filters and platform capacity. The command poll's capability
+gate and the API use `Sensor.EffectiveCapabilities()` and the other
+`Effective*` methods (`pkg/domain/sensor/reported.go`).
+`sensor_reported_caps_db_test.go` (postgres) checks that the columns and the
+methods agree across a matrix of inputs.
+
+Ingest (`SensorService.UpdateHeartbeat` → `sanitizeReport`): one catalog
+lookup (`KnownCapabilityNames`: active platform tools and the tenant's own,
+plus the capability registry), then `CapabilityReportInput.Sanitize`. Unknown
+or malformed names are dropped, lists are capped at 64, versions and the
+platform are reduced to safe tokens, and concurrency is clamped to 1..100. A
+report part that is absent leaves the stored part alone. If the catalog cannot
+be read, the report is skipped and the heartbeat still succeeds.
+
+`GET /api/v1/sensors[/{id}]` returns `reported` (null before the first
+report), `effective`, and `capability_mismatch` (`tools_not_installed`,
+`capabilities_not_reported`, `max_jobs_above_reported`; omitted when there is
+nothing to show). `PUT` with `tools: []` / `capabilities: []` removes the
+limit.
+
 ## History written in the old vocabulary
 
 Hash-chained audit rows (`agent.*`, resource type `agent`) and append-only

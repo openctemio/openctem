@@ -1150,3 +1150,7 @@ func TestNewScanSessionService(t *testing.T) {
 		t.Fatal("expected non-nil service")
 	}
 }
+
+func (m *scanSessionMockSensorRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
+	return map[string]bool{}, map[string]bool{}, nil
+}

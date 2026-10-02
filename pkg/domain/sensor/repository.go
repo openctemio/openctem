@@ -60,6 +60,13 @@ type HeartbeatUpdate struct {
 	// heartbeat reported it (already clamped). 0 leaves the stored start time
 	// untouched: SDKs that do not report it send nothing.
 	UptimeSeconds int64
+
+	// Report is the sanitized capability report the heartbeat carried; nil
+	// leaves the stored report untouched, and so does each part of it that
+	// was not reported (nil list, zero concurrency, empty OS/arch). A sensor
+	// downgraded to an SDK without the report keeps its last one, whose
+	// reported-at time shows how old it is.
+	Report *CapabilityReport
 }
 
 // MaxReportedUptime caps the uptime a heartbeat may report (ten years); a
@@ -197,6 +204,12 @@ type Repository interface {
 
 	// HasSensorForCapability checks if there's at least one sensor that supports the given capability.
 	HasSensorForCapability(ctx context.Context, tenantID shared.ID, capability string) (bool, error)
+
+	// KnownCapabilityNames returns which of the given names are in the tool
+	// catalog (active tools, platform or the tenant's own; tenantID nil:
+	// platform only) and which of the given capability names are in the
+	// capability registry. Used to sanitize a sensor's capability report.
+	KnownCapabilityNames(ctx context.Context, tenantID *shared.ID, tools, capabilities []string) (knownTools, knownCaps map[string]bool, err error)
 
 	// ==========================================================================
 	// Platform Sensor Statistics

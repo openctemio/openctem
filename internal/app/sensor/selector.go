@@ -153,11 +153,12 @@ func (s *SensorSelector) selectLeastLoaded(sensors []*sensordom.Sensor) *sensord
 	now := time.Now()
 
 	for _, a := range sensors {
-		if a.MaxConcurrentJobs <= 0 {
+		limit := a.EffectiveMaxConcurrentJobs()
+		if limit <= 0 {
 			// Sensor has no limit, assume 0 load
 			return a
 		}
-		if a.CurrentJobs >= a.MaxConcurrentJobs {
+		if a.CurrentJobs >= limit {
 			// Fully loaded — never a candidate.
 			continue
 		}
