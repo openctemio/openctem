@@ -862,6 +862,38 @@ Code: `pkg/domain/sensor/manifest.go`, `internal/app/sensor/manifest.go`,
 `sensor_manifest_handler.go`. Migration 000258. Tests:
 `routes/sensor_manifest_db_test.go`, `sensor/manifest_test.go`.
 
+## Collector sensors
+
+A sensor of type `collector` (`sensor.SensorTypeCollector`) pulls asset
+inventory from an external system and submits it as CTIS assets. It runs
+its collections on its own schedule: it takes no dispatched scans. The
+reference implementation is the OpenCTEM Asset Collector
+([github.com/openctemio/asset-collector](https://github.com/openctemio/asset-collector),
+image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
+
+- **Type and key.** An administrator creates the sensor with type
+  `collector` (a rotated key gets `sensor.CollectorScopes()`). Until
+  enrollment ships ([RFC-032](../rfcs/RFC-032-sensor-enrollment-and-identity.md)),
+  the collector uses an `rda_` key and renews it like any other sensor.
+- **Protocol.** It uses protocol v2 through sdk-go `pkg/sensorkit` (hello,
+  heartbeat with control block, manifest, results ingest, durable outbox,
+  key renewal), with commands off. Reports go to
+  `PUT /api/v2/sensor/results/{report_id}` (unbound to a command) with
+  `metadata.source_type = "collector"` and the collector type as
+  `tool.name`.
+- **Tools.** It reports one tool per configured collector type, of kind
+  `collector` (`sensor.ToolKindCollector`): `gcp-dns`, `vcenter`, `ldap`,
+  `splunk` and `prtg`. The platform keeps only tool names in its catalog, so
+  these are in it (migration 000265, category `inventory`, "Asset
+  Collectors").
+- **Not scannable.** Their catalog rows carry `metadata.kind =
+  "collector"` (`tool.KindCollector`). Scan creation and trigger refuse such
+  a tool, as a single scanner or as a pipeline step (`tool.Tool.IsCollector`,
+  error code `TOOL_NOT_SCANNER` at trigger), because nothing would ever
+  claim the job.
+- **Adding a collector type.** Add a catalog row with `metadata.kind =
+  "collector"` in a migration, then report it from the collector.
+
 ## Scanner content
 
 [RFC-031](../rfcs/RFC-031-managed-sensor-updates.md). A tool's binary is

@@ -224,6 +224,19 @@ func (t *Tool) SupportsTarget(targetType string) bool {
 	return slices.Contains(t.SupportedTargets, targetType)
 }
 
+// KindCollector is the catalog's metadata.kind of an asset collector (a source
+// a collector sensor pulls inventory from, e.g. "vcenter"; sensor tool kind
+// "collector"). Collectors are in the catalog so sensors can report them, but they
+// run on their own schedule and take no dispatched scans.
+const KindCollector = "collector"
+
+// IsCollector reports whether the tool is an asset collector, not a scanner
+// (metadata.kind = "collector"). Scans refuse it.
+func (t *Tool) IsCollector() bool {
+	k, _ := t.Metadata["kind"].(string)
+	return k == KindCollector
+}
+
 // IsPlatformTool returns true if this is a platform-provided tool.
 func (t *Tool) IsPlatformTool() bool {
 	return t.TenantID == nil
