@@ -323,3 +323,44 @@ func TestCTEMCycleHandler_ListAndUnlinkProfiles(t *testing.T) {
 		t.Errorf("profile deleted by unlink: n=%d err=%v", n, err)
 	}
 }
+
+// TestBusinessService_AssetCount: list and get carry asset_count, counted
+// once per asset even when it is linked with two dependency types, and only
+// for the tenant's own assets.
+func TestBusinessService_AssetCount(t *testing.T) {
+	db, ctx := openScopingTestDB(t)
+	tenantID := seedHandlerTenant(ctx, t, db)
+
+	a1 := seedAssetRow(ctx, t, db, tenantID, "a1", "active", false)
+	a2 := seedAssetRow(ctx, t, db, tenantID, "a2", "active", false)
+	linked := mustID(ctx, t, db, `INSERT INTO business_services (tenant_id, name) VALUES ($1,'Linked') RETURNING id`, tenantID)
+	empty := mustID(ctx, t, db, `INSERT INTO business_services (tenant_id, name) VALUES ($1,'Empty') RETURNING id`, tenantID)
+	mustExec(ctx, t, db, `INSERT INTO business_service_assets (tenant_id, service_id, asset_id, dependency_type) VALUES
+		($1,$2,$3,'runs_on'),($1,$2,$3,'depends_on'),($1,$2,$4,'runs_on')`, tenantID, linked, a1, a2)
+
+	h := NewBusinessServiceHandler(db, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.List(w, cycleRequest(http.MethodGet, "/api/v1/business-services", tenantID, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("list = %d %s", w.Code, w.Body.String())
+	}
+	var page struct {
+		Data []BusinessServiceResponse `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	got := map[string]int{}
+	for _, s := range page.Data {
+		got[s.ID] = s.AssetCount
+	}
+	if got[linked] != 2 || got[empty] != 0 || len(got) != 2 {
+		t.Errorf("asset_count = %v, want linked=2 empty=0", got)
+	}
+
+	w = httptest.NewRecorder()
+	h.Get(w, cycleRequest(http.MethodGet, "/api/v1/business-services/"+linked, tenantID, linked))
+	if !strings.Contains(w.Body.String(), `"asset_count":2`) {
+		t.Errorf("get body = %s", w.Body.String())
+	}
+}

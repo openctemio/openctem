@@ -79,5 +79,13 @@ global rows. The four built-in profiles are seeded per tenant with
 can be linked like any other. Rows under the internal `system` tenant are not
 listed by `GET /attacker-profiles` and cannot be linked.
 
+## Business services: `asset_count`
+
+`GET /api/v1/business-services` and `GET /{id}` (and the Create/Update
+responses) carry `asset_count`: distinct tenant assets linked through
+`business_service_assets`, computed as a correlated subquery in the same
+query. The Business context page shows it so owners see services with no
+assets.
+
 Linking and unlinking are not audit-logged, matching the rest of the cycle
 endpoints.
