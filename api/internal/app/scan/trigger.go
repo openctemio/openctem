@@ -28,6 +28,10 @@ type TriggerScanExecInput struct {
 	ScanID      string         `json:"scan_id" validate:"required,uuid"`
 	TriggeredBy string         `json:"triggered_by" validate:"omitempty,uuid"`
 	Context     map[string]any `json:"context"`
+	// RetryAttempt is set by the retry controller: the new run is created
+	// with it, so the retry budget is enforced even when the run finishes
+	// before anything could update it afterwards.
+	RetryAttempt int `json:"-"`
 }
 
 // TriggerScan triggers a scan execution.
@@ -80,18 +84,21 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		run, err = s.triggerWorkflow(ctx, sc, input.TriggeredBy, input.Context)
+		run, err = s.triggerWorkflow(ctx, sc, input.TriggeredBy, input.Context, input.RetryAttempt)
 	} else {
-		run, err = s.triggerSingleScan(ctx, sc, input.TriggeredBy, input.Context)
+		run, err = s.triggerSingleScan(ctx, sc, input.TriggeredBy, input.Context, input.RetryAttempt)
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	// Record the run
-	sc.RecordRun(run.ID, string(run.Status))
-	if err := s.scanRepo.Update(ctx, sc); err != nil {
+	// Record the run on the scan with one narrow UPDATE. Writing the whole scan
+	// row back from the copy read above undid any edit made while the trigger
+	// ran (a pause, a config change), and never stored the run status anyway
+	// (the generic Update does not carry the run columns). The run is counted
+	// when it finishes (RecordRun / the timeout reaper).
+	if err := s.scanRepo.RecordRunStarted(ctx, sc.ID, run.ID); err != nil {
 		s.logger.Warn("failed to record run in scan", "error", err)
 	}
 
@@ -108,7 +115,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 }
 
 // triggerWorkflow triggers a workflow pipeline execution.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any) (*pipeline.Run, error) {
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
 	if sc.PipelineID == nil {
 		return nil, fmt.Errorf("%w: pipeline_id is required for workflow", shared.ErrValidation)
 	}
@@ -189,6 +196,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 		return nil, fmt.Errorf("failed to create pipeline run: %w", err)
 	}
 	run.SetTotalSteps(len(steps))
+	run.RetryAttempt = retryAttempt
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
 	if sc.ProfileID != nil {
 		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
@@ -227,7 +235,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 const QuickScanTemplateID = "00000000-0000-0000-0000-000000000001"
 
 // triggerSingleScan triggers a single scanner execution.
-func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any) (*pipeline.Run, error) {
+func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
 	// Build context
 	if runContext == nil {
 		runContext = make(map[string]any)
@@ -317,6 +325,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
 	run.SetTotalSteps(1)
+	run.RetryAttempt = retryAttempt
 	run.Start()
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
 	if sc.ProfileID != nil {

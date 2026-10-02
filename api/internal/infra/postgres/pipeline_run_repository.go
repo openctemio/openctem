@@ -157,6 +157,9 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 		}
 	}
 
+	// A terminal run is final: the guard keeps a stale in-memory copy (a cancel
+	// that read the run before it completed, a late write after the reaper
+	// marked it timeout) from reopening it or overwriting its outcome.
 	query := `
 		UPDATE pipeline_runs
 		SET status = $2, context = $3,
@@ -164,6 +167,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 		    started_at = $9, completed_at = $10, error_message = $11,
 		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14
 		WHERE id = $1
+		  AND status NOT IN ` + terminalRunStatusesSQL + `
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -189,10 +193,27 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return shared.ErrNotFound
+		return r.notUpdatedError(ctx, run.ID)
 	}
 
 	return nil
+}
+
+// terminalRunStatusesSQL lists the statuses a run never leaves.
+const terminalRunStatusesSQL = `('completed', 'failed', 'canceled', 'timeout')`
+
+// notUpdatedError explains a guarded UPDATE that touched no row: the run is
+// missing, or it already finished.
+func (r *PipelineRunRepository) notUpdatedError(ctx context.Context, id shared.ID) error {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pipeline_runs WHERE id = $1)`, id.String()).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check pipeline run: %w", err)
+	}
+	if !exists {
+		return shared.ErrNotFound
+	}
+	return pipeline.ErrRunAlreadyFinished
 }
 
 // Delete deletes a run.
@@ -320,16 +341,28 @@ func (r *PipelineRunRepository) UpdateStats(ctx context.Context, id shared.ID, c
 	return err
 }
 
-// UpdateStatus updates run status.
+// UpdateStatus updates run status. Only a run that has not finished moves:
+// for a terminal run it returns pipeline.ErrRunAlreadyFinished and changes
+// nothing, so exactly one caller wins the transition to a terminal state and
+// only that caller records the outcome (on the scan, in metrics, in the audit
+// log). Two parallel final steps, or a completion racing a cancel or the
+// timeout reaper, otherwise each recorded the run once.
 func (r *PipelineRunRepository) UpdateStatus(ctx context.Context, id shared.ID, status pipeline.RunStatus, errorMessage string) error {
 	query := `
 		UPDATE pipeline_runs
 		SET status = $2, error_message = $3,
-		    completed_at = CASE WHEN $2::varchar IN ('completed', 'failed', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ` + terminalRunStatusesSQL + ` THEN NOW() ELSE completed_at END
 		WHERE id = $1
+		  AND status NOT IN ` + terminalRunStatusesSQL + `
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage)
-	return err
+	result, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage)
+	if err != nil {
+		return fmt.Errorf("failed to update pipeline run status: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return r.notUpdatedError(ctx, id)
+	}
+	return nil
 }
 
 // CreateRunIfUnderLimit atomically checks concurrent run limits and creates run if under limit.
@@ -518,9 +551,8 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 			RETURNING sr.id
 		), recorded_scans AS (
 			UPDATE scans s
-			SET last_run_id = t.id,
-			    last_run_at = NOW(),
-			    last_run_status = 'timeout',
+			SET last_run_status = CASE WHEN s.last_run_id IS NULL OR s.last_run_id = t.id THEN 'timeout' ELSE s.last_run_status END,
+			    last_run_id = COALESCE(s.last_run_id, t.id),
 			    total_runs = s.total_runs + 1,
 			    failed_runs = s.failed_runs + 1,
 			    updated_at = NOW()

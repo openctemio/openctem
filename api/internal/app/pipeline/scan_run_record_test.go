@@ -94,3 +94,38 @@ func TestRecordScanRun_RecorderErrorIsSwallowed(t *testing.T) {
 		t.Fatalf("recorder should still have been attempted once, got %d", len(rec.calls))
 	}
 }
+
+// statusOnlyRunRepo answers UpdateStatus the way the repository does: the
+// first terminal transition wins, every later one is refused.
+type statusOnlyRunRepo struct {
+	pipelinedom.RunRepository
+	finished bool
+}
+
+func (r *statusOnlyRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ pipelinedom.RunStatus, _ string) error {
+	if r.finished {
+		return pipelinedom.ErrRunAlreadyFinished
+	}
+	r.finished = true
+	return nil
+}
+
+// Two parallel final steps (or a completion racing a cancel) both reach the
+// "run is complete" branch. Only the caller that actually moved the run may
+// record it on the scan; before, both did and the scan counted the run twice.
+func TestFinishRun_OnlyTheWinningTransitionRecordsTheRun(t *testing.T) {
+	rec := &fakeScanRunRecorder{}
+	s := &Service{scanRunRecorder: rec, runRepo: &statusOnlyRunRepo{}, logger: logger.NewNop()}
+	scanID := shared.NewID()
+	run := &pipelinedom.Run{ID: shared.NewID(), TenantID: shared.NewID(), ScanID: &scanID}
+
+	if !s.finishRun(context.Background(), run, pipelinedom.RunStatusCompleted, "") {
+		t.Fatal("first transition should win")
+	}
+	if s.finishRun(context.Background(), run, pipelinedom.RunStatusFailed, "late") {
+		t.Fatal("second transition must lose: the run already finished")
+	}
+	if len(rec.calls) != 1 || rec.calls[0].status != "completed" {
+		t.Fatalf("scan recordings = %+v, want exactly one 'completed'", rec.calls)
+	}
+}
