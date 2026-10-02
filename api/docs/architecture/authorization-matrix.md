@@ -1012,7 +1012,11 @@ Tenable.sc's RBAC.
    role `SetUserRoles` drops): nobody may take away a role they could not have
    granted, so a delegated role manager cannot strip admin from an administrator;
    only an owner may change an owner's roles, and the tenant's owner keeps the
-   owner role. The handler-level check
+   owner role. **Deleting a custom role has the same ceiling** (`DeleteRole`,
+   owner decision 2026-10-02): `DELETE /api/v1/roles/{id}` needs
+   `team:roles:delete` *and* every permission (and full data access) the role
+   carries, so an administrator cannot delete an owner-built role holding
+   owner-only permissions (403); owners may delete any custom role. The handler-level check
    (`assertCanGrantPermissions`) lets administrators through, so the service is
    the enforcement point. SCIM mappings, SSO/SAML JIT and the membership-role
    update can never produce `owner`.
