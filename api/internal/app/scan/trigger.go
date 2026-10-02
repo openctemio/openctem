@@ -999,22 +999,28 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 // listGroupExclusionCandidates materializes an asset group's members into scope
 // exclusion candidates (id + name). Paginated to keep memory bounded.
 func (s *Service) listGroupExclusionCandidates(ctx context.Context, groupID shared.ID) ([]scope.ExclusionCandidate, error) {
-	const perPage = 500
+	// pagination.New clamps perPage to 100. This was 500 with a
+	// page*500 >= total stop, so after the first (clamped) page of 100 the
+	// loop believed it had read everything: a scan of a group with 101-500
+	// assets silently scanned only the first 100. Stop on rows read instead.
+	const perPage = 100
 	page := pagination.New(1, perPage)
 	candidates := make([]scope.ExclusionCandidate, 0)
+	read := 0
 
 	for {
 		res, err := s.assetGroupRepo.GetGroupAssets(ctx, groupID, page, nil)
 		if err != nil {
 			return nil, err
 		}
+		read += len(res.Data)
 		for _, ga := range res.Data {
 			candidates = append(candidates, scope.ExclusionCandidate{
 				ID:     ga.ID,
 				Values: []string{ga.Name},
 			})
 		}
-		if len(res.Data) == 0 || int64(page.Page*perPage) >= res.Total {
+		if len(res.Data) == 0 || int64(read) >= res.Total {
 			break
 		}
 		page.Page++
