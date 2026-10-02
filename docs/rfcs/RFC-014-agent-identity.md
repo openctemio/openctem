@@ -1,6 +1,10 @@
 # RFC-014 — k8s-style agent identity (short-lived, auto-rotating credentials)
 
 > Status: **Proposed** (design of record; phased implementation)
+> Update 2026-10-02: Phases 4 (scopes) and 5 (OIDC for CI) and the
+> enrollment model continue in [RFC-032](RFC-032-sensor-enrollment-and-identity.md).
+> The registration tokens described below were never wired: their code is
+> dead and their table was moved to the `deprecated` schema (RFC-032 §3.4).
 > Scope: authentication of **our agents** (phone-home scanners/runners/collectors).
 > **Non-goal:** external connectors (DefectDojo/Jira/Nessus) — those keep the
 > per-tenant AES-encrypted credential model + per-tenant webhook HMAC. Different

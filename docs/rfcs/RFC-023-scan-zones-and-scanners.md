@@ -114,6 +114,10 @@ behaving well, so:
 
 ## 4b. Protocol v2: identity, integrity and supply chain
 
+*Enrollment, identity and capability trust (D10, D20, D22, P1–P4) are
+specified in detail by [RFC-032](RFC-032-sensor-enrollment-and-identity.md),
+which takes precedence where the two differ.*
+
 Target model for every sensor (first- or third-party), chosen to be the most
 secure option that still works through corporate proxies and for third-party
 developers. Sources: GitHub Actions runner auth, Kubernetes kubelet TLS
