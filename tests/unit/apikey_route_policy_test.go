@@ -25,6 +25,7 @@ var keyChainExempt = map[string]string{
 	"/api/v1/mcp":                 "key-only endpoint (the MCP server)",
 	"/api/v1/webhooks/incoming":   "HMAC-verified inbound webhooks",
 	"/api/v1/module-presets":      "JWT-only base chain",
+	"/api/v1/version":             "JWT-only base chain (authMiddleware, no oct_ keys)",
 	"/api/v1/validation/evidence": "sensor-key auth only",
 	"/health":                     "public",
 	"/ready":                      "public",

@@ -64,11 +64,22 @@ COPY . .
 # Disable workspace mode for standalone build
 ENV GOWORK=off
 
+# Build identity, shown by GET /api/v1/version (Help > About). docker-publish.yml
+# passes the tag, commit and build time; a build without them reports the
+# checkout it runs in, or "dev".
+ARG VERSION=""
+ARG COMMIT=""
+ARG BUILD_TIME=""
+
 # Build the main server
 RUN CGO_ENABLED=0 \
     GOOS=${TARGETOS:-linux} \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
-    go build -ldflags="-s -w" -o /app/bin/server ./cmd/server
+    go build -ldflags="-s -w \
+      -X github.com/openctemio/api/pkg/version.Version=${VERSION} \
+      -X github.com/openctemio/api/pkg/version.Commit=${COMMIT} \
+      -X github.com/openctemio/api/pkg/version.BuildTime=${BUILD_TIME}" \
+    -o /app/bin/server ./cmd/server
 
 # Build bootstrap-admin (initial setup: platform administrators and the first
 # organization)

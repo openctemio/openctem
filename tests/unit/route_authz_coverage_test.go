@@ -43,7 +43,9 @@ var gateFuncs = map[string]bool{
 // gated, each with the reason. Keys are "METHOD /path" (path as written in the
 // source, with {param} placeholders). Adding a route here is a SECURITY-
 // sensitive change — it declares a route public/self/machine-scoped.
-var routeAuthzAllowlist = map[string]string{}
+var routeAuthzAllowlist = map[string]string{
+	"GET /api/v1/version": "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
+}
 
 // allowlistPrefixes: groups of routes authenticated by a non-permission gate
 // (public auth flow, sensor API-key, SCIM/MCP bearer, webhooks HMAC, or

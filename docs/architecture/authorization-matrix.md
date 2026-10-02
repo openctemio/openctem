@@ -415,6 +415,19 @@ These routes require the tenant ID in the URL path and use database-based member
 | `DELETE /api/v1/users/me/sessions` | JWT (local auth only) |
 | `DELETE /api/v1/users/me/sessions/{id}` | JWT (local auth only) |
 
+### Build version
+
+| Endpoint | Required Auth |
+|----------|---------------|
+| `GET /api/v1/version` | JWT (any signed-in user; no `oct_` keys) |
+| `GET /api/v1/admin/version` | Console session (any admin role) |
+
+The running build (`version`, `commit`, `build_time`, `channel`) for Help >
+About. Deliberately not on the public `/health`: an unauthenticated client
+cannot fingerprint the build. Release images stamp it with `-ldflags` from the
+tag; the dev container's air build stamps `<highest tag>-dev`; an unstamped
+binary reads the checkout's `.git` (`pkg/version`).
+
 ### Platform Admin Routes (`/api/v1/admin/*`)
 
 Platform admin routes are for OpenCTEM operators, NOT tenant users. They

@@ -40,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.vars.outputs.VERSION }}
+      build_time: ${{ steps.vars.outputs.BUILD_TIME }}
       environment: ${{ steps.vars.outputs.ENVIRONMENT }}
       has_dockerhub: ${{ steps.check.outputs.HAS_DOCKERHUB }}
       api_tags: ${{ steps.vars.outputs.API_TAGS }}
@@ -90,6 +91,7 @@ jobs:
 
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
 
           if [ "$ENVIRONMENT" = "staging" ]; then
             if [[ "$VERSION" != *"-staging"* ]]; then
@@ -174,6 +176,11 @@ jobs:
           file: ./Dockerfile
           target: production
           platforms: ${{ matrix.platform }}
+          # Build identity for GET /api/v1/version (Help > About).
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ needs.prepare.outputs.build_time }}
           outputs: type=image,name=${{ env.API_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=registry,ref=${{ env.API_IMAGE }}:buildcache-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ env.API_IMAGE }}:buildcache-${{ matrix.arch }},mode=max
