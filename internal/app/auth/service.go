@@ -2008,40 +2008,20 @@ func (s *AuthService) generateTenantScopedAccessToken(
 			)
 			// Fall through to use hardcoded mapping
 		} else if len(permissions) > 0 {
-			// Only use database permissions if we actually have some
-			// Get user's roles for JWT claims
-			roles, err := s.roleService.GetUserRoles(ctx, membership.TenantID, userID)
-			if err != nil {
-				s.logger.Warn("failed to get user roles",
-					"error", err,
-					"user_id", userID,
-					"tenant_id", membership.TenantID,
-				)
-			}
-
-			var roleSlugs []string
-			for _, r := range roles {
-				roleSlugs = append(roleSlugs, r.Slug()) // Use Slug() for lowercase (owner, admin, member, viewer)
-			}
-
-			// Use the first role slug for backward compatibility
-			// Frontend expects lowercase: 'owner', 'admin', 'member', 'viewer'
-			if len(roleSlugs) > 0 {
-				membership.Role = roleSlugs[0]
-			}
-
+			// Only use database permissions if we actually have some.
+			// membership.Role stays the team role resolved from the system
+			// roles (owner/admin/member/viewer); RBAC role slugs used to
+			// replace it, and a custom role could be named "owner" (audit F1).
 			s.logger.Debug("using database permissions",
 				"user_id", userID,
 				"tenant_id", membership.TenantID,
 				"permissions_count", len(permissions),
-				"roles", roleSlugs,
 			)
 
 			return s.tokenGenerator.GenerateTenantScopedAccessTokenWithPermissions(
 				userID, email, name, sessionID,
 				membership,
 				permissions,
-				roleSlugs,
 				isAdmin,
 				permVersion,
 				authMethod,

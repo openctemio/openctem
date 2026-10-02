@@ -525,7 +525,8 @@ func (g *Generator) GenerateTenantScopedAccessToken(userID, email, name, session
 
 // GenerateTenantScopedAccessTokenWithPermissions creates an access token with explicit permissions.
 // This is used when permissions come from the database (multiple roles system) rather than hardcoded role mappings.
-// roles parameter contains the role names (e.g., "owner", "admin", "custom_role") for display purposes.
+// The role claim is tenant.Role, the team role; RBAC role slugs are not put in
+// the token.
 //
 // Permission handling:
 // - Owner/Admin (isAdmin=true): No permissions in JWT, bypass all permission checks
@@ -533,7 +534,7 @@ func (g *Generator) GenerateTenantScopedAccessToken(userID, email, name, session
 //
 // Note: For custom RBAC roles with many permissions, JWT might exceed 4KB.
 // In that case, consider limiting permissions or using role-based bypass.
-func (g *Generator) GenerateTenantScopedAccessTokenWithPermissions(userID, email, name, sessionID string, tenant TenantMembership, permissions []string, roles []string, isAdmin bool, permVersion int, authMethod string) (*TenantScopedAccessToken, error) {
+func (g *Generator) GenerateTenantScopedAccessTokenWithPermissions(userID, email, name, sessionID string, tenant TenantMembership, permissions []string, isAdmin bool, permVersion int, authMethod string) (*TenantScopedAccessToken, error) {
 	if userID == "" {
 		return nil, ErrEmptyUserID
 	}
@@ -541,11 +542,10 @@ func (g *Generator) GenerateTenantScopedAccessTokenWithPermissions(userID, email
 	now := time.Now()
 	expiresAt := now.Add(g.config.AccessTokenDuration)
 
-	// Use primary role for backward compatibility
+	// The role claim is the team role (owner/admin/member/viewer) the caller
+	// derived from the system roles. RBAC role slugs (roles) never replace it:
+	// a custom role may be named anything, and IsOwner reads this claim.
 	primaryRole := tenant.Role
-	if len(roles) > 0 {
-		primaryRole = roles[0]
-	}
 
 	// For admin users (owner/admin): no permissions needed - they bypass checks via IsAdmin flag
 	// For non-admin users: include permissions from database

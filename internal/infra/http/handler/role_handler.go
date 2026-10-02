@@ -105,7 +105,7 @@ type CreateRoleRequest struct {
 	Slug              string   `json:"slug" validate:"required,min=2,max=50,slug"`
 	Name              string   `json:"name" validate:"required,min=2,max=100"`
 	Description       string   `json:"description" validate:"max=500"`
-	HierarchyLevel    int      `json:"hierarchy_level" validate:"min=0,max=100"`
+	HierarchyLevel    int      `json:"hierarchy_level" validate:"min=0,max=79"`
 	HasFullDataAccess bool     `json:"has_full_data_access"`
 	Permissions       []string `json:"permissions" validate:"max=200,dive,max=100"`
 }
@@ -114,7 +114,7 @@ type CreateRoleRequest struct {
 type UpdateRoleRequest struct {
 	Name              *string  `json:"name" validate:"omitempty,min=2,max=100"`
 	Description       *string  `json:"description" validate:"omitempty,max=500"`
-	HierarchyLevel    *int     `json:"hierarchy_level" validate:"omitempty,min=0,max=100"`
+	HierarchyLevel    *int     `json:"hierarchy_level" validate:"omitempty,min=0,max=79"`
 	HasFullDataAccess *bool    `json:"has_full_data_access"`
 	Permissions       []string `json:"permissions,omitempty" validate:"omitempty,max=200,dive,max=100"`
 }
