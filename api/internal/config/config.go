@@ -127,6 +127,12 @@ type IngestConfig struct {
 	// SENSOR_V2_BLINDING_MIN_FINDINGS (100).
 	V2BlindingRatio       float64
 	V2BlindingMinFindings int
+
+	// CoverageAutoResolve is the mode of coverage-scoped auto-resolve for
+	// non-repository findings: "off", "dry_run" (default: log, metric and a
+	// "would resolve" audit entry, no state change) or "enforce".
+	// INGEST_COVERAGE_AUTO_RESOLVE.
+	CoverageAutoResolve string
 }
 
 // AsyncEnabled reports whether async ingest mode is on.
@@ -1130,6 +1136,7 @@ func Load() (*Config, error) {
 			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
+			CoverageAutoResolve:   getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
 		},
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.
