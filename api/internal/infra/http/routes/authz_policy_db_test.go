@@ -20,7 +20,9 @@ package routes
 //     are written by owners and admins only; members keep read;
 //   - a scope exclusion a member creates is pending and suppresses nothing;
 //     approving or rejecting it needs attack_surface:scope:exclusions:approve
-//     (owner/admin), and nobody approves their own exclusion.
+//     (owner/admin), and nobody approves their own exclusion;
+//   - business units are deleted by owners and admins only;
+//   - member emails in the member list are shown to owners and admins only.
 
 import (
 	"context"
@@ -121,6 +123,8 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		Scope: handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
 			postgres.NewScopeExclusionRepository(db), postgres.NewScopeScheduleRepository(db),
 			postgres.NewAssetRepository(db), log), v, log),
+		BusinessUnit: handler.NewBusinessUnitHandler(
+			app.NewBusinessUnitService(postgres.NewBusinessUnitRepository(db), postgres.NewAssetRepository(db), log), log),
 	}, cfg, log, authCfg, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
@@ -152,6 +156,7 @@ func (h *authzPolicyHarness) tenant() string {
 			`DELETE FROM template_sources WHERE tenant_id = $1`,
 			`DELETE FROM sensors WHERE tenant_id = $1`,
 			`DELETE FROM scope_exclusions WHERE tenant_id = $1`,
+			`DELETE FROM business_units WHERE tenant_id = $1`,
 			`DELETE FROM user_roles WHERE tenant_id = $1`,
 			`DELETE FROM tenant_members WHERE tenant_id = $1`,
 			`DELETE FROM tenants WHERE id = $1`,
