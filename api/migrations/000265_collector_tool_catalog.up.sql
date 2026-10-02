@@ -17,10 +17,14 @@ SELECT '00000000-0000-0000-0000-000000000209', 'inventory', 'Asset Collectors',
        'Database', TRUE, 9
 WHERE NOT EXISTS (SELECT 1 FROM tool_categories WHERE name = 'inventory' AND tenant_id IS NULL);
 
-INSERT INTO tools (id, name, display_name, description, category_id, capabilities, supported_targets,
-                   output_formats, docs_url, github_url, is_active, is_builtin, tags, metadata)
+-- install_method is set: the tool repository scans it into a non-null string,
+-- so a NULL would break every read of the catalog (tool list, GetByName).
+-- The collectors ship in the asset-collector container image.
+INSERT INTO tools (id, name, display_name, description, category_id, install_method, capabilities,
+                   supported_targets, output_formats, docs_url, github_url, is_active, is_builtin, tags, metadata)
 SELECT v.id::uuid, v.name, v.display_name, v.description,
        (SELECT id FROM tool_categories WHERE name = 'inventory' AND tenant_id IS NULL),
+       'docker',
        ARRAY[]::text[], ARRAY[]::text[], ARRAY['json'],
        'https://github.com/openctemio/asset-collector#collectors',
        'https://github.com/openctemio/asset-collector',
