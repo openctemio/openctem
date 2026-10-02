@@ -155,3 +155,32 @@ func TestTokenService_PreviousPepperDuringKeyRotation(t *testing.T) {
 		t.Fatalf("with the previous pepper listed the old token must authenticate: %v", err)
 	}
 }
+
+// RehashKey makes the fake a TokenRehasher (compare-and-swap).
+func (f *fakeTokenRepo) RehashKey(_ context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	t, ok := f.byID[id]
+	if !ok || f.byHash[oldHash] != t {
+		return false, nil
+	}
+	delete(f.byHash, oldHash)
+	f.byHash[newHash] = t
+	return true, nil
+}
+
+// A token that authenticates through the previous pepper is re-hashed with
+// the current one and keeps working once the previous key is removed.
+func TestTokenService_PreviousPepperTokenIsRehashed(t *testing.T) {
+	repo := newFakeTokenRepo()
+	minted, err := NewTokenService(repo, "old-pepper", logger.NewNop()).Mint(context.Background(), shared.NewID(), "pre-rotation", nil)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	rotated := NewTokenService(repo, "new-pepper", logger.NewNop())
+	rotated.SetLegacyPeppers("old-pepper")
+	if _, err := rotated.Authenticate(context.Background(), minted.Plaintext); err != nil {
+		t.Fatalf("authenticate through the previous pepper: %v", err)
+	}
+	if _, err := NewTokenService(repo, "new-pepper", logger.NewNop()).Authenticate(context.Background(), minted.Plaintext); err != nil {
+		t.Fatalf("a re-hashed token must authenticate without the previous pepper: %v", err)
+	}
+}

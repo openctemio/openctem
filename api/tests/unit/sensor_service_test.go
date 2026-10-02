@@ -2564,3 +2564,45 @@ func (m *sensorSvcMockRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID
 	}
 	return kt, kc, nil
 }
+
+// RehashKey makes the mock an app.KeyRehasher for the inline key.
+func (m *sensorSvcMockRepo) RehashKey(_ context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.sensors[id.String()]
+	if !ok || a.APIKeyHash != oldHash {
+		return false, nil
+	}
+	a.APIKeyHash = newHash
+	return true, nil
+}
+
+func (m *sensorSvcMockRepo) CountKeysNotUnderPepper(context.Context) (int, error) { return 0, nil }
+
+// A sensor key that authenticates through a rotated-out pepper is re-hashed
+// with the current pepper and keeps authenticating once the previous key is
+// removed (APP_ENCRYPTION_KEY_PREVIOUS).
+func TestSensorService_PreviousPepperKeyIsRehashed(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	old := newSensorSvcTestService(repo)
+	old.SetPepper("old-pepper")
+	out, err := old.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: shared.NewID().String(), Name: "pre-rotation", Type: "runner",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	rotated := newSensorSvcTestService(repo)
+	rotated.SetPepper("new-pepper")
+	rotated.SetLegacyPeppers("old-pepper")
+	if _, err := rotated.AuthenticateByAPIKey(context.Background(), out.APIKey); err != nil {
+		t.Fatalf("authenticate through the previous pepper: %v", err)
+	}
+
+	after := newSensorSvcTestService(repo)
+	after.SetPepper("new-pepper")
+	if _, err := after.AuthenticateByAPIKey(context.Background(), out.APIKey); err != nil {
+		t.Fatalf("a re-hashed key must authenticate without the previous pepper: %v", err)
+	}
+}

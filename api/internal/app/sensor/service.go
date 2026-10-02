@@ -189,6 +189,31 @@ func (s *SensorService) candidateHashes(apiKey string) []string {
 	return slices.Compact(out)
 }
 
+// KeyRehasher is implemented by a key store that can replace a key hash made
+// with an earlier pepper (compare-and-swap on the old hash) and count the
+// active keys still hashed with one.
+type KeyRehasher interface {
+	RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error)
+	CountKeysNotUnderPepper(ctx context.Context) (int, error)
+}
+
+// rehashKey stores a key's hash under the current pepper in place of the
+// earlier hash it matched, so the key stops depending on an old pepper
+// (APP_ENCRYPTION_KEY_PREVIOUS, SENSOR_KEY_PEPPER_PREVIOUS) or on the plain
+// SHA-256 of keys from before any pepper. Best effort and never fatal: the
+// key keeps verifying under the old hash if the write fails.
+func (s *SensorService) rehashKey(ctx context.Context, store any, kind string, id shared.ID, oldHash, newHash string) {
+	r, ok := store.(KeyRehasher)
+	if !ok {
+		return
+	}
+	if changed, err := r.RehashKey(ctx, id, oldHash, newHash); err != nil {
+		s.logger.Warn("sensor key re-hash under the current pepper failed", "kind", kind, "id", id.String(), "error", err)
+	} else if changed {
+		s.logger.Info("sensor key re-hashed under the current pepper", "kind", kind, "id", id.String())
+	}
+}
+
 // SetKeyTTL configures how long a self-renewed API key stays valid. Zero (the
 // default) disables expiry — renewed keys never expire. Should be called once
 // at boot before the service handles traffic.
@@ -1203,11 +1228,13 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 	// case (a key stored under the current pepper) is one query.
 	hashes := s.candidateHashes(apiKey)
 	var (
-		a   *sensordom.Sensor
-		err = shared.ErrNotFound
+		a       *sensordom.Sensor
+		err     = shared.ErrNotFound
+		matched string
 	)
 	for _, h := range hashes {
 		if a, err = s.repo.GetByAPIKeyHash(ctx, h); err == nil {
+			matched = h
 			break
 		}
 	}
@@ -1235,6 +1262,9 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "api key expired", shared.ErrUnauthorized)
 	}
 
+	if matched != hashes[0] {
+		s.rehashKey(ctx, s.repo, "inline", a.ID, matched, hashes[0])
+	}
 	if !paused {
 		s.recordKeyUseAsync(a, clientIP, nil)
 	}
@@ -1301,11 +1331,13 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 	}
 
 	var (
-		key *sensordom.APIKey
-		err = shared.ErrNotFound
+		key     *sensordom.APIKey
+		err     = shared.ErrNotFound
+		matched string
 	)
 	for _, h := range hashes {
 		if key, err = s.apiKeyRepo.GetByHash(ctx, h); err == nil {
+			matched = h
 			break
 		}
 	}
@@ -1320,6 +1352,9 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 	paused, err := checkSensorStatus(a, allowPaused)
 	if err != nil {
 		return SensorIdentity{}, err
+	}
+	if matched != hashes[0] {
+		s.rehashKey(ctx, s.apiKeyRepo, "row", key.ID, matched, hashes[0])
 	}
 	if paused {
 		return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, Paused: true}, nil
