@@ -1,4 +1,4 @@
--- Revert 000252. refresh_content commands must be gone before the constraint
+-- Revert 000253. refresh_content commands must be gone before the constraint
 -- can narrow again.
 DROP INDEX IF EXISTS idx_commands_open_refresh_content;
 DELETE FROM commands WHERE type = 'refresh_content';

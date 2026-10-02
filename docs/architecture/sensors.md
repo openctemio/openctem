@@ -585,7 +585,7 @@ Content names: `trivy-db`, `trivy-java-db`, `nuclei-templates`,
 source 256 / error 256 bytes, a digest only when `sha256:<hex>`, timestamps no
 later than a day ahead). No column of its own.
 
-**Policy** (`sensor_content_policies`, migration 000252, one row per tenant):
+**Policy** (`sensor_content_policies`, migration 000253, one row per tenant):
 `refresh_interval_hours`, and per content `max_age_hours`, a pinned `version`
 (an OCI digest `sha256:…` for a database, a release tag for templates) and, for
 `semgrep-rules`, `rulesets` (`p/default`). 0 or absent = the platform default
