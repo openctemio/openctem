@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
@@ -542,6 +545,84 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 	return runs, nil
 }
 
+// AbortUnclaimedRuns ends runs no sensor ever picked up (D8): every command of
+// the run is still 'pending' and was never acknowledged or started, and the
+// run is older than its threshold (4h scheduled / 1h interactive by default,
+// or the scan's own timeout when shorter). Such a run used to wait for the
+// generic run timeout and end as "timeout" with no hint that nobody claimed
+// the work; it was then even retried. Here the run fails with the reason, its
+// open steps fail with NO_SENSOR (a code the retry controller never retries),
+// its commands are failed so no sensor picks them up late, and the scan
+// records the failure.
+func (r *PipelineRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error) {
+	const query = `
+		WITH candidates AS (
+			SELECT pr.id,
+			       LEAST(
+			         CASE WHEN pr.trigger_type = 'schedule' THEN $1::bigint ELSE $2::bigint END,
+			         COALESCE((SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = pr.scan_id), $3::bigint)
+			       ) AS after_seconds
+			FROM pipeline_runs pr
+			WHERE pr.status IN ('pending', 'running')
+			  AND pr.started_at IS NOT NULL
+			  AND EXISTS (
+			        SELECT 1 FROM commands c
+			        WHERE c.tenant_id = pr.tenant_id AND c.payload->>'pipeline_run_id' = pr.id::text)
+			  AND NOT EXISTS (
+			        SELECT 1 FROM commands c
+			        WHERE c.tenant_id = pr.tenant_id AND c.payload->>'pipeline_run_id' = pr.id::text
+			          AND (c.status <> 'pending' OR c.acknowledged_at IS NOT NULL OR c.started_at IS NOT NULL))
+		), unclaimed AS (
+			UPDATE pipeline_runs pr
+			SET status = 'failed',
+			    completed_at = NOW(),
+			    error_message = 'no sensor picked up this run''s work within '
+			        || CASE WHEN k.after_seconds % 3600 = 0 THEN (k.after_seconds / 3600)::text || 'h'
+			                ELSE (k.after_seconds / 60)::text || 'm' END
+			        || ' — check that a sensor with this scanner is online (and in the right zone)'
+			FROM candidates k
+			WHERE pr.id = k.id
+			  AND pr.status IN ('pending', 'running')
+			  AND EXTRACT(EPOCH FROM (NOW() - pr.started_at)) > k.after_seconds
+			RETURNING pr.id, pr.tenant_id, pr.scan_id, pr.error_message
+		), closed_commands AS (
+			UPDATE commands c
+			SET status = 'failed', error_message = u.error_message, completed_at = NOW()
+			FROM unclaimed u
+			WHERE c.tenant_id = u.tenant_id
+			  AND c.payload->>'pipeline_run_id' = u.id::text
+			  AND c.status = 'pending'
+			RETURNING c.id
+		), closed_steps AS (
+			UPDATE step_runs sr
+			SET status = 'failed', error_code = 'NO_SENSOR', error_message = u.error_message, completed_at = NOW()
+			FROM unclaimed u
+			WHERE sr.pipeline_run_id = u.id
+			  AND sr.status IN ('pending', 'queued', 'running')
+			RETURNING sr.id
+		), recorded_scans AS (
+			UPDATE scans s
+			SET last_run_status = CASE WHEN s.last_run_id IS NULL OR s.last_run_id = u.id THEN 'failed' ELSE s.last_run_status END,
+			    last_run_id = COALESCE(s.last_run_id, u.id),
+			    total_runs = s.total_runs + 1,
+			    failed_runs = s.failed_runs + 1,
+			    updated_at = NOW()
+			FROM unclaimed u
+			WHERE s.id = u.scan_id
+			RETURNING s.id
+		)
+		SELECT (SELECT COUNT(*) FROM unclaimed), (SELECT COUNT(*) FROM closed_commands),
+		       (SELECT COUNT(*) FROM closed_steps), (SELECT COUNT(*) FROM recorded_scans)
+	`
+	var runs, commands, steps, scans int64
+	if err := r.db.QueryRowContext(ctx, query,
+		int64(scheduledAfter.Seconds()), int64(interactiveAfter.Seconds()), AbsoluteRunTimeoutSeconds,
+	).Scan(&runs, &commands, &steps, &scans); err != nil {
+		return 0, fmt.Errorf("failed to abort unclaimed runs: %w", err)
+	}
+	return runs, nil
+}
+
 // ListPendingRetries atomically claims failed pipeline_runs eligible for automatic retry.
 //
 // The query finds failed runs whose:
@@ -567,11 +648,21 @@ func (r *PipelineRunRepository) ListPendingRetries(ctx context.Context, limit in
 			       s.max_retries, s.retry_backoff_seconds
 			FROM pipeline_runs pr
 			JOIN scans s ON s.id = pr.scan_id
-			WHERE pr.status = 'failed'
+			WHERE pr.status IN ('failed', 'timeout')
 			  AND pr.retry_dispatched_at IS NULL
 			  AND pr.completed_at IS NOT NULL
 			  AND s.max_retries > 0
-			  AND pr.retry_attempt < s.max_retries
+			  -- A timeout (the sensor died, or never reported) is retried at
+			  -- most twice; other failures use the scan's own budget (D7).
+			  AND pr.retry_attempt < CASE WHEN pr.status = 'timeout' THEN LEAST(s.max_retries, 2) ELSE s.max_retries END
+			  -- A failure a retry cannot fix is never retried: no such scanner on
+			  -- the sensor, target refused, nothing to scan, no sensor (D7).
+			  AND NOT EXISTS (
+			        SELECT 1 FROM step_runs sr
+			        WHERE sr.pipeline_run_id = pr.id
+			          AND sr.status = 'failed'
+			          AND sr.error_code = ANY($2::text[])
+			      )
 			  AND s.status = 'active'
 			  AND NOW() >= pr.completed_at + (s.retry_backoff_seconds * POWER(2, pr.retry_attempt) || ' seconds')::interval
 			ORDER BY pr.completed_at ASC
@@ -589,7 +680,7 @@ func (r *PipelineRunRepository) ListPendingRetries(ctx context.Context, limit in
 		FROM claimed
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, limit)
+	rows, err := r.db.QueryContext(ctx, query, limit, pq.Array(pipeline.PermanentFailureCodes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pending retries: %w", err)
 	}
@@ -624,16 +715,17 @@ func (r *PipelineRunRepository) ListPendingRetries(ctx context.Context, limit in
 	return candidates, nil
 }
 
-// ResetRetryClaim clears the retry_dispatched_at marker on a failed run so it is
-// eligible for ListPendingRetries again. It is the compensating action for a
-// claim that ListPendingRetries set but whose dispatch failed WITHOUT creating a
-// new pipeline_run (a transient failure). The retry budget is tracked by
-// retry_attempt on runs, not by this marker, so releasing the claim does not
-// double-count the budget — no new run was created, so retry_attempt is unchanged.
-func (r *PipelineRunRepository) ResetRetryClaim(ctx context.Context, runID shared.ID) error {
-	const query = `UPDATE pipeline_runs SET retry_dispatched_at = NULL WHERE id = $1`
+// ReleaseFailedRetryDispatch is the compensating action for a retry that was
+// claimed by ListPendingRetries but whose dispatch failed without creating a
+// new run (for example no sensor online at that moment). The claim is released
+// so the run is retried again after the next backoff, and the attempt counts
+// against the budget: retry_attempt moves up, which also doubles the backoff.
+// Releasing without spending the attempt (the old behavior) retried a dispatch
+// that kept failing every backoff interval, forever.
+func (r *PipelineRunRepository) ReleaseFailedRetryDispatch(ctx context.Context, runID shared.ID) error {
+	const query = `UPDATE pipeline_runs SET retry_dispatched_at = NULL, retry_attempt = retry_attempt + 1 WHERE id = $1`
 	if _, err := r.db.ExecContext(ctx, query, runID.String()); err != nil {
-		return fmt.Errorf("failed to reset retry claim: %w", err)
+		return fmt.Errorf("failed to release retry claim: %w", err)
 	}
 	return nil
 }
