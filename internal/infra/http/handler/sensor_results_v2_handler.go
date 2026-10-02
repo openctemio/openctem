@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
 
@@ -30,6 +31,15 @@ type SensorResultsV2Handler struct {
 	receiver *ingest.V2Receiver
 	sensors  *app.SensorService
 	logger   *logger.Logger
+	// features are the RFC-029 control-plane features mounted next to the
+	// results routes, listed on hello.
+	features []string
+}
+
+// SetControlFeatures lists the RFC-029 features served beside the results
+// routes on hello (RFC-029 §4.2).
+func (h *SensorResultsV2Handler) SetControlFeatures(features []string) {
+	h.features = append([]string(nil), features...)
 }
 
 // NewSensorResultsV2Handler builds the handler.
@@ -44,7 +54,9 @@ func (h *SensorResultsV2Handler) Limits() protov2.Limits { return h.receiver.Lim
 // C-2): a sensor key in Authorization: Bearer or X-API-Key. A user JWT, a
 // session cookie or an oct_ key is not a sensor key and gets 401. A disabled
 // sensor is refused on every v2 route (the v1 doorbell exception does not
-// exist here). The refusal is the generic problem; the reason is logged.
+// exist here) except POST /heartbeat, which answers it with the pause action
+// (RFC-029 §4.1: every v2 sensor acts on the doorbell). The refusal is the
+// generic problem; the reason is logged.
 func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := extractAPIKey(r)
@@ -53,7 +65,7 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 		id, err := h.sensors.AuthenticateIdentity(r.Context(), key)
-		if err == nil && id.Paused {
+		if err == nil && id.Paused && !isV2HeartbeatRequest(r) {
 			err = errSensorPaused
 		}
 		if err != nil || id.Sensor == nil {
@@ -68,6 +80,12 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// isV2HeartbeatRequest reports whether r is the v2 heartbeat, the one route a
+// disabled sensor may reach (to be told to pause).
+func isV2HeartbeatRequest(r *http.Request) bool {
+	return r.Method == http.MethodPost && r.URL.Path == protov2.PathPrefix+protov2.HeartbeatPath
 }
 
 // SensorKey returns the authenticated sensor's id, for per-sensor limits.
@@ -190,7 +208,13 @@ func (h *SensorResultsV2Handler) Abandon(w http.ResponseWriter, r *http.Request)
 
 // Hello handles GET /hello: protocol level, features and limits (RFC-023 C3).
 func (h *SensorResultsV2Handler) Hello(w http.ResponseWriter, _ *http.Request) {
-	h.writeJSON(w, http.StatusOK, protov2.NewHello(h.receiver.Limits()))
+	hello := protov2.NewHello(h.receiver.Limits(), h.features...)
+	if len(h.features) > 0 {
+		hello = hello.WithDeprecation(protov2.DeprecationProtocolV1, protov2.Deprecation{
+			DeprecatedAt: legacyv1.ProtocolDeprecatedAt, SunsetAt: legacyv1.ProtocolSunsetAt,
+		})
+	}
+	h.writeJSON(w, http.StatusOK, hello)
 }
 
 func (h *SensorResultsV2Handler) writeStatus(w http.ResponseWriter, res *ingest.PutResult) {

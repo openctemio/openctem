@@ -714,22 +714,7 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	// Update sensor metrics via service. A paused (disabled) sensor is only
 	// told to pause: it does not come online and its row is not written.
 	if !id.Paused {
-		if err := h.sensorService.UpdateHeartbeat(r.Context(), agt.ID, app.SensorHeartbeatData{
-			Version:  req.Version,
-			Hostname: req.Hostname,
-			// The connection's address under the trusted-proxy rule, so a
-			// sensor cannot claim someone else's address.
-			IPAddress:     getClientIP(r),
-			CPUPercent:    req.CPUPercent,
-			MemoryPercent: req.MemoryPercent,
-			CurrentJobs:   req.ActiveJobs,
-			Region:        req.Region,
-			DiskReadMBPS:  req.DiskReadMBPS,
-			DiskWriteMBPS: req.DiskWriteMBPS,
-			NetworkRxMBPS: req.NetworkRxMBPS,
-			NetworkTxMBPS: req.NetworkTxMBPS,
-			Outbox:        req.Outbox.toOutboxStats(),
-		}); err != nil {
+		if err := h.sensorService.UpdateHeartbeat(r.Context(), agt.ID, heartbeatData(r, &req, 1)); err != nil {
 			h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", agt.ID)
 			// Don't fail the request - heartbeat should be resilient
 		}

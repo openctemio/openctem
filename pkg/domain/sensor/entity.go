@@ -199,6 +199,10 @@ type Sensor struct {
 	// heartbeat; nil when it never reported one. Display data only.
 	Outbox *OutboxStats
 
+	// Protocol is the protocol telemetry of the last heartbeat (RFC-029 §5.3);
+	// nil before the first heartbeat that recorded it. Display data only.
+	Protocol *ProtocolInfo
+
 	// Statistics
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"
 	LastOfflineAt *time.Time // When sensor went offline (heartbeat timeout)

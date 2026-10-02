@@ -353,7 +353,9 @@ func V2Observe(routeName func(*http.Request) string) func(http.Handler) http.Han
 			default:
 				method = "other"
 			}
-			metrics.IngestV2RequestsTotal.WithLabelValues(routeName(r), method, outcome, problem).Inc()
+			route := routeName(r)
+			metrics.IngestV2RequestsTotal.WithLabelValues(route, method, outcome, problem).Inc()
+			metrics.SensorProtocolRequestsTotal.WithLabelValues("2", route).Inc()
 		})
 	}
 }

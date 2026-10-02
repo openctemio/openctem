@@ -360,6 +360,10 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    -- stored snapshot and its timestamp as they are.
 		    outbox_stats = COALESCE($14::jsonb, outbox_stats),
 		    outbox_reported_at = CASE WHEN $14::jsonb IS NULL THEN outbox_reported_at ELSE NOW() END,
+		    -- Protocol telemetry (RFC-029 §5.3): $15 = 0 leaves it untouched.
+		    protocol_version = CASE WHEN $15::smallint > 0 THEN $15::smallint ELSE protocol_version END,
+		    protocol_client = CASE WHEN $15::smallint > 0 THEN NULLIF($16, '') ELSE protocol_client END,
+		    protocol_seen_at = CASE WHEN $15::smallint > 0 THEN NOW() ELSE protocol_seen_at END,
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -377,6 +381,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		hb.LoadScore,
 		heartbeatIP(hb.IPAddress),
 		outbox,
+		heartbeatProtocol(hb.Protocol), hb.UserAgent,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -639,6 +644,15 @@ func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.
 	return rowsAffected, nil
 }
 
+// heartbeatProtocol bounds the protocol telemetry value to a smallint; an
+// out-of-range value records nothing.
+func heartbeatProtocol(p int) int16 {
+	if p < 0 || p > 32767 {
+		return 0
+	}
+	return int16(p)
+}
+
 // heartbeatIP is the inet parameter for a heartbeat's client address: NULL
 // (keep the stored value) when the address is unknown.
 func heartbeatIP(ip net.IP) sql.NullString {
@@ -661,7 +675,8 @@ func (r *SensorRepository) selectQuery() string {
 		       last_seen_at, last_offline_at, last_error_at,
 		       total_findings, total_scans, error_count,
 		       created_at, updated_at, key_expires_at,
-		       outbox_stats, outbox_reported_at
+		       outbox_stats, outbox_reported_at,
+		       protocol_version, protocol_client, protocol_seen_at
 		FROM sensors
 	`
 }
@@ -779,6 +794,9 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		keyExpiresAt     sql.NullTime
 		outboxStats      []byte
 		outboxReportedAt sql.NullTime
+		protocolVersion  sql.NullInt16
+		protocolUA       sql.NullString
+		protocolSeenAt   sql.NullTime
 	)
 
 	err := row.Scan(
@@ -825,6 +843,9 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&keyExpiresAt,
 		&outboxStats,
 		&outboxReportedAt,
+		&protocolVersion,
+		&protocolUA,
+		&protocolSeenAt,
 	)
 
 	if err != nil {
@@ -907,6 +928,13 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 				ob.ReportedAt = outboxReportedAt.Time
 			}
 			a.Outbox = &ob
+		}
+	}
+
+	if protocolVersion.Valid && protocolVersion.Int16 > 0 {
+		a.Protocol = &sensor.ProtocolInfo{Version: int(protocolVersion.Int16), UserAgent: protocolUA.String}
+		if protocolSeenAt.Valid {
+			a.Protocol.SeenAt = protocolSeenAt.Time
 		}
 	}
 

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/logger"
 	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
@@ -32,9 +34,17 @@ var (
 // rate-limits, checks the headers, verifies Content-Digest and decodes with a
 // bound before the handler sees a byte (middleware/ingest_v2.go).
 //
+// The control plane of RFC-029 (heartbeat, commands, suppressions,
+// fingerprint queries, key renewal) is mounted in the same group when ctl is
+// not nil; its handlers call the services protocol v1 uses.
+//
 // tenantRateLimiter is the per-tenant ingest budget shared with v1 (nil when
 // rate limiting is off).
-func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, tenantRateLimiter *middleware.TelemetryRateLimiter, log *logger.Logger) {
+//
+//nolint:cyclop // route registration
+func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ctl *handler.SensorControlV2Handler,
+	tenantRateLimiter *middleware.TelemetryRateLimiter, log *logger.Logger,
+) {
 	limits := h.Limits()
 	writeLimiter := middleware.NewTelemetryRateLimiter(v2WriteRatePerSensor, v2WriteBurstPerSensor, 10*time.Minute, log)
 	readLimiter := middleware.NewTelemetryRateLimiter(v2ReadRatePerSensor, v2ReadBurstPerSensor, 10*time.Minute, log)
@@ -53,6 +63,17 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, te
 	}
 	commit := []Middleware{throttleWrite, middleware.BodyLimit(1 << 20)}
 
+	// Control plane (RFC-029): per-sensor budgets only (the per-tenant ingest
+	// budget is for report writes). Key renewal also takes v1's per-sensor
+	// renewal budget: it mints a credential each time.
+	controlWrite := []Middleware{middleware.V2Throttle(nil, writeLimiter, nil, handler.SensorKey)}
+	controlRead := []Middleware{throttleRead}
+	renewLimiter := middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log)
+	keys := []Middleware{middleware.V2Throttle(nil, renewLimiter, nil, handler.SensorKey), controlWrite[0]}
+	if ctl != nil {
+		h.SetControlFeatures(ctl.Features())
+	}
+
 	router.Group(protov2.PathPrefix, func(r Router) {
 		r.GET("/hello", h.Hello, throttleRead)
 
@@ -65,6 +86,26 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, te
 		r.PUT("/commands/{command_id}/results/{report_id}", h.PutReport, content...)
 		r.PUT("/commands/{command_id}/results/{report_id}/segments/{seq}", h.PutSegment, content...)
 		r.POST("/commands/{command_id}/results/{report_id}/commit", h.Commit, commit...)
+
+		if ctl == nil {
+			return
+		}
+		if ctl.HasIngest() {
+			r.POST(protov2.HeartbeatPath, ctl.Heartbeat, controlWrite...)
+			r.POST(protov2.FingerprintsCheckPath, ctl.CheckFingerprints, controlWrite...)
+			r.POST(protov2.BaselineDiffPath, ctl.BaselineDiff, controlWrite...)
+			r.POST(protov2.KeysPath, ctl.RenewKey, keys...)
+		}
+		if ctl.HasCommands() {
+			r.GET(protov2.CommandsPath, ctl.PollCommands, controlRead...)
+			r.POST("/commands/{command_id}/claim", ctl.ClaimCommand, controlWrite...)
+			r.POST("/commands/{command_id}/start", ctl.StartCommand, controlWrite...)
+			r.POST("/commands/{command_id}/complete", ctl.CompleteCommand, controlWrite...)
+			r.POST("/commands/{command_id}/fail", ctl.FailCommand, controlWrite...)
+		}
+		if ctl.HasSuppressions() {
+			r.GET(protov2.SuppressionsPath, ctl.Suppressions, controlRead...)
+		}
 	}, middleware.V2Observe(v2RouteName), h.Authenticate)
 }
 
@@ -77,6 +118,17 @@ var v2RouteNames = map[string]string{
 	protov2.PathPrefix + "/commands/{command_id}/results/{report_id}":                "report",
 	protov2.PathPrefix + "/commands/{command_id}/results/{report_id}/segments/{seq}": "segment",
 	protov2.PathPrefix + "/commands/{command_id}/results/{report_id}/commit":         "commit",
+
+	protov2.PathPrefix + protov2.HeartbeatPath:             "heartbeat",
+	protov2.PathPrefix + protov2.CommandsPath:              "commands",
+	protov2.PathPrefix + "/commands/{command_id}/claim":    "claim",
+	protov2.PathPrefix + "/commands/{command_id}/start":    "start",
+	protov2.PathPrefix + "/commands/{command_id}/complete": "complete",
+	protov2.PathPrefix + "/commands/{command_id}/fail":     "fail",
+	protov2.PathPrefix + protov2.SuppressionsPath:          "suppressions",
+	protov2.PathPrefix + protov2.FingerprintsCheckPath:     "fingerprints_check",
+	protov2.PathPrefix + protov2.BaselineDiffPath:          "baseline_diff",
+	protov2.PathPrefix + protov2.KeysPath:                  "keys",
 }
 
 // v2RouteName is the closed-set route label of a v2 request ("other" for no
@@ -88,4 +140,20 @@ func v2RouteName(r *http.Request) string {
 		}
 	}
 	return "other"
+}
+
+// sensorControlV2Handler builds the RFC-029 control-plane handler from the
+// protocol v1 handlers, so both protocols share every service. Nil when
+// neither the ingest nor the command handler is wired.
+func sensorControlV2Handler(h Handlers, log *logger.Logger) *handler.SensorControlV2Handler {
+	if h.Ingest == nil && h.Command == nil {
+		return nil
+	}
+	var suppressionsEnabled func(ctx context.Context, tenantID string) bool
+	if h.ModuleGate != nil {
+		suppressionsEnabled = func(ctx context.Context, tenantID string) bool {
+			return h.ModuleGate.IsEnabled(ctx, tenantID, moduledom.ModuleSuppressions)
+		}
+	}
+	return handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, suppressionsEnabled, log)
 }

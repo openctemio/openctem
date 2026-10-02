@@ -648,7 +648,7 @@ func Register(
 	// Sensor protocol v2 results (RFC-026): its own route group and
 	// authenticator, only when enabled.
 	if h.SensorResultsV2 != nil {
-		registerSensorV2Routes(router, h.SensorResultsV2, ingestRateLimiter, log)
+		registerSensorV2Routes(router, h.SensorResultsV2, sensorControlV2Handler(h, log), ingestRateLimiter, log)
 	}
 
 	// Sensor management routes (tenant from JWT token)

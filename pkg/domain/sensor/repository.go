@@ -47,6 +47,11 @@ type HeartbeatUpdate struct {
 	// outbox never send one, and a sensor downgraded to such an SDK keeps its
 	// last snapshot, whose reported-at time shows how old it is.
 	Outbox *OutboxStats
+
+	// Protocol is the sensor protocol the heartbeat arrived on; 0 leaves the
+	// stored protocol telemetry untouched. UserAgent is already sanitized.
+	Protocol  int
+	UserAgent string
 }
 
 // Repository defines the interface for sensor persistence.
