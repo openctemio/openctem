@@ -366,5 +366,10 @@
   "auth.loginError.missing_params": "Phản hồi đăng nhập không đầy đủ. Vui lòng thử lại.",
   "auth.loginError.start_failed": "Không thể bắt đầu đăng nhập. Vui lòng thử lại hoặc liên hệ quản trị viên.",
   "auth.loginError.callback_failed": "Không thể hoàn tất đăng nhập. Vui lòng thử lại hoặc liên hệ quản trị viên.",
-  "auth.loginError.generic": "Đăng nhập thất bại. Vui lòng thử lại."
+  "auth.loginError.generic": "Đăng nhập thất bại. Vui lòng thử lại.",
+  "sensors.activity.heartbeatRecovered": "Nhịp tim đã đúng hạn trở lại (trước đó: {state})",
+  "sensors.activity.heartbeatGap": "Không có nhịp tim trong {duration}",
+  "sensors.activity.wasLate": "trễ",
+  "sensors.activity.wasStale": "quá hạn",
+  "sensors.activity.wasOffline": "ngoại tuyến"
 }

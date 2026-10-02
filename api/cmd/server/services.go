@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/telemetry"
 
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	"github.com/openctemio/openctem/api/internal/app/assignment"
@@ -1360,6 +1361,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// with the sensor's jobs and audit rows.
 	s.Sensor.SetEventRepository(repos.SensorEvent, sensordom.DefaultEventLimits())
 	s.Sensor.SetActivityReader(repos.SensorEvent)
+	// Heartbeat gaps: the fleet histogram and each tenant sensor's 48 h
+	// history (the Control channel sparkline; RFC-035).
+	s.Sensor.SetHeartbeatHistory(repos.SensorHeartbeatHistory)
+	s.Sensor.SetHeartbeatGapObserver(telemetry.SensorHeartbeatMetrics{})
 	// Command leases (RFC-035 D6): a claim holds for SENSOR_COMMAND_LEASE
 	// and every heartbeat renews what the sensor holds; job recovery takes
 	// back what runs out, fenced against a late completion.
