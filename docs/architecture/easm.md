@@ -1,0 +1,202 @@
+# External Attack Surface Management (EASM)
+
+> **Status: design (RFC-036 Proposed, 2026-10-02).** This document describes
+> how EASM works in OpenCTEM today and the architecture RFC-036 builds towards.
+> Each section marks what is **built**, what is **partial** and what is
+> **planned**. The reasoning, the industry survey, the ranked gap list and the
+> phased plan are in
+> [RFC-036](../rfcs/RFC-036-easm.md). Update this page in the same PR whenever
+> a phase ships.
+
+EASM answers four questions about the internet-facing assets an organisation
+owns or is responsible for:
+
+1. **What do we have on the internet?** Discovery, starting from seeds.
+2. **Is it really ours?** Attribution, with confidence and evidence.
+3. **What is wrong with it?** Non-intrusive assessment.
+4. **What changed?** Continuous monitoring.
+
+The answers feed the existing CTEM registers (assets, exposures, findings) and
+the P0–P3 priority engine. EASM adds no new score.
+
+**Scope.** Only the customer's own attack surface, scanned under the customer's
+authorization. Active scanning follows RFC-030 politeness and RFC-034 rules: the
+scanner backs off when a target throttles or blocks it and never evades. A
+third-party / vendor-risk mode is a separate owner decision (RFC-036 §7). If it
+is ever built, it uses only passive public data.
+
+## 1. Pipeline
+
+```
+ Scoping › Boundaries › Seeds                       (tenant-entered, verified where possible)
+   │  org names, brands, root domains, ASNs, CIDRs, cloud accounts, GitHub orgs
+   ▼
+ ┌──────────────────────────── API side, passive: no packets to the target ─────────────┐
+ │ Collectors (per tenant, scheduled controllers, SSRF-guarded, per-tenant keys)        │
+ │   CT logs · passive DNS · RDAP · ASN/RIR · reverse DNS of owned ranges · cloud APIs  │
+ │   · GitHub org · search engines of scan data (Censys/Shodan, tenant keys)            │
+ │   · DNS-only checks (SPF/DMARC/MTA-STS, dangling CNAME, lookalike resolution)        │
+ └──────────────────────────────────────┬───────────────────────────────────────────────┘
+                                        ▼
+                 Candidates + evidence ──► Attribution engine (rules, confidence 0–100)
+                                        │      ≥ auto threshold, strong evidence → confirmed
+                                        │      otherwise → review queue (confirm / reject /
+                                        │      dependency / monitor only)
+                                        ▼
+                 Asset inventory (attribution_state, attribution_confidence, evidence)
+                                        │
+ ┌──────────────────────────── Sensor side, active: touches the target ─────────────────┐
+ │ Discovery run per cadence tier, chained steps, RFC-030 chunks + politeness:          │
+ │   resolve (wildcard-aware) → light ports → HTTP/TLS probe (+ certs, CDN, favicon,    │
+ │   tech/CPE) → optional screenshot → nuclei, intrusiveness tier T1 by default         │
+ │ Runs on a tenant sensor in the default (public) zone; optional shared platform       │
+ │ sensors with published egress IPs (owner decision)                                   │
+ └──────────────────────────────────────┬───────────────────────────────────────────────┘
+                                        ▼
+            CTIS ingest (RFC-026) → assets, relationships, findings, exposure events
+                                        ▼
+            Observations (facet hashes) → diffs → state history, exposure events,
+            notifications, workflow triggers → P0–P3 priority → ticketing, validation
+```
+
+**Why the split.** Sending packets to a target belongs on a sensor: the sensor
+sits in a scan zone, follows the RFC-030 politeness limits, and has the egress
+that RFC-034 controls. The API sends no traffic to customer infrastructure. It
+only calls third-party data sources and DNS resolvers. This keeps the control
+plane's IP reputation out of scanning and reuses the SSRF-guarded client every
+API connector already uses (`pkg/httpsec`).
+
+## 2. What exists today (verified on `develop` 2026-10-02)
+
+| Area | State | Where |
+|---|---|---|
+| Asset types `domain`, `subdomain`, `certificate`, `ip_address`, `service` (+ recon sub-types), `application`, cloud types | Built | `pkg/domain/asset/value_objects.go` |
+| Discovery provenance on assets (`discovery_source`, `discovery_tool`, `discovered_at`, `first_seen`, `last_seen`) | Built | `pkg/domain/asset/entity.go` |
+| Exposure fields (`exposure`, `is_internet_accessible`, exposure change timestamps) | Built | ingest `applyCTEMSignals`, `inferAssetExposure` |
+| Relationships `contains` (root → subdomain), `resolves_to` (domain → IP); inferred `exposes`, `runs_on` | Built | `internal/app/ingest/processor_assets.go`, `internal/app/asset/relationship_inference.go` |
+| Identity resolution (strong identifiers, 7-day IP window, conflicts to dedup review) | Built | RFC-001, RFC-028, [asset-identity-resolution.md](asset-identity-resolution.md) |
+| CT monitoring: crt.sh, `subdomain_discovered` + `certificate_expiring` exposures | Built, with two limits (§6) | `internal/app/certmonitor`, [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md) |
+| Certificate assets → `certificate_expiring` / `certificate_expired` / `ssl_issue` exposures; service assets → `port_open` / `service_detected` | Built | `internal/app/exposurebridge/asset_bridge.go` |
+| KEV + EPSS (global, daily), P0–P3 priority with internet-accessible and criticality | Built | `internal/app/threat`, `pkg/domain/vulnerability/priority.go` |
+| Attack paths and exposure chains from public entry points | Built | `internal/app/attack/path_scoring.go`, `exposure_chains.go` |
+| "What changed": state history, `asset_discovered` trigger, throttled new-internet-facing notification | Built | [change-detection.md](change-detection.md) |
+| Scope targets and exclusions; exclusions fail closed on every scan | Built | `pkg/domain/scope`, `internal/app/scan/targets.go` |
+| Scan zones, default zone for public targets | Built (RFC-023 P1) | [scan-zones.md](scan-zones.md) |
+| Verified domains (DNS TXT, re-verified every 12 h) | Built, used only for SSO JIT | migration 000191 |
+| Recon wrappers subfinder, dnsx, naabu, httpx, katana; nuclei takeover preset | Built in sdk-go, **not shipped** in any sensor image | sdk-go `pkg/scanners/recon`, sensor `internal/executor/recon.go` |
+| Seeds / organisation model | **Missing** | — |
+| Attribution confidence and evidence on assets | **Missing** (`asset_sources` has a confidence column but no writer) | migration 000014 |
+| Passive sources other than crt.sh; cloud connectors | **Missing** (providers declared, no clients) | `pkg/domain/integration/entity.go` |
+| Subdomain takeover, email security (SPF/DMARC), open buckets, lookalike domains | **Missing** | — |
+| Chained discovery pipeline (step output → next step input) | **Missing** (steps share one context) | `internal/app/pipeline/run.go` |
+| Change facets beyond appear/disappear/exposure (DNS, ports, certs) | **Missing**: `dns_change`, `port_closed`, `service_changed`, `subdomain_removed` have no producer | `pkg/domain/exposure/value_objects.go` |
+| Hosted scanning from published IP ranges | **Missing**: `CanUsePlatformSensors` is false in OSS | `internal/app/adapters.go` |
+
+### UI
+
+| Page | State |
+|---|---|
+| `/attack-surface` | Real, over `GET /attack-surface/stats`; the trend fields are hard-coded 0 in the API |
+| `/attack-surface/external` | Partial: client-side over the first 100 assets; the "Expiring certs" card is always 0 |
+| `/assets/{domains,certificates,ip-addresses,websites,services}` | Real lists over `/assets?types=`; certificates without `not_after` show as valid; websites without a status show 200 |
+| `/assets/changes` (What changed) | Real |
+| `/attack-paths`, `/exposure-chains`, `/exposures` | Real |
+| `/exposures/{vulnerabilities,secrets,code,misconfigurations}` | Partial: side cards show tenant-wide numbers |
+| `/scope-config`, `/scoping` | Real |
+
+No EASM page is a `useDashboardStats` scaffold. The planned pages (§7) must
+each have their own endpoint. The UI CI test `sidebar-no-scaffolds` enforces
+this for the sidebar.
+
+## 3. Seeds and authorization (planned)
+
+A **seed** is a fact the tenant asserts about itself, and discovery starts from
+it. Seed kinds: organisation name, brand, root domain, ASN, CIDR, cloud
+account, GitHub organisation, mobile publisher, analytics or tag ID, favicon
+hash. Seeds sit in Scoping › Boundaries next to targets and exclusions.
+
+| Ownership proof | What it allows |
+|---|---|
+| None (asserted) | Passive collection; T1 active assessment of confirmed assets |
+| DNS TXT (`verified_domains`, reused from SSO) or cloud connector | Auto-confirmation of names under the domain; eligible for T2 intrusive checks on opt-in |
+
+Exclusions always win, as today. An asset is actively scanned only when it is
+attributed `confirmed` and either inside a scope target or derived from a seed.
+Candidates and dependencies get passive (T0) checks only.
+
+## 4. Attribution (planned)
+
+Each candidate carries **evidence** rows (kind, source, observed value, weight,
+time). Confidence is the noisy-OR of the evidence weights,
+`1 − Π(1 − wᵢ)`, shown as 0–100. Weights start from a rule table (for example:
+name under a verified root ≈ 0.99, IP in a seeded CIDR/ASN ≈ 0.9, resource
+returned by the tenant's cloud connector = 1.0, TLS SAN shared with a confirmed
+name ≈ 0.5, favicon hash match ≈ 0.4). Shared-hosting or CDN evidence counts
+against the candidate and points to the `dependency` state.
+
+States: `candidate` → `confirmed` | `rejected` | `dependency` (ours by name,
+infrastructure is a provider's) | `monitor_only`. Only strong evidence classes
+auto-confirm; everything else goes to the review queue. A rejection is kept as
+a tombstone, so the same candidate is not proposed again unless a new kind of
+evidence appears. Each rule's precision is learned per tenant from
+confirm/reject decisions (a Beta prior per rule), and that adjusts its weight.
+
+Candidates live outside the asset table. A confirmed candidate becomes an asset
+through the normal ingest path, so there is still one asset-creation path (the
+concern RFC-019 §6 raised). Assets created by tenant-triggered scans keep the
+current behaviour and get evidence stamped on them.
+
+## 5. Data model (planned)
+
+- **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and
+  `netblock`, and relationship types `announced_by` (IP/netblock → ASN),
+  `serves_certificate` (service → certificate), `hosted_by` (asset →
+  provider/CDN) and `cname_of` (emitted by DNS resolution). OWASP Amass' Open
+  Asset Model is the reference vocabulary.
+- **Observations.** Append-only per (asset, facet), where the facets are DNS
+  record set, open ports, TLS certificate, HTTP fingerprint, technology set and
+  WHOIS/RDAP. Each observation stores a canonical hash. A change of hash is a
+  diff, and the diff writes state history and the matching exposure event.
+- **Evidence.** `easm_evidence` keyed by tenant and subject (candidate or asset).
+- **Time.** `first_seen`/`last_seen` per asset and per observation; the CT
+  `not_before` and the passive-DNS first-seen give the earliest external
+  evidence, which is what MTTD is measured against.
+
+## 6. Known limits of what is built
+
+- The CT monitor queries only `domain`-type assets, at most 50 per tenant per
+  run, always the first 50 in list order. A tenant with more than 50 domains
+  never gets the rest queried. It needs a rotation cursor (RFC-036 P0).
+- CT discoveries stay exposure events; nothing turns them into assets or
+  candidates.
+- Sensor images ship no recon binaries. The recon executor is off by default
+  but advertises recon capabilities when it is turned on. Pipeline steps do not
+  feed one step's output into the next.
+- httpx's favicon, JARM, ASN and certificate fields are parsed and dropped
+  (`core.LiveHost` has no fields for them). No certificate asset comes from a
+  live TLS handshake.
+- Nothing sets asset scope `external` or `shadow` automatically, so the
+  "Shadow IT" change view is empty.
+
+## 7. UI (planned)
+
+Discovery › Attack Surface becomes the EASM workspace. Tabs:
+
+| Tab | Backed by |
+|---|---|
+| Overview | `GET /easm/summary`: attributed assets, review queue size, new in 7 days, exposures by severity, freshness, coverage |
+| Inventory | `/assets` filtered to external, attribution columns |
+| Review | `GET /easm/candidates` + evidence; confirm / reject / dependency / monitor only; bulk |
+| Graph | `GET /easm/graph?root=` (seed → domain → subdomain → IP → service → certificate) |
+| Changes | `/state-history/*` + facet diffs |
+| Exposures | `/exposures?source=easm` and EASM findings |
+
+Seeds are edited in Scoping › Boundaries.
+
+## 8. Related
+
+- [RFC-036](../rfcs/RFC-036-easm.md): the design, survey, gap list, phases and decisions.
+- [RFC-019](../rfcs/RFC-019-certificate-transparency-discovery.md) / [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md)
+- [change-detection.md](change-detection.md), [scan-zones.md](scan-zones.md), [asset-identity-resolution.md](asset-identity-resolution.md)
+- [RFC-030](../rfcs/RFC-030-scan-work-distribution.md) (politeness), [RFC-034](../rfcs/RFC-034-sensor-network-egress.md) (egress, no evasion)
+- ADR-004 [finding provenance](decisions/004-finding-provenance.md): EASM is a technique (`findings.source = easm`), not a channel.

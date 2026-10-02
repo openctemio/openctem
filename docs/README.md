@@ -19,6 +19,7 @@
 - [Clean Architecture](architecture/clean-arch.md) - Layer details & dependencies
 - [Project Structure](architecture/project-structure.md) - Complete file structure
 - [Notification System](architecture/notification-system.md) - Real-time alerts, providers, async patterns
+- [External Attack Surface Management](architecture/easm.md) - EASM pipeline (seeds → passive collectors on the API → attribution with evidence and confidence → active steps on sensors → observations and diffs), what is built vs planned, known limits (RFC-036)
 - [Change Detection](architecture/change-detection.md) - What changed in the attack surface: state history views, `asset_discovered` / `scan_completed` triggers, throttled new-internet-facing-asset notification
 - [Scan Orchestration](architecture/scan-orchestration.md) - Pipeline execution, agent coordination
 - [CTEM Program Metrics](architecture/program-metrics.md) - MTTD for new internet-facing assets, MTTR for validated exposures, owner acceptance rate: exact definitions, tenant scoping, "—" for not measurable, and why time-to-break attack paths is not computed
