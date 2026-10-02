@@ -138,12 +138,16 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     }
   }
 
+  // The dialog is mounted only while a status waits for approval, so it is
+  // always open when rendered; closing it clears the pending status.
   const dialogs: ReactNode = approvalTarget ? (
     <ApprovalDialog
       findingId={finding.id}
       targetStatus={approvalTarget}
-      open={approvalTarget !== null}
-      onOpenChange={(open) => !open && setApprovalTarget(null)}
+      open
+      onOpenChange={(open) => {
+        if (!open) setApprovalTarget(null)
+      }}
       onSuccess={() => void invalidateFindingsCache()}
     />
   ) : null
