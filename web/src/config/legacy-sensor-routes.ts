@@ -1,6 +1,6 @@
 /**
  * UI routes renamed by the sensor rename (RFC-023 §9.5,
- * openctemio/api docs/rfcs/RFC-023-sensor-rename-contract.md §11).
+ * api/docs/rfcs/RFC-023-sensor-rename-contract.md §11).
  *
  * The product ran under the old name for a long time, so people have /agents
  * bookmarked, linked from runbooks and in browser history. Each old route

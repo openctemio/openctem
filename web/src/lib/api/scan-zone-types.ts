@@ -1,6 +1,6 @@
 /**
  * Scan zone API types (RFC-023): /api/v1/scan-zones.
- * Contract: openctemio/api docs/architecture/scan-zones.md ("UI contract").
+ * Contract: api/docs/architecture/scan-zones.md ("UI contract").
  */
 
 /** A tenant-owned set of address ranges and the sensors that may scan them. */

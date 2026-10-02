@@ -17,7 +17,7 @@ export interface AppVersion {
   commit?: string
 }
 
-/** Same length the API reports (openctemio/api pkg/version). */
+/** Same length the API reports (api/pkg/version). */
 export const SHORT_COMMIT_LENGTH = 8
 
 export function getAppVersion(): AppVersion {

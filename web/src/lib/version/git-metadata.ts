@@ -7,7 +7,7 @@
  * packed refs, a detached HEAD, and a linked worktree's `.git` file
  * (`gitdir:` + `commondir`).
  *
- * The same reader exists in the API (openctemio/api pkg/version/gitinfo.go).
+ * The same reader exists in the API (api/pkg/version/gitinfo.go).
  */
 import { promises as fs } from 'node:fs'
 import path from 'node:path'

@@ -1,6 +1,6 @@
 /**
  * Client-side mirror of the API's scan zone range rules
- * (openctemio/api `pkg/domain/scanzone/zone.go`, ParseRanges). The server is
+ * (`api/pkg/domain/scanzone/zone.go`, ParseRanges). The server is
  * the authority: this only lets the form point at a bad line before saving,
  * and shows what the API will store (normalised CIDRs).
  *
