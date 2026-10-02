@@ -664,10 +664,16 @@ results an out-of-scope id is reported exactly like an unknown id.
   sub-resource, including routes added later — is checked before the handler.
 - **Bulk-by-id and id-in-body paths:** services filter with the same enforcer.
 - **Grouped / by-filter finding queries** (`/findings/groups`, related CVEs,
-  verify / reject-fix / fix-applied by filter): `FindingActionsService.visibleTo`
+  verify / reject-fix / fix-applied by filter, assign-to-owners):
+  `FindingActionsService.visibleTo`
   applies the enforcer's scope and the findings list's pentest-membership rule;
   the group builder (`buildFilterWhere`) honors both filter fields with the
-  list's meaning, and a rule without a tenant matches nothing.
+  list's meaning, and a rule without a tenant matches nothing. Remediation
+  groups resolve the scope in `remediation.GroupService` and pass it to the
+  key repository (`ListGroups`, `OpenFindingIDs`). Do not set
+  `FindingFilter.DataScopeUserID` by hand in new code: use the enforcer
+  (`Resolve` + `WithDataScope`), which knows who is an administrator and the
+  organization's policy.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
@@ -688,6 +694,10 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `POST /findings/bulk/status`, `/bulk/assign` | **bypass (write)** | out-of-scope ids skipped, reported as not found |
 | `POST /findings/actions/verify`, `/reject-fix` (by ids), `/fix-applied` (filter) | partly | scoped |
 | `POST /findings/actions/verify`, `/reject-fix` (by `filter`, Pending Review) | **bypass (write: the scope field was set but the filter builder ignored it)** | scoped; admins unchanged |
+| `GET /findings/remediation-groups`, MCP `list_remediation_groups` | **bypass (fix titles, keys, counts tenant-wide)** | groups and counts from in-scope findings only |
+| `POST /findings/remediation-groups/{key}/resolve` | partly (out-of-scope members not changed, but counted against the abuse guard and reported as `failed`) | only in-scope findings are counted, changed and reported |
+| `POST /findings/actions/assign-to-owners` | **bypass (write)**: fail-open for members without a group even under policy `nothing`; pentest findings of other campaigns assigned; admins with a scope row restricted | enforcer scope + pentest rule; admins unrestricted |
+| `GET /findings/stats` under policy `nothing` when the scope lookup fails | fell through to tenant-wide counts | error (fail closed) |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list filtered per page |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |

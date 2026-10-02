@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/internal/app/finding"
 	remediationdom "github.com/openctemio/api/pkg/domain/remediation"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -32,16 +33,27 @@ type GroupService struct {
 	resolver BulkResolver
 	guard    Guard
 	logger   *logger.Logger
+
+	dataScope *datascope.Enforcer // Layer 2 scope; nil = unrestricted
 }
+
+// SetDataScope wires the Layer 2 data-scope enforcer.
+func (s *GroupService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
 
 // NewGroupService constructs the service. guard may be nil (no abuse gate).
 func NewGroupService(keys remediationdom.KeyRepository, resolver BulkResolver, guard Guard, log *logger.Logger) *GroupService {
 	return &GroupService{keys: keys, resolver: resolver, guard: guard, logger: log.With("service", "remediation_group")}
 }
 
-// ListGroups returns the tenant's remediation groups over its open findings.
+// ListGroups returns the tenant's remediation groups over the open findings
+// the request's caller may see (Layer 2 data scope; pentest findings are never
+// grouped).
 func (s *GroupService) ListGroups(ctx context.Context, tenantID shared.ID) ([]remediationdom.Group, error) {
-	return s.keys.ListGroups(ctx, tenantID, closedStatusStrings())
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.keys.ListGroups(ctx, tenantID, closedStatusStrings(), scope)
 }
 
 // ResolveGroupInput parameterizes a group resolve.
@@ -69,8 +81,15 @@ func (s *GroupService) ResolveGroup(ctx context.Context, tenantID shared.ID, in 
 		return nil, fmt.Errorf("%w: group resolve status must be fix_applied or resolved", shared.ErrValidation)
 	}
 
+	// Only the caller's in-scope findings are counted against the abuse guard
+	// and sent to the bulk path (which checks the scope again), so a group's
+	// out-of-scope members are neither changed nor reported.
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
 	excl := closedStatusStrings()
-	ids, err := s.keys.OpenFindingIDs(ctx, tenantID, in.Key, excl)
+	ids, err := s.keys.OpenFindingIDs(ctx, tenantID, in.Key, excl, scope)
 	if err != nil {
 		return nil, err
 	}

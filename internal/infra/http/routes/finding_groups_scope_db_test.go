@@ -24,6 +24,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/datascope"
+	appremediation "github.com/openctemio/api/internal/app/remediation"
 	infrahttp "github.com/openctemio/api/internal/infra/http"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -87,6 +88,9 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	actionsSvc := app.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
 	actionsSvc.SetDataScope(enforcer)
 
+	remediationSvc := appremediation.NewGroupService(postgres.NewFindingRemediationKeyRepository(db), vulnSvc, nil, log)
+	remediationSvc.SetDataScope(enforcer)
+
 	prevGuard := dataScopeGuardMiddleware
 	dataScopeGuardMiddleware = middleware.DataScopeGuard(enforcer)
 	t.Cleanup(func() { dataScopeGuardMiddleware = prevGuard })
@@ -105,7 +109,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	})
 	router := infrahttp.NewChiRouter()
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log),
-		handler.NewFindingActionsHandler(actionsSvc, log), nil, nil, auth, nil)
+		handler.NewFindingActionsHandler(actionsSvc, log), nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
 	ds.srv.Close()
 	ds.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(ds.srv.Close)

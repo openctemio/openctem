@@ -739,8 +739,13 @@ func (s *FindingActionsService) AutoAssignToOwners(
 		return nil, fmt.Errorf("%w: invalid assigner id", shared.ErrValidation)
 	}
 
-	filter.TenantID = &tid
-	filter.DataScopeUserID = &aid // SEC-01: enforce data scope (mirror BulkVerify/RejectByFilter)
+	// Only findings the caller may see: the enforcer's scope (admins and the
+	// organization's policy for members without a group as everywhere else)
+	// and pentest findings only for members of their campaign.
+	filter, err = s.visibleTo(ctx, tid, filter)
+	if err != nil {
+		return nil, err
+	}
 	result := &AutoAssignToOwnersResult{ByOwner: make(map[string]int)}
 
 	// Cache asset lookups by ID across all pages so repeated findings on the same

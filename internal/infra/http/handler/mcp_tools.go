@@ -583,9 +583,9 @@ func (h *MCPHandler) toolExposureChains(ctx context.Context, tenantID string, _ 
 	return h.surface.ExposureChainsForCaller(ctx, tid)
 }
 
-// toolListRemediationGroups is an intentionally TENANT-WIDE aggregate: a
-// remediation group is a solution family spanning many findings/assets and the
-// service (ListGroups) has no per-user data-scope variant. Gated by findings:read.
+// toolListRemediationGroups lists remediation groups over the key owner's
+// data scope (GroupService.ListGroups resolves it from the request). Gated by
+// findings:read.
 func (h *MCPHandler) toolListRemediationGroups(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
