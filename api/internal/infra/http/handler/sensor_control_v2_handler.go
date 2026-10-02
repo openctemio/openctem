@@ -499,6 +499,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			h.commands.triggerPipelineProgression(r.Context(), res.Command)
 			h.commands.triggerValidationEvidence(res.Command)
 			h.commands.triggerSimulationFinalize(res.Command)
+			h.commands.triggerCoverageAutoResolve(res.Command)
 		case command.TransitionFail:
 			h.commands.triggerPipelineFailed(r.Context(), res.Command, in.ErrorMessage)
 		}
