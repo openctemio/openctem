@@ -1,0 +1,135 @@
+name: Release
+
+# One `v*` tag = one GitHub Release for the whole product (API + web). The
+# images themselves are published by docker-publish.yml on the same tag.
+# Releases v0.1.0..v0.8.0 on this repository's Releases page are the old api
+# releases (same repository after the rename); the old ui releases stay on the
+# archived openctemio/ui and their tags were imported here as ui/v*.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.26.6"
+  GOWORK: "off"
+
+jobs:
+  build:
+    name: Build bootstrap-admin (${{ matrix.os }}/${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: linux, arch: amd64 }
+          - { os: linux, arch: arm64 }
+          - { os: darwin, arch: amd64 }
+          - { os: darwin, arch: arm64 }
+          - { os: windows, arch: amd64 }
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: api/go.sum
+      - name: Build and package
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          BIN=bootstrap-admin; [ "$GOOS" = windows ] && BIN=bootstrap-admin.exe
+          go build -ldflags="-s -w -X main.Version=${VERSION}" -o "bin/${BIN}" ./cmd/bootstrap-admin
+          NAME="bootstrap-admin-${VERSION}-${GOOS}-${GOARCH}"
+          cd bin
+          if [ "$GOOS" = windows ]; then zip "../../${NAME}.zip" "$BIN"; else tar czf "../../${NAME}.tar.gz" "$BIN"; fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bootstrap-admin-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            *.tar.gz
+            *.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          path: /tmp/artifacts
+          pattern: bootstrap-admin-*
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: /tmp/artifacts
+        run: sha256sum ./*.tar.gz ./*.zip > checksums-sha256.txt
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          append_body: true
+          body: |
+            ## Container images (multi-arch: amd64 + arm64)
+
+            ```bash
+            docker pull ghcr.io/openctemio/openctem:${{ github.ref_name }}      # all-in-one (API + web + gateway)
+            docker pull ghcr.io/openctemio/openctem-api:${{ github.ref_name }}
+            docker pull ghcr.io/openctemio/openctem-web:${{ github.ref_name }}
+            docker pull ghcr.io/openctemio/migrations:${{ github.ref_name }}
+            docker pull ghcr.io/openctemio/seed:${{ github.ref_name }}
+            docker pull ghcr.io/openctemio/admin-cli:${{ github.ref_name }}
+            ```
+
+            Images are signed with cosign (keyless) and have SPDX SBOMs attached
+            to this release.
+
+            The previous names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui`
+            receive the same images during the transition window.
+
+            ## Deployment
+
+            ```bash
+            # .env.versions — API and web always share one version now
+            API_VERSION=${{ github.ref_name }}
+            UI_VERSION=${{ github.ref_name }}
+            MIGRATIONS_VERSION=${{ github.ref_name }}
+            docker compose pull && docker compose up -d
+            ```
+          files: |
+            /tmp/artifacts/*.tar.gz
+            /tmp/artifacts/*.zip
+            /tmp/artifacts/checksums-sha256.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sanitize release notes
+        # Escape @mentions that are not "by @login" credits; drop raw emails.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          python3 - notes.md <<'PY'
+          import re, sys
+          path = sys.argv[1]
+          text = re.sub(r" ?<[^<>\s]+@[^<>\s]+>", "", open(path).read())
+          mention = re.compile(r"(?<![\w`/.@-])(?<!by )(?<!\* )@[A-Za-z0-9][\w-]*(?:/[\w.-]+)?(?:@[\w.^~-]+)?")
+          parts = re.split(r"(`[^`]*`)", text)
+          text = "".join(p if p.startswith("`") else mention.sub(lambda m: "`" + m.group(0) + "`", p) for p in parts)
+          open(path, "w").write(text)
+          PY
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md

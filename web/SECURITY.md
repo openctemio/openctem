@@ -485,4 +485,4 @@ The API error handler (`src/lib/api/error-handler.ts`) maps backend errors to us
 ## Contact
 
 - **Security Team**: security@openctem.io
-- **General Issues**: https://github.com/openctemio/ui/issues
+- **General Issues**: https://github.com/openctemio/openctem/issues

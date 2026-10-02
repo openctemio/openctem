@@ -1,0 +1,74 @@
+# OpenCTEM
+
+[![API CI](https://github.com/openctemio/openctem/actions/workflows/api-ci.yml/badge.svg?branch=develop)](https://github.com/openctemio/openctem/actions/workflows/api-ci.yml)
+[![Web CI](https://github.com/openctemio/openctem/actions/workflows/web-ci.yml/badge.svg?branch=develop)](https://github.com/openctemio/openctem/actions/workflows/web-ci.yml)
+[![CodeQL](https://github.com/openctemio/openctem/actions/workflows/codeql.yml/badge.svg?branch=develop)](https://github.com/openctemio/openctem/actions/workflows/codeql.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+
+Open-source Continuous Threat Exposure Management platform. This repository holds
+the two parts that ship together:
+
+| Directory | What | Image |
+|---|---|---|
+| [`api/`](api/) | Go API server, migrations, admin CLI (module `github.com/openctemio/openctem/api`) | `ghcr.io/openctemio/openctem-api` |
+| [`web/`](web/) | Next.js web console | `ghcr.io/openctemio/openctem-web` |
+| [`deploy/allinone/`](deploy/allinone/) | API + web + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
+
+Released separately, in their own repositories:
+[sensor](https://github.com/openctemio/sensor) (scanning agent),
+[sdk-go](https://github.com/openctemio/sdk-go),
+[ctis](https://github.com/openctemio/ctis) (shared contract),
+[helm-charts](https://github.com/openctemio/helm-charts),
+[docs](https://github.com/openctemio/docs) (public documentation).
+
+> This repository was `openctemio/api` until the merge; old links to it redirect
+> here. The web console's earlier history lives in the archived
+> [openctemio/ui](https://github.com/openctemio/ui) and is imported under `web/`
+> (its tags as `ui/v*`).
+
+## Quick start (development)
+
+```bash
+make setup     # go mod download, npm ci, enable git hooks
+make dev-api   # see api/README.md for Postgres/Redis
+make dev-web   # http://localhost:3000
+make check     # what CI runs, both components
+```
+
+## Deploying
+
+- **Compose, one HTTPS port:** [`api/deploy/docker-compose.yml`](api/deploy/docker-compose.yml)
+  runs the gateway ([`api/deploy/gateway`](api/deploy/gateway), Caddy), web, API,
+  Postgres and Redis; only the gateway is published.
+- **All-in-one image:** `ghcr.io/openctemio/openctem` embeds the same gateway.
+  ```bash
+  docker run -d -p 443:443 -v openctem-data:/data \
+    -e OPENCTEM_HOSTNAME=ctem.example.com -e DB_HOST=... -e DB_PASSWORD=... -e REDIS_HOST=... \
+    -e AUTH_JWT_SECRET=... -e APP_ENCRYPTION_KEY=... ghcr.io/openctemio/openctem:vX.Y.Z
+  ```
+  `GATEWAY=on` (default) serves only :443 (`OPENCTEM_TLS_MODE` internal | acme |
+  files | http, as in the Compose gateway); `GATEWAY=off` serves the API on :8080
+  and the web on :3000 for your own proxy. `/data` keeps attachments and the
+  gateway's CA: mount a volume.
+- **Kubernetes:** [helm-charts](https://github.com/openctemio/helm-charts).
+
+## Releases
+
+One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-api`,
+`openctem-web`, `openctem` (all-in-one), `migrations`, `seed`, `admin-cli`, all
+multi-arch (amd64, arm64), signed with cosign, with SBOMs on the release. The
+pre-monorepo names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` keep
+receiving identical copies for two releases. See
+[`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml).
+
+## The API contract
+
+`api/api/openapi/swagger.yaml` is generated from the Go handler annotations
+(`make -C api swagger`, gated by `api/scripts/check-openapi.sh`). The web wire
+types in `web/src/lib/api/generated/api.types.ts` are generated from that same
+file (`make api-types`), and CI fails if they differ — so a change to the API
+contract and the web code that consumes it land in one pull request.
+
+## Contributing / security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).

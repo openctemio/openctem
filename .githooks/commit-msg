@@ -1,0 +1,10 @@
+#!/bin/sh
+# Reject AI attribution in commit messages. The user's standing rule: commits
+# and PRs never carry "Generated with Claude Code", Co-Authored-By: Claude,
+# Claude-Session or claude.ai/code session links.
+if grep -qiE '(generated with \[?claude code|co-authored-by:.*(claude|anthropic)|claude-session:|claude\.ai/code/session)' "$1"; then
+  echo "commit-msg: attribution lines are not allowed in this repository. Remove:" >&2
+  grep -niE '(generated with \[?claude code|co-authored-by:.*(claude|anthropic)|claude-session:|claude\.ai/code/session)' "$1" >&2
+  exit 1
+fi
+exit 0

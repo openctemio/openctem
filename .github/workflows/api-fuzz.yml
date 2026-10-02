@@ -1,10 +1,8 @@
-name: Fuzz
+name: API Fuzz
 
-# Nightly fuzzing of the parsers that read untrusted sensor bytes
-# (RFC-026 WP-A3: the strict CTIS decoder of protocol v2 results). Runs on a
-# schedule and on demand, never on pull requests: a fuzz run is open-ended and
-# would make PR CI slow and non-deterministic. A crash uploads the failing
-# input so it can be added to testdata/fuzz as a regression seed.
+# Nightly fuzzing of the parsers that read untrusted sensor bytes (the strict
+# CTIS decoder of protocol v2 results). Schedule + manual only, never on pull
+# requests. Schedules run from the default branch (main).
 
 on:
   schedule:
@@ -25,23 +23,22 @@ jobs:
     timeout-minutes: 20
     env:
       GOWORK: 'off'
+    defaults:
+      run:
+        working-directory: api
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.8'
+          go-version: '1.26.6'
           cache: true
-
+          cache-dependency-path: api/go.sum
       - name: Fuzz the strict CTIS decoder
         run: go test ./internal/app/ingest/ -run '^$' -fuzz '^FuzzStrictCTIS$' -fuzztime 10m
-
       - name: Upload the failing input
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: fuzz-strict-ctis-crasher
-          path: internal/app/ingest/testdata/fuzz/
+          path: api/internal/app/ingest/testdata/fuzz/
           if-no-files-found: ignore

@@ -1,33 +1,56 @@
-name: CI
+name: API CI
+
+# The Go API lives in api/. This workflow ALWAYS starts (no `paths:` filter, which
+# would leave required checks Pending); the `changes` job decides whether the
+# real jobs run, and `API CI OK` is the single required check.
+# Job bodies are carried over from openctemio/api's ci.yml; see git log for the
+# reasoning behind each gate.
 
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  merge_group:
 
-# A newer push to the same PR or branch cancels the older run: force-pushed
-# and rebased branches otherwise queue every superseded commit and starve the
-# organisation's concurrent-job limit. Tags (releases) and the scheduled scan
-# are never cancelled.
+# A newer push to the same PR or branch cancels the older run. Tags (releases)
+# and the scheduled scan are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
 
+permissions:
+  contents: read
+
 env:
-  GO_VERSION: "1.26.8"
+  GO_VERSION: "1.26.6"
+  GOWORK: "off"
+
+defaults:
+  run:
+    working-directory: api
 
 jobs:
-  # ============================================
-  # Migration Safety — block deploy-breaking (non-expand-contract) migrations.
-  # Production rolls out with old pods still serving the new schema, so a
-  # destructive migration (DROP COLUMN, RENAME, incompatible TYPE change, ...)
-  # breaks them mid-deploy. See docs/deployment/safe-deploy-and-migrations.md.
-  # ============================================
+  changes:
+    name: Detect API changes
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.f.outputs.api }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: f
+        working-directory: .
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: bash .github/scripts/changed.sh api api/ .github/workflows/api- .github/scripts/
+
   migrations:
     name: Migration Safety
+    needs: changes
+    if: needs.changes.outputs.api == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -35,28 +58,20 @@ jobs:
           fetch-depth: 0 # need base branch for the diff
 
       - name: Fetch base branch
-        run: git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
 
       - name: Check for destructive migrations
         env:
-          BASE_REF: "origin/${{ github.base_ref }}"
-          # 'allow-destructive-migration' label overrides the guard (e.g. an
-          # intentional expand-contract "contract" step).
           ALLOW_DESTRUCTIVE_MIGRATION: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destructive-migration') }}
-        run: bash scripts/check-migrations.sh
+        run: |
+          BASE_REF="$(bash ../.github/scripts/effective-base.sh api "origin/${{ github.base_ref }}")"
+          export BASE_REF
+          bash scripts/check-migrations.sh
 
-  # ============================================
-  # SQL schema gate — catches Go-vs-database drift that the startup schema
-  # check cannot see. It only compares the migration VERSION; it has no idea
-  # whether the columns the code references exist. That gap shipped pipeline
-  # runs stuck forever (42P08), asset stale-detection reading last_seen_at
-  # instead of last_seen, pipeline-cancel writing a commands.updated_at that
-  # does not exist, and an EPSS sync whose staging table had drifted from the
-  # real column. Postgres itself is the oracle here: apply the migrations to a
-  # throwaway database and PREPARE every extractable statement.
-  # ============================================
   sql-schema:
     name: SQL Schema Drift
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -65,30 +80,20 @@ jobs:
       - name: Prepare every SQL statement against a migrations-only database
         run: bash scripts/check-sql-schema.sh
 
-  # ============================================
-  # Security lint + tenant-scope analyzer. Both existed already and neither ran:
-  # they were wired into the root monorepo's workflows, and that repository has
-  # no git remote and returns 404 on GitHub. The security-lint script was not
-  # even stored in a backed-up repository — it lived only on one developer's
-  # disk. This job moves it into api/ and runs it for the first time.
-  # ============================================
   security-gates:
     name: Security Gates
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
-      # Rules 1, 4 and 6 read sibling repositories, so reconstruct the workspace
-      # layout the script expects: <root>/{api,agent,sdk-go}.
-      - name: Checkout api
+      # security-lint.sh expects <root>/{api,agent,sdk-go}. The monorepo root
+      # already has api/; the two siblings are checked out next to it.
+      - name: Checkout monorepo
         uses: actions/checkout@v7
-        with:
-          path: api
 
-      - name: Checkout agent
+      - name: Checkout sensor (as agent/)
         uses: actions/checkout@v7
         with:
-          # The sensor repository (renamed from openctemio/agent). Checked out
-          # as agent/ because security-lint.sh and the workspace submodule
-          # still use that directory name.
           repository: openctemio/sensor
           path: agent
 
@@ -99,10 +104,9 @@ jobs:
           path: sdk-go
 
       - name: Run security lint
+        working-directory: .
         env:
           SECLINT_ROOT: ${{ github.workspace }}
-          # A rule that cannot run must not report as passed. Without this, a
-          # workspace missing a sibling runs 4 of 6 rules and still exits 0.
           SECLINT_STRICT: "1"
         run: bash api/scripts/security-lint.sh
 
@@ -113,46 +117,16 @@ jobs:
           cache: true
           cache-dependency-path: api/go.sum
 
-      # F-310: flags repository GetByID calls that are not tenant-scoped. The
-      # analyzer and its baseline live in api/tools/lint/getbyid and are fully
-      # tested; only the CI invocation was missing.
       - name: Run tenant-scope analyzer
-        working-directory: api
-        run: GOWORK=off go test ./tools/lint/getbyid/... -count=1
+        run: go test ./tools/lint/getbyid/... -count=1
 
-      # RFC-023 §9.5: no "agent" identifier outside the legacy v1 adapter and
-      # the other allow-listed places (tools/lint/sensorvocab).
       - name: Sensor vocabulary guard
-        working-directory: api
-        run: GOWORK=off go test ./tools/lint/sensorvocab/... -count=1
+        run: go test ./tools/lint/sensorvocab/... -count=1
 
-  # ============================================
-  # OpenAPI contract gate — api/openapi/swagger.yaml is generated by swag from
-  # the handler // @Router annotations, and until now nothing checked that the
-  # committed file still matched them. It had drifted to the point of describing
-  # a different server: 30 documented paths with no route anywhere in the repo
-  # (a closed-source era leftover), and 40 real endpoints missing, including the
-  # entire /notifications API.
-  #
-  # That is a client bug, not a docs bug — the UI generates its API types from
-  # this file, so a stale entry ships a request to an endpoint that does not
-  # exist and a missing entry hides a feature from every client.
-  #
-  # This compares SETS of operations (annotations vs spec vs registered routes),
-  # not the bytes of the generated file. A byte gate was tried first and failed
-  # here for a reason worth recording: swag is not hermetic. A clean runner
-  # drops `format: int64` from some map[string]int64 fields that a developer
-  # machine emits — same pinned swag, same Go, warm module cache. Both documents
-  # describe the same API, so the gate would have failed on a non-disagreement
-  # nobody could fix, and would have been deleted. See
-  # tools/lint/openapicontract.
-  #
-  # Deliberately UNCONDITIONAL: no `if:` on event_name, no base-ref lookup, and
-  # the script fails (rather than skips) when its inputs are missing.
-  # Conditional gates in this repository have twice turned out never to run.
-  # ============================================
   openapi:
     name: OpenAPI Contract
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -163,18 +137,19 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: api/go.sum
 
       - name: Spec matches the handler annotations
         run: bash scripts/check-openapi.sh
 
-  # ============================================
-  # Gateway — the single public entry point (deploy/gateway). Validates the
+  # Gateway: the single public entry point (api/deploy/gateway). Validates the
   # Caddyfile in every TLS mode, the entrypoint's refusals, and the routing
   # table against stub upstreams; and that the production compose renders.
-  # Unconditional for the same reason as the OpenAPI gate.
-  # ============================================
+  # The all-in-one image (deploy/allinone) embeds the same gateway files.
   gateway:
     name: Gateway Routing
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -184,7 +159,7 @@ jobs:
         run: bash deploy/gateway/smoke-test.sh
 
       - name: Production compose renders
-        working-directory: deploy
+        working-directory: api/deploy
         run: |
           cp .env.example .env
           sed -i -e 's/^DB_PASSWORD=.*/DB_PASSWORD=x/' -e 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=x/' \
@@ -200,6 +175,8 @@ jobs:
 
   lint:
     name: Lint
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -212,44 +189,40 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: api/go.sum
 
       - name: Run go vet
         run: go vet ./...
 
       - name: Install staticcheck
-        # pinned: @latest drifted to a version whose SA4023 analyzer segfaults (see 2026-08-24)
         run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
 
       - name: Run staticcheck
         run: staticcheck ./...
 
-      # CLAUDE.md calls golangci-lint mandatory and .golangci.yml configures 30+
-      # linters, but no live workflow ran it — the only invocation lived in the
-      # root monorepo's workflow, and that repository does not exist on GitHub.
-      # So errorlint, gosec, prealloc and the rest have been advisory for as long
-      # as they have been documented as required.
-      #
-      # Gated on new code only: develop carries 162 pre-existing findings, and a
-      # whole-tree gate would fail every PR until someone pays that down. Same
-      # --new-from-rev shape the migration guard already uses, so the debt is
-      # frozen rather than ignored.
       - name: Fetch base branch
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags origin "${{ github.base_ref }}"
 
       - name: Run golangci-lint on new code
         if: github.event_name == 'pull_request'
-        run: make lint-new BASE_REF="origin/${{ github.base_ref }}"
+        run: |
+          base="$(bash ../.github/scripts/effective-base.sh api "origin/${{ github.base_ref }}")"
+          make lint-new BASE_REF="$base"
 
   test:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17-alpine
         env:
           POSTGRES_USER: openctem
-          POSTGRES_PASSWORD: secret
+          # Job-scoped throwaway database: no password at all (trust auth on
+          # the service network), so no credential literal lives in the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: app_test
         ports:
           - 5432:5432
@@ -258,7 +231,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
       redis:
         image: redis:7-alpine
         ports:
@@ -268,7 +240,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -278,26 +249,18 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: api/go.sum
 
       - name: Download dependencies
         run: go mod download
 
-      # The integration tests need a schema. Nothing created one before, because
-      # Run them through golang-migrate, the tool production uses — not psql.
-      #
-      # psql executes a file as a plain script with no transaction wrapper;
-      # golang-migrate wraps any multi-statement file in one. That difference is
-      # not cosmetic: a migration containing CREATE INDEX CONCURRENTLY alongside
-      # anything else passes under psql and fails under the real runner, which is
-      # exactly how migration 000197 reached the live database and left
-      # schema_migrations dirty. CI has to fail the way production fails.
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
 
       - name: Apply migrations to the test database
         run: migrate -path migrations -database "$DATABASE_URL" up
         env:
-          DATABASE_URL: postgres://openctem:secret@localhost:5432/app_test?sslmode=disable
+          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -305,36 +268,31 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: openctem
-          DB_PASSWORD: secret
           DB_NAME: app_test
-          # tests/integration reads DATABASE_URL, not the DB_* pair above. Without
-          # it, setupTestDB fell back to postgres://openctem@localhost/openctem —
-          # wrong database, no password — failed to ping, and called t.Skipf. Go
-          # prints SKIP where a skimmed log reads green, so 33 tests across 14
-          # files have never actually run in CI.
-          DATABASE_URL: postgres://openctem:secret@localhost:5432/app_test?sslmode=disable
+          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
           REDIS_HOST: localhost
           REDIS_PORT: 6379
 
       - name: Upload coverage
         uses: codecov/codecov-action@v6
         with:
-          files: ./coverage.out
+          files: ./api/coverage.out
+          flags: api
           fail_ci_if_error: false
 
   compat-v1:
-    # Sensors and SDKs already deployed in the field speak protocol v1, which is
-    # frozen (RFC-023 §9.2, C8). Run the last released sdk-go against this build
-    # over the real HTTP surface: a renamed route, a newly required field or a
-    # changed response shape fails here instead of at a customer.
     name: Protocol v1 Compatibility
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17-alpine
         env:
           POSTGRES_USER: openctem
-          POSTGRES_PASSWORD: secret
+          # Job-scoped throwaway database: no password at all (trust auth on
+          # the service network), so no credential literal lives in the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: app_compat
         ports:
           - 5432:5432
@@ -353,12 +311,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgres://openctem:secret@localhost:5432/app_compat?sslmode=disable
+      DATABASE_URL: postgres://openctem@localhost:5432/app_compat?sslmode=disable
       APP_ENV: development
       DB_HOST: localhost
       DB_PORT: 5432
       DB_USER: openctem
-      DB_PASSWORD: secret
       DB_NAME: app_compat
       DB_SSLMODE: disable
       REDIS_HOST: localhost
@@ -375,8 +332,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: |
+            api/go.sum
+            api/tests/compat/v1/go.sum
 
-      # Fresh per run: no secret, not even a throwaway one, lives in the repo.
       - name: Generate secrets
         run: |
           echo "AUTH_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
@@ -394,7 +353,7 @@ jobs:
       - name: Start API
         run: |
           nohup ./bin/server > server.log 2>&1 &
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             curl -sf http://127.0.0.1:8080/health >/dev/null && exit 0
             sleep 1
           done
@@ -412,8 +371,9 @@ jobs:
 
   build:
     name: Build
+    needs: [changes, lint, test]
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
-    needs: [lint, test]
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -423,32 +383,31 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: api/go.sum
 
       - name: Build API Server
-        run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/openctem ./cmd/server
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/openctem ./cmd/server
 
       - name: Build Bootstrap Admin
-        run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/bootstrap-admin ./cmd/bootstrap-admin
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/bootstrap-admin ./cmd/bootstrap-admin
 
       - name: Upload API artifact
         uses: actions/upload-artifact@v7
         with:
           name: api-linux-amd64
-          path: bin/openctem
+          path: api/bin/openctem
 
       - name: Upload Bootstrap Admin artifact
         uses: actions/upload-artifact@v7
         with:
           name: bootstrap-admin-linux-amd64
-          path: bin/bootstrap-admin
+          path: api/bin/bootstrap-admin
 
   docker:
     name: Docker Build
+    needs: [changes, build]
+    if: needs.changes.outputs.api == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: [build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -459,8 +418,26 @@ jobs:
       - name: Build Docker image
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: api
           push: false
-          tags: openctem:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: openctem-api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+  # The ONE required status check for the API. Runs even when everything above
+  # was skipped (non-API change), and fails if any job failed or was cancelled.
+  # A skipped job is fine: it means the path filter or an event condition said
+  # it does not apply.
+  api-ok:
+    name: API CI OK
+    if: always()
+    needs: [changes, migrations, sql-schema, security-gates, openapi, gateway, lint, test, compat-v1, build, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All API jobs passed or were skipped
+        working-directory: .
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null

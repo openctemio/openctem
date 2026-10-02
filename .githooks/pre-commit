@@ -1,0 +1,25 @@
+#!/bin/sh
+# Monorepo pre-commit. Enabled by `make hooks` (git config core.hooksPath .githooks);
+# web's `npm ci` also sets it (package.json "prepare"). Runs only the checks for
+# the component(s) that have staged files, so an API commit never waits on tsc.
+set -e
+top=$(git rev-parse --show-toplevel)
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if printf '%s\n' "$staged" | grep -q '^web/'; then
+  if [ -d "$top/web/node_modules" ]; then
+    (cd "$top/web" && npm run -s type-check && npx --no-install lint-staged)
+  else
+    echo "pre-commit: web/node_modules missing; skipping web checks (run: make setup)" >&2
+  fi
+fi
+
+gofiles=$(printf '%s\n' "$staged" | grep '^api/.*\.go$' || true)
+if [ -n "$gofiles" ]; then
+  # shellcheck disable=SC2086
+  bad=$(cd "$top" && gofmt -l $gofiles)
+  if [ -n "$bad" ]; then
+    echo "pre-commit: gofmt needed:" >&2; echo "$bad" >&2; exit 1
+  fi
+fi
+exit 0

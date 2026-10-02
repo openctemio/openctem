@@ -1,0 +1,26 @@
+# Root-level ignores. api/.gitignore and web/.gitignore keep their own
+# language-specific rules; this file covers what bites at the root.
+
+# Secrets / env (whitelist examples)
+.env
+.env.*
+!.env.example
+!*.env.example
+
+# Local Go workspace files (GOWORK=off is the CI default)
+go.work
+go.work.sum
+
+# Sibling checkouts that CI's Security Gates job (and local security-lint runs)
+# place next to api/: <root>/{api,agent,sdk-go}
+/agent/
+/sdk-go/
+
+# Editors / OS
+.DS_Store
+.idea/
+*.swp
+
+# Worktrees created inside the checkout by mistake
+/.worktrees/
+/worktrees/

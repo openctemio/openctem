@@ -1,0 +1,451 @@
+name: Docker Publish
+
+# One `v*` tag releases the whole product: every image is built from the same
+# commit and gets the same version tag:
+#   ghcr.io/openctemio/openctem-api   API only (8080)
+#   ghcr.io/openctemio/openctem-web   web only (3000)
+#   ghcr.io/openctemio/openctem       all-in-one: API + web + the api/deploy/gateway
+#                                      Caddy gateway (GATEWAY=on: 443 only;
+#                                      GATEWAY=off: 8080+3000)
+#   ghcr.io/openctemio/{migrations,seed,admin-cli}
+# Every image is built on a NATIVE runner per arch and smoke-tested there
+# (config arch + ELF e_machine + it executes) BEFORE it is pushed. (`ui/v*` tags imported from the old ui
+# repository do not match `v*`: the glob's `*` does not cross `/`.)
+#
+# Image names. Primary names follow the repository; the legacy names
+# (ghcr.io/openctemio/api, ghcr.io/openctemio/ui) keep receiving the SAME
+# manifests during the transition window so existing compose files, Helm values
+# and `docker pull` lines keep working. To end the window, blank the `legacy`
+# field of the matrix entry. migrations/seed/admin-cli keep their names.
+#
+# GHCR permissions: packages created by openctemio/api's workflows stay linked
+# to this repository after the rename (same repository). The `ui` package was
+# linked to openctemio/ui: grant this repository Write in that package's
+# "Manage Actions access" BEFORE the first release, or the legacy ui copy fails.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g., v0.10.0, v0.10.0-staging)"
+        required: true
+        type: string
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io/openctemio
+  DOCKERHUB_NAMESPACE: openctemio
+  SOURCE_URL: https://github.com/${{ github.repository }}
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.VERSION }}
+      build_time: ${{ steps.vars.outputs.BUILD_TIME }}
+      environment: ${{ steps.vars.outputs.ENVIRONMENT }}
+      tags: ${{ steps.vars.outputs.TAGS }}
+      has_dockerhub: ${{ steps.check.outputs.HAS_DOCKERHUB }}
+    steps:
+      - name: Check Docker Hub credentials
+        id: check
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ]; then echo "HAS_DOCKERHUB=true" >> "$GITHUB_OUTPUT"; else echo "HAS_DOCKERHUB=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Set build variables
+        id: vars
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_ENVIRONMENT: ${{ github.event.inputs.environment }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"; ENVIRONMENT="$INPUT_ENVIRONMENT"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+            if [[ "$VERSION" == *"-staging"* ]]; then ENVIRONMENT=staging; else ENVIRONMENT=production; fi
+          fi
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Invalid version '$VERSION' (want v<major>.<minor>.<patch>[-suffix])"; exit 1
+          fi
+          if [ "$ENVIRONMENT" = "staging" ]; then
+            [[ "$VERSION" == *"-staging"* ]] || VERSION="${VERSION}-staging"
+            TAGS="${VERSION},staging-latest"
+          else
+            TAGS="${VERSION},latest"
+          fi
+          { echo "VERSION=$VERSION"; echo "ENVIRONMENT=$ENVIRONMENT"; echo "TAGS=$TAGS"; echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.image.name }} (${{ matrix.platform.arch }})
+    needs: [prepare]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: openctem-api, legacy: api, context: api, file: api/Dockerfile, target: production }
+          - { name: migrations, legacy: '', context: api, file: api/Dockerfile.migrations, target: '' }
+          - { name: seed, legacy: '', context: api, file: api/Dockerfile.seed, target: '' }
+          - { name: admin-cli, legacy: '', context: api, file: api/Dockerfile.admin-cli, target: '' }
+          - { name: openctem-web, legacy: ui, context: web, file: web/Dockerfile, target: '' }
+        platform:
+          - { platform: linux/amd64, runner: ubuntu-latest, arch: amd64 }
+          - { platform: linux/arm64, runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to Docker Hub (authenticated base-image pulls)
+        continue-on-error: true
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build for smoke test (native arch, loaded locally, not pushed)
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
+          target: ${{ matrix.image.target }}
+          platforms: ${{ matrix.platform.platform }}
+          # One set for every image; each Dockerfile consumes the ARGs it declares.
+          # VERSION/COMMIT/BUILD_TIME: the API's GET /api/v1/version.
+          # NEXT_PUBLIC_APP_VERSION/COMMIT: web Help > About.
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://app.openctem.io' }}
+            NEXT_PUBLIC_AUTH_PROVIDER=${{ vars.NEXT_PUBLIC_AUTH_PROVIDER || 'local' }}
+            NEXT_PUBLIC_APP_VERSION=${{ needs.prepare.outputs.version }}
+            NEXT_PUBLIC_APP_COMMIT=${{ github.sha }}
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ needs.prepare.outputs.build_time }}
+          load: true
+          tags: smoke/${{ matrix.image.name }}:${{ matrix.platform.arch }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.image.name }}:buildcache-${{ matrix.platform.arch }}
+          provenance: false
+          sbom: false
+      - name: Smoke test on the native arch
+        run: bash .github/scripts/smoke-image.sh ${{ matrix.image.name }} smoke/${{ matrix.image.name }}:${{ matrix.platform.arch }} ${{ matrix.platform.arch }}
+      - name: Push by digest (same build, from cache)
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
+          target: ${{ matrix.image.target }}
+          platforms: ${{ matrix.platform.platform }}
+          # Links a newly created package to this repository (and documents the
+          # source on existing ones).
+          labels: |
+            org.opencontainers.image.source=${{ env.SOURCE_URL }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+          # One set for every image; each Dockerfile consumes the ARGs it declares.
+          # VERSION/COMMIT/BUILD_TIME: the API's GET /api/v1/version.
+          # NEXT_PUBLIC_APP_VERSION/COMMIT: web Help > About.
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://app.openctem.io' }}
+            NEXT_PUBLIC_AUTH_PROVIDER=${{ vars.NEXT_PUBLIC_AUTH_PROVIDER || 'local' }}
+            NEXT_PUBLIC_APP_VERSION=${{ needs.prepare.outputs.version }}
+            NEXT_PUBLIC_APP_COMMIT=${{ github.sha }}
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ needs.prepare.outputs.build_time }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.image.name }}:buildcache-${{ matrix.platform.arch }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.image.name }}:buildcache-${{ matrix.platform.arch }},mode=max
+          provenance: false
+          sbom: false
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish ${{ matrix.image.name }}
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: openctem-api, legacy: api }
+          - { name: migrations, legacy: '' }
+          - { name: seed, legacy: '' }
+          - { name: admin-cli, legacy: '' }
+          - { name: openctem-web, legacy: ui }
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image.name }}-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - uses: imjasonh/setup-crane@v0.7
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch manifest
+        working-directory: /tmp/digests
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image.name }}
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          args=()
+          for t in ${TAGS//,/ }; do args+=(-t "${IMAGE}:${t}"); done
+          # shellcheck disable=SC2046
+          docker buildx imagetools create "${args[@]}" $(printf "${IMAGE}@sha256:%s " *)
+      - name: Copy to the legacy name (transition window)
+        if: matrix.image.legacy != ''
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image.name }}
+          LEGACY: ${{ env.REGISTRY }}/${{ matrix.image.legacy }}
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          for t in ${TAGS//,/ }; do crane copy "${IMAGE}:${t}" "${LEGACY}:${t}"; done
+      - name: Summary
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image.name }}
+          LEGACY: ${{ matrix.image.legacy }}
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          {
+            echo "### ${IMAGE}"
+            for t in ${TAGS//,/ }; do echo "- \`${IMAGE}:${t}\`"; done
+            if [ -n "$LEGACY" ]; then for t in ${TAGS//,/ }; do echo "- \`${REGISTRY}/${LEGACY}:${t}\` (legacy name)"; done; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The all-in-one image is ASSEMBLED from the two component images just
+  # published (same digests), on each native arch, smoke-tested against a real
+  # Postgres + Redis in both gateway modes, then pushed.
+  allinone:
+    name: Build openctem all-in-one (${{ matrix.arch }})
+    needs: [prepare, merge]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux/amd64, runner: ubuntu-latest, arch: amd64 }
+          - { platform: linux/arm64, runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: openctem
+          # Job-scoped throwaway database: no password at all (trust auth on
+          # the service network), so no credential literal lives in the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: app_smoke
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build (load for smoke)
+        uses: docker/build-push-action@v7
+        with:
+          context: deploy/allinone
+          # The gateway is api/deploy/gateway itself (same files as the split deployment).
+          build-contexts: gateway=api/deploy/gateway
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            API_IMAGE=${{ env.REGISTRY }}/openctem-api:${{ needs.prepare.outputs.version }}
+            WEB_IMAGE=${{ env.REGISTRY }}/openctem-web:${{ needs.prepare.outputs.version }}
+          load: true
+          tags: smoke/openctem:${{ matrix.arch }}
+          provenance: false
+          sbom: false
+      - name: Smoke test (arch + both gateway modes against Postgres/Redis)
+        env:
+          SMOKE_NETWORK: host
+          DB_HOST: localhost
+          REDIS_HOST: localhost
+        run: |
+          bash .github/scripts/smoke-image.sh openctem smoke/openctem:${{ matrix.arch }} ${{ matrix.arch }}
+          bash .github/scripts/smoke-allinone.sh smoke/openctem:${{ matrix.arch }}
+      - name: Push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: deploy/allinone
+          # The gateway is api/deploy/gateway itself (same files as the split deployment).
+          build-contexts: gateway=api/deploy/gateway
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            API_IMAGE=${{ env.REGISTRY }}/openctem-api:${{ needs.prepare.outputs.version }}
+            WEB_IMAGE=${{ env.REGISTRY }}/openctem-web:${{ needs.prepare.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+          outputs: type=image,name=${{ env.REGISTRY }}/openctem,push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          sbom: false
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digests-openctem-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  allinone-merge:
+    name: Publish openctem (all-in-one)
+    needs: [prepare, allinone]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digests-openctem-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch manifest
+        working-directory: /tmp/digests
+        env:
+          IMAGE: ${{ env.REGISTRY }}/openctem
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          args=()
+          for t in ${TAGS//,/ }; do args+=(-t "${IMAGE}:${t}"); done
+          # shellcheck disable=SC2046
+          docker buildx imagetools create "${args[@]}" $(printf "${IMAGE}@sha256:%s " *)
+
+  # Keyless cosign signatures (Sigstore, GitHub OIDC) + an SPDX SBOM per image.
+  # Verify with:
+  #   cosign verify ghcr.io/openctemio/openctem:vX.Y.Z \
+  #     --certificate-identity-regexp '^https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v' \
+  #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  sign:
+    name: Sign + SBOM ${{ matrix.name }}
+    needs: [prepare, merge, allinone-merge]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [openctem-api, openctem-web, openctem, migrations, seed, admin-cli]
+    steps:
+      - uses: sigstore/cosign-installer@v3
+      - uses: anchore/sbom-action/download-syft@v0
+      - uses: imjasonh/setup-crane@v0.7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sign the manifest list by digest
+        env:
+          REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
+        run: |
+          digest=$(crane digest "$REF")
+          cosign sign --yes "${REF%:*}@${digest}"
+      - name: SBOM (SPDX JSON)
+        env:
+          REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
+        run: syft "$REF" -o spdx-json="sbom-${{ matrix.name }}-${{ needs.prepare.outputs.version }}.spdx.json"
+      - name: Attach SBOM to the GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 1 30); do gh release view "${{ github.ref_name }}" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break; sleep 10; done
+          gh release upload "${{ github.ref_name }}" -R "$GITHUB_REPOSITORY" --clobber sbom-*.spdx.json
+
+  mirror-to-dockerhub:
+    name: Mirror ${{ matrix.image.name }} to Docker Hub
+    needs: [prepare, merge, allinone-merge]
+    if: needs.prepare.outputs.has_dockerhub == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: openctem-api, legacy: api }
+          - { name: migrations, legacy: '' }
+          - { name: seed, legacy: '' }
+          - { name: admin-cli, legacy: '' }
+          - { name: openctem-web, legacy: ui }
+          - { name: openctem, legacy: '' }
+    steps:
+      - uses: imjasonh/setup-crane@v0.7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Copy tags
+        env:
+          SRC: ${{ env.REGISTRY }}/${{ matrix.image.name }}
+          NAMES: ${{ matrix.image.name }} ${{ matrix.image.legacy }}
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          for n in $NAMES; do
+            for t in ${TAGS//,/ }; do crane copy "${SRC}:${t}" "docker.io/${DOCKERHUB_NAMESPACE}/${n}:${t}"; done
+          done
