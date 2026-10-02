@@ -274,7 +274,8 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/credentials` · `/{id}` · `/{id}/related` · `/identities` · `/identities/{identity}/exposures` · `/stats` | `findings:credentials:read` |
-| `POST /api/v1/credentials/import` · `/import/csv` · `/{id}/resolve` · `/accept` · `/false-positive` · `/reactivate` | `findings:credentials:write` |
+| `POST /api/v1/credentials/import` · `/import/csv` · `/{id}/resolve` · `/reactivate` | `findings:credentials:write` |
+| `POST /api/v1/credentials/{id}/accept` · `/{id}/false-positive` | `findings:credentials:write` **and** `findings:approve` (same dispositions as the exposure routes) |
 | `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` |
 
 > **The leaked secret is reveal-only.** Read endpoints (here and under
