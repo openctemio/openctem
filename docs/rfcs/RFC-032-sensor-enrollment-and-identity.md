@@ -1,6 +1,7 @@
 # RFC-032 — Sensor enrollment, identity and declared capabilities
 
-> Status: **Proposed** (2026-10-02). Docs only; no code in this change.
+> Status: **Accepted** (2026-10-02; owner decisions in §10.1). Proposed
+> 2026-10-02 in #706. Phase 0 is in implementation.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) +
 > ui + helm-charts.
 > Builds on and makes concrete: [RFC-014](RFC-014-agent-identity.md) (per-sensor
@@ -614,7 +615,7 @@ credential's `jti` is remembered until its `exp` to refuse reuse.
 | New SDK against an old platform | `hello` does not advertise `signed_requests` → the SDK stays on the bearer key it was given; with only an enrollment token it reports "platform does not support enrollment" and exits non-zero (clear failure, no silent mode) |
 | Install snippets | `GET /sensors/{id}/config-templates` keeps serving legacy snippets; a new `GET /sensor-enrollment-tokens/{id}/install` renders the enrollment snippets from the same templates directory |
 | Management API | `POST /api/v1/sensors` keeps working (legacy key), marked deprecated in OpenAPI once enrollment ships |
-| Sunset | tenant switch "require key-bound identity" first; platform-wide on the protocol-v1 sunset (Q6) |
+| Sunset | tenant switch "require key-bound identity" first; platform-wide on 2027-04-01 with the protocol-v1 sunset (D3) |
 
 ## 8. Implementation plan
 
@@ -656,7 +657,7 @@ start now.
 | SPIFFE/SPIRE as a hard dependency | Excellent where it exists; too heavy to require for a sensor on one VM. Federation hook in Phase 5 (RFC-023 P3) |
 | Trust tiers from self-reported build facts | A malicious host can report anything (E9); only attestation binds |
 
-## 10. Decisions needed from the owner
+## 10. Decisions
 
 | # | Question | Options | Recommended |
 |---|---|---|---|
@@ -666,6 +667,87 @@ start now.
 | Q4 | Order | (a) Phase 1 (key-bound identity) and Phase 2 (enrollment) in one SDK release; (b) enrollment first, issuing bearer keys, signatures later | **(a)**; (b) only if signatures slip past one release |
 | Q5 | Scan credentials to sensors | (a) only to approved `key_bound`+ sensors, HPKE-sealed per job; legacy sensors use sensor-local credentials; (b) also to legacy sensors with a warning | **(a)** |
 | Q6 | `rda_` retirement | (a) tenant opt-in "require key-bound identity" from Phase 1; new installs enrollment-only from Phase 2; platform-wide with the v1 sunset 2027-04-01; (b) keep `rda_` indefinitely | **(a)** |
+
+### 10.1 Owner decisions (2026-10-02)
+
+The owner accepted every recommendation in the table above.
+
+| # | Decision | Consequence |
+|---|---|---|
+| D1 (Q1) | The default credential on the wire is a **sensor-held Ed25519 key with RFC 9421 request signatures**. mTLS client certificates are an optional later mode (Phase 5), never the default. | E4, E5 and §5.2 stand as written. Phase 1 builds the verifier and the signer; no bearer-token exchange (DPoP, JWT) is built. |
+| D2 (Q2) | **Single-use enrollment tokens auto-approve; reusable tokens require approval.** | The E3 defaults stand: `approval auto` when `max_uses = 1`, else `manual`. |
+| D3 (Q3, Q4, Q6) | The "create sensor + `rda_` key" flow stays only behind **"Legacy key"** in the UI. **Phases 1 and 2 ship in one SDK release**, so a sensor never sees an enrollment that issues bearer keys. **New installs are enrollment-only from Phase 2.** **`rda_` keys are retired platform-wide on 2027-04-01** together with protocol v1; a tenant can opt in earlier with "require key-bound identity". | The §7 sunset row is fixed to 2027-04-01. Until Phase 2 ships the legacy flow is the only flow, and Phase 0 hardens it. |
+| D4 | **Start Phase 0 now**, independently of Phases 1 and 2. | Phase 0 is tracked in §10.2. |
+| D5 (Q5) | **Scan credentials go only to approved, key-bound (or stronger) sensors**, HPKE-sealed per job. Legacy-key sensors keep sensor-local credentials. | E10 stands. Until Phase 3, Phase 0 warns when a scan's `scanner_config` looks like it carries a secret (G7). |
+
+### 10.2 Phase 0 tracking
+
+| Item | Where | Notes |
+|---|---|---|
+| Cloned-identity signal (E13 for `rda_` sensors) | api + sdk-go | The SDK sends a random per-process `instance_id` on every heartbeat (an optional member; older platforms ignore it). Two `instance_id`s alternating for one sensor inside the window flag the sensor and write `sensor.identity_cloned` to the audit log. Quarantine waits for Phase 1. |
+| Source IP on every key use | api | The inline key and `sensor_api_keys` both record the last-used IP from the trusted-proxy-aware client IP; a key used from a new IP is audited. |
+| Renewal that survives a restart, then expiry by default | sdk-go, sensor, api snippets, helm | The SDK persists the renewed key in the state directory (`/var/lib/openctem/state`, 0600, atomic write) and prefers it over the configured key on start; every snippet and the chart mount that directory. **Only after that ships** do the defaults change (key TTL 90 days, renewal inside the last 30 days, auto-renew on in the sensor). Keys issued before the change keep no expiry. |
+| Dedicated key-hash pepper (G9) | api | `SENSOR_KEY_PEPPER`; when unset it is derived with HKDF-SHA256 from `APP_ENCRYPTION_KEY`, so the MAC key is never the encryption key. Hashes made with the old pepper keep verifying (dual lookup); new and renewed keys are stored with the new pepper. |
+| Dead bootstrap and registration-token code (G4) | api, helm, sdk-go | Removed from the api and the chart (`mode: platform`) after a cross-repository search. In sdk-go the client is public API, so it is marked `Deprecated` rather than deleted (the SDK compatibility check allows additions only); it goes with the v1 sunset. |
+| Secret-looking `scanner_config` values (G7) | api + ui | A warning in the save response and a hint in the form; never blocks. |
+| `rda_` in GitHub secret scanning | owner | Needs the GitHub partner program; steps in §10.3. |
+
+### 10.3 Follow-up for the owner: GitHub secret scanning for `rda_` (and `ocse_`)
+
+Having GitHub report leaked keys in public repositories to us is done
+through the **GitHub secret scanning partner program**, not a repository
+setting, so it cannot be done from code.
+
+What the program asks for (partner program page, linked in §11):
+
+1. **A distinctive, high-entropy format.** `rda_` + 64 hex characters
+   qualifies (unique prefix, 256 bits). A checksum suffix is strongly
+   preferred because it lets GitHub, and us, reject false positives
+   offline. Phase 0 does not change the `rda_` format, so `ocse_` (which
+   carries a CRC32, E2) is the better first candidate; `rda_` can be
+   registered alongside with the plain pattern.
+2. **A public alert endpoint** run by the vendor (for example
+   `https://openctem.io/.well-known/secret-scanning`, outside any tenant
+   installation) that accepts `POST` with a JSON array of
+   `{token, type, url, source}`, verifies the request signature (headers
+   `Github-Public-Key-Identifier` and `Github-Public-Key-Signature`, ECDSA
+   P-256 with SHA-256, against the keys published at
+   `https://api.github.com/meta/public_keys/secret_scanning`) and answers
+   quickly. OpenCTEM is self-hosted, so that endpoint cannot revoke a key
+   itself: it can only record the report and, later, let an installation
+   that opts in ask "was one of my keys reported" by hash prefix. That
+   limits what registration buys us; decide this before applying.
+3. **An optional validity check** (GitHub asks whether a reported token is
+   live): not possible for a self-hosted product without phoning home, so
+   the answer would be "unknown".
+4. **Contact GitHub** through the partner program page to start
+   onboarding, with the secret type names (`openctem_sensor_key`,
+   `openctem_enrollment_token`), the regular expressions, the endpoint URL
+   and a security contact.
+
+**Until then, an organization can scan its own repositories for leaked
+sensor keys with a custom pattern** (GitHub Advanced Security:
+organization or repository *Settings → Code security → Secret scanning →
+Custom patterns → New pattern*; enable push protection for it):
+
+| Field | Value |
+|---|---|
+| Pattern name | `OpenCTEM sensor key` |
+| Secret format | `rda_[0-9a-f]{64}` |
+| Before secret | `(?:\A|[^0-9A-Za-z_])` |
+| After secret | `(?:\z|[^0-9A-Za-z_])` |
+| Test string | `API_KEY=rda_` followed by 64 hex characters |
+
+The same expression works elsewhere:
+
+```toml
+# gitleaks (.gitleaks.toml)
+[[rules]]
+id = "openctem-sensor-key"
+description = "OpenCTEM sensor key"
+regex = '''\brda_[0-9a-f]{64}\b'''
+keywords = ["rda_"]
+```
 
 ## 11. Sources
 
