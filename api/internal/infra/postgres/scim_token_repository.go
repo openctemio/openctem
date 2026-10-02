@@ -14,6 +14,7 @@ import (
 // ScimTokenRepository persists SCIM provisioning bearer tokens.
 type ScimTokenRepository struct {
 	db *DB
+	tokenPepper
 }
 
 // NewScimTokenRepository creates the repository.
@@ -23,8 +24,8 @@ func NewScimTokenRepository(db *DB) *ScimTokenRepository {
 
 func (r *ScimTokenRepository) Create(ctx context.Context, t *scimtoken.ScimToken) error {
 	const q = `
-		INSERT INTO scim_tokens (id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO scim_tokens (id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at, key_pepper_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 	_, err := r.db.ExecContext(ctx, q,
 		t.ID().String(),
@@ -36,6 +37,7 @@ func (r *ScimTokenRepository) Create(ctx context.Context, t *scimtoken.ScimToken
 		nullableID(t.CreatedBy()),
 		t.CreatedAt(),
 		t.LastUsedAt(),
+		r.value(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert scim token: %w", err)
@@ -155,4 +157,17 @@ func (r *ScimTokenRepository) scanRow(s scimRowScanner) (*scimtoken.ScimToken, e
 		created = createdAt.Time
 	}
 	return scimtoken.Reconstruct(id, tenantID, name, hash, prefix, scimtoken.Status(status), createdByPtr, created, lastUsed), nil
+}
+
+// RehashKey replaces the stored hash of a SCIM token made with an earlier pepper
+// by its hash under the current pepper, only while the stored hash is still
+// oldHash. Reports whether the row changed.
+func (r *ScimTokenRepository) RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	return r.rehash(ctx, r.db, scimTokens, id, oldHash, newHash)
+}
+
+// CountKeysNotUnderPepper counts active tokens not hashed with the current
+// pepper (they still need APP_ENCRYPTION_KEY_PREVIOUS).
+func (r *ScimTokenRepository) CountKeysNotUnderPepper(ctx context.Context) (int, error) {
+	return r.countNotCurrent(ctx, r.db, scimTokens)
 }

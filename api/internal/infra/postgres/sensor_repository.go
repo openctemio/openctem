@@ -21,6 +21,7 @@ import (
 // SensorRepository implements sensor.Repository using PostgreSQL.
 type SensorRepository struct {
 	db *DB
+	tokenPepper
 }
 
 // NewSensorRepository creates a new SensorRepository.
@@ -54,9 +55,9 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 			version, hostname, ip_address,
 			max_concurrent_jobs, current_jobs,
 			last_seen_at, last_error_at, total_findings, total_scans, error_count,
-			created_at, updated_at, key_expires_at
+			created_at, updated_at, key_expires_at, key_pepper_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
 	`
 
 	var ipAddr sql.NullString
@@ -95,6 +96,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		a.CreatedAt,
 		a.UpdatedAt,
 		nullTime(a.InlineKeyExpiresAt),
+		r.value(),
 	)
 
 	if err != nil {
@@ -554,13 +556,14 @@ func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash,
 		SET api_key_hash = $2,
 		    api_key_prefix = $3,
 		    key_expires_at = $4,
+		    key_pepper_id = $5,
 		    updated_at = NOW()
 		WHERE id = $1
 	`
 	if requireActive {
 		query += " AND status = 'active'"
 	}
-	result, err := r.db.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt))
+	result, err := r.db.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt), r.value())
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor api key: %w", err)
 	}
@@ -1512,4 +1515,17 @@ func (r *SensorRepository) HasSensorForCapability(ctx context.Context, tenantID 
 	}
 
 	return exists, nil
+}
+
+// RehashKey replaces the stored hash of a sensor's inline key made with an earlier pepper
+// by its hash under the current pepper, only while the stored hash is still
+// oldHash. Reports whether the row changed.
+func (r *SensorRepository) RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	return r.rehash(ctx, r.db, sensorInlineTokens, id, oldHash, newHash)
+}
+
+// CountKeysNotUnderPepper counts active tokens not hashed with the current
+// pepper (they still need APP_ENCRYPTION_KEY_PREVIOUS).
+func (r *SensorRepository) CountKeysNotUnderPepper(ctx context.Context) (int, error) {
+	return r.countNotCurrent(ctx, r.db, sensorInlineTokens)
 }
