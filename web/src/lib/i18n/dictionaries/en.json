@@ -215,6 +215,7 @@
   "help.about.api": "API",
   "help.about.devBuild": "Development build",
   "help.about.release": "Release",
+  "help.about.rc": "Release candidate",
   "help.about.unavailable": "unavailable",
   "help.about.loading": "Loading version",
   "activity.listLabel": "Activity",
