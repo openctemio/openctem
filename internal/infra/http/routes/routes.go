@@ -80,6 +80,7 @@ type Handlers struct {
 	// disables the guard (tests with a minimal handler set).
 	DataScope       middleware.DataScopeAsserter
 	Sensor          *handler.SensorHandler          // nil if not initialized (no database)
+	SensorContent   *handler.SensorContentHandler   // scanner content policy + refresh (RFC-031); nil without a database
 	ScanZone        *handler.ScanZoneHandler        // nil if not initialized (no database)
 	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
 	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
@@ -665,7 +666,7 @@ func Register(
 
 	// Sensor management routes (tenant from JWT token)
 	if h.Sensor != nil {
-		registerSensorManagementRoutes(router, h.Sensor, nil, authMiddleware, userSync)
+		registerSensorManagementRoutes(router, h.Sensor, h.SensorContent, authMiddleware, userSync)
 	}
 
 	// Scan zone routes (tenant from JWT token)

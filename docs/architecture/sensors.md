@@ -558,6 +558,77 @@ report), `effective`, and `capability_mismatch` (`tools_not_installed`,
 `capabilities_not_reported`; omitted when there is nothing to show). `PUT` with `tools: []` / `capabilities: []` removes the
 limit.
 
+## Scanner content
+
+[RFC-031](../rfcs/RFC-031-managed-sensor-updates.md). A tool's binary is
+pinned in the sensor image; its **content** is not: trivy's vulnerability
+database, the nuclei templates, the semgrep rules. A sensor with a content
+manager refreshes, verifies and atomically swaps that content itself, and
+reports it on the heartbeat inside its tool inventory:
+
+```json
+"tools": [{"name": "trivy", "version": "0.69.3", "installed": true,
+  "content": [{"name": "trivy-db", "version": "2026-10-02T01:05:41Z",
+    "updated_at": "2026-10-02T01:05:41Z", "fetched_at": "2026-10-02T04:59:26Z",
+    "source": "mirror.gcr.io/aquasec/trivy-db:2", "digest": "sha256:3b16…",
+    "managed": true, "error": ""}]}]
+```
+
+Content names: `trivy-db`, `trivy-java-db`, `nuclei-templates`,
+`semgrep-rules`. `managed: false` is content the tool fetches by itself (semgrep
+`--config auto`): shown, never flagged stale.
+
+**Storage.** Inside `sensors.reported_tools` (migration 000250): each tool's
+`content` member, sanitized by `CapabilityReportInput.Sanitize` →
+`sanitizeToolContent` (names `[a-z0-9-]`, at most 8 per tool, version 128 /
+source 256 / error 256 bytes, a digest only when `sha256:<hex>`, timestamps no
+later than a day ahead). No column of its own.
+
+**Policy** (`sensor_content_policies`, migration 000251, one row per tenant):
+`refresh_interval_hours`, and per content `max_age_hours`, a pinned `version`
+(an OCI digest `sha256:…` for a database, a release tag for templates) and, for
+`semgrep-rules`, `rulesets` (`p/default`). 0 or absent = the platform default
+(trivy-db 48 h, trivy-java-db 168 h, nuclei-templates 336 h, semgrep-rules
+168 h, refresh every 6 h). **The policy never names a content source**
+(registry, mirror, URL, directory): sources are the sensor host's
+configuration, so a compromised platform cannot point a fleet at other
+content. Sensors receive the policy on `refresh_content` commands and keep it.
+
+| Route | Permission | Does |
+|---|---|---|
+| `GET /api/v1/sensors/content-policy` | `sensors:read` | `{policy, defaults, updated_at, updated_by}` (policy with defaults filled) |
+| `PUT /api/v1/sensors/content-policy` | `sensors:write` | `{policy, apply_now}`; `apply_now` queues a refresh (not forced) carrying the policy to every eligible sensor and returns `commands_created`, `skipped` |
+| `POST /api/v1/sensors/{id}/content/refresh` | `sensors:write` | `{content?, force? (default true)}` → `202 {command_id, already_pending}`; `409` when the sensor manages no content or is disabled/revoked; `404` for another tenant's sensor |
+| `POST /api/v1/sensors/content/refresh` | `sensors:write` | the same for every eligible sensor → `{commands_created, skipped}` |
+
+A refresh is a `refresh_content` command pinned to the sensor, expiring after
+24 h, payload `{content, force, policy}` (sdk-go `core.RefreshContentRequest`).
+At most one is open (pending, acknowledged or running) per sensor: a second
+request returns it (`already_pending`). Eligible = active and reporting at
+least one `managed` content item; an older sensor would never claim the type,
+so it is not sent one. Policy updates and refresh requests are audited
+(`sensor.content_policy_updated`, `sensor.content_refresh_requested`).
+
+**Read model.** Every sensor response has `content` (never null): per tool and
+content the reported fields plus `age_seconds`, `max_age_hours`, `stale`,
+`pinned_version`, `pin_mismatch`, judged against the tenant's policy, and
+`content_refresh_supported`.
+
+**Health reasons** (`pkg/domain/sensor/content_health.go`), both `warning`, so
+an online sensor becomes `degraded`:
+
+- `content_stale`: managed content older than its limit (or none installed
+  yet): "The trivy DB is 3d old (limit 2d). The last refresh failed: …".
+- `content_refresh_failed`: the last refresh failed but the content is still
+  within its limit: "Refreshing the nuclei templates failed: checksum
+  mismatch. Scans use v10.4.8."
+
+**Per-scan provenance.** The sensor stamps the content a scan used on the
+report's `tool.properties.content` (CTIS `properties` is free-form, no schema
+change). For protocol v2 the tool is part of the report header, stored
+verbatim in `ingest_reports.header`; findings carry the report id as
+`scan_id`. Protocol v1 ingest keeps no report header.
+
 ## History written in the old vocabulary
 
 Hash-chained audit rows (`agent.*`, resource type `agent`) and append-only
