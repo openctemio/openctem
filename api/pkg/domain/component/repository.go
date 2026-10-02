@@ -39,6 +39,13 @@ type Repository interface {
 	// Returns nil, nil if not found.
 	GetExistingDependencyByComponentID(ctx context.Context, assetID shared.ID, componentID shared.ID, path string) (*AssetDependency, error)
 
+	// GetAssetDependency returns how a tenant's asset uses a component: the
+	// shallowest asset_components row (direct before transitive) for the
+	// (tenant, asset, component) triple, with the component attached. Used to
+	// show a finding's manifest file and dependency type. Returns nil, nil if
+	// the asset does not list the component.
+	GetAssetDependency(ctx context.Context, tenantID, assetID, componentID shared.ID) (*AssetDependency, error)
+
 	// UpdateAssetDependencyParent updates the parent_component_id and depth of an asset_component.
 	// Used in three-pass ingestion to set parent references after all components are inserted.
 	UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error

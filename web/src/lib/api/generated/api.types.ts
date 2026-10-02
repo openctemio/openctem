@@ -33300,7 +33300,16 @@ export interface components {
       was_filtered?: boolean
     }
     'internal_infra_http_handler.FindingAssetInfo': {
+      /**
+       * @description Set on the single-finding response only (GET /findings/{id}): what the
+       *     detail page needs to say how much the asset matters and how exposed it is.
+       */
+      criticality?: string
+      /** @description public | restricted | private | isolated | unknown */
+      exposure?: string
       id?: string
+      /** @description reachable from the internet */
+      is_internet_accessible?: boolean
       name?: string
       type?: string
       /** @description Repository web URL (e.g., github.com/org/repo) */
@@ -33312,7 +33321,12 @@ export interface components {
       name?: string
     }
     'internal_infra_http_handler.FindingComponentInfo': {
-      /** @description Dependency depth (1=direct, 2+=transitive) */
+      /**
+       * @description How the finding's asset uses the component. Set only when the asset's
+       *     dependency list has the component; absent means unknown, not transitive.
+       */
+      dependency_type?: string
+      /** @description 0 = direct */
       depth?: number
       /** @description Package ecosystem (e.g., "npm", "pypi") */
       ecosystem?: string
@@ -33320,10 +33334,10 @@ export interface components {
       fixed_in?: string
       /** @description Global component ID */
       id?: string
-      /** @description true if direct dependency */
-      is_direct?: boolean
       /** @description License identifier */
       license?: string
+      /** @description package.json, go.mod, … */
+      manifest_file?: string
       /** @description Package name (e.g., "lodash") */
       name?: string
       /** @description Package URL */
@@ -33388,7 +33402,7 @@ export interface components {
       compliance_impact?: string[]
       compliance_result?: string
       compliance_section?: string
-      /** @description Embedded component info for SCA findings */
+      /** @description Embedded component info for SCA findings (single-finding response) */
       component?: components['schemas']['internal_infra_http_handler.FindingComponentInfo']
       component_id?: string
       /** @description SARIF 2.1.0 Fields */
@@ -33516,6 +33530,8 @@ export interface components {
       updated_at?: string
       verified_at?: string
       verified_by?: string
+      /** @description Embedded CVE record (single-finding response) */
+      vulnerability?: components['schemas']['internal_infra_http_handler.FindingVulnerabilityInfo']
       vulnerability_class?: string[]
       vulnerability_id?: string
       web3_bytecode_offset?: number
@@ -33604,6 +33620,25 @@ export interface components {
       info?: number
       low?: number
       medium?: number
+    }
+    'internal_infra_http_handler.FindingVulnerabilityInfo': {
+      cisa_kev?: components['schemas']['internal_infra_http_handler.CISAKEVResponse']
+      cve_id?: string
+      cvss_score?: number
+      cvss_vector?: string
+      description?: string
+      epss_percentile?: number
+      epss_score?: number
+      exploit_available?: boolean
+      exploit_maturity?: string
+      fixed_versions?: string[]
+      id?: string
+      modified_at?: string
+      published_at?: string
+      references?: components['schemas']['internal_infra_http_handler.ReferenceResponse'][]
+      remediation?: string
+      severity?: string
+      title?: string
     }
     'internal_infra_http_handler.FixRegexResponse': {
       /** @description Number of replacements (0 = all) */

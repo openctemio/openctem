@@ -7542,8 +7542,19 @@ definitions:
     type: object
   internal_infra_http_handler.FindingAssetInfo:
     properties:
+      criticality:
+        description: |-
+          Set on the single-finding response only (GET /findings/{id}): what the
+          detail page needs to say how much the asset matters and how exposed it is.
+        type: string
+      exposure:
+        description: public | restricted | private | isolated | unknown
+        type: string
       id:
         type: string
+      is_internet_accessible:
+        description: reachable from the internet
+        type: boolean
       name:
         type: string
       type:
@@ -7563,8 +7574,13 @@ definitions:
     type: object
   internal_infra_http_handler.FindingComponentInfo:
     properties:
+      dependency_type:
+        description: |-
+          How the finding's asset uses the component. Set only when the asset's
+          dependency list has the component; absent means unknown, not transitive.
+        type: string
       depth:
-        description: Dependency depth (1=direct, 2+=transitive)
+        description: 0 = direct
         type: integer
       ecosystem:
         description: Package ecosystem (e.g., "npm", "pypi")
@@ -7575,11 +7591,11 @@ definitions:
       id:
         description: Global component ID
         type: string
-      is_direct:
-        description: true if direct dependency
-        type: boolean
       license:
         description: License identifier
+        type: string
+      manifest_file:
+        description: package.json, go.mod, …
         type: string
       name:
         description: Package name (e.g., "lodash")
@@ -7704,7 +7720,7 @@ definitions:
       component:
         allOf:
         - $ref: '#/definitions/internal_infra_http_handler.FindingComponentInfo'
-        description: Embedded component info for SCA findings
+        description: Embedded component info for SCA findings (single-finding response)
       component_id:
         type: string
       confidence:
@@ -7955,6 +7971,10 @@ definitions:
         type: string
       verified_by:
         type: string
+      vulnerability:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.FindingVulnerabilityInfo'
+        description: Embedded CVE record (single-finding response)
       vulnerability_class:
         items:
           type: string
@@ -8113,6 +8133,47 @@ definitions:
         type: integer
       medium:
         type: integer
+    type: object
+  internal_infra_http_handler.FindingVulnerabilityInfo:
+    properties:
+      cisa_kev:
+        $ref: '#/definitions/internal_infra_http_handler.CISAKEVResponse'
+      cve_id:
+        type: string
+      cvss_score:
+        type: number
+      cvss_vector:
+        type: string
+      description:
+        type: string
+      epss_percentile:
+        type: number
+      epss_score:
+        type: number
+      exploit_available:
+        type: boolean
+      exploit_maturity:
+        type: string
+      fixed_versions:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      modified_at:
+        type: string
+      published_at:
+        type: string
+      references:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ReferenceResponse'
+        type: array
+      remediation:
+        type: string
+      severity:
+        type: string
+      title:
+        type: string
     type: object
   internal_infra_http_handler.FixRegexResponse:
     properties:
