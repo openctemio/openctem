@@ -1,7 +1,9 @@
 # RFC-035 — Sensor control plane under load: heartbeats that survive the scans they supervise
 
-> Status: **Proposed** (2026-10-02, api#727). Phase 1 (SDK only, no owner decision
-> needed) is in review: sdk-go#113.
+> Status: **Accepted** (owner decisions 2026-10-02, §6.1; proposed in api#727).
+> - Phase 1 (SDK, no decision needed) is merged: sdk-go#113.
+> - D2 (the B1 fix) is in api#746.
+> - D1, D3, D5 and D6 are in implementation; D4 was declined and D7 deferred (§6.1).
 > Scope: sdk-go + api + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on [RFC-023](RFC-023-scan-zones-and-scanners.md) §9.2a (heartbeat
 > doorbell), [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md)
@@ -462,6 +464,18 @@ RTT and failures, plus a 24 h sparkline of gaps.
 | D5 | Lower the sensor's own `oom_score_adj` (e.g. −500) when it has `CAP_SYS_RESOURCE` | (a) no; (b) yes, opt-in (`SENSOR_PROTECT_FROM_OOM=true`); (c) yes by default | **(b)**. Raising scanners (Phase 1) already makes them the victims. Protecting the agent over a customer's workloads on a shared host should be the operator's choice. |
 | D6 | Lease renewal channel | (a) the heartbeat's `running` list plus any command request; (b) a separate lightweight lease endpoint (KEP-589 style) | **(a)**. RFC-033's slim heartbeat already is the cheap lease. Revisit if heartbeats grow again. |
 | D7 | Per-job cgroups (Phase 3) | (a) opt-in when the sensor detects a delegated cgroup; (b) not at all | **(a)**, documented for systemd (`Delegate=yes`) and Kubernetes. |
+
+### 6.1 Owner decisions (2026-10-02)
+
+| # | Decision | Outcome |
+|---|---|---|
+| D1 | Conviction model | **Yes.** Each sensor is judged against the interval the platform advised it, on a late → stale → offline ladder (§5.6.1–5.6.2). This also fixes B2: `stale` becomes reachable. |
+| D2 | B1 hotfix | **Yes, urgent, its own PR.** Advised intervals are capped at half of the offline mark: ≤ 45 s with the 90 s controller (api#746). |
+| D3 | When `sensor.offline` is notified | **Yes.** Only at true `offline`, and never while the platform itself is degraded or slow (§5.6.4). |
+| D4 | CPU reserve for the sensor | **No.** Scanners yield the CPU through their priority (Phase 1); the measurements showed no heartbeat delay from CPU contention. |
+| D5 | Sensor self-protection from the OOM killer | **Yes, opt-in, off by default** (`SENSOR_PROTECT_FROM_OOM`). A negative `oom_score_adj` needs `CAP_SYS_RESOURCE` (Docker: `--cap-add SYS_RESOURCE`; systemd: run as root or grant the capability); without it the sensor warns and runs unprotected. Scanners never inherit the negative score. |
+| D6 | Leases and re-queue | **Yes.** Leases are renewed by the heartbeat's `running` list and by any other call about the command. A dead sensor's running commands are re-queued promptly, not after the 1 h run timeout (fixes B5). Duplicate execution is fenced: every claim has a lease epoch, and a completion from an older epoch is refused. |
+| D7 | Per-job cgroups | **Deferred to Phase 3.** In the measurements, memory-aware slots plus scanner priority already prevented OOM, and cgroup delegation varies across Docker, Kubernetes and systemd. |
 
 ## 7. Phases
 
