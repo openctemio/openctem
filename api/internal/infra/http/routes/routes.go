@@ -187,6 +187,7 @@ type Handlers struct {
 	AdminAuth           *handler.AdminAuthHandler
 	AdminOrganization   *handler.AdminOrganizationHandler
 	AdminConsole        *handler.AdminConsoleHandler
+	AdminAuditChain     *handler.AdminAuditChainHandler
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
 
 	// Admin Audit middleware (audit logging for admin operations)

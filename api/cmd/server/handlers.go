@@ -397,6 +397,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminAuth:           handler.NewAdminAuthHandler(log),
 		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
 		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
+		AdminAuditChain:     handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
 
 		// Admin Audit middleware (audit logging for admin operations)
