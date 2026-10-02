@@ -1,5 +1,6 @@
 'use client'
 
+import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { useState, useMemo, useCallback } from 'react'
 import { Plus, Wrench, Search, LayoutGrid, TableIcon, Download } from 'lucide-react'
 import { toast } from 'sonner'
@@ -253,30 +254,19 @@ export function ToolsSection({ onToolSelect, selectedToolId }: ToolsSectionProps
   )
 
   const handleExport = useCallback(() => {
-    const csv = [
-      ['Name', 'Display Name', 'Category', 'Install Method', 'Version', 'Active', 'Built-in'].join(
-        ','
-      ),
-      ...tools.map((t) =>
-        [
-          t.name,
-          t.display_name,
-          getCategoryNameById(categoriesData?.items, t.category_id),
-          t.install_method,
-          t.current_version || '',
-          t.is_active ? 'Yes' : 'No',
-          t.is_builtin ? 'Yes' : 'No',
-        ].join(',')
-      ),
-    ].join('\n')
-
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${mainTab}-tools.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    const csv = buildCsv(
+      ['Name', 'Display Name', 'Category', 'Install Method', 'Version', 'Active', 'Built-in'],
+      tools.map((t) => [
+        t.name,
+        t.display_name,
+        getCategoryNameById(categoriesData?.items, t.category_id),
+        t.install_method,
+        t.current_version || '',
+        t.is_active ? 'Yes' : 'No',
+        t.is_builtin ? 'Yes' : 'No',
+      ])
+    )
+    downloadCsv(csv, `${mainTab}-tools.csv`)
     toast.success('Tools exported')
   }, [tools, mainTab, categoriesData])
 

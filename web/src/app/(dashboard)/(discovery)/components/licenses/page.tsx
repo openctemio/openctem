@@ -1,5 +1,6 @@
 'use client'
 
+import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import Link from 'next/link'
@@ -165,22 +166,11 @@ export default function LicensesPage() {
       return
     }
 
-    const csv = [
-      ['License', 'Name', 'Category', 'Risk', 'URL', 'Component Count'].join(','),
-      ...licenseStats.map((l) =>
-        [`"${l.license_id}"`, `"${l.name}"`, l.category, l.risk, `"${l.url || ''}"`, l.count].join(
-          ','
-        )
-      ),
-    ].join('\n')
-
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'license-report.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+    const csv = buildCsv(
+      ['License', 'Name', 'Category', 'Risk', 'URL', 'Component Count'],
+      licenseStats.map((l) => [l.license_id, l.name, l.category, l.risk, l.url || '', l.count])
+    )
+    downloadCsv(csv, 'license-report.csv')
     toast.success('License report exported')
   }
 
