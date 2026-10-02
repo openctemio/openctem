@@ -68,14 +68,22 @@ func (h *FindingActionsHandler) SourceAnalytics(w http.ResponseWriter, r *http.R
 
 // --- Group View ---
 
+// findingGroupByDimensions are exactly the dimensions the repository implements
+// (FindingRepository.ListFindingGroups). The list had drifted: it rejected
+// owner_id, component_id and finding_type, which the UI offers, with 400 and
+// let status and type through to a 500.
+var findingGroupByDimensions = map[string]bool{
+	"cve_id": true, "asset_id": true, "owner_id": true, "component_id": true,
+	"severity": true, "source": true, "finding_type": true,
+}
+
 // ListFindingGroups handles GET /api/v1/findings/groups
 func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	groupBy := r.URL.Query().Get("group_by")
-	allowedGroupBy := map[string]bool{"cve_id": true, "asset_id": true, "severity": true, "status": true, "source": true, "type": true}
 	if groupBy == "" {
 		groupBy = "cve_id"
-	} else if !allowedGroupBy[groupBy] {
+	} else if !findingGroupByDimensions[groupBy] {
 		apierror.BadRequest("Invalid group_by value").WriteJSON(w)
 		return
 	}
