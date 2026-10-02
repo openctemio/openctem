@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -287,8 +288,33 @@ func withoutLaterPermissions(access map[string]string, known map[string]bool) ma
 	return out
 }
 
+// laterRevocations are system-role grants that a migration after 000230
+// removes on purpose (000246: sensors:write, audit:read and
+// settings:billing:read are owner/admin only). They are not part of the
+// rename, so they are taken out of the "before" map too; any other grant the
+// upgrade lost is still caught.
+var laterRevocations = map[string][]string{
+	"role:member": {"sensors:write", "audit:read", "settings:billing:read"},
+	"role:viewer": {"audit:read", "settings:billing:read"},
+}
+
+func withoutLaterRevocations(access map[string]string) map[string]string {
+	out := make(map[string]string, len(access))
+	for who, perms := range access {
+		kept := []string{}
+		for _, p := range strings.Split(perms, ",") {
+			if !slices.Contains(laterRevocations[who], p) {
+				kept = append(kept, p)
+			}
+		}
+		out[who] = strings.Join(kept, ",")
+	}
+	return out
+}
+
 func assertUpgraded(t *testing.T, db *sql.DB, before map[string]string, known map[string]bool, assetsUpdatedAt string) {
 	t.Helper()
+	before = withoutLaterRevocations(before)
 	if got := withoutLaterPermissions(effectiveAccess(t, db), known); fmt.Sprint(got) != fmt.Sprint(before) {
 		t.Errorf("effective access changed by the upgrade:\nbefore %v\nafter  %v", before, got)
 	}

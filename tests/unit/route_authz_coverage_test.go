@@ -35,6 +35,8 @@ var gateFuncs = map[string]bool{
 	"RequireTeamAdmin": true, "RequireTeamOwner": true, "RequireTeamRole": true,
 	"RequireMinTeamRole": true, "RequireRole": true, "RequirePermission": true,
 	"RequireTenantRole": true, "RequireMinTenantRole": true, "RequirePlatformAdmin": true,
+	// RequirePermissionOrSelf: the permission, or the path names the caller.
+	"RequirePermissionOrSelf": true,
 }
 
 // routeAuthzAllowlist enumerates routes that are legitimately NOT permission-

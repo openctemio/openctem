@@ -25,6 +25,13 @@ are separate credentials and are not covered here.
 | `expires_at`, `status` | Expiry and revocation. |
 | `last_used_at`, `last_used_ip`, `use_count` | Updated on every authenticated request. |
 
+Who sees which keys: owners and administrators list every key of the
+organization; anyone else (`integrations:api_keys:read` without the admin
+bypass) lists only the keys whose `user_id` is their own, and another user's
+key reads as 404 (owner decision 2026-10-02). Minting, revoking and deleting
+need `integrations:api_keys:write` / `:delete`, which only owners and
+administrators hold by default.
+
 Storage: HMAC-SHA256 of the key with `APP_ENCRYPTION_KEY` as pepper (legacy
 plain-SHA256 rows still match). Lookup is by hash, so the plaintext is never
 compared.

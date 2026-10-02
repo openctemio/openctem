@@ -22,7 +22,11 @@ import (
 //   - removing a role (RemoveRole, or a role that SetUserRoles drops) needs the
 //     same: nobody may take away a role they could not have given;
 //   - only an owner may change the role set of a user who holds the owner
-//     role, and the tenant's owner (membership role 'owner') always keeps it.
+//     role, and the tenant's owner (membership role 'owner') always keeps it;
+//   - only an owner may change the role set of another administrator (a user
+//     holding the system admin role): administrators manage members and
+//     viewers, not their peers. Changing one's own role set is not a peer
+//     change and stays subject to the rules above.
 //
 // The handler-level check (assertCanGrantPermissions) lets administrators
 // through, so this is where the rule is enforced. An empty actor is a system
@@ -33,6 +37,7 @@ import (
 var ErrGrantForbidden = fmt.Errorf("%w: role change not allowed", shared.ErrForbidden)
 
 type grantActor struct {
+	id       string // the acting user; empty for a system path
 	system   bool
 	owner    bool
 	fullData bool
@@ -51,7 +56,7 @@ func (s *RoleService) loadGrantActor(ctx context.Context, tid roledom.ID, actorI
 	if err != nil {
 		return grantActor{}, fmt.Errorf("load actor roles: %w", err)
 	}
-	a := grantActor{perms: map[string]bool{}}
+	a := grantActor{id: uid.String(), perms: map[string]bool{}}
 	for _, r := range roles {
 		if r.ID() == roledom.OwnerRoleID {
 			a.owner = true
@@ -108,18 +113,22 @@ func (a grantActor) mayCarry(perms []string, fullData bool) error {
 	return nil
 }
 
-// holdsOwnerRole reports whether the user currently holds the owner role.
-func (s *RoleService) holdsOwnerRole(ctx context.Context, tid, uid roledom.ID) (bool, error) {
+// holdsPrivilegedRoles reports whether the user currently holds the owner role
+// and whether they hold the system admin role.
+func (s *RoleService) holdsPrivilegedRoles(ctx context.Context, tid, uid roledom.ID) (owner, admin bool, err error) {
 	roles, err := s.roleRepo.GetUserRoles(ctx, tid, uid)
 	if err != nil {
-		return false, fmt.Errorf("load user roles: %w", err)
+		return false, false, fmt.Errorf("load user roles: %w", err)
 	}
 	for _, r := range roles {
-		if r.ID() == roledom.OwnerRoleID {
-			return true, nil
+		switch r.ID() {
+		case roledom.OwnerRoleID:
+			owner = true
+		case roledom.AdminRoleID:
+			admin = true
 		}
 	}
-	return false, nil
+	return owner, admin, nil
 }
 
 // isMembershipOwner reports whether the user is the tenant's owner by
@@ -143,12 +152,15 @@ func (s *RoleService) isMembershipOwner(ctx context.Context, tid, uid roledom.ID
 // authorizeRoleSetChange checks a change of user uid's role set to keepsOwner
 // (whether the new set still contains the owner role) by actor a.
 func (s *RoleService) authorizeRoleSetChange(ctx context.Context, a grantActor, tid, uid roledom.ID, keepsOwner bool) error {
-	targetOwner, err := s.holdsOwnerRole(ctx, tid, uid)
+	targetOwner, targetAdmin, err := s.holdsPrivilegedRoles(ctx, tid, uid)
 	if err != nil {
 		return err
 	}
 	if targetOwner && !a.owner && !a.system {
 		return fmt.Errorf("%w: only an owner can change an owner's roles", ErrGrantForbidden)
+	}
+	if targetAdmin && !a.owner && !a.system && a.id != uid.String() {
+		return fmt.Errorf("%w: only an owner can change another administrator's roles", ErrGrantForbidden)
 	}
 	if !keepsOwner && s.isMembershipOwner(ctx, tid, uid) {
 		return fmt.Errorf("%w: the organization's owner keeps the owner role; transfer ownership instead", shared.ErrValidation)

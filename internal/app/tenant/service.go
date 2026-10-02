@@ -621,6 +621,9 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	if membership.IsOwner() {
 		return nil, fmt.Errorf("%w: cannot change owner role", shared.ErrValidation)
 	}
+	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
+		return nil, err
+	}
 
 	oldRole := membership.Role().String()
 	role, ok := tenantdom.ParseRole(input.Role)
@@ -672,6 +675,9 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 	// Prevent removing the owner
 	if membership.IsOwner() {
 		return fmt.Errorf("%w: cannot remove the owner", shared.ErrValidation)
+	}
+	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
+		return err
 	}
 
 	tenantID := membership.TenantID().String()
@@ -728,6 +734,9 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
 	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
+		return err
+	}
+	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
 		return err
 	}
 
@@ -810,6 +819,9 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 func (s *TenantService) ReactivateMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
 	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
+		return err
+	}
+	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
 		return err
 	}
 

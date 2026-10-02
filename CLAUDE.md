@@ -504,7 +504,7 @@ returned once as `setup_token`):
 ```go
 POST /api/v1/tenants/{tenant}/users        // owner/admin
 {"email": "user@company.com", "name": "User", "role_ids": ["00000000-0000-0000-0000-000000000004"]}
-POST /api/v1/admin/tenants/{tenantId}/users // platform admin console
+POST /api/v1/admin/tenants/{tenantId}/users // platform admin console: FIRST OWNER ONLY (409 once an owner exists)
 ```
 
 Or invite (invitees without an account register with the invitation token):

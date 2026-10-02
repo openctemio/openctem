@@ -12,6 +12,12 @@ import (
 // (RFC-022); the database enforces it with a trigger on tenant_members.
 var ErrPlatformAdminMembership = fmt.Errorf("%w: platform administrators cannot be members of an organization; use a separate account", shared.ErrConflict)
 
+// ErrOrganizationHasOwner is returned when a platform administrator tries to
+// create the first owner of an organization that already has an active owner.
+// The platform administrator only bootstraps organizations; once an owner
+// exists, the owner and its administrators add people themselves.
+var ErrOrganizationHasOwner = fmt.Errorf("%w: this organization already has an owner; its owner and administrators invite or create users themselves", shared.ErrConflict)
+
 // MemberStatus represents the lifecycle state of a membership.
 type MemberStatus string
 

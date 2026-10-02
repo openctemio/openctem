@@ -13,7 +13,7 @@ sessions and clears the permission cache in the same call).
 
 ## Auth — per-tenant bearer token
 
-A tenant admin mints a SCIM token (shown once); the IdP presents it as
+The organization owner mints a SCIM token (shown once); the IdP presents it as
 `Authorization: Bearer <token>` on every `/scim/v2` request.
 
 - Tokens are stored as **peppered HMAC-SHA256** hashes (`crypto.HashTokenPeppered`,
@@ -25,7 +25,8 @@ A tenant admin mints a SCIM token (shown once); the IdP presents it as
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| POST/GET/DELETE | `/api/v1/scim-tokens` | JWT, owner/admin | mint / list / revoke a tenant's SCIM token |
+| GET | `/api/v1/scim-tokens` | JWT, owner/admin | list a tenant's SCIM tokens |
+| POST/DELETE | `/api/v1/scim-tokens` | JWT, **owner only** | mint / revoke a tenant's SCIM token |
 | GET | `/scim/v2/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas` | SCIM bearer | discovery |
 | GET | `/scim/v2/Users?filter=userName eq "x"` | SCIM bearer | list / filter |
 | POST | `/scim/v2/Users` | SCIM bearer | provision (find-or-create user + membership) |

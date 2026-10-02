@@ -239,7 +239,11 @@ func registerSensorManagementRoutes(
 		// Available capabilities for tenant (aggregated from all accessible sensors)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))
 
-		// Write operations
+		// Write operations. Every one of these creates, rotates or invalidates
+		// a sensor key (or the sensor that owns it), so sensors:write and
+		// sensors:delete are held by owners and administrators only — the
+		// member and viewer seeds do not grant them (owner decision 2026-10-02).
+		// Members and viewers keep the reads above.
 		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite))
 		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite))

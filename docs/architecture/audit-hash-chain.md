@@ -14,7 +14,7 @@ fact breaks the chain from that point on, and the break is detectable.
 | Verify: `GET /api/v1/audit-logs/verify` (admin), 409 + `breaks[]` on a break | `AuditService.VerifyChain` |
 | Hourly verification of every tenant | `internal/infra/controller/audit_chain_verify.go` |
 | Classify breaks offline | `cmd/chainaudit` |
-| Rebaseline: `POST /api/v1/audit-logs/rebaseline` (admin) | `AuditService.RebaselineChain` |
+| Rebaseline: `POST /api/v1/audit-logs/rebaseline` (owner only) | `AuditService.RebaselineChain` |
 
 `payload` is `action|resource_type|resource_id|result`. The timestamp is
 rounded to microseconds, as PostgreSQL stores it.

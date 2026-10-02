@@ -307,7 +307,11 @@ func (s *Service) AuthenticateWithPermissions(ctx context.Context, rawKey, ip st
 
 // ListInput represents input for listing API keys.
 type ListInput struct {
-	TenantID  string `json:"tenant_id" validate:"required,uuid"`
+	TenantID string `json:"tenant_id" validate:"required,uuid"`
+	// UserID, when set, lists only the keys that belong to that user. The
+	// handler sets it for callers who are not organization administrators:
+	// they see their own keys, never other people's.
+	UserID    string `json:"user_id" validate:"omitempty,uuid"`
 	Status    string `json:"status"`
 	Search    string `json:"search"`
 	Page      int    `json:"page"`
@@ -335,6 +339,14 @@ func (s *Service) List(ctx context.Context, input ListInput) (apikeydom.ListResu
 	if input.Status != "" {
 		st := apikeydom.Status(input.Status)
 		filter.Status = &st
+	}
+
+	if input.UserID != "" {
+		uid, err := shared.IDFromString(input.UserID)
+		if err != nil {
+			return apikeydom.ListResult{}, fmt.Errorf("%w: invalid user ID", shared.ErrValidation)
+		}
+		filter.UserID = &uid
 	}
 
 	return s.repo.List(ctx, filter)

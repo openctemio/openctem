@@ -39,7 +39,10 @@ func registerSCIMRoutes(
 		}, scimAuth)
 	}
 
-	// Admin SCIM-token management — JWT, owner/admin.
+	// SCIM-token management — JWT. Listing and group mappings: owner/admin.
+	// Minting and revoking a token: owner only — a SCIM token can create,
+	// suspend and re-role every member, so it is the organization owner's
+	// credential to hand out (owner decision 2026-10-02).
 	if tokenHandler != nil {
 		tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 		router.Group("/api/v1/scim-tokens", func(r Router) {
@@ -49,11 +52,11 @@ func registerSCIMRoutes(
 			// which is application-administrator only. RequireAdmin reads the
 			// JWT IsAdmin flag on this JWT-tenant chain.
 			r.GET("/", tokenHandler.List, middleware.RequireAdmin())
-			r.POST("/", tokenHandler.Create, middleware.RequireAdmin())
+			r.POST("/", tokenHandler.Create, middleware.RequireOwner())
 			// Group → role mappings (register before /{id} so the literal wins).
 			r.GET("/group-mappings", tokenHandler.GetGroupMappings, middleware.RequireAdmin())
 			r.PUT("/group-mappings", tokenHandler.SetGroupMappings, middleware.RequireAdmin())
-			r.DELETE("/{id}", tokenHandler.Revoke, middleware.RequireAdmin())
+			r.DELETE("/{id}", tokenHandler.Revoke, middleware.RequireOwner())
 		}, tenantMiddlewares...)
 	}
 }

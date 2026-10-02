@@ -91,7 +91,9 @@ So a person gets an account in exactly one of these ways:
 
 Platform administrator (console session):
 
-- `GET/POST /api/v1/admin/tenants/{tenantId}/users` (POST: ops_admin+, audited)
+- `GET/POST /api/v1/admin/tenants/{tenantId}/users` (POST: ops_admin+, audited;
+  since RFC-022 revision 5 it creates only the first owner of an organization
+  that has none)
   reuse the same service, with a built-in role (`admin|member|viewer`).
 - `POST /api/v1/admin/tenants` accepts an `owner_email` with no account (plus
   optional `owner_name`): the owner's account is created, the organization is

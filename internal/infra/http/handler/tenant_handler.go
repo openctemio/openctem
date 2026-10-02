@@ -381,6 +381,12 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.Conflict("Tenant already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrConflict):
 		apierror.Conflict(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		msg := err.Error()
+		if idx := strings.Index(msg, ": "); idx != -1 {
+			msg = msg[idx+2:]
+		}
+		apierror.Forbidden(msg).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		// Extract just the message without the wrapped error prefix
 		msg := err.Error()
@@ -875,6 +881,12 @@ func (h *TenantHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request)
 	}
 
 	actx := h.buildAuditContext(r)
+	if actx.ActorID == "" {
+		// The peer-administrator rule needs to know who is acting; an empty
+		// actor means a system path in the service.
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
 	membership, err := h.service.UpdateMemberRole(r.Context(), memberID, input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
@@ -895,6 +907,12 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actx := h.buildAuditContext(r)
+	if actx.ActorID == "" {
+		// The peer-administrator rule needs to know who is acting; an empty
+		// actor means a system path in the service.
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
 	if err := h.service.RemoveMember(r.Context(), memberID, actx); err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -912,6 +930,12 @@ func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actx := h.buildAuditContext(r)
+	if actx.ActorID == "" {
+		// The peer-administrator rule needs to know who is acting; an empty
+		// actor means a system path in the service.
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
 	if err := h.service.SuspendMember(r.Context(), memberID, actx); err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -931,6 +955,12 @@ func (h *TenantHandler) ReactivateMember(w http.ResponseWriter, r *http.Request)
 	}
 
 	actx := h.buildAuditContext(r)
+	if actx.ActorID == "" {
+		// The peer-administrator rule needs to know who is acting; an empty
+		// actor means a system path in the service.
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
 	if err := h.service.ReactivateMember(r.Context(), memberID, actx); err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1083,13 +1113,18 @@ type ProvisionedUserResponse struct {
 	EmailSent      bool                `json:"email_sent"`
 	SetupToken     string              `json:"setup_token,omitempty"`
 	SetupExpiresAt *time.Time          `json:"setup_expires_at,omitempty"`
+	// EmailFailed: the organization can send email but the send failed, and
+	// the link is deliberately not returned (platform administrator's
+	// first-owner bootstrap). The person uses forgot-password.
+	EmailFailed bool `json:"email_failed,omitempty"`
 }
 
 // toProvisionedUserResponse renders a ProvisionedUser for the API.
 func toProvisionedUserResponse(p *app.ProvisionedUser) ProvisionedUserResponse {
 	resp := ProvisionedUserResponse{
-		User:      ProvisionedUserInfo{ID: p.User.ID().String(), Email: p.User.Email(), Name: p.User.Name()},
-		EmailSent: p.EmailSent,
+		User:        ProvisionedUserInfo{ID: p.User.ID().String(), Email: p.User.Email(), Name: p.User.Name()},
+		EmailSent:   p.EmailSent,
+		EmailFailed: p.EmailFailed,
 	}
 	if p.Membership != nil {
 		resp.MembershipID = p.Membership.ID().String()

@@ -184,6 +184,65 @@ Details: [api-keys.md](./api-keys.md).
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
 
+#### Sensors (`/api/v1/sensors`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` | `sensors:read` |
+| `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write` |
+| `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
+
+> **Sensors and their keys are owner/admin only** (owner decision
+> 2026-10-02). Every write above creates, rotates or invalidates a sensor
+> credential (`rda_…`), so `sensors:write` and `sensors:delete` are held by
+> owner and admin only; migration `000246` removed `sensors:write` from the
+> member role (viewer never had it). Members and viewers keep `sensors:read`.
+> Scan-zone sensor assignment (`sensors:zones:write`) hands out no key and was
+> already owner/admin only (`000231`). A custom role carries `sensors:write`
+> only if an owner or administrator gave it one.
+
+#### Audit log (`/api/v1/audit-logs`)
+
+| Endpoint | Gate |
+|----------|------|
+| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) |
+| `GET /api/v1/audit-logs/user/{id}` | `audit:read`, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
+| `GET /api/v1/audit-logs/verify` | owner/admin (`RequireAdmin`) |
+| `POST /api/v1/audit-logs/rebaseline` | **owner only** (`RequireOwner`) |
+
+> The organization audit log (actor emails, IPs, every action) is owner/admin
+> only: migration `000246` removed `audit:read` from member and viewer.
+> Rebaseline overwrites the tamper-evident chain, so it is owner-only: an
+> administrator must not be able to re-sign the chain over their own changes.
+
+#### API keys (`/api/v1/api-keys`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/api-keys` · `/{id}` | `integrations:api_keys:read` — owner/admin see every key of the organization; anyone else sees **only their own keys** (another user's key reads as 404) |
+| `POST /api/v1/api-keys` · `/{id}/revoke` | `integrations:api_keys:write` (owner/admin) |
+| `DELETE /api/v1/api-keys/{id}` | `integrations:api_keys:delete` (owner/admin) |
+
+> Keys belong to the user who minted them (`api_keys.user_id`). The list shows
+> key names, scopes and last-used IPs, so a member or viewer is filtered to
+> their own keys in the handler (`ownKeysOnly`).
+
+#### SCIM tokens (`/api/v1/scim-tokens`)
+
+| Endpoint | Gate |
+|----------|------|
+| `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`) |
+| `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`) |
+
+> A SCIM token can create, suspend and re-role every member, so minting and
+> revoking one is the owner's decision (owner decision 2026-10-02).
+
+#### Billing
+
+`settings:billing:read` is owner/admin only (migration `000246` removed it from
+member and viewer). There is no billing API route today; the permission gates
+the billing page in the UI.
+
 #### Leaked credentials (`/api/v1/credentials`)
 
 | Endpoint | Permission Required |
@@ -247,15 +306,25 @@ These routes require the tenant ID in the URL path and use database-based member
 | `GET /api/v1/tenants/{tenant}/invitations` | Team viewer+ |
 | `PATCH /api/v1/tenants/{tenant}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
-| `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+ |
-| `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+ |
+| `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
+| `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |
+| `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
 | `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
-| `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console issues a new organization's owner link without this check. |
+| `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** (refuses an IP allowlist that excludes the caller's IP) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** |
 
+> **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
+> B3). Changing the role of, suspending, reactivating or removing a member who
+> is an administrator (or owner) needs the caller to be the owner; anyone else
+> gets 403 (`TenantService.authorizeMemberChange`). The same holds on the RBAC
+> paths (`/api/v1/users/{id}/roles`, assign/remove/bulk): only an owner may
+> change another administrator's role set (`grant_guard.go`). Administrators
+> still manage members and viewers, and may change their own membership. SCIM
+> (no human actor) is not a peer and keeps its own rules.
+>
 > **Granting roles** (invitations and created users) is anti-escalation checked:
 > a caller who is not an organization admin may grant only roles whose
 > permissions they hold, and the owner role is never grantable. The membership
@@ -398,9 +467,26 @@ recorded in `admin_audit_logs`, and in the organization's own audit log with
 | `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin |
 | `POST /api/v1/admin/tenants` | **ops_admin+** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
-| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** (audited; RFC-025) |
+| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no active owner, nothing else (409 otherwise). Audited in `admin_audit_logs` and the organization's audit log |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
 | `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited) |
+
+**First-owner bootstrap** (owner decision 2026-10-02, RFC-022 revision 5).
+The platform administrator belongs to no organization and cannot put a person
+of its choosing into one: `POST /admin/tenants/{tenantId}/users` creates only
+the first owner of an organization that has no active owner (checked and
+inserted in one transaction under a per-organization advisory lock, so two
+requests cannot create two owners), and answers 409 once an owner exists — the
+owner and its administrators add users themselves. The account is created
+without a password; the owner sets one through a one-time link, so the
+administrator never knows it and the owner's first sign-in is with a password
+they chose. The link is **emailed when the organization can send email** and is
+then never returned (a failed send reports `email_failed`; the owner uses
+forgot-password). Only when email cannot be sent at all is `setup_token`
+returned once: there is no other way to reach the new owner, and nobody in the
+organization can invite them yet. The same delivery rule applies to the owner
+created with `POST /admin/tenants`. Each is written to the organization's audit
+log (`user.created`, `bootstrap_owner: true`, actor `platform-admin:<email>`).
 
 **Tenant-side counterparts:**
 - `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.
@@ -708,6 +794,18 @@ Tenable.sc's RBAC.
    (`assertCanGrantPermissions`) lets administrators through, so the service is
    the enforcement point. SCIM mappings, SSO/SAML JIT and the membership-role
    update can never produce `owner`.
+
+9. **Owner/admin-only surfaces (owner decision 2026-10-02).** Sensor writes
+   and keys, the audit log, billing, and other users' API keys are owner/admin
+   only; peer administrators, audit-chain rebaseline and SCIM token mint/revoke
+   are owner only; the platform administrator only bootstraps an
+   organization's first owner. Members and viewers keep the member list
+   (emails included) and `sensors:read`. Role diff (migration `000246`):
+
+   | Role | Removed |
+   |------|---------|
+   | member | `sensors:write`, `audit:read`, `settings:billing:read` |
+   | viewer | `audit:read`, `settings:billing:read` |
 
 ### Known, deliberate gaps (do not "fix" without a decision)
 

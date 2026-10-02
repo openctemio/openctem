@@ -1,0 +1,398 @@
+package routes
+
+// The owner-approved authorization policy (2026-10-02), checked over the real
+// route registration (Register: auth chain, membership gate, the real route
+// gates and handlers) and real services against a migrated database. Each
+// caller's token is minted the way the token exchange mints it: owner/admin
+// get the IsAdmin bypass, everyone else carries the permissions the role
+// tables grant them. So these tests exercise the seed migration and the route
+// gates together:
+//
+//   - sensors: create / rotate key / revoke / activate / deactivate are owner
+//     and admin only; members and viewers keep read;
+//   - the audit log is owner/admin only; rebaseline is owner only;
+//   - members see only their own API keys;
+//   - billing read is no longer granted to member or viewer;
+//   - administrators cannot demote, suspend, reactivate or remove a peer
+//     administrator; the owner can; administrators still manage members;
+//   - SCIM token create / revoke is owner only.
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
+
+	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/apikey"
+	auditapp "github.com/openctemio/api/internal/app/audit"
+	"github.com/openctemio/api/internal/app/scim"
+	"github.com/openctemio/api/internal/config"
+	infrahttp "github.com/openctemio/api/internal/infra/http"
+	"github.com/openctemio/api/internal/infra/http/handler"
+	"github.com/openctemio/api/internal/infra/postgres"
+	"github.com/openctemio/api/internal/testdb"
+	"github.com/openctemio/api/pkg/domain/role"
+	"github.com/openctemio/api/pkg/jwt"
+	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/validator"
+)
+
+type authzPolicyHarness struct {
+	t     *testing.T
+	db    *sql.DB
+	srv   *httptest.Server
+	gen   *jwt.Generator
+	roles *postgres.RoleRepository
+	keys  *apikey.Service
+}
+
+func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
+	t.Helper()
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping authorization policy route test")
+	}
+	sqldb, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Skipf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqldb.Close() })
+	if err := sqldb.PingContext(context.Background()); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	// Register sets package-level chain parts; put them back afterwards.
+	saved := []Middleware{csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware,
+		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware}
+	savedKeyAuth := apiKeyOrJWT
+	t.Cleanup(func() {
+		apiKeyOrJWT = savedKeyAuth
+		csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware = saved[0], saved[1], saved[2]
+		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware = saved[3], saved[4], saved[5]
+	})
+
+	db := &postgres.DB{DB: sqldb}
+	log := logger.NewNop()
+	tenantRepo := postgres.NewTenantRepository(db)
+	userRepo := postgres.NewUserRepository(db)
+	roleRepo := postgres.NewRoleRepository(db)
+	auditSvc := auditapp.NewAuditService(postgres.NewAuditRepository(db), log)
+	keys := apikey.NewService(postgres.NewAPIKeyRepository(db), "authz-policy-pepper", log)
+	tenantSvc := app.NewTenantService(tenantRepo, log, app.WithTenantAuditService(auditSvc))
+	v := validator.New()
+
+	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "authz-policy-route-test-secret-0123456789abcdef", Issuer: "test",
+		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour})
+	cfg := &config.Config{}
+	cfg.Auth.Provider = config.AuthProviderLocal
+	authCfg := AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}
+
+	router := infrahttp.NewChiRouter()
+	Register(router, Handlers{
+		Sensor:    handler.NewSensorHandler(app.NewSensorService(postgres.NewSensorRepository(db), auditSvc, log), v, log),
+		Audit:     handler.NewAuditHandler(auditSvc, v, log),
+		APIKey:    handler.NewAPIKeyHandler(keys, v, log),
+		Tenant:    handler.NewTenantHandler(tenantSvc, v, log),
+		SCIMToken: handler.NewSCIMTokenHandler(scim.NewTokenService(postgres.NewScimTokenRepository(db), "authz-policy-pepper", log), log),
+	}, cfg, log, authCfg, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
+
+	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
+	t.Cleanup(srv.Close)
+	return &authzPolicyHarness{t: t, db: sqldb, srv: srv, gen: gen, roles: roleRepo, keys: keys}
+}
+
+func (h *authzPolicyHarness) exec(q string, args ...any) {
+	h.t.Helper()
+	if _, err := h.db.ExecContext(context.Background(), q, args...); err != nil {
+		h.t.Fatalf("%s: %v", q, err)
+	}
+}
+
+func (h *authzPolicyHarness) tenant() string {
+	h.t.Helper()
+	id := uuid.NewString()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'Authz policy IT', $2)`,
+		id, "authzpol-"+strings.ReplaceAll(id[:13], "-", ""))
+	h.t.Cleanup(func() {
+		ctx := context.Background()
+		for _, q := range []string{
+			`DELETE FROM audit_log_chain WHERE tenant_id = $1`,
+			`DELETE FROM audit_logs WHERE tenant_id = $1`,
+			`DELETE FROM api_keys WHERE tenant_id = $1`,
+			`DELETE FROM scim_tokens WHERE tenant_id = $1`,
+			`DELETE FROM sensors WHERE tenant_id = $1`,
+			`DELETE FROM user_roles WHERE tenant_id = $1`,
+			`DELETE FROM tenant_members WHERE tenant_id = $1`,
+			`DELETE FROM tenants WHERE id = $1`,
+		} {
+			_, _ = h.db.ExecContext(ctx, q, id)
+		}
+	})
+	return id
+}
+
+type policyUser struct {
+	id, membershipID, role, token string
+}
+
+// member creates a user with the given membership role in tenantID (the
+// tenant_members trigger grants the matching system role, as in production)
+// and mints their access token the way the token exchange does.
+func (h *authzPolicyHarness) member(tenantID, membershipRole string) policyUser {
+	h.t.Helper()
+	u := policyUser{id: uuid.NewString(), membershipID: uuid.NewString(), role: membershipRole}
+	email := "authzpol-" + u.id[:8] + "@it.test"
+	h.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'Authz policy IT')`, u.id, email)
+	h.t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, u.id) })
+	h.exec(`INSERT INTO tenant_members (id, user_id, tenant_id, role) VALUES ($1, $2, $3, $4)`,
+		u.membershipID, u.id, tenantID, membershipRole)
+
+	isAdmin := membershipRole == "owner" || membershipRole == "admin"
+	var perms []string
+	if !isAdmin {
+		var err error
+		perms, err = h.roles.GetUserPermissions(context.Background(), role.MustParseID(tenantID), role.MustParseID(u.id))
+		if err != nil {
+			h.t.Fatalf("permissions of %s: %v", membershipRole, err)
+		}
+	}
+	tok, err := h.gen.GenerateTenantScopedAccessTokenWithPermissions(u.id, email, "Authz policy IT", uuid.NewString(),
+		jwt.TenantMembership{TenantID: tenantID, Role: membershipRole}, perms, isAdmin, 0, "password")
+	if err != nil {
+		h.t.Fatalf("mint token: %v", err)
+	}
+	u.token = tok.AccessToken
+	return u
+}
+
+func (h *authzPolicyHarness) do(u policyUser, method, path, body string) (int, string) {
+	h.t.Helper()
+	if body == "" {
+		body = "{}"
+	}
+	req, err := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, strings.NewReader(body))
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+u.token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
+func (h *authzPolicyHarness) expect(u policyUser, method, path, body string, want int) string {
+	h.t.Helper()
+	code, resp := h.do(u, method, path, body)
+	if code != want {
+		h.t.Fatalf("%s %s %s as %s: status %d, want %d (body %s)", method, path, body, u.role, code, want, resp)
+	}
+	return resp
+}
+
+func (h *authzPolicyHarness) sensor(tenantID string) string {
+	h.t.Helper()
+	id := uuid.NewString()
+	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix)
+	        VALUES ($1, $2, $3, 'runner', 'active', 'unknown', 'standalone', $4, 'rda_test')`,
+		id, tenantID, "authzpol-"+id[:8], "hash-"+id)
+	return id
+}
+
+func TestAuthzPolicy_SensorsAreAdminOnly_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	tid := h.tenant()
+	admin, member, viewer := h.member(tid, "admin"), h.member(tid, "member"), h.member(tid, "viewer")
+	sid := h.sensor(tid)
+	create := `{"name":"sensor-x","type":"runner"}`
+
+	for _, u := range []policyUser{member, viewer} {
+		h.expect(u, http.MethodGet, "/api/v1/sensors", "", http.StatusOK)
+		h.expect(u, http.MethodGet, "/api/v1/sensors/"+sid, "", http.StatusOK)
+		h.expect(u, http.MethodPost, "/api/v1/sensors", create, http.StatusForbidden)
+		h.expect(u, http.MethodPut, "/api/v1/sensors/"+sid, `{"name":"renamed"}`, http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/sensors/"+sid+"/regenerate-key", "", http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/sensors/"+sid+"/revoke", "", http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/sensors/"+sid+"/deactivate", "", http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/sensors/"+sid+"/activate", "", http.StatusForbidden)
+		h.expect(u, http.MethodDelete, "/api/v1/sensors/"+sid, "", http.StatusForbidden)
+	}
+
+	// The administrator still creates sensors and rotates keys.
+	body := h.expect(admin, http.MethodPost, "/api/v1/sensors", create, http.StatusCreated)
+	if !strings.Contains(body, "rda_") {
+		t.Fatalf("admin create returned no sensor key: %s", body)
+	}
+	body = h.expect(admin, http.MethodPost, "/api/v1/sensors/"+sid+"/regenerate-key", "", http.StatusOK)
+	if !strings.Contains(body, "rda_") {
+		t.Fatalf("admin regenerate returned no sensor key: %s", body)
+	}
+}
+
+func TestAuthzPolicy_AuditLogIsAdminOnly_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	tid := h.tenant()
+	owner, admin, member, viewer := h.member(tid, "owner"), h.member(tid, "admin"), h.member(tid, "member"), h.member(tid, "viewer")
+
+	for _, u := range []policyUser{member, viewer} {
+		h.expect(u, http.MethodGet, "/api/v1/audit-logs", "", http.StatusForbidden)
+		h.expect(u, http.MethodGet, "/api/v1/audit-logs/stats", "", http.StatusForbidden)
+		h.expect(u, http.MethodGet, "/api/v1/audit-logs/user/"+owner.id, "", http.StatusForbidden)
+		h.expect(u, http.MethodGet, "/api/v1/audit-logs/resource/asset/"+uuid.NewString(), "", http.StatusForbidden)
+	}
+	h.expect(admin, http.MethodGet, "/api/v1/audit-logs", "", http.StatusOK)
+	h.expect(owner, http.MethodGet, "/api/v1/audit-logs", "", http.StatusOK)
+
+	// Everyone still reads their own activity (/account/activity).
+	for _, u := range []policyUser{member, viewer} {
+		h.expect(u, http.MethodGet, "/api/v1/audit-logs/user/"+u.id, "", http.StatusOK)
+	}
+	h.expect(admin, http.MethodGet, "/api/v1/audit-logs/user/"+member.id, "", http.StatusOK)
+
+	// Rebaseline overwrites the tamper-evident chain: owner only.
+	h.expect(admin, http.MethodPost, "/api/v1/audit-logs/rebaseline", `{"reason":"benign hashing change"}`, http.StatusForbidden)
+	if code, body := h.do(owner, http.MethodPost, "/api/v1/audit-logs/rebaseline", `{"reason":"benign hashing change"}`); code == http.StatusForbidden {
+		t.Fatalf("owner rebaseline refused: %s", body)
+	}
+}
+
+func TestAuthzPolicy_BillingNotGrantedToMemberOrViewer_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	rows, err := h.db.Query(`SELECT r.slug, rp.permission_id FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
+		WHERE r.is_system AND r.slug IN ('member','viewer')
+		  AND rp.permission_id IN ('settings:billing:read','audit:read','sensors:write','sensors:delete')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var slug, perm string
+		_ = rows.Scan(&slug, &perm)
+		t.Errorf("system role %s still holds %s", slug, perm)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	// Owners and administrators keep them.
+	var n int
+	if err := h.db.QueryRow(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
+		WHERE r.is_system AND r.slug IN ('owner','admin')
+		  AND rp.permission_id IN ('settings:billing:read','audit:read','sensors:write')`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 6 {
+		t.Fatalf("owner+admin hold %d of the 6 admin-only grants, want 6", n)
+	}
+	// Members and viewers keep reading sensors.
+	if err := h.db.QueryRow(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
+		WHERE r.is_system AND r.slug IN ('member','viewer') AND rp.permission_id = 'sensors:read'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("member/viewer sensors:read grants = %d, want 2", n)
+	}
+}
+
+func TestAuthzPolicy_MembersSeeOnlyTheirOwnAPIKeys_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	tid := h.tenant()
+	admin, member := h.member(tid, "admin"), h.member(tid, "member")
+	mint := func(owner policyUser) string {
+		res, err := h.keys.Create(context.Background(), apikey.CreateInput{TenantID: tid, UserID: owner.id, Name: "k-" + uuid.NewString()[:8]})
+		if err != nil {
+			t.Fatalf("mint key: %v", err)
+		}
+		return res.Key.ID().String()
+	}
+	adminKey, memberKey := mint(admin), mint(member)
+
+	type listResp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Total int `json:"total"`
+	}
+	ids := func(u policyUser) []string {
+		var lr listResp
+		if err := json.Unmarshal([]byte(h.expect(u, http.MethodGet, "/api/v1/api-keys", "", http.StatusOK)), &lr); err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(lr.Data))
+		for _, d := range lr.Data {
+			out = append(out, d.ID)
+		}
+		return out
+	}
+	if got := ids(member); len(got) != 1 || got[0] != memberKey {
+		t.Fatalf("member lists %v, want only their own key %s", got, memberKey)
+	}
+	if got := ids(admin); len(got) != 2 {
+		t.Fatalf("admin lists %v, want both keys", got)
+	}
+	h.expect(member, http.MethodGet, "/api/v1/api-keys/"+memberKey, "", http.StatusOK)
+	h.expect(member, http.MethodGet, "/api/v1/api-keys/"+adminKey, "", http.StatusNotFound)
+	h.expect(admin, http.MethodGet, "/api/v1/api-keys/"+memberKey, "", http.StatusOK)
+}
+
+func TestAuthzPolicy_PeerAdminsAreOwnerManaged_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	tid := h.tenant()
+	owner, admin, peer := h.member(tid, "owner"), h.member(tid, "admin"), h.member(tid, "admin")
+	member := h.member(tid, "member")
+	base := "/api/v1/tenants/" + tid + "/members/"
+
+	// An administrator cannot act on a peer administrator.
+	h.expect(admin, http.MethodPatch, base+peer.membershipID, `{"role":"member"}`, http.StatusForbidden)
+	h.expect(admin, http.MethodPost, base+peer.membershipID+"/suspend", "", http.StatusForbidden)
+	h.expect(admin, http.MethodDelete, base+peer.membershipID, "", http.StatusForbidden)
+	var status string
+	if err := h.db.QueryRow(`SELECT COALESCE(status,'active') FROM tenant_members WHERE id = $1`, peer.membershipID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "active" {
+		t.Fatalf("peer admin status changed to %q by a refused request", status)
+	}
+
+	// An administrator still manages members.
+	h.expect(admin, http.MethodPost, base+member.membershipID+"/suspend", "", http.StatusOK)
+	h.expect(admin, http.MethodPost, base+member.membershipID+"/reactivate", "", http.StatusOK)
+
+	// The owner manages administrators.
+	h.expect(owner, http.MethodPost, base+peer.membershipID+"/suspend", "", http.StatusOK)
+	h.expect(admin, http.MethodPost, base+peer.membershipID+"/reactivate", "", http.StatusForbidden)
+	h.expect(owner, http.MethodPost, base+peer.membershipID+"/reactivate", "", http.StatusOK)
+	h.expect(owner, http.MethodDelete, base+peer.membershipID, "", http.StatusNoContent)
+}
+
+func TestAuthzPolicy_SCIMTokensAreOwnerOnly_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	tid := h.tenant()
+	owner, admin := h.member(tid, "owner"), h.member(tid, "admin")
+
+	h.expect(admin, http.MethodPost, "/api/v1/scim-tokens", `{"name":"idp"}`, http.StatusForbidden)
+	h.expect(admin, http.MethodGet, "/api/v1/scim-tokens", "", http.StatusOK)
+	body := h.expect(owner, http.MethodPost, "/api/v1/scim-tokens", `{"name":"idp"}`, http.StatusCreated)
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &created); err != nil || created.ID == "" {
+		t.Fatalf("owner create body %s: %v", body, err)
+	}
+	h.expect(admin, http.MethodDelete, "/api/v1/scim-tokens/"+created.ID, "", http.StatusForbidden)
+	if code, b := h.do(owner, http.MethodDelete, "/api/v1/scim-tokens/"+created.ID, ""); code >= 300 {
+		t.Fatalf("owner revoke: %d %s", code, b)
+	}
+}

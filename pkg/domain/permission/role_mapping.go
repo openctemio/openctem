@@ -8,8 +8,9 @@ import "github.com/openctemio/api/pkg/domain/tenant"
 // Permission hierarchy:
 //   - Owner: Full access including team deletion and billing
 //   - Admin: Full resource access + member management (no billing/team delete)
-//   - Member: Read + Write access to resources (no delete, no member management)
-//   - Viewer: Read-only access to resources
+//   - Member: Read + Write access to resources (no delete, no member management,
+//     no sensor writes, no audit log, no billing)
+//   - Viewer: Read-only access to resources (no audit log, no billing)
 var RolePermissions = map[tenant.Role][]Permission{
 	tenant.RoleOwner: {
 		// Core
@@ -170,9 +171,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 	},
 
 	tenant.RoleMember: {
-		// Core
+		// Core (the audit log is owner/admin only)
 		DashboardRead,
-		AuditRead,
 		SettingsRead,
 		// Assets (read + write, no delete)
 		AssetsRead, AssetsWrite,
@@ -201,8 +201,9 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite,
 		SecretStoreRead, SecretStoreWrite,
-		// Sensors (read + write, no delete)
-		SensorsRead, SensorsWrite,
+		// Sensors: read only. Creating sensors and minting, rotating or
+		// revoking their keys is owner/admin only.
+		SensorsRead,
 		CommandsRead, CommandsWrite,
 		ScanZonesRead, // zones are managed by owners and admins (RFC-023 D16)
 		// Team (read only)
@@ -218,8 +219,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		WebhooksRead,
 		APIKeysRead,
 		PipelinesRead, PipelinesWrite,
-		// Settings (read only)
-		BillingRead,
+		// Settings (read only; billing is owner/admin only)
 		SLARead,
 		// Attack Surface (read + write)
 		ScopeRead, ScopeWrite,
@@ -251,9 +251,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 	},
 
 	tenant.RoleViewer: {
-		// Core
+		// Core (the audit log is owner/admin only)
 		DashboardRead,
-		AuditRead,
 		SettingsRead,
 		// Assets (read only)
 		AssetsRead,
@@ -293,8 +292,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		WebhooksRead,
 		APIKeysRead,
 		PipelinesRead,
-		// Settings (read only)
-		BillingRead,
+		// Settings (read only; billing is owner/admin only)
 		SLARead,
 		// Attack Surface (read only)
 		ScopeRead,

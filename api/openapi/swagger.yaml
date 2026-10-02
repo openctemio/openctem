@@ -3700,13 +3700,10 @@ definitions:
         type: string
       role:
         enum:
-        - admin
-        - member
-        - viewer
+        - owner
         type: string
     required:
     - email
-    - role
     type: object
   internal_infra_http_handler.AdminCreateOrganizationRequest:
     properties:
@@ -9040,6 +9037,12 @@ definitions:
     type: object
   internal_infra_http_handler.ProvisionedUserResponse:
     properties:
+      email_failed:
+        description: |-
+          EmailFailed: the organization can send email but the send failed, and
+          the link is deliberately not returned (platform administrator's
+          first-owner bootstrap). The person uses forgot-password.
+        type: boolean
       email_sent:
         type: boolean
       membership_id:
@@ -12785,16 +12788,19 @@ paths:
     post:
       consumes:
       - application/json
-      description: Same as the organization administrator's POST /tenants/{tenant}/users,
-        with a built-in role. The one-time set-password link is emailed when SMTP
-        is configured, otherwise setup_token is returned once.
+      description: 'Bootstrap only: creates the owner of an organization that has
+        no active owner, and nothing else (409 when it has one: its owner and administrators
+        add users themselves). The one-time set-password link is emailed when the
+        organization can send email and is then never returned; only when email cannot
+        be sent is setup_token returned, once. Written to the organization''s audit
+        log.'
       parameters:
       - description: Organization ID
         in: path
         name: tenantId
         required: true
         type: string
-      - description: User
+      - description: First owner
         in: body
         name: request
         required: true
@@ -12812,12 +12818,12 @@ paths:
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
         "409":
-          description: Account exists
+          description: Organization already has an owner, or the account exists
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Create a user in an organization (platform admin)
+      summary: Create the first owner of an organization (platform admin)
       tags:
       - Admin Organizations
   /admin/threat-intel/sync:

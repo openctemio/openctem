@@ -13,8 +13,8 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/admin"
-	"github.com/openctemio/api/pkg/domain/role"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -88,9 +88,12 @@ type AdminCreateOrganizationRequest struct {
 }
 
 // AdminOwnerSetupResponse describes the owner account created with an
-// organization. SetupToken is present only when the link was not emailed.
+// organization. SetupToken is present only when the organization cannot send
+// email at all; when it can, the link is only ever emailed (EmailFailed
+// reports a failed send, recovered with forgot-password).
 type AdminOwnerSetupResponse struct {
 	EmailSent      bool       `json:"email_sent"`
+	EmailFailed    bool       `json:"email_failed,omitempty"`
 	SetupToken     string     `json:"setup_token,omitempty"`
 	SetupExpiresAt *time.Time `json:"setup_expires_at,omitempty"`
 }
@@ -102,12 +105,14 @@ type AdminCreateOrganizationResponse struct {
 	OwnerSetup *AdminOwnerSetupResponse `json:"owner_setup,omitempty"`
 }
 
-// AdminCreateOrgUserRequest creates an account in an organization from the
-// console. Role is the user's built-in role there.
+// AdminCreateOrgUserRequest creates the first owner of an organization that
+// has none. That is the only user the platform administrator may create in an
+// organization; Role may be omitted, and anything other than "owner" is
+// refused.
 type AdminCreateOrgUserRequest struct {
 	Email string `json:"email" validate:"required,email,max=254"`
 	Name  string `json:"name" validate:"max=255"`
-	Role  string `json:"role" validate:"required,oneof=admin member viewer"`
+	Role  string `json:"role" validate:"omitempty,oneof=owner"`
 }
 
 // AdminOrgUserResponse is one member of an organization in the console.
@@ -125,13 +130,6 @@ type AdminOrgUserResponse struct {
 type AdminOrgUserListResponse struct {
 	Data  []AdminOrgUserResponse `json:"data"`
 	Total int                    `json:"total"`
-}
-
-// adminRoleIDs maps a console role choice to the built-in RBAC role.
-var adminRoleIDs = map[string]string{
-	"admin":  role.AdminRoleID.String(),
-	"member": role.MemberRoleID.String(),
-	"viewer": role.ViewerRoleID.String(),
 }
 
 // AdminSSOEnforcementRequest turns SSO enforcement on or off for an organization.
@@ -310,15 +308,14 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 	middleware.SetAuditResource(r.Context(), t.ID(), t.Name())
 	resp := AdminCreateOrganizationResponse{}
 	if ownerCreated {
-		// No organization caller: the platform console issues the new
-		// owner's first link.
-		setup, serr := h.provisioning.ReissueSetupLink(r.Context(), t.ID().String(), owner.ID().String(), "", adminAuditContext(r, t.ID().String()))
+		// The platform console issues the new owner's first link under the
+		// first-owner rule: emailed only when the organization can send email.
+		setup, serr := h.provisioning.IssueFirstOwnerSetupLink(r.Context(), t, owner, adminAuditContext(r, t.ID().String()))
 		if serr != nil {
-			// The organization exists; the owner can still use forgot-password
-			// or the console can issue a link again.
+			// The organization exists; the owner can still use forgot-password.
 			h.logger.Error("issue owner setup link", "error", sanitizeLogField(serr.Error()))
 		} else {
-			resp.OwnerSetup = &AdminOwnerSetupResponse{EmailSent: setup.EmailSent, SetupToken: setup.SetupToken}
+			resp.OwnerSetup = &AdminOwnerSetupResponse{EmailSent: setup.EmailSent, EmailFailed: setup.EmailFailed, SetupToken: setup.SetupToken}
 			if setup.SetupToken != "" {
 				exp := setup.SetupExpiresAt
 				resp.OwnerSetup.SetupExpiresAt = &exp
@@ -368,16 +365,16 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 }
 
 // CreateUser handles POST /api/v1/admin/tenants/{tenantId}/users.
-// @Summary Create a user in an organization (platform admin)
-// @Description Same as the organization administrator's POST /tenants/{tenant}/users, with a built-in role. The one-time set-password link is emailed when SMTP is configured, otherwise setup_token is returned once.
+// @Summary Create the first owner of an organization (platform admin)
+// @Description Bootstrap only: creates the owner of an organization that has no active owner, and nothing else (409 when it has one: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log.
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
 // @Param tenantId path string true "Organization ID"
-// @Param request body AdminCreateOrgUserRequest true "User"
+// @Param request body AdminCreateOrgUserRequest true "First owner"
 // @Success 201 {object} ProvisionedUserResponse
 // @Failure 400 {object} apierror.Error "Bad Request"
-// @Failure 409 {object} apierror.Error "Account exists"
+// @Failure 409 {object} apierror.Error "Organization already has an owner, or the account exists"
 // @Security BearerAuth
 // @Router /admin/tenants/{tenantId}/users [post]
 func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -399,16 +396,15 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
-	result, err := h.provisioning.CreateUser(r.Context(), app.CreateUserInput{
-		TenantID: id.String(),
-		Email:    req.Email,
-		Name:     req.Name,
-		RoleIDs:  []string{adminRoleIDs[req.Role]},
-	}, adminAuditContext(r, id.String()))
+	result, err := h.provisioning.CreateFirstOwner(r.Context(), id.String(), req.Email, req.Name, adminAuditContext(r, id.String()))
 	if err != nil {
 		switch {
+		case errors.Is(err, tenant.ErrOrganizationHasOwner):
+			apierror.Conflict("This organization already has an owner. Its owner and administrators invite or create users themselves.").WriteJSON(w)
+		case errors.Is(err, tenant.ErrPlatformAdminMembership):
+			apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
 		case errors.Is(err, app.ErrAccountExists):
-			apierror.Conflict("An account with this email already exists. Invite them instead.").WriteJSON(w)
+			apierror.Conflict("An account with this email already exists. The first owner must be a new account.").WriteJSON(w)
 		case errors.Is(err, shared.ErrNotFound):
 			apierror.NotFound("organization").WriteJSON(w)
 		case shared.IsValidation(err):
