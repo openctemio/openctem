@@ -2568,6 +2568,52 @@ definitions:
       user_agent:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class:
+    enum:
+    - verifies
+    - legacy_truncate
+    - pre_79_nanosecond
+    - unexplained
+    - source_missing
+    - link_broken
+    type: string
+    x-enum-varnames:
+    - Verifies
+    - LegacyTruncate
+    - PreHashReduction
+    - Unexplained
+    - SourceMissing
+    - LinkBroken
+  github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Counts:
+    properties:
+      legacy_truncate:
+        type: integer
+      link_broken:
+        type: integer
+      pre_79_nanosecond:
+        type: integer
+      source_missing:
+        type: integer
+      unexplained:
+        type: integer
+      verifies:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample:
+    properties:
+      action:
+        type: string
+      audit_log_id:
+        type: string
+      class:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class'
+      logged_at:
+        type: string
+      offset_ns:
+        type: integer
+      position:
+        type: integer
+    type: object
   github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput:
     properties:
       base_branch_scanned:
@@ -4005,6 +4051,67 @@ definitions:
         type: string
     required:
     - permission_id
+    type: object
+  internal_infra_http_handler.AdminAuditChainRebaselineRequest:
+    properties:
+      fingerprint:
+        description: Fingerprint of the classification the administrator reviewed.
+        type: string
+      totp_code:
+        description: TOTPCode is a fresh code from the console authenticator.
+        type: string
+    type: object
+  internal_infra_http_handler.AdminAuditChainRebaselineResponse:
+    properties:
+      entries_rewritten:
+        type: integer
+      entries_total:
+        type: integer
+      ok:
+        type: boolean
+      rebaseline_id:
+        type: string
+      verify:
+        $ref: '#/definitions/internal_infra_http_handler.AdminAuditChainVerifyResult'
+    type: object
+  internal_infra_http_handler.AdminAuditChainStatusResponse:
+    properties:
+      blocking:
+        type: integer
+      breaks:
+        type: integer
+      classified_at:
+        type: string
+      counts:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Counts'
+      fingerprint:
+        type: string
+      last_position:
+        type: integer
+      rebaseline_allowed:
+        description: |-
+          RebaselineAllowed is true when every break is explained by a known
+          hashing defect. A chain with no breaks needs no rebaseline.
+        type: boolean
+      samples:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample'
+        type: array
+      tenant_id:
+        type: string
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.AdminAuditChainVerifyResult:
+    properties:
+      breaks:
+        type: integer
+      ok:
+        type: boolean
+      total:
+        type: integer
+      verified:
+        type: integer
     type: object
   internal_infra_http_handler.AdminAuditLogListResponse:
     properties:
@@ -13646,6 +13753,88 @@ paths:
       security:
       - BearerAuth: []
       summary: Get an organization (platform admin)
+      tags:
+      - Admin Organizations
+  /admin/tenants/{tenantId}/audit-chain:
+    get:
+      description: 'Classifies every row of the organization''s audit hash-chain:
+        verifies, explained by a known hashing defect (legacy truncate, pre-#79 nanosecond),
+        or blocking (unexplained, missing source, broken link). The fingerprint names
+        the exact chain classified and must be sent with a rebaseline.'
+      parameters:
+      - description: Organization ID
+        in: path
+        name: tenantId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminAuditChainStatusResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Classify an organization's audit chain (platform admin)
+      tags:
+      - Admin Organizations
+  /admin/tenants/{tenantId}/audit-chain/rebaseline:
+    post:
+      consumes:
+      - application/json
+      description: 'Re-signs the organization''s audit hash-chain from current data.
+        Irreversible: the old hashes are archived, and the action is written to the
+        organization''s audit log and the platform admin audit log. Refused (409,
+        nothing changed) when any break is unexplained or the chain changed since
+        the classification whose fingerprint is sent. Requires a fresh code from the
+        console authenticator.'
+      parameters:
+      - description: Organization ID
+        in: path
+        name: tenantId
+        required: true
+        type: string
+      - description: Reviewed fingerprint and authenticator code
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AdminAuditChainRebaselineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminAuditChainRebaselineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized or wrong code
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Unexplained breaks, or the chain changed
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Rebaseline an organization's audit chain (platform admin)
       tags:
       - Admin Organizations
   /admin/tenants/{tenantId}/sso/enforcement:

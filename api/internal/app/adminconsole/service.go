@@ -39,6 +39,8 @@ const (
 	ActionAdminProvisioned = "console.admin_provisioned"
 	ActionPasswordChanged  = "console.password_changed"
 	ActionCredentialsReset = "console.credentials_reset"
+	ActionStepUp           = "console.step_up"
+	ActionStepUpFailed     = "console.step_up_failed"
 )
 
 // StatusSignedIn is the IdP callback outcome when the IdP's MFA was trusted
@@ -347,6 +349,39 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 		return "", nil, err
 	}
 	return token, a, nil
+}
+
+// StepUp re-confirms the signed-in administrator with a fresh code from the
+// console authenticator before an irreversible action (purpose names it in the
+// admin audit log). The console session alone is not enough: it may be hours
+// old, or opened through the platform identity provider without this
+// authenticator. A code can be used once (the same replay guard as sign-in), and
+// a wrong code counts toward the same lockout as a wrong password.
+func (s *Service) StepUp(ctx context.Context, a *admin.AdminUser, code, purpose string, client ClientInfo) error {
+	if a == nil {
+		return admin.ErrInvalidMFACode
+	}
+	creds, err := s.console.GetCredentials(ctx, a.ID())
+	if err != nil || !creds.MFAEnabled || creds.MFASecretEncrypted == "" {
+		return admin.ErrStepUpUnavailable
+	}
+	secret, err := s.encryptor.DecryptString(creds.MFASecretEncrypted)
+	if err != nil {
+		return fmt.Errorf("decrypt mfa secret: %w", err)
+	}
+	step, ok := totp.Verify(secret, code, s.now())
+	if ok {
+		ok, err = s.console.AdvanceMFAStep(ctx, a.ID(), step)
+		if err != nil {
+			return err
+		}
+	}
+	if !ok {
+		s.recordFailure(ctx, a, client, ActionStepUpFailed, "wrong or reused code for "+purpose)
+		return admin.ErrInvalidMFACode
+	}
+	s.recordNote(ctx, a, ActionStepUp, client, purpose)
+	return nil
 }
 
 // openVerifiedSession issues a verified console session and records the

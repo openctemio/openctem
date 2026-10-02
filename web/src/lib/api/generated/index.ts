@@ -133,3 +133,15 @@ export type ScopeBulkOperationResponse =
 
 // Asset state history ("What changed")
 export type StateChangeResponse = Schemas['internal_infra_http_handler.StateChangeResponse']
+
+// Admin console: an organization's audit hash-chain
+export type AdminAuditChainStatusResponse =
+  Schemas['internal_infra_http_handler.AdminAuditChainStatusResponse']
+export type AdminAuditChainRebaselineRequest =
+  Schemas['internal_infra_http_handler.AdminAuditChainRebaselineRequest']
+export type AdminAuditChainRebaselineResponse =
+  Schemas['internal_infra_http_handler.AdminAuditChainRebaselineResponse']
+export type AuditChainSample =
+  Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample']
+export type AuditChainClass =
+  Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class']

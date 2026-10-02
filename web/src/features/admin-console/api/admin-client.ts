@@ -12,7 +12,9 @@ export class AdminApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string
+    readonly code?: string,
+    /** The API's structured detail for the refusal, when it sends one. */
+    readonly details?: unknown
   ) {
     super(message)
     this.name = 'AdminApiError'
@@ -60,8 +62,18 @@ export async function adminFetch<T>(
     }
   }
   if (!res.ok) {
-    const body = (data ?? {}) as { message?: string; error?: string; code?: string }
-    throw new AdminApiError(body.message || body.error || res.statusText, res.status, body.code)
+    const body = (data ?? {}) as {
+      message?: string
+      error?: string
+      code?: string
+      details?: unknown
+    }
+    throw new AdminApiError(
+      body.message || body.error || res.statusText,
+      res.status,
+      body.code,
+      body.details
+    )
   }
   return data as T
 }
