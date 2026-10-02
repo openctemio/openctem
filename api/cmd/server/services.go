@@ -1069,9 +1069,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Note: Pentest notification wiring happens later after NotificationService is initialized
 
 	// Initialize Attachment service (file upload/download).
-	// Storage provider selected via STORAGE_PROVIDER env var (default: "local").
-	// Local path configurable via STORAGE_LOCAL_PATH (default: ./data/attachments).
-	// In Docker: mount a volume at the local path to persist across rebuilds.
+	// The server-wide storage is operator configuration (STORAGE_PROVIDER):
+	//   local (default)  files under STORAGE_LOCAL_PATH (./data/attachments);
+	//                    in Docker/Kubernetes mount a volume there.
+	//   s3 | minio       an S3-compatible bucket (STORAGE_BUCKET, _REGION,
+	//                    _ENDPOINT, _ACCESS_KEY, _SECRET_KEY); needed when more
+	//                    than one API replica serves attachments without a
+	//                    shared (ReadWriteMany) volume.
+	// Attachments record the provider "local" for this server-wide storage, so
+	// switching STORAGE_PROVIDER later does not move existing files.
 	var fileStorage attachment.FileStorage
 	switch cfg.Storage.Provider {
 	case "local", "":
@@ -1081,10 +1087,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 		fileStorage = storage.NewLocalStorage(storagePath)
 		log.Info("attachment storage: local filesystem", "path", storagePath)
+	case attachment.ProviderS3, attachment.ProviderMinIO:
+		s3Store, err := storage.NewOperatorS3Storage(cfg.Storage.Bucket, cfg.Storage.Region,
+			cfg.Storage.Endpoint, cfg.Storage.AccessKey, cfg.Storage.SecretKey)
+		if err != nil {
+			return nil, fmt.Errorf("attachment storage: %w", err)
+		}
+		fileStorage = s3Store
+		log.Info("attachment storage: S3-compatible bucket", "provider", cfg.Storage.Provider,
+			"bucket", cfg.Storage.Bucket, "endpoint", cfg.Storage.Endpoint)
 	default:
-		// Future: case "s3", "minio", "gcs" → initialize respective provider
-		log.Warn("unsupported storage provider, falling back to local", "provider", cfg.Storage.Provider)
-		fileStorage = storage.NewLocalStorage("./data/attachments")
+		// Used to fall back to local storage with only a warning, so a typo
+		// (or "gcs") silently kept files on an ephemeral container disk.
+		return nil, fmt.Errorf("unsupported STORAGE_PROVIDER %q (local, s3 or minio)", cfg.Storage.Provider)
 	}
 	s.Attachment = app.NewAttachmentService(repos.Attachment, fileStorage, log)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
