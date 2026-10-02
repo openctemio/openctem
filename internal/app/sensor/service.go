@@ -58,6 +58,53 @@ type SensorService struct {
 	// load_score on every heartbeat. Defaults to the compiled-in set;
 	// SetLoadBalancingWeights installs the operator's AGENT_LB_* values.
 	lbWeights sensordom.LoadBalancingWeights
+	// events stores the sensor's activity timeline (sensor_events); nil
+	// records nothing. activity reads the merged timeline.
+	events      sensordom.EventRepository
+	eventLimits sensordom.EventLimits
+	activity    sensordom.ActivityReader
+	now         func() time.Time
+}
+
+// SetEventRepository wires the sensor activity store: heartbeat diffs and
+// online transitions are recorded there under the limits.
+func (s *SensorService) SetEventRepository(repo sensordom.EventRepository, limits sensordom.EventLimits) {
+	s.events = repo
+	s.eventLimits = limits
+}
+
+// SetActivityReader wires the timeline reader (GET /sensors/{id}/activity).
+func (s *SensorService) SetActivityReader(r sensordom.ActivityReader) {
+	s.activity = r
+}
+
+// recordEvents writes events best-effort: a failure is logged, never
+// returned, so a heartbeat is not refused because its timeline entry
+// could not be written.
+func (s *SensorService) recordEvents(ctx context.Context, events []sensordom.Event) {
+	if s.events == nil {
+		return
+	}
+	for _, e := range events {
+		res, err := s.events.Record(ctx, e, s.eventLimits)
+		if err != nil {
+			s.logger.Warn("failed to record sensor event",
+				"sensor_id", e.SensorID.String(), "type", string(e.Type), "error", err)
+			continue
+		}
+		if res == sensordom.EventDropped {
+			s.logger.Debug("sensor event dropped by the hourly limit",
+				"sensor_id", e.SensorID.String(), "type", string(e.Type))
+		}
+	}
+}
+
+// warnAudit logs an audit write that failed. Audit writes never fail the
+// operation they record, but a lost audit row must not be silent.
+func (s *SensorService) warnAudit(err error, action, sensorID string) {
+	if err != nil {
+		s.logger.Warn("failed to write sensor audit event", "action", action, "sensor_id", sensorID, "error", err)
+	}
 }
 
 // NewSensorService creates a new SensorService.
@@ -67,6 +114,8 @@ func NewSensorService(repo sensordom.Repository, auditService *auditapp.AuditSer
 		auditService: auditService,
 		logger:       log.With("service", "sensor"),
 		lbWeights:    sensordom.DefaultLoadBalancingWeights(),
+		eventLimits:  sensordom.DefaultEventLimits(),
+		now:          time.Now,
 	}
 }
 
@@ -160,7 +209,7 @@ func (s *SensorService) CreateSensor(ctx context.Context, input CreateSensorInpu
 
 	// Audit logging
 	if s.auditService != nil && input.AuditContext != nil {
-		_ = s.auditService.LogSensorCreated(ctx, *input.AuditContext, a.ID.String(), a.Name, string(a.Type))
+		s.warnAudit(s.auditService.LogSensorCreated(ctx, *input.AuditContext, a.ID.String(), a.Name, string(a.Type)), "LogSensorCreated", a.ID.String())
 	}
 
 	return &CreateSensorOutput{
@@ -195,8 +244,10 @@ type ListSensorsInput struct {
 	Tools         []string `json:"tools"`
 	Search        string   `json:"search" validate:"max=255"`
 	HasCapacity   *bool    `json:"has_capacity"` // Filter by sensors with available capacity
-	Page          int      `json:"page"`
-	PerPage       int      `json:"per_page"`
+	// SDKVersion filters on the reported SDK version; "" = unknown, nil = all.
+	SDKVersion *string `json:"sdk_version"`
+	Page       int     `json:"page"`
+	PerPage    int     `json:"per_page"`
 }
 
 // ListSensors lists sensors with filters.
@@ -216,6 +267,7 @@ func (s *SensorService) ListSensors(ctx context.Context, input ListSensorsInput)
 		Tools:           input.Tools,
 		Search:          input.Search,
 		HasCapacity:     input.HasCapacity,
+		SDKVersion:      input.SDKVersion,
 	}
 
 	if input.Type != "" {
@@ -320,7 +372,7 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		if sensorName == "" {
 			sensorName = oldName
 		}
-		_ = s.auditService.LogSensorUpdated(ctx, *input.AuditContext, a.ID.String(), sensorName, changes)
+		s.warnAudit(s.auditService.LogSensorUpdated(ctx, *input.AuditContext, a.ID.String(), sensorName, changes), "LogSensorUpdated", a.ID.String())
 	}
 
 	return a, nil
@@ -372,6 +424,10 @@ type SensorHeartbeatData struct {
 	// when it carried none. It is sanitized here against the tool catalog
 	// before it is stored (sensordom.CapabilityReportInput.Sanitize).
 	Report *sensordom.CapabilityReportInput
+
+	// Build is the build information the heartbeat carried (sdk, sensor
+	// members), untrusted. Parts it leaves empty are read from UserAgent.
+	Build sensordom.BuildReport
 }
 
 // canonicalToolNames writes tool limits the way sensors report tools:
@@ -477,9 +533,15 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		outbox = &clamped
 	}
 
+	now := s.now()
+	userAgent := sensordom.SanitizeUserAgent(data.UserAgent)
+	build, version := sensordom.ResolveBuild(data.Build, data.Version, userAgent, now)
+	uptime := sensordom.ClampUptime(data.UptimeSeconds)
+	report := s.sanitizeReport(ctx, a, data.Report)
+
 	updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, sensordom.HeartbeatUpdate{
 		TenantID:      a.TenantID,
-		Version:       data.Version,
+		Version:       version,
 		Hostname:      data.Hostname,
 		IPAddress:     clientIP,
 		Region:        data.Region,
@@ -492,10 +554,11 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		LoadScore:     snapshot.LoadScore,
 		Outbox:        outbox,
 		Protocol:      data.Protocol,
-		UserAgent:     sensordom.SanitizeUserAgent(data.UserAgent),
-		UptimeSeconds: sensordom.ClampUptime(data.UptimeSeconds),
-		Report:        s.sanitizeReport(ctx, a, data.Report),
 		Load:          load,
+		UserAgent:     userAgent,
+		UptimeSeconds: uptime,
+		Report:        report,
+		Build:         build,
 	})
 	if err != nil {
 		return err
@@ -519,13 +582,125 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		case a.IPAddress != nil:
 			ip = a.IPAddress.String()
 		}
-		_ = s.auditService.LogSensorConnected(ctx, auditapp.AuditContext{
+		s.warnAudit(s.auditService.LogSensorConnected(ctx, auditapp.AuditContext{
 			TenantID:   a.TenantID.String(),
 			ActorEmail: sensorAuditSystemActor,
-		}, a.ID.String(), a.Name, ip)
+		}, a.ID.String(), a.Name, ip), "LogSensorConnected", a.ID.String())
+	}
+
+	// The activity timeline: what this heartbeat changed compared with the
+	// stored row read above, plus the online transition.
+	if a.TenantID != nil && s.events != nil {
+		var startedAt *time.Time
+		if uptime > 0 {
+			t := now.Add(-time.Duration(uptime) * time.Second)
+			startedAt = &t
+		}
+		var events []sensordom.Event
+		if prevHealth != sensordom.SensorHealthOnline {
+			if e, ok := sensordom.OnlineEvent(a, now); ok {
+				events = append(events, e)
+			}
+		}
+		events = append(events, sensordom.DiffHeartbeat(a, sensordom.HeartbeatObservation{
+			At: now, Version: version, Protocol: data.Protocol, StartedAt: startedAt, Report: report, Build: build,
+		})...)
+		s.recordEvents(ctx, events)
 	}
 
 	return nil
+}
+
+// RecordOffline records the offline transition of a sensor the health
+// checker marked offline.
+func (s *SensorService) RecordOffline(ctx context.Context, a *sensordom.Sensor) {
+	if e, ok := sensordom.OfflineEvent(a, s.now()); ok {
+		s.recordEvents(ctx, []sensordom.Event{e})
+	}
+}
+
+// ActivityInput selects a page of a sensor's activity timeline.
+type ActivityInput struct {
+	TenantID string
+	SensorID string
+	// Categories filters the timeline; empty means all.
+	Categories []string
+	// IncludeAudit admits audit-log items (the caller holds audit:read).
+	IncludeAudit bool
+	Cursor       string
+	Limit        int
+}
+
+// ActivityPage is one page of a sensor's timeline.
+type ActivityPage struct {
+	Items      []sensordom.ActivityItem
+	NextCursor string
+}
+
+// Activity limits.
+const (
+	DefaultActivityLimit = 30
+	MaxActivityLimit     = 100
+)
+
+// ListActivity returns a page of the sensor's timeline: its events, its jobs
+// and, when admitted, its audit rows (including those written before the
+// rename as resource type "agent"), newest first. The sensor must belong to
+// the tenant.
+func (s *SensorService) ListActivity(ctx context.Context, in ActivityInput) (*ActivityPage, error) {
+	if s.activity == nil {
+		return nil, shared.NewDomainError("UNAVAILABLE", "sensor activity is not available", shared.ErrInternal)
+	}
+	a, err := s.GetSensor(ctx, in.TenantID, in.SensorID)
+	if err != nil {
+		return nil, err
+	}
+	if a.TenantID == nil {
+		return nil, shared.ErrNotFound
+	}
+
+	cats := make([]sensordom.ActivityCategory, 0, len(in.Categories))
+	for _, c := range in.Categories {
+		c = strings.ToLower(strings.TrimSpace(c))
+		if c == "" {
+			continue
+		}
+		cat := sensordom.ActivityCategory(c)
+		if !cat.IsValid() {
+			return nil, fmt.Errorf("%w: unknown activity type %q (want people, status, updates or jobs)", shared.ErrValidation, c)
+		}
+		if !slices.Contains(cats, cat) {
+			cats = append(cats, cat)
+		}
+	}
+	if len(cats) == 0 {
+		cats = sensordom.AllCategories()
+	}
+
+	cursor, err := sensordom.ParseActivityCursor(in.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	limit := in.Limit
+	if limit <= 0 {
+		limit = DefaultActivityLimit
+	}
+	limit = min(limit, MaxActivityLimit)
+
+	items, err := s.activity.ListActivity(ctx, sensordom.ActivityQuery{
+		TenantID: *a.TenantID, SensorID: a.ID, Categories: cats,
+		IncludeAudit: in.IncludeAudit, After: cursor, Limit: limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	page := &ActivityPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		last := page.Items[limit-1]
+		page.NextCursor = sensordom.ActivityCursor{At: last.At, Key: last.Key}.Encode()
+	}
+	return page, nil
 }
 
 // DeleteSensor deletes a sensor.
@@ -554,7 +729,7 @@ func (s *SensorService) DeleteSensor(ctx context.Context, tenantID, sensorID str
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
-		_ = s.auditService.LogSensorDeleted(ctx, *auditCtx, sensorID, sensorName)
+		s.warnAudit(s.auditService.LogSensorDeleted(ctx, *auditCtx, sensorID, sensorName), "LogSensorDeleted", sensorID)
 	}
 
 	return nil
@@ -595,7 +770,7 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
-		_ = s.auditService.LogSensorKeyRegenerated(ctx, *auditCtx, sensorID, a.Name)
+		s.warnAudit(s.auditService.LogSensorKeyRegenerated(ctx, *auditCtx, sensorID, a.Name), "LogSensorKeyRegenerated", sensorID)
 	}
 
 	return apiKey, nil
@@ -703,10 +878,10 @@ func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor
 	if s.auditService == nil || a.TenantID == nil {
 		return
 	}
-	_ = s.auditService.LogSensorKeyRenewed(ctx, auditapp.AuditContext{
+	s.warnAudit(s.auditService.LogSensorKeyRenewed(ctx, auditapp.AuditContext{
 		TenantID:   a.TenantID.String(),
 		ActorEmail: sensorAuditSystemActor,
-	}, a.ID.String(), a.Name, expiresAt, overlap)
+	}, a.ID.String(), a.Name, expiresAt, overlap), "LogSensorKeyRenewed", a.ID.String())
 }
 
 // overlapGrace is how long the superseded static (inline) key stays valid after
@@ -959,7 +1134,7 @@ func (s *SensorService) ActivateSensor(ctx context.Context, tenantID, sensorID s
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
-		_ = s.auditService.LogSensorActivated(ctx, *auditCtx, sensorID, a.Name)
+		s.warnAudit(s.auditService.LogSensorActivated(ctx, *auditCtx, sensorID, a.Name), "LogSensorActivated", sensorID)
 	}
 
 	s.logger.Info("sensor activated", "sensor_id", logger.SanitizeValue(sensorID))
@@ -984,7 +1159,7 @@ func (s *SensorService) DisableSensor(ctx context.Context, tenantID, sensorID, r
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
-		_ = s.auditService.LogSensorDeactivated(ctx, *auditCtx, sensorID, a.Name, reason)
+		s.warnAudit(s.auditService.LogSensorDeactivated(ctx, *auditCtx, sensorID, a.Name, reason), "LogSensorDeactivated", sensorID)
 	}
 
 	s.logger.Info("sensor disabled", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
@@ -1009,7 +1184,7 @@ func (s *SensorService) RevokeSensor(ctx context.Context, tenantID, sensorID, re
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
-		_ = s.auditService.LogSensorRevoked(ctx, *auditCtx, sensorID, a.Name, reason)
+		s.warnAudit(s.auditService.LogSensorRevoked(ctx, *auditCtx, sensorID, a.Name, reason), "LogSensorRevoked", sensorID)
 	}
 
 	s.logger.Info("sensor revoked", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))

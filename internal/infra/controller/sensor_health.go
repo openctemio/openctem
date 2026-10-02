@@ -52,6 +52,7 @@ type SensorHealthController struct {
 	sensorRepo   sensor.Repository
 	auditService *auditapp.AuditService
 	notifier     SensorOfflineNotifier
+	events       SensorOfflineRecorder
 	config       *SensorHealthControllerConfig
 	logger       *logger.Logger
 }
@@ -91,6 +92,17 @@ func NewSensorHealthController(
 // controller still marks sensors offline and writes the audit event.
 func (c *SensorHealthController) SetNotifier(n SensorOfflineNotifier) {
 	c.notifier = n
+}
+
+// SensorOfflineRecorder records the offline transition on the sensor's
+// activity timeline.
+type SensorOfflineRecorder interface {
+	RecordOffline(ctx context.Context, a *sensor.Sensor)
+}
+
+// SetEventRecorder wires the activity timeline. Optional.
+func (c *SensorHealthController) SetEventRecorder(r SensorOfflineRecorder) {
+	c.events = r
 }
 
 // Name returns the controller name.
@@ -148,7 +160,7 @@ func (c *SensorHealthController) Reconcile(ctx context.Context) (int, error) {
 // notification to. Best-effort — a failure to resolve, log or enqueue must not
 // abort the reconcile.
 func (c *SensorHealthController) onOffline(ctx context.Context, sensorID shared.ID) {
-	if c.auditService == nil && c.notifier == nil {
+	if c.auditService == nil && c.notifier == nil && c.events == nil {
 		return
 	}
 
@@ -166,10 +178,17 @@ func (c *SensorHealthController) onOffline(ctx context.Context, sensorID shared.
 	}
 
 	if c.auditService != nil {
-		_ = c.auditService.LogSensorDisconnected(ctx, auditapp.AuditContext{
+		if err := c.auditService.LogSensorDisconnected(ctx, auditapp.AuditContext{
 			TenantID:   a.TenantID.String(),
 			ActorEmail: sensorAuditSystemActor,
-		}, a.ID.String(), a.Name)
+		}, a.ID.String(), a.Name); err != nil {
+			c.logger.Warn("failed to write sensor.disconnected audit event",
+				"controller", "sensor-health", "sensor_id", a.ID, "error", err)
+		}
+	}
+
+	if c.events != nil {
+		c.events.RecordOffline(ctx, a)
 	}
 
 	if c.notifier != nil {

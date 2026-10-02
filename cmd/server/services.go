@@ -61,6 +61,7 @@ import (
 	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/credential"
+	sensordom "github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/domain/tenant"
@@ -1318,6 +1319,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Operator-tunable load-balancing weights (AGENT_LB_*). Applied to the
 	// load_score recomputed on every heartbeat.
 	s.Sensor.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
+	// Activity timeline: heartbeat diffs and online/offline transitions are
+	// recorded in sensor_events; GET /sensors/{id}/activity reads them merged
+	// with the sensor's jobs and audit rows.
+	s.Sensor.SetEventRepository(repos.SensorEvent, sensordom.DefaultEventLimits())
+	s.Sensor.SetActivityReader(repos.SensorEvent)
 	s.Command = command.NewService(repos.Command, log, command.WithSensorLookup(repos.Sensor))
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 

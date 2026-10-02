@@ -393,6 +393,12 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    reported_capacity = COALESCE($26::jsonb, reported_capacity),
 		    reported_queue = COALESCE($27::jsonb, reported_queue),
 		    load_reported_at = CASE WHEN $28::boolean THEN NOW() ELSE load_reported_at END,
+		    -- Build information: an empty part leaves the stored value.
+		    sdk_name = COALESCE(NULLIF($29, ''), sdk_name),
+		    sdk_version = COALESCE(NULLIF($30, ''), sdk_version),
+		    sensor_product = COALESCE(NULLIF($31, ''), sensor_product),
+		    sensor_commit = COALESCE(NULLIF($32, ''), sensor_commit),
+		    sensor_build_time = COALESCE($33::timestamptz, sensor_build_time),
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -414,6 +420,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		sensor.ClampUptime(hb.UptimeSeconds),
 		rep.tools, rep.toolNames, rep.capabilities, rep.maxJobs, rep.os, rep.arch, rep.present,
 		load.resources, load.capacity, load.queue, load.present,
+		hb.Build.SDKName, hb.Build.SDKVersion, hb.Build.Product, hb.Build.Commit, nullTime(hb.Build.BuildTime),
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -679,7 +686,8 @@ func (r *SensorRepository) selectQuery() string {
 		       process_started_at,
 		       reported_tools, reported_capabilities, reported_max_jobs,
 		       reported_os, reported_arch, reported_at,
-		       reported_resources, reported_capacity, reported_queue, load_reported_at
+		       reported_resources, reported_capacity, reported_queue, load_reported_at,
+		       sdk_name, sdk_version, sensor_product, sensor_commit, sensor_build_time
 		FROM sensors
 	`
 }
@@ -733,6 +741,16 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 		conditions = append(conditions, fmt.Sprintf("effective_tools && $%d", argIndex))
 		args = append(args, pq.Array(filter.Tools))
 		argIndex++
+	}
+
+	if filter.SDKVersion != nil {
+		if *filter.SDKVersion == "" {
+			conditions = append(conditions, "(sdk_version IS NULL OR sdk_version = '')")
+		} else {
+			conditions = append(conditions, fmt.Sprintf("sdk_version = $%d", argIndex))
+			args = append(args, *filter.SDKVersion)
+			argIndex++
+		}
 	}
 
 	if filter.Search != "" {
@@ -815,6 +833,11 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		loadCapacity     []byte
 		loadQueue        []byte
 		loadReportedAt   sql.NullTime
+		sdkName          sql.NullString
+		sdkVersion       sql.NullString
+		sensorProduct    sql.NullString
+		sensorCommit     sql.NullString
+		sensorBuildTime  sql.NullTime
 	)
 
 	err := row.Scan(
@@ -875,6 +898,11 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&loadCapacity,
 		&loadQueue,
 		&loadReportedAt,
+		&sdkName,
+		&sdkVersion,
+		&sensorProduct,
+		&sensorCommit,
+		&sensorBuildTime,
 	)
 
 	if err != nil {
@@ -968,6 +996,12 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		if protocolSeenAt.Valid {
 			a.Protocol.SeenAt = protocolSeenAt.Time
 		}
+	}
+
+	a.Build = sensor.BuildInfo{SDKName: sdkName.String, SDKVersion: sdkVersion.String,
+		Product: sensorProduct.String, Commit: sensorCommit.String}
+	if sensorBuildTime.Valid {
+		a.Build.BuildTime = &sensorBuildTime.Time
 	}
 
 	a.Reported = scanReported(a.ID, reportedTools, reportedCaps, reportedMaxJobs, reportedOS, reportedArch, reportedAt)

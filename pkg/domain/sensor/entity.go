@@ -180,6 +180,9 @@ type Sensor struct {
 	Version   string
 	Hostname  string
 	IPAddress net.IP
+	// Build is the SDK and build the sensor reported (build.go); empty
+	// fields are unknown.
+	Build BuildInfo
 
 	// System metrics (from heartbeat)
 	CPUPercent       float64
