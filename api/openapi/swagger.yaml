@@ -3234,6 +3234,12 @@ definitions:
     type: object
   github_com_openctemio_api_pkg_domain_sensor.ReportedContent:
     properties:
+      checked_at:
+        description: |-
+          CheckedAt is when the sensor last confirmed with its source that this
+          is still the newest (or pinned) version: old content is not stale
+          while it keeps being confirmed (sdk-go ContentInfo.Stale).
+        type: string
       digest:
         type: string
       error:
@@ -10385,6 +10391,12 @@ definitions:
     properties:
       age_seconds:
         type: integer
+      checked_at:
+        description: |-
+          CheckedAt is when the sensor last confirmed this is still the newest
+          (or pinned) version; stale needs both an age and a confirmation
+          older than max_age_hours.
+        type: string
       digest:
         type: string
       error:
