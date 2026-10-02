@@ -103,6 +103,33 @@ func TestPresetsSatisfyHardDeps(t *testing.T) {
 	}
 }
 
+// scopingModuleIDs are the Scoping modules whose registers only make
+// sense when they fill a CTEM cycle's charter and snapshot.
+var scopingModuleIDs = []string{
+	"crown_jewels", "scope_config", "threat_model",
+	"business_services", "business_units", "attacker_profiles",
+}
+
+// TestPresetsWithScopingIncludeCycles — a bundle that ships any scoping
+// module must ship ctem_cycles too. Without it the tenant gets crown
+// jewels, boundaries and threat models with no cycle to scope (the ASM
+// tenant that hid Cycles for two months).
+func TestPresetsWithScopingIncludeCycles(t *testing.T) {
+	for _, p := range ModulePresets {
+		resolved := ResolvePresetModules(&p)
+		scoping := make([]string, 0, len(scopingModuleIDs))
+		for _, id := range scopingModuleIDs {
+			if resolved[id] {
+				scoping = append(scoping, id)
+			}
+		}
+		if len(scoping) > 0 && !resolved[ModuleCTEMCycles] {
+			t.Errorf("preset %q enables scoping modules %v but not %s",
+				p.ID, scoping, ModuleCTEMCycles)
+		}
+	}
+}
+
 // TestPresetsIncludeCore — every preset must include all core modules,
 // even if EnabledModules doesn't list them. ResolvePresetModules
 // guarantees this; the test is a belt-and-braces check.
