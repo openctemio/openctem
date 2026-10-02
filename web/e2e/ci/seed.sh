@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Seeds the e2e stack (web/e2e/ci/compose.yml) with what the Playwright specs
+# need, then prints E2E_* variables (KEY=value lines) on stdout.
+#
+#   - an organization and its owner (bootstrap-admin), who signs in
+#   - assets of two types, two sensors, a CTIS report with 15 findings
+#     (enough for the findings picker to scroll), a remediation task
+#
+# Requires: docker, curl, jq. Env: ADMIN_IMAGE (api/Dockerfile.admin-cli),
+# E2E_OWNER_PASSWORD and E2E_DATABASE_URL (web/e2e/ci/make-env.sh),
+# API (default http://127.0.0.1:8080), COMPOSE_NETWORK (default
+# octe2e-ci_default).
+set -euo pipefail
+
+API=${API:-http://127.0.0.1:8080}
+NETWORK=${COMPOSE_NETWORK:-octe2e-ci_default}
+RUN=$(date +%s)
+EMAIL="e2e-owner-$RUN@openctem-test.local"
+OWNER_PASSWORD="${E2E_OWNER_PASSWORD:?set E2E_OWNER_PASSWORD (see web/e2e/ci/make-env.sh)}"
+DATABASE_URL="${E2E_DATABASE_URL:?set E2E_DATABASE_URL}"
+SLUG="e2e-$RUN"
+WORK=$(mktemp -d)
+JAR="$WORK/cookies"
+trap 'rm -rf "$WORK"' EXIT
+
+log() { echo "seed: $*" >&2; }
+
+# call METHOD PATH [JSON] -> BODY; fails the script on a non-2xx answer.
+call() {
+  local method="$1" path="$2" data="${3:-}" csrf code
+  csrf=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$JAR" 2>/dev/null || true)
+  local args=(-sS -o "$WORK/body" -w '%{http_code}' -X "$method" "$API$path" -b "$JAR" -c "$JAR"
+    -H 'Content-Type: application/json')
+  [[ -n "${ACCESS_TOKEN:-}" ]] && args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
+  [[ -n "$csrf" ]] && args+=(-H "X-CSRF-Token: $csrf")
+  [[ -n "$data" ]] && args+=(-d "$data")
+  code=$(curl "${args[@]}")
+  BODY=$(cat "$WORK/body")
+  if [[ ! "$code" =~ ^2 ]]; then
+    log "$method $path -> $code: $(head -c 300 <<<"$BODY")"
+    exit 1
+  fi
+}
+
+log "organization and owner"
+setup=$(docker run --rm --network "$NETWORK" -e SMTP_ENABLED=false "${ADMIN_IMAGE:?set ADMIN_IMAGE}" \
+  -db="$DATABASE_URL" \
+  -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
+  -org-name="E2E Org $RUN" -org-slug="$SLUG" -org-owner-email="$EMAIL" 2>&1)
+TOKEN=$(grep -o 'set-password?token=[^[:space:]]*' <<<"$setup" | head -1 | sed 's/.*token=//')
+if [[ -z "$TOKEN" ]]; then
+  log "bootstrap-admin printed no set-password link:"
+  echo "$setup" >&2
+  exit 1
+fi
+call POST /api/v1/auth/reset-password "{\"token\":\"$TOKEN\",\"new_password\":\"$OWNER_PASSWORD\"}"
+call POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$OWNER_PASSWORD\"}"
+TENANT_ID=$(jq -r --arg s "$SLUG" '.tenants[] | select(.slug==$s) | .id' <<<"$BODY")
+call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}"
+ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
+
+log "assets"
+call POST /api/v1/assets '{"name":"e2e-web.example.com","type":"domain","criticality":"high","description":"e2e asset","tags":["e2e"]}'
+call POST /api/v1/assets '{"name":"10.20.30.40","type":"ip_address","criticality":"medium"}'
+
+log "sensors and a CTIS report"
+call POST /api/v1/sensors '{"name":"e2e-sensor","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'
+KEY=$(jq -r .api_key <<<"$BODY")
+call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'
+
+findings=$(for i in $(seq 1 15); do
+  printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"}\n' \
+    "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))"
+done | jq -s .)
+jq -n --arg id "e2e-$RUN" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson findings "$findings" '{
+  version: "1.0",
+  metadata: { id: $id, timestamp: $ts, source_type: "scanner" },
+  tool: { name: "nuclei", version: "3.3.0" },
+  assets: [
+    { id: "a1", type: "domain", value: "e2e-web.example.com" },
+    { id: "a2", type: "domain", value: "e2e-api.example.com" }
+  ],
+  findings: $findings
+}' >"$WORK/report.json"
+code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v1/agent/ingest" \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' --data-binary @"$WORK/report.json")
+[[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
+
+log "remediation task"
+call POST /api/v1/remediation/campaigns '{"name":"E2E remediation task","description":"e2e","priority":"high"}'
+
+# Ingest is asynchronous: wait until the findings are listed.
+for _ in $(seq 1 30); do
+  call GET "/api/v1/findings?per_page=50"
+  n=$(jq -r '[.data[]? | select(.title|startswith("E2E finding"))] | length' <<<"$BODY")
+  [[ "$n" -ge 15 ]] && break
+  sleep 1
+done
+[[ "$n" -ge 15 ]] || { log "only $n of 15 findings visible"; exit 1; }
+
+# The specs sign in through the form; end this API session.
+call POST /api/v1/auth/logout '{}'
+
+log "done"
+echo "E2E_USER_EMAIL=$EMAIL"
+echo "E2E_USER_PASSWORD=$OWNER_PASSWORD"
+echo "E2E_TENANT_SLUG=$SLUG"
