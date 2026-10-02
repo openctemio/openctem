@@ -1496,9 +1496,18 @@ func TestAuthService_Login(t *testing.T) {
 		}
 	})
 
+	stateHash := func(t *testing.T) string {
+		t.Helper()
+		h, err := password.New(password.WithCost(4)).Hash("Password123!")
+		if err != nil {
+			t.Fatalf("hash: %v", err)
+		}
+		return h
+	}
+
 	t.Run("account locked", func(t *testing.T) {
 		svc, deps := newTestAuthService()
-		seedAuthLockedUser(deps.userRepo, "locked@example.com", "hash")
+		seedAuthLockedUser(deps.userRepo, "locked@example.com", stateHash(t))
 
 		_, err := svc.Login(context.Background(), app.LoginInput{
 			Email:    "locked@example.com",
@@ -1512,7 +1521,7 @@ func TestAuthService_Login(t *testing.T) {
 
 	t.Run("account suspended", func(t *testing.T) {
 		svc, deps := newTestAuthService()
-		seedAuthSuspendedUser(deps.userRepo, "suspended@example.com", "hash")
+		seedAuthSuspendedUser(deps.userRepo, "suspended@example.com", stateHash(t))
 
 		_, err := svc.Login(context.Background(), app.LoginInput{
 			Email:    "suspended@example.com",
@@ -1521,6 +1530,41 @@ func TestAuthService_Login(t *testing.T) {
 
 		if !errors.Is(err, app.ErrAccountSuspended) {
 			t.Errorf("expected ErrAccountSuspended, got %v", err)
+		}
+	})
+
+	// Without the password, a locked or suspended account answers exactly like
+	// a wrong password: the state must not reveal that the account exists.
+	t.Run("account state hidden from a wrong password", func(t *testing.T) {
+		for name, seed := range map[string]func(*mockAuthUserRepo, string, string) *user.User{
+			"locked":    seedAuthLockedUser,
+			"suspended": seedAuthSuspendedUser,
+		} {
+			t.Run(name, func(t *testing.T) {
+				svc, deps := newTestAuthService()
+				seed(deps.userRepo, "state@example.com", stateHash(t))
+				_, err := svc.Login(context.Background(), app.LoginInput{
+					Email:    "state@example.com",
+					Password: "WrongPassword!",
+				})
+				if !errors.Is(err, app.ErrInvalidCredentials) {
+					t.Errorf("expected ErrInvalidCredentials, got %v", err)
+				}
+			})
+		}
+	})
+
+	// Guesses against an already-locked account do not extend the lockout.
+	t.Run("locked account wrong password does not extend lockout", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		seedAuthLockedUser(deps.userRepo, "locked2@example.com", stateHash(t))
+		before := deps.userRepo.updateCalls
+		_, _ = svc.Login(context.Background(), app.LoginInput{
+			Email:    "locked2@example.com",
+			Password: "WrongPassword!",
+		})
+		if deps.userRepo.updateCalls != before {
+			t.Errorf("expected no user update for a guess against a locked account, got %d", deps.userRepo.updateCalls-before)
 		}
 	})
 

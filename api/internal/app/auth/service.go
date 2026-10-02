@@ -552,27 +552,21 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Check if account is locked
-	if u.IsLocked() {
-		return nil, ErrAccountLocked
-	}
-
-	// Check if account is suspended
-	if u.Status() == userdom.StatusSuspended {
-		return nil, ErrAccountSuspended
-	}
-
-	// Check if user is a local user
-	if u.AuthProvider() != userdom.AuthProviderLocal {
-		return nil, ErrInvalidCredentials
-	}
-
-	// Verify password
+	// The password is checked BEFORE the account state is revealed: answering
+	// "locked" or "suspended" to any password would tell an unauthenticated
+	// caller that the email has an account and what state it is in. Only the
+	// password holder learns why a correct password was refused.
 	passwordHash := u.PasswordHash()
-	if passwordHash == nil {
+	if u.AuthProvider() != userdom.AuthProviderLocal || passwordHash == nil {
+		_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
 		return nil, ErrInvalidCredentials
 	}
 	if err := s.passwordHasher.Verify(input.Password, *passwordHash); err != nil {
+		if u.IsLocked() {
+			// Already locked: do not extend the lockout or audit each guess
+			// against it; the answer is the same as any wrong password.
+			return nil, ErrInvalidCredentials
+		}
 		// Record failed login attempt
 		u.RecordFailedLogin(s.config.MaxLoginAttempts, s.config.LockoutDuration)
 		if updateErr := s.userRepo.Update(ctx, u); updateErr != nil {
@@ -588,6 +582,14 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		_ = s.auditService.LogAuthFailed(ctx, actx, "invalid credentials")
 
 		return nil, ErrInvalidCredentials
+	}
+
+	// Correct password: now the account state may be stated.
+	if u.IsLocked() {
+		return nil, ErrAccountLocked
+	}
+	if u.Status() == userdom.StatusSuspended {
+		return nil, ErrAccountSuspended
 	}
 
 	// Check if email is verified.
