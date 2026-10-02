@@ -375,7 +375,7 @@ fingerprint queries); errors are RFC 9457 problems; every response carries
 
 | v1 (deprecated) | v2 | Notes |
 |---|---|---|
-| `POST /api/v1/agent/heartbeat` | `POST /api/v2/sensor/heartbeat` | Same body. The doorbell is always on: `sensor_id`, `tenant_id`, `status` (`ok`/`paused`), `pending_jobs`, `next_heartbeat_seconds`, `actions`, `config_version` are always present. A disabled sensor gets `200` `paused` + `["pause"]` here and `401` everywhere else. |
+| `POST /api/v1/agent/heartbeat` | `POST /api/v2/sensor/heartbeat` | Same body. The doorbell is always on: `sensor_id`, `tenant_id`, `status` (`ok`/`paused`), `pending_jobs`, `next_heartbeat_seconds`, `actions`, `config_version` are always present. A disabled sensor gets `200` `paused` + `["pause"]` here, can still read `GET /hello`, and gets `401` everywhere else. |
 | `GET /api/v1/agent/commands?limit=n` | `GET /api/v2/sensor/commands?limit=n` | `{"commands": [...]}`; a command carries `sensor_id` (null while unassigned). |
 | `POST …/commands/{id}/acknowledge` | `POST /api/v2/sensor/commands/{id}/claim` | |
 | `POST …/commands/{id}/start` | `POST /api/v2/sensor/commands/{id}/start` | |

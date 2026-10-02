@@ -55,8 +55,9 @@ func (h *SensorResultsV2Handler) Limits() protov2.Limits { return h.receiver.Lim
 // session cookie or an oct_ key is not a sensor key and gets 401. A disabled
 // sensor is refused on every v2 route (the v1 doorbell exception does not
 // exist here) except POST /heartbeat, which answers it with the pause action
-// (RFC-029 §4.1: every v2 sensor acts on the doorbell). The refusal is the
-// generic problem; the reason is logged.
+// (RFC-029 §4.1: every v2 sensor acts on the doorbell), and GET /hello, so a
+// paused sensor keeps negotiating v2 and reaches that heartbeat. The refusal
+// is the generic problem; the reason is logged.
 func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := extractAPIKey(r)
@@ -65,7 +66,7 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 		id, err := h.sensors.AuthenticateIdentity(r.Context(), key)
-		if err == nil && id.Paused && !isV2HeartbeatRequest(r) {
+		if err == nil && id.Paused && !isV2HeartbeatRequest(r) && !isV2HelloRequest(r) {
 			err = errSensorPaused
 		}
 		if err != nil || id.Sensor == nil {
@@ -86,6 +87,12 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 // disabled sensor may reach (to be told to pause).
 func isV2HeartbeatRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost && r.URL.Path == protov2.PathPrefix+protov2.HeartbeatPath
+}
+
+// isV2HelloRequest reports whether r is GET /hello (protocol level, features
+// and limits; nothing about the tenant).
+func isV2HelloRequest(r *http.Request) bool {
+	return r.Method == http.MethodGet && r.URL.Path == protov2.PathPrefix+protov2.HelloPath
 }
 
 // SensorKey returns the authenticated sensor's id, for per-sensor limits.

@@ -307,6 +307,11 @@ func TestSensorV2Control_DisabledAndRevoked(t *testing.T) {
 	}
 	resp, raw = h.call(s.key, http.MethodGet, "/api/v2/sensor/commands", nil)
 	h.want(resp, raw, 401, ingestProblem("unauthenticated"))
+	// hello stays reachable, so a paused sensor keeps negotiating v2.
+	resp, raw = h.call(s.key, http.MethodGet, "/api/v2/sensor/hello", nil)
+	h.want(resp, raw, 200, "")
+	resp, raw = h.call(s.key, http.MethodGet, "/api/v2/sensor/suppressions", nil)
+	h.want(resp, raw, 401, ingestProblem("unauthenticated"))
 
 	r := h.newSensor(h.tenantID, "revoked")
 	if _, err := h.db.ExecContext(ctx, `UPDATE sensors SET status = 'revoked' WHERE id = $1`, r.id); err != nil {
