@@ -1,5 +1,6 @@
 'use client'
 
+import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
@@ -760,21 +761,14 @@ function FindingsContent() {
       const headers = ['ID', 'Title', 'Severity', 'Status', 'Source', 'Scanner', 'Created At']
       const rows = findings.map((f) => [
         f.id,
-        `"${(f.title || '').replace(/"/g, '""')}"`,
+        f.title || '',
         f.severity,
         f.status,
         f.source || '',
         f.scanner || '',
         f.createdAt,
       ])
-      const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
-      const blob = new Blob([csv], { type: 'text/csv' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `findings-${new Date().toISOString().split('T')[0]}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadCsv(buildCsv(headers, rows), `findings-${new Date().toISOString().split('T')[0]}.csv`)
       toast.success('CSV exported successfully')
     } else if (format === 'JSON') {
       const data = findings.map((f) => ({

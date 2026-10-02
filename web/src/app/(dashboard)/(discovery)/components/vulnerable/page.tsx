@@ -1,5 +1,6 @@
 'use client'
 
+import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { useState, useMemo } from 'react'
 import { Main } from '@/components/layout'
 import { PageHeader } from '@/features/shared'
@@ -120,7 +121,7 @@ export default function VulnerableComponentsPage() {
       return
     }
 
-    const csv = [
+    const csv = buildCsv(
       [
         'Name',
         'Version',
@@ -132,30 +133,21 @@ export default function VulnerableComponentsPage() {
         'Low',
         'Risk Score',
         'CISA KEV',
-      ].join(','),
-      ...filteredComponents.map((c) =>
-        [
-          `"${c.name}"`,
-          c.version,
-          c.ecosystem,
-          `"${c.purl}"`,
-          c.vulnerabilityCount.critical,
-          c.vulnerabilityCount.high,
-          c.vulnerabilityCount.medium,
-          c.vulnerabilityCount.low,
-          c.riskScore,
-          c.vulnerabilities.some((v) => v.inCisaKev) ? 'Yes' : 'No',
-        ].join(',')
-      ),
-    ].join('\n')
-
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'vulnerable-components.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+      ],
+      filteredComponents.map((c) => [
+        c.name,
+        c.version,
+        c.ecosystem,
+        c.purl,
+        c.vulnerabilityCount.critical,
+        c.vulnerabilityCount.high,
+        c.vulnerabilityCount.medium,
+        c.vulnerabilityCount.low,
+        c.riskScore,
+        c.vulnerabilities.some((v) => v.inCisaKev) ? 'Yes' : 'No',
+      ])
+    )
+    downloadCsv(csv, 'vulnerable-components.csv')
     toast.success('Vulnerable components exported')
   }
 
