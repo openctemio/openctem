@@ -281,3 +281,38 @@ func validateSARIFRepositoryInput(req SARIFRepository) error {
 	}
 	return nil
 }
+
+// sarifResultFields is the slice of a SARIF result that ctis.FromSARIF drops
+// but the findings table stores.
+type sarifResultFields struct {
+	Runs []struct {
+		Results []struct {
+			Kind          string `json:"kind"`
+			BaselineState string `json:"baselineState"`
+		} `json:"results"`
+	} `json:"runs"`
+}
+
+// applySARIFResultFields copies each result's kind and baselineState onto the
+// finding ctis.FromSARIF made from it. FromSARIF converts runs[0] only, one
+// finding per result in order, so finding i is result i. If the counts differ
+// the mapping is not trusted and nothing is copied. Values are copied as
+// written ("notApplicable"); buildFinding normalizes and validates them.
+func applySARIFResultFields(report *ctis.Report, sarifData []byte) {
+	var doc sarifResultFields
+	if err := json.Unmarshal(sarifData, &doc); err != nil || len(doc.Runs) == 0 {
+		return
+	}
+	results := doc.Runs[0].Results
+	if len(results) != len(report.Findings) {
+		return
+	}
+	for i := range report.Findings {
+		if report.Findings[i].Kind == "" {
+			report.Findings[i].Kind = results[i].Kind
+		}
+		if report.Findings[i].BaselineState == "" {
+			report.Findings[i].BaselineState = results[i].BaselineState
+		}
+	}
+}
