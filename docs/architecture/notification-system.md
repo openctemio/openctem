@@ -427,6 +427,32 @@ vulnerabilityService.SetNotificationService(db.DB, notificationService)
 exposureService.SetNotificationService(db.DB, notificationService)
 ```
 
+## In-App Inbox (user notifications)
+
+Separate from the outbox above, `NotificationService.Notify`
+(`internal/app/integration/notification.go`) stores one row per event in
+`notifications` with an audience: `user` (one user), `group` (the members of
+one group) or `all` (every member of the tenant). Read state and preferences
+are per user (`notification_reads`, `notification_state`,
+`notification_preferences`).
+
+### Who sees a notification
+
+A user sees a notification when they are in its audience. The same rule is
+applied by the inbox list (`NotificationRepository.List`), the unread badge
+(`NotificationRepository.UnreadCount`) and the real-time push
+(`NotificationRepository.ListRecipients`), so they never disagree.
+
+### Real-time push
+
+Each recipient gets the notification on their own channel,
+`user:{tenant_id}:{user_id}` (`notification.UserChannel`). The hub lets a
+connection subscribe only to the channel of the user and tenant it
+authenticated as, and delivers a user channel only to that user's
+connections. Notifications are never sent on `tenant:{id}` (every member can
+watch it) or `group:{id}`. The UI's notification bell subscribes to its user
+channel.
+
 ## Deprecation Notice
 
 ### notification_history (REMOVED)

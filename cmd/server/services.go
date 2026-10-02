@@ -415,6 +415,38 @@ func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context
 	return app.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
+// wsChannelAccess adapts the RBAC and group services to
+// websocket.ChannelAccessChecker, so the hub can refuse a subscription to a
+// finding, triage, scan or group channel the user is not allowed to read.
+type wsChannelAccess struct {
+	roles  *app.RoleService
+	groups *postgres.GroupRepository
+}
+
+func (a wsChannelAccess) HasPermission(ctx context.Context, tenantID, userID, perm string) (bool, error) {
+	return a.roles.HasPermission(ctx, tenantID, userID, perm)
+}
+
+func (a wsChannelAccess) IsGroupMember(ctx context.Context, tenantID, groupID, userID string) (bool, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, err
+	}
+	gid, err := shared.IDFromString(groupID)
+	if err != nil {
+		return false, err
+	}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return false, err
+	}
+	// The group must belong to the caller's tenant before membership counts.
+	if _, err := a.groups.GetByTenantAndID(ctx, tid, gid); err != nil {
+		return false, err
+	}
+	return a.groups.IsMember(ctx, gid, uid)
+}
+
 // wsHubBroadcaster adapts websocket.Hub to app.ActivityBroadcaster and app.TriageBroadcaster interfaces.
 type wsHubBroadcaster struct {
 	hub *websocket.Hub
@@ -1607,6 +1639,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
+	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group})
 	log.Info("websocket hub initialized")
 
 	// Wire WebSocket broadcasters - must be done AFTER WebSocketHub is initialized

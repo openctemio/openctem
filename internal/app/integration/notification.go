@@ -207,8 +207,8 @@ func (s *NotificationService) Notify(ctx context.Context, params notificationdom
 		return fmt.Errorf("create notification: %w", err)
 	}
 
-	// Push via WebSocket based on audience.
-	s.pushWebSocket(params)
+	// Push to each recipient's own WebSocket channel.
+	s.pushWebSocket(ctx, n)
 
 	s.logger.Info("notification created",
 		"notification_id", n.ID(),
@@ -220,38 +220,40 @@ func (s *NotificationService) Notify(ctx context.Context, params notificationdom
 	return nil
 }
 
-// pushWebSocket sends a real-time notification to the appropriate WebSocket channels.
-func (s *NotificationService) pushWebSocket(params notificationdom.NotificationParams) {
+// pushWebSocket sends the notification in real time to the users who should
+// see it, each on their own user:{tenant}:{user} channel.
+//
+// It never uses a shared channel. The tenant channel reaches every member of
+// the tenant, and a group channel can be watched by people outside the group,
+// so a notification addressed to one user or one group sent there was readable
+// by everyone else in the tenant. The recipients are the audience the inbox
+// query uses, resolved by the repository.
+func (s *NotificationService) pushWebSocket(ctx context.Context, n *notificationdom.Notification) {
 	if s.wsHub == nil {
+		return
+	}
+
+	recipients, err := s.repo.ListRecipients(ctx, n)
+	if err != nil {
+		// The notification is stored; the inbox and badge still pick it up on
+		// the next fetch. Only the live push is lost.
+		s.logger.Error("failed to resolve notification recipients",
+			"tenant_id", n.TenantID(), "notification_id", n.ID(), "error", err)
 		return
 	}
 
 	payload := map[string]interface{}{
 		"type":     "notification",
-		"sub_type": params.NotificationType,
-		"title":    params.Title,
-		"body":     params.Body,
-		"severity": params.Severity,
+		"id":       n.ID().String(),
+		"sub_type": n.NotificationType(),
+		"title":    n.Title(),
+		"body":     n.Body(),
+		"severity": n.Severity(),
 	}
 
-	tenantID := params.TenantID.String()
-
-	// Always broadcast to the tenant channel so the notification bell updates.
-	tenantChannel := fmt.Sprintf("tenant:%s", tenantID)
-	s.wsHub.BroadcastEvent(tenantChannel, payload, tenantID)
-
-	// Additionally broadcast to audience-specific channels for targeted listeners.
-	switch params.Audience {
-	case notificationdom.AudienceUser:
-		if params.AudienceID != nil {
-			channel := fmt.Sprintf("notification:%s", params.AudienceID.String())
-			s.wsHub.BroadcastEvent(channel, payload, tenantID)
-		}
-	case notificationdom.AudienceGroup:
-		if params.AudienceID != nil {
-			channel := fmt.Sprintf("group:%s", params.AudienceID.String())
-			s.wsHub.BroadcastEvent(channel, payload, tenantID)
-		}
+	tenantID := n.TenantID().String()
+	for _, userID := range recipients {
+		s.wsHub.BroadcastEvent(notificationdom.UserChannel(tenantID, userID.String()), payload, tenantID)
 	}
 }
 

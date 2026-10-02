@@ -86,12 +86,12 @@ type ChannelType string
 
 const (
 	// Channel types
-	ChannelTypeFinding      ChannelType = "finding"      // finding:{id} - activity updates for a finding
-	ChannelTypeScan         ChannelType = "scan"         // scan:{id} - scan progress updates
-	ChannelTypeTenant       ChannelType = "tenant"       // tenant:{id} - tenant-wide notifications
-	ChannelTypeNotification ChannelType = "notification" // notification:{tenant_id} - notification delivery
-	ChannelTypeTriage       ChannelType = "triage"       // triage:{finding_id} - AI triage progress updates
-	ChannelTypeGroup        ChannelType = "group"        // group:{id} - group membership/scope rule changes
+	ChannelTypeFinding ChannelType = "finding" // finding:{id} - activity updates for a finding
+	ChannelTypeScan    ChannelType = "scan"    // scan:{id} - scan progress updates
+	ChannelTypeTenant  ChannelType = "tenant"  // tenant:{id} - events meant for every tenant member (never user notifications)
+	ChannelTypeUser    ChannelType = "user"    // user:{tenant_id}:{user_id} - one user's in-app notifications
+	ChannelTypeTriage  ChannelType = "triage"  // triage:{finding_id} - AI triage progress updates
+	ChannelTypeGroup   ChannelType = "group"   // group:{id} - group scope rule changes
 )
 
 // ParseChannel extracts the channel type and ID from a channel string.

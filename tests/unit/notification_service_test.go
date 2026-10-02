@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +53,12 @@ type mockNotificationRepo struct {
 	lastPagination pagination.Pagination
 	lastDeleteAge  time.Duration
 
+	// Audience resolution for ListRecipients
+	tenantMembers  []shared.ID
+	groupMembers   map[shared.ID][]shared.ID
+	recipientsErr  error
+	recipientCalls int
+
 	// Return overrides
 	unreadCountResult int
 	deleteOlderResult int64
@@ -94,6 +103,24 @@ func (m *mockNotificationRepo) List(_ context.Context, tenantID, userID shared.I
 		PerPage:    page.PerPage,
 		TotalPages: 1,
 	}, nil
+}
+
+// ListRecipients mirrors the postgres implementation: the audience's members.
+func (m *mockNotificationRepo) ListRecipients(_ context.Context, n *notification.Notification) ([]shared.ID, error) {
+	m.recipientCalls++
+	if m.recipientsErr != nil {
+		return nil, m.recipientsErr
+	}
+	var audience []shared.ID
+	switch n.Audience() {
+	case notification.AudienceAll:
+		audience = m.tenantMembers
+	case notification.AudienceUser:
+		audience = []shared.ID{*n.AudienceID()}
+	case notification.AudienceGroup:
+		audience = m.groupMembers[*n.AudienceID()]
+	}
+	return audience, nil
 }
 
 func (m *mockNotificationRepo) UnreadCount(_ context.Context, _, _ shared.ID) (int, error) {
@@ -1096,10 +1123,39 @@ func TestNotify_Success(t *testing.T) {
 	if len(repo.notifications) != 1 {
 		t.Errorf("expected 1 notification stored, got %d", len(repo.notifications))
 	}
-	// 2 broadcasts: tenant channel (for bell) + audience-specific channel
-	if len(ws.calls) != 2 {
-		t.Errorf("expected 2 ws broadcasts, got %d", len(ws.calls))
+	// Exactly one push: the addressed user's own channel.
+	if len(ws.calls) != 1 {
+		t.Errorf("expected 1 ws broadcast, got %d", len(ws.calls))
 	}
+}
+
+// assertNoSharedChannel fails if any push went to a channel other users can
+// watch. A notification must only ever travel on user:{tenant}:{user}.
+func assertNoSharedChannel(t *testing.T, calls []wsBroadcastCall) {
+	t.Helper()
+	for _, c := range calls {
+		if !strings.HasPrefix(c.channel, notification.UserChannelPrefix) {
+			t.Errorf("notification pushed on shared channel %q", c.channel)
+		}
+	}
+}
+
+func pushedChannels(calls []wsBroadcastCall) []string {
+	out := make([]string, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, c.channel)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func userChannels(tenantID shared.ID, users ...shared.ID) []string {
+	out := make([]string, 0, len(users))
+	for _, u := range users {
+		out = append(out, notification.UserChannel(tenantID.String(), u.String()))
+	}
+	sort.Strings(out)
+	return out
 }
 
 func TestNotify_AudienceAll(t *testing.T) {
@@ -1108,6 +1164,8 @@ func TestNotify_AudienceAll(t *testing.T) {
 	svc := newTestNotificationService(repo, ws)
 	ctx := context.Background()
 	tenantID := shared.NewID()
+	alice, bob := shared.NewID(), shared.NewID()
+	repo.tenantMembers = []shared.ID{alice, bob}
 
 	params := notification.NotificationParams{
 		TenantID:         tenantID,
@@ -1122,18 +1180,20 @@ func TestNotify_AudienceAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(ws.calls) != 1 {
-		t.Fatalf("expected 1 ws broadcast, got %d", len(ws.calls))
+	assertNoSharedChannel(t, ws.calls)
+	if got, want := pushedChannels(ws.calls), userChannels(tenantID, alice, bob); !slices.Equal(got, want) {
+		t.Fatalf("pushed to %v, want %v", got, want)
 	}
-	expectedChannel := fmt.Sprintf("tenant:%s", tenantID.String())
-	if ws.calls[0].channel != expectedChannel {
-		t.Errorf("expected channel %s, got %s", expectedChannel, ws.calls[0].channel)
-	}
-	if ws.calls[0].tenantID != tenantID.String() {
-		t.Errorf("expected tenantID %s, got %s", tenantID.String(), ws.calls[0].tenantID)
+	for _, c := range ws.calls {
+		if c.tenantID != tenantID.String() {
+			t.Errorf("expected tenantID %s, got %s", tenantID.String(), c.tenantID)
+		}
 	}
 }
 
+// Regression: a user-targeted notification used to be broadcast on the
+// tenant:{id} channel, so every member of the tenant received its title and
+// body. It must reach only the addressed user.
 func TestNotify_AudienceUser(t *testing.T) {
 	repo := newMockNotificationRepo()
 	ws := newMockWSBroadcaster()
@@ -1141,6 +1201,7 @@ func TestNotify_AudienceUser(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 	userID := shared.NewID()
+	repo.tenantMembers = []shared.ID{userID, shared.NewID(), shared.NewID()}
 
 	params := notification.NotificationParams{
 		TenantID:         tenantID,
@@ -1156,22 +1217,14 @@ func TestNotify_AudienceUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// 2 broadcasts: tenant channel (for bell) + user-specific channel
-	if len(ws.calls) != 2 {
-		t.Fatalf("expected 2 ws broadcasts, got %d", len(ws.calls))
-	}
-	// First broadcast is always tenant channel
-	expectedTenantChannel := fmt.Sprintf("tenant:%s", tenantID.String())
-	if ws.calls[0].channel != expectedTenantChannel {
-		t.Errorf("expected channel %s, got %s", expectedTenantChannel, ws.calls[0].channel)
-	}
-	// Second broadcast is audience-specific channel
-	expectedUserChannel := fmt.Sprintf("notification:%s", userID.String())
-	if ws.calls[1].channel != expectedUserChannel {
-		t.Errorf("expected channel %s, got %s", expectedUserChannel, ws.calls[1].channel)
+	assertNoSharedChannel(t, ws.calls)
+	if got, want := pushedChannels(ws.calls), userChannels(tenantID, userID); !slices.Equal(got, want) {
+		t.Fatalf("pushed to %v, want only %v", got, want)
 	}
 }
 
+// Regression: a group-targeted notification used to go to tenant:{id} and to
+// group:{id}, both watchable by non-members. It must reach only the members.
 func TestNotify_AudienceGroup(t *testing.T) {
 	repo := newMockNotificationRepo()
 	ws := newMockWSBroadcaster()
@@ -1179,6 +1232,9 @@ func TestNotify_AudienceGroup(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 	groupID := shared.NewID()
+	m1, m2, outsider := shared.NewID(), shared.NewID(), shared.NewID()
+	repo.tenantMembers = []shared.ID{m1, m2, outsider}
+	repo.groupMembers = map[shared.ID][]shared.ID{groupID: {m1, m2}}
 
 	params := notification.NotificationParams{
 		TenantID:         tenantID,
@@ -1194,17 +1250,33 @@ func TestNotify_AudienceGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// 2 broadcasts: tenant channel (for bell) + group-specific channel
-	if len(ws.calls) != 2 {
-		t.Fatalf("expected 2 ws broadcasts, got %d", len(ws.calls))
+	assertNoSharedChannel(t, ws.calls)
+	if got, want := pushedChannels(ws.calls), userChannels(tenantID, m1, m2); !slices.Equal(got, want) {
+		t.Fatalf("pushed to %v, want members only %v", got, want)
 	}
-	expectedTenantChannel := fmt.Sprintf("tenant:%s", tenantID.String())
-	if ws.calls[0].channel != expectedTenantChannel {
-		t.Errorf("expected channel %s, got %s", expectedTenantChannel, ws.calls[0].channel)
+}
+
+// If recipients cannot be resolved the notification is still stored (the inbox
+// shows it) and nothing is pushed anywhere, in particular not to a shared
+// channel as a fallback.
+func TestNotify_RecipientLookupFails_NoPush(t *testing.T) {
+	repo := newMockNotificationRepo()
+	repo.recipientsErr = errors.New("db down")
+	ws := newMockWSBroadcaster()
+	svc := newTestNotificationService(repo, ws)
+
+	err := svc.Notify(context.Background(), notification.NotificationParams{
+		TenantID: shared.NewID(), Audience: notification.AudienceAll,
+		NotificationType: notification.TypeSystemAlert, Title: "t",
+	})
+	if err != nil {
+		t.Fatalf("notify should still succeed: %v", err)
 	}
-	expectedGroupChannel := fmt.Sprintf("group:%s", groupID.String())
-	if ws.calls[1].channel != expectedGroupChannel {
-		t.Errorf("expected channel %s, got %s", expectedGroupChannel, ws.calls[1].channel)
+	if repo.createCalls != 1 {
+		t.Errorf("expected the notification stored, create calls = %d", repo.createCalls)
+	}
+	if len(ws.calls) != 0 {
+		t.Errorf("expected no push, got %v", pushedChannels(ws.calls))
 	}
 }
 
