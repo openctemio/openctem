@@ -3122,6 +3122,26 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		argIndex++
 	}
 
+	// CVE and finding-type filters. Both were on FindingFilter (the groups
+	// endpoint and remediation campaigns set them) but this builder ignored
+	// them, so List/Count silently returned every finding: a campaign scoped to
+	// cve_ids counted, and resolved, findings outside its CVEs.
+	if len(filter.CVEIDs) > 0 {
+		conditions = append(conditions, fmt.Sprintf("cve_id = ANY($%d)", argIndex))
+		args = append(args, pq.Array(filter.CVEIDs))
+		argIndex++
+	}
+
+	if len(filter.FindingTypes) > 0 {
+		types := make([]string, len(filter.FindingTypes))
+		for i, t := range filter.FindingTypes {
+			types[i] = string(t)
+		}
+		conditions = append(conditions, fmt.Sprintf("finding_type = ANY($%d)", argIndex))
+		args = append(args, pq.Array(types))
+		argIndex++
+	}
+
 	if len(filter.FindingIDs) > 0 {
 		placeholders := make([]string, len(filter.FindingIDs))
 		for i, id := range filter.FindingIDs {
