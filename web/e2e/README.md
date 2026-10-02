@@ -65,15 +65,29 @@ Each spec is designed to:
    - `E2E_API_BASE_URL` — for tests that hit the API directly
    - `E2E_LOCALE` — override the browser locale (defaults to `en-US`)
 
-3. Make sure the UI and API are running:
+3. Make sure the web app and API are running (monorepo: `api/` and `web/`):
 
    ```bash
    # in api/
    make dev
 
-   # in ui/
+   # in web/
    npm run dev
    ```
+
+   One account drives every test, so raise the API's per-user read limit
+   for the stack under test (`RATE_LIMIT_READ_PER_MIN=3000`). At the default
+   of 120 reads a minute the parallel run gets 429s and their error toasts
+   cover the menus the tests click.
+
+### Sign-in
+
+Each worker signs in once (`fixtures/authenticated-page.ts`, a worker-scoped
+fixture) and every test in that worker reuses the saved session through
+`storageState`. Signing in per test hit the API's sign-in limit (5 a minute
+per address). One session per worker, not one shared by all workers, keeps
+refresh-token rotation inside one process. A refused sign-in waits for the
+limit window and retries.
 
 ## Running
 
@@ -96,8 +110,10 @@ e2e/
 ├── fixtures/
 │   └── authenticated-page.ts       # custom test fixture (logged-in page)
 ├── helpers/
+│   ├── assets.ts                   # openFirstAssetSheet()
 │   ├── auth.ts                     # loginAs(), gotoDashboardPath()
-│   └── env.ts                      # env loading + skip-on-missing
+│   ├── env.ts                      # env loading + skip-on-missing
+│   └── table.ts                    # dataRows(), firstDataRow()
 └── specs/
     ├── 01-login-and-invitation.spec.ts
     ├── 02-asset-relationship-multiselect.spec.ts
@@ -137,11 +153,14 @@ invitation preview) import `test` from `@playwright/test` directly.
 When a test depends on seed data that may not be present, use:
 
 ```ts
-if (!(await something.isVisible().catch(() => false))) {
-  test.skip(true, 'Need at least one X — seed it to enable this test')
-  return
-}
+const row = await firstDataRow(page)
+test.skip(!row, 'Need at least one X — seed it to enable this test')
 ```
+
+Do not use `getByRole('row').nth(1)` for "the first row": an empty table
+renders one full-width "No ... yet" row, which is visible and is not data.
+`dataRows()` / `firstDataRow()` in `helpers/table.ts` match rows with at
+least two cells.
 
 This keeps the suite useful as a smoke test on a fresh tenant while
 giving teams with seed data the full coverage.
@@ -155,6 +174,8 @@ giving teams with seed data the full coverage.
   manually in a real browser.
 - **"No assets in tenant"** — most tests need at least one asset; seed
   one via the API or the UI before running.
+- **Random 429s, toasts covering menus** — raise `RATE_LIMIT_READ_PER_MIN`
+  on the API under test (see Setup).
 - **Tests pass locally, fail in CI** — bump `workers: 1` in
   `playwright.config.ts` (already the default for `CI=true`) and check
   for tests that depend on shared state.

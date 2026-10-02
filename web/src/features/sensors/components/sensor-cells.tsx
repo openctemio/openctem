@@ -75,7 +75,9 @@ export function SensorNameCell({ sensor }: { sensor: Sensor }) {
   return (
     <div className="flex min-w-0 flex-col">
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate font-medium">{sensor.name}</span>
+        <span className="truncate font-medium" data-slot="sensor-name">
+          {sensor.name}
+        </span>
         {sensor.is_platform_sensor && <SensorTag>Platform</SensorTag>}
         <ProtocolTag sensor={sensor} />
       </span>

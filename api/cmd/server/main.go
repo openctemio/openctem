@@ -245,6 +245,11 @@ func run() int {
 		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
 	)
 	services.Tenant.SetPermissionServices(services.PermCache, services.PermVersion)
+	// Re-wire the data-scope policy store. initServices sets it on the tenant
+	// service this constructor just replaced; without it GET and PATCH
+	// /tenants/{t}/settings/data-scope fail closed with a 500, so the policy for
+	// members without an access group can be neither read nor changed.
+	services.Tenant.SetDataScopePolicyStore(repos.Tenant)
 	// Re-wire session service after rebuilding the tenant service —
 	// the constructor above replaces services.Tenant, dropping the
 	// SetSessionService call from initServices().
