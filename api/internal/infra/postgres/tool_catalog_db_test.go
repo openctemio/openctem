@@ -18,6 +18,7 @@ func TestToolCatalog_SeededToolsReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = rows.Close() }()
 	var names []string
 	for rows.Next() {
 		var n string
@@ -26,7 +27,9 @@ func TestToolCatalog_SeededToolsReadBack(t *testing.T) {
 		}
 		names = append(names, n)
 	}
-	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if len(names) == 0 {
 		t.Skip("no seeded tools (migrations not applied)")
 	}
@@ -36,7 +39,7 @@ func TestToolCatalog_SeededToolsReadBack(t *testing.T) {
 		}
 	}
 
-	// The asset collectors (migration 000265) are catalogued as collectors.
+	// The asset collectors (migration 000265) are in the catalog as collectors.
 	for _, n := range []string{"gcp-dns", "vcenter", "ldap", "splunk", "prtg"} {
 		tl, err := repo.GetByName(ctx, n)
 		if err != nil {
