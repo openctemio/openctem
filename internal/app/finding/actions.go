@@ -232,8 +232,33 @@ func (s *FindingActionsService) ListFindingGroups(
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("%w: invalid group_by: %s", shared.ErrValidation, groupBy)
 	}
 
-	filter.TenantID = &tid
+	filter, err = s.visibleTo(ctx, tid, filter)
+	if err != nil {
+		return pagination.Result[*vulnerability.FindingGroup]{}, err
+	}
 	return s.findingRepo.ListFindingGroups(ctx, tid, groupBy, filter, page)
+}
+
+// visibleTo narrows a filter to the findings the request's caller may see,
+// with the rules the findings list applies: the Layer 2 data scope (resolved
+// by the shared enforcer, so admins, internal calls and the organization's
+// policy for members without an access group behave the same everywhere),
+// and pentest findings only for members of their campaign.
+func (s *FindingActionsService) visibleTo(
+	ctx context.Context, tid shared.ID, filter vulnerability.FindingFilter,
+) (vulnerability.FindingFilter, error) {
+	filter.TenantID = &tid
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return filter, fmt.Errorf("failed to resolve data scope: %w", err)
+	}
+	filter = filter.WithDataScope(scope)
+	if c := s.dataScope.CallerOf(ctx); !c.IsAdmin && c.UserID != "" {
+		if uid, err := shared.IDFromString(c.UserID); err == nil {
+			filter = filter.WithPentestMemberOrNonPentest(uid)
+		}
+	}
+	return filter, nil
 }
 
 // --- Related CVEs ---
@@ -251,6 +276,10 @@ func (s *FindingActionsService) GetRelatedCVEs(
 		return nil, err
 	}
 
+	filter, err = s.visibleTo(ctx, tid, filter)
+	if err != nil {
+		return nil, err
+	}
 	return s.findingRepo.FindRelatedCVEs(ctx, tid, cveID, filter)
 }
 
@@ -300,6 +329,13 @@ func (s *FindingActionsService) BulkFixApplied(
 		}
 	}
 
+	// Layer 2: only findings in the caller's data scope — also when looking
+	// up related CVEs, so out-of-scope findings do not widen the CVE list.
+	input.Filter, err = s.visibleTo(ctx, tid, input.Filter)
+	if err != nil {
+		return nil, err
+	}
+
 	// Include related CVEs if requested
 	if input.IncludeRelatedCVEs && len(input.Filter.CVEIDs) > 0 {
 		relatedCVEs, err := s.findingRepo.FindRelatedCVEs(ctx, tid, input.Filter.CVEIDs[0], input.Filter)
@@ -314,14 +350,6 @@ func (s *FindingActionsService) BulkFixApplied(
 
 	// Ensure we only target in_progress findings
 	input.Filter.Statuses = []vulnerability.FindingStatus{vulnerability.FindingStatusInProgress}
-	input.Filter.TenantID = &tid
-
-	// Layer 2: only findings in the caller's data scope.
-	scope, err := s.dataScope.Resolve(ctx, tid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve data scope: %w", err)
-	}
-	input.Filter = input.Filter.WithDataScope(scope)
 
 	// Count preview — cap at 1000
 	count, err := s.findingRepo.Count(ctx, input.Filter)
@@ -631,8 +659,10 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 
 	// Force filter to only fix_applied findings + apply data scope
 	input.Filter.Statuses = []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied}
-	input.Filter.TenantID = &tid
-	input.Filter.DataScopeUserID = &uid // SEC-01: enforce data scope
+	input.Filter, err = s.visibleTo(ctx, tid, input.Filter)
+	if err != nil {
+		return 0, err
+	}
 
 	resolution := "Verified by security review"
 	if input.Note != "" {
@@ -672,8 +702,10 @@ func (s *FindingActionsService) BulkRejectByFilter(
 	}
 
 	input.Filter.Statuses = []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied}
-	input.Filter.TenantID = &tid
-	input.Filter.DataScopeUserID = &uid // SEC-01: enforce data scope
+	input.Filter, err = s.visibleTo(ctx, tid, input.Filter)
+	if err != nil {
+		return 0, err
+	}
 
 	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
 		vulnerability.FindingStatusInProgress, input.Reason, &uid)

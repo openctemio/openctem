@@ -662,6 +662,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   `/api/v1/verification-checklists/{uuid}` — read or write, the object or any
   sub-resource, including routes added later — is checked before the handler.
 - **Bulk-by-id and id-in-body paths:** services filter with the same enforcer.
+- **Grouped / by-filter finding queries** (`/findings/groups`, related CVEs,
+  verify / reject-fix / fix-applied by filter): `FindingActionsService.visibleTo`
+  applies the enforcer's scope and the findings list's pentest-membership rule;
+  the group builder (`buildFilterWhere`) honors both filter fields with the
+  list's meaning, and a rule without a tenant matches nothing.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
@@ -670,7 +675,9 @@ results an out-of-scope id is reported exactly like an unknown id.
 
 | Surface | Before (audit 2026-10, F4) | Now |
 |---|---|---|
-| `GET /assets`, `/findings` (list, search), `/findings/stats`, `/findings/groups` | scoped | scoped (unchanged) |
+| `GET /assets`, `/findings` (list, search), `/findings/stats` | scoped | scoped (unchanged) |
+| `GET /findings/groups` (every `group_by`: asset, CVE, owner, component, severity, source, type; incl. the total-groups count and the `statuses=fix_applied` Pending Review queue) | **bypass (group names + counts tenant-wide; listed as scoped by mistake)** | scoped: groups and their counts come only from in-scope findings; pentest findings only to campaign members (the view lists no pentest findings at all) |
+| `GET /findings/related-cves/{cve}` | **bypass (CVE ids/titles/counts)** | scoped (both the source CVE's components and the related findings) |
 | `GET /assets/{id}`, `/findings/{id}`, `/findings/{id}/activities`, `POST /findings/{id}/comments` | scoped | scoped (guard + service) |
 | `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
 | `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
@@ -679,6 +686,7 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `PUT/DELETE /assets/{id}`, activate/deactivate/archive, crown-jewel, snooze, sync, scan | **bypass (write)** | 404 (guard) |
 | `POST /findings/bulk/status`, `/bulk/assign` | **bypass (write)** | out-of-scope ids skipped, reported as not found |
 | `POST /findings/actions/verify`, `/reject-fix` (by ids), `/fix-applied` (filter) | partly | scoped |
+| `POST /findings/actions/verify`, `/reject-fix` (by `filter`, Pending Review) | **bypass (write: the scope field was set but the filter builder ignored it)** | scoped; admins unchanged |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list filtered per page |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
