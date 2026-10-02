@@ -1,7 +1,7 @@
 package postgres
 
 // Tenant scanner content policies (docs/rfcs/RFC-031-managed-sensor-updates.md,
-// migration 000251).
+// migration 000252).
 
 import (
 	"context"
