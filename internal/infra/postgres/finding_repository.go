@@ -1460,6 +1460,7 @@ func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
 	tenantID, vulnID shared.ID,
 	includeResolved bool,
 	page pagination.Pagination,
+	scope *shared.DataScope,
 ) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
 	empty := pagination.NewResult([]vulnerability.VulnerabilityAffectedAsset{}, 0, page)
 
@@ -1468,6 +1469,11 @@ func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
 	if !includeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
 	}
+	// Layer 2: $3/$4 are the data-scope user/tenant when a scope is set; the
+	// pagination placeholders follow the scope arguments.
+	scopeCond, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String(), vulnID.String()})
+	statusFilter += " AND " + scopeCond
+	limitIdx, offsetIdx := len(args)+1, len(args)+2
 
 	countQuery := `
 		SELECT COUNT(DISTINCT f.asset_id)
@@ -1522,19 +1528,17 @@ func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
 			agg.sla_rank ASC,
 			a.risk_score DESC,
 			a.name ASC
-		LIMIT $3 OFFSET $4
-	`
+		LIMIT $` + strconv.Itoa(limitIdx) + ` OFFSET $` + strconv.Itoa(offsetIdx)
 
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String(), vulnID.String()).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return empty, fmt.Errorf("failed to count affected assets: %w", err)
 	}
 	if total == 0 {
 		return empty, nil
 	}
 
-	rows, err := r.db.QueryContext(ctx, listQuery,
-		tenantID.String(), vulnID.String(), page.Limit(), page.Offset())
+	rows, err := r.db.QueryContext(ctx, listQuery, append(args, page.Limit(), page.Offset())...)
 	if err != nil {
 		return empty, fmt.Errorf("failed to list affected assets: %w", err)
 	}

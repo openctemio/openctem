@@ -6,6 +6,7 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/internal/app/scope"
 
 	assetgroupdom "github.com/openctemio/api/pkg/domain/assetgroup"
@@ -21,6 +22,15 @@ type AssetGroupService struct {
 
 	// Scope rule reconciler callback (set by services.go wiring)
 	scopeRuleReconciler scope.RuleGroupReconcilerFunc
+
+	// Layer 2 data scope for group contents (nil = unrestricted).
+	dataScope *datascope.Enforcer
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer: a restricted member
+// sees only the in-scope assets and findings of a group.
+func (s *AssetGroupService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
 }
 
 // NewAssetGroupService creates a new asset group service.
@@ -458,8 +468,13 @@ func (s *AssetGroupService) GetGroupAssets(ctx context.Context, tenantID string,
 	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
 		return pagination.Result[*assetgroupdom.GroupAsset]{}, err
 	}
+	tid, _ := shared.IDFromString(tenantID) // validated by verifyGroupTenant
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return pagination.Result[*assetgroupdom.GroupAsset]{}, fmt.Errorf("resolve data scope: %w", err)
+	}
 	page := pagination.New(pageNum, perPage)
-	return s.repo.GetGroupAssets(ctx, groupID, page)
+	return s.repo.GetGroupAssets(ctx, groupID, page, scope)
 }
 
 // GetGroupFindings retrieves findings for assets in a group.
@@ -467,8 +482,13 @@ func (s *AssetGroupService) GetGroupFindings(ctx context.Context, tenantID strin
 	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
 		return pagination.Result[*assetgroupdom.GroupFinding]{}, err
 	}
+	tid, _ := shared.IDFromString(tenantID) // validated by verifyGroupTenant
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return pagination.Result[*assetgroupdom.GroupFinding]{}, fmt.Errorf("resolve data scope: %w", err)
+	}
 	page := pagination.New(pageNum, perPage)
-	return s.repo.GetGroupFindings(ctx, groupID, page)
+	return s.repo.GetGroupFindings(ctx, groupID, page, scope)
 }
 
 // BulkUpdateInput represents input for bulk updating asset groups.

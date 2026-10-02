@@ -946,7 +946,7 @@ func (m *mockFindingRepoForScope) UpdateWorkItemURIs(_ context.Context, _, _ sha
 	return nil
 }
 
-func (m *mockFindingRepoForScope) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+func (m *mockFindingRepoForScope) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
 	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
 }
 

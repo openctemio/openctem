@@ -571,16 +571,16 @@ func (h *MCPHandler) toolExplainPriority(ctx context.Context, tenantID string, r
 	return h.priority.ExplainFinding(ctx, tid, fid)
 }
 
-// toolExposureChains is an intentionally TENANT-WIDE aggregate: the attack-path
-// engine (GetExposureChains) computes graph-level exposure chains across the
-// whole tenant estate and exposes no per-user data-scope variant. It is gated by
-// the assets:read scope only; there is no *WithScope path to route through.
+// toolExposureChains returns exposure chains narrowed to the key owner's data
+// scope: the chains are computed over the whole tenant graph, but a chain is
+// returned only when every hop is an asset the key owner may see (the summary
+// counts stay tenant-wide). Gated by the assets:read scope.
 func (h *MCPHandler) toolExposureChains(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, toolInputError{"invalid tenant"}
 	}
-	return h.surface.GetExposureChains(ctx, tid)
+	return h.surface.ExposureChainsForCaller(ctx, tid)
 }
 
 // toolListRemediationGroups is an intentionally TENANT-WIDE aggregate: a

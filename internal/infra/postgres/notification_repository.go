@@ -134,6 +134,7 @@ func (r *NotificationRepository) List(
 func (r *NotificationRepository) UnreadCount(
 	ctx context.Context,
 	tenantID, userID shared.ID,
+	scope *shared.DataScope,
 ) (int, error) {
 	audienceClause := r.buildAudienceClause()
 	args := []any{tenantID, userID}
@@ -150,6 +151,11 @@ func (r *NotificationRepository) UnreadCount(
 		  AND n.created_at > NOW() - INTERVAL '30 days'
 		  AND (` + audienceClause + `)
 		  AND ` + preferenceFilter("n.notification_type", "n.severity")
+	if scope != nil {
+		var cond string
+		cond, args = notificationScopeCond(scope, args)
+		query += " AND " + cond
+	}
 
 	var count int
 	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
@@ -162,14 +168,21 @@ func (r *NotificationRepository) UnreadCount(
 // audience whose preferences allow it: the users a real-time push goes to.
 // The audience and preference rules are the ones List and UnreadCount apply,
 // so a push never reaches anyone whose inbox would not show the notification.
-func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notification.Notification) ([]shared.ID, error) {
+func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notification.Notification, strictScope bool) ([]shared.ID, error) {
 	var audienceID *string
 	if n.AudienceID() != nil {
 		s := n.AudienceID().String()
 		audienceID = &s
 	}
 
-	// $1 tenant, $2 audience, $3 audience_id, $4 type, $5 severity.
+	var resourceID *string
+	if n.ResourceID() != nil {
+		s := n.ResourceID().String()
+		resourceID = &s
+	}
+
+	// $1 tenant, $2 audience, $3 audience_id, $4 type, $5 severity,
+	// $6 resource_type, $7 resource_id, $8 strict data scope.
 	query := `
 		SELECT tm.user_id
 		FROM tenant_members tm
@@ -185,10 +198,25 @@ func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notifica
 				WHERE g.id = $3::uuid AND g.tenant_id = $1 AND g.is_active = true
 			))
 		  )
-		  AND ` + preferenceFilter("$4::text", "$5::text")
+		  AND ` + preferenceFilter("$4::text", "$5::text") + `
+		  AND (
+			COALESCE($6::text, '') NOT IN ('finding', 'asset')
+			OR EXISTS (
+				SELECT 1 FROM v_user_effective_role ver
+				WHERE ver.user_id = tm.user_id AND ver.tenant_id = $1
+				  AND ver.role IN ('owner', 'admin'))
+			OR (NOT $8::boolean AND NOT EXISTS (
+				SELECT 1 FROM user_accessible_assets uaa
+				WHERE uaa.user_id = tm.user_id AND uaa.tenant_id = $1))
+			OR EXISTS (
+				SELECT 1 FROM user_accessible_assets uaa
+				WHERE uaa.user_id = tm.user_id AND uaa.tenant_id = $1
+				  AND uaa.asset_id = ` + notificationAssetExpr("$6::text", "$7::uuid", "$1") + `)
+		  )`
 
 	rows, err := r.db.QueryContext(ctx, query,
-		n.TenantID(), n.Audience(), audienceID, n.NotificationType(), n.Severity())
+		n.TenantID(), n.Audience(), audienceID, n.NotificationType(), n.Severity(),
+		n.ResourceType(), resourceID, strictScope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list notification recipients: %w", err)
 	}
@@ -406,6 +434,12 @@ func (r *NotificationRepository) buildWhereClause(tenantID, userID shared.ID, fi
 		where += fmt.Sprintf(" AND n.notification_type = $%d", len(args))
 	}
 
+	if filter.DataScope != nil {
+		var cond string
+		cond, args = notificationScopeCond(filter.DataScope, args)
+		where += " AND " + cond
+	}
+
 	if filter.IsRead != nil {
 		if *filter.IsRead {
 			where += " AND (nr.notification_id IS NOT NULL OR n.created_at <= COALESCE(ns.last_read_all_at, '-infinity'::timestamptz))"
@@ -415,6 +449,23 @@ func (r *NotificationRepository) buildWhereClause(tenantID, userID shared.ID, fi
 	}
 
 	return where, args
+}
+
+// notificationAssetExpr is the asset a notification is about: the resource
+// itself for an asset notification, the finding's asset for a finding one,
+// NULL otherwise.
+func notificationAssetExpr(typeExpr, idExpr, tenantExpr string) string {
+	return `(CASE ` + typeExpr +
+		` WHEN 'asset' THEN ` + idExpr +
+		` WHEN 'finding' THEN (SELECT f.asset_id FROM findings f WHERE f.id = ` + idExpr + ` AND f.tenant_id = ` + tenantExpr + `)` +
+		` END)`
+}
+
+// notificationScopeCond hides finding and asset notifications whose asset is
+// outside the reader's data scope; other notifications are unaffected.
+func notificationScopeCond(scope *shared.DataScope, args []any) (string, []any) {
+	cond, args := dataScopeCond(notificationAssetExpr("n.resource_type", "n.resource_id", "n.tenant_id"), scope, args)
+	return `(COALESCE(n.resource_type, '') NOT IN ('finding', 'asset') OR ` + cond + `)`, args
 }
 
 // rowScanner interface for scanning from both *sql.Row and *sql.Rows

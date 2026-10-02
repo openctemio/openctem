@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/internal/app/scope"
 
 	"github.com/openctemio/api/internal/infra/redis"
@@ -53,6 +54,7 @@ type AssetService struct {
 	assetGroupRepo    assetgroupdom.Repository // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
 	dataScopePolicy   DataScopePolicy          // Layer 2: fail-open vs fail-closed per tenant (nil = fail-open)
+	dataScope         *datascope.Enforcer      // Layer 2 enforcement on bulk-by-id paths (nil = unrestricted)
 	scoringProvider   assetdom.ScoringConfigProvider
 	redisClient       *redis.Client
 	logger            *logger.Logger
@@ -864,6 +866,12 @@ func (s *AssetService) mergeAndUpdateExisting(
 	return existing, nil
 }
 
+// SetDataScope wires the Layer 2 data-scope enforcer used on bulk-by-id
+// writes. By-id routes are guarded at the HTTP layer (DataScopeGuard).
+func (s *AssetService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
+}
+
 // GetAsset retrieves an asset by ID within a tenant.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (s *AssetService) GetAsset(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error) {
@@ -1558,6 +1566,22 @@ func (s *AssetService) BulkUpdateAssetStatus(ctx context.Context, tenantID strin
 		}
 		validIDs = append(validIDs, parsedID)
 	}
+
+	// Layer 2: drop assets outside the caller's data scope. They count as
+	// failed, exactly like ids that do not exist.
+	inScope, err := s.dataScope.FilterForCaller(ctx, parsedTenantID, validIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve data scope: %w", err)
+	}
+	scopedIDs := validIDs[:0]
+	for _, id := range validIDs {
+		if inScope(id) {
+			scopedIDs = append(scopedIDs, id)
+		} else {
+			result.Failed++
+		}
+	}
+	validIDs = scopedIDs
 
 	if len(validIDs) == 0 {
 		return result, nil

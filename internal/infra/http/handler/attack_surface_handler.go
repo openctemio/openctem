@@ -170,7 +170,7 @@ func (h *AttackSurfaceHandler) GetAttackPaths(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	result, err := h.service.GetAttackPathScores(ctx, tenantID)
+	result, err := h.service.AttackPathScoresForCaller(ctx, tenantID)
 	if err != nil {
 		h.logger.Error("failed to compute attack path scores", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
@@ -229,7 +229,7 @@ func (h *AttackSurfaceHandler) GetExposureChains(w http.ResponseWriter, r *http.
 		return
 	}
 
-	result, err := h.service.GetExposureChains(ctx, tenantID)
+	result, err := h.service.ExposureChainsForCaller(ctx, tenantID)
 	if err != nil {
 		h.logger.Error("failed to compute exposure chains", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

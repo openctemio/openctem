@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/api/internal/app/datascope"
 	notificationdom "github.com/openctemio/api/pkg/domain/notification"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -39,9 +40,17 @@ type UpdatePreferencesInput struct {
 
 // NotificationService handles user notification operations (inbox).
 type NotificationService struct {
-	repo   notificationdom.Repository
-	wsHub  WebSocketBroadcaster
-	logger *logger.Logger
+	repo      notificationdom.Repository
+	wsHub     WebSocketBroadcaster
+	dataScope *datascope.Enforcer // Layer 2: hide out-of-scope finding/asset notices (nil = off)
+	logger    *logger.Logger
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer. Finding and asset
+// notifications (whose body carries the finding message or asset name) are
+// then shown, counted and pushed only to users whose scope covers the asset.
+func (s *NotificationService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
 }
 
 // NewNotificationService creates a new NotificationService.
@@ -69,6 +78,11 @@ func (s *NotificationService) ListNotifications(
 	filter notificationdom.ListFilter,
 	page pagination.Pagination,
 ) (pagination.Result[*notificationdom.Notification], error) {
+	scope, err := s.readerScope(ctx, tenantID, userID)
+	if err != nil {
+		return pagination.Result[*notificationdom.Notification]{}, err
+	}
+	filter.DataScope = scope
 	result, err := s.repo.List(ctx, tenantID, userID, filter, page)
 	if err != nil {
 		s.logger.Error("failed to list notifications", "tenant_id", tenantID, "user_id", userID, "error", err)
@@ -81,13 +95,31 @@ func (s *NotificationService) ListNotifications(
 // GetUnreadCount returns the number of unread notifications for a user.
 // Group membership is resolved via subquery in the repository, eliminating an extra DB roundtrip.
 func (s *NotificationService) GetUnreadCount(ctx context.Context, tenantID, userID shared.ID) (int, error) {
-	count, err := s.repo.UnreadCount(ctx, tenantID, userID)
+	scope, err := s.readerScope(ctx, tenantID, userID)
+	if err != nil {
+		return 0, err
+	}
+	count, err := s.repo.UnreadCount(ctx, tenantID, userID, scope)
 	if err != nil {
 		s.logger.Error("failed to get unread count", "tenant_id", tenantID, "user_id", userID, "error", err)
 		return 0, fmt.Errorf("get unread count: %w", err)
 	}
 
 	return count, nil
+}
+
+// readerScope resolves the data scope of the request's caller, who is the
+// inbox owner (userID). Fails closed on a resolution error.
+func (s *NotificationService) readerScope(ctx context.Context, tenantID, userID shared.ID) (*shared.DataScope, error) {
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope != nil && scope.UserID != userID {
+		// The inbox is always the caller's own; never apply someone else's scope.
+		return &shared.DataScope{TenantID: tenantID, UserID: userID}, nil
+	}
+	return scope, nil
 }
 
 // =============================================================================
@@ -234,7 +266,7 @@ func (s *NotificationService) pushWebSocket(ctx context.Context, n *notification
 		return
 	}
 
-	recipients, err := s.repo.ListRecipients(ctx, n)
+	recipients, err := s.repo.ListRecipients(ctx, n, s.dataScope.Strict(ctx, n.TenantID()))
 	if err != nil {
 		// The notification is stored; the inbox and badge still pick it up on
 		// the next fetch. Only the live push is lost.

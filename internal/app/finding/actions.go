@@ -9,6 +9,7 @@ import (
 	"regexp"
 
 	"github.com/openctemio/api/internal/app/activity"
+	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -46,6 +47,7 @@ type FindingActionsService struct {
 	activityService *activity.FindingActivityService
 	scanTrigger     VerificationScanTrigger // optional; set via SetVerificationScanTrigger
 	autoValidator   AutoValidator           // optional; set via SetAutoValidator
+	dataScope       *datascope.Enforcer     // optional; Layer 2 scope on by-id actions
 	db              *sql.DB
 	logger          *logger.Logger
 }
@@ -69,6 +71,12 @@ func NewFindingActionsService(
 		db:              db,
 		logger:          logger,
 	}
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer for the by-id bulk
+// actions (verify / reject-fix) and the fix-applied filter. Nil leaves it off.
+func (s *FindingActionsService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
 }
 
 // loadVerificationChecklist loads the structured closure checklist for a
@@ -308,6 +316,13 @@ func (s *FindingActionsService) BulkFixApplied(
 	input.Filter.Statuses = []vulnerability.FindingStatus{vulnerability.FindingStatusInProgress}
 	input.Filter.TenantID = &tid
 
+	// Layer 2: only findings in the caller's data scope.
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve data scope: %w", err)
+	}
+	input.Filter = input.Filter.WithDataScope(scope)
+
 	// Count preview — cap at 1000
 	count, err := s.findingRepo.Count(ctx, input.Filter)
 	if err != nil {
@@ -469,6 +484,10 @@ func (s *FindingActionsService) BulkVerify(
 		}
 
 		f, err := s.findingRepo.GetByID(ctx, tid, fid)
+		if err == nil && s.dataScope.AssertAsset(ctx, tid, f.AssetID()) != nil {
+			// Layer 2: an out-of-scope finding reads exactly as a missing one.
+			err = vulnerability.FindingNotFoundError(fid)
+		}
 		if err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
@@ -554,6 +573,10 @@ func (s *FindingActionsService) BulkRejectFix(
 		}
 
 		f, err := s.findingRepo.GetByID(ctx, tid, fid)
+		if err == nil && s.dataScope.AssertAsset(ctx, tid, f.AssetID()) != nil {
+			// Layer 2: an out-of-scope finding reads exactly as a missing one.
+			err = vulnerability.FindingNotFoundError(fid)
+		}
 		if err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))

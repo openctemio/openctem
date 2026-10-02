@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/lib/pq"
@@ -588,18 +589,22 @@ func (r *AssetGroupRepository) RemoveAssets(ctx context.Context, groupID shared.
 }
 
 // GetGroupAssets returns assets belonging to a group.
-func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID shared.ID, page pagination.Pagination) (pagination.Result[*assetgroup.GroupAsset], error) {
+func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID shared.ID, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
+	scopeCond, args := dataScopeCond("a.id", scope, []any{groupID.String()})
+
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	countQuery := `
 		SELECT COUNT(*) FROM asset_group_members agm
 		JOIN assets a ON a.id = agm.asset_id
-		WHERE agm.asset_group_id = $1
-	`
+		WHERE agm.asset_group_id = $1 AND ` + scopeCond
 
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, groupID.String()).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return pagination.Result[*assetgroup.GroupAsset]{}, fmt.Errorf("count group assets: %w", err)
 	}
 
+	n := len(args)
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT a.id, a.name, a.asset_type, a.status, a.risk_score,
 			   COALESCE(fc.finding_count, 0) as finding_count,
@@ -607,12 +612,11 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 		FROM asset_group_members agm
 		JOIN assets a ON a.id = agm.asset_id
 		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = a.id
-		WHERE agm.asset_group_id = $1
+		WHERE agm.asset_group_id = $1 AND ` + scopeCond + `
 		ORDER BY a.name
-		LIMIT $2 OFFSET $3
-	`
+		LIMIT $` + strconv.Itoa(n+1) + ` OFFSET $` + strconv.Itoa(n+2)
 
-	rows, err := r.db.QueryContext(ctx, query, groupID.String(), page.Limit(), page.Offset())
+	rows, err := r.db.QueryContext(ctx, query, append(args, page.Limit(), page.Offset())...)
 	if err != nil {
 		return pagination.Result[*assetgroup.GroupAsset]{}, fmt.Errorf("get group assets: %w", err)
 	}
@@ -742,15 +746,17 @@ func (r *AssetGroupRepository) GetGroupIDsByAssetID(ctx context.Context, assetID
 }
 
 // GetGroupFindings returns findings for assets belonging to a group.
-func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID shared.ID, page pagination.Pagination) (pagination.Result[*assetgroup.GroupFinding], error) {
+func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID shared.ID, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*assetgroup.GroupFinding], error) {
+	scopeCond, args := dataScopeCond("f.asset_id", scope, []any{groupID.String()})
+
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	countQuery := `
 		SELECT COUNT(*) FROM findings f
 		INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-		WHERE agm.asset_group_id = $1
-	`
+		WHERE agm.asset_group_id = $1 AND ` + scopeCond
 
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, groupID.String()).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return pagination.Result[*assetgroup.GroupFinding]{}, fmt.Errorf("count group findings: %w", err)
 	}
 
@@ -759,7 +765,7 @@ func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID sha
 		FROM findings f
 		INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
 		INNER JOIN assets a ON f.asset_id = a.id
-		WHERE agm.asset_group_id = $1
+		WHERE agm.asset_group_id = $1 AND ` + scopeCond + `
 		ORDER BY
 			CASE f.severity
 				WHEN 'critical' THEN 1
@@ -769,10 +775,9 @@ func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID sha
 				ELSE 5
 			END,
 			f.created_at DESC
-		LIMIT $2 OFFSET $3
-	`
+		LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2)
 
-	rows, err := r.db.QueryContext(ctx, query, groupID.String(), page.Limit(), page.Offset())
+	rows, err := r.db.QueryContext(ctx, query, append(args, page.Limit(), page.Offset())...)
 	if err != nil {
 		return pagination.Result[*assetgroup.GroupFinding]{}, fmt.Errorf("get group findings: %w", err)
 	}

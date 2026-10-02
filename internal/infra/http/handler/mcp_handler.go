@@ -75,7 +75,7 @@ type mcpPriorityExplainer interface {
 }
 
 type mcpSurfaceReader interface {
-	GetExposureChains(ctx context.Context, tenantID shared.ID) (*attack.ExposureChainResult, error)
+	ExposureChainsForCaller(ctx context.Context, tenantID shared.ID) (*attack.ExposureChainResult, error)
 }
 
 type mcpGroupReader interface {

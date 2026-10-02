@@ -1655,8 +1655,8 @@ func (h *AssetHandler) validateSyncAsset(
 	ctx context.Context,
 	id, tenantID string,
 ) (*asset.Asset, *asset.RepositoryExtension, error) {
-	// GetAsset now enforces tenant isolation internally
-	a, err := h.service.GetAsset(ctx, tenantID, id)
+	// Tenant isolation + Layer 2 data scope (bulk sync names assets by id).
+	a, err := h.service.GetAssetWithScope(ctx, tenantID, id, middleware.GetUserID(ctx), middleware.IsAdmin(ctx))
 	if err != nil {
 		return nil, nil, err
 	}

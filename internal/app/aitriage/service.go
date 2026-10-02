@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/api/internal/app/activity"
 	auditapp "github.com/openctemio/api/internal/app/audit"
+	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/llm"
 	"github.com/openctemio/api/internal/metrics"
@@ -151,6 +152,14 @@ type AITriageService struct {
 	// nil-safe: when unset, Check/Record short-circuit. Also behind
 	// platformCfg.BudgetEnabled — Phase 1 ships flag OFF.
 	budget *BudgetService
+	// dataScope applies the Layer 2 data scope to by-result-id reads and bulk
+	// triage requests (nil = unrestricted).
+	dataScope *datascope.Enforcer
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer.
+func (s *AITriageService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
 }
 
 // NewAITriageService creates a new AITriageService.
@@ -810,6 +819,11 @@ func (s *AITriageService) GetTriageResult(ctx context.Context, tenantID, resultI
 	if err != nil {
 		return nil, err
 	}
+	// Layer 2: the result id is not bound to the route's finding id, so check
+	// the result's own finding.
+	if err := s.dataScope.AssertFinding(ctx, tid, result.FindingID()); err != nil {
+		return nil, err
+	}
 
 	return s.toTriageResultResponse(result), nil
 }
@@ -954,6 +968,16 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		return nil, fmt.Errorf("failed to check findings existence: %w", err)
 	}
 
+	// Layer 2: findings outside the caller's data scope read as not found.
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve data scope: %w", err)
+	}
+	inScope, err := s.dataScope.FilterFindings(ctx, scope, validFindingIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to filter findings by data scope: %w", err)
+	}
+
 	// Process each valid finding
 	for findingIDStr, findingID := range findingIDMap {
 		job := BulkTriageJob{
@@ -961,7 +985,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		}
 
 		// Check if finding exists (from batch result)
-		if !existsMap[findingID] {
+		if !existsMap[findingID] || !inScope(findingID) {
 			job.Status = "failed"
 			job.Error = "finding not found"
 			response.Jobs = append(response.Jobs, job)
