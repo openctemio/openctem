@@ -298,6 +298,13 @@ type sarifResultFields struct {
 // finding per result in order, so finding i is result i. If the counts differ
 // the mapping is not trusted and nothing is copied. Values are copied as
 // written ("notApplicable"); buildFinding normalizes and validates them.
+//
+// This exists only because the ctis release in go.mod (v1.2.0) drops both
+// fields. openctemio/ctis#10 makes FromSARIF fill them itself. Once the first
+// ctis release that includes it is in go.mod, this function only ever sees
+// fields that are already set, and it can be deleted together with its call
+// in IngestSARIF. Releases from ctis 1.3.0 also convert every run, so on a
+// multi-run log the count check above already makes this a no-op.
 func applySARIFResultFields(report *ctis.Report, sarifData []byte) {
 	var doc sarifResultFields
 	if err := json.Unmarshal(sarifData, &doc); err != nil || len(doc.Runs) == 0 {
