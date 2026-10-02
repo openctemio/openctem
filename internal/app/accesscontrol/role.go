@@ -174,9 +174,23 @@ type CreateRoleInput struct {
 	Slug              string   `json:"slug" validate:"required,min=2,max=50,slug"`
 	Name              string   `json:"name" validate:"required,min=2,max=100"`
 	Description       string   `json:"description" validate:"max=500"`
-	HierarchyLevel    int      `json:"hierarchy_level" validate:"min=0,max=100"`
+	HierarchyLevel    int      `json:"hierarchy_level" validate:"min=0,max=79"`
 	HasFullDataAccess bool     `json:"has_full_data_access"`
 	Permissions       []string `json:"permissions"`
+}
+
+// validateCustomRoleShape refuses a custom role that would look like a system
+// role: a system slug, or a hierarchy level at or above admin. The team role
+// never reads either (it comes from the system role ids), but the values are
+// shown in the UI and were once the escalation path (audit F1).
+func validateCustomRoleShape(slug string, hierarchyLevel int) error {
+	if roledom.IsReservedSlug(slug) {
+		return fmt.Errorf("%w: slug '%s' is reserved for a system role", shared.ErrValidation, slug)
+	}
+	if !roledom.ValidCustomHierarchyLevel(hierarchyLevel) {
+		return fmt.Errorf("%w: hierarchy_level must be between 0 and %d", shared.ErrValidation, roledom.MaxCustomHierarchyLevel)
+	}
+	return nil
 }
 
 // CreateRole creates a new custom role for a tenant.
@@ -191,6 +205,10 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 	createdByID, err := roledom.ParseID(createdBy)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid created_by id format", shared.ErrValidation)
+	}
+
+	if err := validateCustomRoleShape(input.Slug, input.HierarchyLevel); err != nil {
+		return nil, err
 	}
 
 	// Check if slug already exists in tenant
@@ -328,7 +346,7 @@ func (s *RoleService) GetRoleBySlug(ctx context.Context, tenantID *string, slug 
 type UpdateRoleInput struct {
 	Name              *string  `json:"name" validate:"omitempty,min=2,max=100"`
 	Description       *string  `json:"description" validate:"omitempty,max=500"`
-	HierarchyLevel    *int     `json:"hierarchy_level" validate:"omitempty,min=0,max=100"`
+	HierarchyLevel    *int     `json:"hierarchy_level" validate:"omitempty,min=0,max=79"`
 	HasFullDataAccess *bool    `json:"has_full_data_access"`
 	Permissions       []string `json:"permissions,omitempty"`
 }
@@ -372,6 +390,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 		description = *input.Description
 	}
 	if input.HierarchyLevel != nil {
+		if !roledom.ValidCustomHierarchyLevel(*input.HierarchyLevel) {
+			return nil, fmt.Errorf("%w: hierarchy_level must be between 0 and %d", shared.ErrValidation, roledom.MaxCustomHierarchyLevel)
+		}
 		changes.Set("hierarchy_level", hierarchyLevel, *input.HierarchyLevel)
 		hierarchyLevel = *input.HierarchyLevel
 	}
@@ -704,15 +725,19 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	// Get role name for audit
-	r, _ := s.roleRepo.GetByID(ctx, rid)
-	roleName := "unknown"
-	if r != nil {
-		roleName = r.Name()
+	r, err := s.roleRepo.GetByID(ctx, rid)
+	if err != nil {
+		return err
 	}
+	roleName := r.Name()
 
 	actor, err := s.loadGrantActor(ctx, tid, actx.ActorID)
 	if err != nil {
+		return err
+	}
+	// Removing a role is bounded like granting it: nobody may take away a
+	// role they could not have given (audit F5).
+	if err := actor.mayRevoke(r); err != nil {
 		return err
 	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, rid != roledom.OwnerRoleID); err != nil {
@@ -806,11 +831,19 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		return err
 	}
 
-	// Get current roles for audit
-	currentRoles, _ := s.roleRepo.GetUserRoles(ctx, tid, uid)
+	// Every role the new set drops is a removal, bounded like a grant.
+	currentRoles, err := s.roleRepo.GetUserRoles(ctx, tid, uid)
+	if err != nil {
+		return fmt.Errorf("load current roles: %w", err)
+	}
 	currentRoleNames := make([]string, 0, len(currentRoles))
 	for _, r := range currentRoles {
 		currentRoleNames = append(currentRoleNames, r.Name())
+		if !slices.Contains(roleIDs, r.ID()) {
+			if err := actor.mayRevoke(r); err != nil {
+				return err
+			}
+		}
 	}
 
 	var assignedByID *roledom.ID

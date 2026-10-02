@@ -646,15 +646,36 @@ Tenable.sc's RBAC.
    by design (see "Module-Gate Layer"). Never rely on it to protect data — that is
    the job of the permission gate + tenant isolation.
 
-7. **`user_roles` is the RBAC role set; `tenant_members.role` is a label.**
+7. **`user_roles` is the RBAC role set; the team role comes from the system role IDs only.**
    Permissions are resolved only from `user_roles`, which holds exactly the roles
    an administrator granted (custom roles, several roles, or none).
-   `tenant_members.role` is the coarse membership label derived from them
-   (`MembershipRoleForRoleIDs`) and is what the team-role gates read. Nothing may
-   re-derive the role set from the label: the `role-sync` controller only restores
-   the owner role of a tenant owner who lacks it, and reports (does not repair)
-   active members with no role. It used to re-grant the label's system role
-   hourly, which brought back roles administrators had removed.
+   The **team role** (owner/admin/member/viewer) is what the token's `role` claim
+   and `admin` flag, `IsOwner`/`RequireOwner`/`RequireAdmin`, and
+   `RequireTeamAdmin/Owner` all read. It is computed by the view
+   `v_user_effective_role` (migration `000245`), one row per membership:
+   - the highest of the four **system roles** the user holds, matched by role
+     id (`…0001` owner > `…0002` admin > `…0003` member > `…0004` viewer);
+   - a user holding no system role gets the membership label
+     (`tenant_members.role`, derived by `MembershipRoleForRoleIDs`), **capped at
+     `member`**: an `owner`/`admin` label without the matching system role
+     resolves to `viewer`. Removing every role from an administrator therefore
+     removes their admin powers.
+   - **Custom roles never count**, whatever their slug or `hierarchy_level`.
+     Before `000245` the view took the slug of the highest-`hierarchy_level`
+     role, so a custom role with slug `owner` and level 100 made its holder
+     owner (audit F1). Custom roles may no longer use a system slug
+     (`owner`/`admin`/`member`/`viewer`) or a level at or above admin's 80
+     (service validation + `CHECK` constraints `roles_custom_slug_not_reserved`
+     and `roles_custom_level_below_admin`); the migration renamed offending
+     roles to `custom-<slug>` and clamped levels to 79. `hierarchy_level` is
+     display order only.
+   - The token's `role` claim is this team role; RBAC role slugs are never put
+     in its place.
+
+   Nothing may re-derive the role set from the label: the `role-sync` controller
+   only restores the owner role of a tenant owner who lacks it, and reports (does
+   not repair) active members with no role. It used to re-grant the label's
+   system role hourly, which brought back roles administrators had removed.
 
 8. **Role grants are bounded by the granter's own grants** (`accesscontrol/grant_guard.go`).
    Every path that changes a role set (assign, set, bulk assign, remove,
@@ -662,8 +683,11 @@ Tenable.sc's RBAC.
    update) is checked in `RoleService` against the actor's roles in the
    database: only an owner may grant the owner role; anyone else may grant only
    roles whose permissions (and full data access) they hold, so nobody can raise
-   their own privileges; only an owner may change an owner's roles, and the
-   tenant's owner keeps the owner role. The handler-level check
+   their own privileges; **removal has the same ceiling** (`RemoveRole`, and every
+   role `SetUserRoles` drops): nobody may take away a role they could not have
+   granted, so a delegated role manager cannot strip admin from an administrator;
+   only an owner may change an owner's roles, and the tenant's owner keeps the
+   owner role. The handler-level check
    (`assertCanGrantPermissions`) lets administrators through, so the service is
    the enforcement point. SCIM mappings, SSO/SAML JIT and the membership-role
    update can never produce `owner`.

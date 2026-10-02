@@ -19,6 +19,8 @@ import (
 //   - anyone else may grant only roles whose permissions they hold themselves
 //     (and full data access only if they have it), so an administrator can
 //     neither grant a role above their own nor raise their own privileges;
+//   - removing a role (RemoveRole, or a role that SetUserRoles drops) needs the
+//     same: nobody may take away a role they could not have given;
 //   - only an owner may change the role set of a user who holds the owner
 //     role, and the tenant's owner (membership role 'owner') always keeps it.
 //
@@ -75,6 +77,17 @@ func (a grantActor) mayGrant(r *roledom.Role) error {
 	}
 	if err := a.mayCarry(r.Permissions(), r.HasFullDataAccess()); err != nil {
 		return fmt.Errorf("%w (role %q)", err, r.Name())
+	}
+	return nil
+}
+
+// mayRevoke reports whether the actor may take role r away from someone. The
+// ceiling is the same as for granting: a delegated role manager cannot strip a
+// role (system admin, member, or a custom role) whose permissions they do not
+// hold, and only an owner can remove the owner role.
+func (a grantActor) mayRevoke(r *roledom.Role) error {
+	if err := a.mayGrant(r); err != nil {
+		return fmt.Errorf("cannot remove it: %w", err)
 	}
 	return nil
 }

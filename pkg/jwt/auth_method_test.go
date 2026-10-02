@@ -31,7 +31,7 @@ func TestTenantScopedTokenCarriesAuthMethod(t *testing.T) {
 
 		// Same for the DB-permissions path.
 		tok2, err := g.GenerateTenantScopedAccessTokenWithPermissions(
-			"u1", "u@x.com", "U", "sess1", member, []string{"assets:read"}, []string{"member"}, false, 0, method)
+			"u1", "u@x.com", "U", "sess1", member, []string{"assets:read"}, false, 0, method)
 		if err != nil {
 			t.Fatalf("generate w/perms (%s): %v", method, err)
 		}
