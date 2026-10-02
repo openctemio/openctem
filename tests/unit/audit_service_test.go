@@ -29,6 +29,10 @@ type mockAuditRepo struct {
 	// heals what VerifyChain reports broken.
 	chainStore []audit.ChainEntry
 	chainLogs  map[shared.ID]*audit.AuditLog
+	// rebaselines captures every ApplyChainRebaseline call;
+	// applyRebaselineErr makes it fail.
+	rebaselines        []audit.ChainRebaseline
+	applyRebaselineErr error
 
 	// Error overrides
 	createErr         error
@@ -1152,17 +1156,35 @@ func (m *mockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) 
 	return m.chainStore, nil
 }
 
-func (m *mockAuditRepo) UpdateChainEntryHashes(_ context.Context, auditLogID shared.ID, prevHash, hash string) error {
+func (m *mockAuditRepo) ApplyChainRebaseline(_ context.Context, rb audit.ChainRebaseline) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for i := range m.chainStore {
-		if m.chainStore[i].AuditLogID == auditLogID {
-			m.chainStore[i].PrevHash = prevHash
-			m.chainStore[i].Hash = hash
-			return nil
+	if m.applyRebaselineErr != nil {
+		return m.applyRebaselineErr
+	}
+	m.rebaselines = append(m.rebaselines, rb)
+	for _, w := range rb.Rewrites {
+		for i := range m.chainStore {
+			if m.chainStore[i].AuditLogID == w.AuditLogID {
+				m.chainStore[i].PrevHash = w.NewPrevHash
+				m.chainStore[i].Hash = w.NewHash
+			}
 		}
 	}
 	return nil
+}
+
+// eventsWithAction returns the created audit logs carrying the action.
+func (m *mockAuditRepo) eventsWithAction(action audit.Action) []*audit.AuditLog {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*audit.AuditLog
+	for _, l := range m.logs {
+		if l.Action() == action {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // =============================================================================
@@ -1224,12 +1246,48 @@ func TestAuditService_RebaselineChain_HealsBrokenChain(t *testing.T) {
 	}
 
 	// Re-baseline re-signs the whole chain from current data.
-	rewritten, err := svc.RebaselineChain(ctx, tenantID, "admin-actor")
+	actorID := shared.NewID()
+	actx := app.AuditContext{ActorID: actorID.String(), ActorEmail: "admin@example.test"}
+	res, err := svc.RebaselineChain(ctx, tenantID, actx)
 	if err != nil {
 		t.Fatalf("RebaselineChain: %v", err)
 	}
-	if rewritten != len(specs) {
-		t.Fatalf("expected %d entries rewritten, got %d", len(specs), rewritten)
+	if res.EntriesRewritten != len(specs) || res.EntriesTotal != len(specs) {
+		t.Fatalf("expected %d/%d entries rewritten, got %d/%d", len(specs), len(specs), res.EntriesRewritten, res.EntriesTotal)
+	}
+
+	// The repository got every old hash to archive, with the actor.
+	if len(repo.rebaselines) != 1 {
+		t.Fatalf("expected 1 ApplyChainRebaseline call, got %d", len(repo.rebaselines))
+	}
+	rb := repo.rebaselines[0]
+	if rb.ID.String() != res.RebaselineID || rb.TenantID != tenantID || rb.ActorID == nil || *rb.ActorID != actorID {
+		t.Fatalf("rebaseline record id=%s tenant=%s actor=%v, want %s/%s/%s", rb.ID, rb.TenantID, rb.ActorID, res.RebaselineID, tenantID, actorID)
+	}
+	for _, w := range rb.Rewrites {
+		if w.OldHash != "stale-hash" || w.OldPrevHash != "stale-prev" {
+			t.Errorf("rewrite of %s archives old=%q/%q, want the stale values", w.AuditLogID, w.OldPrevHash, w.OldHash)
+		}
+	}
+	if rb.LastChainPosition != int64(len(specs)) {
+		t.Errorf("LastChainPosition = %d, want %d", rb.LastChainPosition, len(specs))
+	}
+
+	// One critical audit event records it, on the rebaselined tenant.
+	events := repo.eventsWithAction(audit.ActionAuditChainRebaselined)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 %s event, got %d", audit.ActionAuditChainRebaselined, len(events))
+	}
+	ev := events[0]
+	if ev.Severity() != audit.SeverityCritical || ev.Result() != audit.ResultSuccess || ev.ResourceID() != res.RebaselineID {
+		t.Errorf("event severity=%s result=%s resource=%s", ev.Severity(), ev.Result(), ev.ResourceID())
+	}
+	if ev.TenantID() == nil || *ev.TenantID() != tenantID {
+		t.Errorf("event tenant = %v, want %s", ev.TenantID(), tenantID)
+	}
+	meta := ev.Metadata()
+	if meta["entries_total"] != len(specs) || meta["entries_rewritten"] != len(specs) || meta["rebaseline_id"] != res.RebaselineID {
+		t.Errorf("event metadata = %v", meta)
 	}
 
 	// After: the chain verifies clean and every entry counts as verified.
@@ -1245,12 +1303,12 @@ func TestAuditService_RebaselineChain_HealsBrokenChain(t *testing.T) {
 	}
 
 	// Idempotent: a second re-baseline rewrites nothing.
-	again, err := svc.RebaselineChain(ctx, tenantID, "admin-actor")
+	again, err := svc.RebaselineChain(ctx, tenantID, actx)
 	if err != nil {
 		t.Fatalf("RebaselineChain (second): %v", err)
 	}
-	if again != 0 {
-		t.Fatalf("expected 0 rewrites on idempotent re-baseline, got %d", again)
+	if again.EntriesRewritten != 0 {
+		t.Fatalf("expected 0 rewrites on idempotent re-baseline, got %d", again.EntriesRewritten)
 	}
 }
 
@@ -1274,7 +1332,42 @@ func TestAuditService_RebaselineChain_AbortsOnMissingLog(t *testing.T) {
 
 	svc := app.NewAuditService(repo, logger.NewNop())
 
-	if _, err := svc.RebaselineChain(context.Background(), tenantID, "admin-actor"); err == nil {
-		t.Fatal("expected RebaselineChain to abort on missing source audit log")
+	_, err := svc.RebaselineChain(context.Background(), tenantID, app.AuditContext{ActorID: shared.NewID().String()})
+	if !errors.Is(err, audit.ErrChainSourceMissing) {
+		t.Fatalf("expected ErrChainSourceMissing, got %v", err)
+	}
+	if len(repo.rebaselines) != 0 {
+		t.Fatal("a refused rebaseline must not apply anything")
+	}
+	// The refusal itself is audited.
+	events := repo.eventsWithAction(audit.ActionAuditChainRebaselined)
+	if len(events) != 1 || events[0].Result() != audit.ResultFailure {
+		t.Fatalf("expected one failed %s event, got %d", audit.ActionAuditChainRebaselined, len(events))
+	}
+}
+
+// TestAuditService_RebaselineChain_ApplyFailureIsNotReportedAsSuccess: when the
+// repository refuses the rewrite (e.g. the chain moved), the caller gets the
+// error and the attempt is audited as a failure, not a success.
+func TestAuditService_RebaselineChain_ApplyFailureIsNotReportedAsSuccess(t *testing.T) {
+	repo := newMockAuditRepo()
+	repo.chainLogs = make(map[shared.ID]*audit.AuditLog)
+	repo.applyRebaselineErr = audit.ErrChainRebaselineConflict
+	tenantID := shared.NewID()
+
+	log, err := audit.NewAuditLog(audit.ActionUserCreated, audit.ResourceTypeUser, "u", audit.ResultSuccess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.chainLogs[log.ID()] = log
+	repo.chainStore = []audit.ChainEntry{{AuditLogID: log.ID(), TenantID: tenantID, Hash: "stale", ChainPosition: 1}}
+
+	svc := app.NewAuditService(repo, logger.NewNop())
+	if _, err := svc.RebaselineChain(context.Background(), tenantID, app.AuditContext{}); !errors.Is(err, audit.ErrChainRebaselineConflict) {
+		t.Fatalf("expected ErrChainRebaselineConflict, got %v", err)
+	}
+	events := repo.eventsWithAction(audit.ActionAuditChainRebaselined)
+	if len(events) != 1 || events[0].Result() != audit.ResultFailure {
+		t.Fatalf("expected one failed %s event, got %d", audit.ActionAuditChainRebaselined, len(events))
 	}
 }

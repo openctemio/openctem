@@ -52,8 +52,10 @@ var auditTables = map[string]bool{
 // orphanAllowlist lists tables with a tenant_id column whose rows are meant
 // to outlive the tenant, because they are audit evidence.
 var orphanAllowlist = map[string]string{
-	"audit_log_chain":          "hash chain of audit_logs; audit_logs keep their rows (tenant_id SET NULL) and the chain must stay verifiable",
-	"priority_class_audit_log": "append-only priority audit trail; no FK to tenants by design",
+	"audit_log_chain":                "hash chain of audit_logs; audit_logs keep their rows (tenant_id SET NULL) and the chain must stay verifiable",
+	"audit_chain_rebaselines":        "record of an admin re-signing the audit chain; evidence, no FK to tenants by design",
+	"audit_chain_rebaseline_entries": "hashes a chain rebaseline overwrote; evidence, no FK to tenants by design",
+	"priority_class_audit_log":       "append-only priority audit trail; no FK to tenants by design",
 }
 
 func openDeleteTestDB(t *testing.T) *sql.DB {
@@ -223,6 +225,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	},
 	"audit_log_chain": func(*schemaSeeder) map[string]any {
 		return map[string]any{"hash": strings.Repeat("ab", 32), "prev_hash": ""}
+	},
+	"audit_chain_rebaseline_entries": func(*schemaSeeder) map[string]any {
+		h := strings.Repeat("ab", 32)
+		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
 	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
 	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
