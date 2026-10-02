@@ -57,8 +57,13 @@ main() {
     # Clean old binary to ensure fresh build
     rm -rf /app/tmp/openctem 2>/dev/null || true
 
-    # Create go.work for local SDK development
-    if [ -d "/app/sdk-go" ]; then
+    # go.work for a local sdk-go checkout mounted at /app/sdk-go, only when the
+    # API actually requires sdk-go. Today it does not (the sensor does): adding
+    # sdk-go to the workspace then serves no purpose and can only change which
+    # versions of shared dependencies the dev binary is built with (MVS across
+    # the workspace), so it would no longer match CI and the release image.
+    # Such a go.work, left by earlier versions of this script, is removed.
+    if [ -d "/app/sdk-go" ] && grep -q 'github.com/openctemio/sdk-go ' /app/go.mod; then
         echo "Creating go.work for local SDK..."
         cat > /app/go.work <<GOWORK
 go $(grep '^go ' /app/go.mod | awk '{print $2}')
@@ -68,6 +73,9 @@ use (
 	./sdk-go
 )
 GOWORK
+    elif [ -f /app/go.work ] && grep -q '^[[:space:]]*\./sdk-go$' /app/go.work; then
+        echo "Removing go.work: the API does not require sdk-go"
+        rm -f /app/go.work /app/go.work.sum
     fi
 
     # Ensure go dependencies are in sync

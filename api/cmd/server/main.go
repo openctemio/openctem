@@ -470,23 +470,31 @@ func run() int {
 // =============================================================================
 
 func initLogger(cfg *config.Config) *logger.Logger {
-	var log *logger.Logger
-	if cfg.App.Env == "production" {
-		// SamplingThreshold is validated to be non-negative in config validation
-		//nolint:gosec // G115: safe conversion, value validated non-negative in config.Validate()
-		threshold := uint64(cfg.Log.SamplingThreshold)
-		log = logger.NewProductionWithConfig(logger.SamplingConfig{
+	log := logger.New(loggerConfig(cfg))
+	log.SetDefault()
+	return log
+}
+
+// loggerConfig turns LOG_LEVEL, LOG_FORMAT and LOG_SAMPLING_* into the logger
+// settings, in every environment. (Outside APP_ENV=production they used to be
+// ignored: always debug + text, so a non-production deployment such as the
+// live demo could neither lower the volume nor switch to JSON.)
+func loggerConfig(cfg *config.Config) logger.Config {
+	// SamplingThreshold is validated to be non-negative in config validation
+	//nolint:gosec // G115: safe conversion, value validated non-negative in config.Validate()
+	threshold := uint64(cfg.Log.SamplingThreshold)
+	return logger.Config{
+		Level:  cfg.Log.Level,
+		Format: cfg.Log.Format,
+		Output: os.Stdout,
+		Sampling: logger.SamplingConfig{
 			Enabled:   cfg.Log.SamplingEnabled,
 			Tick:      time.Second,
 			Threshold: threshold,
 			Rate:      cfg.Log.SamplingRate,
 			ErrorRate: cfg.Log.ErrorSamplingRate,
-		})
-	} else {
-		log = logger.NewDevelopment()
+		},
 	}
-	log.SetDefault()
-	return log
 }
 
 type closer interface {
