@@ -153,8 +153,11 @@ func registerCredentialRoutes(
 
 		// State change endpoints
 		r.POST("/{id}/resolve", h.Resolve, middleware.Require(permission.CredentialsWrite))
-		r.POST("/{id}/accept", h.Accept, middleware.Require(permission.CredentialsWrite))
-		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.Require(permission.CredentialsWrite))
+		// Accept and false-positive set the same exposure dispositions that
+		// /exposures/{id}/accept and /false-positive gate on the approver
+		// permission, so they need findings:approve as well as credentials:write.
+		r.POST("/{id}/accept", h.Accept, middleware.RequireAll(permission.CredentialsWrite, permission.FindingsApprove))
+		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.RequireAll(permission.CredentialsWrite, permission.FindingsApprove))
 		r.POST("/{id}/reactivate", h.Reactivate, middleware.Require(permission.CredentialsWrite))
 	}, tenantMiddlewares...)
 
