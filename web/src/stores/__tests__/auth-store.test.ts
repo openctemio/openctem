@@ -5,7 +5,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { useAuthStore } from '../auth-store'
+import { loginPageUrl, useAuthStore } from '../auth-store'
+import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
 
 // Mock external dependencies
 vi.mock('@/lib/permission-storage', () => ({
@@ -14,6 +15,10 @@ vi.mock('@/lib/permission-storage', () => ({
 
 vi.mock('@/lib/logo-storage', () => ({
   clearAllLogoCaches: vi.fn(),
+}))
+
+vi.mock('@/features/auth/actions/local-auth-actions', () => ({
+  localLogoutAction: vi.fn(() => Promise.resolve()),
 }))
 
 // ============================================
@@ -472,5 +477,40 @@ describe('useAuthStore', () => {
     it('should return 0 when there is no token', () => {
       expect(useAuthStore.getState().getTimeUntilExpiry()).toBe(0)
     })
+  })
+})
+
+// ============================================
+// SIGN-IN / SIGN-OUT TARGETS
+// ============================================
+
+describe('loginPageUrl', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/findings?severity=critical')
+  })
+
+  it('sends the user to /login (there is no /auth/login route)', () => {
+    expect(loginPageUrl('/assets')).toBe('/login?redirect=%2Fassets')
+  })
+
+  it('returns the user to the page they were on by default', () => {
+    expect(loginPageUrl()).toBe('/login?redirect=%2Ffindings%3Fseverity%3Dcritical')
+  })
+
+  it('adds no redirect for the home page or the login page itself', () => {
+    expect(loginPageUrl('/')).toBe('/login')
+    expect(loginPageUrl('/login?redirect=%2Fx')).toBe('/login')
+  })
+})
+
+describe('logout', () => {
+  it('signs out through the server action instead of the missing /auth/logout route', () => {
+    useAuthStore.getState().logout('/login')
+    expect(localLogoutAction).toHaveBeenCalledWith('/login')
+  })
+
+  it('does not pass an external post-logout target through', () => {
+    useAuthStore.getState().logout('https://evil.example/')
+    expect(localLogoutAction).toHaveBeenLastCalledWith('/login')
   })
 })

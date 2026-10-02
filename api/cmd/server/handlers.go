@@ -632,8 +632,12 @@ func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handl
 }
 
 // heartbeatDoorbellConfig maps the SENSOR_HEARTBEAT_* settings onto the
-// doorbell, bounded so no advised interval reaches half of the offline
-// timeout (WORKER_HEARTBEAT_TIMEOUT).
+// doorbell, bounded so no advised interval reaches half of the time after
+// which a sensor is marked offline: the health controller's
+// sensorStaleTimeout (90 s), or WORKER_HEARTBEAT_TIMEOUT when shorter. The
+// bound used to be WORKER_HEARTBEAT_TIMEOUT alone (5 min), so the "loaded"
+// advice (120 s) outlasted the controller's 90 s and every sensor that
+// followed it was marked offline once per cycle (RFC-035 B1, decision D2).
 func heartbeatDoorbellConfig(cfg *config.Config) app.DoorbellConfig {
 	sc := cfg.SensorConfig
 	c := app.DefaultDoorbellConfig()
@@ -650,7 +654,17 @@ func heartbeatDoorbellConfig(cfg *config.Config) app.DoorbellConfig {
 		// Kubelet-style: renew at half-life.
 		c.KeyRenewBefore = sc.KeyTTL / 2
 	}
-	return c.Normalized(cfg.Worker.HeartbeatTimeout)
+	return c.Normalized(offlineMark(cfg.Worker.HeartbeatTimeout))
+}
+
+// offlineMark is how long after its last heartbeat a sensor is marked
+// offline: the health controller's sensorStaleTimeout, or the configured
+// heartbeat timeout when that is shorter.
+func offlineMark(heartbeatTimeout time.Duration) time.Duration {
+	if heartbeatTimeout > 0 && heartbeatTimeout < sensorStaleTimeout {
+		return heartbeatTimeout
+	}
+	return sensorStaleTimeout
 }
 
 // newSensorResultsV2Handler builds the protocol v2 results handler (RFC-026),
