@@ -136,6 +136,14 @@ func WithEmailEnqueuer(enqueuer EmailJobEnqueuer) TenantServiceOption {
 	}
 }
 
+// SetEmailEnqueuer wires the email job enqueuer (invitation emails). It is a
+// setter, not only a constructor option, because the job client is built after
+// the services: cmd/server used to construct a second TenantService just to
+// pass it, and every collaborator wired on the first instance was lost.
+func (s *TenantService) SetEmailEnqueuer(enqueuer EmailJobEnqueuer) {
+	s.emailEnqueuer = enqueuer
+}
+
 // WithUserInfoProvider sets the user info provider for TenantService.
 func WithUserInfoProvider(provider UserInfoProvider) TenantServiceOption {
 	return func(s *TenantService) {

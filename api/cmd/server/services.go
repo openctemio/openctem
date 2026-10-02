@@ -829,6 +829,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
 	)
 	s.Tenant.SetDataScopePolicyStore(repos.Tenant)
+	// The user service lets AddMember enforce Security.AllowedDomains and lets
+	// the suspend/reactivate notifier resolve the recipient.
+	s.Tenant.SetUserService(s.User)
 
 	// Initialize asset services
 	s.Asset = app.NewAssetService(repos.Asset, log)

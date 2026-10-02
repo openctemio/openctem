@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -210,42 +211,141 @@ func TestPriorityClassificationSeams_AreWiredOrExplicitlyOptional(t *testing.T) 
 	}
 }
 
-// TestTenantRebuild_KeepsEveryInitServicesSetter guards the split-brain
-// composition root: main.go rebuilds services.Tenant after initServices, so
-// every Set* collaborator initServices attached to the first tenant service is
-// lost unless main.go attaches it again. SetDataScopePolicyStore was dropped
-// this way, which made GET/PATCH /tenants/{t}/settings/data-scope return 500.
-func TestTenantRebuild_KeepsEveryInitServicesSetter(t *testing.T) {
-	settersIn := func(file, recv string) map[string]bool {
-		t.Helper()
-		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, file, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", file, err)
+// servicesReceiver matches the expressions cmd/server uses for the Services
+// value: `s` inside its methods, `services` in main.go, `svc` in the handler
+// and worker builders.
+var servicesReceiver = regexp.MustCompile(`^(s|services|svc)\.([A-Z]\w*)$`)
+
+// cmdServerServicesUsage parses cmd/server's non-test sources and returns, per
+// Services field, every place it is assigned and the set of methods called on it.
+func cmdServerServicesUsage(t *testing.T) (assigned map[string][]string, called map[string]bool) {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read cmd/server: %v", err)
+	}
+	fset := token.NewFileSet()
+	assigned = map[string][]string{}
+	called = map[string]bool{}
+	parsed := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
 		}
-		out := map[string]bool{}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		parsed++
 		ast.Inspect(f, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok || !strings.HasPrefix(sel.Sel.Name, "Set") {
-				return true
-			}
-			var buf bytes.Buffer
-			if err := printer.Fprint(&buf, fset, sel.X); err == nil && buf.String() == recv {
-				out[sel.Sel.Name] = true
+			switch v := n.(type) {
+			case *ast.AssignStmt:
+				for _, lhs := range v.Lhs {
+					var b bytes.Buffer
+					if printer.Fprint(&b, fset, lhs) == nil {
+						if m := servicesReceiver.FindStringSubmatch(b.String()); m != nil {
+							assigned[m[2]] = append(assigned[m[2]], fset.Position(v.Pos()).String())
+						}
+					}
+				}
+			case *ast.SelectorExpr:
+				var b bytes.Buffer
+				if printer.Fprint(&b, fset, v.X) == nil {
+					if m := servicesReceiver.FindStringSubmatch(b.String()); m != nil {
+						called[m[2]+"."+v.Sel.Name] = true
+					}
+				}
 			}
 			return true
 		})
-		return out
 	}
+	if parsed == 0 {
+		t.Fatal("parsed no cmd/server sources; the guard is not guarding anything")
+	}
+	return assigned, called
+}
 
-	initSetters := settersIn("services.go", "s.Tenant")
-	if len(initSetters) == 0 {
-		t.Fatal("found no s.Tenant.Set* calls in services.go; the guard is not guarding anything")
+// TestServices_EachServiceConstructedOnce guards the split-brain composition
+// root. main.go used to replace services.Tenant with a second
+// app.NewTenantService; every Set* applied to the first instance was silently
+// lost (six features, including GET /settings/data-scope returning 500), and
+// adapters that had captured the first instance kept using it. A Services
+// field must be assigned in exactly one place. Add a missing collaborator with
+// a setter on the existing instance instead of constructing another one.
+func TestServices_EachServiceConstructedOnce(t *testing.T) {
+	assigned, _ := cmdServerServicesUsage(t)
+	if len(assigned) == 0 {
+		t.Fatal("found no Services field assignments; the guard is not guarding anything")
 	}
-	mainSetters := settersIn("main.go", "services.Tenant")
-	for setter := range initSetters {
-		if !mainSetters[setter] {
-			t.Errorf("services.go wires s.Tenant.%s but main.go rebuilds services.Tenant without it; re-wire it after app.NewTenantService in main.go", setter)
+	for field, sites := range assigned {
+		if len(sites) > 1 {
+			t.Errorf("Services.%s is constructed %d times (%s). The later construction discards every "+
+				"setter applied to the earlier one; wire the extra collaborator with a setter instead.",
+				field, len(sites), strings.Join(sites, ", "))
+		}
+	}
+}
+
+// optionalServiceSetters are Set* methods on Services fields that are
+// deliberately NOT called in cmd/server, each with the reason. Everything else
+// must be wired: the services nil-guard their collaborators, so an unwired
+// setter is a feature that silently never runs.
+var optionalServiceSetters = map[string]string{
+	// Business operations named Set*, not collaborator seams.
+	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
+	"PermVersion.Set":                   "cache operation, not a seam",
+	"Role.SetUserRoles":                 "request operation, called by the role handler",
+	"SCIMGroups.SetRoleMappings":        "request operation, called by the SCIM token handler",
+	"SCIMProvisioning.SetActive":        "SCIM PATCH operation, not a seam",
+	"ScanProfile.SetDefaultScanProfile": "request operation, called by the scan profile handler",
+	"ThreatIntel.SetSyncEnabled":        "request operation, called by the threat-intel handler",
+	"UserDashboard.SetDefault":          "request operation, called by the dashboard handler",
+	"Vulnerability.SetFindingTags":      "request operation, called by the finding handler",
+	// Real seams left at their defaults on purpose.
+	"ScannerTemplate.SetQuota":         "default quota applies; the override exists for tests and future config",
+	"Vulnerability.SetFindingNotifier": "deprecated; superseded by the notification outbox",
+	"WebSocketHub.SetAuthorizeFunc":    "superseded by SetChannelAccessChecker",
+	"WebSocketHub.SetPublisher":        "set by websocket.NewRedisBridge on the hub it is given",
+}
+
+// TestServices_EverySetterWiredOrExplicitlyOptional reflects over every
+// Services field and requires each of its Set* methods to be called on that
+// field somewhere in cmd/server, or to be listed in optionalServiceSetters with
+// a reason. This generalizes the per-service guards above: a collaborator added
+// later, on any service, cannot ship unwired.
+func TestServices_EverySetterWiredOrExplicitlyOptional(t *testing.T) {
+	_, called := cmdServerServicesUsage(t)
+	typ := reflect.TypeOf(Services{})
+	checked := 0
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		if f.Type.Kind() != reflect.Ptr {
+			continue
+		}
+		for j := 0; j < f.Type.NumMethod(); j++ {
+			m := f.Type.Method(j).Name
+			if !strings.HasPrefix(m, "Set") {
+				continue
+			}
+			checked++
+			key := f.Name + "." + m
+			if _, ok := optionalServiceSetters[key]; ok {
+				continue
+			}
+			if !called[key] {
+				t.Errorf("Services.%s is never called in cmd/server. The service nil-guards this collaborator, "+
+					"so leaving it unwired silently disables the feature. Wire it, or add it to "+
+					"optionalServiceSetters with a reason.", key)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("reflection found no Set* methods on Services fields; the guard is not guarding anything")
+	}
+	for key := range optionalServiceSetters {
+		if called[key] {
+			t.Errorf("%s is listed as optional but is wired; remove it from optionalServiceSetters", key)
 		}
 	}
 }
