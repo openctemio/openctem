@@ -139,6 +139,21 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 		totalProcessed += int(recoveredTenant)
 	}
 
+	// Step 2b: Release pending work pinned to a sensor that went offline or
+	// was disabled. Without it a zone batch pinned at trigger time to a sensor
+	// that then died waited for the run timeout (RFC-030 B7).
+	released, err := c.commandRepo.ReleasePendingFromUnavailableSensors(ctx)
+	if err != nil {
+		c.logger.Error("failed to release pending commands of unavailable sensors",
+			"error", err,
+		)
+	} else if released > 0 {
+		c.logger.Info("released pending commands pinned to unavailable sensors",
+			"count", released,
+		)
+		totalProcessed += int(released)
+	}
+
 	// NOTE: expiry is deliberately NOT done here — neither for regular
 	// (non-platform) commands nor for queued platform jobs.
 	// app/command.ExpirationChecker owns both: it calls

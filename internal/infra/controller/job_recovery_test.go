@@ -16,7 +16,12 @@ type recordingCommandRepo struct {
 
 	recoverStuckJobs           int64
 	recoverStuckTenantCommands int64
+	releasedPending            int64
 	failExhaustedCommands      int64
+}
+
+func (r *recordingCommandRepo) ReleasePendingFromUnavailableSensors(context.Context) (int64, error) {
+	return r.releasedPending, nil
 }
 
 func (r *recordingCommandRepo) RecoverStuckJobs(_ context.Context, _, _ int) (int64, error) {
@@ -161,6 +166,7 @@ func TestJobRecoveryController_ReportsOnlyItsOwnWork(t *testing.T) {
 	repo := &recordingCommandRepo{
 		recoverStuckJobs:           1,
 		recoverStuckTenantCommands: 2,
+		releasedPending:            8,
 		failExhaustedCommands:      4,
 	}
 	c := NewJobRecoveryController(repo, &JobRecoveryControllerConfig{Logger: logger.NewNop()})
@@ -169,7 +175,7 @@ func TestJobRecoveryController_ReportsOnlyItsOwnWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
-	if want := 7; got != want {
+	if want := 15; got != want {
 		t.Fatalf("processed count = %d, want %d (an inflated count means a foreign expiry path is still counted here)", got, want)
 	}
 }

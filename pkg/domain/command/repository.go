@@ -132,6 +132,13 @@ type Repository interface {
 	// Returns the number of commands recovered.
 	RecoverStuckTenantCommands(ctx context.Context, stuckThresholdMinutes int, maxRetries int) (int64, error)
 
+	// ReleasePendingFromUnavailableSensors unpins pending scan work that was
+	// routed to a sensor which is now offline or no longer active, so another
+	// eligible sensor can claim it (RFC-030 B7). The zone stamp stays, so a
+	// zone's work stays inside the zone. Returns the number of commands
+	// released.
+	ReleasePendingFromUnavailableSensors(ctx context.Context) (int64, error)
+
 	// FailExhaustedCommands marks commands that exceeded max retries as failed.
 	// Returns the number of commands failed.
 	FailExhaustedCommands(ctx context.Context, maxRetries int) (int64, error)

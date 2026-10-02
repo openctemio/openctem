@@ -1209,6 +1209,39 @@ func (r *CommandRepository) GetPlatformJobsBySensor(ctx context.Context, sensorI
 // Tenant Command Recovery Methods
 // =============================================================================
 
+// ReleasePendingFromUnavailableSensors unpins pending scan commands that the
+// platform routed to a sensor which has since gone offline (the health
+// controller marks it after missed heartbeats) or stopped being active
+// (disabled, revoked). Before this, such a command waited for the run timeout:
+// only a zone unassignment ever unpinned pending work (RFC-030 B7).
+//
+// Only routed scan work is released: type 'scan' with a pipeline_run_id in the
+// payload, i.e. what trigger-time zone pinning and pipeline step routing pin.
+// A command an operator addressed to one sensor on purpose (config_update,
+// health_check, a scan coverage job pinned to one Tenable runner) keeps its
+// sensor. scan_zone_id is untouched, so the zone claim predicate still limits
+// the released command to the zone's sensors, and the tool gate to sensors
+// with the tool.
+func (r *CommandRepository) ReleasePendingFromUnavailableSensors(ctx context.Context) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands c
+		SET sensor_id = NULL
+		FROM sensors s
+		WHERE c.sensor_id = s.id
+		  AND c.status = 'pending'
+		  AND c.type = 'scan'
+		  AND c.payload ? 'pipeline_run_id'
+		  AND (s.health = 'offline' OR s.status <> 'active')`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to release pending commands of unavailable sensors: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	return n, nil
+}
+
 // RecoverStuckTenantCommands returns stuck tenant commands to the pool.
 // A command is stuck if it's assigned to an offline sensor or hasn't been picked up.
 // Uses a database function for atomic recovery.
