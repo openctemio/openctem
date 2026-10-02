@@ -17,9 +17,13 @@ func renderShippedTemplates(t *testing.T, dir string) *app.RenderedTemplates {
 	svc := app.NewSensorConfigTemplateService(dir, logger.NewNop())
 	tenantID := shared.NewID()
 	out, err := svc.Render(app.SensorTemplateData{
-		Sensor:  &sensor.Sensor{ID: shared.NewID(), TenantID: &tenantID, Name: "edge-1", Tools: []string{"nuclei"}},
-		APIKey:  "rda_test",
+		Sensor: &sensor.Sensor{
+			ID: shared.NewID(), TenantID: &tenantID, Name: "edge-1", Tools: []string{"nuclei"},
+			Type: sensor.SensorTypeWorker, ExecutionMode: sensor.ExecutionModeDaemon,
+		},
+		APIKey:  "rda_test0123",
 		BaseURL: "https://ctem.example.com",
+		Image:   "ghcr.io/openctemio/sensor:v0.4.2",
 	})
 	if err != nil {
 		t.Fatalf("render: %v", err)
@@ -40,25 +44,35 @@ func TestSensorConfigTemplates_PointAtTheCurrentTemplateDirectory(t *testing.T) 
 	}
 }
 
-// RFC-023 contract: the templates render the settings the CURRENT released
-// sensor binary reads (agent.yaml keys, AGENT_ID, ./agent, openctemio/agent).
-// Updating the comments must not touch them.
-func TestSensorConfigTemplates_StillRenderTheReleasedBinarySettings(t *testing.T) {
+// The templates render the settings the released sensor (v0.4.x, the image
+// they pin) reads: the sensor: / sensor_id config keys, SENSOR_* variables,
+// the openctemio-sensor binary and the ghcr.io/openctemio/sensor image. The
+// pre-rename names (agent:, AGENT_ID, ./agent, openctemio/agent) are gone:
+// openctemio/agent was never published, and the old docker command ended
+// early at a commented-out line inside its backslash continuation.
+func TestSensorConfigTemplates_RenderTheReleasedSensorSettings(t *testing.T) {
 	for _, dir := range []string{"../../configs/sensor-templates", "/nonexistent-uses-builtins"} {
 		out := renderShippedTemplates(t, dir)
-		for _, want := range []string{"\nagent:\n", "  agent_id: "} {
+		for _, want := range []string{"\nsensor:\n", "  sensor_id: "} {
 			if !strings.Contains(out.YAML, want) {
-				t.Errorf("[%s] yaml lost %q", dir, want)
+				t.Errorf("[%s] yaml lacks %q", dir, want)
 			}
 		}
-		if !strings.Contains(out.Env, "AGENT_ID=") {
-			t.Errorf("[%s] env lost AGENT_ID", dir)
+		if !strings.Contains(out.Env, "SENSOR_TOOLS=") {
+			t.Errorf("[%s] env lacks SENSOR_TOOLS", dir)
 		}
-		if !strings.Contains(out.Docker, "openctemio/agent") {
-			t.Errorf("[%s] docker lost the openctemio/agent image", dir)
+		if !strings.Contains(out.Docker, "ghcr.io/openctemio/sensor:v0.4.2") {
+			t.Errorf("[%s] docker does not run the pinned sensor image", dir)
 		}
-		if !strings.Contains(out.CLI, "./agent") {
-			t.Errorf("[%s] cli lost ./agent", dir)
+		if !strings.Contains(out.CLI, "./openctemio-sensor") {
+			t.Errorf("[%s] cli lacks ./openctemio-sensor", dir)
+		}
+		for name, s := range map[string]string{"yaml": out.YAML, "env": out.Env, "docker": out.Docker, "cli": out.CLI} {
+			for _, old := range []string{"AGENT_ID", "\nagent:", "openctemio/agent", "./agent "} {
+				if strings.Contains(s, old) {
+					t.Errorf("[%s] %s still renders the pre-rename %q", dir, name, old)
+				}
+			}
 		}
 	}
 }

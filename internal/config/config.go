@@ -204,19 +204,34 @@ type SensorConfigConfig struct {
 
 	// LatestVersion is the newest sensor release (SENSOR_LATEST_VERSION,
 	// default DefaultSensorLatestVersion). The Sensors page compares each
-	// sensor's version with it ("update available"). Empty turns the
-	// comparison off.
+	// sensor's version with it ("update available"), and the install
+	// snippets pin the image to it. Empty turns the comparison off.
 	LatestVersion string
 	// MinVersion is the oldest sensor release still supported
 	// (SENSOR_MIN_VERSION, default empty = no minimum). A heartbeating sensor
 	// below it shows as degraded with "version unsupported".
 	MinVersion string
+
+	// Image is the sensor image repository the install snippets run
+	// (SENSOR_IMAGE, default ghcr.io/openctemio/sensor). The tag is
+	// LatestVersion (DefaultSensorLatestVersion when that is off), never
+	// "latest", so a snippet installs the release the page compares against.
+	Image string
+	// CACertFile is the platform's private CA certificate (PEM) the install
+	// snippets install on the sensor host (SENSOR_CA_CERT_FILE). Set it when
+	// the platform uses the built-in gateway in TLS mode internal: mount the
+	// gateway's CA export directory into the API read-only and point this at
+	// openctem-root-ca.crt. Empty: the certificate is publicly trusted.
+	CACertFile string
 }
 
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
 // the platform is upgraded; set it to "none" to turn the comparison off.
 const DefaultSensorLatestVersion = "v0.4.2"
+
+// DefaultSensorImageRepository is the published sensor image.
+const DefaultSensorImageRepository = "ghcr.io/openctemio/sensor"
 
 // ServerConfig holds HTTP server configuration.
 type ServerConfig struct {
@@ -802,6 +817,8 @@ func Load() (*Config, error) {
 			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
 			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
 			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", "")),
+			Image:                   getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
+			CACertFile:              getEnv("SENSOR_CA_CERT_FILE", ""),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),

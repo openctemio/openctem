@@ -15,29 +15,46 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// SensorConfigTemplateService renders sensor configuration templates
-// (yaml, env, docker, cli) from filesystem-loaded templates.
+// SensorConfigTemplateService renders the snippets that install and configure
+// a sensor (docker run, Compose, Kubernetes, Helm, yaml, env, cli) from
+// filesystem-loaded templates.
 //
-// Templates live in <templates_dir>/{yaml,env,docker,cli}.tmpl and use
-// Go text/template syntax. Operators can edit the .tmpl files in place
-// without rebuilding the API or frontend — changes are picked up on
-// restart, or live if Reload() is called.
+// Templates live in <templates_dir>/<format>.tmpl and use Go text/template
+// syntax. Operators can edit the .tmpl files in place without rebuilding the
+// API or frontend; changes are picked up on restart, or live if Reload() is
+// called. A missing file falls back to the built-in template of the same name
+// (identical to the shipped file; a test keeps them in step).
 //
-// The service caches parsed templates after first load. Call Reload() to
-// pick up file changes without restart.
+// Every snippet must work as pasted, for the sensor release the image tag
+// pins (SENSOR_LATEST_VERSION): tests run `bash -n` on the shell snippets and
+// parse the YAML ones.
 type SensorConfigTemplateService struct {
 	templatesDir string
 	logger       *logger.Logger
 
 	mu        sync.RWMutex
-	templates map[string]*template.Template // key: format name (yaml, env, docker, cli)
+	templates map[string]*template.Template // key: format name
 }
+
+// templateFormats is every format, in response order.
+var templateFormats = []string{"yaml", "env", "docker", "cli", "compose", "kubernetes", "helm"}
 
 // SensorTemplateData is the data passed to every sensor config template.
 type SensorTemplateData struct {
-	Sensor      *sensordom.Sensor
-	APIKey      string // May be empty if not freshly created/regenerated
-	BaseURL     string // Public API URL sensors should connect to
+	Sensor *sensordom.Sensor
+	// APIKey is the sensor's key, available only right after it was created
+	// or rotated; empty renders a reference to $OPENCTEM_API_KEY instead.
+	APIKey string
+	// BaseURL is the public URL sensors connect to (SENSOR_PUBLIC_API_URL,
+	// else APP_URL).
+	BaseURL string
+	// Image is the sensor image with its pinned tag, e.g.
+	// ghcr.io/openctemio/sensor:v0.4.2. Never "latest".
+	Image string
+	// CACert is the PEM of the platform's certificate authority when it uses
+	// a private one (SENSOR_CA_CERT_FILE); empty for a publicly trusted
+	// certificate. The snippets install it and point SSL_CERT_DIR at it.
+	CACert      string
 	GeneratedAt string // RFC3339 timestamp
 }
 
@@ -54,26 +71,32 @@ func NewSensorConfigTemplateService(templatesDir string, log *logger.Logger) *Se
 		s.logger.Warn("failed to load sensor config templates, using built-in defaults",
 			"templates_dir", templatesDir,
 			"error", err)
+		s.loadBuiltins()
 	}
 	return s
 }
 
+// loadBuiltins installs the built-in templates (they always parse; a test
+// renders them).
+func (s *SensorConfigTemplateService) loadBuiltins() {
+	loaded := make(map[string]*template.Template, len(templateFormats))
+	for _, format := range templateFormats {
+		loaded[format] = template.Must(template.New(format).Funcs(templateFuncs()).Parse(builtinTemplates[format]))
+	}
+	s.mu.Lock()
+	s.templates = loaded
+	s.mu.Unlock()
+}
+
 // Reload re-reads all template files from disk. Safe to call at runtime.
 func (s *SensorConfigTemplateService) Reload() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	formats := []string{"yaml", "env", "docker", "cli"}
-	loaded := make(map[string]*template.Template, len(formats))
-
-	for _, format := range formats {
+	loaded := make(map[string]*template.Template, len(templateFormats))
+	for _, format := range templateFormats {
 		path := filepath.Join(s.templatesDir, format+".tmpl")
 		content, err := os.ReadFile(path)
 		if err != nil {
-			s.logger.Warn("template file missing, will use built-in default",
-				"format", format,
-				"path", path,
-				"error", err)
+			s.logger.Debug("template file missing, using the built-in one",
+				"format", format, "path", path, "error", err)
 			content = []byte(builtinTemplates[format])
 		}
 
@@ -84,21 +107,25 @@ func (s *SensorConfigTemplateService) Reload() error {
 		loaded[format] = tmpl
 	}
 
+	s.mu.Lock()
 	s.templates = loaded
+	s.mu.Unlock()
 	s.logger.Info("sensor config templates loaded", "count", len(loaded), "dir", s.templatesDir)
 	return nil
 }
 
 // RenderedTemplates is the output of rendering all templates for one sensor.
 type RenderedTemplates struct {
-	YAML   string `json:"yaml"`
-	Env    string `json:"env"`
-	Docker string `json:"docker"`
-	CLI    string `json:"cli"`
+	YAML       string `json:"yaml"`
+	Env        string `json:"env"`
+	Docker     string `json:"docker"`
+	CLI        string `json:"cli"`
+	Compose    string `json:"compose"`
+	Kubernetes string `json:"kubernetes"`
+	Helm       string `json:"helm"`
 }
 
-// Render renders all four template formats with the given sensor data.
-// Returns user-friendly content (no internal errors leaked).
+// Render renders every template format with the given sensor data.
 func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*RenderedTemplates, error) {
 	s.mu.RLock()
 	tmpls := s.templates
@@ -107,9 +134,15 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 	if data.GeneratedAt == "" {
 		data.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 	}
+	if data.Sensor == nil {
+		return nil, fmt.Errorf("render sensor templates: no sensor")
+	}
+	if data.CACert != "" && !strings.HasSuffix(data.CACert, "\n") {
+		data.CACert += "\n"
+	}
 
-	result := &RenderedTemplates{}
-	for _, format := range []string{"yaml", "env", "docker", "cli"} {
+	out := make(map[string]string, len(templateFormats))
+	for _, format := range templateFormats {
 		tmpl, ok := tmpls[format]
 		if !ok {
 			return nil, fmt.Errorf("template %q not loaded", format)
@@ -118,18 +151,12 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 		if err := tmpl.Execute(&buf, data); err != nil {
 			return nil, fmt.Errorf("failed to render %s template: %w", format, err)
 		}
-		switch format {
-		case "yaml":
-			result.YAML = buf.String()
-		case "env":
-			result.Env = buf.String()
-		case "docker":
-			result.Docker = buf.String()
-		case "cli":
-			result.CLI = buf.String()
-		}
+		out[format] = buf.String()
 	}
-	return result, nil
+	return &RenderedTemplates{
+		YAML: out["yaml"], Env: out["env"], Docker: out["docker"], CLI: out["cli"],
+		Compose: out["compose"], Kubernetes: out["kubernetes"], Helm: out["helm"],
+	}, nil
 }
 
 // =============================================================================
@@ -137,6 +164,10 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 // =============================================================================
 
 var slugRegexp = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// toolNameRegexp is a tool name that is safe to put in a shell snippet. Tool
+// names are set by tenant admins; anything else is dropped from the snippets.
+var toolNameRegexp = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,49}$`)
 
 // Tool-name normalization table — raw tool name → scanner name the
 // sensor config template expects. Kept as one source of truth so both
@@ -158,102 +189,96 @@ func normalizeToolName(tool string) string {
 	return tool
 }
 
+// safeTools keeps the tool names that are safe in a snippet, lowercased.
+func safeTools(tools []string) []string {
+	out := make([]string, 0, len(tools))
+	for _, t := range tools {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if toolNameRegexp.MatchString(t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// slugify converts a name to a docker/kubernetes-friendly name.
+func slugify(name string) string {
+	s := strings.ToLower(name)
+	s = strings.ReplaceAll(s, " ", "-")
+	s = slugRegexp.ReplaceAllString(s, "")
+	s = strings.Trim(s, "-")
+	if len(s) > 50 {
+		s = strings.Trim(s[:50], "-")
+	}
+	if s == "" {
+		return "openctem-sensor"
+	}
+	return s
+}
+
+// shellQuote quotes a value for a POSIX shell (single quotes).
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// yamlQuote quotes a value as a YAML double-quoted scalar.
+func yamlQuote(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
+	return `"` + r.Replace(s) + `"`
+}
+
+// indent prefixes every non-empty line of s with n spaces.
+func indent(n int, s string) string {
+	pad := strings.Repeat(" ", n)
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = pad + l
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// imageTag returns the tag of an image reference ("" without one).
+func imageTag(image string) string {
+	ref := image
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		ref = ref[i+1:]
+	}
+	if i := strings.LastIndex(ref, ":"); i >= 0 {
+		return ref[i+1:]
+	}
+	return ""
+}
+
 // templateFuncs are the functions exposed to templates.
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		// toScannerName maps a tool name to its scanner name
 		// (e.g., "trivy" -> "trivy-fs").
 		"toScannerName": normalizeToolName,
-		// firstTool returns the first tool in the list, or
-		// defaultToolName if empty.
+		// firstTool returns the first safe tool in the list, or
+		// defaultToolName if there is none.
 		"firstTool": func(tools []string) string {
-			if len(tools) == 0 {
-				return defaultToolName
+			if t := safeTools(tools); len(t) > 0 {
+				return normalizeToolName(t[0])
 			}
-			return normalizeToolName(tools[0])
+			return defaultToolName
 		},
-		// slugify converts a name to a docker-friendly slug.
-		"slugify": func(name string) string {
-			s := strings.ToLower(name)
-			s = strings.ReplaceAll(s, " ", "-")
-			s = slugRegexp.ReplaceAllString(s, "")
-			if s == "" {
-				return "agent"
-			}
-			return s
-		},
+		// tools returns the safe tool names.
+		"tools": safeTools,
+		// toolList joins the safe tool names with commas ("" for none).
+		"toolList": func(tools []string) string { return strings.Join(safeTools(tools), ",") },
+		// slugify converts a name to a docker/kubernetes-friendly name.
+		"slugify":    slugify,
+		"shellQuote": shellQuote,
+		"yamlQuote":  yamlQuote,
+		"indent":     indent,
+		"imageTag":   imageTag,
+		// replaceComma escapes commas for a helm --set value.
+		"replaceComma": func(s string) string { return strings.ReplaceAll(s, ",", `\,`) },
+		// isDaemon reports whether the sensor runs continuously (as opposed
+		// to a one-shot CI run).
+		"isDaemon": func(s *sensordom.Sensor) bool { return s != nil && !s.IsOneShot() },
 	}
-}
-
-// =============================================================================
-// Built-in Template Defaults
-// =============================================================================
-//
-// These are used when the template files on disk are missing or unreadable.
-// They are intentionally kept minimal — operators should override by editing
-// configs/sensor-templates/*.tmpl on disk.
-
-var builtinTemplates = map[string]string{
-	"yaml": `# Sensor configuration for {{.Sensor.Name}}
-# Generated by OpenCTEM at {{.GeneratedAt}}
-
-agent:
-  name: {{.Sensor.Name}}
-  region: "{{.Sensor.Region}}"
-  enable_commands: true
-  command_poll_interval: 30s
-  heartbeat_interval: 1m
-
-server:
-  base_url: {{.BaseURL}}
-  api_key: {{.APIKey}}
-  agent_id: {{.Sensor.ID}}
-
-scanners:
-{{- if .Sensor.Tools}}
-{{- range .Sensor.Tools}}
-  - name: {{toScannerName .}}
-    enabled: true
-{{- end}}
-{{- else}}
-  - name: semgrep
-    enabled: true
-{{- end}}
-`,
-	"env": `# Environment Variables for {{.Sensor.Name}}
-
-export API_URL={{.BaseURL}}
-export API_KEY={{.APIKey}}
-export AGENT_ID={{.Sensor.ID}}
-{{- if .Sensor.Region}}
-export REGION={{.Sensor.Region}}
-{{- end}}
-`,
-	"docker": `# Docker run command for {{.Sensor.Name}}
-
-docker run -d \
-  --name {{slugify .Sensor.Name}} \
-  -v /path/to/scan:/code:ro \
-  -e API_URL={{.BaseURL}} \
-  -e API_KEY={{.APIKey}} \
-  -e AGENT_ID={{.Sensor.ID}} \
-{{- if .Sensor.Region}}
-  -e REGION={{.Sensor.Region}} \
-{{- end}}
-  openctemio/agent:latest \
-  -daemon -config /app/agent.yaml
-`,
-	"cli": `# CLI Commands for {{.Sensor.Name}}
-
-# One-shot scan
-./agent -tool {{firstTool .Sensor.Tools}} -target /path/to/project -push
-
-# Daemon mode
-./agent -daemon -config agent.yaml
-
-# With env vars
-export API_URL={{.BaseURL}}
-export API_KEY={{.APIKey}}
-./agent -tool {{firstTool .Sensor.Tools}} -target . -push
-`,
 }

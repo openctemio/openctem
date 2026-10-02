@@ -170,6 +170,12 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # Sensors: the install snippets on the Sensors page pin this image
+      # release and install the gateway's internal CA (TLS mode internal; the
+      # file is absent in the other modes and the snippets then skip it).
+      SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.4.2}
+      SENSOR_MIN_VERSION: ${SENSOR_MIN_VERSION:-}
+      SENSOR_CA_CERT_FILE: /ca/openctem-root-ca.crt
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 15s
@@ -188,6 +194,8 @@ services:
     restart: unless-stopped
     volumes:
       - datastore-tls:/datastore-tls:ro
+      # The CA the gateway exports (public certificate, read-only here).
+      - ${OPENCTEM_CA_EXPORT_DIR:-./ca}:/ca:ro
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=100M
