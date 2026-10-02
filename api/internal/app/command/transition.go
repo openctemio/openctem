@@ -53,6 +53,9 @@ type TransitionInput struct {
 	CommandID    string
 	Result       json.RawMessage // complete
 	ErrorMessage string          // fail
+	// LeaseEpoch is the lease epoch the sensor holds the command under, when
+	// it says (complete, fail): a command claimed again since is refused.
+	LeaseEpoch *int
 }
 
 // TransitionResult is the command after the transition. Replayed is true when
@@ -112,9 +115,9 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	case TransitionStart:
 		out, err = s.Start(ctx, in.TenantID, in.SensorID, in.CommandID)
 	case TransitionComplete:
-		out, err = s.Complete(ctx, CompleteInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, Result: in.Result})
+		out, err = s.Complete(ctx, CompleteInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, Result: in.Result, LeaseEpoch: in.LeaseEpoch})
 	case TransitionFail:
-		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage})
+		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage, LeaseEpoch: in.LeaseEpoch})
 	}
 	if err != nil {
 		return nil, s.transitionError(ctx, t, in, err)

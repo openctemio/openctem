@@ -168,6 +168,13 @@ type Command struct {
 
 	// LastDispatchAt is the last time dispatch was attempted
 	LastDispatchAt *time.Time
+
+	// LeaseEpoch counts the claims of the command: every claim starts a new
+	// lease epoch. A sensor-side state change is applied only under the
+	// epoch it read (no completion after a re-queue). LeaseExpiresAt is when
+	// the holder's lease runs out unless renewed; nil when nobody holds it.
+	LeaseEpoch     int
+	LeaseExpiresAt *time.Time
 }
 
 // NewCommand creates a new Command entity.

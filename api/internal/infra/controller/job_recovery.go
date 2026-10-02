@@ -175,6 +175,28 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	// entirely, so this cannot be reintroduced by accident: expiry has exactly
 	// one implementation and it notifies the run.
 
+	// Step 2c: Take back commands whose lease ran out (RFC-035 D6): the
+	// sensor holding them stopped renewing (it died, or lost them), so they
+	// go back to the queue now instead of at the run timeout. The holder can
+	// no longer complete them (fenced by sensor, state and lease epoch).
+	if reaper, ok := c.commandRepo.(command.LeaseReaper); ok {
+		requeued, err := reaper.RequeueExpiredLeases(ctx)
+		if err != nil {
+			c.logger.Error("failed to re-queue commands with an expired lease", "error", err)
+		} else if len(requeued) > 0 {
+			for _, rq := range requeued {
+				holder := ""
+				if rq.SensorID != nil {
+					holder = rq.SensorID.String()
+				}
+				c.logger.Info("re-queued command: its lease ran out",
+					"command_id", rq.ID.String(), "tenant_id", rq.TenantID.String(),
+					"sensor_id", holder, "lease_epoch", rq.Epoch)
+			}
+			totalProcessed += len(requeued)
+		}
+	}
+
 	// Step 3: Fail commands that have exceeded max retry attempts
 	failedExhausted, err := c.commandRepo.FailExhaustedCommands(ctx, c.config.MaxRetries)
 	if err != nil {

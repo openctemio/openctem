@@ -15,6 +15,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
@@ -73,6 +74,17 @@ type SensorService struct {
 	eventLimits sensordom.EventLimits
 	activity    sensordom.ActivityReader
 	now         func() time.Time
+	// leases renews the leases of the commands a heartbeating sensor holds
+	// (RFC-035 D6); nil renews nothing.
+	leases commanddom.LeaseRenewer
+}
+
+// SetLeaseRenewer wires command lease renewal into the heartbeat: every
+// accepted heartbeat renews the leases of the commands the sensor says it
+// holds (its running list), or of every command it holds when it does not
+// report one (an SDK without the load report). Optional.
+func (s *SensorService) SetLeaseRenewer(r commanddom.LeaseRenewer) {
+	s.leases = r
 }
 
 // SetEventRepository wires the sensor activity store: heartbeat diffs and
@@ -458,6 +470,13 @@ type SensorHeartbeatData struct {
 	// did not report one. Clamped before it is stored.
 	UptimeSeconds int64
 
+	// Running is the ids of the commands the sensor says it holds (the
+	// heartbeat's "running"), untrusted. RunningReported is false for a
+	// sensor that does not report it (an SDK without the load report): its
+	// heartbeat then renews every command it holds.
+	Running         []string
+	RunningReported bool
+
 	// Load is the load report the heartbeat carried (resources, capacity,
 	// local queue), untrusted; nil when it carried none. Clamped here before
 	// it is stored (sensordom.LoadReport.Clamp).
@@ -636,6 +655,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	}
 
 	s.observeInstance(ctx, a, data.InstanceID, data.Hostname, now)
+	s.renewLeases(ctx, a, data)
 
 	// Record a connect event only on an offline/unknown/error -> online
 	// transition. Tenant sensors only: platform sensors (TenantID == nil) are
@@ -689,6 +709,25 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	}
 
 	return nil
+}
+
+// maxRenewedCommands bounds the running list a heartbeat renews.
+const maxRenewedCommands = 1000
+
+// renewLeases renews the leases of the commands a heartbeating tenant
+// sensor holds. Best effort: a failure is logged; the lease then runs out
+// only if the next heartbeats fail too.
+func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData) {
+	if s.leases == nil || a.TenantID == nil {
+		return
+	}
+	ids := data.Running
+	if len(ids) > maxRenewedCommands {
+		ids = ids[:maxRenewedCommands]
+	}
+	if _, err := s.leases.RenewLeases(ctx, *a.TenantID, a.ID, ids, !data.RunningReported); err != nil {
+		s.logger.Warn("command leases not renewed", "sensor_id", a.ID.String(), "error", err)
+	}
 }
 
 // observeInstance feeds the heartbeat's process instance to clone

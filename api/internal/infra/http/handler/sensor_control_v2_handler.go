@@ -336,7 +336,11 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		UserAgent:     r.UserAgent(),
 		Report:        req.capabilityReport(),
 		Load:          req.loadReport(),
-		Build:         req.buildReport(),
+		// The SDK that reports its queue lists what it runs ("running",
+		// left out when empty); one that does not renews everything it holds.
+		Running:         req.Running,
+		RunningReported: req.Queue != nil,
+		Build:           req.buildReport(),
 		// v1 has no manifest: its heartbeat is always the source.
 		ManifestDigest: manifestDigestFor(req, protocol),
 		Content:        slimContentFor(req, protocol),
@@ -451,7 +455,8 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
 		return
 	}
-	in := command.TransitionInput{TenantID: s.TenantID.String(), SensorID: s.ID.String(), CommandID: commandID}
+	in := command.TransitionInput{TenantID: s.TenantID.String(), SensorID: s.ID.String(), CommandID: commandID,
+		LeaseEpoch: leaseEpochHeader(r)}
 	switch t {
 	case command.TransitionComplete:
 		var req protov2.CompleteRequest
@@ -507,6 +512,21 @@ func (h *SensorControlV2Handler) transitionFailed(w http.ResponseWriter, route s
 	}
 }
 
+// leaseEpochHeader is the lease epoch a sensor states it holds the command
+// under (X-OpenCTEM-Lease-Epoch, the lease_epoch it was given); nil when
+// absent or not a number.
+func leaseEpochHeader(r *http.Request) *int {
+	v := strings.TrimSpace(r.Header.Get(protov2.HeaderLeaseEpoch))
+	if v == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return nil
+	}
+	return &n
+}
+
 // toV2Command is the v2 representation of a command.
 func toV2Command(c *commanddom.Command) protov2.Command {
 	out := protov2.Command{
@@ -522,6 +542,8 @@ func toV2Command(c *commanddom.Command) protov2.Command {
 		CompletedAt:    utcPtr(c.CompletedAt),
 		ErrorMessage:   c.ErrorMessage,
 		Result:         rawOrNull(c.Result),
+		LeaseEpoch:     c.LeaseEpoch,
+		LeaseExpiresAt: utcPtr(c.LeaseExpiresAt),
 	}
 	if c.SensorID != nil {
 		id := c.SensorID.String()
