@@ -17,6 +17,8 @@ const (
 	FingerprintsCheckPath = "/fingerprints/check"
 	BaselineDiffPath      = "/fingerprints/baseline-diff"
 	KeysPath              = "/keys"
+	// ManifestPath is the sensor manifest (RFC-033): PUT registers it.
+	ManifestPath = "/manifest"
 
 	// Command transitions, under CommandsPath + "/{command_id}".
 	ClaimAction    = "claim"
@@ -29,6 +31,37 @@ const (
 func CommandActionPath(commandID, action string) string {
 	return PathPrefix + CommandsPath + "/" + commandID + "/" + action
 }
+
+// ManifestResponse answers PUT /manifest (RFC-033 §6.4): the digest the
+// platform stored (the sensor echoes it as the heartbeat's manifest_digest),
+// whether it was new, and what was accepted and ignored.
+type ManifestResponse struct {
+	ManifestDigest string            `json:"manifest_digest"`
+	Changed        bool              `json:"changed"`
+	Accepted       ManifestAccepted  `json:"accepted"`
+	Ignored        []ManifestIgnored `json:"ignored"`
+}
+
+// ManifestAccepted is what the platform kept of a manifest: tool names and
+// the flat capability list dispatch uses.
+type ManifestAccepted struct {
+	Tools        []string `json:"tools"`
+	Capabilities []string `json:"capabilities"`
+}
+
+// ManifestIgnored is one manifest item the platform dropped: where it was,
+// its value and why ("unknown-tool", "unknown-capability", "invalid-name",
+// "unknown-member", "limit").
+type ManifestIgnored struct {
+	Path   string `json:"path"`
+	Value  string `json:"value,omitempty"`
+	Reason string `json:"reason"`
+}
+
+// ActionSendManifest is the heartbeat action asking a sensor whose
+// manifest_digest the platform does not have to PUT its manifest (RFC-033
+// §6.4). Sent only to sensors that sent a manifest_digest.
+const ActionSendManifest = "send_manifest"
 
 // Heartbeat status values (RFC-029 §4.3).
 const (

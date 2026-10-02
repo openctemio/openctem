@@ -465,6 +465,11 @@ type SensorHeartbeatData struct {
 	// Build is the build information the heartbeat carried (sdk, sensor
 	// members), untrusted. Parts it leaves empty are read from UserAgent.
 	Build sensordom.BuildReport
+
+	// ManifestDigest is the manifest digest the sensor echoes (RFC-033); ""
+	// from a sensor that registers no manifest, whose manifest is then
+	// derived from this heartbeat's report.
+	ManifestDigest string
 }
 
 // canonicalToolNames writes tool limits the way sensors report tools:
@@ -653,6 +658,12 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 			At: now, Version: version, Protocol: data.Protocol, StartedAt: startedAt, Report: report, Build: build,
 		})...)
 		s.recordEvents(ctx, events)
+	}
+
+	// A sensor that registers no manifest: keep the history of the one its
+	// heartbeat implies (RFC-033 §6.6).
+	if data.ManifestDigest == "" {
+		s.recordDerivedManifest(ctx, a, report, build, version, now)
 	}
 
 	return nil

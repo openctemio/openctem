@@ -171,6 +171,37 @@ paths:
         "413": { $ref: "#/components/responses/Problem" }
         "415": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/manifest:
+    put:
+      summary: Register what this sensor is (feature "manifest", RFC-033)
+      operationId: sensorV2PutManifest
+      description: >-
+        The sensor's manifest: build, platform, resources, concurrency ceiling,
+        sensor-wide capabilities and its tools (kind, version, installed,
+        capabilities, target types, content versions). Sent after hello and
+        before the first heartbeat, again when it changes and when a
+        heartbeat answer carries the action send_manifest. Idempotent by
+        content. Unknown members, tools and capabilities are ignored and
+        listed in the answer, never an error. At most 256 KiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Manifest" }
+      responses:
+        "200":
+          description: The digest stored (echo it as the heartbeat's manifest_digest) and what was kept.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManifestResponse" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "415": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/commands:
     get:
       summary: Commands this sensor may claim now
@@ -520,6 +551,14 @@ components:
     HeartbeatRequest:
       type: object
       properties:
+        manifest_digest:
+          type: string
+          maxLength: 71
+          description: >-
+            The digest PUT /manifest returned (feature "manifest", RFC-033).
+            When it is not the platform's current one the answer carries the
+            action send_manifest. Absent: the platform derives the manifest
+            from this heartbeat's tools.
         name: { type: string }
         status: { type: string }
         version: { type: string }
@@ -588,6 +627,86 @@ components:
             running: { type: integer }
             queued_local: { type: integer }
             oldest_age_seconds: { type: integer }
+    Manifest:
+      type: object
+      required: [schema]
+      description: RFC-033 §6.2. Every member but schema is optional; unknown members are ignored and listed.
+      properties:
+        schema: { type: integer, enum: [1] }
+        sensor:
+          type: object
+          properties:
+            name: { type: string }
+            version: { type: string }
+            commit: { type: string }
+            build_time: { type: string, format: date-time }
+        sdk:
+          type: object
+          properties:
+            name: { type: string }
+            version: { type: string }
+        platform:
+          type: object
+          properties:
+            os: { type: string }
+            arch: { type: string }
+        resources:
+          type: object
+          description: What the sensor may use (container limits when in one). Display and selection input, not capacity.
+          properties:
+            cpu_cores: { type: number }
+            mem_total_bytes: { type: integer }
+        concurrency:
+          type: object
+          properties:
+            ceiling: { type: integer, minimum: 0, maximum: 100, description: The operator's cap (SENSOR_MAX_JOBS); 0 when none. What the sensor runs now is the heartbeat's capacity.slots_total. }
+            model: { type: string, enum: [dynamic, fixed] }
+        capabilities: { type: array, maxItems: 64, items: { type: string }, description: Sensor-wide capabilities (served whatever the tools, e.g. validate). }
+        tools:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string }
+              kind: { type: string, enum: [scanner, collector] }
+              version: { type: string }
+              installed: { type: boolean }
+              capabilities: { type: array, maxItems: 32, items: { type: string } }
+              target_types: { type: array, maxItems: 16, items: { type: string } }
+              content:
+                type: array
+                items:
+                  type: object
+                  required: [name]
+                  properties:
+                    name: { type: string }
+                    version: { type: string }
+                    digest: { type: string }
+                    source: { type: string }
+                    managed: { type: boolean }
+    ManifestResponse:
+      type: object
+      required: [manifest_digest, changed, accepted, ignored]
+      properties:
+        manifest_digest: { type: string, description: '"sha256:" + hex over the canonical JSON of the manifest as received.' }
+        changed: { type: boolean, description: False when it was already the current manifest. }
+        accepted:
+          type: object
+          required: [tools, capabilities]
+          properties:
+            tools: { type: array, items: { type: string } }
+            capabilities: { type: array, items: { type: string }, description: The flat list dispatch reads. }
+        ignored:
+          type: array
+          items:
+            type: object
+            required: [path, reason]
+            properties:
+              path: { type: string }
+              value: { type: string }
+              reason: { type: string, enum: [unknown-member, unknown-tool, invalid-name, unknown-capability, limit] }
     HeartbeatResponse:
       type: object
       required: [sensor_id, tenant_id, status, pending_jobs, next_heartbeat_seconds, actions, config_version]
@@ -597,7 +716,7 @@ components:
         status: { type: string, enum: [ok, paused] }
         pending_jobs: { type: integer }
         next_heartbeat_seconds: { type: integer }
-        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update; ignore unknown values" } }
+        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest (RFC-033: PUT /manifest; only for a sensor that sent manifest_digest); ignore unknown values" } }
         config_version: { type: string }
     Command:
       type: object

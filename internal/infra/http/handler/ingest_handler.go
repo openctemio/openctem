@@ -277,6 +277,13 @@ type HeartbeatRequest struct {
 	// that omit it are read from their User-Agent.
 	SDK    json.RawMessage `json:"sdk,omitempty" swaggertype:"object"`
 	Sensor json.RawMessage `json:"sensor,omitempty" swaggertype:"object"`
+
+	// ManifestDigest is the digest of the sensor's registered manifest, as
+	// the platform returned it (RFC-033, protocol v2 feature "manifest").
+	// When it is not the stored one the v2 answer asks for the manifest
+	// (action send_manifest). Absent: the platform derives the manifest
+	// from this heartbeat.
+	ManifestDigest string `json:"manifest_digest,omitempty"`
 }
 
 // loadReport returns the heartbeat's load report, nil when it carried none.

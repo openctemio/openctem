@@ -49,6 +49,7 @@ var Paths = map[string]string{
 	"FingerprintsCheckPath": FingerprintsCheckPath,
 	"BaselineDiffPath":      BaselineDiffPath,
 	"KeysPath":              KeysPath,
+	"ManifestPath":          ManifestPath,
 }
 
 // ReportLocation is the status resource of a report: the Location header of a

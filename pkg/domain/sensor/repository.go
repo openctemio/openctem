@@ -296,3 +296,23 @@ type InstanceObserver interface {
 	// key was regenerated, copies of the old key can no longer connect).
 	ClearIdentityCloned(ctx context.Context, id shared.ID) error
 }
+
+// ManifestStore is implemented by a sensor repository that keeps manifest
+// versions (manifest.go, RFC-033).
+type ManifestStore interface {
+	// SaveManifest stores v (a new version, or an earlier one becoming
+	// current again), points the sensor at it and, when report is not nil,
+	// writes the report as the sensor's reported_* projection, in one
+	// transaction, for an active sensor only (saved is false otherwise).
+	// Old versions are pruned (ManifestVersionsKept, ManifestVersionsMaxAge).
+	SaveManifest(ctx context.Context, v ManifestVersion, report *CapabilityReport, at time.Time) (saved bool, err error)
+	// TouchManifest records that the sensor confirmed its current version.
+	// Every read and write is scoped to tenantID (nil: a platform sensor).
+	TouchManifest(ctx context.Context, tenantID *shared.ID, sensorID shared.ID, digest string, at time.Time) error
+	// CurrentManifest returns the sensor's current version; ErrNotFound
+	// when it has none.
+	CurrentManifest(ctx context.Context, tenantID *shared.ID, sensorID shared.ID) (*ManifestVersion, error)
+	// ListManifests returns the sensor's versions, most recently current
+	// first, at most limit.
+	ListManifests(ctx context.Context, tenantID *shared.ID, sensorID shared.ID, limit int) ([]ManifestVersion, error)
+}

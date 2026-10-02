@@ -791,7 +791,8 @@ func (r *SensorRepository) selectQuery() string {
 		       reported_resources, reported_capacity, reported_queue, load_reported_at,
 		       sdk_name, sdk_version, sensor_product, sensor_commit, sensor_build_time,
 		       api_key_last_used_at, host(api_key_last_used_ip),
-		       instance_id, instance_state, identity_cloned_at
+		       instance_id, instance_state, identity_cloned_at,
+		       manifest_digest, manifest_at, manifest_source
 		FROM sensors
 	`
 }
@@ -947,6 +948,9 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		instanceID       sql.NullString
 		instanceState    []byte
 		identityCloned   sql.NullTime
+		manifestDigest   sql.NullString
+		manifestAt       sql.NullTime
+		manifestSource   sql.NullString
 	)
 
 	err := row.Scan(
@@ -1017,6 +1021,9 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&instanceID,
 		&instanceState,
 		&identityCloned,
+		&manifestDigest,
+		&manifestAt,
+		&manifestSource,
 	)
 
 	if err != nil {
@@ -1132,6 +1139,10 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	}
 	if identityCloned.Valid {
 		a.IdentityClonedAt = &identityCloned.Time
+	}
+	a.ManifestDigest, a.ManifestSource = manifestDigest.String, manifestSource.String
+	if manifestAt.Valid {
+		a.ManifestAt = &manifestAt.Time
 	}
 
 	a.Reported = scanReported(a.ID, reportedTools, reportedCaps, reportedMaxJobs, reportedOS, reportedArch, reportedAt)

@@ -187,6 +187,13 @@ type Sensor struct {
 	// regenerates the key.
 	IdentityClonedAt *time.Time
 
+	// The current manifest (RFC-033, manifest.go): its digest, when it
+	// became current and where it came from (ManifestSourceSensor or
+	// ManifestSourceHeartbeat). "" / nil before the first one.
+	ManifestDigest string
+	ManifestAt     *time.Time
+	ManifestSource string
+
 	// Metadata and configuration
 	Labels   map[string]interface{}
 	Config   map[string]interface{}

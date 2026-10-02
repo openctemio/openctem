@@ -720,6 +720,78 @@ report), `effective`, and `capability_mismatch` (`tools_not_installed`,
 `capabilities_not_reported`; omitted when there is nothing to show). `PUT` with `tools: []` / `capabilities: []` removes the
 limit.
 
+## Sensor manifest
+
+[RFC-033](../rfcs/RFC-033-sensor-manifest.md). A manifest is what a sensor
+*is*, as opposed to its load. It contains:
+
+- build, platform and resources
+- the operator's concurrency ceiling and the sensor-wide capabilities
+- its tools, each with kind, version, installed state, capabilities, target
+  types and content versions
+
+It is registered once and again on change. Heartbeats keep carrying the load.
+
+**Wire (protocol v2, feature `manifest`).**
+
+- `PUT /api/v2/sensor/manifest`:
+  - body: a JSON document, `schema: 1`, at most 256 KiB
+  - answers `{manifest_digest, changed, accepted: {tools, capabilities},
+    ignored: [{path, value, reason}]}`
+  - unknown members, tools (not in the catalog) and capabilities (not in the
+    registry) are ignored and listed, never an error
+  - problems: 413 `content-too-large`, 422 `manifest-invalid`,
+    422 `manifest-schema-unsupported`, 503 `unavailable` (catalog unreadable,
+    retry)
+- The digest is `sha256:` over the canonical JSON of the document as received
+  (sorted members, no whitespace, no HTML escaping). The platform computes it
+  and the sensor echoes it.
+- The heartbeat's optional `manifest_digest`: when it is not the current one,
+  the answer adds the action `send_manifest`. This goes only to sensors that
+  send a digest; deployed sensors ignore unknown actions anyway.
+
+**Processing** (`SensorService.RegisterManifest`):
+
+1. Parse leniently and digest.
+2. Turn it into a capability report:
+   - flat capabilities = installed tools' names + their capabilities +
+     sensor-wide ones, the SDK registry's rule
+   - sanitize it with the heartbeat's catalog lookup
+3. An unchanged digest only touches the version's `last_seen_at`.
+4. A new one is stored in one transaction:
+   - a `sensor_manifests` row; a sensor going back to an earlier manifest
+     makes that row current again
+   - `sensors.manifest_digest`, `manifest_at`, `manifest_source`
+   - the `reported_*` projection. A manifest is a complete statement, so its
+     ceiling and platform replace the stored ones, NULL included.
+5. Old versions are pruned in the same transaction: the newest 50 are kept,
+   plus any seen in the last 90 days.
+6. The diff goes to the activity timeline with the existing event types,
+   each with `manifest_digest` and `previous_manifest_digest` in its details.
+
+**Derived manifests.** For a heartbeat without `manifest_digest` that carries
+tools (protocol v1, older SDKs), the platform builds the manifest from the
+sanitized report. Its sensor-wide capabilities are the flat ones no installed
+tool provides. The platform stores it with `source = heartbeat` only when its
+digest differs from the current one. Every sensor therefore gets a version
+history, and a steady heartbeat writes nothing extra. The comparison uses the
+digest in the row the heartbeat already reads.
+
+**Reads.**
+
+- `GET /api/v1/sensors/{id}/manifest`: the current version, or 404 when there
+  is none yet.
+- `GET /api/v1/sensors/{id}/manifests?limit=`: history, most recently current
+  first. Both need `sensors:read` and are tenant-scoped.
+- The sensor response carries `manifest_digest`, `manifest_at` and
+  `manifest_source`.
+
+Code: `pkg/domain/sensor/manifest.go`, `internal/app/sensor/manifest.go`,
+`internal/infra/postgres/sensor_manifest.go`,
+`internal/infra/http/handler/sensor_control_v2_handler.go` (`PutManifest`),
+`sensor_manifest_handler.go`. Migration 000258. Tests:
+`routes/sensor_manifest_db_test.go`, `sensor/manifest_test.go`.
+
 ## Scanner content
 
 [RFC-031](../rfcs/RFC-031-managed-sensor-updates.md). A tool's binary is

@@ -67,6 +67,10 @@ const (
 	ProblemTransitionConflict ProblemType = "transition-conflict"
 	ProblemRenewalRefused     ProblemType = "renewal-refused"
 	ProblemTooManyItems       ProblemType = "too-many-items"
+
+	// RFC-033 (ProblemTypeBaseSensor).
+	ProblemManifestInvalid           ProblemType = "manifest-invalid"
+	ProblemManifestSchemaUnsupported ProblemType = "manifest-schema-unsupported"
 )
 
 type problemDef struct {
@@ -125,6 +129,9 @@ var problemDefs = map[ProblemType]problemDef{
 	ProblemTransitionConflict: {http.StatusConflict, "Transition conflict", "The command already reached this state with a different result or message.", false, ProblemTypeBaseSensor},
 	ProblemRenewalRefused:     {http.StatusForbidden, "Renewal refused", "This sensor may not renew its key.", false, ProblemTypeBaseSensor},
 	ProblemTooManyItems:       {http.StatusUnprocessableEntity, "Too many items", "The request lists more items than the limit; split it into several requests.", false, ProblemTypeBaseSensor},
+
+	ProblemManifestInvalid:           {http.StatusUnprocessableEntity, "Manifest invalid", "The manifest is not a JSON object with a schema member of the documented shape.", false, ProblemTypeBaseSensor},
+	ProblemManifestSchemaUnsupported: {http.StatusUnprocessableEntity, "Manifest schema unsupported", "The manifest's schema version is not one this server reads; send schema 1.", false, ProblemTypeBaseSensor},
 }
 
 // ProblemTypes returns every defined problem type, for tests and docs.
