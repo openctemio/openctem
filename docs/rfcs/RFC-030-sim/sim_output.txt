@@ -1,0 +1,29 @@
+
+## big_nuclei
+policy                       makespan(min)  finished   util done<=1h scanned  per-scan latency (min)
+current_unzoned                      556.7     20/20   0.06     0.00   1.000  A=556.7
+current_zoned batch=1                 86.3     20/20   0.60     0.86   1.000  A=86.3
+current_zoned batch=50                86.6     20/20   0.50     0.72   1.000  A=86.6
+pull_fixed batch=50                   83.7     20/20   0.55     0.80   1.000  A=83.7
+pull_fixed batch=10                   50.5     20/20   0.80     1.00   1.000  A=50.5
+pull_adaptive                         44.9     20/20   0.90     1.00   1.000  A=44.9
+
+## big_nuclei_death
+policy                       makespan(min)  finished   util done<=1h scanned  per-scan latency (min)
+current_zoned batch=50                 inf      0/20   0.56     0.47   0.750  A=inf
+pull_fixed batch=50                   85.3     20/20   0.70     0.66   1.000  A=85.3
+pull_adaptive                         64.8     20/20   0.91     0.98   1.000  A=64.8
+
+## repos
+policy                       makespan(min)  finished   util done<=1h scanned  per-scan latency (min)
+current_unzoned                        0.5     20/20   0.06     0.00   0.001  R=0.5
+pull_fixed batch=1                   136.6     20/20   0.74     0.63   1.000  R=136.6
+pull_fixed batch=20                  144.7     20/20   0.64     0.51   1.000  R=144.7
+pull_adaptive                        124.6     20/20   0.75     0.64   1.000  R=124.6
+
+## multitenant
+policy                       makespan(min)  finished   util done<=1h scanned  per-scan latency (min)
+current_zoned batch=50               154.6     20/20   0.52     0.64   1.000  A=133.2 B=136.7 C=134.6
+pull_fixed batch=50                   93.6     20/20   0.71     0.62   1.000  A=84.5 B=73.1 C=83.2
+pull_adaptive fairness=fifo           77.2     20/20   0.93     0.85   1.000  A=65.9 B=65.6 C=71.6
+pull_adaptive fairness=drr            76.9     20/20   0.94     0.80   1.000  A=76.9 B=9.4 C=17.3
