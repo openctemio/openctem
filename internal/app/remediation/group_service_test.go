@@ -21,11 +21,11 @@ type mockKeyRepo struct {
 
 func (m *mockKeyRepo) Upsert(_ context.Context, _, _ shared.ID, _, _ string) error { return nil }
 func (m *mockKeyRepo) Delete(_ context.Context, _ shared.ID) error                 { return nil }
-func (m *mockKeyRepo) ListGroups(_ context.Context, _ shared.ID, excl []string) ([]remediationdom.Group, error) {
+func (m *mockKeyRepo) ListGroups(_ context.Context, _ shared.ID, excl []string, _ *shared.DataScope) ([]remediationdom.Group, error) {
 	m.lastExcl = excl
 	return m.groups, nil
 }
-func (m *mockKeyRepo) OpenFindingIDs(_ context.Context, _ shared.ID, key string, excl []string) ([]shared.ID, error) {
+func (m *mockKeyRepo) OpenFindingIDs(_ context.Context, _ shared.ID, key string, excl []string, _ *shared.DataScope) ([]shared.ID, error) {
 	m.lastKey = key
 	m.lastExcl = excl
 	return m.openIDs, m.openErr

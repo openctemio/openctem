@@ -247,13 +247,23 @@ func (s *FindingActionsService) ListFindingGroups(
 func (s *FindingActionsService) visibleTo(
 	ctx context.Context, tid shared.ID, filter vulnerability.FindingFilter,
 ) (vulnerability.FindingFilter, error) {
+	return visibleFilter(ctx, s.dataScope, tid, filter)
+}
+
+// visibleFilter pins filter to tid and narrows it to what the request's
+// caller may see: the enforcer's data scope and the findings list's
+// pentest-membership rule. Shared by every filter-driven finding path so none
+// sets the scope fields by hand.
+func visibleFilter(
+	ctx context.Context, e *datascope.Enforcer, tid shared.ID, filter vulnerability.FindingFilter,
+) (vulnerability.FindingFilter, error) {
 	filter.TenantID = &tid
-	scope, err := s.dataScope.Resolve(ctx, tid)
+	scope, err := e.Resolve(ctx, tid)
 	if err != nil {
 		return filter, fmt.Errorf("failed to resolve data scope: %w", err)
 	}
 	filter = filter.WithDataScope(scope)
-	if c := s.dataScope.CallerOf(ctx); !c.IsAdmin && c.UserID != "" {
+	if c := e.CallerOf(ctx); !c.IsAdmin && c.UserID != "" {
 		if uid, err := shared.IDFromString(c.UserID); err == nil {
 			filter = filter.WithPentestMemberOrNonPentest(uid)
 		}
@@ -739,8 +749,13 @@ func (s *FindingActionsService) AutoAssignToOwners(
 		return nil, fmt.Errorf("%w: invalid assigner id", shared.ErrValidation)
 	}
 
-	filter.TenantID = &tid
-	filter.DataScopeUserID = &aid // SEC-01: enforce data scope (mirror BulkVerify/RejectByFilter)
+	// Only findings the caller may see: the enforcer's scope (admins and the
+	// organization's policy for members without a group as everywhere else)
+	// and pentest findings only for members of their campaign.
+	filter, err = s.visibleTo(ctx, tid, filter)
+	if err != nil {
+		return nil, err
+	}
 	result := &AutoAssignToOwnersResult{ByOwner: make(map[string]int)}
 
 	// Cache asset lookups by ID across all pages so repeated findings on the same

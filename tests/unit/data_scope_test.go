@@ -854,6 +854,30 @@ func TestGetFindingStatsWithScope_NonAdmin_EmptyUserID(t *testing.T) {
 	}
 }
 
+// strictScopePolicy: every organization runs "members without a group see nothing".
+type strictScopePolicy struct{}
+
+func (strictScopePolicy) RestrictedDataScope(context.Context, string) bool { return true }
+
+// Under the "nothing" policy a failed scope lookup must not fall through to
+// the tenant-wide counts.
+func TestGetFindingStatsWithScope_StrictPolicy_ScopeLookupError_FailClosed(t *testing.T) {
+	stats := vulnerability.NewFindingStats()
+	stats.Total = 42
+	findingRepo := &mockFindingRepoForScope{statsResult: stats}
+	svc := newTestVulnService(findingRepo)
+	svc.SetAccessControlRepository(&mockAccessControlRepo{hasAnyScopeErr: errors.New("db error")})
+	svc.SetDataScopePolicy(strictScopePolicy{})
+
+	result, err := svc.GetFindingStatsWithScope(context.Background(), app.GetFindingStatsInput{
+		TenantID:     shared.NewID().String(),
+		ActingUserID: shared.NewID().String(),
+	})
+	if err == nil {
+		t.Fatalf("expected an error, got stats total %d", result.Total)
+	}
+}
+
 func TestGetFindingStats_BackwardCompat(t *testing.T) {
 	stats := vulnerability.NewFindingStats()
 	stats.Total = 99

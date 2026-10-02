@@ -47,9 +47,11 @@ func (r *FindingRemediationKeyRepository) Delete(ctx context.Context, findingID 
 	return nil
 }
 
-// ListGroups rolls up the tenant's open, non-pentest findings by remediation key.
-func (r *FindingRemediationKeyRepository) ListGroups(ctx context.Context, tenantID shared.ID, excludeStatuses []string) ([]remediation.Group, error) {
-	const q = `
+// ListGroups rolls up the tenant's open, non-pentest findings by remediation
+// key, over the findings in scope (nil = all).
+func (r *FindingRemediationKeyRepository) ListGroups(ctx context.Context, tenantID shared.ID, excludeStatuses []string, scope *shared.DataScope) ([]remediation.Group, error) {
+	scopeCond, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String(), pq.Array(excludeStatuses)})
+	q := `
 		SELECT frk.remediation_key,
 		       MAX(frk.title) AS title,
 		       COUNT(*)::int AS finding_count,
@@ -64,10 +66,11 @@ func (r *FindingRemediationKeyRepository) ListGroups(ctx context.Context, tenant
 		WHERE frk.tenant_id = $1
 		  AND f.source <> 'pentest'
 		  AND f.status <> ALL($2::text[])
+		  AND ` + scopeCond + `
 		GROUP BY frk.remediation_key
 		ORDER BY finding_count DESC`
 
-	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), pq.Array(excludeStatuses))
+	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list remediation groups: %w", err)
 	}
@@ -91,18 +94,21 @@ func (r *FindingRemediationKeyRepository) ListGroups(ctx context.Context, tenant
 	return groups, rows.Err()
 }
 
-// OpenFindingIDs returns the open, non-pentest finding IDs in a group.
-func (r *FindingRemediationKeyRepository) OpenFindingIDs(ctx context.Context, tenantID shared.ID, key string, excludeStatuses []string) ([]shared.ID, error) {
-	const q = `
+// OpenFindingIDs returns the open, non-pentest finding IDs in a group that are
+// in scope (nil = all).
+func (r *FindingRemediationKeyRepository) OpenFindingIDs(ctx context.Context, tenantID shared.ID, key string, excludeStatuses []string, scope *shared.DataScope) ([]shared.ID, error) {
+	scopeCond, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String(), key, pq.Array(excludeStatuses)})
+	q := `
 		SELECT f.id
 		FROM finding_remediation_keys frk
 		JOIN findings f ON f.id = frk.finding_id
 		WHERE frk.tenant_id = $1
 		  AND frk.remediation_key = $2
 		  AND f.source <> 'pentest'
-		  AND f.status <> ALL($3::text[])`
+		  AND f.status <> ALL($3::text[])
+		  AND ` + scopeCond
 
-	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), key, pq.Array(excludeStatuses))
+	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("open finding ids by key: %w", err)
 	}

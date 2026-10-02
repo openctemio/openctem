@@ -58,7 +58,7 @@ func TestFindingRemediationKeyRepository_RoundTrip(t *testing.T) {
 
 	excl := []string{"resolved", "false_positive", "accepted", "duplicate"}
 
-	groups, err := repo.ListGroups(ctx, tenantID, excl)
+	groups, err := repo.ListGroups(ctx, tenantID, excl, nil)
 	if err != nil {
 		t.Fatalf("list groups: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestFindingRemediationKeyRepository_RoundTrip(t *testing.T) {
 		t.Errorf("severity rollup wrong: %+v", g.SeverityCounts)
 	}
 
-	ids, err := repo.OpenFindingIDs(ctx, tenantID, "sol:openssl", excl)
+	ids, err := repo.OpenFindingIDs(ctx, tenantID, "sol:openssl", excl, nil)
 	if err != nil {
 		t.Fatalf("open finding ids: %v", err)
 	}

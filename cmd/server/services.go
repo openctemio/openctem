@@ -1639,6 +1639,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// state history + dedupe/reactivate as the secret/misconfig bridge.
 	s.Ingest.SetAssetExposureProjector(exposurebridge.NewAssetBridge(repos.Exposure, repos.ExposureStateHistory, log))
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
+	s.RemediationGroup.SetDataScope(s.DataScope)
 
 	// A remediation campaign can be scoped to a group key (solution family): its
 	// progress + resolve then run off the side-table / group-resolve path rather

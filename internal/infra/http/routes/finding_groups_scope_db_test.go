@@ -24,6 +24,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/datascope"
+	appremediation "github.com/openctemio/api/internal/app/remediation"
 	infrahttp "github.com/openctemio/api/internal/infra/http"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -48,6 +49,7 @@ type gsHarness struct {
 	findingB2, findingP          shared.ID // FB2: B1 sharing A's component; FP: pentest on A1
 	cveA, cveB, cveB2, cveP      string
 	componentA, componentB, camp shared.ID
+	vuln                         *app.VulnerabilityService
 }
 
 func newGroupScopeHarness(t *testing.T) *gsHarness {
@@ -83,9 +85,13 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	vulnSvc.SetDataScopePolicy(dsStrictPolicy{ds})
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
+	h.vuln = vulnSvc
 
 	actionsSvc := app.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
 	actionsSvc.SetDataScope(enforcer)
+
+	remediationSvc := appremediation.NewGroupService(postgres.NewFindingRemediationKeyRepository(db), vulnSvc, nil, log)
+	remediationSvc.SetDataScope(enforcer)
 
 	prevGuard := dataScopeGuardMiddleware
 	dataScopeGuardMiddleware = middleware.DataScopeGuard(enforcer)
@@ -105,7 +111,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	})
 	router := infrahttp.NewChiRouter()
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log),
-		handler.NewFindingActionsHandler(actionsSvc, log), nil, nil, auth, nil)
+		handler.NewFindingActionsHandler(actionsSvc, log), nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
 	ds.srv.Close()
 	ds.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(ds.srv.Close)

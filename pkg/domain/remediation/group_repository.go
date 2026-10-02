@@ -29,12 +29,14 @@ type KeyRepository interface {
 
 	// ListGroups returns groups rolled up over the tenant's OPEN findings.
 	// excludeStatuses are the closed finding statuses to leave out; pentest
-	// findings are always excluded (they own their lifecycle).
-	ListGroups(ctx context.Context, tenantID shared.ID, excludeStatuses []string) ([]Group, error)
+	// findings are always excluded (they own their lifecycle). A non-nil scope
+	// keeps only findings on assets in that Layer 2 data scope.
+	ListGroups(ctx context.Context, tenantID shared.ID, excludeStatuses []string, scope *shared.DataScope) ([]Group, error)
 
 	// OpenFindingIDs returns the tenant's open, non-pentest finding IDs in a group
-	// — the set a "resolve group" action transitions.
-	OpenFindingIDs(ctx context.Context, tenantID shared.ID, key string, excludeStatuses []string) ([]shared.ID, error)
+	// — the set a "resolve group" action transitions — narrowed to scope when
+	// it is non-nil.
+	OpenFindingIDs(ctx context.Context, tenantID shared.ID, key string, excludeStatuses []string, scope *shared.DataScope) ([]shared.ID, error)
 
 	// CountByKey returns (total, resolved) non-pentest findings sharing the key —
 	// total across all statuses, resolved being those in closedStatuses. Used to
