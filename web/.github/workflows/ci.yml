@@ -1,0 +1,186 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# A newer push to the same PR or branch cancels the older run: force-pushed
+# and rebased branches otherwise queue every superseded commit and starve the
+# organisation's concurrent-job limit. Tags (releases) and the scheduled scan
+# are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ============================================
+  # Quality Checks (Combined for speed)
+  # ============================================
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # check-palette-drift needs the merge base; depth 1 would make it skip.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The API wire types in src/lib/api/generated are generated from
+      # src/lib/api/openapi/swagger.yaml. Hand-written ones are how the
+      # event-type picker came to fetch GET /api/v1/me/event-types — a path the
+      # OSS server never had — and how six notification event types ended up
+      # with no checkbox. This fails if the generated file was hand-edited or
+      # the vendored spec moved without regenerating.
+      #
+      # Unconditional on purpose: no `if:`, no base-ref lookup. It compares a
+      # committed file against a pure function of another committed file, so it
+      # gives the same answer on a push and on a pull request.
+      - name: Check generated API types match the spec
+        run: npm run check:api-types
+
+      # ...and the spec itself must still be the server's. The check above only
+      # proves the types match the vendored copy; it cannot see that the copy
+      # has fallen behind openctemio/api, which would leave the UI generating a
+      # faithful client for a server that has moved on — the same failure one
+      # hop further out.
+      #
+      # A fetch failure exits 2 rather than passing. When this goes red the fix
+      # is two commands, printed in the failure message.
+      #
+      # Who it blocks: every api merge that changes the spec used to turn EVERY
+      # open ui pull request red, though none of them caused the drift. So on a
+      # pull request it blocks only when the PR itself touches the vendored spec
+      # (then the copy it brings must be exact); otherwise the drift is reported
+      # as a warning. On develop (push) it always blocks, and the Sync API spec
+      # workflow opens the fix PR.
+      - name: Does this PR touch the vendored spec?
+        id: spec_touch
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -q '^src/lib/api/openapi/'; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Vendored spec matches openctemio/api
+        run: |
+          rc=0
+          npm run -s check:spec-vendored || rc=$?
+          [ "$rc" -eq 0 ] && exit 0
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ steps.spec_touch.outputs.touched }}" != "true" ]; then
+            echo "::warning title=API spec drift::openctemio/api's spec moved since develop vendored it. Not caused by this PR; the Sync API spec workflow re-vendors it."
+            exit 0
+          fi
+          exit $rc
+
+      # Run all checks in parallel using &
+      - name: Run type check
+        run: npm run type-check
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Prettier check
+        run: npm run format:check
+
+      # A pull request must not add new hardcoded Tailwind palette classes: the
+      # count grew 4,825 -> 5,323 in a month, so a cleanup without a gate regrows.
+      # Only lines this branch adds are checked, so it names your lines rather
+      # than a 5,000-line backlog.
+      # PR-only on purpose. This gate answers "what does this branch ADD", which
+      # only has meaning while there is a branch to answer for. After the merge
+      # the same lines are already in the base, so a push run re-asks a question
+      # nobody can act on — and on a push `github.base_ref` is empty, so the
+      # expression falls back to `develop` and diffs main against develop. Since
+      # release merges are squashed, main is not an ancestor of develop, the
+      # merge-base lands before the last release, and a month of already-gated
+      # code is reported as new. That is what turned main red after v0.4.0.
+      #
+      # Skipping here loses no coverage: every one of those lines was gated on
+      # the PR that introduced it. This is not the docker-scan shape, where a
+      # condition meant the scan never ran anywhere.
+      - name: Check palette drift
+        if: github.event_name == 'pull_request'
+        run: bash scripts/check-palette-drift.sh "origin/${{ github.base_ref }}"
+
+  # ============================================
+  # Test
+  # ============================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test -- --coverage --passWithNoTests
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v7
+        with:
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  # ============================================
+  # Build (only on main/develop push, not PRs)
+  # ============================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [quality, test]
+    # Skip build on PRs to save time - docker-publish will build when releasing
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Cache Next.js build
+      - name: Cache Next.js build
+        uses: actions/cache@v6
+        with:
+          path: |
+            .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+            ${{ runner.os }}-nextjs-
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8080' }}

@@ -1,0 +1,118 @@
+# Dependabot configuration for OpenCTEM UI
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # NPM packages
+  - package-ecosystem: 'npm'
+    directory: '/'
+    # Target the integration branch — the repo's workflow is "PRs target develop,
+    # never main". Without this, dependabot bases PRs on the default branch (main),
+    # which lags develop and produces lockfile conflicts / failing CI.
+    target-branch: 'develop'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Asia/Ho_Chi_Minh'
+    open-pull-requests-limit: 10
+    reviewers:
+      - 'openctemio/security'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    commit-message:
+      prefix: 'deps(npm)'
+    versioning-strategy: increase
+    groups:
+      # Group React ecosystem updates
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react'
+          - '@types/react-dom'
+      # Group Next.js updates
+      nextjs:
+        patterns:
+          - 'next'
+          - '@next/*'
+          - 'eslint-config-next'
+      # Group testing libraries
+      testing:
+        patterns:
+          - '@testing-library/*'
+          - 'vitest'
+          - '@vitest/*'
+          - 'jest'
+          - '@types/jest'
+      # Group linting/formatting
+      linting:
+        patterns:
+          - 'eslint'
+          - 'eslint-*'
+          - '@eslint/*'
+          - 'prettier'
+          - '@typescript-eslint/*'
+      # Group TypeScript
+      typescript:
+        patterns:
+          - 'typescript'
+          - '@types/*'
+      # Group Tailwind CSS
+      tailwind:
+        patterns:
+          - 'tailwindcss'
+          - '@tailwindcss/*'
+          - 'postcss'
+          - 'autoprefixer'
+      # Group shadcn/ui dependencies
+      radix-ui:
+        patterns:
+          - '@radix-ui/*'
+      # Group minor and patch updates
+      minor-patch:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+        exclude-patterns:
+          - 'react'
+          - 'react-dom'
+          - 'next'
+          - '@next/*'
+    ignore:
+      # Be careful with major updates
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+      # Except for security updates
+    # Allow major updates for security-critical packages
+    allow:
+      - dependency-name: '*'
+        dependency-type: 'all'
+
+  # GitHub Actions
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    target-branch: 'develop'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Asia/Ho_Chi_Minh'
+    open-pull-requests-limit: 5
+    reviewers:
+      - 'openctemio/security'
+    labels:
+      - 'dependencies'
+      - 'github-actions'
+    commit-message:
+      prefix: 'deps(actions)'
+
+  # Docker base-image updates are intentionally NOT managed by Dependabot.
+  # The Dockerfile pins base images on public.ecr.aws (ECR Public) to avoid
+  # Docker Hub pull rate limits in CI. Dependabot's docker updater cannot
+  # authenticate/query ECR Public for tags (it fails every run with
+  # "DENIED Not Authorized" / HTTP 429), so the job only ever errored and never
+  # produced a PR. Bump base images manually instead.

@@ -1,0 +1,441 @@
+'use client'
+
+/**
+ * Relationship Section Component
+ *
+ * A section component for displaying relationships in asset detail sheets
+ */
+
+import * as React from 'react'
+import {
+  ArrowRight,
+  ArrowLeft,
+  Link2,
+  Plus,
+  ChevronRight,
+  LayoutGrid,
+  List,
+  GitBranch,
+  Loader2,
+} from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
+import { EmptyState, DetailSection } from '@/features/shared'
+import type {
+  AssetRelationship,
+  RelationshipDirection,
+  RelationshipGraphNode,
+  RelationshipGraphEdge,
+  RelationshipGraph,
+} from '../../types'
+import { RELATIONSHIP_LABELS } from '../../types'
+import { RelationshipCard, RelationshipListItem } from './relationship-card'
+import { RelationshipGraphView, MiniGraph } from './relationship-graph'
+
+// ============================================
+// Types
+// ============================================
+
+/**
+ * Build a relationship graph from an array of relationships for visualization.
+ */
+function buildGraphFromRelationships(relationships: AssetRelationship[]): RelationshipGraph {
+  const nodeMap = new Map<string, RelationshipGraphNode>()
+  const edges: RelationshipGraphEdge[] = []
+
+  relationships.forEach((rel) => {
+    if (!nodeMap.has(rel.sourceAssetId)) {
+      nodeMap.set(rel.sourceAssetId, {
+        id: rel.sourceAssetId,
+        name: rel.sourceAssetName,
+        type: rel.sourceAssetType,
+      })
+    }
+    if (!nodeMap.has(rel.targetAssetId)) {
+      nodeMap.set(rel.targetAssetId, {
+        id: rel.targetAssetId,
+        name: rel.targetAssetName,
+        type: rel.targetAssetType,
+      })
+    }
+    edges.push({
+      id: rel.id,
+      source: rel.sourceAssetId,
+      target: rel.targetAssetId,
+      type: rel.type,
+      label: rel.type.replace(/_/g, ' '),
+      impactWeight: rel.impactWeight,
+    })
+  })
+
+  return { nodes: Array.from(nodeMap.values()), edges }
+}
+
+interface RelationshipSectionProps {
+  /** All relationships for this asset */
+  relationships: AssetRelationship[]
+  /** Whether relationships are still loading from the API */
+  isLoading?: boolean
+  /** Current asset ID */
+  currentAssetId: string
+  /** Called when "Add" button is clicked */
+  onAddClick?: () => void
+  /** Called when a relationship is clicked for editing */
+  onEditClick?: (relationship: AssetRelationship) => void
+  /** Called when delete is clicked */
+  onDeleteClick?: (relationship: AssetRelationship) => void
+  /** Called when an asset is clicked to navigate */
+  onAssetClick?: (assetId: string) => void
+  /** Show graph view by default */
+  defaultView?: 'list' | 'card' | 'graph'
+  /** Maximum height for scrollable area */
+  maxHeight?: string
+  className?: string
+}
+
+// ============================================
+// View Modes
+// ============================================
+
+type ViewMode = 'list' | 'card' | 'graph'
+
+// ============================================
+// Relationship Section Component
+// ============================================
+
+export function RelationshipSection({
+  relationships,
+  isLoading = false,
+  currentAssetId,
+  onAddClick,
+  onEditClick,
+  onDeleteClick,
+  onAssetClick,
+  defaultView = 'list',
+  maxHeight = '400px',
+  className,
+}: RelationshipSectionProps) {
+  const [viewMode, setViewMode] = React.useState<ViewMode>(defaultView)
+  const [activeTab, setActiveTab] = React.useState<'all' | 'outgoing' | 'incoming'>('all')
+
+  // Split relationships by direction
+  const { outgoing, incoming } = React.useMemo(() => {
+    const out: AssetRelationship[] = []
+    const inc: AssetRelationship[] = []
+
+    relationships.forEach((rel) => {
+      if (rel.sourceAssetId === currentAssetId) {
+        out.push(rel)
+      } else {
+        inc.push(rel)
+      }
+    })
+
+    return { outgoing: out, incoming: inc }
+  }, [relationships, currentAssetId])
+
+  // Filter based on active tab
+  const filteredRelationships = React.useMemo(() => {
+    switch (activeTab) {
+      case 'outgoing':
+        return outgoing
+      case 'incoming':
+        return incoming
+      default:
+        return relationships
+    }
+  }, [activeTab, relationships, outgoing, incoming])
+
+  // Build graph data from the relationships already passed in
+  const graphData = React.useMemo(() => buildGraphFromRelationships(relationships), [relationships])
+
+  // Get direction for a relationship
+  const getDirection = (rel: AssetRelationship): RelationshipDirection => {
+    return rel.sourceAssetId === currentAssetId ? 'outgoing' : 'incoming'
+  }
+
+  if (isLoading) {
+    return (
+      <div className={cn('py-8', className)}>
+        <div className="flex flex-col items-center justify-center text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">Loading relationships...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (relationships.length === 0) {
+    return (
+      <div className={cn('py-4', className)}>
+        <EmptyState
+          card={false}
+          icon={Link2}
+          title="No relationships"
+          description="This asset has no relationships with other assets yet."
+          action={
+            onAddClick && (
+              <Button size="sm" onClick={onAddClick}>
+                <Plus className="me-2 h-4 w-4" />
+                Add relationship
+              </Button>
+            )
+          }
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn('min-w-0 space-y-2', className)}>
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <Link2 className="h-4 w-4" />
+            Relationships
+          </h3>
+          <Badge variant="secondary" className="text-xs">
+            {relationships.length}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* View mode toggle */}
+          <div className="flex items-center rounded-md border p-0.5">
+            <Button
+              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setViewMode('list')}
+            >
+              <List className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === 'card' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setViewMode('card')}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === 'graph' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setViewMode('graph')}
+            >
+              <GitBranch className="h-4 w-4" />
+            </Button>
+          </div>
+          {onAddClick && (
+            <Button size="sm" variant="outline" onClick={onAddClick}>
+              <Plus className="me-1 h-4 w-4" />
+              Add
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs for direction filter */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+        <div>
+          <TabsList>
+            <TabsTrigger value="all" className="text-xs">
+              All <TabsCount value={relationships.length} />
+            </TabsTrigger>
+            <TabsTrigger value="outgoing" className="text-xs">
+              <ArrowRight className="me-1 h-3 w-3" />
+              Outgoing <TabsCount value={outgoing.length} />
+            </TabsTrigger>
+            <TabsTrigger value="incoming" className="text-xs">
+              <ArrowLeft className="me-1 h-3 w-3" />
+              Incoming <TabsCount value={incoming.length} />
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value={activeTab} className="m-0">
+          {viewMode === 'graph' ? (
+            <div className="py-3">
+              <RelationshipGraphView
+                graph={graphData}
+                centralNodeId={currentAssetId}
+                onNodeClick={onAssetClick}
+              />
+            </div>
+          ) : (
+            // Radix renders the viewport's inner wrapper as display:table, which
+            // grows to its content and pushed the rows past the sheet edge.
+            <ScrollArea
+              style={{ maxHeight }}
+              className="py-3 [&_[data-slot=scroll-area-viewport]>div]:!block"
+            >
+              {viewMode === 'list' ? (
+                <div className="space-y-2">
+                  {filteredRelationships.map((rel) => (
+                    <RelationshipListItem
+                      key={rel.id}
+                      relationship={rel}
+                      direction={getDirection(rel)}
+                      currentAssetId={currentAssetId}
+                      onAssetClick={onAssetClick}
+                      onEdit={onEditClick}
+                      onDelete={onDeleteClick}
+                    />
+                  ))}
+                </div>
+              ) : (
+                /* Card view: default to a single column. The 2-column
+                   variant only kicks in at lg+ where this section has
+                   ~700px+ to play with. The previous `sm:grid-cols-2`
+                   activated at 640px viewport but the parent sheet is
+                   only ~576px wide regardless of viewport, so cards were
+                   getting crushed to ~260px and truncating both asset
+                   names. */
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {filteredRelationships.map((rel) => (
+                    <RelationshipCard
+                      key={rel.id}
+                      relationship={rel}
+                      direction={getDirection(rel)}
+                      currentAssetId={currentAssetId}
+                      onEdit={onEditClick}
+                      onDelete={onDeleteClick}
+                      onSourceClick={onAssetClick}
+                      onTargetClick={onAssetClick}
+                    />
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Quick stats footer */}
+      <div className="flex items-center justify-between border-t pt-2 text-xs text-muted-foreground">
+        <span>
+          {outgoing.length} outgoing, {incoming.length} incoming
+        </span>
+        <span>
+          Avg. impact:{' '}
+          {(
+            relationships.reduce((sum, r) => sum + r.impactWeight, 0) / relationships.length
+          ).toFixed(1)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ============================================
+// Compact Relationship Preview
+// ============================================
+
+interface RelationshipPreviewProps {
+  relationships: AssetRelationship[]
+  currentAssetId: string
+  onViewAll?: () => void
+  onAssetClick?: (assetId: string) => void
+  maxItems?: number
+  className?: string
+}
+
+export function RelationshipPreview({
+  relationships,
+  currentAssetId,
+  onViewAll,
+  onAssetClick,
+  maxItems = 3,
+  className,
+}: RelationshipPreviewProps) {
+  const graphData = React.useMemo(() => buildGraphFromRelationships(relationships), [relationships])
+
+  // expanded → show all relationships inline. The user can collapse
+  // back via the "Show fewer" button. This is the in-place alternative
+  // to "View All" (which navigates to the Relations tab) — useful when
+  // the user just wants a peek without leaving the Overview.
+  const [expanded, setExpanded] = React.useState(false)
+
+  const displayRelationships = expanded ? relationships : relationships.slice(0, maxItems)
+  const remainingCount = relationships.length - maxItems
+
+  if (relationships.length === 0) {
+    return (
+      <DetailSection title="Relationships" icon={Link2} className={className}>
+        <p className="text-sm text-muted-foreground">No relationships</p>
+      </DetailSection>
+    )
+  }
+
+  return (
+    <DetailSection
+      title="Relationships"
+      icon={Link2}
+      count={relationships.length}
+      className={className}
+      actions={
+        onViewAll && (
+          <Button variant="ghost" size="sm" onClick={onViewAll} className="h-7 text-xs">
+            View all
+            <ChevronRight className="ms-1 h-3 w-3" />
+          </Button>
+        )
+      }
+    >
+      <div className="space-y-2">
+        {/* Mini graph */}
+        <MiniGraph graph={graphData} centralNodeId={currentAssetId} />
+
+        {/* Relationship list */}
+        {displayRelationships.map((rel) => {
+          const isOutgoing = rel.sourceAssetId === currentAssetId
+          const otherAsset = isOutgoing
+            ? { name: rel.targetAssetName, type: rel.targetAssetType, id: rel.targetAssetId }
+            : { name: rel.sourceAssetName, type: rel.sourceAssetType, id: rel.sourceAssetId }
+          const label = RELATIONSHIP_LABELS[rel.type]
+
+          return (
+            <button
+              key={rel.id}
+              onClick={() => onAssetClick?.(otherAsset.id)}
+              className="flex items-center gap-2 w-full p-2 rounded hover:bg-accent/50 transition-colors text-start"
+            >
+              {isOutgoing ? (
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span className="text-xs text-muted-foreground shrink-0">
+                {isOutgoing ? label.direct : label.inverse}
+              </span>
+              <span className="text-sm font-medium truncate flex-1">{otherAsset.name}</span>
+            </button>
+          )
+        })}
+
+        {remainingCount > 0 && !expanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="w-full text-xs text-muted-foreground text-center pt-1 hover:text-foreground hover:underline transition-colors"
+          >
+            +{remainingCount} more relationship{remainingCount === 1 ? '' : 's'}
+          </button>
+        )}
+        {expanded && relationships.length > maxItems && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="w-full text-xs text-muted-foreground text-center pt-1 hover:text-foreground hover:underline transition-colors"
+          >
+            Show fewer
+          </button>
+        )}
+      </div>
+    </DetailSection>
+  )
+}

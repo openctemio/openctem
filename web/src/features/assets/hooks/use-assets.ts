@@ -1,0 +1,898 @@
+'use client'
+
+import { useMemo } from 'react'
+import useSWR from 'swr'
+import { get, post, put, del } from '@/lib/api/client'
+import { endpoints } from '@/lib/api/endpoints'
+import { useTenant } from '@/context/tenant-provider'
+import { usePermissions, Permission } from '@/lib/permissions'
+import type {
+  Asset,
+  AssetType,
+  AssetCategory,
+  AssetScope,
+  ExposureLevel,
+  Criticality,
+  ImpactRating,
+  CreateAssetInput,
+  UpdateAssetInput,
+  RepositoryExtension,
+  AssetWithRepository,
+  CreateRepositoryAssetInput,
+  UpdateRepositoryExtensionInput,
+  RepoVisibility,
+} from '../types'
+
+/**
+ * Backend paginated response format (matches Go ListResponse struct)
+ */
+interface BackendListResponse<T> {
+  data: T[]
+  total: number
+  page: number
+  per_page: number
+  total_pages: number
+  links?: {
+    self?: string
+    first?: string
+    prev?: string
+    next?: string
+    last?: string
+  }
+}
+
+/**
+ * Asset-specific search filters
+ * Maps to backend ListAssetsInput struct
+ */
+export interface AssetSearchFilters {
+  // Pagination
+  page?: number
+  pageSize?: number
+
+  // Filtering
+  name?: string
+  types?: AssetType[]
+  subType?: string
+  criticalities?: Criticality[]
+  statuses?: ('active' | 'inactive' | 'archived')[]
+  scopes?: AssetScope[]
+  exposures?: ExposureLevel[]
+  tags?: string[]
+
+  // Search
+  search?: string
+
+  // Risk score range
+  minRiskScore?: number
+  maxRiskScore?: number
+
+  // Has findings filter
+  hasFindings?: boolean
+
+  // Crown jewel filter (properties->>'is_crown_jewel')
+  isCrownJewel?: boolean
+
+  // CTEM inventory filter dimensions (api: all-assets-inventory).
+  // All optional; multi-select where an array.
+  businessUnitIds?: string[]
+  hasOwner?: boolean
+  dataClassifications?: string[] // public | internal | confidential | restricted | secret
+  isControlPlane?: boolean
+  isInternetAccessible?: boolean
+  environments?: string[] // production | staging | development | testing | dr
+  providers?: string[]
+  lastSeenBefore?: string // ISO timestamp — assets last seen before this instant
+  lastSeenAfter?: string // ISO timestamp — assets last seen after this instant
+
+  // Properties filter: key=value pairs for JSONB containment (server-side)
+  propertiesFilter?: Record<string, string[]>
+
+  // Sorting (e.g., "-created_at", "name", "-risk_score")
+  sort?: string
+
+  // Skip fetching (for lazy loading dialogs)
+  skip?: boolean
+}
+
+// Backend asset type mapping (matches Go AssetResponse struct)
+interface BackendAsset {
+  id: string
+  tenant_id?: string
+  name: string
+  type: string // Backend uses "type" in JSON
+  sub_type?: string // Sub-type for consolidated types
+  category?: string // Derived category for UI grouping
+  provider?: string // SCM provider or asset source
+  criticality: string // low, medium, high, critical
+  status: string // active, inactive, archived
+  scope: string // internal, external, cloud, partner, vendor, shadow
+  exposure: string // public, restricted, private, isolated, unknown
+  is_internet_accessible?: boolean // optional: present once the api surfaces the column
+  // CTEM Scoping CIA impact ratings (api #467). Omitted by the backend when
+  // a dimension is unrated (json omitempty), so these are optional here.
+  impact_confidentiality?: string // low | moderate | high
+  impact_integrity?: string
+  impact_availability?: string
+  is_control_plane?: boolean // CTEM Scoping: asset governs other assets (api #467)
+  risk_score: number // 0-100
+  finding_count: number
+  finding_severity_counts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
+  parent_id?: string
+  external_id?: string
+  discovery_source?: string
+  discovery_tool?: string
+  discovered_at?: string
+  compliance_scope?: string[]
+  data_classification?: string
+  pii_data_exposed?: boolean
+  phi_data_exposed?: boolean
+  sync_status?: string
+  last_synced_at?: string
+  description?: string
+  owner_ref?: string // Free-text owner reference (team / contact / cost center)
+  tags?: string[]
+  metadata?: Record<string, unknown>
+  properties?: Record<string, unknown>
+  primary_owner?: { id: string; type: string; name: string; email?: string }
+  first_seen: string
+  last_seen: string
+  lifecycle_paused_until?: string | null
+  manual_status_override?: boolean
+  created_at: string
+  updated_at: string
+  repository?: BackendRepositoryExtension
+}
+
+// Transform backend asset to frontend format
+function transformAsset(backend: BackendAsset): Asset {
+  return {
+    id: backend.id,
+    name: backend.name,
+    type: backend.type as AssetType,
+    subType: backend.sub_type || undefined,
+    category: (backend.category as AssetCategory) || undefined,
+    provider: backend.provider,
+    criticality: backend.criticality as Criticality,
+    status: backend.status as Asset['status'],
+    description: backend.description,
+    ownerRef: backend.owner_ref,
+    scope: backend.scope as AssetScope,
+    exposure: backend.exposure as ExposureLevel,
+    isInternetAccessible: backend.is_internet_accessible,
+    // CIA impact ratings (api #467). Backend omits unrated dimensions, so
+    // coerce the empty string to undefined to mean "not rated".
+    impactConfidentiality: (backend.impact_confidentiality as ImpactRating) || undefined,
+    impactIntegrity: (backend.impact_integrity as ImpactRating) || undefined,
+    impactAvailability: (backend.impact_availability as ImpactRating) || undefined,
+    isControlPlane: backend.is_control_plane ?? undefined,
+    riskScore: backend.risk_score,
+    findingCount: backend.finding_count,
+    // Detail fields the API always sent but the transform used to drop, so the
+    // detail sheet had nothing to show beyond tags.
+    findingSeverityCounts: backend.finding_severity_counts,
+    parentId: backend.parent_id || undefined,
+    externalId: backend.external_id || undefined,
+    discoverySource: backend.discovery_source || undefined,
+    discoveryTool: backend.discovery_tool || undefined,
+    discoveredAt: backend.discovered_at || undefined,
+    complianceScope: backend.compliance_scope?.length ? backend.compliance_scope : undefined,
+    dataClassification: backend.data_classification || undefined,
+    piiDataExposed: backend.pii_data_exposed,
+    phiDataExposed: backend.phi_data_exposed,
+    syncStatus: backend.sync_status || undefined,
+    lastSyncedAt: backend.last_synced_at || undefined,
+    metadata: backend.properties || {},
+    tags: backend.tags || [],
+    primaryOwner: backend.primary_owner
+      ? {
+          id: backend.primary_owner.id,
+          type: backend.primary_owner.type as 'user' | 'group',
+          name: backend.primary_owner.name,
+          email: backend.primary_owner.email,
+        }
+      : undefined,
+    firstSeen: backend.first_seen,
+    lastSeen: backend.last_seen,
+    createdAt: backend.created_at,
+    updatedAt: backend.updated_at,
+    lifecyclePausedUntil: backend.lifecycle_paused_until ?? null,
+    manualStatusOverride: backend.manual_status_override ?? false,
+    repository: backend.repository ? transformRepositoryExtension(backend.repository) : undefined,
+  }
+}
+
+// Asset stats from backend - matches /api/v1/assets/stats response
+interface BackendAssetStats {
+  total: number
+  by_type: Record<string, number>
+  by_sub_type?: Record<string, number>
+  by_status: Record<string, number>
+  by_criticality: Record<string, number>
+  by_scope: Record<string, number>
+  by_exposure: Record<string, number>
+  with_findings: number
+  risk_score_avg: number
+  findings_total: number
+  high_risk_count?: number
+  metadata_counts?: Record<string, Record<string, number>>
+  // CTEM inventory facet counts (api: all-assets-inventory). Optional so a
+  // pre-upgrade backend (which omits them) still deserializes cleanly.
+  by_data_classification?: Record<string, number>
+  by_environment?: Record<string, number>
+  by_provider?: Record<string, number>
+  by_internet_accessible?: Record<string, number> // keys "true" | "false"
+  by_has_owner?: Record<string, number> // keys "true" | "false"
+  by_control_plane?: Record<string, number> // keys "true" | "false"
+  by_business_unit?: Record<string, number> // keys = business_unit id
+}
+
+export interface AssetStatsData {
+  total: number
+  byType: Record<string, number>
+  bySubType: Record<string, number>
+  byStatus: Record<string, number>
+  byCriticality: Record<string, number>
+  byScope: Record<string, number>
+  byExposure: Record<string, number>
+  withFindings: number
+  averageRiskScore: number
+  totalFindings: number
+  highRiskCount: number
+  /** Server-side metadata property counts. Key=field, Value=map[value]count */
+  metadataCounts: Record<string, Record<string, number>>
+  // CTEM inventory facet counts (api: all-assets-inventory).
+  byDataClassification: Record<string, number>
+  byEnvironment: Record<string, number>
+  byProvider: Record<string, number>
+  byInternetAccessible: Record<string, number> // keys "true" | "false"
+  byHasOwner: Record<string, number> // keys "true" | "false"
+  byControlPlane: Record<string, number> // keys "true" | "false"
+  byBusinessUnit: Record<string, number> // keys = business_unit id
+}
+
+function transformAssetStats(backend: BackendAssetStats): AssetStatsData {
+  return {
+    total: backend.total || 0,
+    byType: backend.by_type || {},
+    bySubType: backend.by_sub_type || {},
+    byStatus: backend.by_status || {},
+    byCriticality: backend.by_criticality || {},
+    byScope: backend.by_scope || {},
+    byExposure: backend.by_exposure || {},
+    withFindings: backend.with_findings || 0,
+    averageRiskScore: backend.risk_score_avg || 0,
+    totalFindings: backend.findings_total || 0,
+    highRiskCount: backend.high_risk_count || 0,
+    metadataCounts: backend.metadata_counts || {},
+    byDataClassification: backend.by_data_classification || {},
+    byEnvironment: backend.by_environment || {},
+    byProvider: backend.by_provider || {},
+    byInternetAccessible: backend.by_internet_accessible || {},
+    byHasOwner: backend.by_has_owner || {},
+    byControlPlane: backend.by_control_plane || {},
+    byBusinessUnit: backend.by_business_unit || {},
+  }
+}
+
+// Backend repository extension type (matches Go RepositoryExtensionResponse struct)
+interface BackendRepositoryExtension {
+  asset_id: string
+  repo_id?: string
+  full_name: string
+  scm_organization?: string
+  clone_url?: string
+  web_url?: string
+  ssh_url?: string
+  default_branch?: string
+  visibility: string
+  language?: string
+  languages?: Record<string, number>
+  topics?: string[]
+  stars: number
+  forks: number
+  watchers: number
+  open_issues: number
+  contributors_count: number
+  size_kb: number
+  branch_count: number
+  protected_branch_count: number
+  component_count: number
+  vulnerable_component_count: number
+  finding_count: number
+  scan_enabled: boolean
+  scan_schedule?: string
+  last_scanned_at?: string
+  repo_created_at?: string
+  repo_updated_at?: string
+  repo_pushed_at?: string
+}
+
+// Transform backend repository extension to frontend format
+function transformRepositoryExtension(backend: BackendRepositoryExtension): RepositoryExtension {
+  return {
+    assetId: backend.asset_id,
+    repoId: backend.repo_id,
+    fullName: backend.full_name,
+    scmOrganization: backend.scm_organization,
+    cloneUrl: backend.clone_url,
+    webUrl: backend.web_url,
+    sshUrl: backend.ssh_url,
+    defaultBranch: backend.default_branch,
+    visibility: backend.visibility as RepoVisibility,
+    language: backend.language,
+    languages: backend.languages,
+    topics: backend.topics,
+    stars: backend.stars,
+    forks: backend.forks,
+    watchers: backend.watchers,
+    openIssues: backend.open_issues,
+    contributorsCount: backend.contributors_count,
+    sizeKb: backend.size_kb,
+    branchCount: backend.branch_count,
+    protectedBranchCount: backend.protected_branch_count,
+    componentCount: backend.component_count,
+    vulnerableComponentCount: backend.vulnerable_component_count,
+    findingCount: backend.finding_count,
+    scanEnabled: backend.scan_enabled,
+    scanSchedule: backend.scan_schedule,
+    lastScannedAt: backend.last_scanned_at,
+    repoCreatedAt: backend.repo_created_at,
+    repoUpdatedAt: backend.repo_updated_at,
+    repoPushedAt: backend.repo_pushed_at,
+  }
+}
+
+// Backend asset with repository response (matches Go AssetWithRepositoryResponse struct)
+interface BackendAssetWithRepository extends BackendAsset {
+  repository?: BackendRepositoryExtension
+}
+
+// Transform backend asset with repository to frontend format
+function transformAssetWithRepository(backend: BackendAssetWithRepository): AssetWithRepository {
+  return {
+    ...transformAsset(backend),
+    repository: backend.repository ? transformRepositoryExtension(backend.repository) : undefined,
+  }
+}
+
+/**
+ * Build query params from AssetSearchFilters
+ * Converts frontend filter format to backend query string
+ */
+function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, string> {
+  if (!filters) return {}
+
+  const params: Record<string, string> = {}
+
+  // Pagination
+  if (filters.page) params.page = String(filters.page)
+  if (filters.pageSize) params.per_page = String(filters.pageSize)
+
+  // Filtering - arrays need to be comma-separated for backend
+  if (filters.name) params.name = filters.name
+  if (filters.types?.length) params.types = filters.types.join(',')
+  if (filters.subType) params.sub_type = filters.subType
+  if (filters.criticalities?.length) params.criticalities = filters.criticalities.join(',')
+  if (filters.statuses?.length) params.statuses = filters.statuses.join(',')
+  if (filters.scopes?.length) params.scopes = filters.scopes.join(',')
+  if (filters.exposures?.length) params.exposures = filters.exposures.join(',')
+  if (filters.tags?.length) params.tags = filters.tags.join(',')
+
+  // Properties filter (JSONB key:value pairs, multi-value per key)
+  if (filters.propertiesFilter && Object.keys(filters.propertiesFilter).length > 0) {
+    params.properties = Object.entries(filters.propertiesFilter)
+      .flatMap(([k, vals]) => vals.map((v) => `${k}:${v}`))
+      .join(',')
+  }
+
+  // Search
+  if (filters.search) params.search = filters.search
+
+  // Risk score range
+  if (filters.minRiskScore !== undefined) params.min_risk_score = String(filters.minRiskScore)
+  if (filters.maxRiskScore !== undefined) params.max_risk_score = String(filters.maxRiskScore)
+
+  // Has findings
+  if (filters.hasFindings !== undefined) params.has_findings = String(filters.hasFindings)
+
+  // Crown jewel
+  if (filters.isCrownJewel !== undefined) params.is_crown_jewel = String(filters.isCrownJewel)
+
+  // CTEM inventory dimensions
+  if (filters.businessUnitIds?.length) params.business_unit_ids = filters.businessUnitIds.join(',')
+  if (filters.hasOwner !== undefined) params.has_owner = String(filters.hasOwner)
+  if (filters.dataClassifications?.length)
+    params.data_classifications = filters.dataClassifications.join(',')
+  if (filters.isControlPlane !== undefined) params.is_control_plane = String(filters.isControlPlane)
+  if (filters.isInternetAccessible !== undefined)
+    params.is_internet_accessible = String(filters.isInternetAccessible)
+  if (filters.environments?.length) params.environments = filters.environments.join(',')
+  if (filters.providers?.length) params.providers = filters.providers.join(',')
+  if (filters.lastSeenBefore) params.last_seen_before = filters.lastSeenBefore
+  if (filters.lastSeenAfter) params.last_seen_after = filters.lastSeenAfter
+
+  // Sorting
+  if (filters.sort) params.sort = filters.sort
+
+  return params
+}
+
+/**
+ * Fetch EVERY asset matching the given filters by walking all pages. Used by
+ * "Export" so the CSV covers the whole filtered dataset, not just the page
+ * currently rendered in the table. Any page/pageSize on the passed filters is
+ * ignored; it pages at per_page=100 (the API maximum) with a hard cap to avoid
+ * a runaway loop.
+ */
+export async function fetchAllAssets(
+  filters?: AssetSearchFilters,
+  onTruncated?: (loaded: number, cap: number) => void
+): Promise<Asset[]> {
+  const perPage = 100
+  const maxPages = 500 // hard safety cap (≈50k assets)
+  const all: Asset[] = []
+  let page = 1
+  let hasMore = true
+
+  while (hasMore && page <= maxPages) {
+    const params = buildAssetQueryParams({ ...filters, page, pageSize: perPage })
+    const queryString =
+      Object.keys(params).length > 0 ? '?' + new URLSearchParams(params).toString() : ''
+    const resp = await get<BackendListResponse<BackendAsset>>(`/api/v1/assets${queryString}`)
+    for (const a of resp.data ?? []) {
+      all.push(transformAsset(a))
+    }
+    hasMore = page < (resp.total_pages || 1)
+    page++
+  }
+
+  // Stopped at the cap with pages still remaining → the export is incomplete.
+  if (hasMore) {
+    onTruncated?.(all.length, maxPages * perPage)
+  }
+
+  return all
+}
+
+/**
+ * Hook to fetch paginated assets list
+ * Only fetches if user has assets:read permission
+ */
+export function useAssets(filters?: AssetSearchFilters) {
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const canReadAssets = can(Permission.AssetsRead)
+
+  // Build query string from filters
+  const queryParams = buildAssetQueryParams(filters)
+  const queryString =
+    Object.keys(queryParams).length > 0 ? '?' + new URLSearchParams(queryParams).toString() : ''
+
+  // Only fetch if user has permission, tenant context, and not skipped
+  const shouldFetch = currentTenant && canReadAssets && !filters?.skip
+
+  // Use stable string key (queryString) instead of object reference to prevent cache bloat
+  const { data, error, isLoading, mutate } = useSWR<BackendListResponse<BackendAsset>>(
+    shouldFetch ? `/api/v1/assets${queryString}` : null,
+    () => get<BackendListResponse<BackendAsset>>(`/api/v1/assets${queryString}`),
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 10000,
+    }
+  )
+
+  const memoizedResult = useMemo(
+    () => ({
+      assets: data?.data?.map(transformAsset) || [],
+      total: data?.total || 0,
+      page: data?.page || 1,
+      pageSize: data?.per_page || 20,
+      totalPages: data?.total_pages || 1,
+      isLoading: shouldFetch ? isLoading : false,
+      isError: !!error,
+      error,
+      mutate,
+    }),
+    [data, shouldFetch, isLoading, error, mutate]
+  )
+
+  return memoizedResult
+}
+
+/**
+ * Hook to fetch a single asset by ID
+ * Only fetches if user has assets:read permission
+ */
+export function useAsset(assetId: string | null) {
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const canReadAssets = can(Permission.AssetsRead)
+
+  // Only fetch if user has permission and tenant context
+  const shouldFetch = assetId && currentTenant && canReadAssets
+
+  const { data, error, isLoading, mutate } = useSWR<BackendAsset>(
+    shouldFetch ? ['asset', assetId] : null,
+    () => get<BackendAsset>(endpoints.assets.get(assetId!)),
+    {
+      revalidateOnFocus: false,
+    }
+  )
+
+  return {
+    asset: data ? transformAsset(data) : null,
+    isLoading: shouldFetch ? isLoading : false,
+    error,
+    mutate,
+  }
+}
+
+/**
+ * Hook to fetch assets by type
+ */
+export function useAssetsByType(
+  type: AssetType,
+  additionalFilters?: Omit<AssetSearchFilters, 'types'>
+) {
+  const { assets, total, isLoading, isError, error, mutate, totalPages, page, pageSize } =
+    useAssets({
+      types: [type],
+      ...additionalFilters,
+    })
+
+  return {
+    assets,
+    total,
+    totalPages,
+    page,
+    pageSize,
+    isLoading,
+    isError,
+    error,
+    mutate,
+  }
+}
+
+/**
+ * Fetch a single asset by ID (non-hook variant of useAsset).
+ *
+ * Use this from event handlers / callbacks where you cannot call hooks
+ * conditionally. Example: clicking a related asset in the relationships
+ * tab needs to swap the parent sheet's selectedAsset, but the click
+ * handler isn't a render path so it can't useSWR.
+ */
+export async function getAsset(assetId: string): Promise<Asset> {
+  const response = await get<BackendAsset>(endpoints.assets.get(assetId))
+  return transformAsset(response)
+}
+
+/**
+ * Create a new asset
+ */
+export async function createAsset(input: CreateAssetInput): Promise<Asset> {
+  const response = await post<BackendAsset>(endpoints.assets.create(), {
+    name: input.name,
+    type: input.type,
+    criticality: input.criticality || 'medium', // Default to medium if not specified
+    description: input.description,
+    scope: input.scope || 'internal',
+    exposure: input.exposure || 'unknown',
+    // CIA impact ratings (api #467). Send undefined (omitted) when unrated so
+    // the backend leaves the dimension unset rather than storing an empty rating.
+    impact_confidentiality: input.impactConfidentiality || undefined,
+    impact_integrity: input.impactIntegrity || undefined,
+    impact_availability: input.impactAvailability || undefined,
+    owner_ref: input.ownerRef,
+    tags: input.tags,
+    // Per-type fields collected by the form live in `metadata`; the backend
+    // stores them under `properties`. Without this they were silently dropped.
+    properties:
+      input.metadata && Object.keys(input.metadata).length > 0 ? input.metadata : undefined,
+  })
+  return transformAsset(response)
+}
+
+/**
+ * Update an existing asset
+ */
+export async function updateAsset(assetId: string, input: UpdateAssetInput): Promise<Asset> {
+  const response = await put<BackendAsset>(endpoints.assets.update(assetId), {
+    name: input.name,
+    criticality: input.criticality,
+    description: input.description,
+    scope: input.scope,
+    exposure: input.exposure,
+    // CIA impact ratings (api #467). The backend uses a *string pointer with
+    // omitempty: an empty string clears the rating; undefined (key omitted by
+    // JS) leaves it unchanged.
+    impact_confidentiality: input.impactConfidentiality,
+    impact_integrity: input.impactIntegrity,
+    impact_availability: input.impactAvailability,
+    owner_ref: input.ownerRef,
+    tags: input.tags,
+    // Per-type form fields live in `metadata`; backend merges them into
+    // `properties` (preserving keys like is_crown_jewel). Previously dropped.
+    properties:
+      input.metadata && Object.keys(input.metadata).length > 0 ? input.metadata : undefined,
+  })
+  return transformAsset(response)
+}
+
+/**
+ * Delete an asset
+ */
+export async function deleteAsset(assetId: string): Promise<void> {
+  await del(endpoints.assets.delete(assetId))
+}
+
+/**
+ * Bulk delete multiple assets
+ * Deletes assets in batches with a concurrency limit.
+ * Uses Promise.allSettled to preserve partial failure info.
+ */
+export async function bulkDeleteAssets(assetIds: string[]): Promise<void> {
+  const BATCH_SIZE = 5
+  const failedIds: string[] = []
+
+  for (let i = 0; i < assetIds.length; i += BATCH_SIZE) {
+    const batch = assetIds.slice(i, i + BATCH_SIZE)
+    const results = await Promise.allSettled(batch.map((id) => del(endpoints.assets.delete(id))))
+    results.forEach((result, idx) => {
+      if (result.status === 'rejected') {
+        failedIds.push(batch[idx])
+      }
+    })
+  }
+
+  if (failedIds.length > 0) {
+    throw new Error(`Failed to delete ${failedIds.length} of ${assetIds.length} assets`)
+  }
+}
+
+/**
+ * Hook for asset stats (uses dedicated /api/v1/assets/stats endpoint)
+ * This provides comprehensive cached asset statistics with all breakdowns
+ * Only fetches if user has assets:read permission
+ *
+ * Optionally filter by asset types and/or tags. Both filters mirror the List
+ * endpoint semantics so the stats card always reflects whatever the user has
+ * filtered to in the table (e.g. type=host AND tag=production).
+ */
+export function useAssetStats(
+  types?: string[],
+  tags?: string[],
+  subType?: string,
+  countBy?: string[]
+) {
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const canReadAssets = can(Permission.AssetsRead)
+
+  // Only fetch if user has permission and tenant context
+  const shouldFetch = currentTenant && canReadAssets
+
+  const params = new URLSearchParams()
+  if (types && types.length > 0) params.set('types', types.join(','))
+  if (tags && tags.length > 0) params.set('tags', tags.join(','))
+  if (subType) params.set('sub_type', subType)
+  if (countBy && countBy.length > 0) params.set('count_by', countBy.join(','))
+  const queryString = params.toString()
+  const querySuffix = queryString ? `?${queryString}` : ''
+  const cacheKey = shouldFetch ? `asset-stats${querySuffix}` : null
+
+  const { data, error, isLoading, mutate } = useSWR<BackendAssetStats>(
+    cacheKey,
+    async () => {
+      // Fetch from dedicated asset stats endpoint with optional filters
+      const url = `${endpoints.assets.stats()}${querySuffix}`
+      const response = await get<BackendAssetStats>(url)
+      return response
+    },
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 30000,
+    }
+  )
+
+  const emptyStats: AssetStatsData = {
+    total: 0,
+    byType: {},
+    bySubType: {},
+    byStatus: {},
+    byCriticality: {},
+    byScope: {},
+    byExposure: {},
+    withFindings: 0,
+    averageRiskScore: 0,
+    totalFindings: 0,
+    highRiskCount: 0,
+    metadataCounts: {},
+    byDataClassification: {},
+    byEnvironment: {},
+    byProvider: {},
+    byInternetAccessible: {},
+    byHasOwner: {},
+    byControlPlane: {},
+    byBusinessUnit: {},
+  }
+
+  return {
+    stats: data ? transformAssetStats(data) : emptyStats,
+    isLoading: shouldFetch ? isLoading : false,
+    error,
+    mutate,
+  }
+}
+
+// ============================================
+// REPOSITORY EXTENSION HOOKS
+// ============================================
+
+/**
+ * Hook to fetch an asset with its repository extension
+ * Only fetches if user has assets:read permission
+ */
+export function useAssetWithRepository(assetId: string | null) {
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const canReadAssets = can(Permission.AssetsRead)
+
+  // Only fetch if user has permission and tenant context
+  const shouldFetch = assetId && currentTenant && canReadAssets
+
+  const { data, error, isLoading, mutate } = useSWR<BackendAssetWithRepository>(
+    shouldFetch ? ['asset-with-repository', assetId] : null,
+    () => get<BackendAssetWithRepository>(endpoints.assets.getFull(assetId!)),
+    {
+      revalidateOnFocus: false,
+    }
+  )
+
+  return {
+    asset: data ? transformAssetWithRepository(data) : null,
+    isLoading: shouldFetch ? isLoading : false,
+    error,
+    mutate,
+  }
+}
+
+/**
+ * Hook to fetch just the repository extension for an asset
+ * Only fetches if user has assets:read permission
+ */
+export function useRepositoryExtension(assetId: string | null) {
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const canReadAssets = can(Permission.AssetsRead)
+
+  // Only fetch if user has permission and tenant context
+  const shouldFetch = assetId && currentTenant && canReadAssets
+
+  const { data, error, isLoading, mutate } = useSWR<BackendRepositoryExtension>(
+    shouldFetch ? ['repository-extension', assetId] : null,
+    () => get<BackendRepositoryExtension>(endpoints.assets.getRepository(assetId!)),
+    {
+      revalidateOnFocus: false,
+    }
+  )
+
+  return {
+    repository: data ? transformRepositoryExtension(data) : null,
+    isLoading: shouldFetch ? isLoading : false,
+    error,
+    mutate,
+  }
+}
+
+/**
+ * Hook to fetch repository assets (assets with type="repository")
+ */
+export function useRepositoryAssets(additionalFilters?: Omit<AssetSearchFilters, 'types'>) {
+  return useAssetsByType('repository', additionalFilters)
+}
+
+/**
+ * Create a repository asset (creates both asset and repository extension)
+ */
+export async function createRepositoryAsset(
+  input: CreateRepositoryAssetInput
+): Promise<AssetWithRepository> {
+  const response = await post<BackendAssetWithRepository>(endpoints.assets.createRepository(), {
+    // Asset fields
+    name: input.name,
+    criticality: input.criticality || 'medium',
+    scope: input.scope || 'internal',
+    exposure: input.exposure || 'unknown',
+    description: input.description,
+    tags: input.tags,
+    // Repository extension fields
+    provider: input.provider,
+    external_id: input.externalId,
+    repo_id: input.repoId,
+    full_name: input.fullName,
+    scm_organization: input.scmOrganization,
+    clone_url: input.cloneUrl,
+    web_url: input.webUrl,
+    ssh_url: input.sshUrl,
+    default_branch: input.defaultBranch,
+    visibility: input.visibility || 'private',
+    language: input.language,
+    languages: input.languages,
+    topics: input.topics,
+    stars: input.stars,
+    forks: input.forks,
+    watchers: input.watchers,
+    open_issues: input.openIssues,
+    size_kb: input.sizeKb,
+    scan_enabled: input.scanEnabled,
+    scan_schedule: input.scanSchedule,
+    repo_created_at: input.repoCreatedAt,
+    repo_updated_at: input.repoUpdatedAt,
+    repo_pushed_at: input.repoPushedAt,
+  })
+  return transformAssetWithRepository(response)
+}
+
+/**
+ * Update a repository extension
+ */
+export async function updateRepositoryExtension(
+  assetId: string,
+  input: UpdateRepositoryExtensionInput
+): Promise<RepositoryExtension> {
+  const response = await put<BackendRepositoryExtension>(
+    endpoints.assets.updateRepository(assetId),
+    {
+      full_name: input.fullName,
+      scm_organization: input.scmOrganization,
+      clone_url: input.cloneUrl,
+      web_url: input.webUrl,
+      ssh_url: input.sshUrl,
+      default_branch: input.defaultBranch,
+      visibility: input.visibility,
+      language: input.language,
+      languages: input.languages,
+      topics: input.topics,
+      stars: input.stars,
+      forks: input.forks,
+      watchers: input.watchers,
+      open_issues: input.openIssues,
+      size_kb: input.sizeKb,
+      scan_enabled: input.scanEnabled,
+      scan_schedule: input.scanSchedule,
+      repo_created_at: input.repoCreatedAt,
+      repo_updated_at: input.repoUpdatedAt,
+      repo_pushed_at: input.repoPushedAt,
+    }
+  )
+  return transformRepositoryExtension(response)
+}
+
+// ============================================
+// ASSET STATUS OPERATIONS
+// ============================================
+
+/**
+ * Activate an asset (set status to active)
+ */
+export async function activateAsset(assetId: string): Promise<Asset> {
+  const response = await post<BackendAsset>(endpoints.assets.activate(assetId), {})
+  return transformAsset(response)
+}
+
+/**
+ * Deactivate an asset (set status to inactive)
+ */
+export async function deactivateAsset(assetId: string): Promise<Asset> {
+  const response = await post<BackendAsset>(endpoints.assets.deactivate(assetId), {})
+  return transformAsset(response)
+}
+
+/**
+ * Archive an asset (set status to archived)
+ */
+export async function archiveAsset(assetId: string): Promise<Asset> {
+  const response = await post<BackendAsset>(endpoints.assets.archive(assetId), {})
+  return transformAsset(response)
+}

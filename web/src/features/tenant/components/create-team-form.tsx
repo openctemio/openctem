@@ -1,0 +1,498 @@
+/**
+ * Create Team Form Component
+ *
+ * Form for creating a new team/tenant
+ * - For new users (no tenants): Uses createFirstTeamAction with refresh token
+ * - For existing users (has tenants): Uses useCreateTenant with access token
+ */
+
+'use client'
+
+import { useState, useCallback, useEffect } from 'react'
+import { devLog } from '@/lib/logger'
+import { useRouter } from 'next/navigation'
+import { useForm, type UseFormReturn } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+import { toast } from 'sonner'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { csrfHeaders } from '@/lib/csrf-client'
+import { useCreateTenant } from '../api'
+import { createTenantSchema, generateSlug, type CreateTenantInput } from '../schemas'
+import { createFirstTeamAction } from '@/features/auth/actions/local-auth-actions'
+import {
+  useModulePresetsPublic,
+  subscribeBundlesRequest,
+  type ModulePreset,
+} from '@/features/organization/api/use-tenant-modules'
+import { OnboardingBundlePicker } from './onboarding-bundle-picker'
+
+interface CreateTeamFormProps {
+  /** Whether to show cancel button (hide when shown in TenantGate) */
+  showCancel?: boolean
+  /** Whether this is for a new user creating their first team */
+  isFirstTeam?: boolean
+}
+
+// Wrapper component that handles both first team and additional team flows
+export function CreateTeamForm({ showCancel = true, isFirstTeam = false }: CreateTeamFormProps) {
+  // For first team creation, we don't need TenantProvider context
+  // Use the simpler form that only uses server action
+  if (isFirstTeam) {
+    return <CreateFirstTeamFormInner showCancel={showCancel} />
+  }
+
+  // For additional teams, we need TenantProvider context
+  return <CreateAdditionalTeamFormInner showCancel={showCancel} />
+}
+
+// ============================================
+// BUNDLE SELECTION (shared by both flows)
+// ============================================
+
+/**
+ * Loads the public product-bundle catalog and tracks the (optional) selection.
+ * Shared by both onboarding flows so the picker + subscribe behaviour stays
+ * identical whether it's a user's first team or an additional one. Uses the
+ * tenantless preset endpoint because the tenant doesn't exist yet at this point.
+ */
+function useBundleSelection() {
+  const { presets, isLoading } = useModulePresetsPublic()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const toggle = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  return {
+    bundles: presets as ModulePreset[],
+    isLoadingBundles: isLoading,
+    selected,
+    toggle,
+  }
+}
+
+const EMPTY_TEAM: CreateTenantInput = { name: '', slug: '', description: '' }
+
+// ============================================
+// FIRST TEAM FORM (no TenantProvider needed)
+// ============================================
+
+function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
+  const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { bundles, isLoadingBundles, selected, toggle } = useBundleSelection()
+
+  const form = useForm<CreateTenantInput>({
+    resolver: zodResolver(createTenantSchema),
+    // No default name: an organization is named for the organization, not
+    // for the person creating it.
+    defaultValues: EMPTY_TEAM,
+    mode: 'onChange',
+  })
+
+  const watchName = form.watch('name')
+
+  // Auto-generate slug from name if not manually edited
+  useEffect(() => {
+    if (!isSlugManuallyEdited && watchName) {
+      const generatedSlug = generateSlug(watchName)
+      form.setValue('slug', generatedSlug, { shouldValidate: true })
+    }
+  }, [watchName, isSlugManuallyEdited, form])
+
+  const handleSlugChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setIsSlugManuallyEdited(true)
+      const value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+      form.setValue('slug', value, { shouldValidate: true })
+    },
+    [form]
+  )
+
+  const onSubmit = async (data: CreateTenantInput) => {
+    setIsSubmitting(true)
+
+    try {
+      devLog.log('[CreateTeamForm] Creating first team via server action')
+      const result = await createFirstTeamAction({
+        teamName: data.name,
+        teamSlug: data.slug,
+      })
+
+      if (result.success && result.tenant) {
+        toast.success('Team created successfully', {
+          description: `Welcome to ${result.tenant.name}!`,
+        })
+
+        // createFirstTeamAction already set the access-token cookie for the new
+        // tenant, so this client-side subscribe is authorised. Non-blocking:
+        // the team exists regardless of whether this succeeds.
+        await subscribeSelectedBundles(result.tenant.id, [...selected])
+
+        // Force full page reload to pick up new cookies
+        window.location.href = '/'
+      } else {
+        throw new Error(result.error || 'Failed to create team')
+      }
+    } catch (error) {
+      console.error('Failed to create team:', error)
+      handleFormError(error, form)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const slugValue = form.watch('slug')
+  const isFormValid = form.formState.isValid
+
+  return (
+    <CreateTeamFormUI
+      form={form}
+      onSubmit={onSubmit}
+      handleSlugChange={handleSlugChange}
+      slugValue={slugValue}
+      isFormValid={isFormValid}
+      isSubmitting={isSubmitting}
+      isMutating={false}
+      showCancel={showCancel}
+      bundles={bundles}
+      isLoadingBundles={isLoadingBundles}
+      selectedBundles={selected}
+      onToggleBundle={toggle}
+    />
+  )
+}
+
+// ============================================
+// ADDITIONAL TEAM FORM (requires TenantProvider)
+// ============================================
+
+function CreateAdditionalTeamFormInner({ showCancel }: { showCancel: boolean }) {
+  const router = useRouter()
+  const { trigger, isMutating } = useCreateTenant()
+  const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { bundles, isLoadingBundles, selected, toggle } = useBundleSelection()
+
+  const form = useForm<CreateTenantInput>({
+    resolver: zodResolver(createTenantSchema),
+    // No default name: an organization is named for the organization, not
+    // for the person creating it.
+    defaultValues: EMPTY_TEAM,
+    mode: 'onChange',
+  })
+
+  const watchName = form.watch('name')
+
+  // Auto-generate slug from name if not manually edited
+  useEffect(() => {
+    if (!isSlugManuallyEdited && watchName) {
+      const generatedSlug = generateSlug(watchName)
+      form.setValue('slug', generatedSlug, { shouldValidate: true })
+    }
+  }, [watchName, isSlugManuallyEdited, form])
+
+  const handleSlugChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setIsSlugManuallyEdited(true)
+      const value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+      form.setValue('slug', value, { shouldValidate: true })
+    },
+    [form]
+  )
+
+  const onSubmit = async (data: CreateTenantInput) => {
+    setIsSubmitting(true)
+
+    try {
+      devLog.log('[CreateTeamForm] Creating additional team via API')
+      const result = await trigger({
+        name: data.name,
+        slug: data.slug,
+        description: data.description || undefined,
+      })
+
+      if (result) {
+        toast.success('Team created successfully', {
+          description: `Welcome to ${result.name}!`,
+        })
+
+        // Call switch-team API directly to set cookies, then reload
+        // This avoids race condition with refreshTenants/switchTeam
+        try {
+          const switchResponse = await fetch('/api/auth/switch-team', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            credentials: 'include',
+            body: JSON.stringify({
+              tenant_id: result.id,
+              tenant_name: result.name,
+            }),
+          })
+
+          if (!switchResponse.ok) {
+            devLog.error('[CreateTeamForm] Failed to switch to new team')
+          }
+        } catch (switchError) {
+          devLog.error('[CreateTeamForm] Switch team error:', switchError)
+        }
+
+        // Subscribe to the chosen products now that switch-team has scoped the
+        // access token to the new tenant. Non-blocking: the team exists
+        // regardless of whether this succeeds.
+        await subscribeSelectedBundles(result.id, [...selected])
+
+        // Force full page reload to pick up new cookies and refresh all state
+        window.location.href = '/'
+      }
+    } catch (error) {
+      console.error('Failed to create team:', error)
+      handleFormError(error, form)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const slugValue = form.watch('slug')
+  const isFormValid = form.formState.isValid
+
+  return (
+    <CreateTeamFormUI
+      form={form}
+      onSubmit={onSubmit}
+      handleSlugChange={handleSlugChange}
+      slugValue={slugValue}
+      isFormValid={isFormValid}
+      isSubmitting={isSubmitting}
+      isMutating={isMutating}
+      showCancel={showCancel}
+      onCancel={() => router.back()}
+      bundles={bundles}
+      isLoadingBundles={isLoadingBundles}
+      selectedBundles={selected}
+      onToggleBundle={toggle}
+    />
+  )
+}
+
+// ============================================
+// SHARED UI COMPONENT
+// ============================================
+
+interface CreateTeamFormUIProps {
+  form: UseFormReturn<CreateTenantInput>
+  onSubmit: (data: CreateTenantInput) => Promise<void>
+  handleSlugChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  slugValue: string
+  isFormValid: boolean
+  isSubmitting: boolean
+  isMutating: boolean
+  showCancel: boolean
+  onCancel?: () => void
+  bundles: ModulePreset[]
+  isLoadingBundles: boolean
+  selectedBundles: Set<string>
+  onToggleBundle: (id: string) => void
+}
+
+function CreateTeamFormUI({
+  form,
+  onSubmit,
+  handleSlugChange,
+  slugValue: _slugValue,
+  isFormValid,
+  isSubmitting,
+  isMutating,
+  showCancel,
+  onCancel,
+  bundles,
+  isLoadingBundles,
+  selectedBundles,
+  onToggleBundle,
+}: CreateTeamFormUIProps) {
+  // No Card wrapper, no duplicate title, no icon clutter on labels.
+  // The page-level <h1> already says "Set up your first team" — the form
+  // just needs to be the form, not re-introduce a card title.
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        {/* Team Name */}
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Team name</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="Acme Corporation"
+                  autoFocus
+                  disabled={isMutating || isSubmitting}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* URL Slug — single composite input. The "app.openctem.io/" prefix
+            sits inline at the start of the box; the input shares the same
+            border so the whole thing reads as one field, not two glued
+            rectangles. */}
+        <FormField
+          control={form.control}
+          name="slug"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Team URL</FormLabel>
+              <FormControl>
+                <div className="border-input bg-background focus-within:border-ring focus-within:ring-ring/50 flex h-9 items-center rounded-md border shadow-xs transition-[color,box-shadow] focus-within:ring-[3px]">
+                  <span className="text-muted-foreground select-none ps-3 text-sm">
+                    app.openctem.io/
+                  </span>
+                  <Input
+                    placeholder="acme-corp"
+                    className="border-0 shadow-none focus-visible:ring-0 ps-1"
+                    disabled={isMutating || isSubmitting}
+                    {...field}
+                    onChange={handleSlugChange}
+                  />
+                </div>
+              </FormControl>
+              <FormDescription className="text-xs">
+                Lowercase letters, numbers, and hyphens only.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Description — optional, no resize handle, no double-description text */}
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="flex items-baseline gap-2">
+                Description
+                <span className="text-muted-foreground text-xs font-normal">Optional</span>
+              </FormLabel>
+              <FormControl>
+                <Textarea
+                  placeholder="What does this team work on?"
+                  rows={3}
+                  disabled={isMutating || isSubmitting}
+                  className="resize-none"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Products — optional. Narrow the platform to the products this team
+            runs, or leave empty to start with everything on (the default). */}
+        <OnboardingBundlePicker
+          bundles={bundles}
+          selected={selectedBundles}
+          onToggle={onToggleBundle}
+          isLoading={isLoadingBundles}
+          disabled={isMutating || isSubmitting}
+        />
+
+        {/* Action row — primary button is full-width when there's no Cancel
+            (onboarding case) so the next step is unmistakable. With Cancel,
+            buttons share the row. No icon on the Create button — the text
+            "Create team" is enough. */}
+        <div className="flex gap-3 pt-2">
+          {showCancel && onCancel && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isMutating || isSubmitting}
+            >
+              Cancel
+            </Button>
+          )}
+          <Button
+            type="submit"
+            size="lg"
+            disabled={isMutating || isSubmitting || !isFormValid}
+            className="flex-1"
+          >
+            {isMutating || isSubmitting ? (
+              <>
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                Creating team…
+              </>
+            ) : (
+              'Create team'
+            )}
+          </Button>
+        </div>
+      </form>
+    </Form>
+  )
+}
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Subscribes the freshly-created tenant to the chosen product bundles. An empty
+ * selection is the default (every module on), so we skip the call entirely.
+ *
+ * Best-effort by design: the tenant is already created and the user is about to
+ * be redirected in, so a failure here must never block. We surface a
+ * non-blocking toast and let them set products later in Settings → Products.
+ */
+async function subscribeSelectedBundles(tenantIdOrSlug: string, bundleIds: string[]) {
+  if (bundleIds.length === 0) return
+  try {
+    await subscribeBundlesRequest(tenantIdOrSlug, bundleIds)
+  } catch (error) {
+    devLog.error('[CreateTeamForm] Bundle subscription failed (non-blocking):', error)
+    toast.warning('Team created, but your product selection could not be applied', {
+      description: 'You can choose products anytime in Settings → Products.',
+    })
+  }
+}
+
+function handleFormError(error: unknown, form: UseFormReturn<CreateTenantInput>) {
+  const errorMessage = getErrorMessage(error, 'An unexpected error occurred. Please try again.')
+
+  if (
+    errorMessage.includes('slug') ||
+    errorMessage.includes('already exists') ||
+    errorMessage.includes('already taken')
+  ) {
+    form.setError('slug', {
+      type: 'manual',
+      message: 'This URL is already taken. Please choose another one.',
+    })
+  } else {
+    toast.error(getErrorMessage(error, 'Failed to create team'))
+  }
+}
