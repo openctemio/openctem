@@ -314,6 +314,12 @@ func SeverityFilterApplies(eventType EventType) bool {
 	// operator opts in through the event-type list.
 	case EventTypeSensorOffline:
 		return false
+	// sla_warning is stamped "medium" by the SLA warning adapter as the urgency
+	// of an approaching deadline, whatever the finding's severity. It is opt-in
+	// (not default-on), and under the default critical+high filter every one
+	// was dropped, so opting in delivered nothing.
+	case EventTypeSLAWarning:
+		return false
 	default:
 		return true
 	}
