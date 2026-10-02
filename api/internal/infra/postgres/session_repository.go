@@ -14,7 +14,7 @@ import (
 
 const sessionColumns = `id, user_id, access_token_hash, ip_address, user_agent,
 	device_fingerprint, expires_at, last_activity_at, status, auth_method,
-	idp_issuer, idp_sid, idp_sub, created_at, updated_at`
+	idp_issuer, idp_sid, idp_sub, idp_tenant_id, created_at, updated_at`
 
 // SessionRepository implements session.Repository using PostgreSQL.
 type SessionRepository struct {
@@ -32,8 +32,8 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 		INSERT INTO sessions (
 			id, user_id, access_token_hash, ip_address, user_agent,
 			device_fingerprint, expires_at, last_activity_at, status, auth_method,
-			idp_issuer, idp_sid, idp_sub, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
+			idp_issuer, idp_sid, idp_sub, idp_tenant_id, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		s.ID().String(),
@@ -49,6 +49,7 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 		nullString(s.IDPIssuer()),
 		nullString(s.IDPSID()),
 		nullString(s.IDPSub()),
+		nullIDValue(s.IDPTenantID()),
 		s.CreatedAt(),
 		s.UpdatedAt(),
 	)
@@ -297,6 +298,7 @@ func (r *SessionRepository) scanSession(row *sql.Row) (*session.Session, error) 
 		&fields.idpIssuer,
 		&fields.idpSID,
 		&fields.idpSub,
+		&fields.idpTenantID,
 		&fields.createdAt,
 		&fields.updatedAt,
 	)
@@ -327,6 +329,7 @@ func (r *SessionRepository) scanSessionFromRows(rows *sql.Rows) (*session.Sessio
 		&fields.idpIssuer,
 		&fields.idpSID,
 		&fields.idpSub,
+		&fields.idpTenantID,
 		&fields.createdAt,
 		&fields.updatedAt,
 	)
@@ -339,7 +342,7 @@ func (r *SessionRepository) scanSessionFromRows(rows *sql.Rows) (*session.Sessio
 
 // reconstructSession creates a Session from scanned fields.
 func (r *SessionRepository) reconstructSession(f sessionScanFields) *session.Session {
-	return session.Reconstitute(
+	sess := session.Reconstitute(
 		shared.IDFromUUID(f.id),
 		shared.IDFromUUID(f.userID),
 		f.accessTokenHash,
@@ -356,6 +359,10 @@ func (r *SessionRepository) reconstructSession(f sessionScanFields) *session.Ses
 		f.createdAt,
 		f.updatedAt,
 	)
+	if f.idpTenantID.Valid {
+		sess.SetIDPTenant(shared.IDFromUUID(f.idpTenantID.UUID))
+	}
+	return sess
 }
 
 // sessionScanFields holds scanned fields from database.
@@ -373,6 +380,7 @@ type sessionScanFields struct {
 	idpIssuer         sql.NullString
 	idpSID            sql.NullString
 	idpSub            sql.NullString
+	idpTenantID       uuid.NullUUID
 	createdAt         time.Time
 	updatedAt         time.Time
 }

@@ -75,8 +75,9 @@ var (
 	// ErrMFANotSupported: the account signs in through an identity provider,
 	// which owns the second factor.
 	ErrMFANotSupported = errors.New("two-factor authentication is managed by your identity provider")
-	// ErrMFAEnrollmentRequired: an organization requires 2FA and this password
-	// session's user has not enrolled.
+	// ErrMFAEnrollmentRequired: an organization requires 2FA and this session
+	// has not been through it: a password session whose user has not enrolled,
+	// or a federated session not issued by that organization's own IdP.
 	ErrMFAEnrollmentRequired = errors.New("this organization requires two-factor authentication")
 	// ErrMFAUnavailable: the server was started without 2FA storage.
 	ErrMFAUnavailable = errors.New("two-factor authentication is not available")
@@ -578,11 +579,19 @@ func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID s
 }
 
 // enforceMFAPolicy is the per-tenant 2FA gate at token mint (ExchangeToken and
-// RefreshToken), next to enforceSSOPolicy. A password session cannot obtain a
-// tenant-scoped access token for a tenant that requires 2FA unless the user
-// has 2FA on. Federated sessions pass: their IdP owns the second factor.
+// RefreshToken), next to enforceSSOPolicy.
+//
+//   - A session issued by THIS tenant's own SAML/OIDC provider passes: the
+//     tenant chose that IdP, and it owns the second factor.
+//   - A password session passes only when the user has 2FA on. The password
+//     login verified the code (loginMFAChallenge), so an enabled factor means
+//     this session went through the second step.
+//   - Any other federated session (social OAuth, another organization's IdP)
+//     never went through our second step, and its IdP is not one this tenant
+//     chose, so it is refused whether or not the user has enrolled. The user
+//     signs in again — with password and 2FA, or through this tenant's IdP.
 func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Session, userID shared.ID, tenantID string) error {
-	if !s.mfaEnabled() || sess.AuthMethod().IsFederated() {
+	if !s.mfaEnabled() || sess.FederatedFor(tenantID) {
 		return nil
 	}
 	tid, err := shared.IDFromString(tenantID)
@@ -595,6 +604,11 @@ func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Ses
 	}
 	if !t.TypedSettings().Security.MFARequired {
 		return nil
+	}
+	if sess.AuthMethod().IsFederated() {
+		s.logger.Warn("blocked federated session not issued by this tenant's IdP from 2FA-required tenant",
+			"tenant_id", tid.String(), "user_id", userID.String())
+		return ErrMFAEnrollmentRequired
 	}
 	f, err := s.mfaRepo.GetFactor(ctx, userID)
 	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {
