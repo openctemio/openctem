@@ -9,6 +9,10 @@ name: All-in-one CI
 # Without this, a change to a Dockerfile, the gateway or the supervisor would
 # first be exercised by the release tag. Same shape as the other workflows:
 # always starts, `changes` gates the job, `All-in-one OK` reports either way.
+# Runs when either component (api/, web/) or a shared file (deploy/, .github/,
+# the root Makefile; see .github/scripts/changed.sh) changes: both images are
+# built from the whole component directory, so any change there is an image
+# change. A docs-only change at the root runs nothing.
 
 on:
   push:
@@ -16,6 +20,7 @@ on:
   pull_request:
     branches: [main, develop]
   merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -29,7 +34,7 @@ jobs:
     name: Detect image changes
     runs-on: ubuntu-latest
     outputs:
-      images: ${{ steps.f.outputs.images }}
+      images: ${{ steps.f.outputs.api == 'true' || steps.f.outputs.web == 'true' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,11 +42,9 @@ jobs:
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
-        run: >-
-          bash .github/scripts/changed.sh images
-          deploy/ api/deploy/gateway/ api/Dockerfile api/.dockerignore api/go.mod
-          web/Dockerfile web/.dockerignore web/package-lock.json web/server-with-ws.mjs web/next.config.ts
-          .github/scripts/smoke- .github/workflows/allinone-ci.yml
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/changed.sh
 
   images:
     name: Build and smoke-test images (amd64)

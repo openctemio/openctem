@@ -4,12 +4,31 @@ name: API Security
 # (one workflow, both languages) and secret scanning to repo-security.yml (it
 # scans the whole repository history, not one component).
 
+# No required check lives here, so this workflow uses `paths:` and does not
+# start at all for a web-only change. Same routing as .github/scripts/changed.sh
+# (api/ + shared files); keep the two in step. The weekly schedule scans
+# everything. No merge_group trigger: it cannot be path-filtered, the PR run
+# already scanned the change, and the push to the branch scans it again.
+
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'api/**'
+      - 'Makefile'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/**'
+      - 'deploy/**'
   pull_request:
     branches: [main, develop]
-  merge_group:
+    paths:
+      - 'api/**'
+      - 'Makefile'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/**'
+      - 'deploy/**'
   schedule:
     - cron: '0 0 * * 1' # Monday 00:00 UTC; schedules run from the default branch (main)
 
@@ -22,8 +41,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
 
+# Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
+# version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
+# separate pin here would silently test and govulncheck an OLDER Go than ships.
 env:
-  GO_VERSION: "1.26.6"
   GOWORK: "off"
 
 defaults:
@@ -31,31 +52,14 @@ defaults:
     working-directory: api
 
 jobs:
-  changes:
-    name: Detect API changes
-    runs-on: ubuntu-latest
-    outputs:
-      api: ${{ steps.f.outputs.api }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - id: f
-        working-directory: .
-        env:
-          EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh api api/ .github/workflows/api- .github/scripts/
-
   govulncheck:
     name: Go Vulnerability Check
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
       - name: Install govulncheck
@@ -65,8 +69,6 @@ jobs:
 
   trivy:
     name: Trivy Vulnerability Scanner (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -89,8 +91,6 @@ jobs:
 
   semgrep:
     name: Semgrep (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     container:
       image: semgrep/semgrep:1.178.0
@@ -116,14 +116,13 @@ jobs:
 
   snyk:
     name: Snyk Security Scan (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true' && vars.ENABLE_SNYK == 'true'
+    if: vars.ENABLE_SNYK == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
       - name: Run Snyk to check for vulnerabilities
@@ -136,14 +135,12 @@ jobs:
 
   license-check:
     name: License Compliance (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
       - name: Install go-licenses
@@ -156,12 +153,10 @@ jobs:
   # PR: building the image costs minutes and the fs scan covers dependencies.
   docker-scan:
     name: Docker Image Scan (api)
-    needs: changes
     if: >-
-      needs.changes.outputs.api == 'true' && (
       github.event_name == 'schedule'
       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || (github.event_name == 'pull_request' && github.base_ref == 'main'))
+      || (github.event_name == 'pull_request' && github.base_ref == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

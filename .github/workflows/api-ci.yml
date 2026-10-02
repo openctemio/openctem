@@ -2,7 +2,9 @@ name: API CI
 
 # The Go API lives in api/. This workflow ALWAYS starts (no `paths:` filter, which
 # would leave required checks Pending); the `changes` job decides whether the
-# real jobs run, and `API CI OK` is the single required check.
+# real jobs run, and `API CI OK` is the single required check. The real jobs run
+# for api/ and shared files only (rules: .github/scripts/changed.sh), so a
+# web-only change costs this workflow two ~10 s jobs and nothing else.
 # Job bodies are carried over from openctemio/api's ci.yml; see git log for the
 # reasoning behind each gate.
 
@@ -12,6 +14,7 @@ on:
   pull_request:
     branches: [main, develop]
   merge_group:
+    types: [checks_requested]
 
 # A newer push to the same PR or branch cancels the older run. Tags (releases)
 # and the scheduled scan are never cancelled.
@@ -22,8 +25,10 @@ concurrency:
 permissions:
   contents: read
 
+# Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
+# version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
+# separate pin here would silently test and govulncheck an OLDER Go than ships.
 env:
-  GO_VERSION: "1.26.6"
   GOWORK: "off"
 
 defaults:
@@ -44,7 +49,9 @@ jobs:
         working-directory: .
         env:
           EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh api api/ .github/workflows/api- .github/scripts/
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/changed.sh
 
   migrations:
     name: Migration Safety
@@ -113,7 +120,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 
@@ -135,7 +142,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 
@@ -187,7 +194,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 
@@ -247,7 +254,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 
@@ -263,7 +270,9 @@ jobs:
           DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        # Explicit -timeout: the default 10m per package binary is too tight for
+        # the -race unit suite on a slow or busy runner (it takes ~5m normally).
+        run: go test -v -race -timeout 20m -coverprofile=coverage.out -covermode=atomic ./...
         env:
           DB_HOST: localhost
           DB_PORT: 5432
@@ -274,7 +283,7 @@ jobs:
           REDIS_PORT: 6379
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: ./api/coverage.out
           flags: api
@@ -330,7 +339,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: |
             api/go.sum
@@ -381,7 +390,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 

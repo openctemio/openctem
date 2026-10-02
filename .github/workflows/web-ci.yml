@@ -2,6 +2,8 @@ name: Web CI
 
 # The Next.js app lives in web/. Same shape as api-ci.yml: always starts, the
 # `changes` job gates the real jobs, `Web CI OK` is the single required check.
+# The real jobs run for web/, the API spec (below) and shared files only; the
+# routing rules are in .github/scripts/changed.sh.
 #
 # The API's OpenAPI spec (api/api/openapi/swagger.yaml) counts as a web input:
 # the web wire types are generated from it, so a spec change must regenerate
@@ -15,6 +17,7 @@ on:
   pull_request:
     branches: [main, develop]
   merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -23,9 +26,7 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  NODE_VERSION: '20'
-
+# Node version: web/.nvmrc, the same major web/Dockerfile ships (node:26-alpine).
 defaults:
   run:
     working-directory: web
@@ -44,7 +45,9 @@ jobs:
         working-directory: .
         env:
           EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh web web/ api/api/openapi/swagger.yaml .github/workflows/web- .github/scripts/
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/changed.sh
 
   quality:
     name: Quality Checks
@@ -60,7 +63,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: web/.nvmrc
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
@@ -98,7 +101,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: web/.nvmrc
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
@@ -122,7 +125,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: web/.nvmrc
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies

@@ -49,6 +49,36 @@ vi.mock('next/headers', () => ({
 }))
 
 // ============================================
+// WEB STORAGE (Node >= 25)
+// ============================================
+
+// Node 25+ has its own Web Storage globals. Without --localstorage-file, its
+// `localStorage` getter returns undefined, and because the global already
+// exists, Vitest does not copy jsdom's working Storage over it. So
+// `window.localStorage` is undefined in tests on the Node we ship (node:26,
+// see web/.nvmrc). Point both globals back at the jsdom window's Storage.
+// This is a no-op on older Node, where jsdom's storage is already in place.
+{
+  const dom = (globalThis as { jsdom?: { window: Window } }).jsdom
+  for (const name of ['localStorage', 'sessionStorage'] as const) {
+    let current: unknown
+    try {
+      current = globalThis[name]
+    } catch {
+      current = undefined
+    }
+    if (dom && typeof (current as Storage | undefined)?.setItem !== 'function') {
+      const storage = dom.window[name]
+      Object.defineProperty(globalThis, name, {
+        configurable: true,
+        enumerable: true,
+        get: () => storage,
+      })
+    }
+  }
+}
+
+// ============================================
 // ENVIRONMENT SETUP
 // ============================================
 
