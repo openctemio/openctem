@@ -575,6 +575,14 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	build, version := sensordom.ResolveBuild(data.Build, data.Version, userAgent, now)
 	uptime := sensordom.ClampUptime(data.UptimeSeconds)
 	report := s.sanitizeReport(ctx, a, data.Report)
+	// An SDK that reports its slots but no ceiling has none (sdk-go v0.13+:
+	// max_concurrent_jobs is only the operator's cap). Older SDKs with a
+	// load report always sent max_concurrent_jobs, so this clears exactly
+	// the upper bound (64) they stored (RFC-033 §6.1).
+	if report != nil && report.Tools != nil && report.MaxConcurrentJobs == 0 &&
+		load != nil && load.Capacity != nil && load.Capacity.SlotsTotal > 0 {
+		report.NoCeiling = true
+	}
 
 	updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, sensordom.HeartbeatUpdate{
 		TenantID:      a.TenantID,

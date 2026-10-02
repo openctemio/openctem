@@ -76,8 +76,13 @@ type CapabilityReport struct {
 	Tools             []ReportedTool
 	Capabilities      []string
 	MaxConcurrentJobs int
-	OS                string
-	Arch              string
+	// NoCeiling: the sensor said it has no operator ceiling (an SDK that
+	// reports its slots and no max_concurrent_jobs), so a ceiling stored
+	// from an older SDK (which sent its upper bound, 64) is cleared. Not
+	// stored; MaxConcurrentJobs is 0 then.
+	NoCeiling bool
+	OS        string
+	Arch      string
 	// ReportedAt is when the report was last written; nil before the first.
 	ReportedAt *time.Time
 }

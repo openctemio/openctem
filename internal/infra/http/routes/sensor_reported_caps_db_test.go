@@ -381,3 +381,46 @@ func TestReportedCaps_PollOffersToolScansOnlyToSensorsWithTheTool(t *testing.T) 
 		t.Fatalf("doorbell pending_jobs = %d for the sensor without nuclei, want 1 (the health check)", hb.PendingJobs)
 	}
 }
+
+// The live upgrade path (RFC-033 §6.1): a sensor on sdk-go before v0.13
+// reported its resource manager's bound 64 as max_concurrent_jobs; on
+// v0.13 it reports its slots and no ceiling, which clears the stored 64.
+// A heartbeat without a load report (an older SDK) never clears it, and
+// per-tool kind and capabilities arrive end to end through the handler.
+func TestHeartbeat_NoCeilingClearsTheOldUpperBound(t *testing.T) {
+	h := newCtlHarness(t)
+	s := h.newLimitedSensor(h.tenantID, "upgraded", nil, nil, 5)
+	nuclei := map[string]any{"name": "nuclei", "kind": "scanner", "version": "v3.11.1", "installed": true,
+		"capabilities": []string{"dast", "validate:nuclei"}}
+	capacity := map[string]any{"slots_total": 4, "slots_free": 4, "active_jobs": 0}
+
+	// sdk-go v0.11: the bound 64 and the slots.
+	h.heartbeatV2(s, map[string]any{"status": "running", "tools": []any{nuclei},
+		"capabilities": []string{"nuclei", "dast", "validate:nuclei"}, "max_concurrent_jobs": 64, "capacity": capacity})
+	got := h.load(s)
+	if got.Reported.MaxConcurrentJobs != 64 || got.EffectiveMaxConcurrentJobs() != 4 {
+		t.Fatalf("old sdk: ceiling %d effective %d, want 64 and 4", got.Reported.MaxConcurrentJobs, got.EffectiveMaxConcurrentJobs())
+	}
+	if tl := got.Reported.Tools; len(tl) != 1 || tl[0].Kind != "scanner" || strings.Join(tl[0].Capabilities, ",") != "dast,validate:nuclei" {
+		t.Fatalf("per-tool fields not stored: %+v", tl)
+	}
+
+	// A heartbeat with a report but no load report keeps it.
+	h.heartbeatV2(s, map[string]any{"status": "running", "tools": []any{nuclei},
+		"capabilities": []string{"nuclei", "dast", "validate:nuclei"}})
+	if got := h.load(s); got.Reported.MaxConcurrentJobs != 64 {
+		t.Fatalf("cleared without a load report: %d", got.Reported.MaxConcurrentJobs)
+	}
+
+	// sdk-go v0.13: slots, no ceiling.
+	h.heartbeatV2(s, map[string]any{"status": "running", "tools": []any{nuclei},
+		"capabilities": []string{"nuclei", "dast", "validate:nuclei"}, "capacity": capacity})
+	got = h.load(s)
+	if got.Reported.MaxConcurrentJobs != 0 || got.EffectiveMaxConcurrentJobs() != 4 {
+		t.Fatalf("new sdk: ceiling %d effective %d, want none and 4", got.Reported.MaxConcurrentJobs, got.EffectiveMaxConcurrentJobs())
+	}
+	var stored *int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT reported_max_jobs FROM sensors WHERE id = $1`, s.id).Scan(&stored); err != nil || stored != nil {
+		t.Fatalf("reported_max_jobs = %v (%v), want NULL", stored, err)
+	}
+}
