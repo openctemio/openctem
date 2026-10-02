@@ -103,7 +103,7 @@ already refuses tenant-less sensors on v2.
 | Identity | From the key only. `X-Agent-ID` is not sent and is ignored if present. |
 | Tenant | From the key. A sensor without a tenant (platform sensor) gets `403 scope-denied` on every v2 route (RFC-026 §10.1). |
 | Disabled sensor | `POST /heartbeat` answers `200` with `actions: ["pause"]` and writes nothing (every v2 sensor is doorbell-aware by contract). Every other route answers `401 unauthenticated`. Revoked sensor or expired key: `401` everywhere. |
-| Request bodies (control plane) | `Content-Type: application/json` (absent is accepted for empty bodies; anything else `415 unsupported-media-type`). Lenient decode: unknown members ignored; malformed JSON `400 invalid-request`. Max 1 MiB (`413 content-too-large`), except `complete` (4 MiB). |
+| Request bodies (control plane) | `Content-Type: application/json` or absent; anything else is `415 unsupported-media-type` with `Accept: application/json`. Lenient decode: unknown members ignored; malformed JSON `400 invalid-request`. Max 1 MiB (`413 content-too-large`), except `complete` (4 MiB) and the fingerprint queries (8 MiB, for 50,000 fingerprints). |
 | Responses | `Content-Type: application/json` on success, `application/problem+json` on error; always `OpenCTEM-Protocol: 2`. Clients must ignore unknown members. Timestamps RFC 3339 UTC. Ids lower-case UUID strings. |
 | `User-Agent` | `openctem-sdk-go/<sdk version> (<binary>/<version>)` from sdk-go `pkg/useragent`; recorded (§5.3), never trusted. |
 | Rate limits | Per sensor, on top of the per-tenant ingest budget: reads (`hello`, `commands` poll, `suppressions`) 5/s burst 20; writes (everything else) 10/s burst 20 (the existing v2 limiters). `429 rate-limited` + `Retry-After`. |
@@ -369,7 +369,7 @@ when it receives `Deprecation` (it only can if it fell back to v1).
 ### 5.3 Telemetry
 
 - **Per sensor (stored).** Migration: `sensors.protocol_version smallint`,
-  `sensors.protocol_user_agent varchar(256)`, `sensors.protocol_seen_at
+  `sensors.protocol_client varchar(256)`, `sensors.protocol_seen_at
   timestamptz`, all nullable. Written by the heartbeat update that already
   runs on every heartbeat (no extra statement): `1` from the v1 heartbeat,
   `2` from the v2 heartbeat; the `User-Agent` is reduced to printable ASCII,
@@ -600,7 +600,7 @@ Each step is its own PR, green before the next depends on it.
 | # | Repo | PR | Content | Tests | Effort |
 |---|---|---|---|---|---|
 | 1 | api | this RFC | docs | — | done |
-| 2 | api | `feat(sensor): protocol v2 for the whole sensor surface` | `pkg/sensorproto/v2`: new paths, problem types (sensor base), hello `features`/limits/deprecations, `Command` and heartbeat DTOs. `handler/sensor_v2_handler.go`: heartbeat, commands poll + 4 transitions, suppressions (ETag), fingerprints check + baseline-diff, keys; calls the existing services. Transition replay logic in `internal/app/command` (one place, used only by v2, v1 behaviour unchanged). Routes in `routes/sensor_v2.go`. Deprecation middleware on the §5.1 v1 routes. Migration: `sensors.protocol_*` columns; heartbeat writes them; Sensors API returns `protocol`. Metric. OpenAPI `api/openapi/sensor-protocol-v2.yaml`. `architecture/sensors.md`. | DB-backed handler tests per route and status (wrong tenant, revoked key, other sensor's command → 404, replays, conflicts, ETag/304, limits); v1 golden unchanged; deprecation headers asserted on every listed v1 route and absent elsewhere; route-authz coverage; `sensorvocab` lint; `check-openapi.sh` | 2–3 days |
+| 2 | api | `feat(sensor): protocol v2 for the whole sensor surface` (api#678) | `pkg/sensorproto/v2`: new paths, problem types (sensor base), hello `features`/limits/deprecations, `Command` and heartbeat DTOs. `handler/sensor_v2_handler.go`: heartbeat, commands poll + 4 transitions, suppressions (ETag), fingerprints check + baseline-diff, keys; calls the existing services. Transition replay logic in `internal/app/command` (one place, used only by v2, v1 behaviour unchanged). Routes in `routes/sensor_v2.go`. Deprecation middleware on the §5.1 v1 routes. Migration: `sensors.protocol_*` columns; heartbeat writes them; Sensors API returns `protocol`. Metric. OpenAPI `api/openapi/sensor-protocol-v2.yaml`. `architecture/sensors.md`. | DB-backed handler tests per route and status (wrong tenant, revoked key, other sensor's command → 404, replays, conflicts, ETag/304, limits); v1 golden unchanged; deprecation headers asserted on every listed v1 route and absent elsewhere; route-authz coverage; `sensorvocab` lint; `check-openapi.sh` | 2–3 days |
 | 3 | sdk-go | `feat: protocol v2 for every call` | negotiation (§6.1), v2 codecs, poller handling of the new 409s, suppressions ETag cache, fingerprint splitting, no `X-Agent-ID` on v2; conformance fakes v1 + v2 + mixed; CI: apidiff gate, sensor-compat build | `go test -race ./...`, golangci-lint (whole tree), gofmt, ctis-parity | 2 days |
 | 4 | api | `ci: compat-v2 job` | `tests/compat/v2` pinned to sdk-go v0.9.0 once tagged | job green | 0.5 day |
 | 5 | sensor | `deps: sdk-go v0.9.0, protocol v2 everywhere` | bump, wording, aliases, CHANGELOG + migration notice | build default and `-tags platform`, tests, image smoke | 0.5 day |
