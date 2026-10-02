@@ -10,6 +10,7 @@
  * - Token expiration checked automatically
  */
 
+import { clearFormDrafts } from '@/lib/form-drafts'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { clearAllStoredPermissions } from '@/lib/permission-storage'
@@ -216,6 +217,7 @@ export const useAuthStore = create<AuthState>()(
 
         clearAllStoredPermissions()
         clearAllLogoCaches()
+        clearFormDrafts()
 
         redirectToLogout({
           post_logout_redirect_uri: postLogoutRedirectUri,
@@ -264,6 +266,7 @@ export const useAuthStore = create<AuthState>()(
 
         clearAllStoredPermissions()
         clearAllLogoCaches()
+        clearFormDrafts()
       },
 
       setError: (error: string) => {
