@@ -125,13 +125,32 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// ownKeysOnly returns the user whose keys the caller may see, or "" when the
+// caller is an organization owner/admin and may see every key of the
+// organization. Members and viewers see only their own keys: the list shows
+// other people's key names, scopes and last-used IPs (owner decision
+// 2026-10-02). ok is false when the caller has no user identity at all.
+func ownKeysOnly(r *http.Request) (userID string, ok bool) {
+	if middleware.IsAdmin(r.Context()) {
+		return "", true
+	}
+	userID = middleware.GetUserID(r.Context())
+	return userID, userID != ""
+}
+
 // List handles GET /api/v1/api-keys
 func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+	ownerFilter, ok := ownKeysOnly(r)
+	if !ok {
+		apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+		return
+	}
 
 	query := r.URL.Query()
 	input := apikey.ListInput{
 		TenantID:  tenantID,
+		UserID:    ownerFilter,
 		Status:    query.Get("status"),
 		Search:    query.Get("search"),
 		Page:      parseQueryInt(query.Get("page"), 1),
@@ -168,9 +187,20 @@ func (h *APIKeyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	ownerFilter, ok := ownKeysOnly(r)
+	if !ok {
+		apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+		return
+	}
+
 	key, err := h.service.Get(r.Context(), id, tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
+		return
+	}
+	// Someone else's key reads as not found, so a member cannot probe ids.
+	if ownerFilter != "" && (key.UserID() == nil || key.UserID().String() != ownerFilter) {
+		apierror.NotFound("API key").WriteJSON(w)
 		return
 	}
 

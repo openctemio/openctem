@@ -139,8 +139,10 @@ func registerAdminRoutes(
 			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite}, audit("organization.create"))...)
 			r.GET("/{tenantId}", h.AdminOrganization.Get)
 
-			// Organization users: list, and create an account with a
-			// one-time set-password link (same service organization admins use).
+			// Organization users: list, and bootstrap the FIRST owner of an
+			// organization that has none (RFC-022 rev. 5). The platform
+			// administrator never adds users to an organization that has an
+			// owner (409); the owner and its administrators do that.
 			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, read...)
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
 				with([]Middleware{opsWrite, scope}, audit("organization.user_create"))...)

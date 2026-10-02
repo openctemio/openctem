@@ -5,8 +5,9 @@ deprovision users** into an OpenCTEM tenant over SCIM 2.0. Deactivation in the I
 suspends the OpenCTEM membership **immediately** (0-second offboarding).
 Architecture: [scim-provisioning.md](../architecture/scim-provisioning.md).
 
-> Roles: minting/listing/revoking SCIM tokens needs the **admin** or **owner**
-> team role.
+> Roles: listing SCIM tokens and editing group mappings needs the **admin** or
+> **owner** team role; minting and revoking a token is **owner only** (a token
+> can create, suspend and re-role every member).
 
 ## 1. Generate a SCIM token
 

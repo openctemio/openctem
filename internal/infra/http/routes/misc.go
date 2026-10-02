@@ -74,7 +74,9 @@ func registerDashboardRoutes(
 // registerAuditRoutes registers audit log endpoints.
 // Audit logs are tenant-scoped (tenant from JWT token).
 // Permission model:
-// - Read (GET): audit:read permission
+//   - Read (GET): audit:read, held by owners and administrators only
+//     (the seed no longer grants it to member or viewer).
+//   - Verify: owner/admin. Rebaseline: owner.
 func registerAuditRoutes(
 	router Router,
 	h *handler.AuditHandler,
@@ -109,9 +111,11 @@ func registerAuditRoutes(
 		r.GET("/verify", h.VerifyChain, middleware.RequireAdmin())
 
 		// Re-baseline the hash-chain (re-sign from current data) to clear
-		// breaks from a known-benign hashing change. Admin-only + audited —
-		// it overwrites the tamper-evident chain, so it is deliberately gated.
-		r.POST("/rebaseline", h.RebaselineChain, middleware.RequireAdmin())
+		// breaks from a known-benign hashing change. Owner-only + audited —
+		// it overwrites the tamper-evident chain, so an administrator must not
+		// be able to erase the evidence of their own changes (owner decision
+		// 2026-10-02).
+		r.POST("/rebaseline", h.RebaselineChain, middleware.RequireOwner())
 	}, tenantMiddlewares...)
 }
 

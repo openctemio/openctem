@@ -102,8 +102,8 @@ Base URL: `http://localhost:8080/api/v1`
 | GET | `/tenants/:tenant/members?include=user` | List with user info | Team member |
 | GET | `/tenants/:tenant/members/stats` | Get member statistics | Team member |
 | POST | `/tenants/:tenant/members` | Add member | Team admin+ |
-| PATCH | `/tenants/:tenant/members/:id` | Update role | Team admin+ |
-| DELETE | `/tenants/:tenant/members/:id` | Remove member | Team admin+ |
+| PATCH | `/tenants/:tenant/members/:id` | Update role | Team admin+ (owner only when the target is an administrator) |
+| DELETE | `/tenants/:tenant/members/:id` | Remove member | Team admin+ (owner only when the target is an administrator) |
 
 #### Member Statistics Response
 
@@ -189,10 +189,10 @@ Base URL: `http://localhost:8080/api/v1`
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|------------|
-| GET | `/audit-logs` | List audit logs | `audit:read` |
+| GET | `/audit-logs` | List audit logs (`audit:read` is owner/admin only) | `audit:read` |
 | GET | `/audit-logs/stats` | Get audit statistics | `audit:read` |
 | GET | `/audit-logs/verify` | Verify hash-chain integrity. Returns 200 OK when the chain is intact, 409 Conflict with the offending entry when a break is detected. | admin only |
-| POST | `/audit-logs/rebaseline` | Re-sign the tenant's hash-chain from current data (only after `cmd/chainaudit` reports 0 UNEXPLAINED). Archives every overwritten hash and writes a critical `audit.chain_rebaselined` event. 200 `{ok, rebaseline_id, entries_total, entries_rewritten}`; 409 when a source audit log is missing or the chain changed — nothing is rewritten. See [audit-hash-chain.md](../architecture/audit-hash-chain.md). | admin only |
+| POST | `/audit-logs/rebaseline` | Re-sign the tenant's hash-chain from current data (only after `cmd/chainaudit` reports 0 UNEXPLAINED). Archives every overwritten hash and writes a critical `audit.chain_rebaselined` event. 200 `{ok, rebaseline_id, entries_total, entries_rewritten}`; 409 when a source audit log is missing or the chain changed — nothing is rewritten. See [audit-hash-chain.md](../architecture/audit-hash-chain.md). | owner only |
 | GET | `/dashboard/executive-summary/export?format=html` | Executive summary as print-ready HTML. Browser's Print dialog → "Save as PDF" produces the PDF report. Same endpoint also supports `format=json` (default) and `format=csv`. | `dashboard:read` |
 | GET | `/audit-logs/:id` | Get single audit log | `audit:read` |
 | GET | `/audit-logs/resource/:type/:id` | Get resource history | `audit:read` |

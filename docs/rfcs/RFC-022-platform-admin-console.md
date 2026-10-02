@@ -8,6 +8,9 @@
 > **Revision 4** (2026-10-01): break-glass administrators and a platform-level
 > identity provider for administrators (see
 > [Revision 4](#revision-4-break-glass-administrators-and-the-platform-identity-provider)).
+> **Revision 5** (2026-10-02): the platform administrator only bootstraps an
+> organization's first owner (see
+> [Revision 5](#revision-5-first-owner-bootstrap-only)).
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*, modeled on Tenable Security Center,
 > where the system administrator is an account with a system-level role and a
@@ -264,6 +267,48 @@ local administrator for when SSO is unavailable.
 - **Audit.** `console.idp_login` / `console.idp_login_failed` /
   `console.idp_bound` rows, with the reason server-side only. The client gets
   one generic "single sign-on failed" message.
+
+## Revision 5: first-owner bootstrap only
+
+The 2026-10-02 admin-plane review proved that an `ops_admin` could
+`POST /admin/tenants/{id}/users {"role":"admin"}` into any existing
+organization, receive the set-password link when SMTP was off (or use an email
+it controls when it was on), sign in, and read the organization's findings,
+credentials and audit log. That contradicts the Tenable model this RFC adopts:
+the system administrator manages organizations but cannot see their data.
+Owner decision, implemented here:
+
+- **Bootstrap only.** `POST /admin/tenants/{tenantId}/users` creates the first
+  owner of an organization that has **no active owner**, and nothing else. An
+  organization with an owner answers **409** ("its owner and administrators
+  invite or create users themselves"). The request takes `email` and `name`;
+  `role` may be omitted, anything but `owner` is a 400. The no-owner check and
+  the insert run in one transaction under a per-organization advisory lock, so
+  concurrent requests create one owner.
+- **Delivery.** The account is created without a password; the owner chooses
+  one through the one-time link, so the administrator never knows a password
+  and the owner's first sign-in is with their own. (Tenant accounts have no
+  temporary-password mechanism; `admin_users.password_change_required` is
+  for console accounts. A password-less pending account plus a set-password
+  link gives the same guarantee without one.) When the organization can send
+  email (tenant or system SMTP) the link is **only emailed** and never returned
+  — a failed send is reported as `email_failed` and the owner uses
+  forgot-password; it does not fall back to handing the link over. Only when
+  email cannot be sent at all is `setup_token` returned, once. That exception is
+  allowed for this bootstrap case alone: without SMTP there is no other way to
+  reach the new owner, and the organization has nobody who could invite them.
+  The owner created with `POST /admin/tenants` follows the same rule.
+- **Audit.** Besides `admin_audit_logs`, the creation is written to the
+  organization's own audit log (`user.created`, `bootstrap_owner: true`,
+  actor `platform-admin:<email>`, severity high), so the owner sees how their
+  account came to exist.
+- **Console.** The organization's Users section offers "Create first owner"
+  only while the organization has no owner; otherwise it explains that the
+  owner and administrators invite users themselves.
+
+Not changed: a lost or departed owner still has no recovery path short of SQL
+(no ownership transfer, no "assign owner" for an organization whose owner
+exists). That is a separate decision.
 
 ## Later phases
 

@@ -10,11 +10,27 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 |-----|-------------|------|
 | Organization admin creates the user | `POST /api/v1/tenants/{tenant}/users` | owner/admin of the organization |
 | New set-password link for a pending account | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | owner/admin; account unused and in this organization only |
-| Platform admin creates the user | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited) |
+| Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner — see [First owner](#first-owner-platform-administrator) |
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/{token}/accept` | owner/admin to invite; the token + matching email to accept |
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain + allowed domains |
 | Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
+
+### First owner (platform administrator)
+
+The platform administrator only bootstraps organizations (owner decision
+2026-10-02, RFC-022 revision 5). `POST /api/v1/admin/tenants/{tenantId}/users`
+with `{"email": "...", "name": "..."}` (`role` may be omitted; anything but
+`owner` is a 400) creates the owner of an organization that has no active
+owner, and answers 409 otherwise: from then on the owner and its administrators
+invite or create users. The account has no password until the owner sets one
+through the one-time link. The link is emailed when the organization can send
+email (tenant or system SMTP) and is then never in the response
+(`email_failed: true` if the send failed — the owner uses forgot-password);
+only when email cannot be sent is `setup_token` returned, once. The creation is
+written to the organization's audit log as `user.created` by
+`platform-admin:<email>`. The owner created with `POST /api/v1/admin/tenants`
+follows the same delivery rule.
 
 ### Administrator-created accounts
 

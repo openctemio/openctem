@@ -108,6 +108,11 @@ type ProvisionedUser struct {
 	// to the administrator, who hands it over. It is never stored in clear.
 	SetupToken     string
 	SetupExpiresAt time.Time
+	// EmailFailed is set when the organization can send email but sending the
+	// link failed and, by policy, the link was not handed back either (the
+	// platform administrator's first-owner bootstrap). The person recovers
+	// with forgot-password once mail works.
+	EmailFailed bool
 }
 
 // CreateUser creates a password-less local account, makes it a member of the
