@@ -146,6 +146,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
 	tenantHandler.SetModuleService(svc.Module)
+	if svc.DataScopePolicy != nil {
+		tenantHandler.SetDataScopePolicyInvalidator(svc.DataScopePolicy.Invalidate)
+	}
 	lastTenantHandler = tenantHandler
 
 	// Vulnerability handler with user and asset services for enrichment

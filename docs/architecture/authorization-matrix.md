@@ -451,16 +451,31 @@ Permissions decide what *kind* of thing a member may do; the data scope decides
 they may see and change. Scope rows live in `user_accessible_assets` (group
 membership × group-owned assets, plus assets a user owns directly).
 
-**Who is restricted** (unchanged, see the fail-open note under *Known,
-deliberate gaps*):
+**Who is restricted:**
 
 | Caller | Sees |
 |---|---|
 | Owner / admin (`IsAdmin`) | everything in the tenant |
 | Internal calls with no user (jobs, sensors, ingest) | everything in the tenant |
 | Member with ≥ 1 scope row | only their in-scope assets |
-| Member with no scope row, default tenant | everything (fail-open) |
-| Member with no scope row, tenant with `Security.RestrictedDataScope` | nothing (fail-closed) |
+| Member with no scope row | the organization's policy: **everything** or **nothing** |
+
+**Policy for members without an access group** (owner decision 2026-10-02):
+`tenants.members_without_group_see` (migration `000247`), `everything`
+(fail-open) or `nothing` (fail-closed, Tenable's "No Access").
+
+- Organizations that existed when the migration ran keep `everything`, so
+  nobody lost access; one that had switched on the earlier settings flag
+  (`settings.security.restricted_data_scope = true`, no longer read) keeps
+  `nothing`.
+- New organizations start with `nothing` (column default).
+- `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
+  (`{"members_without_group_see": "everything"|"nothing"}`), owner/admin
+  (`RequireTeamAdmin`). A change is audited (`tenant.settings_updated`,
+  severity high, before/after in `changes`) and drops the enforcer's 60-second
+  policy cache for that organization at once.
+- A failure to read the policy is treated as `everything` (a database hiccup
+  must not hide all data); every other scope-lookup error denies.
 
 **One enforcement point.** `internal/app/datascope.Enforcer` resolves the
 caller's scope (caller and admin flag come from the HTTP auth context, wired in
@@ -813,11 +828,10 @@ Tenable.sc's RBAC.
   (which would also fix `IsOwner` under OIDC) is a phased refactor —
   **deferred** because a missing membership middleware on any chain would 403 a
   whole route group.
-- **Data-scope is fail-open.** `user_accessible_assets` narrows assets, findings
-  and every asset-bound row for non-admins (see *Data scope* above), but an
-  *empty* assignment means "see all" unless the tenant turned on
-  `Security.RestrictedDataScope`. Flipping the default to fail-closed (Tenable's
-  "No Access") is behavior-changing — **deferred**, needs signoff.
+- **Data scope for members without a group is a per-organization choice.**
+  Decided 2026-10-02: existing organizations stay `everything` (fail-open), new
+  ones start `nothing`, administrators choose (see *Data scope* above). Do not
+  change an organization's value in a migration without its owner.
 - **RLS is shadow-mode.** ~99 policies exist, 0 tables have RLS enabled. This is
   intentional (staged rollout), not a dead control. Tenant isolation is enforced by
   convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.

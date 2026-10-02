@@ -50,6 +50,14 @@ type TenantHandler struct {
 	// invalidateSecurityPolicy drops the IP-allowlist gate's cached policy for
 	// an organization after its security settings change.
 	invalidateSecurityPolicy func(tenantID string)
+	// invalidateDataScopePolicy drops the cached data-scope policy of an
+	// organization after an administrator changes it.
+	invalidateDataScopePolicy func(tenantID string)
+}
+
+// SetDataScopePolicyInvalidator wires the data-scope policy cache invalidation.
+func (h *TenantHandler) SetDataScopePolicyInvalidator(fn func(tenantID string)) {
+	h.invalidateDataScopePolicy = fn
 }
 
 // SetUserProvisioning wires administrator-created accounts.
@@ -1663,6 +1671,89 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// DataScopePolicyResponse is what members without an access group see.
+type DataScopePolicyResponse struct {
+	// MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
+	// (fail-closed). Owners and admins always see everything.
+	MembersWithoutGroupSee string `json:"members_without_group_see" enums:"everything,nothing"`
+}
+
+// UpdateDataScopePolicyRequest sets what members without an access group see.
+type UpdateDataScopePolicyRequest struct {
+	MembersWithoutGroupSee string `json:"members_without_group_see" validate:"required,oneof=everything nothing" enums:"everything,nothing"`
+}
+
+// GetDataScopePolicy handles GET /api/v1/tenants/{tenant}/settings/data-scope
+// @Summary      Get the data scope of members without an access group
+// @Description  Returns what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything.
+// @Tags         Tenants
+// @Produce      json
+// @Security     BearerAuth
+// @Param        tenant  path      string  true  "Tenant ID or slug"
+// @Success      200     {object}  DataScopePolicyResponse
+// @Failure      401     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Failure      404     {object}  apierror.Error
+// @Router       /tenants/{tenant}/settings/data-scope [get]
+func (h *TenantHandler) GetDataScopePolicy(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	policy, err := h.service.GetDataScopePolicy(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(DataScopePolicyResponse{MembersWithoutGroupSee: policy})
+}
+
+// UpdateDataScopePolicy handles PATCH /api/v1/tenants/{tenant}/settings/data-scope
+// @Summary      Set the data scope of members without an access group
+// @Description  Sets what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything. The change is audited.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        tenant  path      string                        true  "Tenant ID or slug"
+// @Param        body    body      UpdateDataScopePolicyRequest  true  "Policy"
+// @Success      200     {object}  DataScopePolicyResponse
+// @Failure      400     {object}  apierror.Error
+// @Failure      401     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Failure      404     {object}  apierror.Error
+// @Router       /tenants/{tenant}/settings/data-scope [patch]
+func (h *TenantHandler) UpdateDataScopePolicy(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	var req UpdateDataScopePolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	policy, err := h.service.UpdateDataScopePolicy(r.Context(), tenantID.String(), req.MembersWithoutGroupSee, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if h.invalidateDataScopePolicy != nil {
+		h.invalidateDataScopePolicy(tenantID.String())
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(DataScopePolicyResponse{MembersWithoutGroupSee: policy})
 }
 
 // UpdateAPISettingsRequest represents the request to update API settings.

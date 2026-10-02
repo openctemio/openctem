@@ -1508,3 +1508,32 @@ func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation
 		id, tenantID, email, role, []string(roleIDs), token, invitedBy, expiresAt, acceptedAtPtr, createdAt,
 	), nil
 }
+
+// GetMembersWithoutGroupSee returns the organization's data-scope policy for
+// members without an access group ("everything" or "nothing").
+func (r *TenantRepository) GetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID) (string, error) {
+	var v string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT members_without_group_see FROM tenants WHERE id = $1`, tenantID.String()).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", shared.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get data scope policy: %w", err)
+	}
+	return v, nil
+}
+
+// SetMembersWithoutGroupSee stores the organization's data-scope policy.
+func (r *TenantRepository) SetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID, value string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE tenants SET members_without_group_see = $2, updated_at = NOW() WHERE id = $1`,
+		tenantID.String(), value)
+	if err != nil {
+		return fmt.Errorf("set data scope policy: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
