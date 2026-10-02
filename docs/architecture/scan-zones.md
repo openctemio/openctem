@@ -171,6 +171,11 @@ Warnings: `no_sensors_assigned`, `private_ranges_without_healthy_sensor`,
   validation jobs do not use zones yet.
 - A zone deleted while a trigger is creating its commands leaves those commands
   unclaimable (fail closed); they expire.
+- A zone has no network path of its own: its sensors reach its ranges
+  directly, or through whatever proxy their environment sets. Per-zone proxies
+  (egress profiles) are proposed in
+  [RFC-034](../rfcs/RFC-034-sensor-network-egress.md); see
+  [sensors.md](sensors.md#network-egress-and-proxies-rfc-034-proposed).
 
 ## UI contract
 

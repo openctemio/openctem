@@ -5,6 +5,8 @@
 > Protocol v2: [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (results) and
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; v1 deprecated).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
+> Proxies and network egress (proposed): [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
+> section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
 
 ## Glossary
 
@@ -892,6 +894,82 @@ A sensor hands a command it holds back with
 `POST /api/v2/sensor/commands/{id}/release` (feature `release`): the
 command returns to `pending`, unpinned, zone kept, so another sensor takes
 it at once (a draining sensor). See RFC-030 §5.8.1 and §5.12.
+
+## Network egress and proxies (RFC-034, proposed)
+
+> Design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md). Status:
+> **Proposed**. Only "Today" below is implemented.
+
+A sensor sends three kinds of traffic, and RFC-034 configures each one
+separately:
+
+| Class | Today | Proposed |
+|---|---|---|
+| **Control**: sensor → platform | `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` on the sensor host (`httpsec.NewAPIClient`, `http.ProxyFromEnvironment`). `SENSOR_CA_CERT_FILE` trusts an inspecting proxy's or a private CA. | Unchanged, sensor-local only. `SENSOR_CONTROL_PROXY` (a URL or `direct`) overrides the environment for this channel alone. |
+| **Content**: templates, DBs, rules, KEV/EPSS | Upstream sources use `httpsec.SafeHTTPClient`, which has **no proxy**: they fail on proxy-only networks. Mirrors and trivy's DB download use the environment. | Sensor-local. `SENSOR_CONTENT_PROXY`, else the control proxy. `SafeHTTPClient` checks the request URL before it hands the request to the proxy. |
+| **Scan**: scanner → target | Scanner processes inherit the proxy variables (`core/scanner_env.go`), so internal targets can be sent to the corporate egress proxy unless `NO_PROXY` lists them. Tools that ignore the variables go direct. Nothing records the path. | Per scan zone (and optionally per tool), configured on the platform as an **egress profile**. Without a profile a zone keeps `inherit`, which is today's behaviour. |
+
+**Today's advice.** If a sensor reaches the platform through a corporate
+proxy and also scans internal ranges, list those ranges and domains in
+`NO_PROXY`. Go matches a CIDR entry only when the target is an IP literal, so
+also list domains (`.corp.example`). Each tool parses `NO_PROXY` its own way,
+and Go reads the environment once per process. A segment
+that the sensor can reach only through a proxy should get its own sensor
+inside it. Use one zone per segment (scan-zones.md).
+
+**Proposed model, in brief.**
+
+- **Profiles.** An `egress_profile` is an ordered list of proxy endpoints:
+  `http`, `https`, `socks5` or `socks5h`, with host and port.
+  - Its auth is `none`, `local` (credentials stay on the sensor host,
+    `SENSOR_EGRESS_CREDENTIALS_DIR/<ref>`) or, later, `basic` stored on the
+    platform and HPKE-sealed per command to key-bound sensors (RFC-032 D5).
+  - It also holds an optional CA for an `https://` proxy endpoint, DNS
+    (`proxy` or `local`), a health target inside the segment, and a
+    revision.
+  - Zones reference one profile (`scan_zones.egress_profile_id`), with
+    per-tool overrides (`profile`, `direct`, `refuse`).
+- **Delivery.** Profiles of the sensor's zones go out with the RFC-033 policy
+  echo, without credentials, and are re-read when `config_version` changes.
+  A command carries only `egress: {profile_id, revision, mode}`, never a
+  proxy URL.
+- **Host veto.** `SENSOR_SCAN_EGRESS=platform|direct-only|local` is declared
+  in the manifest. Dispatch respects it, and a command that arrives anyway
+  fails as `egress-refused-by-host`.
+- **Forwarder.** Each proxied job runs its tools through an SDK forwarder on
+  `127.0.0.1` (HTTP CONNECT and SOCKS5, random per-job credentials).
+  - It checks every destination against job targets ∩ zone ranges ∩ the
+    operator's local allow-list, plus the hard deny list.
+  - It adds the proxy credentials and fails over in the administrator's
+    order.
+  - Tools: nuclei, httpx, katana and naabu (TCP connect only, no ping
+    discovery) use `-proxy`. trivy image uses `HTTPS_PROXY` in its own child
+    environment. Local scanners (semgrep, betterleaks, trivy fs) have no
+    scan egress.
+  - A tool that cannot use the profile fails the command with
+    `egress-unsupported`. It never goes direct.
+- **Health.**
+  - The sensor checks each endpoint: TCP, TLS, the proxy handshake, then the
+    health target. A failure in the last step only means the segment is
+    unreachable; the proxy is up.
+  - Circuit breakers open after 3 proxy failures, from 30 s up to 10 min with
+    jitter. One connection makes at most N attempts for N endpoints.
+  - The heartbeat carries an `egress` member. Activity events are
+    `egress_degraded`, `egress_down`, `egress_recovered` and
+    `egress_auth_failed`. The health flag is `egress_down`.
+  - Dispatch skips sensors whose profile is down. A zone with no reachable
+    path fails its run once, with `ZONE_UNREACHABLE`.
+- **Throttling is not failover.** A 429, a block, or a proxy saying the
+  target is unreachable never switches proxy. The sensor backs off, honours
+  `Retry-After`, and reports `target_throttled` / `target_blocked`. Rotating
+  proxies to evade a target's limits is an explicit non-goal.
+- **Visibility and audit.**
+  - The path taken is recorded per job in `tool.properties.egress`, shown on
+    the run page and in the preview.
+  - Every profile and zone-path change is audited: `egress_profile.*`,
+    `scan_zone.egress_changed`, `scan_zone.tool_egress_changed`. Credentials
+    are never shown in the audit.
+  - Permissions: `sensors:egress:read|write|delete`, admin and owner only.
 
 ## History written in the old vocabulary
 
