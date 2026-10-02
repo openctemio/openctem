@@ -1750,6 +1750,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log.Info("ScopeRule broadcaster wired to WebSocket hub")
 	}
 
+	// Wire to ModuleService so a module toggle / preset / reset pushes
+	// "module.updated" on tenant:{id}. wsHubBroadcaster.Broadcast exists only
+	// for this seam; without the call the Settings → Modules page and the
+	// sidebar never hear about a change made in another tab or by another
+	// admin and stay stale until the SWR dedup window expires.
+	s.Module.SetWSBroadcaster(broadcaster)
+
 	// Initialize user notification service (needs WebSocketHub)
 	s.Notification = app.NewNotificationService(
 		repos.Notification,

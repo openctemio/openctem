@@ -156,6 +156,7 @@ var guardedInertSeams = []struct {
 	{".AITriage", "SetWorkflowDispatcher", "AI-triage workflow events"},
 	{".Pentest", "SetTenantMemberChecker", "pentest cross-tenant member check"},
 	{".Tenant", "SetMemberStatusEmailNotifier", "member suspend/reactivate emails"},
+	{".Module", "SetWSBroadcaster", "module.updated WebSocket push on module toggle"},
 }
 
 // TestInertWiringSeams_StayWired asserts each previously-dead Set* seam is
