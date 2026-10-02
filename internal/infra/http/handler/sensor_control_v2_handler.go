@@ -68,7 +68,10 @@ func (h *SensorControlV2Handler) Features() []string {
 		out = append(out, protov2.FeatureSuppressions)
 	}
 	if h.ingest != nil {
-		out = append(out, protov2.FeatureFingerprints, protov2.FeatureKeys)
+		out = append(out, protov2.FeatureFingerprints, protov2.FeatureKeys, protov2.FeatureLoad)
+	}
+	if h.commands != nil {
+		out = append(out, protov2.FeatureRelease)
 	}
 	return out
 }
@@ -185,6 +188,15 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 	writeV2JSON(w, http.StatusOK, resp)
 }
 
+// freeSlotsNow is how many scan commands the poll may offer the sensor: its
+// free slots (effective capacity minus the commands it holds, narrowed by a
+// fresh load report). The sensor was read when it authenticated, so the
+// count is that of this request.
+func freeSlotsNow(s *sensor.Sensor) *int {
+	n := s.FreeSlots(time.Now())
+	return &n
+}
+
 // heartbeatData maps a heartbeat body (v1 and v2 share it) to the service
 // input, with the protocol the heartbeat arrived on and the client's
 // User-Agent for the fleet's protocol telemetry (RFC-029 §5.3).
@@ -208,6 +220,7 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		Protocol:      protocol,
 		UserAgent:     r.UserAgent(),
 		Report:        req.capabilityReport(),
+		Load:          req.loadReport(),
 	}
 }
 
@@ -226,6 +239,7 @@ func (h *SensorControlV2Handler) PollCommands(w http.ResponseWriter, r *http.Req
 	cmds, err := h.commands.service.Poll(r.Context(), command.PollInput{
 		TenantID: s.TenantID.String(), SensorID: s.ID.String(),
 		Capabilities: s.EffectiveCapabilities(), Limit: limit,
+		MaxScanCommands: freeSlotsNow(s),
 	})
 	if err != nil {
 		h.internal(w, "commands", err)
@@ -251,6 +265,36 @@ func (h *SensorControlV2Handler) StartCommand(w http.ResponseWriter, r *http.Req
 // CompleteCommand handles POST /api/v2/sensor/commands/{command_id}/complete.
 func (h *SensorControlV2Handler) CompleteCommand(w http.ResponseWriter, r *http.Request) {
 	h.transition(w, r, command.TransitionComplete)
+}
+
+// ReleaseCommand handles POST /api/v2/sensor/commands/{command_id}/release
+// (RFC-030 §5.12): the sensor that holds a claimed or running command hands
+// it back, and it returns to the queue at once (pending, unpinned, zone kept)
+// instead of waiting for the reaper. A draining sensor releases what it will
+// not finish. A repeat of a release that already happened answers the
+// command as it is now.
+func (h *SensorControlV2Handler) ReleaseCommand(w http.ResponseWriter, r *http.Request) {
+	s := sensorForV2(w, r)
+	if s == nil {
+		return
+	}
+	commandID := chi.URLParam(r, "command_id")
+	if protov2.ValidateUUID(commandID) != nil {
+		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
+		return
+	}
+	var req protov2.ReleaseRequest
+	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &req) {
+		return
+	}
+	res, err := h.commands.service.Release(r.Context(), command.ReleaseInput{
+		TenantID: s.TenantID.String(), SensorID: s.ID.String(), CommandID: commandID, Reason: req.Reason,
+	})
+	if err != nil {
+		h.transitionFailed(w, "release", err)
+		return
+	}
+	writeV2JSON(w, http.StatusOK, toV2Command(res.Command))
 }
 
 // FailCommand handles POST /api/v2/sensor/commands/{command_id}/fail.

@@ -102,6 +102,7 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 			r.POST("/commands/{command_id}/start", ctl.StartCommand, controlWrite...)
 			r.POST("/commands/{command_id}/complete", ctl.CompleteCommand, controlWrite...)
 			r.POST("/commands/{command_id}/fail", ctl.FailCommand, controlWrite...)
+			r.POST("/commands/{command_id}/release", ctl.ReleaseCommand, controlWrite...)
 		}
 		if ctl.HasSuppressions() {
 			r.GET(protov2.SuppressionsPath, ctl.Suppressions, controlRead...)

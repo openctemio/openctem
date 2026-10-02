@@ -204,3 +204,71 @@ func sameJSON(a, b json.RawMessage) bool {
 	}
 	return reflect.DeepEqual(av, bv)
 }
+
+// ReleaseInput is a sensor handing a claimed or running command back.
+type ReleaseInput struct {
+	TenantID  string
+	SensorID  string
+	CommandID string
+	Reason    string
+}
+
+// MaxReleaseReasonBytes bounds the reason stored with a released command.
+const MaxReleaseReasonBytes = 200
+
+// Releaser is the repository side of a release (CommandRepository).
+type Releaser interface {
+	// ReleaseForSensor returns the command to pending and unpins it, only if
+	// it is acknowledged or running and held by sensorID; false otherwise.
+	ReleaseForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID, reason string) (bool, error)
+}
+
+// Release hands a command the sensor holds back to the queue at once
+// (RFC-030 §5.12): pending, unpinned, its zone kept, so another eligible
+// sensor can claim it without waiting for the stuck-command reaper. It is
+// idempotent: once released, a repeat by the same sensor answers the command
+// as it is (Replayed) as long as nobody else holds it. Errors:
+// shared.ErrNotFound (unknown, or held by another sensor),
+// *InvalidTransitionError (not acknowledged or running).
+func (s *Service) Release(ctx context.Context, in ReleaseInput) (*TransitionResult, error) {
+	rel, ok := s.repo.(Releaser)
+	if !ok {
+		return nil, fmt.Errorf("%w: release is not supported by this repository", shared.ErrValidation)
+	}
+	cmd, err := s.Get(ctx, in.TenantID, in.CommandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, in.SensorID); err != nil {
+		return nil, err
+	}
+	if cmd.SensorID == nil {
+		// Unpinned: already released (by this sensor or the reaper), or never
+		// claimed. Nothing to hand back.
+		if cmd.Status == commanddom.CommandStatusPending {
+			return &TransitionResult{Command: cmd, Replayed: true}, nil
+		}
+		return nil, &InvalidTransitionError{State: stateOf(cmd)}
+	}
+	if cmd.Status != commanddom.CommandStatusAcknowledged && cmd.Status != commanddom.CommandStatusRunning {
+		return nil, &InvalidTransitionError{State: stateOf(cmd)}
+	}
+	reason := "released by sensor"
+	if r := truncateUTF8(in.Reason, MaxReleaseReasonBytes); r != "" {
+		reason += ": " + r
+	}
+	released, err := rel.ReleaseForSensor(ctx, cmd.TenantID, cmd.ID, in.SensorID, reason)
+	if err != nil {
+		return nil, err
+	}
+	if !released {
+		// The state changed between the read and the write.
+		return nil, s.transitionError(ctx, TransitionFail, TransitionInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID},
+			shared.NewDomainError("CONFLICT", "command state changed", shared.ErrConflict))
+	}
+	out, err := s.Get(ctx, in.TenantID, in.CommandID)
+	if err != nil {
+		return nil, err
+	}
+	return &TransitionResult{Command: out}, nil
+}

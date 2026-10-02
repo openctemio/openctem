@@ -824,7 +824,7 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	if err != nil {
 		return false, err
 	}
-	if result.Sensor != nil && !result.IsPlatform {
+	if (result.Sensor != nil && !result.IsPlatform) || result.TenantBusy {
 		return false, nil
 	}
 	canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)

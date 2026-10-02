@@ -970,55 +970,6 @@ func TestFindAvailableSensors_NoSensors(t *testing.T) {
 }
 
 // =============================================================================
-// Tests for ClaimJob / ReleaseJob
-// =============================================================================
-
-func TestClaimJob_Success(t *testing.T) {
-	repo := newMockSensorRepo()
-	svc := newTestSensorService(repo)
-	sensorID := shared.NewID()
-
-	err := svc.ClaimJob(context.Background(), sensorID)
-	if err != nil {
-		t.Fatalf("ClaimJob failed: %v", err)
-	}
-
-	if repo.claimJobCalls != 1 {
-		t.Errorf("Expected 1 claim job call, got %d", repo.claimJobCalls)
-	}
-}
-
-func TestClaimJob_Error(t *testing.T) {
-	repo := newMockSensorRepo()
-	repo.claimJobErr = sensor.ErrSensorNoCapacity
-	svc := newTestSensorService(repo)
-	sensorID := shared.NewID()
-
-	err := svc.ClaimJob(context.Background(), sensorID)
-	if err == nil {
-		t.Fatal("Expected error when sensor has no capacity")
-	}
-	if !errors.Is(err, sensor.ErrSensorNoCapacity) {
-		t.Errorf("Expected ErrSensorNoCapacity, got: %v", err)
-	}
-}
-
-func TestReleaseJob_Success(t *testing.T) {
-	repo := newMockSensorRepo()
-	svc := newTestSensorService(repo)
-	sensorID := shared.NewID()
-
-	err := svc.ReleaseJob(context.Background(), sensorID)
-	if err != nil {
-		t.Fatalf("ReleaseJob failed: %v", err)
-	}
-
-	if repo.releaseJobCalls != 1 {
-		t.Errorf("Expected 1 release job call, got %d", repo.releaseJobCalls)
-	}
-}
-
-// =============================================================================
 // Tests for RegenerateAPIKey
 // =============================================================================
 

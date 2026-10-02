@@ -1859,62 +1859,6 @@ func TestSensorService_FindAvailableWithCapacity_RepoError(t *testing.T) {
 }
 
 // ============================================================================
-// Tests: ClaimJob
-// ============================================================================
-
-func TestSensorService_ClaimJob_Success(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	svc := newSensorSvcTestService(repo)
-
-	err := svc.ClaimJob(context.Background(), shared.NewID())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if repo.claimJobCalls != 1 {
-		t.Errorf("expected 1 ClaimJob call, got %d", repo.claimJobCalls)
-	}
-}
-
-func TestSensorService_ClaimJob_RepoError(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	repo.claimJobErr = errors.New("no capacity")
-	svc := newSensorSvcTestService(repo)
-
-	err := svc.ClaimJob(context.Background(), shared.NewID())
-	if err == nil {
-		t.Fatal("expected error when repo.ClaimJob fails")
-	}
-}
-
-// ============================================================================
-// Tests: ReleaseJob
-// ============================================================================
-
-func TestSensorService_ReleaseJob_Success(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	svc := newSensorSvcTestService(repo)
-
-	err := svc.ReleaseJob(context.Background(), shared.NewID())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if repo.releaseJobCalls != 1 {
-		t.Errorf("expected 1 ReleaseJob call, got %d", repo.releaseJobCalls)
-	}
-}
-
-func TestSensorService_ReleaseJob_RepoError(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	repo.releaseJobErr = errors.New("not claimed")
-	svc := newSensorSvcTestService(repo)
-
-	err := svc.ReleaseJob(context.Background(), shared.NewID())
-	if err == nil {
-		t.Fatal("expected error when repo.ReleaseJob fails")
-	}
-}
-
-// ============================================================================
 // Tests: IncrementStats
 // ============================================================================
 

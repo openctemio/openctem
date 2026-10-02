@@ -634,6 +634,31 @@ report's `tool.properties.content` (CTIS `properties` is free-form, no schema
 change). For protocol v2 the tool is part of the report header, stored
 verbatim in `ingest_reports.header`; findings carry the report id as
 `scan_id`. Protocol v1 ingest keeps no report header.
+||||||| parent of 27ab6f1d (feat(dispatch): sensor load report, server-counted capacity and release)
+
+## Load, capacity and release (RFC-030)
+
+The heartbeat may carry the sensor's **load report**, computed by the SDK
+(feature `load`): `resources` (cgroup-aware CPU cores and use, memory limit
+and available, load1, free disk), `capacity` (`slots_total`, `slots_free`,
+`active_jobs`, `per_tool` cost and throughput) and `queue` (the SDK's local
+work queue). The API clamps it and stores the latest snapshot
+(`sensors.reported_resources`, `reported_capacity`, `reported_queue`,
+`load_reported_at`; migration 000254); `GET /api/v1/sensors/{id}` shows it as
+`load` with `fresh`.
+
+Capacity is counted by the server: `current_jobs` in the API is the number
+of commands the sensor holds (acknowledged or running), and
+`available_slots` is `effective max jobs − current_jobs`, no more than a
+fresh (≤ 3 min) `capacity.slots_free`. The command poll (v1 and v2) never
+offers more scan commands than that; selection skips sensors with no free
+slot and prefers the most free slots, then the highest reported throughput
+for the tool. `sensors.current_jobs` (never written) is no longer read.
+
+A sensor hands a command it holds back with
+`POST /api/v2/sensor/commands/{id}/release` (feature `release`): the
+command returns to `pending`, unpinned, zone kept, so another sensor takes
+it at once (a draining sensor). See RFC-030 §5.8.1 and §5.12.
 
 ## History written in the old vocabulary
 

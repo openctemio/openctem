@@ -99,6 +99,10 @@ type SelectSensorResult struct {
 	Sensor  *sensordom.Sensor
 	Queued  bool
 	Message string
+	// TenantBusy is true when the tenant has online sensors that can run the
+	// job but none has a free slot: the job waits for one of them (it is
+	// never moved to shared sensors because the tenant's fleet is busy).
+	TenantBusy bool
 }
 
 // SelectSensor selects the best sensor for a job based on the selection mode.
@@ -124,8 +128,16 @@ func (s *SensorSelector) selectTenantSensor(ctx context.Context, req SelectSenso
 		return nil, ErrNoSensorAvailable
 	}
 
-	// Select the best sensor (least loaded)
+	// Select the best sensor (least loaded). Candidates are every capable
+	// online sensor; one without a free slot is skipped.
 	selected := s.selectLeastLoaded(sensors)
+	if selected == nil {
+		return &SelectSensorResult{
+			Queued:     true,
+			TenantBusy: true,
+			Message:    "Tenant sensors are busy, job will be queued",
+		}, nil
+	}
 
 	return &SelectSensorResult{
 		Sensor:  selected,
@@ -153,13 +165,13 @@ func (s *SensorSelector) selectLeastLoaded(sensors []*sensordom.Sensor) *sensord
 	now := time.Now()
 
 	for _, a := range sensors {
-		limit := a.EffectiveMaxConcurrentJobs()
-		if limit <= 0 {
+		if a.EffectiveMaxConcurrentJobs() <= 0 {
 			// Sensor has no limit, assume 0 load
 			return a
 		}
-		if a.CurrentJobs >= limit {
-			// Fully loaded — never a candidate.
+		if a.FreeSlots(now) <= 0 {
+			// No free slot (server count of its commands, narrowed by a
+			// fresh load report) — never a candidate.
 			continue
 		}
 		score := s.loadScore(a, now)

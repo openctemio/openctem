@@ -145,7 +145,8 @@ func (a *scanSensorSelectorAdapter) SelectSensor(ctx context.Context, req scan.S
 	}
 
 	return &scan.SelectSensorResult{
-		Sensor: result.Sensor,
+		Sensor:     result.Sensor,
+		TenantBusy: result.TenantBusy,
 	}, nil
 }
 

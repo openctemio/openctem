@@ -362,6 +362,8 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 		// that can actually execute them.
 		Capabilities: agt.EffectiveCapabilities(),
 		Limit:        limit,
+		// Never more scans than the sensor has free slots (RFC-030 D5).
+		MaxScanCommands: freeSlotsNow(agt),
 	})
 	if err != nil {
 		h.handleServiceError(w, err)

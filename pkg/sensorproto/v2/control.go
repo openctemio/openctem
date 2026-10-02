@@ -77,6 +77,16 @@ type CompleteRequest struct {
 	Result json.RawMessage `json:"result,omitempty"`
 }
 
+// ReleaseRequest is the body of POST /commands/{id}/release (RFC-030 §5.12):
+// why the sensor hands the command back (draining, shutdown, canceled,
+// politeness, ...). Free text, at most MaxReleaseReasonBytes.
+type ReleaseRequest struct {
+	Reason string `json:"reason"`
+}
+
+// MaxReleaseReasonBytes bounds the reason stored with a released command.
+const MaxReleaseReasonBytes = 200
+
 // FailRequest is the body of POST /commands/{id}/fail.
 type FailRequest struct {
 	ErrorMessage string `json:"error_message"`

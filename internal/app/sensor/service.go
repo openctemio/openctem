@@ -363,6 +363,11 @@ type SensorHeartbeatData struct {
 	// did not report one. Clamped before it is stored.
 	UptimeSeconds int64
 
+	// Load is the load report the heartbeat carried (resources, capacity,
+	// local queue), untrusted; nil when it carried none. Clamped here before
+	// it is stored (sensordom.LoadReport.Clamp).
+	Load *sensordom.LoadReport
+
 	// Report is the capability report the heartbeat carried, untrusted; nil
 	// when it carried none. It is sanitized here against the tool catalog
 	// before it is stored (sensordom.CapabilityReportInput.Sanitize).
@@ -433,6 +438,18 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	// persisted value (repo.UpdateHeartbeat below) and the load-score snapshot.
 	data.Region = sensordom.SanitizeRegion(data.Region)
 
+	// The load report is untrusted: clamp it. A sensor on an SDK that
+	// reports resources but not the legacy cpu/memory percentages still
+	// feeds the load score.
+	var load *sensordom.LoadReport
+	if !data.Load.IsEmpty() {
+		clamped := data.Load.Clamp()
+		load = &clamped
+		if cpu, mem, ok := clamped.Resources.ResourcePercents(); ok && data.CPUPercent == 0 && data.MemoryPercent == 0 {
+			data.CPUPercent, data.MemoryPercent = cpu, mem
+		}
+	}
+
 	// Capture health BEFORE the heartbeat flips it to online, so we can detect
 	// an offline/unknown/error -> online TRANSITION (a connect event) and audit
 	// it once, instead of logging on every steady-state heartbeat.
@@ -478,6 +495,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		UserAgent:     sensordom.SanitizeUserAgent(data.UserAgent),
 		UptimeSeconds: sensordom.ClampUptime(data.UptimeSeconds),
 		Report:        s.sanitizeReport(ctx, a, data.Report),
+		Load:          load,
 	})
 	if err != nil {
 		return err
@@ -1040,16 +1058,6 @@ func (s *SensorService) FindAvailableSensors(ctx context.Context, tenantID share
 // FindAvailableWithCapacity finds sensors with available job capacity for load balancing.
 func (s *SensorService) FindAvailableWithCapacity(ctx context.Context, tenantID shared.ID, capabilities []string, tool string) ([]*sensordom.Sensor, error) {
 	return s.repo.FindAvailableWithCapacity(ctx, tenantID, capabilities, tool)
-}
-
-// ClaimJob claims a job slot on a sensor for load balancing.
-func (s *SensorService) ClaimJob(ctx context.Context, sensorID shared.ID) error {
-	return s.repo.ClaimJob(ctx, sensorID)
-}
-
-// ReleaseJob releases a job slot on a sensor.
-func (s *SensorService) ReleaseJob(ctx context.Context, sensorID shared.ID) error {
-	return s.repo.ReleaseJob(ctx, sensorID)
 }
 
 // IncrementStats increments sensor statistics.

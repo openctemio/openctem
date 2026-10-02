@@ -99,7 +99,9 @@
     "commands",
     "suppressions",
     "fingerprints",
-    "keys"
+    "keys",
+    "load",
+    "release"
   ],
   "media_types": [
     "application/vnd.openctem.ctis.v1+json"

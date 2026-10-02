@@ -182,15 +182,19 @@ type Sensor struct {
 	IPAddress net.IP
 
 	// System metrics (from heartbeat)
-	CPUPercent        float64
-	MemoryPercent     float64
-	DiskReadMBPS      float64 // Disk read throughput in MB/s
-	DiskWriteMBPS     float64 // Disk write throughput in MB/s
-	NetworkRxMBPS     float64 // Network receive throughput in MB/s
-	NetworkTxMBPS     float64 // Network transmit throughput in MB/s
-	LoadScore         float64 // Computed weighted load score (lower is better)
-	MetricsUpdatedAt  *time.Time
-	ActiveJobs        int
+	CPUPercent       float64
+	MemoryPercent    float64
+	DiskReadMBPS     float64 // Disk read throughput in MB/s
+	DiskWriteMBPS    float64 // Disk write throughput in MB/s
+	NetworkRxMBPS    float64 // Network receive throughput in MB/s
+	NetworkTxMBPS    float64 // Network transmit throughput in MB/s
+	LoadScore        float64 // Computed weighted load score (lower is better)
+	MetricsUpdatedAt *time.Time
+	ActiveJobs       int
+	// CurrentJobs is the number of commands the sensor holds (acknowledged
+	// or running), counted by the server from the commands table when the
+	// sensor is read: the capacity truth (RFC-030 D5). It is never taken
+	// from the sensor.
 	CurrentJobs       int
 	MaxConcurrentJobs int
 	Region            string
@@ -207,6 +211,10 @@ type Sensor struct {
 	// Tools, Capabilities and MaxConcurrentJobs above are the
 	// administrator's settings; dispatch uses the Effective* values.
 	Reported CapabilityReport
+
+	// Load is the load the sensor last reported (load.go): resources,
+	// capacity, local queue. Untrusted; it can only lower FreeSlots.
+	Load LoadReport
 
 	// Statistics
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"
@@ -626,17 +634,9 @@ func (a *Sensor) SetMaxConcurrentJobs(max int) {
 	a.UpdatedAt = time.Now()
 }
 
-// AvailableSlots returns the number of available job slots.
+// AvailableSlots returns the number of available job slots (FreeSlots now).
 func (a *Sensor) AvailableSlots() int {
-	limit := a.EffectiveMaxConcurrentJobs()
-	if limit <= 0 {
-		return 1 // Default to 1 if not set
-	}
-	slots := limit - a.CurrentJobs
-	if slots < 0 {
-		return 0
-	}
-	return slots
+	return a.FreeSlots(time.Now())
 }
 
 // LoadFactor returns the current load factor (0.0 to 1.0).
@@ -650,11 +650,7 @@ func (a *Sensor) LoadFactor() float64 {
 
 // HasCapacity checks if the sensor has capacity for more jobs.
 func (a *Sensor) HasCapacity() bool {
-	limit := a.EffectiveMaxConcurrentJobs()
-	if limit <= 0 {
-		return true // No limit set
-	}
-	return a.CurrentJobs < limit
+	return a.FreeSlots(time.Now()) > 0
 }
 
 // SetPlatformSensor marks this sensor as a platform-managed sensor.

@@ -67,6 +67,11 @@ type HeartbeatUpdate struct {
 	// downgraded to an SDK without the report keeps its last one, whose
 	// reported-at time shows how old it is.
 	Report *CapabilityReport
+
+	// Load is the clamped load report the heartbeat carried (load.go); nil
+	// leaves the stored report untouched, and so does each part of it that
+	// was not reported.
+	Load *LoadReport
 }
 
 // MaxReportedUptime caps the uptime a heartbeat may report (ten years); a
@@ -162,14 +167,12 @@ type Repository interface {
 	// Returns the number of sensors marked as offline.
 	MarkStaleAsOffline(ctx context.Context, timeout time.Duration) (int64, error)
 
-	// FindAvailableWithCapacity finds sensors that have capacity for new jobs.
+	// FindAvailableWithCapacity finds the online daemon sensors that could run
+	// the job (capabilities, tool), most free slots first. A busy sensor is
+	// still returned, so "is there a capable sensor" gates never refuse work
+	// because the fleet is busy; callers that pick one skip those without
+	// free slots (Sensor.FreeSlots).
 	FindAvailableWithCapacity(ctx context.Context, tenantID shared.ID, capabilities []string, tool string) ([]*Sensor, error)
-
-	// ClaimJob atomically claims a job slot for a sensor.
-	ClaimJob(ctx context.Context, sensorID shared.ID) error
-
-	// ReleaseJob releases a job slot for a sensor.
-	ReleaseJob(ctx context.Context, sensorID shared.ID) error
 
 	// ==========================================================================
 	// Online/Offline Tracking Methods (Heartbeat Optimization)

@@ -158,6 +158,9 @@ const (
 type SelectSensorResult struct {
 	Sensor     *sensor.Sensor
 	IsPlatform bool
+	// TenantBusy: the tenant has capable sensors, all busy; the job waits
+	// for them (RFC-023 D14), it is not moved to shared sensors.
+	TenantBusy bool
 }
 
 // TemplateSyncer interface for template sync operations.
