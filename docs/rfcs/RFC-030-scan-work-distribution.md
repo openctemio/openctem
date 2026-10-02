@@ -1,6 +1,6 @@
 # RFC-030 — Scan work distribution: plan, chunks, leases and fair pull scheduling
 
-> Status: **Proposed** (2026-10-02).
+> Status: **Accepted for Phases 0–1** (2026-10-02; §9 decisions resolved). Phases 2–4 remain Proposed.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on: [RFC-007](RFC-007-license-aware-scan-coverage.md) (rolling batch
 > coverage, batch-scoped auto-resolve), [RFC-023](RFC-023-scan-zones-and-scanners.md)
@@ -610,24 +610,21 @@ what a command carries.
 - **Monorepo cutover.** This RFC lands in api `docs/rfcs`; it moves with the
   repository.
 
-## 9. Decisions needed from the owner
+## 9. Decisions (resolved 2026-10-02)
 
-1. **Priority classes and their order** (D8): `verify > interactive >
-   scheduled > background`; is a manual re-scan of a P0 finding `verify`?
-2. **Fairness unit on tenant sensors**: per scan (proposed) or per user who
-   triggered it?
-3. **Default politeness**: `per_host = 1` and a zone `max_rps` default (e.g.
-   300 req/s) — acceptable, or opt-in only?
-4. **Partial runs**: a run that loses some targets ends `partial` and is
-   *not* auto-retried as a whole (only its failed chunks are); scan retry
-   policy (`max_retries`) then applies per chunk. Agree?
-5. **Target cap per run**: 200,000 (proposed) or unlimited with the planner
-   streaming targets.
-6. **Phase 0.3 (fan-out of single-target scanners)** increases the number of
-   commands immediately; ship before Phase 2 (proposed) or wait for claim-time
-   chunking?
-7. **Speculative re-execution** of stragglers: rejected here (double load on
-   customer assets). Confirm.
+The owner decided items 1, 3, 4 and 6; items 2, 5 and 7 were left to the
+implementer and take the RFC's proposal. All seven are settled; Phases 0–1
+are accepted for implementation on that basis.
+
+| # | Question | Decision | By |
+|---|---|---|---|
+| 1 | Priority classes and their order (D8) | **`verify > interactive > scheduled > background`, with ageing** (§5.3). A manual rescan that verifies a P0 finding is `verify`. | owner |
+| 2 | Fairness unit on tenant sensors | **Per scan** (each scan's run is a flow), as proposed. | default |
+| 3 | Default politeness | **On by default**: `per_host = 1` (one chunk in flight per target host) and a sane per-zone rate (`max_rps`, default 300 req/s), **overridable by an administrator per scan profile**. | owner |
+| 4 | Partial runs | **Agreed.** A run that loses targets ends `partial`; successful findings are kept; **"Retry failed" re-runs only the failed chunks**, never the whole run. | owner |
+| 5 | Target cap per run | **200,000** targets per run (bounded by the planner insert). Phase 0 keeps today's caps (10,000 targets; 1,000 commands per run) because it still creates every command at trigger time; the cap is raised with the Phase 2 planner. | default |
+| 6 | Ship Phase 0.3 (fan-out of single-target scanners) early | **Yes, now, in Phase 0**: one command per target for single-target scanners outside zones too. | owner |
+| 7 | Speculative re-execution of stragglers | **Rejected**: never re-run a slow chunk on a second sensor (double load on customer assets). | default |
 
 ## Appendix A — size and pick, as code
 
