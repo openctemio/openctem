@@ -636,24 +636,18 @@ export default function RemediationPage() {
       if (apiStatus) {
         try {
           await patch(`/api/v1/remediation/campaigns/${task.id}/status`, { status: apiStatus })
+          // The open drawer follows the refreshed list (the effect that syncs
+          // viewTask with tasks). It used to be overwritten here from
+          // campaignData captured before the refresh, which put the old status
+          // back: after "Start Task" the drawer still said Open.
           await refreshCampaigns()
-          // Update viewTask if it's the same one
-          if (viewTask?.id === task.id) {
-            const updated = campaignData?.data?.find((c) => c.id === task.id)
-            if (updated) {
-              setViewTask({
-                ...task,
-                status: normalizeStatus(updated.status),
-              })
-            }
-          }
           toast.success('Task updated')
         } catch (err) {
           toast.error(getErrorMessage(err, `Failed to ${action} task`))
         }
       }
     },
-    [router, refreshCampaigns, viewTask, campaignData]
+    [router, refreshCampaigns]
   )
 
   const handleBulkAction = useCallback(

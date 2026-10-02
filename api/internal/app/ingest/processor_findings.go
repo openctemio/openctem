@@ -1231,8 +1231,8 @@ func (p *FindingProcessor) setComplianceFields(f *vulnerability.Finding, ctisFin
 	if ctisFinding.Compliance.ControlDescription != "" {
 		f.SetComplianceControlDescription(ctisFinding.Compliance.ControlDescription)
 	}
-	if ctisFinding.Compliance.Result != "" {
-		f.SetComplianceResult(ctisFinding.Compliance.Result)
+	if v := normalizeEnumToken(ctisFinding.Compliance.Result); v != "" && vulnerability.ComplianceResult(v).IsValid() {
+		f.SetComplianceResult(v)
 	}
 }
 
@@ -1348,13 +1348,15 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 		confidence := ctisFinding.Confidence
 		_ = f.SetConfidence(&confidence)
 	}
-	if ctisFinding.Impact != "" {
-		// Normalize to lowercase (DB constraint requires lowercase: critical, high, medium, low)
-		f.SetImpact(strings.ToLower(ctisFinding.Impact))
+	// impact, likelihood, baseline_state, kind and compliance_result are
+	// CHECK-constrained columns. A value outside the vocabulary fails the INSERT
+	// and drops the whole finding, so each is normalized (case, SARIF camelCase)
+	// and anything still unrecognized is left unset rather than stored.
+	if v := normalizeEnumToken(ctisFinding.Impact); v != "" && vulnerability.ImpactLevel(v).IsValid() {
+		f.SetImpact(v)
 	}
-	if ctisFinding.Likelihood != "" {
-		// Normalize to lowercase (DB constraint requires lowercase: high, medium, low)
-		f.SetLikelihood(strings.ToLower(ctisFinding.Likelihood))
+	if v := normalizeEnumToken(ctisFinding.Likelihood); v != "" && vulnerability.LikelihoodLevel(v).IsValid() {
+		f.SetLikelihood(v)
 	}
 	if len(ctisFinding.VulnerabilityClass) > 0 {
 		f.SetVulnerabilityClass(ctisFinding.VulnerabilityClass)
@@ -1364,11 +1366,12 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 	}
 
 	// SARIF core fields
-	if ctisFinding.BaselineState != "" {
-		f.SetBaselineState(ctisFinding.BaselineState)
+	if v := normalizeEnumToken(ctisFinding.BaselineState); v != "" && vulnerability.BaselineState(v).IsValid() {
+		f.SetBaselineState(v)
 	}
-	if ctisFinding.Kind != "" {
-		f.SetKind(ctisFinding.Kind)
+	// SARIF spells this "notApplicable"; the column holds "not_applicable".
+	if v := normalizeEnumToken(ctisFinding.Kind); v != "" && vulnerability.FindingKind(v).IsValid() {
+		f.SetKind(v)
 	}
 	if ctisFinding.Rank > 0 {
 		rank := ctisFinding.Rank
@@ -1960,4 +1963,27 @@ func (p *FindingProcessor) linkFindingToComponent(ctx context.Context, f *vulner
 			"purl", purl,
 		)
 	}
+}
+
+// normalizeEnumToken maps a producer-supplied enum label onto the stored
+// vocabulary's spelling: trimmed, lower snake_case. SARIF uses camelCase
+// ("notApplicable"), CTIS producers vary in case ("High"), and the database
+// stores lower snake_case ("not_applicable", "high"). The caller still
+// validates the result; this only fixes spelling.
+func normalizeEnumToken(s string) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 && s[i-1] >= 'a' && s[i-1] <= 'z' {
+				b.WriteByte('_')
+			}
+			r += 'a' - 'A'
+		}
+		if r == '-' || r == ' ' {
+			r = '_'
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

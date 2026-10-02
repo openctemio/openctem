@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
@@ -236,57 +235,16 @@ func run() int {
 		})
 	}
 
-	emailEnqueuer := jobs.NewEmailEnqueuerAdapter(jobClient)
-	services.Tenant = app.NewTenantService(repos.Tenant, log,
-		app.WithTenantAuditService(services.Audit),
-		app.WithEmailEnqueuer(emailEnqueuer),
-		// Inviter display name for invitation emails and the public preview
-		// (was never wired: emails said "A team member", the preview was blank).
-		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
-	)
-	services.Tenant.SetPermissionServices(services.PermCache, services.PermVersion)
-	// Re-wire the data-scope policy store. initServices sets it on the tenant
-	// service this constructor just replaced; without it GET and PATCH
-	// /tenants/{t}/settings/data-scope fail closed with a 500, so the policy for
-	// members without an access group can be neither read nor changed.
-	services.Tenant.SetDataScopePolicyStore(repos.Tenant)
-	// Re-wire session service after rebuilding the tenant service —
-	// the constructor above replaces services.Tenant, dropping the
-	// SetSessionService call from initServices().
-	services.Tenant.SetSessionService(services.Session)
-	// Re-wire the membership cache too. Without this, SuspendMember /
-	// ReactivateMember / UpdateMemberRole / RemoveMember silently skip cache
-	// invalidation (membershipCache == nil), so a revoked member keeps tenant
-	// access until the cache TTL expires — breaking the documented 0-second
-	// revocation guarantee.
-	if services.MembershipCache != nil {
-		services.Tenant.SetMembershipCache(services.MembershipCache)
-	}
-	// Re-wire the SSO-path checker after rebuilding the tenant service (the
-	// constructor above dropped the SetSSOPathChecker call from initServices).
-	// Needed so the can't-enable guard on sso_enforced works at runtime.
-	if services.SSO != nil {
-		services.Tenant.SetSSOPathChecker(services.SSO)
-	}
-	// Wire the member-status email notifier so SuspendMember / ReactivateMember
-	// send their transactional email. SetMemberStatusEmailNotifier was never
-	// called, so those emails silently never went out. Applied here (not in
-	// initServices) because the constructor above rebuilt services.Tenant and
-	// would otherwise drop the wire.
+	// The tenant service is built once, in NewServices, with everything it can
+	// get there. Only collaborators that do not exist until this point are
+	// added here, on that same instance. It used to be rebuilt here instead,
+	// which silently dropped every setter NewServices had applied (session,
+	// membership cache, SSO checker, role service, data-scope store, ...).
+	services.Tenant.SetEmailEnqueuer(jobs.NewEmailEnqueuerAdapter(jobClient))
+	// Suspend/reactivate emails need the email service, built above.
 	if services.Email != nil {
 		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
 	}
-	// Re-wire the RBAC role service. The rebuild above dropped the
-	// SetRoleService call from initServices, so POST /invitations/{token}/accept
-	// silently discarded the invitation's role_ids and the new member kept only
-	// the role the tenant_members trigger copied from the membership role.
-	if services.Role != nil {
-		services.Tenant.SetRoleService(services.Role)
-	}
-	// The user service lets AddMember enforce Security.AllowedDomains and lets
-	// the suspend/reactivate notifier resolve the recipient (it was never wired,
-	// so those emails were skipped).
-	services.Tenant.SetUserService(services.User)
 	// Administrator-created accounts. The set-password link is emailed
 	// when SMTP is configured, otherwise returned once to the administrator.
 	var setupMailer app.AccountSetupMailer
@@ -475,23 +433,31 @@ func run() int {
 // =============================================================================
 
 func initLogger(cfg *config.Config) *logger.Logger {
-	var log *logger.Logger
-	if cfg.App.Env == "production" {
-		// SamplingThreshold is validated to be non-negative in config validation
-		//nolint:gosec // G115: safe conversion, value validated non-negative in config.Validate()
-		threshold := uint64(cfg.Log.SamplingThreshold)
-		log = logger.NewProductionWithConfig(logger.SamplingConfig{
+	log := logger.New(loggerConfig(cfg))
+	log.SetDefault()
+	return log
+}
+
+// loggerConfig turns LOG_LEVEL, LOG_FORMAT and LOG_SAMPLING_* into the logger
+// settings, in every environment. (Outside APP_ENV=production they used to be
+// ignored: always debug + text, so a non-production deployment such as the
+// live demo could neither lower the volume nor switch to JSON.)
+func loggerConfig(cfg *config.Config) logger.Config {
+	// SamplingThreshold is validated to be non-negative in config validation
+	//nolint:gosec // G115: safe conversion, value validated non-negative in config.Validate()
+	threshold := uint64(cfg.Log.SamplingThreshold)
+	return logger.Config{
+		Level:  cfg.Log.Level,
+		Format: cfg.Log.Format,
+		Output: os.Stdout,
+		Sampling: logger.SamplingConfig{
 			Enabled:   cfg.Log.SamplingEnabled,
 			Tick:      time.Second,
 			Threshold: threshold,
 			Rate:      cfg.Log.SamplingRate,
 			ErrorRate: cfg.Log.ErrorSamplingRate,
-		})
-	} else {
-		log = logger.NewDevelopment()
+		},
 	}
-	log.SetDefault()
-	return log
 }
 
 type closer interface {

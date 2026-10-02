@@ -360,5 +360,11 @@
   "sensors.manifest.toolsRemoved": "Removed: {list}",
   "sensors.manifest.toolCapabilities": "{tool} capabilities: {changes}",
   "sensors.manifest.sensorWide": "Sensor-wide capabilities: {changes}",
-  "sensors.manifest.otherChanged": "Changed: {list}"
+  "sensors.manifest.otherChanged": "Changed: {list}",
+  "auth.loginError.invalid_provider": "This sign-in provider is not supported.",
+  "auth.loginError.provider_error": "The identity provider did not complete the sign-in. Try again.",
+  "auth.loginError.missing_params": "The sign-in response was incomplete. Try again.",
+  "auth.loginError.start_failed": "Sign-in could not be started. Try again, or contact your administrator.",
+  "auth.loginError.callback_failed": "Sign-in could not be completed. Try again, or contact your administrator.",
+  "auth.loginError.generic": "Sign-in failed. Try again."
 }

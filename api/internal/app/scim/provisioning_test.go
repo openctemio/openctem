@@ -274,3 +274,67 @@ func TestProvision_CreateInactive(t *testing.T) {
 		}
 	}
 }
+
+type staticVerifier map[string]bool
+
+func (v staticVerifier) IsVerifiedDomain(_ context.Context, _, domain string) (bool, error) {
+	return v[domain], nil
+}
+
+// seedOutsideAccount creates an account that is not a member of the tenant
+// under test (it belongs to some other organization).
+func seedOutsideAccount(t *testing.T, users *fakeUserStore, email string) *userdom.User {
+	t.Helper()
+	u, err := userdom.New(email, "Victim")
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	_ = users.Create(context.Background(), u)
+	return u
+}
+
+// An organization must not enroll someone else's existing account by email:
+// attaching an existing account needs the person's consent (an invitation)
+// unless the organization owns the email domain.
+func TestProvision_ExistingAccountOutsideVerifiedDomain_Refused(t *testing.T) {
+	for name, verifier := range map[string]DomainVerifier{
+		"no verifier":         nil,
+		"domain not verified": staticVerifier{"attacker.io": true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, users, members := newProvisioning()
+			if verifier != nil {
+				svc.SetDomainVerifier(verifier)
+			}
+			seedOutsideAccount(t, users, "victim@corp.com")
+
+			_, _, err := svc.CreateOrActivate(context.Background(), shared.NewID(), ProvisionInput{
+				UserName: "victim@corp.com", Active: true,
+			})
+			if !errors.Is(err, ErrExistingAccountNeedsInvite) || !errors.Is(err, shared.ErrConflict) {
+				t.Fatalf("expected ErrExistingAccountNeedsInvite, got %v", err)
+			}
+			if len(members.byUser) != 0 {
+				t.Fatal("no membership may be created for a refused provision")
+			}
+		})
+	}
+}
+
+// On a domain the organization has DNS-verified, SCIM may attach the existing
+// account (the organization owns that identity).
+func TestProvision_ExistingAccountOnVerifiedDomain_Attached(t *testing.T) {
+	svc, users, members := newProvisioning()
+	svc.SetDomainVerifier(staticVerifier{"corp.com": true})
+	u := seedOutsideAccount(t, users, "staff@corp.com")
+
+	_, created, err := svc.CreateOrActivate(context.Background(), shared.NewID(), ProvisionInput{
+		UserName: "staff@corp.com", Active: true,
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if !created || members.byUser[u.ID()] == nil {
+		t.Fatal("expected the existing account to be attached on a verified domain")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -32,11 +33,13 @@ func (n NullableJSON) Value() (driver.Value, error) {
 // CommandRepository implements command.Repository using PostgreSQL.
 type CommandRepository struct {
 	db *DB
+	// lease is how long a claim holds without renewal (command_lease.go).
+	lease time.Duration
 }
 
 // NewCommandRepository creates a new CommandRepository.
 func NewCommandRepository(db *DB) *CommandRepository {
-	return &CommandRepository{db: db}
+	return &CommandRepository{db: db, lease: command.DefaultLeaseDuration}
 }
 
 // Create persists a new command.
@@ -365,13 +368,15 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID string) (bool, error) {
 	query := `
 		UPDATE commands
-		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW()
+		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW(),
+		    lease_epoch = lease_epoch + 1,
+		    lease_expires_at = NOW() + make_interval(secs => $4)
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 		  AND (sensor_id IS NULL OR sensor_id = $3)
 		  AND ` + zoneClaimPredicate("$3") + `
 		  AND ` + toolClaimPredicate("$3") + `
 	`
-	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID)
+	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())
 	if err != nil {
 		return false, fmt.Errorf("failed to claim command: %w", err)
 	}
@@ -458,7 +463,8 @@ func (r *CommandRepository) selectQuery() string {
 		       result, scheduled_at, schedule_id, step_run_id,
 		       is_platform_job, platform_sensor_id,
 		       auth_token_hash, auth_token_prefix, auth_token_expires_at,
-		       queue_priority, queued_at, dispatch_attempts, scan_zone_id
+		       queue_priority, queued_at, dispatch_attempts, scan_zone_id,
+		       lease_epoch, lease_expires_at
 		FROM commands
 	`
 }
@@ -543,6 +549,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		queuedAt           sql.NullTime
 		dispatchAttempts   int
 		scanZoneID         sql.NullString
+		leaseExpiresAt     sql.NullTime
 	)
 
 	var errorMessage sql.NullString
@@ -574,6 +581,8 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		&queuedAt,
 		&dispatchAttempts,
 		&scanZoneID,
+		&cmd.LeaseEpoch,
+		&leaseExpiresAt,
 	)
 
 	if err != nil {
@@ -654,6 +663,9 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		cmd.QueuedAt = &queuedAt.Time
 	}
 
+	if leaseExpiresAt.Valid {
+		cmd.LeaseExpiresAt = &leaseExpiresAt.Time
+	}
 	if scanZoneID.Valid {
 		zid, _ := shared.IDFromString(scanZoneID.String)
 		cmd.ScanZoneID = &zid
@@ -690,6 +702,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		queuedAt           sql.NullTime
 		dispatchAttempts   int
 		scanZoneID         sql.NullString
+		leaseExpiresAt     sql.NullTime
 	)
 
 	var errorMessage sql.NullString
@@ -721,6 +734,8 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		&queuedAt,
 		&dispatchAttempts,
 		&scanZoneID,
+		&cmd.LeaseEpoch,
+		&leaseExpiresAt,
 	)
 
 	if err != nil {
@@ -798,6 +813,9 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		cmd.QueuedAt = &queuedAt.Time
 	}
 
+	if leaseExpiresAt.Valid {
+		cmd.LeaseExpiresAt = &leaseExpiresAt.Time
+	}
 	if scanZoneID.Valid {
 		zid, _ := shared.IDFromString(scanZoneID.String)
 		cmd.ScanZoneID = &zid
@@ -1436,6 +1454,7 @@ func (r *CommandRepository) ReleaseForSensor(ctx context.Context, tenantID, comm
 		UPDATE commands
 		SET status = 'pending', sensor_id = NULL,
 		    acknowledged_at = NULL, started_at = NULL,
+		    lease_expires_at = NULL,
 		    error_message = $4
 		WHERE id = $1 AND tenant_id = $2 AND sensor_id = $3
 		  AND status IN ('acknowledged', 'running')`,

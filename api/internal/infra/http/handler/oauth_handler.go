@@ -209,10 +209,11 @@ type ProvidersResponse struct {
 
 // ListProviders returns the list of available OAuth providers.
 // @Summary      List OAuth providers
-// @Description  Returns list of available and configured OAuth providers
+// @Description  Returns the configured OAuth providers. Served only when social login (OAuth) is configured on this server; otherwise the route is not registered and returns 404. GET /auth/providers is always available and reports which login methods exist.
 // @Tags         OAuth
 // @Produce      json
 // @Success      200  {object}  ProvidersResponse
+// @Failure      404  "OAuth is not configured on this server"
 // @Router       /auth/oauth/providers [get]
 func (h *OAuthHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	providers := h.oauthService.GetAvailableProviders()

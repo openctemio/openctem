@@ -14,6 +14,7 @@ import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { env } from '@/lib/env'
+import { validateRedirectUrl } from '@/lib/redirect'
 import { setServerCookie, removeServerCookie } from '@/lib/cookies-server'
 import { devLog } from '@/lib/logger'
 import { authEndpoints, userEndpoints } from '@/lib/api/endpoints'
@@ -942,9 +943,12 @@ export async function localLogoutAction(redirectTo?: string): Promise<never> {
     await removeServerCookie(env.cookies.pendingTenants) // Pending tenant selection
     await removeServerCookie('app_permissions') // Legacy permissions cookie (cleanup)
 
-    devLog.log('[Logout] All cookies cleared, redirecting to:', redirectTo || '/login')
+    // A Server Action's argument comes from the client: only a same-origin
+    // path is followed after sign-out, anything else goes to /login.
+    const target = validateRedirectUrl(redirectTo, '/login')
+    devLog.log('[Logout] All cookies cleared, redirecting to:', target)
 
-    redirect(redirectTo || '/login')
+    redirect(target)
   } catch (error) {
     // Handle redirect error (expected)
     if (error instanceof Error && error.message === 'NEXT_REDIRECT') {

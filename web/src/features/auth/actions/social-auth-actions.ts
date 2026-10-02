@@ -17,6 +17,7 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
 import { setServerCookie } from '@/lib/cookies-server'
@@ -244,8 +245,8 @@ export async function initiateSocialLogin(
 
   if (!result.success) {
     // If we can't get the authorization URL, redirect back to the login page
-    // with the error so the login form surfaces it via toast (?error= handler).
-    redirect(`/login?error=${encodeURIComponent(result.error)}`)
+    // with an error code; the login form shows the matching message.
+    redirect(loginErrorHref('start_failed'))
   }
 
   redirect(result.data.authorizationUrl)

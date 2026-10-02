@@ -25,6 +25,9 @@ type SLABreachEvent struct {
 	SLADeadline     time.Time
 	OverdueDuration time.Duration
 	At              time.Time
+	// FindingSeverity is the breached finding's own severity. The
+	// notification is sent at max(high, FindingSeverity).
+	FindingSeverity string
 }
 
 // SLABreachPublisher delivers breach events to downstream consumers.
@@ -92,13 +95,14 @@ const breachSelectUpdateQuery = `
 	  AND sla_deadline IS NOT NULL
 	  AND (sla_status IS NULL OR sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
 	  AND status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
-	RETURNING tenant_id, id, sla_deadline
+	RETURNING tenant_id, id, sla_deadline, severity
 `
 
 type breachRow struct {
 	tenantID    string
 	findingID   string
 	slaDeadline time.Time
+	severity    string
 }
 
 // SLAEscalationController periodically checks for overdue findings
@@ -243,9 +247,11 @@ func (c *SLAEscalationController) scanBreaches(rows *sql.Rows) ([]breachRow, err
 	var breaches []breachRow
 	for rows.Next() {
 		var br breachRow
-		if err := rows.Scan(&br.tenantID, &br.findingID, &br.slaDeadline); err != nil {
+		var sev sql.NullString
+		if err := rows.Scan(&br.tenantID, &br.findingID, &br.slaDeadline, &sev); err != nil {
 			return nil, fmt.Errorf("scan breach row: %w", err)
 		}
+		br.severity = sev.String
 		breaches = append(breaches, br)
 	}
 	if err := rows.Err(); err != nil {
@@ -280,6 +286,7 @@ func breachEvent(br breachRow, now time.Time) (SLABreachEvent, bool) {
 		SLADeadline:     br.slaDeadline,
 		OverdueDuration: now.Sub(br.slaDeadline),
 		At:              now,
+		FindingSeverity: br.severity,
 	}, true
 }
 
@@ -300,7 +307,7 @@ func (c *SLAEscalationController) markWarning(ctx context.Context) {
 		  AND sla_deadline < NOW() + INTERVAL '3 days'
 		  AND (sla_status IS NULL OR sla_status = 'on_track')
 		  AND status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
-		RETURNING tenant_id, id, sla_deadline
+		RETURNING tenant_id, id, sla_deadline, severity
 	`
 
 	rows, err := c.db.QueryContext(ctx, warningQuery)

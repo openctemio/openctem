@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/robfig/cron/v3"
-
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/reportschedule"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -53,13 +51,12 @@ type ReportSchedulerConfig struct {
 // This is the controller that was missing — schedules could be created but never
 // executed because nothing invoked ListDue().
 type ReportScheduler struct {
-	store    ReportScheduleStore
-	stats    ReportStatsSource
-	emailer  ReportEmailer
-	tenants  TenantNamer // optional; nil → tenant id used as the name
-	config   ReportSchedulerConfig
-	cronspec cron.Parser
-	logger   *logger.Logger
+	store   ReportScheduleStore
+	stats   ReportStatsSource
+	emailer ReportEmailer
+	tenants TenantNamer // optional; nil → tenant id used as the name
+	config  ReportSchedulerConfig
+	logger  *logger.Logger
 	// moduleGuard skips schedules whose tenant has not subscribed to the reports
 	// module. Optional — nil means "never skip" (fully backward compatible).
 	moduleGuard ModuleGuard
@@ -78,10 +75,7 @@ func NewReportScheduler(store ReportScheduleStore, stats ReportStatsSource, emai
 		tenants:     tenants,
 		moduleGuard: moduleGuard,
 		config:      cfg,
-		// Standard 5-field cron (minute hour dom month dow), matching what the
-		// schedule UI collects.
-		cronspec: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
-		logger:   log.With("controller", "report-scheduler"),
+		logger:      log.With("controller", "report-scheduler"),
 	}
 }
 
@@ -128,18 +122,16 @@ func (c *ReportScheduler) Reconcile(ctx context.Context) (int, error) {
 	return processed, nil
 }
 
-// nextRun parses the cron expression and returns the next fire after now.
-// Falls back to +24h on a bad expression (logged) so the schedule keeps moving
-// rather than busy-looping or stalling.
+// nextRun returns the schedule's next fire after now in its own timezone
+// (ReportSchedule.NextFireAfter). Falls back to +24h on a bad expression
+// (logged) so the schedule keeps moving rather than busy-looping or stalling.
 func (c *ReportScheduler) nextRun(s *reportschedule.ReportSchedule, now time.Time) *time.Time {
-	sched, err := c.cronspec.Parse(s.CronExpression())
+	t, err := s.NextFireAfter(now)
 	if err != nil {
 		c.logger.Warn("invalid cron expression; defaulting next run to +24h",
 			"schedule_id", s.ID().String(), "cron", s.CronExpression(), "error", err)
-		t := now.Add(24 * time.Hour)
-		return &t
+		t = now.Add(24 * time.Hour)
 	}
-	t := sched.Next(now)
 	return &t
 }
 

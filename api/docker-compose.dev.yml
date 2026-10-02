@@ -86,6 +86,8 @@ services:
       # Encryption (optional in dev - credentials stored in plaintext if not set)
       # Generate with: openssl rand -hex 32
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      # Old key(s) while rotating APP_ENCRYPTION_KEY (docs/deployment/encryption-key-rotation.md).
+      APP_ENCRYPTION_KEY_PREVIOUS: ${APP_ENCRYPTION_KEY_PREVIOUS:-}
       # SMTP (optional - use env vars from host)
       SMTP_ENABLED: ${SMTP_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -113,10 +115,11 @@ services:
       - go-mod-cache:/go/pkg/mod
       # Preserve build cache
       - go-build-cache:/root/.cache/go-build
-      # Mount SDK source
-      - ../sdk:/app/sdk
-      # Mount Docker-specific go.work (paths adjusted for container)
-      - ./go.work.docker:/app/go.work
+      # No SDK mount and no go.work: the API does not depend on sdk-go (the
+      # sensor does), and both paths these lines used to mount (../sdk,
+      # ./go.work.docker) do not exist in the monorepo, so Docker created
+      # empty root-owned directories for them in the checkout. The image
+      # builds with GOWORK unset and no go.work file, exactly like CI.
     depends_on:
       postgres:
         condition: service_healthy

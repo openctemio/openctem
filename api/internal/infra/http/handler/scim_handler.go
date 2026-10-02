@@ -355,6 +355,8 @@ func (h *SCIMHandler) writeProvisionError(w http.ResponseWriter, err error) {
 		h.scimError(w, http.StatusNotFound, "", "user not found")
 	case errors.Is(err, shared.ErrValidation):
 		h.scimError(w, http.StatusBadRequest, "invalidValue", "invalid request")
+	case errors.Is(err, shared.ErrConflict):
+		h.scimError(w, http.StatusConflict, "uniqueness", "an account with this email already exists; invite them instead")
 	default:
 		h.logger.Error("scim provisioning failed", "error", err)
 		h.scimError(w, http.StatusInternalServerError, "", "provisioning failed")

@@ -87,15 +87,11 @@ func norm(method, path string) Op {
 	return Op{Method: strings.ToUpper(method), Path: NormalizePath(path)}
 }
 
-// rootOnlyPaths are registered on the root router rather than under BasePath,
-// deliberately: liveness and readiness probes must not require a version prefix
-// or auth. Swagger 2.0 has no per-operation basePath, so the spec renders them
-// as /api/v1/health and /api/v1/ready. This is the one place the spec cannot be
-// literally true, and it is recorded here rather than papered over.
-var rootOnlyPaths = map[string]bool{
-	"/health": true,
-	"/ready":  true,
-}
+// Routes registered on the root router (the /health and /ready probes) are
+// outside BasePath. Swagger 2.0 has no per-operation basePath, so an
+// annotation on them would render as /api/v1/health, a path that 404s. They
+// are therefore not annotated, and RouteToSpec leaves them out of the
+// documented surface.
 
 // ---------------------------------------------------------------------------
 // 1. @Router annotations
@@ -297,18 +293,12 @@ func Baseline(path string) (map[Op]bool, error) {
 
 // SpecToRoute maps a spec/annotation path onto the route path it should serve.
 func SpecToRoute(specPath string) string {
-	if rootOnlyPaths[specPath] {
-		return specPath
-	}
 	return BasePath + specPath
 }
 
 // RouteToSpec maps a registered route path back onto its spec path, reporting
-// false when the route lives outside BasePath and is not a known root-only one.
+// false when the route lives outside BasePath.
 func RouteToSpec(routePath string) (string, bool) {
-	if rootOnlyPaths[routePath] {
-		return routePath, true
-	}
 	if !strings.HasPrefix(routePath, BasePath+"/") {
 		return "", false
 	}

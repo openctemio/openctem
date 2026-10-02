@@ -136,3 +136,22 @@ func TestTokenRevokeIsTenantScoped(t *testing.T) {
 		t.Error("token should still be valid after a failed cross-tenant revoke")
 	}
 }
+
+// Encryption-key rotation: a token minted under the old pepper keeps
+// authenticating while the old key is listed as previous.
+func TestTokenService_PreviousPepperDuringKeyRotation(t *testing.T) {
+	repo := newFakeTokenRepo()
+	old := NewTokenService(repo, "old-pepper", logger.NewNop())
+	minted, err := old.Mint(context.Background(), shared.NewID(), "pre-rotation", nil)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	rotated := NewTokenService(repo, "new-pepper", logger.NewNop())
+	if _, err := rotated.Authenticate(context.Background(), minted.Plaintext); err == nil {
+		t.Fatal("without the previous pepper the old token must not authenticate")
+	}
+	rotated.SetLegacyPeppers("old-pepper")
+	if _, err := rotated.Authenticate(context.Background(), minted.Plaintext); err != nil {
+		t.Fatalf("with the previous pepper listed the old token must authenticate: %v", err)
+	}
+}

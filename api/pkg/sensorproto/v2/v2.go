@@ -96,6 +96,10 @@ const (
 	HeaderSensorFeatures = "X-OpenCTEM-Sensor-Features"
 	// HeaderRetryAfter tells a sensor when to poll or retry.
 	HeaderRetryAfter = "Retry-After"
+	// HeaderLeaseEpoch is the lease epoch (Command.LeaseEpoch) a sensor
+	// holds a command under, sent on complete and fail: a command claimed
+	// again since refuses the change. Optional.
+	HeaderLeaseEpoch = "X-OpenCTEM-Lease-Epoch"
 )
 
 // FeatureResultsV2 is the feature a v1 sensor names in HeaderSensorFeatures to

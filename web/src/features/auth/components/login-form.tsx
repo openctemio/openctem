@@ -31,6 +31,8 @@ import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 import { validateRedirectUrl } from '@/lib/redirect'
+import { loginErrorMessage } from '@/features/auth/lib/login-error'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Import schema and server actions
 import { loginSchema, type LoginInput } from '../schemas/auth.schema'
@@ -124,12 +126,15 @@ export function LoginForm({
     : []
 
   // Check for error from OAuth/SSO callback
+  // Only a known code's message is shown, never the raw parameter: a crafted
+  // link must not put arbitrary text on the sign-in page.
   const errorParam = searchParams.get('error')
+  const { t } = useTranslation()
+  const loginError = errorParam ? loginErrorMessage(errorParam) : null
+  const errorMessage = loginError ? t(loginError.key, loginError.fallback) : null
   useEffect(() => {
-    if (errorParam) {
-      toast.error(errorParam)
-    }
-  }, [errorParam])
+    if (errorMessage) toast.error(errorMessage)
+  }, [errorMessage])
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({

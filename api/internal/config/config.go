@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
@@ -220,6 +221,13 @@ type SensorConfigConfig struct {
 	// load" and advises HeartbeatLoadedInterval. SENSOR_HEARTBEAT_SLOW_QUERY
 	// (default 250ms).
 	HeartbeatSlowQuery time.Duration
+
+	// CommandLease is how long a sensor holds a claimed command without
+	// renewing its lease (every heartbeat that lists the command renews
+	// it). A command whose lease runs out goes back to the queue, and the
+	// sensor that held it can no longer complete it (RFC-035 D6).
+	// SENSOR_COMMAND_LEASE, default 3m, clamped to 1m-30m.
+	CommandLease time.Duration
 
 	// LatestVersion is the newest sensor release (SENSOR_LATEST_VERSION,
 	// default DefaultSensorLatestVersion). The Sensors page compares each
@@ -752,6 +760,15 @@ type EncryptionConfig struct {
 	// in dev. Production NEVER allows plaintext (initEncryptor enforces).
 	// Env var: APP_ALLOW_PLAINTEXT_CREDENTIALS
 	AllowPlaintext bool
+
+	// PreviousKeys are earlier encryption keys, kept only while a key
+	// rotation is in progress: values encrypted under them stay readable,
+	// and token hashes peppered with them keep verifying, while new values
+	// use Key. Each is auto-detected like Key (raw 32, hex 64, base64 44).
+	// Remove them once cmd/rekey has re-encrypted the stored values and the
+	// tokens issued under the old key have been rotated.
+	// Env var: APP_ENCRYPTION_KEY_PREVIOUS (comma-separated)
+	PreviousKeys []string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -823,6 +840,25 @@ func (c *AITriageConfig) IsConfigured() bool {
 }
 
 // Load loads configuration from environment variables.
+// envDevelopment is the APP_ENV value of a developer machine.
+const envDevelopment = "development"
+
+// defaultLogLevel is LOG_LEVEL when it is not set.
+func defaultLogLevel(appEnv string) string {
+	if appEnv == envDevelopment {
+		return "debug"
+	}
+	return "info"
+}
+
+// defaultLogFormat is LOG_FORMAT when it is not set.
+func defaultLogFormat(appEnv string) string {
+	if appEnv == envDevelopment {
+		return "text"
+	}
+	return "json"
+}
+
 func Load() (*Config, error) {
 	deprecations, err := resolveRenamedEnv(os.LookupEnv, os.Setenv)
 	if err != nil {
@@ -852,6 +888,7 @@ func Load() (*Config, error) {
 			HeartbeatMinInterval:    getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
 			HeartbeatMaxInterval:    getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
 			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
+			CommandLease:            getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
 			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
 			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", "")),
 			SDKMinVersion:           sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", "")),
@@ -915,8 +952,11 @@ func Load() (*Config, error) {
 			MaxRetryDelay: getEnvDuration("REDIS_MAX_RETRY_DELAY", 3*time.Second),
 		},
 		Log: LogConfig{
-			Level:              getEnv("LOG_LEVEL", "info"), // Default info for safety
-			Format:             getEnv("LOG_FORMAT", "json"),
+			// Unset: debug/text for APP_ENV=development (readable while
+			// developing), info/json everywhere else. Set, they apply in every
+			// environment.
+			Level:              getEnv("LOG_LEVEL", defaultLogLevel(getEnv("APP_ENV", envDevelopment))),
+			Format:             getEnv("LOG_FORMAT", defaultLogFormat(getEnv("APP_ENV", envDevelopment))),
 			SamplingEnabled:    getEnvBool("LOG_SAMPLING_ENABLED", false),   // Enable via env for production
 			SamplingThreshold:  getEnvInt("LOG_SAMPLING_THRESHOLD", 100),    // First 100 identical logs/sec
 			SamplingRate:       getEnvFloat("LOG_SAMPLING_RATE", 0.1),       // Then 10%
@@ -1035,6 +1075,7 @@ func Load() (*Config, error) {
 			Key:            getEnv("APP_ENCRYPTION_KEY", ""),
 			KeyFormat:      getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
 			AllowPlaintext: getEnvBool("APP_ALLOW_PLAINTEXT_CREDENTIALS", false),
+			PreviousKeys:   getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
 		},
 		Webhooks: WebhooksConfig{
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
@@ -1313,6 +1354,16 @@ func (c *Config) validateEncryption() error {
 		}
 	default:
 		return fmt.Errorf("APP_ENCRYPTION_KEY_FORMAT must be 'raw', 'hex', or 'base64', got '%s'", format)
+	}
+
+	for i, prev := range c.Encryption.PreviousKeys {
+		if _, err := crypto.ParseKey(prev, ""); err != nil {
+			// Never echo the key itself.
+			return fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d is not a valid key (expected 32 raw, 64 hex or 44 base64 characters)", i+1)
+		}
+		if prev == c.Encryption.Key {
+			return fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d equals APP_ENCRYPTION_KEY", i+1)
+		}
 	}
 
 	return nil

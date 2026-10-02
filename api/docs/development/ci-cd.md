@@ -3,7 +3,7 @@
 CI for the `openctemio/openctem` monorepo (`api/` + `web/`). All workflows live
 in the repository root's [`.github/workflows/`](../../../.github/workflows/);
 `api/` and `web/` have none of their own. The workflow files are the source of
-truth: this page describes them as of the monorepo cutover (2026-10-02).
+truth: this page describes them as of the merge-queue routing (#730, 2026-10-02).
 
 ## Workflows
 
@@ -11,11 +11,11 @@ truth: this page describes them as of the monorepo cutover (2026-10-02).
 |-----------------|----------|--------------|------------|
 | API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | Migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, lint, tests, protocol-v1 compat, build, Docker build | **API CI OK** |
 | Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | Generated API types check, type-check, ESLint, Prettier, palette drift, Vitest, `next build` (push only) | **Web CI OK** |
-| CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | CodeQL for Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language | **CodeQL OK** |
+| CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
 | All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. | **All-in-one OK** |
-| Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks over the full git history (root `.betterleaks.toml`, `.gitleaksignore`); actionlint over the workflows | **Secret Scanning**, **Workflow Lint** |
-| API Security (`api-security.yml`) | PR / push; merge queue; weekly | govulncheck, Trivy (fs), Semgrep, Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
-| Web Security (`web-security.yml`) | PR / push; merge queue; weekly | npm audit, Trivy (fs), ESLint security rules, Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
+| Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. actionlint over the workflows | **Secret Scanning**, **Workflow Lint** |
+| API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | govulncheck, Trivy (fs), Semgrep, Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
+| Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | npm audit, Trivy (fs), ESLint security rules, Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
 | API Fuzz (`api-fuzz.yml`) | Nightly (03:17 UTC), manual | 10 minutes of `FuzzStrictCTIS` (the protocol-v2 results decoder); uploads a crasher artifact on failure | — |
 | Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)) | — |
 | Release (`release.yml`) | Tag `v*` | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
@@ -24,8 +24,10 @@ Scheduled runs (weekly security, nightly fuzz) run from the default branch, `mai
 
 ### Required checks
 
-Branch protection on `main` and `develop` requires exactly these six checks
-(strict: the branch must be up to date with its base):
+Branch protection on `main` and `develop` requires exactly these six checks.
+Merges go through the GitHub merge queue (see [Merge queue](#merge-queue)); the
+strict "branch must be up to date" rule is off, because the queue itself tests
+each PR on top of the current base:
 
 `API CI OK` · `Web CI OK` · `CodeQL OK` · `All-in-one OK` · `Secret Scanning` · `Workflow Lint`
 
@@ -39,26 +41,78 @@ these workflow gates.
 
 ### Path filtering
 
-No workflow uses `on.<event>.paths`: a workflow skipped that way leaves its
-required checks *Pending* forever. Instead every workflow always starts, and a
-`changes` job runs [`.github/scripts/changed.sh`](../../../.github/scripts/changed.sh),
-which diffs the PR (against its base) or the push (against `before`) and decides
-whether the real jobs run. A job skipped by `if:` reports success to its aggregator.
+One rule set, in [`.github/scripts/changed.sh`](../../../.github/scripts/changed.sh),
+decides two outputs, `api` and `web`, for every workflow:
 
-| Workflow | Runs its jobs when the change touches |
-|----------|----------------------------------------|
-| API CI, API Security | `api/`, `.github/workflows/api-*`, `.github/scripts/` |
-| Web CI | `web/`, **`api/api/openapi/swagger.yaml`**, `.github/workflows/web-*`, `.github/scripts/` |
-| Web Security | `web/`, `.github/workflows/web-*`, `.github/scripts/` |
-| CodeQL | Go leg: `api/`; JS/TS leg: `web/`; both: `.github/workflows/codeql.yml` |
-| All-in-one CI | `deploy/`, `api/deploy/gateway/`, `api/Dockerfile`, `api/.dockerignore`, `api/go.mod`, `web/Dockerfile`, `web/.dockerignore`, `web/package-lock.json`, `web/server-with-ws.mjs`, `web/next.config.ts`, `.github/scripts/smoke-*`, `.github/workflows/allinone-ci.yml` |
-| Repository Security | always (no filter) |
+| Changed path | api | web |
+|--------------|-----|-----|
+| `api/**` | ✓ | |
+| `web/**` | | ✓ |
+| `api/api/openapi/swagger.yaml` (the web types are generated from it) | ✓ | ✓ |
+| Shared: root `Makefile`, `go.work*`, `.github/**`, `deploy/**` | ✓ | ✓ |
+| Anything else (root docs, `.githooks/`) | | |
 
-Any event that is not a PR or an ordinary branch push (schedule, manual
-dispatch, tag, merge queue, first push of a branch) runs everything.
+The diff range depends on the event:
+
+| Event | Range |
+|-------|-------|
+| `pull_request` | the PR against its base (`origin/<base>...HEAD`) |
+| `push` | `before..HEAD` |
+| `merge_group` | `merge_group.base_sha..head_sha`, exactly the queued PR |
+| schedule, manual dispatch, tag, a branch's first push, missing SHAs | everything runs |
+
+How each workflow uses the outputs:
+
+| Workflow | Scoping |
+|----------|---------|
+| API CI | always starts; real jobs run when `api` |
+| Web CI | always starts; real jobs run when `web` |
+| CodeQL | always starts; Go when `api`, JS/TS when `web` (PR, merge queue); both on push and weekly |
+| All-in-one CI | always starts; runs when `api` or `web` (both images are built from the whole component directory) |
+| Repository Security | always runs (secret scan diff-scoped on PR and merge queue) |
+| API Security | `on.paths`: `api/**` + shared files. Does not start at all for a web-only change |
+| Web Security | `on.paths`: `web/**` + shared files. Does not start at all for an API-only change |
+
+Workflows that carry a required check never use `on.<event>.paths`: a workflow
+skipped that way leaves its required checks *Pending* forever. They always start,
+and a job skipped by `if:` reports success to its aggregator. API Security and
+Web Security carry no required check, so they can use `on.paths`. If you change
+the shared list, change it in `changed.sh` and in both of those `paths:` lists.
 
 Each workflow cancels an older run for the same PR or branch; tag and scheduled
 runs are never cancelled.
+
+### Merge queue
+
+1. A PR runs CI as usual (`pull_request`). When it is green and approved,
+   **Merge when ready** adds it to the queue.
+2. The queue creates `gh-readonly-queue/<base>/pr-<n>-<sha>`: the base (or the
+   group ahead of it in the queue) plus this PR, and fires `merge_group`
+   (`checks_requested`).
+3. API CI, Web CI, CodeQL, All-in-one CI and Repository Security run on that ref.
+   `changed.sh` diffs `base_sha..head_sha`, so a queued web-only PR runs only web
+   jobs, as it did on the PR.
+4. All six required checks report on every queue ref: the four `… OK`
+   aggregators run with `if: always()` and pass when their jobs were skipped;
+   Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
+5. When all six pass, the queue fast-forwards the base branch, and the `push` run
+   (path-scoped, plus CodeQL on both languages) refreshes the branch's baseline.
+6. A failure removes the PR from the queue; the groups behind it are rebuilt.
+
+PR-only steps (Migration Safety, golangci-lint on new code) are skipped in the
+queue: they already ran on the PR. API Security and Web Security do not run in
+the queue (no required check; the PR and the push scan the change).
+
+### Toolchain versions
+
+- **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
+  reads the `toolchain` directive (currently `go1.26.8`). setup-go sets
+  `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
+  and the release binaries use. `api/Dockerfile` and `api/Dockerfile.admin-cli`
+  pin their `golang:` base image separately: bump them with `go.mod`.
+- **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
+  (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
+  its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
 
 ### The API ↔ web contract
 
@@ -85,7 +139,7 @@ make check            # both contract checks, as CI runs them
 | OpenAPI Contract | See above. |
 | Gateway Routing | `api/deploy/gateway/smoke-test.sh` + renders the production compose files. |
 | Lint | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
-| Test | `go test -race` against Postgres 17 + Redis 7 service containers. |
+| Test | `go test -race -timeout 20m` against Postgres 17 + Redis 7 service containers. |
 | Protocol v1 Compatibility | Runs the pinned, last-released sdk-go against a freshly built server (`api/scripts/compat-v1.sh`). |
 | Build | `cmd/server` and `cmd/bootstrap-admin` binaries. |
 | Docker Build | Pushes to `main` only; builds the image, does not push it. |
@@ -187,7 +241,7 @@ develop  integration branch; every PR targets develop
 
 1. Branch from `develop`, open the PR against `develop`. One PR may change both
    `api/` and `web/`.
-2. All six required checks green, branch up to date.
+2. All six required checks green, then **Merge when ready** (merge queue).
 3. Merge with a merge commit or squash, never "rebase and merge" for branches
    that contain merges.
 4. Release: `develop` → PR to `main` → tag `vX.Y.Z` on `main`.
@@ -209,16 +263,16 @@ The legacy `ui` GHCR package was created by `openctemio/ui`; this repository nee
 
 ## Troubleshooting
 
-- **A required check stays Pending.** Something added `on.paths` to a workflow;
-  remove it and gate the jobs through the `changes` job instead.
+- **A required check stays Pending.** Something added `on.paths` to a workflow
+  that carries a required check, or dropped its `merge_group` trigger; gate the
+  jobs through the `changes` job instead.
 - **Web CI fails on `check:api-types`.** The spec changed without regenerating the
   web types: `make api-types`, commit `web/src/lib/api/generated/api.types.ts`.
 - **golangci-lint reports issues you didn't touch.** The PR's base is stale; rebase
   on `develop` (lint diffs against `.github/scripts/effective-base.sh`).
-- **govulncheck fails on every PR at once.** A new Go stdlib CVE: bump the Go
-  version everywhere it is pinned, together: `GO_VERSION` in `api-ci.yml`,
-  `api-security.yml` and `release.yml`, and `go-version` in `codeql.yml` and
-  `api-fuzz.yml`.
+- **govulncheck fails on every PR at once.** A new Go stdlib CVE: bump the
+  `toolchain` directive in `api/go.mod` (CI follows it) and the `golang:` base
+  image in `api/Dockerfile` and `api/Dockerfile.admin-cli`.
 - **Image not found after a tag.** Check the Docker Publish run; the tag must match
   `v<major>.<minor>.<patch>[-suffix]`. Images for v0.8.0 and earlier exist only
   under the legacy `api` / `ui` names.

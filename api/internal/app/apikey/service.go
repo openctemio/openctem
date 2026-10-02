@@ -38,6 +38,7 @@ func errString(err error) string {
 type Service struct {
 	repo       apikeydom.Repository
 	pepper     string
+	legacy     []string          // earlier peppers that still verify (key rotation)
 	membership MembershipChecker // nil → no member-lifecycle gate (tests only)
 	holder     HolderPermissions // nil → scopes are not narrowed to the holder (tests only)
 	audit      *auditapp.AuditService
@@ -66,6 +67,18 @@ func NewService(repo apikeydom.Repository, pepper string, log *logger.Logger) *S
 		repo:   repo,
 		pepper: pepper,
 		logger: log.With("service", "apikey"),
+	}
+}
+
+// SetLegacyPeppers sets earlier peppers whose key hashes keep verifying
+// while APP_ENCRYPTION_KEY rotates (APP_ENCRYPTION_KEY_PREVIOUS). New keys
+// are always hashed with the current pepper.
+func (s *Service) SetLegacyPeppers(peppers ...string) {
+	s.legacy = s.legacy[:0]
+	for _, p := range peppers {
+		if p != "" && p != s.pepper {
+			s.legacy = append(s.legacy, p)
+		}
 	}
 }
 
@@ -225,6 +238,14 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 	}
 
 	key, err := s.repo.GetByHash(ctx, crypto.HashTokenPeppered(rawKey, s.pepper))
+	// Keys hashed under an earlier pepper (a rotated encryption key) keep
+	// working while it is listed as previous.
+	for _, p := range s.legacy {
+		if err == nil || !errors.Is(err, shared.ErrNotFound) {
+			break
+		}
+		key, err = s.repo.GetByHash(ctx, crypto.HashTokenPeppered(rawKey, p))
+	}
 	if err != nil {
 		// Legacy rows (pre-pepper) stored a plain SHA-256 hash; retry with it
 		// so old keys keep working after the pepper was introduced.
