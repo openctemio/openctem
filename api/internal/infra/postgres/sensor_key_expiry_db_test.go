@@ -73,11 +73,11 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 		t.Errorf("KeyExpiresAt mismatch: got %v, want %v", got.KeyExpiresAt.UTC(), exp.UTC())
 	}
 
-	// Update to a new expiry and confirm it persists.
+	// Change the key with a new expiry (key columns change only through
+	// UpdateAPIKey; Update never writes them) and confirm it persists.
 	newExp := time.Now().Add(48 * time.Hour).Truncate(time.Microsecond)
-	got.SetAPIKeyWithExpiry("hash-keyexp-2", "rda_keyexp2", &newExp)
-	if err := repo.Update(ctx, got); err != nil {
-		t.Fatalf("update sensor: %v", err)
+	if ok, err := repo.UpdateAPIKey(ctx, got.ID, "hash-keyexp-2", "rda_keyexp2", &newExp, false); err != nil || !ok {
+		t.Fatalf("update api key: ok=%v err=%v", ok, err)
 	}
 	got2, err := repo.GetByAPIKeyHash(ctx, "hash-keyexp-2")
 	if err != nil {
@@ -88,9 +88,8 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	}
 
 	// A never-expiring key (nil) must also round-trip as nil.
-	got2.SetAPIKey("hash-keyexp-3", "rda_keyexp3")
-	if err := repo.Update(ctx, got2); err != nil {
-		t.Fatalf("update sensor (nil expiry): %v", err)
+	if ok, err := repo.UpdateAPIKey(ctx, got2.ID, "hash-keyexp-3", "rda_keyexp3", nil, false); err != nil || !ok {
+		t.Fatalf("update api key (nil expiry): ok=%v err=%v", ok, err)
 	}
 	got3, err := repo.GetByAPIKeyHash(ctx, "hash-keyexp-3")
 	if err != nil {
@@ -120,5 +119,77 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	}
 	if got, _ := repo.GetByID(ctx, a.ID); got.KeyExpiresAt == nil || got.KeyExpiresAt.Equal(future) {
 		t.Errorf("status guard failed: revoked sensor's key_expires_at was rewritten to %v", got.KeyExpiresAt)
+	}
+}
+
+// An admin request that read the sensor before a key change (rename, activate,
+// disable, revoke) must not write the old key columns back when it saves: the
+// regenerated key and the expiry that retires a superseded key stay as they
+// are. Skipped unless DATABASE_URL is set.
+func TestSensorUpdate_DoesNotRevertKeyColumns(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB check")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	tenantID := shared.NewID()
+	if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
+		tenantID.String(), "sensor-update-keys", "suk-"+tenantID.String()[:8]); err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
+
+	repo := NewSensorRepository(&DB{DB: db})
+	a, err := sensor.NewSensor(tenantID, "suk-sensor", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
+	if err != nil {
+		t.Fatalf("new sensor: %v", err)
+	}
+	a.SetAPIKey("old-hash", "rda_old0001")
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Request 1 reads the sensor (old key, no expiry).
+	stale, err := repo.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	// Meanwhile the key is regenerated with an expiry.
+	exp := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	if ok, err := repo.UpdateAPIKey(ctx, a.ID, "new-hash", "rda_new0001", &exp, false); err != nil || !ok {
+		t.Fatalf("UpdateAPIKey: ok=%v err=%v", ok, err)
+	}
+
+	// Request 1 now saves its rename from the stale copy.
+	stale.Name = "suk-renamed"
+	if err := repo.Update(ctx, stale); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	var hash, prefix, name string
+	var expires sql.NullTime
+	if err := db.QueryRowContext(ctx,
+		`SELECT api_key_hash, api_key_prefix, key_expires_at, name FROM sensors WHERE id = $1`, a.ID.String(),
+	).Scan(&hash, &prefix, &expires, &name); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if name != "suk-renamed" {
+		t.Errorf("name = %q, want the rename applied", name)
+	}
+	if hash != "new-hash" || prefix != "rda_new0001" {
+		t.Errorf("key reverted by a stale Update: hash=%q prefix=%q", hash, prefix)
+	}
+	if !expires.Valid || !expires.Time.Equal(exp) {
+		t.Errorf("key expiry reverted by a stale Update: %v", expires)
 	}
 }

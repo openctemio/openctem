@@ -195,7 +195,12 @@ func (r *SensorRepository) List(ctx context.Context, filter sensor.Filter, page 
 	return pagination.NewResult(sensors, total, page), nil
 }
 
-// Update updates a sensor.
+// Update writes a sensor's mutable fields from a. It deliberately does NOT
+// write the key columns (api_key_hash, api_key_prefix, key_expires_at): those
+// change only through Create, UpdateAPIKey and UpdateKeyExpiry. Writing them
+// here from a copy read at the start of an admin request (rename, activate,
+// disable, revoke) let that request put back a key an admin had just
+// regenerated, or clear the expiry that retires a superseded key.
 func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 	metadata, err := json.Marshal(a.Metadata)
 	if err != nil {
@@ -216,13 +221,13 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 		UPDATE sensors
 		SET name = $2, type = $3, description = $4, capabilities = $5, tools = $6,
 		    execution_mode = $7, status = $8, health = $9, status_message = $10,
-		    api_key_hash = $11, api_key_prefix = $12, metadata = $13, labels = $14, config = $15,
-		    version = $16, hostname = $17, ip_address = $18,
-		    cpu_percent = $19, memory_percent = $20, max_concurrent_jobs = $21, current_jobs = $22, region = $23,
-		    disk_read_mbps = $24, disk_write_mbps = $25, network_rx_mbps = $26, network_tx_mbps = $27,
-		    load_score = $28, metrics_updated_at = $29,
-		    last_seen_at = $30, last_error_at = $31, total_findings = $32, total_scans = $33, error_count = $34,
-		    updated_at = $35, key_expires_at = $36
+		    metadata = $11, labels = $12, config = $13,
+		    version = $14, hostname = $15, ip_address = $16,
+		    cpu_percent = $17, memory_percent = $18, max_concurrent_jobs = $19, current_jobs = $20, region = $21,
+		    disk_read_mbps = $22, disk_write_mbps = $23, network_rx_mbps = $24, network_tx_mbps = $25,
+		    load_score = $26, metrics_updated_at = $27,
+		    last_seen_at = $28, last_error_at = $29, total_findings = $30, total_scans = $31, error_count = $32,
+		    updated_at = $33
 		WHERE id = $1
 	`
 
@@ -242,8 +247,6 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 		string(a.Status),
 		string(a.Health),
 		a.StatusMessage,
-		a.APIKeyHash,
-		a.APIKeyPrefix,
 		metadata,
 		labels,
 		config,
@@ -267,7 +270,6 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 		a.TotalScans,
 		a.ErrorCount,
 		a.UpdatedAt,
-		nullTime(a.KeyExpiresAt),
 	)
 
 	if err != nil {
