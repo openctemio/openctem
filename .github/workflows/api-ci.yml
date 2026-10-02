@@ -14,6 +14,7 @@ on:
   pull_request:
     branches: [main, develop]
   merge_group:
+    types: [checks_requested]
 
 # A newer push to the same PR or branch cancels the older run. Tags (releases)
 # and the scheduled scan are never cancelled.
@@ -48,6 +49,8 @@ jobs:
         working-directory: .
         env:
           EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/changed.sh
 
   migrations:

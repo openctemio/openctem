@@ -5,8 +5,9 @@ name: Web Security
 
 # No required check lives here, so this workflow uses `paths:` and does not
 # start at all for an API-only change. Same routing as .github/scripts/changed.sh
-# (web/ + shared files); keep the two in step. The weekly schedule and
-# merge_group ignore `paths:` and scan everything.
+# (web/ + shared files); keep the two in step. The weekly schedule scans
+# everything. No merge_group trigger: it cannot be path-filtered, the PR run
+# already scanned the change, and the push to the branch scans it again.
 
 on:
   push:
@@ -27,7 +28,6 @@ on:
       - 'go.work.sum'
       - '.github/**'
       - 'deploy/**'
-  merge_group:
   schedule:
     - cron: '0 0 * * 1'
 

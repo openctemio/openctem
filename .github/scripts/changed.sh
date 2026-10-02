@@ -19,8 +19,10 @@
 # check (api-security.yml, web-security.yml) use `paths:` directly and do not
 # start at all for the other side.
 #
-# Anything that is not a PR or an ordinary branch push (schedule, dispatch, tag,
-# first push of a branch, merge_group) runs everything: when in doubt, run.
+# PR: diff against the base branch. Push: before..HEAD. Merge queue
+# (merge_group): merge_group.base_sha..head_sha, i.e. only the queued PR.
+# Anything else (schedule, dispatch, tag, first push of a branch, missing
+# SHAs) runs everything: when in doubt, run.
 set -euo pipefail
 
 shared=(Makefile go.work go.work.sum .github/ deploy/)
@@ -40,6 +42,18 @@ case "${GITHUB_EVENT_NAME:-}" in
       all "push without a usable 'before'"
     fi
     range="${before}..HEAD" ;;
+  merge_group)
+    # A queued group: base_sha is what the group sits on (the branch tip, or
+    # the group ahead of it in the queue), head_sha is base + this PR. The
+    # diff is exactly what this PR adds, so a queued web-only PR runs only
+    # web jobs, as it did on the PR itself.
+    base="${MG_BASE:-}" head="${MG_HEAD:-}"
+    if [[ -z "$base" || -z "$head" ]]; then all "merge_group without base_sha/head_sha"; fi
+    git cat-file -e "${base}^{commit}" 2>/dev/null || git fetch --no-tags --quiet origin "$base" || true
+    if ! git cat-file -e "${base}^{commit}" 2>/dev/null || ! git cat-file -e "${head}^{commit}" 2>/dev/null; then
+      all "merge_group commits not available"
+    fi
+    range="${base}..${head}" ;;
   *)
     all "event ${GITHUB_EVENT_NAME:-unknown} runs everything" ;;
 esac

@@ -20,6 +20,7 @@ on:
   pull_request:
     branches: [main, develop]
   merge_group:
+    types: [checks_requested]
   schedule:
     - cron: '0 0 * * 1'
 
@@ -58,12 +59,13 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: |
           case "$EVENT" in
             pull_request)
               git fetch --no-tags --quiet origin "$BASE_REF"
               range="origin/${BASE_REF}..HEAD" ;;
-            merge_group) range="${MG_BASE}..HEAD" ;;
+            merge_group) range="${MG_BASE}..${MG_HEAD}" ;;
             *) range="" ;;
           esac
           echo "range=$range" >> "$GITHUB_OUTPUT"

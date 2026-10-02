@@ -20,6 +20,7 @@ on:
   pull_request:
     branches: [main, develop]
   merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -41,6 +42,8 @@ jobs:
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/changed.sh
 
   images:
