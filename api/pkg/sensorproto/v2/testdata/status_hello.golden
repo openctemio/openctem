@@ -1,0 +1,142 @@
+{
+  "report_id": "0192a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+  "command_id": "0192a3b4-0000-7e8f-9a0b-1c2d3e4f5a6b",
+  "state": "completed",
+  "segments": {
+    "received": 3,
+    "expected": 3
+  },
+  "accepted": {
+    "assets": 120,
+    "findings": 812
+  },
+  "rejected": {
+    "assets": 0,
+    "findings": 4
+  },
+  "quarantined": {
+    "assets": 0,
+    "findings": 0
+  },
+  "auto_resolved": 37,
+  "auto_resolve": "applied",
+  "errors": [
+    {
+      "segment": 1,
+      "pointer": "/findings/17/asset_ref",
+      "code": "asset_unresolved",
+      "detail": "finding references no asset in this segment"
+    }
+  ],
+  "errors_truncated": false,
+  "received_at": "2026-10-01T12:00:00Z",
+  "updated_at": "2026-10-01T12:01:00Z"
+}
+{
+  "report_id": "0192a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+  "state": "receiving",
+  "segments": {
+    "received": 1
+  },
+  "accepted": {
+    "assets": 0,
+    "findings": 0
+  },
+  "rejected": {
+    "assets": 0,
+    "findings": 0
+  },
+  "quarantined": {
+    "assets": 0,
+    "findings": 0
+  },
+  "auto_resolved": 0,
+  "errors": [],
+  "errors_truncated": false,
+  "received_at": "2026-10-01T12:00:00Z",
+  "updated_at": "2026-10-01T12:00:00Z"
+}
+{
+  "protocol": 2,
+  "features": [
+    "results"
+  ],
+  "media_types": [
+    "application/vnd.openctem.ctis.v1+json"
+  ],
+  "encodings": [
+    "gzip",
+    "zstd"
+  ],
+  "digests": [
+    "sha-256",
+    "sha-512"
+  ],
+  "limits": {
+    "max_content_bytes": 16777216,
+    "max_decompressed_bytes": 67108864,
+    "max_compression_ratio": 100,
+    "max_zstd_window_bytes": 8388608,
+    "max_json_depth": 64,
+    "max_findings_per_segment": 10000,
+    "max_assets_per_segment": 10000,
+    "max_segments_per_report": 256,
+    "max_findings_per_report": 100000,
+    "max_assets_per_report": 100000,
+    "max_open_reports_per_sensor": 8,
+    "max_segments_in_flight": 4,
+    "max_item_errors": 100,
+    "uncommitted_ttl_seconds": 3600,
+    "max_control_body_bytes": 1048576,
+    "max_fingerprints_per_request": 50000
+  }
+}
+{
+  "protocol": 2,
+  "features": [
+    "results",
+    "heartbeat",
+    "commands",
+    "suppressions",
+    "fingerprints",
+    "keys",
+    "load",
+    "release",
+    "manifest"
+  ],
+  "media_types": [
+    "application/vnd.openctem.ctis.v1+json"
+  ],
+  "encodings": [
+    "gzip",
+    "zstd"
+  ],
+  "digests": [
+    "sha-256",
+    "sha-512"
+  ],
+  "limits": {
+    "max_content_bytes": 16777216,
+    "max_decompressed_bytes": 67108864,
+    "max_compression_ratio": 100,
+    "max_zstd_window_bytes": 8388608,
+    "max_json_depth": 64,
+    "max_findings_per_segment": 10000,
+    "max_assets_per_segment": 10000,
+    "max_segments_per_report": 256,
+    "max_findings_per_report": 100000,
+    "max_assets_per_report": 100000,
+    "max_open_reports_per_sensor": 8,
+    "max_segments_in_flight": 4,
+    "max_item_errors": 100,
+    "uncommitted_ttl_seconds": 3600,
+    "max_control_body_bytes": 1048576,
+    "max_fingerprints_per_request": 50000
+  },
+  "deprecations": {
+    "protocol_v1": {
+      "deprecated_at": "2026-10-01T00:00:00Z",
+      "sunset_at": "2027-04-01T00:00:00Z"
+    }
+  }
+}

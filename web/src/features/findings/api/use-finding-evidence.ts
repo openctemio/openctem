@@ -1,0 +1,157 @@
+/**
+ * Finding Evidence & Remediation-Step Hooks
+ *
+ * SWR hooks for the manual evidence-note and remediation-step endpoints that
+ * back the finding-detail Evidence / Remediation tabs. These are distinct from
+ * the CTEM Stage-4 validation-evidence endpoint (see
+ * `useFindingValidationEvidenceApi` in use-findings-api.ts):
+ *
+ *   - Manual notes:  GET/POST /api/v1/findings/{id}/evidence/notes | /evidence
+ *   - Steps:         POST     /api/v1/findings/{id}/remediation/steps
+ *
+ * Mutations go through the shared api client (`@/lib/api/client`) so the CSRF
+ * double-submit header is attached automatically.
+ */
+
+'use client'
+
+import useSWR, { type SWRConfiguration } from 'swr'
+import useSWRMutation from 'swr/mutation'
+import { get, post, del, patch } from '@/lib/api/client'
+import { useTenant } from '@/context/tenant-provider'
+
+// ============================================
+// TYPES
+// ============================================
+
+/** A single manual evidence note attached to a finding. */
+export interface FindingEvidenceNote {
+  id: string
+  kind: string
+  description: string
+  type?: string
+  url?: string
+  created_at: string
+  uploaded_by?: string
+  /** Display name (or email) of the uploader; may be empty. Prefer over `uploaded_by`. */
+  uploaded_by_name?: string
+}
+
+interface FindingEvidenceNotesResponse {
+  data: FindingEvidenceNote[]
+  total: number
+}
+
+/** Payload for POST /findings/{id}/evidence. `description` is required. */
+export interface AddFindingEvidenceInput {
+  description: string
+  type?: string
+  url?: string
+}
+
+/** Payload for POST /findings/{id}/remediation/steps. */
+export interface AddRemediationStepInput {
+  step: string
+}
+
+/** Response shape from POST /findings/{id}/remediation/steps. */
+export interface RemediationStepsResponse {
+  steps: string[]
+  total: number
+}
+
+/**
+ * Payload for PATCH /findings/{id}/remediation — the CTEM Mobilization
+ * engineering-grade guidance (definition of done + acceptable fixes). Every
+ * field is optional; omitted fields are left unchanged server-side, so partial
+ * edits are safe.
+ */
+export interface UpdateFindingRemediationInput {
+  preferred_fix?: string
+  alternative_fixes?: string[]
+  verification_method?: string
+  success_criteria?: string
+}
+
+// ============================================
+// HOOKS
+// ============================================
+
+/**
+ * Fetch the manual evidence notes recorded against a finding.
+ * GET /api/v1/findings/{id}/evidence/notes
+ */
+export function useFindingEvidenceNotes(findingId: string | null, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && findingId ? `/api/v1/findings/${findingId}/evidence/notes` : null
+
+  return useSWR<FindingEvidenceNotesResponse>(
+    key,
+    (url: string) => get<FindingEvidenceNotesResponse>(url),
+    config
+  )
+}
+
+/**
+ * Add a manual evidence note to a finding.
+ * POST /api/v1/findings/{id}/evidence
+ */
+export function useAddFindingEvidence(findingId: string | null) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `/api/v1/findings/${findingId}/evidence` : null,
+    async (url: string, { arg }: { arg: AddFindingEvidenceInput }) => {
+      return post<FindingEvidenceNote>(url, arg)
+    }
+  )
+}
+
+/**
+ * Delete a manual evidence note from a finding.
+ * DELETE /api/v1/findings/{id}/evidence/notes/{noteId}
+ *
+ * `trigger(noteId)` issues the delete; on success revalidate the notes list via
+ * the `mutate` returned by `useFindingEvidenceNotes`.
+ */
+export function useDeleteFindingEvidence(findingId: string | null) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `/api/v1/findings/${findingId}/evidence/notes` : null,
+    async (baseUrl: string, { arg: noteId }: { arg: string }) => {
+      return del<void>(`${baseUrl}/${noteId}`)
+    }
+  )
+}
+
+/**
+ * Append a remediation step to a finding.
+ * POST /api/v1/findings/{id}/remediation/steps
+ */
+export function useAddRemediationStep(findingId: string | null) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `/api/v1/findings/${findingId}/remediation/steps` : null,
+    async (url: string, { arg }: { arg: AddRemediationStepInput }) => {
+      return post<RemediationStepsResponse>(url, arg)
+    }
+  )
+}
+
+/**
+ * Update a finding's CTEM Mobilization remediation guidance (definition of
+ * done + acceptable fixes).
+ * PATCH /api/v1/findings/{id}/remediation
+ */
+export function useUpdateFindingRemediation(findingId: string | null) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `/api/v1/findings/${findingId}/remediation` : null,
+    async (url: string, { arg }: { arg: UpdateFindingRemediationInput }) => {
+      return patch<unknown>(url, arg)
+    }
+  )
+}

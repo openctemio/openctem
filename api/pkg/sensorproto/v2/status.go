@@ -1,0 +1,264 @@
+package v2
+
+import "time"
+
+// ReportState is the lifecycle state of a report on the status resource.
+type ReportState string
+
+const (
+	// StateReceiving: segments arrive; the report is not committed yet.
+	StateReceiving ReportState = "receiving"
+	// StateQueued: committed, segments waiting for the worker.
+	StateQueued ReportState = "queued"
+	// StateProcessing: the worker is processing segments or the commit.
+	StateProcessing ReportState = "processing"
+	// StateCompleted: every segment and the commit were processed. Item
+	// rejections are reported in the counts and errors, not as a failure.
+	StateCompleted ReportState = "completed"
+	// StateFailed: server-side processing failed after acceptance (worker
+	// retries exhausted). The sensor may PUT the same report id again.
+	StateFailed ReportState = "failed"
+	// StateExpired: never committed within the window; its upserts stay but it
+	// never auto-resolves.
+	StateExpired ReportState = "expired"
+)
+
+// IsFinal reports whether the state can no longer change.
+func (s ReportState) IsFinal() bool {
+	return s == StateCompleted || s == StateFailed || s == StateExpired
+}
+
+// AutoResolve outcomes on the status resource (RFC-026 §5.4).
+const (
+	// AutoResolveApplied: the commit resolved stale findings.
+	AutoResolveApplied = "applied"
+	// AutoResolveHeld: the blinding guard held the auto-resolve for review.
+	AutoResolveHeld = "held"
+	// AutoResolveSkipped: the report was not eligible (not a full,
+	// default-branch scan, or the tool may not auto-resolve).
+	AutoResolveSkipped = "skipped"
+)
+
+// Item error codes on the status resource and in 422 problems.
+const (
+	CodeAssetUnresolved   = "asset_unresolved"
+	CodeAssetInvalid      = "asset_invalid"
+	CodeFindingNotStored  = "finding_not_stored"
+	CodeRequired          = "required"
+	CodeInvalidValue      = "invalid_value"
+	CodeMismatch          = "mismatch"
+	CodeUnknownField      = "unknown_field"
+	CodeTooMany           = "too_many"
+	CodeProcessingFailed  = "processing_failed"
+	CodeOutOfZone         = "out_of_zone"
+	CodeToolNotPermitted  = "tool_not_permitted"
+	CodeSegmentIncomplete = "segment_incomplete"
+)
+
+// Fixed item error details. Details never quote sensor bytes.
+const (
+	DetailAssetUnresolved  = "finding references no asset in this segment"
+	DetailAssetAmbiguous   = "finding has no asset_ref and the segment has more than one asset"
+	DetailAssetNotStored   = "the asset this finding references was not stored"
+	DetailAssetInvalid     = "asset has no usable value"
+	DetailFindingNotStored = "the finding could not be stored"
+	DetailRequired         = "a required field is missing"
+	DetailInvalidValue     = "the value is not allowed here"
+	DetailMetadataID       = "metadata.id must be empty or equal to the report id"
+	DetailUnknownField     = "the field is not part of CTIS v1"
+	DetailTooMany          = "the array exceeds the per-segment limit"
+	DetailProcessingFailed = "the segment could not be processed"
+)
+
+// Counts are asset and finding counts on the status resource.
+type Counts struct {
+	Assets   int `json:"assets"`
+	Findings int `json:"findings"`
+}
+
+// SegmentCounts are the segments received and, once committed, expected.
+type SegmentCounts struct {
+	Received int  `json:"received"`
+	Expected *int `json:"expected,omitempty"`
+}
+
+// Status is the report status resource (RFC-026 §3.7), the body of a 202, of
+// a replay's 200 and of GET /results/{report_id}.
+type Status struct {
+	ReportID        string        `json:"report_id"`
+	CommandID       string        `json:"command_id,omitempty"`
+	State           ReportState   `json:"state"`
+	Segments        SegmentCounts `json:"segments"`
+	Accepted        Counts        `json:"accepted"`
+	Rejected        Counts        `json:"rejected"`
+	Quarantined     Counts        `json:"quarantined"`
+	AutoResolved    int           `json:"auto_resolved"`
+	AutoResolve     string        `json:"auto_resolve,omitempty"`
+	Errors          []ItemError   `json:"errors"`
+	ErrorsTruncated bool          `json:"errors_truncated"`
+	ReceivedAt      time.Time     `json:"received_at"`
+	UpdatedAt       time.Time     `json:"updated_at"`
+}
+
+// CommitRequest is the body of POST .../results/{report_id}/commit. The
+// digests are the canonical sha-256 Content-Digest member of each segment, in
+// segment order.
+type CommitRequest struct {
+	SegmentCount   int      `json:"segment_count"`
+	SegmentDigests []string `json:"segment_digests"`
+}
+
+// Limits are the server's ingest limits, published on hello so the SDK sizes
+// segments from the server's numbers (RFC-026 §3.6).
+type Limits struct {
+	MaxContentBytes         int64   `json:"max_content_bytes"`
+	MaxDecompressedBytes    int64   `json:"max_decompressed_bytes"`
+	MaxCompressionRatio     float64 `json:"max_compression_ratio"`
+	MaxZstdWindowBytes      int64   `json:"max_zstd_window_bytes"`
+	MaxJSONDepth            int     `json:"max_json_depth"`
+	MaxFindingsPerSegment   int     `json:"max_findings_per_segment"`
+	MaxAssetsPerSegment     int     `json:"max_assets_per_segment"`
+	MaxSegmentsPerReport    int     `json:"max_segments_per_report"`
+	MaxFindingsPerReport    int     `json:"max_findings_per_report"`
+	MaxAssetsPerReport      int     `json:"max_assets_per_report"`
+	MaxOpenReportsPerSensor int     `json:"max_open_reports_per_sensor"`
+	MaxSegmentsInFlight     int     `json:"max_segments_in_flight"`
+	MaxItemErrors           int     `json:"max_item_errors"`
+	UncommittedTTLSeconds   int     `json:"uncommitted_ttl_seconds"`
+	// MaxControlBodyBytes caps a control-plane request body (RFC-029 §4.1);
+	// a command completion may carry up to MaxCompleteBodyBytes.
+	MaxControlBodyBytes int64 `json:"max_control_body_bytes"`
+	// MaxFingerprintsPerRequest caps the fingerprint queries (RFC-029 §4.6).
+	MaxFingerprintsPerRequest int `json:"max_fingerprints_per_request"`
+}
+
+// Limit defaults (RFC-026 §3.6).
+const (
+	DefaultMaxContentBytes      = 16 << 20
+	DefaultMaxDecompressedBytes = 64 << 20
+	DefaultMaxCompressionRatio  = 100
+	DefaultMaxZstdWindowBytes   = 8 << 20
+	DefaultMaxJSONDepth         = 64
+	DefaultMaxFindingsPerSeg    = 10000
+	DefaultMaxAssetsPerSeg      = 10000
+	DefaultMaxSegments          = 256
+	DefaultMaxFindingsPerReport = 100000
+	DefaultMaxAssetsPerReport   = 100000
+	DefaultMaxOpenReports       = 8
+	DefaultMaxSegmentsInFlight  = 4
+	DefaultUncommittedTTL       = 60 * time.Minute
+	// DefaultMaxControlBodyBytes caps a control-plane request body.
+	DefaultMaxControlBodyBytes = 1 << 20
+	// MaxCompleteBodyBytes caps a command completion (its result).
+	MaxCompleteBodyBytes = 4 << 20
+	// DefaultMaxFingerprintsPerRequest caps a fingerprint query.
+	DefaultMaxFingerprintsPerRequest = 50000
+	// CommandGraceAfterFinish is how long after a command finished its
+	// results are still accepted (RFC-023 C-8).
+	CommandGraceAfterFinish = 15 * time.Minute
+)
+
+// MaxItemErrors is how many item errors a status or problem carries before
+// errors_truncated (RFC-026 §3.6).
+const MaxItemErrors = 100
+
+// DefaultLimits returns the RFC-026 §3.6 defaults.
+func DefaultLimits() Limits {
+	return Limits{
+		MaxContentBytes:         DefaultMaxContentBytes,
+		MaxDecompressedBytes:    DefaultMaxDecompressedBytes,
+		MaxCompressionRatio:     DefaultMaxCompressionRatio,
+		MaxZstdWindowBytes:      DefaultMaxZstdWindowBytes,
+		MaxJSONDepth:            DefaultMaxJSONDepth,
+		MaxFindingsPerSegment:   DefaultMaxFindingsPerSeg,
+		MaxAssetsPerSegment:     DefaultMaxAssetsPerSeg,
+		MaxSegmentsPerReport:    DefaultMaxSegments,
+		MaxFindingsPerReport:    DefaultMaxFindingsPerReport,
+		MaxAssetsPerReport:      DefaultMaxAssetsPerReport,
+		MaxOpenReportsPerSensor: DefaultMaxOpenReports,
+		MaxSegmentsInFlight:     DefaultMaxSegmentsInFlight,
+		MaxItemErrors:           MaxItemErrors,
+		UncommittedTTLSeconds:   int(DefaultUncommittedTTL / time.Second),
+
+		MaxControlBodyBytes:       DefaultMaxControlBodyBytes,
+		MaxFingerprintsPerRequest: DefaultMaxFingerprintsPerRequest,
+	}
+}
+
+// Features a v2 server can advertise on hello. A sensor uses v2 for a
+// listed feature and protocol v1 for one that is not listed (RFC-029 D6).
+// The set is closed and append-only.
+const (
+	// FeatureResults: the results resource (RFC-026).
+	FeatureResults = "results"
+	// FeatureHeartbeat: POST /heartbeat (RFC-029 §4.3).
+	FeatureHeartbeat = "heartbeat"
+	// FeatureCommands: GET /commands and the claim/start/complete/fail
+	// transitions (RFC-029 §4.4).
+	FeatureCommands = "commands"
+	// FeatureSuppressions: GET /suppressions (RFC-029 §4.5).
+	FeatureSuppressions = "suppressions"
+	// FeatureFingerprints: POST /fingerprints/check and
+	// /fingerprints/baseline-diff (RFC-029 §4.6).
+	FeatureFingerprints = "fingerprints"
+	// FeatureKeys: POST /keys, key renewal (RFC-029 §4.7).
+	FeatureKeys = "keys"
+	// FeatureLoad: the heartbeat accepts the sensor's load report
+	// (resources, capacity, queue) and dispatch uses it (RFC-030 §5.8).
+	FeatureLoad = "load"
+	// FeatureRelease: POST /commands/{id}/release hands a claimed command
+	// back to the queue at once (a draining sensor, RFC-030 §5.12).
+	FeatureRelease = "release"
+	// FeatureManifest: PUT /manifest registers the sensor manifest and the
+	// heartbeat accepts manifest_digest (RFC-033).
+	FeatureManifest = "manifest"
+)
+
+// ControlFeatures are the RFC-029 features, in hello order.
+func ControlFeatures() []string {
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest}
+}
+
+// Deprecation announces a deprecated protocol on hello.
+type Deprecation struct {
+	DeprecatedAt time.Time `json:"deprecated_at"`
+	SunsetAt     time.Time `json:"sunset_at"`
+}
+
+// DeprecationProtocolV1 is the hello key of protocol v1's deprecation.
+const DeprecationProtocolV1 = "protocol_v1"
+
+// Hello is GET /api/v2/sensor/hello: what this server speaks and its limits
+// (RFC-023 C3, RFC-029 §4.2).
+type Hello struct {
+	Protocol     int                    `json:"protocol"`
+	Features     []string               `json:"features"`
+	MediaTypes   []string               `json:"media_types"`
+	Encodings    []string               `json:"encodings"`
+	Digests      []string               `json:"digests"`
+	Limits       Limits                 `json:"limits"`
+	Deprecations map[string]Deprecation `json:"deprecations,omitempty"`
+}
+
+// NewHello builds the hello document for the given limits. Results are always
+// listed; extra names the other features this server mounted.
+func NewHello(l Limits, extra ...string) Hello {
+	features := append([]string{FeatureResults}, extra...)
+	return Hello{
+		Protocol:   ProtocolVersion,
+		Features:   features,
+		MediaTypes: []string{MediaTypeCTIS},
+		Encodings:  []string{EncodingGzip, EncodingZstd},
+		Digests:    []string{DigestSHA256, DigestSHA512},
+		Limits:     l,
+	}
+}
+
+// WithDeprecation adds a deprecation announcement.
+func (h Hello) WithDeprecation(name string, d Deprecation) Hello {
+	if h.Deprecations == nil {
+		h.Deprecations = map[string]Deprecation{}
+	}
+	h.Deprecations[name] = d
+	return h
+}

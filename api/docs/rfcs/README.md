@@ -1,0 +1,143 @@
+# RFC Index & Feature-Thread Map
+
+This is the map of design documents (RFCs) and how they connect to shipped PRs
+and the code. Start here to remember "what was decided, why, and where it lives".
+
+## RFC index
+
+| RFC | Title | Status | Design PR | Implementation PRs |
+|-----|-------|--------|-----------|--------------------|
+| [RFC-001](RFC-001-asset-identity-resolution.md) | Asset identity resolution | Implemented | — | (2026-04 batch) |
+| [RFC-002](RFC-002-decouple-api-from-sdk.md) | Decouple API from SDK-Go | Implemented | — | `feat/decouple-sdk` |
+| [RFC-005](RFC-005-asynchronous-ingest.md) | Asynchronous ingest | Implemented | — | #123–#133 |
+| [RFC-006](RFC-006-ticketing-provider-and-mapping.md) | Ticketing: provider abstraction + configurable mapping | Phase 0 done | #136 | #134, #135, **#137** + ui#152 |
+| [RFC-007](RFC-007-license-aware-scan-coverage.md) | License-aware scan coverage (Tenable Nessus Pro + .sc) | Proposed, Phase 1 in progress | #138 | **#139** (converter) |
+| [RFC-008](RFC-008-native-shift-left-ci-scanning.md) | Native shift-left CI/CD code scanning (agent-first) | Proposed, Phase 1 shipped | — | agent **#27** (risk-aware gate) |
+| [RFC-009](RFC-009-enterprise-sso-saml-scim.md) | Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning | SCIM (9a–9c) done; SAML 9d+9e done (login+ACS) | — | SCIM Users/token/Groups; SAML config+metadata+login/ACS |
+| [RFC-010](RFC-010-jira-assets-cmdb.md) | Jira Assets / JSM CMDB integration (enrich + reconcile) | Proposed | — | — |
+| [RFC-011](RFC-011-validation-engine-dispatch.md) | Validation engine: dispatch (make the "V" executable) | Phase 1 (safe-check) shipped; [**Phase 2**](RFC-011.2-validation-executor-downgrade-loop.md) proposed | — | validate command + dispatcher + producer endpoint + completion hook |
+| [RFC-011.2](RFC-011.2-validation-executor-downgrade-loop.md) | Validation executor + confirm-or-downgrade loop (`nuclei` re-verify → finding-state verdict → `downgrade %` metric) | Phase 2a+2b (api) shipped; agent executor + UI pending | — | 2a = api verdict rule + metric (shipped); 2b = api `KindNuclei` executor + `validate:nuclei` capability gate + template-safety routing (**shipped**); agent-side nuclei executor (sdk-go/agent) = deferred; 2c = ui pending |
+| [RFC-012](RFC-012-real-bas-execution.md) | Real BAS / attack-simulation execution (de-synthesize the "V") | Phase 0–1 shipped | — | honesty (#270); persist runs (#271); real safe-check dispatch (#272) |
+| [RFC-013](RFC-013-defectdojo-coexistence.md) | DefectDojo co-existence connector (buy breadth, build brain; phase DD out) | Phases 1–2c shipped | — | converter (#273); live sync (#274); dependency metric (#275); auto-scheduler (#280) |
+| [RFC-014](RFC-014-agent-identity.md) | k8s-style agent identity (short-lived, auto-rotating credentials) | Phases 1a–3 shipped; agent auto-renew shipped (sdk-go v0.5.0) | #281 | self-renew (#282); key expiry (#283); rotation overlap (#285/#286); agent auto-renew (sdk-go #45 / agent #35); 4 = scopes TODO |
+| [RFC-015](RFC-015-remediation-groups.md) | Remediation groups — fix a whole "solution family" in one action | Phase 1 shipped | — | `remediation_key` derivation + `finding_remediation_keys` side-table + `GET/POST /findings/remediation-groups` (this PR); 2 = UI + verify loop; 3 = campaign unify |
+| [RFC-016](RFC-016-mcp-server.md) | Read-only MCP server — AI-native access to CTEM data (learned from OASM) | Phase 1 shipped | #298 (auth) + #299 (MCP) | tenant-scoped `oct_` API-key auth + `POST /api/v1/mcp` JSON-RPC with 9 read tools; 2 = UI connect page; 3 = per-key rate-limit + scopes + resources. The same keys read the tenant REST API (read-only): [architecture/api-keys.md](../architecture/api-keys.md) |
+| [RFC-017](RFC-017-ctem-prioritization-surfacing.md) | CTEM prioritization surfacing & loop closure — make the P0–P3 engine the sortable/filterable, explainable organizing principle; close the Attacker-Profile + Business-Service seams; unify the 4 competing scores | Proposed | — | P1 = sort/filter/default P0-first; P2 = explainability + persist reachability; P3 = seam closure; P4 = score rationalisation; P5 = validation-gated closure + assignment sync + cut synthetic |
+| [RFC-018](RFC-018-identity-exposure-discovery.md) | Identity exposure discovery from EntraID (MFA / privilege / stale) — the CTEM Discovery identity attack surface as first-class ExposureEvents | Phase 0 shipped (exposure vocabulary); Phase 1 (Graph app-only emitter) needs admin-consented scopes | — | Phase 0 = 3 identity `event_type`s + migration 000210 + tests (this PR); Phase 1 = per-tenant `client_credentials` Graph reader + scheduled controller + projection; Phase 2 = sign-in risk + identity CTEM-ID category + UI |
+| [RFC-019](RFC-019-certificate-transparency-discovery.md) | Certificate-Transparency exposure discovery — the first fully-built external-exposure connector: public crt.sh monitoring of tenant domains → `subdomain_discovered` + `certificate_expiring` ExposureEvents (no credentials/consent) | Phase 1 shipped (crt.sh client + parser + per-tenant controller + 2 exposure types) | — | Phase 1 = SSRF-guarded/rate-limited crt.sh poller, no migration (event types pre-exist), tests (this PR); Phase 2 = lookalike/typosquat + asset promotion |
+| [RFC-020](RFC-020-api-ui-monorepo.md) | Consolidate `api` + `ui` into one repo (`openctemio/platform`) with a generated `contract/` (permission consts + OpenAPI types from the Go source) — kills the contract-drift + non-atomic-full-stack classes; keeps agent/sdk-go/ctis/helm-charts separate | Proposed (decision required) | — | P1 migrate w/ history-preserving `filter-repo` + path-filtered CI; P2 contract codegen replaces the AUTHZ-17 sync test; P3 archive old repos |
+| [RFC-021](RFC-021-customizable-dashboards.md) | Customizable dashboards (Tenable-style widgets) — per-user composable dashboards from a curated widget catalog (reusing existing cards), grid layout, persisted server-side under `/me/dashboards`; phased, with a Phase-4 seam for custom-query widgets | Proposed | — | P1 widget registry + `user_dashboards` + CRUD + grid add/remove/reorder; P2 per-widget config; P3 tenant templates; P4 custom-query widget |
+| [RFC-022](RFC-022-platform-admin-console.md) | Platform administration console (Tenable-style): administrators are user accounts in no organization, linked to `admin_users` (role, TOTP, audit); same `/login`, then mandatory TOTP and server-side console sessions on the same backend; no admin API keys; break-glass backup admins (alerted, never federated) and a separate platform-level OIDC IdP for admins (rev. 4); the console only bootstraps an organization's first owner, never adds users to an organization that has one (rev. 5); creation mode admin-only by default, the installer creates the first organization (rev. 6); cross-tenant Organizations (SSO per org, creation mode); separate UI shell; entitlement layer for bundles | Accepted | — | P1 console auth; P2 Organizations API + per-org SSO; P3 console UI shell; P4 entitlements |
+| [RFC-023](RFC-023-scan-zones-and-scanners.md) | Scan zones + one Scanners resource (Tenable SC-style, hardened): tenant admins register scanners (outbound-only agents; external engines like Nessus via a bridge agent) and group networks into zones; narrowest-zone routing, out-of-zone targets skipped; three enforcement layers incl. scanner-side allow-list on resolved IPs, signed jobs, enrollment approval + key TTL, scoped credential release; enforced at protocol level and implemented in sdk-go so third-party SDK sensors (runners, collectors, bridges) inherit it: capability negotiation, push scopes, trust tiers, conformance suite; fixes Targets[0]-only dispatch and the silent platform fallback. §9.5 complete agent → sensor rename: API step implemented (migration 000230, [contract](RFC-023-sensor-rename-contract.md)). Phase 1 scan zones: API implemented (migration 000231, [architecture + UI contract](../architecture/scan-zones.md)). §9.2a heartbeat doorbell (pending_jobs / next_heartbeat_seconds / typed actions / config_version, additive v1): API implemented ([architecture](../architecture/sensors.md#heartbeat-doorbell)) | Proposed (§9.5 API step + Phase 1 API implemented) | — | P0 fix broken dispatch; P1 zones; P2 Scanners resource; P3 scanner-side enforcement + signing; P4 credentials, networks, platform layer |
+| [RFC-024](RFC-024-user-two-factor-authentication.md) | Two-factor authentication (TOTP) for organization users + immediate session revocation + My account: login challenge (opaque, single-use, not a session) → `/auth/mfa/verify`; forced enrollment for orgs with "Require MFA"; token-mint gate so refresh cannot bypass it; replay-safe step tracking; recovery codes; Redis-backed per-request session revocation; federated users exempt | Implemented | — | api `feat/user-2fa` (migration 000228) + ui `feat/user-2fa` |
+| [RFC-025](RFC-025-user-onboarding.md) | User onboarding: no self-registration by default (`AUTH_ALLOW_REGISTRATION=false`; invitees register with their invitation token); organization owners/admins and the platform administrator create users with a one-time set-password link (hashed, single use, 24 h, emailed or shown once); invitation membership role derived from its RBAC roles (fixes viewer → member); organization SSO admits users by JIT only on DNS-verified domains (default role viewer); `AllowedDomains` and `IPWhitelist` enforced, with a lockout guard | Accepted, implemented | — | api + ui (this change) |
+| [RFC-026](RFC-026-sensor-results-ingest.md) | Sensor results ingest, protocol v2: one resource per data kind, not per format. Sensors send CTIS only (`application/vnd.openctem.ctis.v1+json`, chosen by `Content-Type`, `415` otherwise) via `PUT /api/v2/sensor/results/{report_id}`: the sensor-chosen id is the idempotency key, `Content-Digest` is mandatory, large reports are self-describing segments + commit (auto-resolve only on commit), validation is complete before `202` + status resource, RFC 9457 errors, partial success per item, provenance stamped by the server, no fallback asset, no sensor writes to the global catalog. SDK converts SARIF/nuclei/trivy client-side; raw files go to a user-authenticated `POST /api/v1/imports` (format by `Content-Type`, allow-list, bounded converter). Ships on the sensor key + digest first, RFC 9421 later; v1 frozen, retired by a minimum-ingest-protocol lever. Research survey of 20+ ingest APIs and standards | Accepted (§10.1 decisions); api iteration 1 implemented (§7.6) | — | api #635 (A1), #636 (A2), #638 (A3), #639 (A4), #640 (A6), #642 (A5), A7; WP-A8 (api), WP-S1..S3 (sdk-go), WP-G1 (sensor); `compat-v1` kept + new `Protocol v2 Conformance` job |
+| [RFC-027](RFC-027-betterleaks-replaces-gitleaks.md) | Betterleaks replaces gitleaks as the secret scanner: v1.9.0 pinned (v2 RC breaks the JSON report and SARIF); claims verified side by side (CLI, config, JSON fields, identical fingerprints; rule-set differences; archives on by default); one secret-scanner name, `betterleaks`, with one mapping point per side (`tool.CanonicalName` at ingest, sdk-go `core.CanonicalScannerName` in the sensor); add-only migration 000241 moves tools, scans, profiles, schedules, pipelines, sensors, workflow filters, suppressions, templates and findings' `tool_name` so dedup and auto-resolve keep matching | Accepted, implemented | — | sdk-go, sensor, api (000241), ui, helm-charts, docs |
+| [RFC-028](RFC-028-asset-identity-model.md) | Asset identity model: `asset_identifiers` (strong kinds unique per tenant), matching order host ID > cloud ID > BIOS UUID/serial > MAC > FQDN > hostname > IP with a conflict veto, IP only within 7 days and unambiguous, SCM repository ID for repositories; renames in state history; conflicts to the dedup review queue, never auto-merged; CTIS `identifiers` block; backfill controller | Accepted, implemented | — | ctis#7, sdk-go#83, api#650 (7-day window) + api (migration 000243), ui#542 |
+| [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md) | Sensor protocol v2 for the whole sensor surface + a stable SDK: every sensor resource under `/api/v2/sensor/*` (hello with per-feature negotiation, heartbeat with the doorbell always on, commands poll + idempotent claim/start/complete/fail, suppressions with ETag, fingerprint check and baseline-diff, key renewal; results stay RFC-026), identity from the key only (no `X-Agent-ID`), RFC 9457 problems, lenient decode + must-ignore for evolution; v1 served but deprecated (`Deprecation`/`Sunset` 2027-04-01 headers, per-sensor protocol telemetry on the Sensors API); SDK negotiates per feature and falls back to v1; "bump and done": `sensorkit` facade, optional-interface evolution, apidiff + sensor-compat CI gates, deprecation policy, v1.0.0 criteria | Accepted | this PR | api (v2 routes + deprecation + telemetry), sdk-go v0.9.0, sensor v0.5.0; facade in sdk-go v0.10.0; §4.3.1 sensor-reported capabilities (migration 000253, next sdk-go) |
+| [RFC-030](RFC-030-scan-work-distribution.md) | Scan work distribution: a run is planned into a weighted, zoned target list and handed out as **chunks cut at claim time** (sized to a time budget from measured per-tool, per-sensor throughput, shrinking near the end; slow sensors kept off the tail), **pulled** by sensors with free slots (no trigger-time pinning), held under **leases** renewed on the heartbeat (expiry re-queues; max attempts; poison chunks split), served by **priority class then hierarchical fair share** (tenant → scan), with per-host politeness limits carried in the command; current-state audit (12 inert parts/bugs: `current_jobs` never written, single-target scanners scan only `targets[0]`, over-claim + 10-min reaper → duplicate scans, no tool gate outside zones, …) and a simulation | Accepted (P0–P1) | #683 | P0 fix inert inputs + tool gate + over-claim; P1 unpinned fixed chunks + server-side capacity + leases + per-chunk deadlines; P2 claim-time adaptive chunks; P3 priority + fair share; P4 politeness, cancel, progress, affinity |
+| [RFC-031](RFC-031-managed-sensor-updates.md) | Managed sensor updates (owner: "can the sensor hot-update trivy?"): **content** (trivy DB, nuclei templates, semgrep rules) is managed by the sensor — scheduled + on-demand refresh (`refresh_content` command), per-kind integrity (OCI digest + anti-rollback, published checksums + publisher signatures at scan time, validated rules), atomic swap with rollback, scans use the managed version explicitly, versions on the heartbeat (`tools[].content`) and on every result (`tool.properties.content`), tenant policy (max age, pins, rulesets; never sources), `content_stale` / `content_refresh_failed` health; **binaries** only via whole releases signed with cosign keyless by the sensor's release workflow, installed by digest after verification, self-test and auto-rollback, staged campaigns (Proposed); threat model incl. platform compromise | Part A in implementation, Part B Proposed | this PR | sdk-go#91, sensor#82 (signing), sensor content manager, api + ui sensor content PRs |
+| [RFC-032](RFC-032-sensor-enrollment-and-identity.md) | Sensor enrollment, identity and declared capabilities (owner: "only the sensor can say which tools it has; give the most secure option"): admins create **enrollment tokens** (`ocse_…`: tenant + role, zone, tags, tool ceiling, uses, TTL, approval mode), not sensors; the sensor generates an **Ed25519 key pair** on its host, enrolls itself with its facts and tool report (signed with the new key), and appears pre-approved or **Pending approval** with its key fingerprint; every v2 request is **RFC 9421-signed** (no bearer secret; mTLS optional later because egress TLS inspection breaks it); automatic rotation, per-request revocation, **cloned-identity detection**; capabilities stay claims that policy narrows, identity **assurance** levels (legacy key → key-bound → platform-attested), scan credentials **HPKE-sealed** to the claiming sensor; keyless joins (Kubernetes SA tokens, GitHub/GitLab OIDC for CI runners, cloud identity); existing `rda_` sensors upgrade themselves on SDK bump. Current-state audit (keys never expire by default, auto-renew off everywhere, bootstrap tokens dead code, no host binding or leak signal), industry survey, threat model | Accepted (owner decisions 2026-10-02) | #706 | P0 hardening (clone detection, persisted renewal + default TTL, pepper split); P1 key-bound identity; P2 enrollment + approval UI; P3 assurance + sealed credentials; P4 keyless joins; P5 mTLS/TPM + `rda_` sunset |
+| [RFC-033](RFC-033-sensor-manifest.md) | Sensor manifest (owner: "shouldn't a sensor register its capabilities when it first connects?"): yes. The sensor **registers a manifest** once (`PUT /api/v2/sensor/manifest`: build, platform, resources, concurrency ceiling, tools with kind/version/capabilities/target types/content), again on change; heartbeats carry its **digest** and the live load; the platform answers accepted/ignored, keeps every version, diffs them onto the activity timeline and derives manifests for sensors that send none. Capacity follows Kubernetes' **capacity vs allocatable**: operator ceiling in the manifest, slots on the heartbeat, dispatch takes the smallest of ceiling, slots and admin limit. Research: Kubernetes Node/Lease, Nomad fingerprinting + ComputedClass, GitHub/Buildkite registration, Tenable agents, Envoy xDS ACK/NACK. Phase 0 fixed 3 live defects (64 reported as capacity, per-tool capabilities and kind dropped, nuclei version lost on stderr) | Accepted (owner decisions O1–O4 2026-10-02); P0 + P1 live | #718 | P0 api#714, sdk-go#106, ui#589, sensor v0.6.3; P1 api#718 (migration 000258), sdk-go#108; P2 (§6.12) slim heartbeat + content block, policy echo + SDK refusal, `manifest_changed`, UI manifest section; P3 target types + routing; P4 enrollment/approval |
+| [RFC-034](RFC-034-sensor-network-egress.md) | Sensor network egress: proxies per scan zone (owner: "some network zones can only be reached through a proxy; research the best proxy solution"). Placement first: as with Nessus, Qualys and Rapid7, a sensor inside each segment is the primary answer. Where that is impossible, an administrator attaches an **egress profile** (an ordered list of HTTP CONNECT, HTTPS or SOCKS5 proxies) to a zone, optionally per tool. Three traffic classes are configured separately: **control** and **content** are sensor-local, **scan** is platform-managed. Commands reference a profile, never a URL. Every proxied job runs through an **in-sensor forwarder** on loopback that holds the credentials (sensor-local, or HPKE-sealed to key-bound sensors), fails over only on proxy failures, and refuses destinations outside job targets ∩ zone ∩ operator allow-list. Health checks, circuit breakers, `ZONE_UNREACHABLE`, the path recorded per job, audit for every change. **Non-goal:** no rotating proxies to evade a target's rate limits or blocks; the sensor backs off and reports. Current-state audit: the control proxy leaks into scanners (G1); content from upstream sources ignores the proxy (G2) | Proposed | #723 | P0 proxy-aware `SafeHTTPClient` + explicit control/content proxies; P1 profiles + forwarder + tool wiring; P2 health/failover; P3 stored credentials + HTTPS proxies; P4 SSH jump hosts, NTLM (optional) |
+| [RFC-036](RFC-036-easm.md) | External Attack Surface Management (owner: "plan how to complete EASM in the most complete, modern way"): the customer's own internet-facing surface, passive-first and non-intrusive by default. **Seeds** in Scoping › Boundaries (org, brand, root domain, ASN, CIDR, cloud account, GitHub org, analytics/favicon tokens; ownership via the existing DNS TXT verification or a cloud connector); **passive collectors on the API** (CT incl. tiled logs, RDAP, ASN/RIR, DNS-only dangling-DNS and SPF/DMARC (RFC 9989)/MTA-STS checks, cloud APIs, per-tenant keys for Censys/Shodan/SecurityTrails …) and **active steps on sensors** (chained resolve with wildcard filter → light ports → HTTP/TLS → nuclei T1 without intrusive/default-login, RFC-030 politeness, never evading blocks); **attribution engine** with typed evidence, noisy-OR confidence and five states (confirmed/candidate/dependency/monitor-only/rejected), review queue, tombstones, per-rule learning, path-cascading exclusions; facet observations → diffs → exposure events; confidence gates P0–P3 (no new score). Current-state audit (CT monitor never queries domains past 50; no sensor image ships recon tools; pipeline steps never chain; httpx pivots dropped; dishonest UI cards) and a survey of 12 vendors | Proposed | this PR | P0 make what exists honest; P1 takeover/dangling DNS, email posture, attribution fields, CT promotion, EASM overview; P2 seeds + attribution + review queue; P3 chained discovery pipeline; P4 monitoring + cadence tiers; P5 passive sources + cloud connectors; P6 lookalikes, T2 opt-in, shared platform sensors (owner decisions O1–O10) |
+
+> Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
+
+---
+
+## Thread A — Ticketing / Mobilization (RFC-006)
+
+Outbound ticketing was non-functional (nil client wired in production). The
+thread made it work per-tenant, then layers provider abstraction + configurable
+mapping on top.
+
+```
+RFC-006  Ticketing provider + mapping  (#136 design)
+│
+├─ Pre-work (shipped)
+│   ├─ #134  idempotent create (one ticket per finding+project)
+│   └─ #135  secret redaction in ticket descriptions
+│
+├─ Phase 0  per-tenant client resolver   ── DONE
+│   ├─ api #137   internal/app/jira (ClientResolver, ErrNoTicketingIntegration)
+│   │             internal/infra/jira/resolver.go  (mirrors SMTP resolver)
+│   │             cmd/server/services.go  (wires repos.Integration + Encryptor)
+│   └─ ui  #152   ticketing connect dialog collects Atlassian email
+│                 (JSON {email,api_token} creds)
+│
+├─ Phase 1  TicketProvider iface + MappingConfig (defaults=today)   ── TODO
+├─ Phase 2  wire configurable mapping into create + inbound webhook ── TODO
+├─ Phase 3  outbound status sync via outbox/worker + echo-guard     ── TODO
+│           detailed design: RFC-006-phase-3-bidirectional-sync.md
+│           (ticket_links table, echo-guard, conflict policy,
+│            WorkItem seam → finding now, remediation_task later)
+└─ Phase 4  2nd provider (ServiceNow/GitHub) + finding_tickets + UI ── TODO
+
+Code touchpoints:
+  internal/app/jira/sync_service.go      — SyncService, resolveClient, mappings
+  internal/infra/jira/{client,resolver}.go
+  internal/infra/http/handler/jira_webhook_handler.go
+```
+
+Open follow-up, now designed in **[RFC-010](RFC-010-jira-assets-cmdb.md)**:
+**Jira Assets / JSM CMDB** integration (pull business-context to enrich
+prioritization; reconcile/push discovered assets; link CI to tickets). Today
+only the core issue API is used — the Assets API is not touched. Note: a Jira
+*project* is a ticket routing destination (config), **not** an asset; Jira
+**Assets/CMDB objects** are the asset records RFC-010 reconciles.
+
+---
+
+## Thread B — License-aware scan coverage (RFC-007)
+
+Cover a large estate (e.g. 3000 IPs) with a smaller scan license by rolling
+batches, storing everything durably in OpenCTEM. Supports **both** Nessus Pro
+(unlimited) and Tenable.sc (active-IP, aging) as first-class engines.
+
+```
+RFC-007  License-aware scan coverage  (#138 design)
+│
+├─ Phase 1  .nessus -> CTIS findings adapter + safety   ── IN PROGRESS
+│   └─ api #139   internal/infra/scanner/nessus/converter.go
+│                 hosts->assets, ReportItems->findings, CVE/CVSS, fingerprint
+│                 report shaped so auto-resolve is scoped to the batch only
+│
+├─ Phase 2  ScanEngine connector (Nessus Pro + Tenable.sc)          ── TODO
+│            per-tenant resolver (mirrors Jira), LicensePolicy, TestConnection
+├─ Phase 3  coverage scheduler (criticality+staleness rotation,     ── TODO
+│            .sc active-IP cap enforcement, reclaim gated on ingest ACK)
+└─ Phase 4  observability (freshness, license utilisation) + UI     ── TODO
+
+Reused existing infra (do NOT rebuild):
+  pkg/domain/scan         — Scan.TargetsPerJob (batch size), scheduler, retry
+  internal/app/ingest     — async pipeline; AutoResolveStaleByAssets is ALREADY
+                            scoped by (tool, scanID, assetIDs) → the safety
+                            invariant is enforced at service.go
+  pkg/domain/asset        — Criticality + LastScannedAt (rotation cursor)
+  pkg/domain/integration  — ProviderTenable + AES-encrypted creds
+```
+
+**Engine license models** (decides whether the rotate-delete loop is needed):
+
+| Engine | License | Reclaim | Rotation |
+|--------|---------|---------|----------|
+| Nessus Pro | unlimited IPs | n/a | not needed (batch = perf only) |
+| Tenable.sc | active IPs (cap) | explicit removal (immediate) / aging | first-class; scheduler enforces cap |
+| *(Tenable.io)* | assets, 90-day count | deletion lag | rotation can't reclaim in time — excluded |
+
+---
+
+## Where things live
+
+```
+docs/rfcs/                  RFC design documents (this folder) + this index
+  RFC-00N-*.md
+internal/app/<cluster>/     application services (jira, ingest, scan, …)
+internal/infra/             infra: postgres, http, jira, scanner/nessus, controller
+pkg/domain/<X>/             domain entities (asset, scan, integration, vulnerability)
+migrations/                 golang-migrate SQL (latest: 000210)
+```
+
+Conventions: PRs/merges target `develop` (never `main`). RFCs are reviewed as a
+docs PR, then implemented in phased PRs that reference the RFC number.

@@ -1,0 +1,111 @@
+name: CodeQL
+
+# Advanced setup, one matrix for both languages. Default setup is NOT used:
+# it is undocumented whether it finds a go.mod in a subdirectory, and Go has
+# no build-mode `none`, so the Go leg builds explicitly inside api/.
+# `category` keeps the two languages' results separate (the documented
+# monorepo pattern). '/language:go' is the category openctemio/api already
+# used, so existing Go alerts keep matching after the move.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  merge_group:
+  schedule:
+    - cron: '0 0 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.api.outputs.api }}
+      web: ${{ steps.web.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: api
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: bash .github/scripts/changed.sh api api/ .github/workflows/codeql.yml
+      - id: web
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: bash .github/scripts/changed.sh web web/ .github/workflows/codeql.yml
+
+  # Job-level `if:` cannot see the matrix, so one job per language.
+  go:
+    name: CodeQL (go)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.6'
+          cache: true
+          cache-dependency-path: api/go.sum
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          build-mode: manual
+          queries: security-and-quality
+      - name: Build
+        working-directory: api
+        env:
+          GOWORK: "off"
+        run: go build ./...
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:go
+
+  javascript-typescript:
+    name: CodeQL (javascript-typescript)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-and-quality
+          # Analyse the web app only (api/ has a k6 script and doc snippets).
+          config: |
+            paths:
+              - web
+            paths-ignore:
+              - '**/node_modules/**'
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
+
+  codeql-ok:
+    name: CodeQL OK
+    if: always()
+    needs: [changes, go, javascript-typescript]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null

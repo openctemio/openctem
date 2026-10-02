@@ -1,0 +1,351 @@
+package ingest
+
+// Ingest semantics of sensor protocol v2 results (RFC-026 §5,
+// docs/rfcs/RFC-026-sensor-results-ingest.md).
+//
+// A v2 segment runs through the same pipeline as v1 (Service.Ingest) with the
+// v2 Options on: no fallback asset, no writes to the global vulnerability
+// catalog, no auto-resolve. Findings whose asset cannot be resolved inside
+// their own segment are rejected per item before the pipeline runs, and every
+// finding and asset ends up either accepted or rejected with a pointer and a
+// fixed reason. Auto-resolve runs once, at commit, over the union of the
+// assets the report's segments touched, behind the blinding guard.
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+)
+
+// V2Options are the ingest rules every v2 segment runs with.
+func V2Options() Options {
+	return Options{RequireAssetForFindings: true, NoCatalogWrites: true, DeferAutoResolve: true, DeferSensorStats: true}
+}
+
+// Provenance is what the server stamps on a v2 segment (RFC-026 §5.1). None
+// of it is read from the CTIS body.
+type Provenance struct {
+	TenantID      shared.ID
+	SensorID      shared.ID
+	SensorType    string
+	CommandID     *shared.ID
+	ScanZoneID    *shared.ID
+	ReportRef     shared.ID
+	ReportID      string
+	SegmentSeq    int
+	ContentDigest string
+	MediaType     string
+}
+
+// V2Header is the part every segment of a report repeats: the tool and the
+// report metadata. Its canonical JSON is stored on the report and its digest
+// is how segments are checked to belong together.
+type V2Header struct {
+	Tool     *ctis.Tool          `json:"tool"`
+	Metadata ctis.ReportMetadata `json:"metadata"`
+}
+
+// V2HeaderOf returns the canonical header JSON of a segment and its digest.
+// The report id is not part of it: metadata.id is either empty or the report
+// id, and both spellings describe the same report.
+func V2HeaderOf(r *ctis.Report) (canonical []byte, digest string, err error) {
+	md := r.Metadata
+	md.ID = ""
+	canonical, err = json.Marshal(V2Header{Tool: r.Tool, Metadata: md})
+	if err != nil {
+		return nil, "", fmt.Errorf("encode v2 header: %w", err)
+	}
+	sum := sha256.Sum256(canonical)
+	return canonical, protov2.FormatSHA256(sum[:]), nil
+}
+
+// SegmentResult is what ingesting one v2 segment produced.
+type SegmentResult struct {
+	Outcome ingestreport.SegmentOutcome
+	// Touched are the persisted assets the segment upserted: the scope of
+	// the report's commit-time auto-resolve.
+	Touched []shared.ID
+}
+
+// IngestV2Segment ingests one validated v2 segment under the server-stamped
+// provenance. Item problems are returned in the outcome, never as an error;
+// an error means the segment could not be processed and is retried.
+func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *ctis.Report) (*SegmentResult, error) {
+	if report == nil {
+		return nil, shared.NewDomainError("INVALID_INPUT", "report is required", nil)
+	}
+	// The report id is the scan identity of every finding of every segment,
+	// which is what lets the commit tell seen from stale.
+	report.Metadata.ID = prov.ReportID
+
+	kept, keptIdx, assetIdx, itemErrs := resolveV2Assets(report)
+	filtered := *report
+	filtered.Findings = kept
+
+	agt := &sensor.Sensor{ID: prov.SensorID, TenantID: &prov.TenantID, Type: sensor.SensorType(prov.SensorType), Status: sensor.SensorStatusActive}
+	out, err := s.Ingest(ctx, agt, Input{Report: &filtered, Options: V2Options()})
+	if err != nil {
+		return nil, err
+	}
+
+	res := &SegmentResult{}
+	o := &res.Outcome
+	o.RejectedFindings = len(report.Findings) - len(kept)
+	o.Errors = itemErrs
+
+	// Assets: accepted when persisted, rejected otherwise.
+	seen := map[shared.ID]bool{}
+	for i := range filtered.Assets {
+		id, ok := out.AssetMap[filtered.Assets[i].ID]
+		if !ok || id.IsZero() {
+			o.RejectedAssets++
+			addItemError(o, protov2.ItemError{Pointer: "/assets/" + strconv.Itoa(assetIdx[i]),
+				Code: protov2.CodeAssetInvalid, Detail: protov2.DetailAssetInvalid})
+			continue
+		}
+		if !seen[id] {
+			seen[id] = true
+			res.Touched = append(res.Touched, id)
+		}
+	}
+	o.AcceptedAssets = len(filtered.Assets) - o.RejectedAssets
+
+	// Findings: rejected when their asset was not stored or the store failed.
+	failed := map[int]bool{}
+	for i := range kept {
+		if id, ok := out.AssetMap[kept[i].AssetRef]; !ok || id.IsZero() {
+			failed[i] = true
+			addItemError(o, protov2.ItemError{Pointer: "/findings/" + strconv.Itoa(keptIdx[i]) + "/asset_ref",
+				Code: protov2.CodeAssetUnresolved, Detail: protov2.DetailAssetNotStored})
+		}
+	}
+	for _, ff := range out.FailedFindings {
+		if ff.Index < 0 || ff.Index >= len(kept) || failed[ff.Index] {
+			continue
+		}
+		failed[ff.Index] = true
+		addItemError(o, protov2.ItemError{Pointer: "/findings/" + strconv.Itoa(keptIdx[ff.Index]),
+			Code: protov2.CodeFindingNotStored, Detail: protov2.DetailFindingNotStored})
+	}
+	o.RejectedFindings += len(failed)
+	o.AcceptedFindings = len(kept) - len(failed)
+	return res, nil
+}
+
+// addItemError appends an item error, capped at protov2.MaxItemErrors.
+func addItemError(o *ingestreport.SegmentOutcome, e protov2.ItemError) {
+	if len(o.Errors) >= protov2.MaxItemErrors {
+		o.ErrorsTruncated = true
+		return
+	}
+	o.Errors = append(o.Errors, e)
+}
+
+// resolveV2Assets binds every finding to an asset of its own segment
+// (RFC-026 §5.2) before the pipeline runs. A finding with an asset_ref keeps
+// it when the segment has that asset; a finding without one is bound to the
+// segment's asset when there is exactly one. Anything else is rejected:
+// v2 never falls back to a made-up or shared asset. Assets without an id get
+// a server-generated one so the binding is exact. It returns the kept
+// findings, their original indices, each asset's original index and the
+// item errors of the rejected findings.
+func resolveV2Assets(r *ctis.Report) (kept []ctis.Finding, keptIdx, assetIdx []int, errs []protov2.ItemError) {
+	ids := make(map[string]bool, len(r.Assets))
+	for i := range r.Assets {
+		if r.Assets[i].ID != "" {
+			ids[r.Assets[i].ID] = true
+		}
+	}
+	assetIdx = make([]int, len(r.Assets))
+	for i := range r.Assets {
+		assetIdx[i] = i
+		if r.Assets[i].ID == "" {
+			gen := "_server_asset_" + strconv.Itoa(i)
+			for ids[gen] {
+				gen += "_"
+			}
+			ids[gen] = true
+			r.Assets[i].ID = gen
+		}
+	}
+
+	kept = make([]ctis.Finding, 0, len(r.Findings))
+	keptIdx = make([]int, 0, len(r.Findings))
+	for i := range r.Findings {
+		f := r.Findings[i]
+		switch {
+		case f.AssetRef != "" && ids[f.AssetRef]:
+		case f.AssetRef == "" && len(r.Assets) == 1:
+			f.AssetRef = r.Assets[0].ID
+		default:
+			detail := protov2.DetailAssetUnresolved
+			if f.AssetRef == "" && len(r.Assets) > 1 {
+				detail = protov2.DetailAssetAmbiguous
+			}
+			if len(errs) < protov2.MaxItemErrors {
+				errs = append(errs, protov2.ItemError{Pointer: "/findings/" + strconv.Itoa(i) + "/asset_ref",
+					Code: protov2.CodeAssetUnresolved, Detail: detail})
+			}
+			continue
+		}
+		kept = append(kept, f)
+		keptIdx = append(keptIdx, i)
+	}
+	return kept, keptIdx, assetIdx, errs
+}
+
+// BlindingGuard holds back a commit-time auto-resolve that would close too
+// much at once (RFC-023 C-4, RFC-026 §5.4): more than MinFindings findings
+// and more than Ratio of the open findings of that tool on those assets.
+type BlindingGuard struct {
+	Ratio       float64
+	MinFindings int
+}
+
+// DefaultBlindingGuard is 50 % and more than 100 findings (RFC-026 §10.1).
+func DefaultBlindingGuard() BlindingGuard { return BlindingGuard{Ratio: 0.5, MinFindings: 100} }
+
+// Holds reports whether resolving stale of open findings must be held.
+func (g BlindingGuard) Holds(stale, open int) bool {
+	return stale > g.MinFindings && float64(stale) > g.Ratio*float64(open)
+}
+
+// autoResolveCounter is the dry-run count the blinding guard needs. Optional
+// so finding repository fakes need not implement it; without it the guard
+// cannot measure, and a commit holds rather than resolves.
+type autoResolveCounter interface {
+	CountAutoResolveCandidates(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, toolName, currentScanID string) (stale, open int, err error)
+}
+
+// CommitResult is what the commit-time steps did.
+type CommitResult struct {
+	AutoResolved int
+	// AutoResolve is protov2.AutoResolveApplied, AutoResolveHeld or
+	// AutoResolveSkipped.
+	AutoResolve string
+}
+
+// ErrV2ToolNotDeclared: the report's tool is not among the sensor's declared
+// tools (strict: a sensor with no declared tools may report none).
+var ErrV2ToolNotDeclared = errors.New("tool not declared by the sensor")
+
+// SensorDeclaresTool is the v2 tool gate (RFC-026 §5.2): the tool must be one
+// the sensor declared, and never a name reserved for non-sensor sources.
+// Unlike v1 there is no allow-all for a sensor that declared nothing.
+func SensorDeclaresTool(tools []string, toolName string) bool {
+	name := strings.TrimSpace(toolName)
+	if name == "" {
+		return false
+	}
+	if _, reserved := reservedAutoResolveTools[strings.ToLower(name)]; reserved {
+		return false
+	}
+	for _, t := range tools {
+		if tooldom.SameTool(t, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// CommitV2Report runs the report-level steps once, after every segment of a
+// committed report was processed: auto-resolve over the assets the report
+// touched (full coverage on a default branch, a tool the sensor declares,
+// behind the blinding guard), the per-branch occurrence sweep and the asset
+// finding counts. Failures are logged; they never fail the report, as in v1.
+//
+//nolint:cyclop // a sequence of guarded, independent steps
+func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2Header, touched []shared.ID, guard BlindingGuard) CommitResult {
+	res := CommitResult{AutoResolve: protov2.AutoResolveSkipped}
+	tenantID := prov.TenantID
+	defer func() {
+		if len(touched) > 0 {
+			if err := s.assetProcessor.UpdateFindingCounts(ctx, tenantID, touched); err != nil {
+				s.logger.Warn("failed to update finding counts", "error", err)
+			}
+		}
+	}()
+
+	if header.Tool == nil || s.findingRepo == nil || len(touched) == 0 {
+		return res
+	}
+	toolName := header.Tool.Name
+	md := header.Metadata
+	md.ID = prov.ReportID
+	input := Input{Report: &ctis.Report{Metadata: md, Tool: header.Tool}}
+
+	var tools []string
+	if s.sensorRepo != nil {
+		if stored, err := s.sensorRepo.GetByID(ctx, prov.SensorID); err == nil && stored != nil {
+			tools = stored.EffectiveTools()
+		}
+	}
+	if !SensorDeclaresTool(tools, toolName) {
+		s.logger.Warn("v2 commit: auto-resolve skipped, tool not declared by the sensor",
+			"sensor_id", prov.SensorID.String(), "tool_name", sanitizeIngestLogField(toolName))
+		return res
+	}
+
+	if input.ShouldAutoResolve() {
+		counter, ok := s.findingRepo.(autoResolveCounter)
+		if !ok {
+			res.AutoResolve = protov2.AutoResolveHeld
+			return res
+		}
+		stale, open, err := counter.CountAutoResolveCandidates(ctx, tenantID, touched, toolName, prov.ReportID)
+		if err != nil {
+			s.logger.Warn("v2 commit: blinding guard could not count; auto-resolve held", "error", err)
+			res.AutoResolve = protov2.AutoResolveHeld
+			return res
+		}
+		if guard.Holds(stale, open) {
+			s.logger.Warn("v2 commit: auto-resolve held for review (blinding guard)",
+				"sensor_id", prov.SensorID.String(), "report_id", prov.ReportID,
+				"tool_name", sanitizeIngestLogField(toolName), "would_resolve", stale, "open", open)
+			res.AutoResolve = protov2.AutoResolveHeld
+			return res
+		}
+		resolved, err := s.findingRepo.AutoResolveStaleByAssets(ctx, tenantID, touched, toolName, prov.ReportID, nil)
+		if err != nil {
+			s.logger.Warn("v2 commit: auto-resolve failed", "error", err)
+			return res
+		}
+		res.AutoResolve = protov2.AutoResolveApplied
+		res.AutoResolved = len(resolved)
+		if len(resolved) > 0 {
+			app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolved)))
+			if s.activityService != nil {
+				if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, toolName, prov.ReportID); err != nil {
+					s.logger.Warn("failed to record auto-resolve activities", "error", err)
+				}
+			}
+		}
+	}
+
+	// Per-branch occurrences: any full scan, on the branch it scanned.
+	if input.IsFullCoverage() && s.branchRepo != nil && md.Branch != nil && md.Branch.Name != "" {
+		for _, assetID := range touched {
+			br, err := s.branchRepo.GetByName(ctx, assetID, md.Branch.Name)
+			if err != nil || br == nil {
+				continue
+			}
+			if _, err := s.findingRepo.AutoResolveStaleBranchOccurrences(ctx, tenantID, br.ID(), toolName, prov.ReportID); err != nil {
+				s.logger.Warn("v2 commit: branch occurrence auto-resolve failed", "asset_id", assetID.String(), "error", err)
+			}
+		}
+	}
+	return res
+}

@@ -1,0 +1,622 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+)
+
+// ValidationRunner dispatches a CTEM Stage-4 validation job for a finding and
+// returns the command ID it was queued under. Implemented by
+// *validation.RunService.
+type ValidationRunner interface {
+	ValidateFinding(ctx context.Context, tenantID, findingID shared.ID) (shared.ID, error)
+}
+
+// FindingActionsHandler handles closed-loop finding lifecycle operations.
+type FindingActionsHandler struct {
+	service          *app.FindingActionsService
+	validationRunner ValidationRunner
+	sourceAnalytics  *app.SourceAnalyticsService
+	logger           *logger.Logger
+}
+
+// NewFindingActionsHandler creates a new FindingActionsHandler.
+func NewFindingActionsHandler(svc *app.FindingActionsService, log *logger.Logger) *FindingActionsHandler {
+	return &FindingActionsHandler{service: svc, logger: log}
+}
+
+// SetValidationRunner wires the validation-run service. When unset, the
+// validate endpoint responds 503 (feature not configured).
+func (h *FindingActionsHandler) SetValidationRunner(r ValidationRunner) {
+	h.validationRunner = r
+}
+
+// SetSourceAnalytics wires the finding source-analytics service (Tool Insights +
+// DefectDojo-dependency ratio). When unset, the endpoint responds 503.
+func (h *FindingActionsHandler) SetSourceAnalytics(s *app.SourceAnalyticsService) {
+	h.sourceAnalytics = s
+}
+
+// SourceAnalytics handles GET /api/v1/findings/analytics/sources — per-source /
+// per-tool finding breakdown plus the DefectDojo-dependency ratio.
+func (h *FindingActionsHandler) SourceAnalytics(w http.ResponseWriter, r *http.Request) {
+	if h.sourceAnalytics == nil {
+		apierror.InternalServerError("source analytics not configured").WriteJSON(w)
+		return
+	}
+	tenantID := middleware.MustGetTenantID(r.Context())
+	result, err := h.sourceAnalytics.GetSourceAnalytics(r.Context(), tenantID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, result)
+}
+
+// --- Group View ---
+
+// findingGroupByDimensions are exactly the dimensions the repository implements
+// (FindingRepository.ListFindingGroups). The list had drifted: it rejected
+// owner_id, component_id and finding_type, which the UI offers, with 400 and
+// let status and type through to a 500.
+var findingGroupByDimensions = map[string]bool{
+	"cve_id": true, "asset_id": true, "owner_id": true, "component_id": true,
+	"severity": true, "source": true, "finding_type": true,
+}
+
+// ListFindingGroups handles GET /api/v1/findings/groups
+func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	groupBy := r.URL.Query().Get("group_by")
+	if groupBy == "" {
+		groupBy = "cve_id"
+	} else if !findingGroupByDimensions[groupBy] {
+		apierror.BadRequest("Invalid group_by value").WriteJSON(w)
+		return
+	}
+
+	filter := h.buildFilter(r)
+	page := h.buildPagination(r, 50) // default 50 per page
+
+	result, err := h.service.ListFindingGroups(r.Context(), tenantID, groupBy, filter, page)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"data": result.Data,
+		"pagination": map[string]any{
+			"total":    result.Total,
+			"page":     result.Page,
+			"per_page": result.PerPage,
+		},
+	})
+}
+
+// --- Related CVEs ---
+
+// GetRelatedCVEs handles GET /api/v1/findings/related-cves/{cveId}
+func (h *FindingActionsHandler) GetRelatedCVEs(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	cveID := chi.URLParam(r, "cveId")
+	if cveID == "" {
+		apierror.BadRequest("cveId is required").WriteJSON(w)
+		return
+	}
+
+	filter := h.buildFilter(r)
+	result, err := h.service.GetRelatedCVEs(r.Context(), tenantID, cveID, filter)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"source_cve":   cveID,
+		"related_cves": result,
+	})
+}
+
+// --- Fix Applied ---
+
+// FixAppliedRequest is the request body for POST /api/v1/findings/actions/fix-applied
+type FixAppliedRequest struct {
+	Filter             FindingFilterRequest `json:"filter"`
+	IncludeRelatedCVEs bool                 `json:"include_related_cves"`
+	Note               string               `json:"note" validate:"max=5000"`
+	Reference          string               `json:"reference" validate:"max=1000"`
+}
+
+// FindingFilterRequest is the filter in request body.
+type FindingFilterRequest struct {
+	CVEIDs    []string `json:"cve_ids" validate:"max=100,dive,max=255"`
+	AssetTags []string `json:"asset_tags" validate:"max=100,dive,max=255"`
+	AssetIDs  []string `json:"asset_ids" validate:"max=100,dive,uuid"`
+}
+
+// FixApplied handles POST /api/v1/findings/actions/fix-applied
+func (h *FindingActionsHandler) FixApplied(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetLocalUserID(r.Context())
+
+	var req FixAppliedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Validate input bounds
+	if len(req.Filter.CVEIDs) > 100 {
+		apierror.BadRequest("Maximum 100 CVE IDs allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Filter.AssetTags) > 100 {
+		apierror.BadRequest("Maximum 100 asset tags allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Filter.AssetIDs) > 100 {
+		apierror.BadRequest("Maximum 100 asset IDs allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Note) > 5000 {
+		apierror.BadRequest("Note must be at most 5000 characters").WriteJSON(w)
+		return
+	}
+
+	// Require a scoping filter. Without this guard an empty filter would match
+	// every in_progress finding (bounded only by the 1000 cap) — the same
+	// "ids or filter required" guard Verify/RejectFix use, adapted to this
+	// filter-only action. This also turns the previously-dropped asset_ids
+	// path (UI's asset-grouped "mark fixed") from a dangerous broad match into
+	// a properly scoped one via WithAssetID below.
+	if len(req.Filter.CVEIDs) == 0 && len(req.Filter.AssetTags) == 0 && len(req.Filter.AssetIDs) == 0 {
+		apierror.BadRequest("filter (cve_ids, asset_tags, or asset_ids) is required").WriteJSON(w)
+		return
+	}
+
+	filter := vulnerability.NewFindingFilter()
+	if len(req.Filter.CVEIDs) > 0 {
+		filter = filter.WithCVEIDs(req.Filter.CVEIDs)
+	}
+	if len(req.Filter.AssetTags) > 0 {
+		filter = filter.WithAssetTags(req.Filter.AssetTags)
+	}
+	// The domain filter scopes to a single asset; the UI's asset-grouped action
+	// sends exactly one asset_id. Use the first if provided.
+	if len(req.Filter.AssetIDs) > 0 {
+		assetID, err := shared.IDFromString(req.Filter.AssetIDs[0])
+		if err != nil {
+			apierror.BadRequest("Invalid asset_id").WriteJSON(w)
+			return
+		}
+		filter = filter.WithAssetID(assetID)
+	}
+
+	input := app.BulkFixAppliedInput{
+		Filter:             filter,
+		IncludeRelatedCVEs: req.IncludeRelatedCVEs,
+		Note:               req.Note,
+		Reference:          req.Reference,
+	}
+
+	result, err := h.service.BulkFixApplied(r.Context(), tenantID, userID.String(), input)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, result)
+}
+
+// --- Verify (by IDs or by filter) ---
+
+// VerifyRequest supports both finding_ids and filter. At least one must be provided.
+type VerifyRequest struct {
+	FindingIDs []string              `json:"finding_ids" validate:"max=100,dive,uuid"` // verify specific findings
+	Filter     *FindingFilterRequest `json:"filter"`                                   // verify all matching filter
+	Note       string                `json:"note" validate:"max=5000"`
+}
+
+// Verify handles POST /api/v1/findings/actions/verify
+func (h *FindingActionsHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetLocalUserID(r.Context())
+
+	var req VerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Validate input bounds
+	if len(req.FindingIDs) > 100 {
+		apierror.BadRequest("Maximum 100 finding IDs allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Note) > 5000 {
+		apierror.BadRequest("Note must be at most 5000 characters").WriteJSON(w)
+		return
+	}
+	if req.Filter != nil && (len(req.Filter.CVEIDs) > 100 || len(req.Filter.AssetTags) > 100) {
+		apierror.BadRequest("Maximum 100 filter items allowed").WriteJSON(w)
+		return
+	}
+
+	// By filter (Pending Review tab uses this)
+	if req.Filter != nil && (len(req.Filter.CVEIDs) > 0 || len(req.Filter.AssetTags) > 0) {
+		filter := vulnerability.NewFindingFilter()
+		if len(req.Filter.CVEIDs) > 0 {
+			filter = filter.WithCVEIDs(req.Filter.CVEIDs)
+		}
+		if len(req.Filter.AssetTags) > 0 {
+			filter = filter.WithAssetTags(req.Filter.AssetTags)
+		}
+		count, err := h.service.BulkVerifyByFilter(r.Context(), tenantID, userID.String(), app.VerifyByFilterInput{
+			Filter: filter, Note: req.Note,
+		})
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+		h.writeJSON(w, http.StatusOK, map[string]any{"updated": count})
+		return
+	}
+
+	// By IDs
+	if len(req.FindingIDs) == 0 {
+		apierror.BadRequest("finding_ids or filter is required").WriteJSON(w)
+		return
+	}
+
+	result, err := h.service.BulkVerify(r.Context(), tenantID, userID.String(), req.FindingIDs, req.Note)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, result)
+}
+
+// --- Reject Fix (by IDs or by filter) ---
+
+// RejectFixRequest supports both finding_ids and filter.
+type RejectFixRequest struct {
+	FindingIDs []string              `json:"finding_ids" validate:"max=100"`
+	Filter     *FindingFilterRequest `json:"filter"`
+	Reason     string                `json:"reason" validate:"max=5000"`
+}
+
+// RejectFix handles POST /api/v1/findings/actions/reject-fix
+func (h *FindingActionsHandler) RejectFix(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetLocalUserID(r.Context())
+
+	var req RejectFixRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Validate input bounds
+	if len(req.FindingIDs) > 100 {
+		apierror.BadRequest("Maximum 100 finding IDs allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Reason) > 5000 {
+		apierror.BadRequest("Reason must be at most 5000 characters").WriteJSON(w)
+		return
+	}
+	if req.Filter != nil && (len(req.Filter.CVEIDs) > 100 || len(req.Filter.AssetTags) > 100) {
+		apierror.BadRequest("Maximum 100 filter items allowed").WriteJSON(w)
+		return
+	}
+
+	// By filter
+	if req.Filter != nil && (len(req.Filter.CVEIDs) > 0 || len(req.Filter.AssetTags) > 0) {
+		filter := vulnerability.NewFindingFilter()
+		if len(req.Filter.CVEIDs) > 0 {
+			filter = filter.WithCVEIDs(req.Filter.CVEIDs)
+		}
+		if len(req.Filter.AssetTags) > 0 {
+			filter = filter.WithAssetTags(req.Filter.AssetTags)
+		}
+		count, err := h.service.BulkRejectByFilter(r.Context(), tenantID, userID.String(), app.RejectByFilterInput{
+			Filter: filter, Reason: req.Reason,
+		})
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+		h.writeJSON(w, http.StatusOK, map[string]any{"updated": count})
+		return
+	}
+
+	// By IDs
+	if len(req.FindingIDs) == 0 {
+		apierror.BadRequest("finding_ids or filter is required").WriteJSON(w)
+		return
+	}
+
+	result, err := h.service.BulkRejectFix(r.Context(), tenantID, userID.String(), req.FindingIDs, req.Reason)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, result)
+}
+
+// --- Request Verification Scan ---
+
+// RequestVerificationScanRequest is the request body for POST /api/v1/findings/{id}/request-verification.
+type RequestVerificationScanRequest struct {
+	ScannerName string `json:"scanner_name" validate:"omitempty,max=100"`
+	WorkflowID  string `json:"workflow_id"  validate:"omitempty,uuid"`
+}
+
+// RequestVerificationScan handles POST /api/v1/findings/{id}/request-verification
+// Triggers a targeted quick scan on the asset associated with a fix_applied finding.
+func (h *FindingActionsHandler) RequestVerificationScan(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetLocalUserID(r.Context())
+	findingID := chi.URLParam(r, "id")
+
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	var req RequestVerificationScanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if len(req.ScannerName) > 100 {
+		apierror.BadRequest("scanner_name must be at most 100 characters").WriteJSON(w)
+		return
+	}
+
+	result, err := h.service.RequestVerificationScan(r.Context(), tenantID, userID.String(), app.RequestVerificationScanInput{
+		FindingID:   findingID,
+		ScannerName: req.ScannerName,
+		WorkflowID:  req.WorkflowID,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusAccepted, result)
+}
+
+// RequestValidation handles POST /api/v1/findings/{id}/validate
+// It dispatches a CTEM Stage-4 validation job (safe-check re-check) for the
+// finding. The job runs on a sensor; the outcome is applied to the finding
+// asynchronously when the sensor completes the command.
+func (h *FindingActionsHandler) RequestValidation(w http.ResponseWriter, r *http.Request) {
+	if h.validationRunner == nil {
+		apierror.InternalServerError("validation is not configured").WriteJSON(w)
+		return
+	}
+
+	tenantID := middleware.MustGetTenantID(r.Context())
+	findingID := chi.URLParam(r, "id")
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+	fid, err := shared.IDFromString(findingID)
+	if err != nil {
+		apierror.BadRequest("invalid finding id").WriteJSON(w)
+		return
+	}
+
+	cmdID, err := h.validationRunner.ValidateFinding(r.Context(), tid, fid)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusAccepted, map[string]any{
+		"finding_id": findingID,
+		"command_id": cmdID.String(),
+		"status":     "queued",
+	})
+}
+
+// --- Auto-Assign ---
+
+// AssignToOwnersRequest is the request body for POST /api/v1/findings/actions/assign-to-owners
+type AssignToOwnersRequest struct {
+	Filter FindingFilterRequest `json:"filter"`
+}
+
+// AssignToOwners handles POST /api/v1/findings/actions/assign-to-owners
+func (h *FindingActionsHandler) AssignToOwners(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetLocalUserID(r.Context())
+
+	var req AssignToOwnersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	filter := vulnerability.NewFindingFilter()
+	if len(req.Filter.CVEIDs) > 0 {
+		filter = filter.WithCVEIDs(req.Filter.CVEIDs)
+	}
+	if len(req.Filter.AssetTags) > 0 {
+		filter = filter.WithAssetTags(req.Filter.AssetTags)
+	}
+
+	result, err := h.service.AutoAssignToOwners(r.Context(), tenantID, userID.String(), filter)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, result)
+}
+
+// --- Helpers ---
+
+func (h *FindingActionsHandler) buildFilter(r *http.Request) vulnerability.FindingFilter {
+	filter := vulnerability.NewFindingFilter()
+	q := r.URL.Query()
+
+	if sevs := q.Get("severities"); sevs != "" {
+		for _, s := range splitCSV(sevs) {
+			sev, err := vulnerability.ParseSeverity(s)
+			if err == nil {
+				filter.Severities = append(filter.Severities, sev)
+			}
+		}
+	}
+
+	if stats := q.Get("statuses"); stats != "" {
+		for _, s := range splitCSV(stats) {
+			st, err := vulnerability.ParseFindingStatus(s)
+			if err == nil {
+				filter.Statuses = append(filter.Statuses, st)
+			}
+		}
+	}
+
+	if sources := q.Get("sources"); sources != "" {
+		for _, s := range splitCSV(sources) {
+			src, err := vulnerability.ParseFindingSource(s)
+			if err == nil {
+				filter.Sources = append(filter.Sources, src)
+			}
+		}
+	}
+
+	if cves := q.Get("cve_ids"); cves != "" {
+		cveList := splitCSV(cves)
+		if len(cveList) > 100 {
+			cveList = cveList[:100] // Silently cap at 100
+		}
+		filter.CVEIDs = cveList
+	}
+
+	if tags := q.Get("asset_tags"); tags != "" {
+		tagList := splitCSV(tags)
+		if len(tagList) > 100 {
+			tagList = tagList[:100]
+		}
+		filter.AssetTags = tagList
+	}
+
+	// "Show only mine": restrict groups to findings related to the current user
+	// (direct assignee, member of an assigned group, or asset owner). Resolve the
+	// authenticated local user from context; skip silently if unresolved so an
+	// unauthenticated/absent user never widens the result set.
+	if mine := parseQueryBoolPtr(q.Get("assigned_to_me")); mine != nil && *mine {
+		if uid := middleware.GetLocalUserID(r.Context()); !uid.IsZero() {
+			userID := uid
+			filter.RelatedToUserID = &userID
+		}
+	}
+
+	return filter
+}
+
+func (h *FindingActionsHandler) buildPagination(r *http.Request, defaultPerPage int) pagination.Pagination {
+	q := r.URL.Query()
+	perPage := defaultPerPage
+	page := 1
+
+	if pp := q.Get("per_page"); pp != "" {
+		if v, err := strconv.Atoi(pp); err == nil && v > 0 && v <= 100 {
+			perPage = v
+		}
+	}
+	if p := q.Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+
+	// pagination.New(page, perPage) computes the offset internally. The args
+	// were swapped (perPage passed as page, a pre-computed offset as perPage),
+	// so page 1 became New(20,0) → LIMIT 20 OFFSET 980 and any dataset under
+	// ~980 groups returned an empty first page.
+	return pagination.New(page, perPage)
+}
+
+func (h *FindingActionsHandler) handleError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("Finding").WriteJSON(w)
+		return
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict(err.Error()).WriteJSON(w)
+		return
+	}
+	h.logger.Error("finding lifecycle error", "error", err)
+	apierror.InternalServerError("Internal server error").WriteJSON(w)
+}
+
+func (h *FindingActionsHandler) writeJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(data)
+}
+
+func splitCSV(s string) []string {
+	parts := make([]string, 0)
+	for _, p := range splitByComma(s) {
+		p = trimSpace(p)
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return parts
+}
+
+func splitByComma(s string) []string {
+	result := make([]string, 0)
+	start := 0
+	for i := range len(s) {
+		if s[i] == ',' {
+			result = append(result, s[start:i])
+			start = i + 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
+}
+
+func trimSpace(s string) string {
+	i, j := 0, len(s)
+	for i < j && s[i] == ' ' {
+		i++
+	}
+	for j > i && s[j-1] == ' ' {
+		j--
+	}
+	return s[i:j]
+}

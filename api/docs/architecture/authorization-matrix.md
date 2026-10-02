@@ -1,0 +1,1104 @@
+# Authorization Matrix
+
+This document describes the complete authorization model for the OpenCTEM API.
+
+## Overview
+
+The system uses a **two-layer authorization model**:
+
+1. **Permission-based Authorization**: Fine-grained permissions (`resource:action`) embedded in JWT tokens
+2. **Role-based Authorization**: Team roles (owner, admin, member, viewer) for team management
+
+## Authorization Models
+
+### Permission-based (JWT Claims)
+
+Permissions are included in the access token and checked using `middleware.Require()`.
+
+**The canonical permission list is code, not this document.** The single source
+of truth is `permission.AllPermissions()` in
+`pkg/domain/permission/permission.go`; `permission.IsValid()` /
+`ParsePermission()` validate against it. As of this writing it defines
+**168 permissions**, grouped by module. Rather than hand-mirror all 168 (which
+would drift), the table below lists the module groups and the count each
+contributes — derive the exact strings from `AllPermissions()`.
+
+| Module group | Count | Example permissions |
+|--------------|-------|---------------------|
+| Core (dashboard, audit, settings) | 4 | `dashboard:read`, `audit:read`, `settings:read/write` |
+| Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
+| Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
+| Scans | 22 | `scans:read/write/delete/execute`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
+| Sensors | 9 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete` |
+| Team | 23 | `team:*`, `members:*`, `groups:*`, `roles:*`, `permission_sets:*`, `assignment_rules:*` |
+| Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
+| Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
+| Attack Surface | 3 | `scope:read/write/delete` |
+| Validation (legacy) | 4 | `validation:read/write`, `pentest:read/write` |
+| Pentest (granular) | 11 | `pentest_campaigns:*`, `pentest_findings:*`, `pentest_retests:*`, `pentest_templates:*`, `pentest_reports:write` |
+| Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
+| Reports | 2 | `reports:read/write` |
+| Threat Intel | 2 | `threat_intel:read/write` |
+| AI Triage | 2 | `ai_triage:read/trigger` |
+| CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
+| **Total** | **168** | |
+
+> There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and
+> no `/api/v1/projects/*` routes; the resource hierarchy is
+> tenant → assets/components/findings. (This doc previously listed a phantom
+> projects module — removed.)
+
+### Role-based (Team Context)
+
+Team roles are used for team management operations:
+
+| Role | Level | Description |
+|------|-------|-------------|
+| `owner` | 4 | Team owner - full control, can delete team |
+| `admin` | 3 | Team admin - manage members, invitations, settings |
+| `member` | 2 | Team member - create/edit resources |
+| `viewer` | 1 | Team viewer - read-only access |
+
+## Middleware Stack
+
+The authorization is implemented through a middleware chain:
+
+```
+Request
+   │
+   ▼
+┌─────────────────────────────────────────┐
+│ UnifiedAuth                              │ ← Validates JWT (local or OIDC)
+│ - Extracts user ID, email, tenant ID     │
+│ - Extracts permissions array             │
+│ - Extracts role from claims              │
+└─────────────────────────────────────────┘
+   │
+   ▼
+┌─────────────────────────────────────────┐
+│ UserSync                                 │ ← Syncs user to local DB
+└─────────────────────────────────────────┘
+   │
+   ▼
+┌─────────────────────────────────────────┐
+│ RequireTenant (for JWT-tenant routes)    │ ← Validates tenant ID in token
+│   OR                                     │
+│ TenantContext (for URL-tenant routes)    │ ← Extracts tenant from path
+└─────────────────────────────────────────┘
+   │
+   ▼
+┌─────────────────────────────────────────┐
+│ RequireMembership (URL routes only)      │ ← Verifies team membership
+└─────────────────────────────────────────┘
+   │
+   ▼
+┌─────────────────────────────────────────┐
+│ Require(permission) / RequireTeamAdmin   │ ← Permission or role check
+└─────────────────────────────────────────┘
+   │
+   ▼
+Handler
+```
+
+## API Routes by Authorization Type
+
+### Public Routes (No Auth)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Health check |
+| `GET /ready` | Readiness check |
+| `POST /api/v1/auth/register` | User registration (403 unless `AUTH_ALLOW_REGISTRATION=true` or a matching invitation token) |
+| `POST /api/v1/auth/login` | User login |
+| `POST /api/v1/auth/token` | Token exchange |
+| `POST /api/v1/auth/refresh` | Token refresh |
+
+### JWT-Tenant Routes (Tenant from Token)
+
+These routes use the tenant ID embedded in the JWT access token.
+
+They also accept a tenant `oct_` API key (`Authorization: Bearer oct_…` or
+`X-API-Key`), **read-only** (GET/HEAD): the tenant comes from the key, the
+permissions are the key's scopes narrowed to what its user holds now, the key
+is never admin, and credential/account areas (`/api-keys`, `/scim-tokens`,
+`/me`, `/notifications`, `/ws`, `/platform`, `/users`, …) refuse keys. Every
+ungated route must refuse keys (`tests/unit/apikey_route_policy_test.go`).
+Details: [api-keys.md](./api-keys.md).
+
+#### Assets (`/api/v1/assets`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/assets` | `assets:read` |
+| `GET /api/v1/assets/{id}` | `assets:read` |
+| `POST /api/v1/assets` | `assets:write` |
+| `PUT /api/v1/assets/{id}` | `assets:write` |
+| `DELETE /api/v1/assets/{id}` | `assets:delete` |
+
+#### Components (`/api/v1/components`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/components` | `components:read` |
+| `GET /api/v1/components/{id}` | `components:read` |
+| `POST /api/v1/components` | `components:write` |
+| `PUT /api/v1/components/{id}` | `components:write` |
+| `DELETE /api/v1/components/{id}` | `components:delete` |
+
+#### Findings (`/api/v1/findings`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/findings` | `findings:read` |
+| `GET /api/v1/findings/{id}` | `findings:read` |
+| `POST /api/v1/findings` | `findings:write` |
+| `DELETE /api/v1/findings/{id}` | `findings:delete` |
+| `PATCH /api/v1/findings/{id}/status` | `findings:status` |
+| `POST /api/v1/findings/{id}/triage` | `findings:triage` |
+| `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
+| `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
+| `POST /api/v1/findings/{id}/verify` | `findings:verify` |
+
+> The finding **action** routes (status, triage, assign, bulk, verify) are gated on
+> **precise granular permissions**, not the coarse `findings:write` (AUTHZ-05).
+> `verify` is a separate permission from `status`/`triage` to keep
+> **separation of duties** — the person who triages a finding should not be able to
+> self-verify their own fix (AUTHZ B1, api#505). Migration `000217` backfilled the
+> four granular perms onto every role that already held `findings:write`, so the
+> tightening is honest-not-breaking: nobody lost an action they could perform before.
+
+#### Exposures (`/api/v1/exposures`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/exposures` · `/{id}` · `/stats` · `/{id}/history` | `findings:read` |
+| `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `PUT /{id}/ctem-id` | `findings:write` |
+| `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` | `findings:approve` |
+| `DELETE /api/v1/exposures/{id}` | `findings:delete` |
+
+> Accepted and false-positive are the dispositions a finding reaches only
+> through the approval workflow (`FindingStatus.RequiresApproval`: request with
+> `findings:write`, approve with `findings:approve`, never your own request).
+> Exposures have no request/approve records, so these two transitions are
+> gated on the approver permission itself: a `findings:write` holder (member)
+> gets 403 and must ask an approver. The reason is kept in the exposure's state
+> history. Unlike findings, an approver sets the state directly (no second
+> person); a full request/approve flow for exposures would need its own
+> records.
+
+#### Scope exclusions (`/api/v1/scope/exclusions`)
+
+`POST /api/v1/scope/exclusions/{id}/approve` is gated on `scope:write`, and the
+service refuses an approval by the user who requested the exclusion
+(`created_by`) with 403 — the same separation of duties as finding approvals.
+
+#### Scan zones (`/api/v1/scan-zones`, RFC-023)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/scan-zones` · `/{id}` · `/coverage` | `sensors:zones:read` |
+| `POST /api/v1/scan-zones` | `sensors:zones:write` |
+| `PATCH /api/v1/scan-zones/{id}` | `sensors:zones:write` |
+| `PUT` · `DELETE /api/v1/scan-zones/{id}/sensors/{sensorId}` | `sensors:zones:write` |
+| `DELETE /api/v1/scan-zones/{id}` | `sensors:zones:delete` |
+
+> Seeded by migration `000231`: owner and admin hold all three, member and
+> viewer hold `sensors:zones:read` (RFC-023 D16). Object level: every query
+> carries `tenant_id`, and `scan_zone_sensors` has composite foreign keys
+> `(tenant_id, zone_id)` and `(tenant_id, sensor_id)`, so a zone or sensor of
+> another tenant cannot be linked even by a wrong handler. See
+> [scan-zones.md](scan-zones.md).
+
+#### Sensors (`/api/v1/sensors`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` · `/content-policy` | `sensors:read` |
+| `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write` |
+| `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
+| `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
+
+> **Sensors and their keys are owner/admin only** (owner decision
+> 2026-10-02). Every write above creates, rotates or invalidates a sensor
+> credential (`rda_…`), so `sensors:write` and `sensors:delete` are held by
+> owner and admin only; migration `000246` removed `sensors:write` from the
+> member role (viewer never had it). Members and viewers keep `sensors:read`.
+> Scan-zone sensor assignment (`sensors:zones:write`) hands out no key and was
+> already owner/admin only (`000231`). A custom role carries `sensors:write`
+> only if an owner or administrator gave it one.
+
+#### Audit log (`/api/v1/audit-logs`)
+
+| Endpoint | Gate |
+|----------|------|
+| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) |
+| `GET /api/v1/audit-logs/user/{id}` | `audit:read`, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
+| `GET /api/v1/audit-logs/verify` | owner/admin (`RequireAdmin`) |
+| `POST /api/v1/audit-logs/rebaseline` | **owner only** (`RequireOwner`) |
+
+> The organization audit log (actor emails, IPs, every action) is owner/admin
+> only: migration `000246` removed `audit:read` from member and viewer.
+> Rebaseline overwrites the tamper-evident chain, so it is owner-only: an
+> administrator must not be able to re-sign the chain over their own changes.
+
+#### API keys (`/api/v1/api-keys`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/api-keys` · `/{id}` | `integrations:api_keys:read` — owner/admin see every key of the organization; anyone else sees **only their own keys** (another user's key reads as 404) |
+| `POST /api/v1/api-keys` · `/{id}/revoke` | `integrations:api_keys:write` (owner/admin) |
+| `DELETE /api/v1/api-keys/{id}` | `integrations:api_keys:delete` (owner/admin) |
+
+> Keys belong to the user who minted them (`api_keys.user_id`). The list shows
+> key names, scopes and last-used IPs, so a member or viewer is filtered to
+> their own keys in the handler (`ownKeysOnly`).
+
+#### SCIM tokens (`/api/v1/scim-tokens`)
+
+| Endpoint | Gate |
+|----------|------|
+| `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`) |
+| `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`) |
+
+> A SCIM token can create, suspend and re-role every member, so minting and
+> revoking one is the owner's decision (owner decision 2026-10-02).
+
+#### Billing
+
+`settings:billing:read` is owner/admin only (migration `000246` removed it from
+member and viewer). There is no billing API route today; the permission gates
+the billing page in the UI.
+
+#### Leaked credentials (`/api/v1/credentials`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/credentials` · `/{id}` · `/{id}/related` · `/identities` · `/identities/{identity}/exposures` · `/stats` | `findings:credentials:read` |
+| `POST /api/v1/credentials/import` · `/import/csv` · `/{id}/resolve` · `/accept` · `/false-positive` · `/reactivate` | `findings:credentials:write` |
+| `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` |
+
+> **The leaked secret is reveal-only.** Read endpoints (here and under
+> `/api/v1/exposures`) return `secret_masked` and `secret_fingerprint` (a
+> keyed HMAC), never the plaintext. `findings:credentials:reveal` is held by
+> owner and admin only (migration `000232`); viewer and member read the
+> masked value. Every reveal writes `credential.revealed` to the audit log
+> before the secret is returned, and the call answers 503 if the audit event
+> cannot be written. At rest the secret is AES-256-GCM encrypted with
+> `APP_ENCRYPTION_KEY` (`details.secret_value_enc`); the server seals legacy
+> plaintext rows on start, and `cmd/encrypt-credentials` does the same offline.
+
+#### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
+| `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
+| `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
+| Secret store `GET` / `POST`,`PUT` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+
+> **A stored credential goes only where someone entitled to it pointed it.**
+> A sync decrypts the source's `credential_id` and sends it to the source's
+> URL (bearer/basic/API key, git token or SSH key, S3 keys). Members hold
+> `scans:sources:write` and `scans:secret_store:write`, so the route gates
+> alone would let any member send any stored secret to a server they run.
+> `template.SourceService` therefore checks, on create and update:
+> - **Binding** a credential (a new `credential_id`, or keeping one while the
+>   destination changes) is allowed to tenant owners/admins and to the user who
+>   stored that credential (`credentials.created_by`). Anyone else gets 403
+>   `CREDENTIAL_BIND_FORBIDDEN`, and the attempt is audited as
+>   `template_source.credential_attached` with result `denied`.
+> - **Re-pointing** a source that carries a credential (git URL, HTTP URL, or
+>   S3 endpoint/region/bucket/role ARN) without re-binding it in the same request
+>   **drops the credential**, audited as `template_source.credential_detached`
+>   (`reason: destination changed`). An S3 source cannot exist without its
+>   keys, so re-pointing one needs the owner/admin to re-bind.
+> - Every successful bind is audited as `template_source.credential_attached`
+>   (severity high) with the credential id/name and the destination host.
+>
+> The secret store has no per-credential host allowlist; the binding check
+> above is the control. Sources bound before this check existed keep their
+> credential until they are next re-pointed.
+>
+> Templates synced or uploaded are validated before use. For Nuclei, the
+> `code`, `javascript` and `headless` protocols are refused on the **parsed**
+> document (`execProtocolKey`), so JSON, flow-style YAML, escaped or
+> differently-cased keys cannot hide them.
+
+#### Vulnerabilities (`/api/v1/vulnerabilities`) - Global
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/vulnerabilities` | `vulnerabilities:read` |
+| `GET /api/v1/vulnerabilities/{id}` | `vulnerabilities:read` |
+| `GET /api/v1/vulnerabilities/cve/{cve_id}` | `vulnerabilities:read` |
+| `POST /api/v1/vulnerabilities` | `vulnerabilities:write` |
+| `PUT /api/v1/vulnerabilities/{id}` | `vulnerabilities:write` |
+| `DELETE /api/v1/vulnerabilities/{id}` | `vulnerabilities:delete` |
+
+#### Dashboard (`/api/v1/dashboard`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/dashboard/stats` | `dashboard:read` |
+| `GET /api/v1/dashboard/stats/global` | `dashboard:read` |
+
+### URL-Tenant Routes (Tenant from URL)
+
+These routes require the tenant ID in the URL path and use database-based membership verification.
+
+#### Teams (`/api/v1/tenants`)
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/tenants` | Any authenticated |
+| `POST /api/v1/tenants` | Any authenticated |
+| `GET /api/v1/tenants/{tenant}` | Any authenticated |
+
+> These responses carry the tenant's `settings` map, which every member can
+> read. Secrets stored in settings (`api.webhook_secret`, `ai.api_key`, and any
+> key whose name marks it as a secret) are **write-only**:
+> `tenant.RedactSettings` removes them and adds `<key>_configured: true|false`.
+> The webhook signing secret is set with the owner-only
+> `PATCH /api/v1/tenants/{tenant}/settings/api`.
+
+#### Team Management (`/api/v1/tenants/{tenant}`)
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/tenants/{tenant}/members` | Team viewer+ |
+| `GET /api/v1/tenants/{tenant}/invitations` | Team viewer+ |
+| `PATCH /api/v1/tenants/{tenant}` | Team admin+ |
+| `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
+| `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
+| `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |
+| `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
+| `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
+| `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
+| `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
+| `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
+| `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** (refuses an IP allowlist that excludes the caller's IP) |
+| `DELETE /api/v1/tenants/{tenant}` | **Team owner only** |
+
+> **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
+> B3). Changing the role of, suspending, reactivating or removing a member who
+> is an administrator (or owner) needs the caller to be the owner; anyone else
+> gets 403 (`TenantService.authorizeMemberChange`). The same holds on the RBAC
+> paths (`/api/v1/users/{id}/roles`, assign/remove/bulk): only an owner may
+> change another administrator's role set (`grant_guard.go`). Administrators
+> still manage members and viewers, and may change their own membership. SCIM
+> (no human actor) is not a peer and keeps its own rules.
+>
+> **Granting roles** (invitations and created users) is anti-escalation checked:
+> a caller who is not an organization admin may grant only roles whose
+> permissions they hold, and the owner role is never grantable. The membership
+> role is derived from the granted RBAC roles (`member` if they include the
+> system member/admin role, else `viewer`) and the granted roles become the
+> user's exact role set, so the `tenant_members` → `user_roles` trigger cannot
+> add more.
+
+#### Invitations (`/api/v1/invitations`)
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/invitations/{token}` | Any authenticated |
+| `POST /api/v1/invitations/{token}/accept` | Any authenticated (email must match) |
+
+### User Routes (`/api/v1/users`)
+
+| Endpoint | Required Auth |
+|----------|---------------|
+| `GET /api/v1/users/me` | JWT |
+| `PUT /api/v1/users/me` | JWT |
+| `PUT /api/v1/users/me/preferences` | JWT |
+| `GET /api/v1/users/me/tenants` | JWT |
+| `POST /api/v1/users/me/change-password` | JWT (local auth only) |
+| `GET /api/v1/users/me/sessions` | JWT (local auth only) |
+| `DELETE /api/v1/users/me/sessions` | JWT (local auth only) |
+| `DELETE /api/v1/users/me/sessions/{id}` | JWT (local auth only) |
+
+### Build version
+
+| Endpoint | Required Auth |
+|----------|---------------|
+| `GET /api/v1/version` | JWT (any signed-in user; no `oct_` keys) |
+| `GET /api/v1/admin/version` | Console session (any admin role) |
+
+The running build (`version`, `commit`, `build_time`, `channel`) for Help >
+About. Deliberately not on the public `/health`: an unauthenticated client
+cannot fingerprint the build. Release images stamp it with `-ldflags` from the
+tag; the dev container's air build stamps `<highest tag>-dev`; an unstamped
+binary reads the checkout's `.git` (`pkg/version`).
+
+### Platform Admin Routes (`/api/v1/admin/*`)
+
+Platform admin routes are for OpenCTEM operators, NOT tenant users. They
+authenticate **only** with a **console session** (RFC-022: `/login` password
+sign-in + mandatory TOTP, server-side session in the `admin_session` cookie,
+scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
+`admin_csrf` double-submit check). There are **no admin API keys**: an
+`X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
+so every admin action has passed TOTP. The session resolves to an
+`admin_users` row with a platform role: `super_admin` > `ops_admin` >
+`readonly`. The tenant JWT never authenticates these routes, and the admin
+session never reaches tenant routes.
+
+Authorization is enforced at the **route layer** in
+`internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
+— not in the handlers.
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/admin/auth/validate` | any admin |
+| `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
+| `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
+| `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
+| `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
+| `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (token-exchange rate limit, 20/min; state bound to the `admin_idp` cookie, single use) |
+| `POST /api/v1/admin/administrators` | **super_admin** (audited; `break_glass` audited high) |
+| `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** (audited; not self) |
+| `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
+| `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
+| `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
+| `GET /api/v1/admin/users` | **super_admin** |
+| `GET /api/v1/admin/users/{id}` | **super_admin** |
+| `PATCH /api/v1/admin/users/{id}` | **super_admin** (audited) |
+| `DELETE /api/v1/admin/users/{id}` | **super_admin** (audited) |
+| `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
+| `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
+| `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+
+> The admin roster (`/admin/users`) is super_admin-only for reads as well as
+> writes: it exposes admin emails and last-used IPs, so listing
+> it is itself a privileged operation.
+
+### SSO / identity-federation setup (platform administrator)
+
+SSO **setup** for an organization (SAML, OIDC identity providers, verified
+domains, SSO enforcement) is a platform-administrator operation, modeled on
+Tenable Security Center's system-level Configuration. It lives only under the
+admin realm, `/api/v1/admin/tenants/{tenantId}/sso/*` (next section). The former
+tenant-context routes `/api/v1/settings/{saml,identity-providers,verified-domains}`
+and the `PLATFORM_ADMIN_EMAILS` flag that guarded them were removed; no tenant
+role, however high, can reach SSO setup. The SSO **login** flow
+(`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is public and unchanged.
+
+### Platform administrator identity (RFC-022)
+
+A platform administrator is a `users` account linked to an `admin_users` row
+(`admin_users.user_id`) that holds the role (`super_admin` > `ops_admin` >
+`readonly`), the TOTP second factor and the admin audit trail. It signs in on the
+normal `/login`, then `POST /api/v1/admin/auth/session` (refresh-token cookie)
+and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
+
+- **Belongs to no organization.** A trigger on `tenant_members` rejects a
+  membership for a linked account (SQLSTATE 23514, surfaced as 409), and an
+  account with memberships cannot be linked. This is what keeps a tenant
+  role and the platform role from ever meeting in one principal.
+- **Password sign-in only.** A session created by SSO, SAML or a social provider
+  cannot open the console, so no organization's IdP can authenticate an
+  administrator.
+- **TOTP always.** The `/login` session alone reaches nothing under
+  `/api/v1/admin/*`; only a verified console session does (there are no
+  admin API keys).
+- Provisioning is `POST /api/v1/admin/administrators` (super admin), or
+  `bootstrap-admin` for the first one and its break-glass backup. Rows without
+  a `user_id` (former API-key identities) were deactivated by migration 000227.
+- **Temporary password gate.** A provisioned account has
+  `password_change_required`; a password-authenticated console session can then
+  call only `GET /auth/validate` and `POST /auth/password` (403
+  `PASSWORD_CHANGE_REQUIRED` otherwise).
+
+#### Break-glass administrators and the platform IdP (RFC-022 revision 4)
+
+- **Platform IdP** (`platform_identity_provider`, one OIDC provider, not
+  tenant-scoped) is the only IdP that can open the console, and only for an
+  administrator that already exists: matched by bound (`iss`, `sub`), or on
+  first sign-in by verified email, then bound. No JIT creation. The console TOTP
+  is still required after it unless a super admin trusts specific `acr`/`amr`
+  values. Organization IdPs still cannot open the console.
+- **Require IdP** refuses the local password path (`/auth/session`) for every
+  administrator except break-glass ones.
+- **Break-glass** administrators are local `super_admin`s that can never be
+  bound to the IdP (database `CHECK`), are exempt from "require IdP", and every
+  sign-in is audited high + alerted (`alert=break_glass_sign_in` + email).
+- **Invariant** (server-side, under an advisory lock): at least one active,
+  linked `super_admin` who can sign in locally always remains — while "require
+  IdP" is in force, at least one break-glass `super_admin`. Delete, deactivate,
+  demote and unmark that would break it return 409, as does turning on "require
+  IdP" without one.
+
+### Organizations — platform admin cross-tenant (RFC-022 Phase 2)
+
+Under the admin realm (console session), never tenant-permission
+gated. Organization-scoped SSO routes reuse the tenant SSO handlers through
+`AdminTenantScope`, which checks the organization exists, sets it as the request
+tenant, and **clears the user id** (the principal is the admin identity, not an
+organization member, and those handlers write `created_by` columns that
+reference `users(id)`). Writes are
+recorded in `admin_audit_logs`, and in the organization's own audit log with
+`actor_email = platform-admin:<email>`, `actor_id` NULL and `actor_ip` the
+resolved client IP (forwarding headers only from a trusted proxy). The
+organization's log gets: `sso.saml_config_updated` / `_deleted`,
+`sso.identity_provider_created` / `_updated` / `_deleted`,
+`sso.verified_domain_added` / `_verified` / `_deleted` (severity high; written
+by the SAML, SSO and verified-domain handlers), `tenant.settings_updated` for
+SSO enforcement, and `user.created` for console-created users. Client secrets
+and certificates are never logged — an IdP update records
+`client_secret_changed`, a SAML save records the certificate's SHA-256.
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin |
+| `POST /api/v1/admin/tenants` | **ops_admin+** (audited; creates the owner's account when `owner_email` has none) |
+| `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
+| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no active owner, nothing else (409 otherwise). Audited in `admin_audit_logs` and the organization's audit log |
+| `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
+| `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited) |
+
+**First-owner bootstrap** (owner decision 2026-10-02, RFC-022 revision 5).
+The platform administrator belongs to no organization and cannot put a person
+of its choosing into one: `POST /admin/tenants/{tenantId}/users` creates only
+the first owner of an organization that has no active owner (checked and
+inserted in one transaction under a per-organization advisory lock, so two
+requests cannot create two owners), and answers 409 once an owner exists — the
+owner and its administrators add users themselves. The account is created
+without a password; the owner sets one through a one-time link, so the
+administrator never knows it and the owner's first sign-in is with a password
+they chose. The link is **emailed when the organization can send email** and is
+then never returned (a failed send reports `email_failed`; the owner uses
+forgot-password). Only when email cannot be sent at all is `setup_token`
+returned once: there is no other way to reach the new owner, and nobody in the
+organization can invite them yet. The same delivery rule applies to the owner
+created with `POST /admin/tenants`. Each is written to the organization's audit
+log (`user.created`, `bootstrap_owner: true`, actor `platform-admin:<email>`).
+
+**Tenant-side counterparts:**
+- `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.
+  Enforcement is set only through `PUT /admin/tenants/{tenantId}/sso/enforcement`,
+  which keeps the "usable SSO path required" guard.
+- With `TENANT_CREATION_MODE=admin_only` (the default; anything but
+  `self_service` counts), both self-service creation paths
+  (`POST /api/v1/tenants` and `POST /api/v1/auth/create-first-team`) return
+  403. Only `POST /admin/tenants` (and `bootstrap-admin -org-*` at install)
+  creates organizations. The mode is published
+  as `tenant_creation_mode` on the public `GET /api/v1/auth/providers`.
+
+### Metrics Endpoint (`GET /metrics`)
+
+`/metrics` (Prometheus) is **not public by default**. It is gated by
+`MetricsConfig`:
+
+| `METRICS_PUBLIC` | `METRICS_TOKEN` | Behavior |
+|------------------|-----------------|----------|
+| `false` (default) | set | Requires `Authorization: Bearer <token>` (or `X-Metrics-Token`). Missing/wrong → 404 |
+| `false` (default) | empty | Endpoint disabled (fail closed, 404) |
+| `true` | — | Open, no auth (legacy; use only when firewalled to an internal scrape network) |
+
+`/health` and `/ready` remain public. Configure the scraper's bearer token to
+match `METRICS_TOKEN`.
+
+## Organization access policy (RFC-025)
+
+Two per-organization policies (`Security.AllowedDomains`, `Security.IPWhitelist`,
+owner-managed) are enforced, not just stored. See
+[user-onboarding.md](./user-onboarding.md).
+
+- **Allowed email domains** gate every way into the organization: invitations
+  (create and accept), invited registration, administrator-created users,
+  `AddMember`/SCIM, and SSO just-in-time provisioning.
+- **IP allowlist**: `middleware.IPAllowlistGate` runs on every user-token
+  request (in `buildBaseMiddlewares` for the token's organization and after
+  `RequireMembership` on `/tenants/{tenant}` for the URL organization), and on
+  every tenant `oct_` API-key request on the REST API. Not applied to sensor
+  keys, the MCP endpoint, the admin console, or public routes. 403 `IP_NOT_ALLOWED`; lookup errors fail closed; client IP from
+  `httpsec.ClientIP` (trusted proxies only).
+- **Self-registration** (`POST /auth/register`) is off unless
+  `AUTH_ALLOW_REGISTRATION=true`; a pending invitation for the same email opens
+  it for that person only.
+
+## Data scope (Layer 2: access groups)
+
+Permissions decide what *kind* of thing a member may do; the data scope decides
+*which* assets — and so which findings, exposures and other asset-bound rows —
+they may see and change. Scope rows live in `user_accessible_assets` (group
+membership × group-owned assets, plus assets a user owns directly).
+
+**Who is restricted:**
+
+| Caller | Sees |
+|---|---|
+| Owner / admin (`IsAdmin`) | everything in the tenant |
+| Internal calls with no user (jobs, sensors, ingest) | everything in the tenant |
+| Member with ≥ 1 scope row | only their in-scope assets |
+| Member with no scope row | the organization's policy: **everything** or **nothing** |
+
+**Policy for members without an access group** (owner decision 2026-10-02):
+`tenants.members_without_group_see` (migration `000247`), `everything`
+(fail-open) or `nothing` (fail-closed, Tenable's "No Access").
+
+- Organizations that existed when the migration ran keep `everything`, so
+  nobody lost access; one that had switched on the earlier settings flag
+  (`settings.security.restricted_data_scope = true`, no longer read) keeps
+  `nothing`.
+- New organizations start with `nothing` (column default).
+- `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
+  (`{"members_without_group_see": "everything"|"nothing"}`), owner/admin
+  (`RequireTeamAdmin`). A change is audited (`tenant.settings_updated`,
+  severity high, before/after in `changes`) and drops the enforcer's 60-second
+  policy cache for that organization at once.
+- A failure to read the policy is treated as `everything` (a database hiccup
+  must not hide all data); every other scope-lookup error denies.
+
+**One enforcement point.** `internal/app/datascope.Enforcer` resolves the
+caller's scope (caller and admin flag come from the HTTP auth context, wired in
+`cmd/server/services.go`) and is shared by every service. Nil-safe: an unwired
+service is unrestricted. Out-of-scope by-id access returns **404**, never 403 —
+the same answer as a missing row, so it is not an existence oracle; in bulk
+results an out-of-scope id is reported exactly like an unknown id.
+
+- **By-id routes:** `middleware.DataScopeGuard` runs last on every token-tenant
+  chain (`buildTokenTenantMiddlewares`). Any request under
+  `/api/v1/assets/{uuid}/**`, `/api/v1/findings/{uuid}/**`,
+  `/api/v1/compliance/findings/{uuid}/**` or
+  `/api/v1/verification-checklists/{uuid}` — read or write, the object or any
+  sub-resource, including routes added later — is checked before the handler.
+- **Bulk-by-id and id-in-body paths:** services filter with the same enforcer.
+- **Grouped / by-filter finding queries** (`/findings/groups`, related CVEs,
+  verify / reject-fix / fix-applied by filter, assign-to-owners):
+  `FindingActionsService.visibleTo`
+  applies the enforcer's scope and the findings list's pentest-membership rule;
+  the group builder (`buildFilterWhere`) honors both filter fields with the
+  list's meaning, and a rule without a tenant matches nothing. Remediation
+  groups resolve the scope in `remediation.GroupService` and pass it to the
+  key repository (`ListGroups`, `OpenFindingIDs`). Do not set
+  `FindingFilter.DataScopeUserID` by hand in new code: use the enforcer
+  (`Resolve` + `WithDataScope`), which knows who is an administrator and the
+  organization's policy. Inside the finding package every filter-driven path
+  goes through one helper (`visibleFilter`: `visibleTo`, `ListFindingIDs`).
+  Three older paths still set the field themselves with the caller's admin
+  flag and `DataScopeStrict` from the same policy — the findings list/search,
+  the asset list and `/findings/stats`; their SQL gives the same answer as a
+  resolved scope (fail-open bypass only when the policy is `everything`).
+- **Indirect lists:** the resolved scope is pushed into SQL as
+  `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
+  (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
+
+### Coverage
+
+| Surface | Before (audit 2026-10, F4) | Now |
+|---|---|---|
+| `GET /assets`, `/findings` (list, search), `/findings/stats` | scoped | scoped (unchanged) |
+| `GET /findings/groups` (every `group_by`: asset, CVE, owner, component, severity, source, type; incl. the total-groups count and the `statuses=fix_applied` Pending Review queue) | **bypass (group names + counts tenant-wide; listed as scoped by mistake)** | scoped: groups and their counts come only from in-scope findings; pentest findings only to campaign members (the view lists no pentest findings at all) |
+| `GET /findings/related-cves/{cve}` | **bypass (CVE ids/titles/counts)** | scoped (both the source CVE's components and the related findings) |
+| `GET /assets/{id}`, `/findings/{id}`, `/findings/{id}/activities`, `POST /findings/{id}/comments` | scoped | scoped (guard + service) |
+| `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
+| `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
+| `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
+| `PUT/DELETE /findings/{id}/comments/{commentId}` | bypass | 404 (guard) + comment's finding checked |
+| `PUT/DELETE /assets/{id}`, activate/deactivate/archive, crown-jewel, snooze, sync, scan | **bypass (write)** | 404 (guard) |
+| `POST /findings/bulk/status`, `/bulk/assign` | **bypass (write)** | out-of-scope ids skipped, reported as not found |
+| `POST /findings/actions/verify`, `/reject-fix` (by ids), `/fix-applied` (filter) | partly | scoped |
+| `POST /findings/actions/verify`, `/reject-fix` (by `filter`, Pending Review) | **bypass (write: the scope field was set but the filter builder ignored it)** | scoped; admins unchanged |
+| `GET /findings/remediation-groups`, MCP `list_remediation_groups` | **bypass (fix titles, keys, counts tenant-wide)** | groups and counts from in-scope findings only |
+| `POST /findings/remediation-groups/{key}/resolve` | partly (out-of-scope members not changed, but counted against the abuse guard and reported as `failed`) | only in-scope findings are counted, changed and reported |
+| `POST /findings/actions/assign-to-owners` | **bypass (write)**: fail-open for members without a group even under policy `nothing`; pentest findings of other campaigns assigned; admins with a scope row restricted | enforcer scope + pentest rule; admins unrestricted |
+| `GET /findings/stats` under policy `nothing` when the scope lookup fails | fell through to tenant-wide counts | error (fail closed) |
+| `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
+| `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
+| `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
+| `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list filtered per page |
+| `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
+| `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
+| `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
+| `GET /attack-surface/attack-paths` | **bypass** | `top_assets` filtered |
+| `GET /attack-surface/exposure-chains`, MCP `get_exposure_chains` | **bypass** | a chain is returned only when every hop is in scope |
+| `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
+| `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
+| `GET /dashboard/executive-summary` (+ export) `top_risks` | bypass | filtered |
+| `GET /dashboard/stats/global` recent activity | bypass | per organization: filtered where the caller is restricted there |
+| `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
+| In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
+| WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
+
+### Deliberately tenant-wide (counts only, no row data)
+
+These return aggregates over the whole tenant to every holder of the read
+permission. Filtering them would need a scoped variant of each aggregate
+query; none exposes a row, name, title or id of an out-of-scope object.
+
+| Endpoint | Why tenant-wide |
+|---|---|
+| `GET /dashboard/stats` counts (assets/findings by type, status, severity, avg risk/CVSS, repositories, finding trend) | one batched aggregate query; counts only |
+| `GET /dashboard/{mttr,velocity,data-quality,risk-trend,mttr-analytics,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
+| `GET /attack-surface/stats` average risk score and per-type breakdown | aggregate; the counts and row lists on that endpoint are scoped |
+| `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
+| `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
+| `GET /exposures/stats` | counts by state/severity, MTTR |
+| `GET /findings/analytics/sources`, `/vulnerabilities/active`, `/active/stats` | counts per tool / per CVE |
+| `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
+
+**Not covered by data scope** (separate access models): pentest findings and
+attachments (campaign membership), threat models and remediation campaigns,
+scans, audit logs, report schedules, and access-control administration
+(`/groups/{id}/assets/{assetId}`, which defines scope and needs `groups:write`).
+The reachability oracle used by priority classification and threat models reads
+the full graph on purpose (`GetExposureChains` stays unscoped).
+
+Outside a request (WebSocket subscriptions, cross-organization dashboard) admin
+status is the team role from `v_user_effective_role` (owner/admin) — the same
+source as the access token's `admin` claim; the live-push recipient query reads
+the same view in SQL. Keep them in step if that derivation changes.
+
+## Module-Gate Layer (per-tenant feature gating)
+
+Above the permission and role checks there is a third, orthogonal layer: the
+**module gate**. `middleware.ModuleGate.RequireModule(moduleID)`
+(`internal/infra/http/middleware/module_gate.go`) wraps a route group and returns
+`403 MODULE_NOT_ENABLED` when the tenant has explicitly disabled that product
+module. It is wired onto **26 route groups** in
+`internal/infra/http/routes/routes.go` — e.g. `attack_surface`, `exposures`,
+`suppressions`, `remediation`, `compliance`, `pentest`, `threat_intel`,
+`reports`, `ctem_cycles`, `attacker_profiles`, `business_services`,
+`compensating_controls`, `priority_rules`, `scope_config`, `components`,
+`relationships`, `credentials`, `workflows`, `integrations`, `scan_pipelines`,
+`scanner_templates`, `template_sources`, `attack_simulation`, `control_testing`,
+`branches`, `iocs`.
+
+**This is a feature gate, not a security boundary, and it is deliberately
+fail-open.** A nil gate, missing provider, empty tenant, a core module, or any
+lookup miss all resolve to "enabled" — only an explicitly-disabled non-core
+module returns 403. Disabled sets are cached per tenant with a short TTL (60s
+default) and invalidated on toggle. Permission and tenant-isolation checks are
+the real access-control boundary; the gate only hides modules a tenant has
+turned off. Core modules (see `module.IsCoreModule`) can never be gated off.
+
+## Middleware Reference
+
+### Permission Middleware
+
+```go
+// Single permission required
+middleware.Require(permission.AssetsRead)
+
+// Any of the permissions (OR)
+middleware.RequireAny(permission.AssetsRead, permission.FindingsRead)
+
+// All permissions required (AND)
+middleware.RequireAll(permission.AssetsWrite, permission.FindingsWrite)
+```
+
+### Role Middleware (Team Context)
+
+```go
+// Specific roles required (from database membership)
+middleware.RequireTeamRole(tenant.RoleOwner, tenant.RoleAdmin)
+
+// Minimum role level (uses hierarchy)
+middleware.RequireMinTeamRole(tenant.RoleAdmin)  // admin or owner
+
+// Shortcuts
+middleware.RequireTeamAdmin()   // owner or admin
+middleware.RequireTeamOwner()   // owner only
+middleware.RequireTeamWrite()   // owner, admin, or member
+```
+
+### Tenant Middleware
+
+```go
+// JWT-based tenant (from token claims)
+middleware.RequireTenant()
+
+// URL-based tenant (from path parameter)
+middleware.TenantContext(tenantRepo)
+middleware.RequireMembership(tenantRepo)
+```
+
+## Implementation Pattern
+
+### Permission-based Routes (Recommended)
+
+```go
+router.Group("/api/v1/assets", func(r Router) {
+    // Read operations
+    r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+    r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+
+    // Write operations
+    r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
+    r.PUT("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
+
+    // Delete operations
+    r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsDelete))
+}, authMiddleware, userSyncMiddleware, middleware.RequireTenant())
+```
+
+### Role-based Routes (Team Management)
+
+```go
+router.Group("/api/v1/tenants/{tenant}", func(r Router) {
+    // Read operations - any member
+    r.GET("/members", h.ListMembers)
+
+    // Admin operations
+    r.PATCH("/", h.Update, middleware.RequireTeamAdmin())
+    r.POST("/members", h.AddMember, middleware.RequireTeamAdmin())
+
+    // Owner-only operations
+    r.DELETE("/", h.Delete, middleware.RequireTeamOwner())
+}, authMiddleware, userSyncMiddleware, tenantContext, requireMembership)
+```
+
+## Role Hierarchy
+
+```
+owner (4) ─┬─ Can do everything
+           │
+admin (3) ─┼─ Can manage team members and settings
+           │
+member (2) ┼─ Can create/edit resources
+           │
+viewer (1) ┴─ Can only view resources
+```
+
+## Security Considerations
+
+1. **Tenant Isolation**: Access tokens are scoped to a specific tenant. Users must exchange their refresh token for a tenant-scoped access token.
+
+2. **Permission Validation**: The access token carries the user's full permission
+   array, so the hot path checks permissions in-token with no per-request DB read.
+   To close the stale-token window, a per-user **permission version** (Redis `INCR`)
+   is bumped on any grant/revoke — every `RoleService` role-set change and the
+   member-role update (`PATCH /tenants/{t}/members/{id}`). On every token-tenant
+   request `EnrichPermissions` resolves the effective permission set from
+   Redis/DB, and:
+   - `HasPermission` then answers **only from that fresh set**; the token's
+     embedded array is never consulted again on that request, so a revoked
+     permission stops working on the next request, **reads included**;
+   - when the token's version is confirmed **stale**, a **write** is rejected
+     with `409 permissions_stale`; a **read** proceeds only after the token's
+     `admin` flag and `role` are **re-derived from the database** (the team role,
+     read from `tenant_members`/`user_roles` without the membership cache), so a
+     demoted admin loses the admin bypass on the next request. If the team role
+     or the permission set cannot be read for a stale token, the read gets the
+     same `409` (fail closed);
+   - when the token is **not** stale and the permission lookup fails
+     (Redis/DB outage), the token's own permissions are used: they are current,
+     and an outage is not a revocation.
+
+   Role-set changes also drop the user's cached membership, so
+   `RequireTeamAdmin/Owner` see the new team role on the next request.
+   `RevokeAllSessions` forces immediate re-auth. So the token is the fast path,
+   but the database is the source of truth — see
+   [permission-realtime-sync.md](./permission-realtime-sync.md).
+
+3. **IDOR Prevention**: JWT-based tenant routes eliminate IDOR by design - users can only access their current tenant's data.
+
+4. **Team Management Security**: Team operations use database-based membership verification via `RequireMembership` middleware.
+
+5. **Owner Protection**: Team owners cannot be demoted or removed. Only team deletion removes the owner.
+
+6. **Invitation Security**: Invitations are validated against the accepting user's email address.
+
+## API Routes Summary
+
+```
+Public (No Auth):
+├── GET  /health
+├── GET  /ready
+├── GET  /metrics
+└── POST /api/v1/auth/*
+
+User Profile (JWT Required):
+└── /api/v1/users/me/*
+
+JWT-Tenant Routes (Permission-based):
+├── /api/v1/assets/*           → assets:read/write/delete
+├── /api/v1/components/*       → components:read/write/delete
+├── /api/v1/findings/*         → findings:read/write/delete
+├── /api/v1/vulnerabilities/*  → vulnerabilities:read/write/delete
+└── /api/v1/dashboard/*        → dashboard:read
+
+URL-Tenant Routes (Role-based):
+├── /api/v1/tenants                      → Any authenticated
+├── /api/v1/tenants/{tenant}/members     → viewer+ (R), admin+ (W)
+├── /api/v1/tenants/{tenant}/invitations → viewer+ (R), admin+ (W)
+└── /api/v1/tenants/{tenant}             → admin+ (U), owner (D)
+
+Invitations:
+└── /api/v1/invitations/{token}/*        → Any authenticated
+```
+
+Legend: (R) = Read, (W) = Write, (U) = Update, (D) = Delete
+
+## Settled model — the rules we lock going forward
+
+The authorization model was reviewed end-to-end (2026-09, `docs/authz-audit.md`)
+and standardized. The following are **decisions**, not accidents — each was made
+deliberately and, where a design choice was involved, benchmarked against
+Tenable.sc's RBAC.
+
+1. **Allow-only, default-deny.** A user's effective permission set is the *union*
+   of what their roles grant. There is **no deny-override**: a permission-set can
+   only *add* capability, never subtract it at the enforcement layer. A "deny" that
+   appears in the UI/permission-set model is advisory (Layer-2), it does **not**
+   gate the API. This mirrors Tenable.sc, which is purely additive with no
+   deny-override. → we will **not** build a permission-set deny-gate.
+
+2. **Backend is the only authority.** The frontend hides controls the user lacks
+   perms for as a UX nicety; it is never the boundary. Every mutation is
+   independently gated server-side. UI perm checks that duplicate a server gate are
+   convenience, not security.
+
+3. **Effective permissions come from the database, not blindly from the token.**
+   The token is the fast path; the per-user permission version + `EnrichPermissions`
+   re-resolution + `409` on stale writes make the DB the source of truth (see
+   Security Consideration #2 and `permission-realtime-sync.md`).
+
+4. **Granular over coarse.** Action routes are gated on the most precise permission
+   that describes the action (e.g. `findings:status`, not `findings:write`), so the
+   role matrix tells the truth about who can do what. Tightening a role's grant is a
+   *product* decision made via seed/migration, never by silently widening a route's
+   gate.
+
+5. **No time-limited grants.** There is no `expires_at` on role assignments.
+   Tenable.sc has no expiring grants either; revocation is immediate via
+   `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
+
+6. **The module gate is a feature flag, not a security boundary.** It is fail-open
+   by design (see "Module-Gate Layer"). Never rely on it to protect data — that is
+   the job of the permission gate + tenant isolation.
+
+7. **`user_roles` is the RBAC role set; the team role comes from the system role IDs only.**
+   Permissions are resolved only from `user_roles`, which holds exactly the roles
+   an administrator granted (custom roles, several roles, or none).
+   The **team role** (owner/admin/member/viewer) is what the token's `role` claim
+   and `admin` flag, `IsOwner`/`RequireOwner`/`RequireAdmin`, and
+   `RequireTeamAdmin/Owner` all read. It is computed by the view
+   `v_user_effective_role` (migration `000245`), one row per membership:
+   - the highest of the four **system roles** the user holds, matched by role
+     id (`…0001` owner > `…0002` admin > `…0003` member > `…0004` viewer);
+   - a user holding no system role gets the membership label
+     (`tenant_members.role`, derived by `MembershipRoleForRoleIDs`), **capped at
+     `member`**: an `owner`/`admin` label without the matching system role
+     resolves to `viewer`. Removing every role from an administrator therefore
+     removes their admin powers.
+   - **Custom roles never count**, whatever their slug or `hierarchy_level`.
+     Before `000245` the view took the slug of the highest-`hierarchy_level`
+     role, so a custom role with slug `owner` and level 100 made its holder
+     owner (audit F1). Custom roles may no longer use a system slug
+     (`owner`/`admin`/`member`/`viewer`) or a level at or above admin's 80
+     (service validation + `CHECK` constraints `roles_custom_slug_not_reserved`
+     and `roles_custom_level_below_admin`); the migration renamed offending
+     roles to `custom-<slug>` and clamped levels to 79. `hierarchy_level` is
+     display order only.
+   - The token's `role` claim is this team role; RBAC role slugs are never put
+     in its place.
+
+   Nothing may re-derive the role set from the label: the `role-sync` controller
+   only restores the owner role of a tenant owner who lacks it, and reports (does
+   not repair) active members with no role. It used to re-grant the label's
+   system role hourly, which brought back roles administrators had removed.
+
+8. **Role grants are bounded by the granter's own grants** (`accesscontrol/grant_guard.go`).
+   Every path that changes a role set (assign, set, bulk assign, remove,
+   invitation/created-user grants) or what a custom role carries (create,
+   update) is checked in `RoleService` against the actor's roles in the
+   database: only an owner may grant the owner role; anyone else may grant only
+   roles whose permissions (and full data access) they hold, so nobody can raise
+   their own privileges; **removal has the same ceiling** (`RemoveRole`, and every
+   role `SetUserRoles` drops): nobody may take away a role they could not have
+   granted, so a delegated role manager cannot strip admin from an administrator;
+   only an owner may change an owner's roles, and the tenant's owner keeps the
+   owner role. The handler-level check
+   (`assertCanGrantPermissions`) lets administrators through, so the service is
+   the enforcement point. SCIM mappings, SSO/SAML JIT and the membership-role
+   update can never produce `owner`.
+
+9. **Owner/admin-only surfaces (owner decision 2026-10-02).** Sensor writes
+   and keys, the audit log, billing, and other users' API keys are owner/admin
+   only; peer administrators, audit-chain rebaseline and SCIM token mint/revoke
+   are owner only; the platform administrator only bootstraps an
+   organization's first owner. Members and viewers keep the member list
+   (emails included) and `sensors:read`. Role diff (migration `000246`):
+
+   | Role | Removed |
+   |------|---------|
+   | member | `sensors:write`, `audit:read`, `settings:billing:read` |
+   | viewer | `audit:read`, `settings:billing:read` |
+
+### Known, deliberate gaps (do not "fix" without a decision)
+
+- **Two admin oracles.** Permission-based `IsAdmin` (from the token) and live-DB
+  team-role (`RequireTeamAdmin/Owner`) are separate mechanisms. They read the
+  same team role, and a role change makes the token stale, after which
+  `EnrichPermissions` re-derives `IsAdmin`/`role` from the database (see Security
+  Consideration #2), so they no longer disagree after a demotion on the
+  token-tenant chains. Unifying them onto live membership on every request
+  (which would also fix `IsOwner` under OIDC) is a phased refactor —
+  **deferred** because a missing membership middleware on any chain would 403 a
+  whole route group.
+- **Data scope for members without a group is a per-organization choice.**
+  Decided 2026-10-02: existing organizations stay `everything` (fail-open), new
+  ones start `nothing`, administrators choose (see *Data scope* above). Do not
+  change an organization's value in a migration without its owner.
+- **RLS is shadow-mode.** ~99 policies exist, 0 tables have RLS enabled. This is
+  intentional (staged rollout), not a dead control. Tenant isolation is enforced by
+  convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
+
+## CI invariants that keep this from drifting
+
+Two tests fail the build if the model erodes. Treat them as executable spec:
+
+| Invariant | Test | What it guarantees |
+|-----------|------|--------------------|
+| **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
+| **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
+
+The permission strings themselves are also mirrored in the UI (TS constants); the
+sync test covers Go↔DB, and code review covers UI drift until the monorepo contract
+codegen (RFC-020) subsumes both.
+
+## How to … (recipes that stay inside the invariants)
+
+### Add a new permission
+
+1. Add the constant to `pkg/domain/permission/permission.go` **and** include it in
+   `AllPermissions()`.
+2. Add the same string to the DB seed (a new numbered migration under
+   `migrations/` — additive `INSERT ... ON CONFLICT DO NOTHING`, with a matching
+   `.down.sql`).
+3. Add the string to the UI permission constants so the frontend can gate on it.
+4. Map it into the default roles that should hold it (`role_mapping.go` + seed).
+5. `go test ./tests/unit/...` — the catalog-sync test proves 1↔2 agree.
+
+### Gate a new route
+
+- Attach the least-privilege permission at registration:
+  `r.POST("/", h.Create, middleware.Require(permission.FooWrite))`.
+- For team-management routes under `/tenants/{tenant}`, use `RequireTeamAdmin()` /
+  `RequireTeamOwner()` (live membership) instead of a permission.
+- If the whole route group belongs to a product module, wrap it with
+  `ModuleGate.RequireModule(moduleID)` **in addition to** (never instead of) the
+  permission gate.
+- If the route is legitimately unauthenticated or self-scoped (auth, `/users/me`,
+  agent-key, SCIM, webhook, admin-realm, health), add it to `allowlistPrefixes` in
+  `route_authz_coverage_test.go` **with a reason comment** — that is the only way to
+  pass the coverage gate without a gate, and it forces the decision to be explicit.
+
+### Enforce object-level (row) authorization
+
+Permission gates answer "may this user do this *kind* of thing"; they do **not**
+answer "may they touch *this* row". For that:
+
+- Always scope repository reads/writes by `tenant_id` (every mutating query must
+  carry `AND tenant_id = $n` — see `ScanRepository.Update`, AUTHZ-10). Do not trust
+  an id from the URL to already be tenant-scoped.
+- For non-admin data-scope narrowing, use `datascope.Enforcer` (inject it with
+  `SetDataScope`): `AssertAsset`/`AssertFinding` for by-id paths (deny =
+  `ErrNotFound`), `Filter`/`FilterFindings` for bulk ids, and `Resolve` + an
+  SQL predicate from `postgres.dataScopeCond` for lists. New routes under
+  `/assets/{id}` or `/findings/{id}` are guarded automatically. Add any new
+  asset-bound list to the coverage table in *Data scope*.
+- Never authorize a mutation off the request body's tenant/owner fields — derive the
+  principal's tenant from the authenticated context (or, for agents, from the agent
+  key), never from client-supplied data.

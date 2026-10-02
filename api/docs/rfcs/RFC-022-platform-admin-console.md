@@ -1,0 +1,392 @@
+# RFC-022 — Platform administration console (Tenable-style system admin)
+
+> Status: **Accepted** (2026-09-30) — Phases 1-3 implemented (api#547, api#548, ui#505).
+> **Revision 2** (2026-09-30): the administrator is a user account signing in on
+> the normal `/login` (see [Revision 2](#revision-2-administrators-are-user-accounts)).
+> **Revision 3** (2026-10-01): administrators have no API keys (see
+> [Revision 3](#revision-3-no-admin-api-keys)).
+> **Revision 4** (2026-10-01): break-glass administrators and a platform-level
+> identity provider for administrators (see
+> [Revision 4](#revision-4-break-glass-administrators-and-the-platform-identity-provider)).
+> **Revision 5** (2026-10-02): the platform administrator only bootstraps an
+> organization's first owner (see
+> [Revision 5](#revision-5-first-owner-bootstrap-only)).
+> **Revision 6** (2026-10-02): organizations are created by the platform
+> administrator by default, and the installer creates the first one (see
+> [Revision 6](#revision-6-admin-only-organization-creation-and-the-first-organization)).
+> Scope: api + ui. Separates *application (platform) administration* from
+> *organization (tenant) administration*, modeled on Tenable Security Center,
+> where the system administrator is an account with a system-level role and a
+> different menu (Organizations, Users, Scanning, System) from organization users.
+
+## Problem
+
+1. **Identity-federation setup belonged to the wrong tier.** Every tenant admin
+   could configure SAML, identity providers and verified domains for their own
+   tenant. api#545 moved that behind a *platform admin* flag, but the flag is a
+   stop-gap: it is an env allow-list (`PLATFORM_ADMIN_EMAILS`) stamped onto a
+   normal tenant user, so the platform admin is still a tenant user, and SSO is
+   still configured "for the tenant I am in", not per organization.
+2. **The operator console has no human login.** `/api/v1/admin/*` (admin users,
+   admin audit logs, target mappings) authenticates only with `X-Admin-API-Key`.
+   That suits the CLI, not a person at a browser: no password, no MFA, no
+   revocable session.
+3. **No cross-tenant view.** A platform admin cannot list organizations, create
+   or suspend one, or configure one's SSO without being a member of it.
+4. **The tenant UI shell cannot host an admin.** The dashboard layout requires a
+   tenant (TenantGate + `/me/bootstrap` + the tenant switcher); an identity with
+   no tenant errors or is pushed to onboarding.
+
+## Decisions
+
+| # | Decision | Why |
+|---|----------|-----|
+| D1 | **Identity = a `users` account linked to `admin_users`** (rev. 2; originally `admin_users` alone). The account belongs to no organization (enforced in the database); `admin_users` holds the role (`super_admin` > `ops_admin` > `readonly`), the second factor, lockout and the admin audit trail. | Tenable SC: one account table, one login page, the Administrator role is system-level and belongs to no organization. Keeping the account out of every organization is what separates the tiers, not a second account table. `PLATFORM_ADMIN_EMAILS` is removed. |
+| D2 | **Same backend.** Extend `/api/v1/admin/*`; no second service. | Admin operations (create org, assign bundles, configure SSO) need the same tenant/module/SSO services. A second service would duplicate logic or call back into the api. |
+| D3 | **Console = password sign-in on `/login` + mandatory TOTP**, server-side console sessions. SSO/SAML sign-ins cannot open it. No admin API keys (rev. 3). | Admin sessions must be revocable (server-side), short-lived, and MFA-protected. No organization's IdP may authenticate a platform administrator. |
+| D4 | **TOTP implemented in-house** (RFC 6238: HMAC-SHA1, 6 digits, 30 s, ±1 step), verified against the RFC test vectors. | No OTP library is in `go.mod`; ~50 lines is easier to audit than a new dependency on the admin auth path. Reusable later for tenant-user 2FA, which is also missing (the UI calls `/users/me/2fa`, which has no backend). |
+| D5 | **Same Next.js app, separate shell** (own route group, layout, login, sidebar; shared `SidebarBrand`). | Tenable does the same: one application, a different menu per account type. Can be split into its own deployable later because the route group is independent. `/admin` + `/api/v1/admin` can be IP-restricted at the ingress. |
+| D6 | **SCIM stays a tenant-admin feature** (api#546). | The tenant's own IT connects their IdP. |
+| D7 | **Bundles become licensing only through a separate entitlement layer.** | Today a tenant admin's per-module "on" override beats the bundle baseline, and the module gate is fail-open, so locking bundle *subscription* alone would lock nothing. Entitlement (platform-set ceiling, fail-closed) ⊇ subscription (tenant) ⊇ toggles. OSS default: entitled to everything. |
+| D8 | **Organization creation is a per-installation setting**, `TENANT_CREATION_MODE=self_service\|admin_only` (default `admin_only` since rev. 6; was `self_service`). | SaaS/trials need self-service; on-prem/enterprise wants admin-only (Tenable). The platform admin can always create organizations. |
+
+## Design — Phase 1: console authentication (api, as revised)
+
+**Schema.** Migration `000225` added `admin_credentials` and `admin_sessions`;
+`000226` (rev. 2) links administrators to accounts. The console password
+columns (`admin_credentials.password_hash`, `password_changed_at`) are no longer
+used and are dropped in a later release (expand-contract):
+
+- `admin_users.user_id` (unique, FK `users`, cascade). Rows without it were
+  API-key identities; migration 000227 deactivated them (rev. 3).
+- A trigger on `tenant_members` rejects a membership for a linked account
+  (SQLSTATE 23514, surfaced as 409 "platform administrators cannot be members of
+  an organization"); linking an account that has memberships is refused.
+- `admin_credentials` (1:1 with `admin_users`): `mfa_secret_encrypted` (AES-GCM
+  via the application `Encryptor`), `mfa_enabled`, `mfa_last_step` (replay
+  protection: a TOTP code is accepted only if its time step is newer than the
+  last accepted one, enforced by a single conditional `UPDATE`).
+- `admin_sessions`: `id`, `admin_id` (FK, cascade), `token_hash` (SHA-256 of a
+  32-byte random token; the token itself is never stored), `mfa_verified`,
+  `created_at`, `expires_at`, `last_seen_at`, `ip`, `user_agent`.
+
+**Flow.** The administrator signs in on the normal `/login` (email + password,
+the account's own lockout and password policy). Login and `GET /users/me` report
+`platform_admin` / `is_platform_admin`, and the UI sends the administrator to
+`/admin` instead of organization onboarding. Then, under `/api/v1/admin/auth`:
+
+1. `POST /session`: reads the `/login` refresh-token cookie (validated, not
+   rotated). Refused with 401 when not signed in, 403 when the account is not
+   linked to an active, unlocked administrator, and 403 when the sign-in came
+   from SSO, SAML or a social provider (audited). Otherwise it creates a
+   *pending* session (`mfa_verified=false`, 5-minute expiry) in an HttpOnly
+   `admin_mfa` cookie and answers `mfa_required`, or `mfa_enrollment_required`
+   with a freshly generated secret + `otpauth://` URI when MFA is not set up.
+2. `POST /mfa {code}`: verifies the TOTP (constant-time, ±1 step). On first
+   enrollment this also enables MFA. The pending session is deleted and a new
+   verified session is issued in the `admin_session` cookie (HttpOnly, Secure
+   per `AUTH_COOKIE_SECURE`, `SameSite=Strict`, `Path=/api/v1/admin`), plus a
+   readable `admin_csrf` cookie. It is separate from the tenant `csrf_token` so
+   both shells can be open in one browser. Session lifetime: 8 h absolute,
+   30 min idle. Wrong codes count toward the administrator's lockout.
+3. `POST /logout`: deletes the console session and clears its cookies (the UI
+   also signs out of `/login`).
+
+**Authentication middleware**: `AdminAuthMiddleware.Authenticate` accepts
+only a verified, unexpired `admin_session` cookie (rev. 3 removed admin API
+keys). The `/login` session alone authenticates nothing under `/api/v1/admin`.
+Cookie-authenticated state-changing requests must pass the double-submit CSRF
+check. Every `/admin/*` route and role guard works from a browser unchanged.
+
+**Provisioning**: `POST /api/v1/admin/administrators {email, name, role}`
+(super admin, audited) links the account with that email, or creates a local
+account and returns its temporary password once. `bootstrap-admin` does the same
+for the first administrator, and `bootstrap-admin -link` links an administrator
+created before revision 2 (keeping its role and authenticator, and reactivating
+it: migration 000227 deactivated every administrator without an account, which
+is every v0.8 administrator). Without `-link`, such an administrator is refused
+with a pointer to `-link` rather than reported as existing. A
+`super_admin` can reset another administrator's second factor
+(`POST /admin/users/{id}/reset-credentials`, audited); the password is the
+account's and is reset through the normal forgot-password flow.
+
+## Revision 2: administrators are user accounts
+
+Phase 1 first shipped a separate console login (own password on
+`admin_credentials`, own form at `/admin/login`). Re-checking Tenable:
+
+- **Tenable Security Center**: one user table and one login page. *Administrator*
+  is a system-level role: the account belongs to no organization, cannot see
+  organization data, and manages organizations, system configuration and SAML.
+- **Tenable Vulnerability Management (cloud)**: one login; the customer's own
+  Administrator configures SAML for their container. **MSSP portal**: the same
+  login, then SSO into customer containers.
+
+So two separate identity stores and two login forms were not the Tenable model.
+What actually separates the tiers there is that the administrator account is in
+no organization. Revision 2 adopts that: one account and one login, a database
+guarantee that an administrator account is in no organization, TOTP before the
+console, and no IdP path to the console. The console password, `/admin/auth/login`,
+`/admin/auth/password`, `PLATFORM_ADMIN_EMAILS` and the tenant-context
+`/api/v1/settings/{saml,identity-providers,verified-domains}` routes are removed.
+
+## Revision 3: no admin API keys
+
+Revision 2 still let every administrator row carry an API key (`X-Admin-API-Key`
+or Bearer) with the same power as the console, no TOTP and no expiry, and it
+generated and discarded one for every human administrator. With administrators
+signing in as people, the key was only a second, weaker way in. Revision 3
+removes it:
+
+- `AdminAuthMiddleware` accepts only a verified console session.
+- Removed: `POST /admin/users` (create by key), `POST /admin/users/{id}/rotate-key`,
+  the `openctem-admin` CLI (its admin, audit-log and target-mapping commands
+  are in the console), and the key fields on `AdminUser`.
+- Migration 000227 revokes every key, deactivates rows with no linked account,
+  and makes the key columns nullable; a later release drops them.
+- `bootstrap-admin` creates only a person: the admin row and its sign-in
+  account (temporary password printed once). It ships in the API image and the
+  `admin-cli` image.
+
+## Revision 4: break-glass administrators and the platform identity provider
+
+Two decisions taken on 2026-10-01: `bootstrap-admin` also creates a backup
+(break-glass) administrator, and administrators can sign in to the console
+through a platform-level identity provider that is separate from every
+organization's IdP.
+
+References: Microsoft's emergency-access guidance (at least two accounts, not
+federated, alert on every use, test regularly) and Tenable's advice to keep a
+local administrator for when SSO is unavailable.
+
+### Break-glass administrators
+
+- **Schema** (migration 000229): `admin_users.is_break_glass`,
+  `break_glass_tested_at`, `password_change_required`, and the IdP binding
+  (`idp_issuer`, `idp_subject`, `idp_bound_at`). A `CHECK` forbids a binding on a
+  break-glass row, so a break-glass administrator can never sign in through the
+  IdP, whatever the application does. `admin_sessions.auth_method`
+  (`password` | `idp`) and `admin_audit_logs.severity` are added.
+- **Provisioning.** `bootstrap-admin -email=a@x -backup-email=b@x` creates both
+  in one run: the primary `super_admin` and a `super_admin` marked break-glass,
+  each with a new local account and a temporary password printed once. It is
+  idempotent: an administrator that already exists is reported and skipped, so
+  re-running it with `-backup-email` adds a backup to an existing install.
+  `-backup-email` is required unless `-no-backup` is given explicitly. A super
+  admin can also mark or unmark an administrator as break-glass in the console.
+- **First use.** Both temporary passwords set `password_change_required`.
+  After the TOTP step, a password-authenticated console session can call only
+  `GET /auth/validate`, `POST /auth/password` and `POST /auth/logout` (403
+  `PASSWORD_CHANGE_REQUIRED` otherwise) until the password is changed; TOTP
+  enrollment is already mandatory. An IdP session is not held to this, since it
+  did not use the password.
+- **Every use is alerted.** When a break-glass administrator completes the
+  console sign-in: an `admin_audit_logs` row `console.break_glass_sign_in` with
+  severity `high`; a `WARN` log line with the stable field
+  `alert=break_glass_sign_in` (for log-based alerting, the always-on channel);
+  and an email to every other active administrator through the system SMTP
+  sender (`SMTP_*`; skipped with a warning when it is not configured). There is
+  no platform-level notification integration (integrations are per tenant), so
+  email plus the log line is the channel.
+- **Testing.** A test is a real sign-in with the break-glass account (which
+  alerts like any other). Another super admin then confirms it on the
+  Administrators page (`POST /admin/users/{id}/break-glass-test`), which records
+  the sign-in time as `break_glass_tested_at`. The account cannot confirm its
+  own test (four eyes), and the console flags a break-glass account that has
+  not been tested for 90 days.
+- **At least one way in remains.** The invariant, enforced server-side under a
+  transaction-scoped advisory lock: there is always at least one active,
+  linked `super_admin` who can sign in locally. While "require IdP" is in force,
+  that means at least one break-glass `super_admin`. Deleting, deactivating,
+  demoting or unmarking an administrator that would break it is refused (409),
+  and so is turning on "require IdP" without a break-glass `super_admin`.
+
+### Platform identity provider (OIDC)
+
+- **Configuration** (`platform_identity_provider`, a single row, platform-level,
+  not tenant-scoped): issuer, client id, client secret (AES-GCM via the
+  application `Encryptor`; write-only, never returned), redirect URI, scopes,
+  display name, enabled, `require_idp`, and the trusted `acr` / `amr` values.
+  Managed by super admins at System → Admin sign-in
+  (`GET/PUT/DELETE /api/v1/admin/platform-idp`), every change audited with
+  severity `high`. On save the API fetches `{issuer}/.well-known/openid-configuration`,
+  requires its `issuer` to equal the configured issuer exactly (OIDC Discovery
+  4.3) and every endpoint to be `https`, and stores the authorization, token
+  and JWKS endpoints. Discovery, JWKS and token requests use
+  `httpsec.SafeHTTPClient` after `httpsec.ValidateURL`. The redirect URI is
+  configured, never taken from a request, so there is no open redirect.
+  Changing the issuer removes every administrator's IdP binding.
+- **OIDC only.** SAML in this code base is tenant-shaped (per-organization
+  metadata, ACS, JIT into tenant membership); reusing it for a platform IdP is
+  not cheap, so it is left out. The protocol column exists for a later addition.
+- **Separate from organizations.** The tenant `/login` page lists only the
+  organization's providers (`/auth/providers`, per org slug); the platform IdP
+  appears only on the console sign-in page, through
+  `GET /api/v1/admin/auth/idp` (enabled + display name, nothing else). An
+  organization's IdP still cannot open the console: `/auth/session` refuses any
+  non-password `/login` session as before.
+- **Flow** (authorization code + PKCE S256 + nonce + state):
+  1. `POST /api/v1/admin/auth/idp/start` stores `sha256(state)`, the nonce and
+     the encrypted PKCE verifier server-side (10-minute expiry, single use) and
+     sets the state in an HttpOnly `admin_idp` cookie scoped to
+     `/api/v1/admin/auth`. It returns the authorization URL (with `acr_values`
+     when trusted `acr` values are configured).
+  2. The IdP redirects to the console page `/admin/login/callback`, which posts
+     `{code, state}` to `POST /api/v1/admin/auth/idp/callback`. The state must
+     equal the cookie (constant time) and is consumed atomically
+     (`DELETE ... RETURNING`), so it cannot be replayed or used from another
+     browser.
+  3. The code is exchanged with the client secret and the PKCE verifier. The
+     `id_token` must verify against the JWKS (RS256/384/512, PS256, ES256), with
+     `iss` equal to the pinned issuer, `aud` containing the client id (`azp`
+     equal to it when there are several audiences), `exp` and `iat` within a
+     two-minute leeway, a non-empty `sub`, and the nonce.
+  4. **Matching, no JIT.** The administrator bound to (`iss`, `sub`) signs in.
+     With no binding, an administrator whose email equals the token's email is
+     bound on this first sign-in, only if the email is verified
+     (`email_verified: true`, or Entra's `xms_edov: true`), the administrator
+     is active, not break-glass, and not bound to another subject. After that,
+     matching is by `iss` + `sub` only, never by email. An unknown identity is
+     refused; nothing is created.
+- **Second factor.** The default still requires the console TOTP after an IdP
+  sign-in. Reason: the console cannot see how the IdP authenticated the user,
+  and an IdP compromise or a weak IdP policy would otherwise be enough to reach
+  every organization. A super admin can opt in to accepting the IdP's MFA by
+  listing trusted `acr` values (sent as `acr_values` and required in the
+  token's `acr`) and/or `amr` values (any one present in the token's `amr`).
+  Only then does a matching token open a verified session directly. The
+  session records `auth_method = idp`.
+- **Require IdP.** With the IdP enabled and `require_idp` on, the local
+  password path (`/auth/session`) is refused for every administrator except
+  break-glass ones, and turning it on ends existing password sessions of
+  non-break-glass administrators. The `/login` account itself is untouched,
+  since it belongs to no organization and can open nothing without the console.
+- **Rate limits.** `/idp/start` and `/idp/callback` use the auth limiter's
+  token-exchange bucket (20/min per client IP); the TOTP step (`/mfa`) keeps
+  the 5/min login bucket. Behind the UI's admin proxy every administrator
+  reaches the API from the proxy's address, and one IdP sign-in makes three
+  or four console auth calls, so the login bucket alone would let a single
+  sign-in exhaust it for everyone.
+- **Audit.** `console.idp_login` / `console.idp_login_failed` /
+  `console.idp_bound` rows, with the reason server-side only. The client gets
+  one generic "single sign-on failed" message.
+
+## Revision 5: first-owner bootstrap only
+
+The 2026-10-02 admin-plane review proved that an `ops_admin` could
+`POST /admin/tenants/{id}/users {"role":"admin"}` into any existing
+organization, receive the set-password link when SMTP was off (or use an email
+it controls when it was on), sign in, and read the organization's findings,
+credentials and audit log. That contradicts the Tenable model this RFC adopts:
+the system administrator manages organizations but cannot see their data.
+Owner decision, implemented here:
+
+- **Bootstrap only.** `POST /admin/tenants/{tenantId}/users` creates the first
+  owner of an organization that has **no active owner**, and nothing else. An
+  organization with an owner answers **409** ("its owner and administrators
+  invite or create users themselves"). The request takes `email` and `name`;
+  `role` may be omitted, anything but `owner` is a 400. The no-owner check and
+  the insert run in one transaction under a per-organization advisory lock, so
+  concurrent requests create one owner.
+- **Delivery.** The account is created without a password; the owner chooses
+  one through the one-time link, so the administrator never knows a password
+  and the owner's first sign-in is with their own. (Tenant accounts have no
+  temporary-password mechanism; `admin_users.password_change_required` is
+  for console accounts. A password-less pending account plus a set-password
+  link gives the same guarantee without one.) When the organization can send
+  email (tenant or system SMTP) the link is **only emailed** and never returned
+  — a failed send is reported as `email_failed` and the owner uses
+  forgot-password; it does not fall back to handing the link over. Only when
+  email cannot be sent at all is `setup_token` returned, once. That exception is
+  allowed for this bootstrap case alone: without SMTP there is no other way to
+  reach the new owner, and the organization has nobody who could invite them.
+  The owner created with `POST /admin/tenants` follows the same rule.
+- **Audit.** Besides `admin_audit_logs`, the creation is written to the
+  organization's own audit log (`user.created`, `bootstrap_owner: true`,
+  actor `platform-admin:<email>`, severity high), so the owner sees how their
+  account came to exist.
+- **Console.** The organization's Users section offers "Create first owner"
+  only while the organization has no owner; otherwise it explains that the
+  owner and administrators invite users themselves.
+
+Not changed: a lost or departed owner still has no recovery path short of SQL
+(no ownership transfer, no "assign owner" for an organization whose owner
+exists). That is a separate decision.
+
+## Revision 6: admin-only organization creation and the first organization
+
+Owner decision 2026-10-02 ("admin-only + setup creates the first org", the
+Tenable Security Center model).
+
+- **Default `TENANT_CREATION_MODE=admin_only`.** Organizations are created by
+  the platform administrator: the console (`POST /admin/tenants`) or
+  `bootstrap-admin -org-*` at install. `self_service` (create-first-team and
+  `POST /tenants` for any signed-in user) is an explicit opt-in for SaaS and
+  trial installs. The check fails closed: anything but `self_service`,
+  including an unset mode in a configuration built in code, is admin-only.
+  Existing organizations are unaffected.
+- **The installer creates the first organization.** A platform administrator
+  belongs to no organization (revision 2), so a fresh install had no one who
+  could use the product until an administrator created an organization in the
+  console. `bootstrap-admin` takes `-org-name`, `-org-slug` (derived when
+  empty), `-org-owner-email` and `-org-owner-name` and creates it through
+  `tenantapp.OrganizationCreator`, the service the console's create path uses:
+  organization, owner membership and owner role in one transaction;
+  `tenant.created` and (for a new owner account) `user.created` audited in the
+  new organization with actor `bootstrap-admin`; a one-time set-password link
+  for a new owner under the revision 5 first-owner rule: emailed when the
+  organization can send email (never printed then; a failed send is reported
+  and the owner uses forgot-password), otherwise printed once by the command.
+  An existing slug is reported and left alone, so re-running is safe; the
+  System tenant's slug is refused; an administrator's email cannot own it.
+- **`bootstrap-tenant` is removed.** It wrote users, tenants, memberships and
+  roles with raw SQL, audited nothing, ignored the creation mode and took the
+  owner's password on the command line. The Helm chart's `api.bootstrapTenant`
+  Job is removed with it (the chart refuses to render if it is still enabled).
+- **Self-service paths are audited.** `create-first-team` now writes the
+  organization and owner atomically (`CreateWithOwner`, like the other paths)
+  and audits `tenant.created`; `POST /tenants` already did. The UI no longer
+  pre-fills "<Name>'s Team", which produced personal organizations.
+
+First install: migrations → `bootstrap-admin -email … -backup-email …
+-org-name … -org-owner-email …` → the administrator signs in on `/login`,
+changes the temporary password and enrolls TOTP in `/admin` → the owner sets a
+password through the link → the owner adds users; the administrator configures
+the organization's SSO in the console.
+
+## Later phases
+
+- **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
+  reactivate; per-organization SSO under `/admin/tenants/{id}/sso/*` (SAML,
+  identity providers, verified domains, **SSO enforcement**, moved out of the
+  tenant owner's `settings/security`); `TENANT_CREATION_MODE`; delete the dead
+  `sso_enabled` / `sso_provider` / `sso_config_url` security fields (written,
+  never read by the login path).
+- **Phase 3 (ui) — console shell** (implemented, ui#505; sign-in reworked for
+  rev. 2). A Tenable-style sidebar: Overview · Organizations · Users · Scanning
+  (target mappings, platform tools) · System (Configuration, Diagnostics, Job
+  queue, System logs, Keys). Replaces the transitional `(dashboard)/admin` pages.
+- **Phase 4 — Entitlements.** Platform-set bundle ceiling per organization,
+  fail-closed, that per-module overrides cannot exceed.
+
+## Security notes
+
+- The admin session cookie is scoped to `/api/v1/admin`, so it is never sent to
+  tenant routes, and the tenant JWT never authenticates admin routes.
+- Server-side sessions: deactivating an admin or resetting credentials deletes
+  all of that admin's sessions immediately.
+- All console outcomes (including refused SSO attempts) and credential changes
+  are written to `admin_audit_logs`.
+- Provisioning never links an existing account: it always creates a new one
+  and refuses an email that already has an account. With self-registration an
+  attacker could otherwise pre-register an administrator's email, own its
+  password, and enroll their own TOTP on first use (found in the 2026-10-01
+  review).
+- The console checks on every request that the linked account can still sign
+  in, so suspending the account ends console access at once.
+- Administrators change their own password in the console
+  (`POST /admin/auth/password`); the change ends every `/login` and console
+  session of the account.
+- An administrator cannot deactivate, demote or delete themselves, so the
+  super admin making a change always remains: the platform is never left
+  without an active super admin.

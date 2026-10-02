@@ -1,0 +1,94 @@
+# Air configuration for hot reloading
+# Documentation: https://github.com/air-verse/air
+
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  # Binary output
+  bin = "./tmp/openctem"
+
+  full_bin = "sh -lc 'while true; do ./tmp/openctem; code=$?; echo \"[air] app exited ($code) - restarting\"; sleep 1; done'"
+
+  # Build command. Stamps the build identity GET /api/v1/version reports:
+  # "<highest vX.Y.Z tag>-dev" and the short HEAD. The checkout is mounted from
+  # the host, so git needs safe.directory; any git failure falls back to
+  # "dev"/"unknown" and never fails the build. Air reads this file once at
+  # start: a running container keeps its old command until it restarts, and
+  # until then the binary reads the same facts from .git itself (pkg/version).
+  cmd = '''V=$(git -c safe.directory="$PWD" tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1); C=$(git -c safe.directory="$PWD" rev-parse --short=8 HEAD 2>/dev/null); go build -buildvcs=false -ldflags "-X github.com/openctemio/openctem/api/pkg/version.Version=${V:-dev}${V:+-dev} -X github.com/openctemio/openctem/api/pkg/version.Commit=${C:-unknown} -X github.com/openctemio/openctem/api/pkg/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ./tmp/openctem ./cmd/server'''
+
+  # Build delay after file change (milliseconds)
+  delay = 1000
+
+  # Exclude directories
+  exclude_dir = ["assets", "tmp", "vendor", "testdata", "node_modules", ".git", "docs"]
+
+  # Exclude files
+  exclude_file = []
+
+  # Exclude specific file patterns
+  exclude_regex = ["_test.go", ".*_mock.go"]
+
+  # Exclude unchanged files
+  exclude_unchanged = false
+
+  # Follow symlinks
+  follow_symlink = false
+
+  # Include extensions
+  include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml", "toml", "json"]
+
+  # Include specific directories
+  include_dir = []
+
+  # Kill delay (nanoseconds)
+  kill_delay = "0s"
+
+  # Log output
+  log = "build-errors.log"
+
+  # Poll for changes (required for Docker on macOS/Windows)
+  poll = true
+
+  # Poll interval (milliseconds)
+  poll_interval = 500
+
+  # Rerun the command after rebuild
+  rerun = false
+
+  # Rerun delay (milliseconds)
+  rerun_delay = 500
+
+  # Send SIGINT before killing
+  send_interrupt = false
+
+  # Stop on error
+  stop_on_error = false
+
+[color]
+  # Customize colors
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  # Log main process output
+  main_only = false
+
+  # Show log time
+  time = false
+
+[misc]
+  # Delete tmp directory on exit
+  clean_on_exit = true
+
+[screen]
+  # Clear screen on rebuild
+  clear_on_rebuild = true
+
+  # Keep scroll position
+  keep_scroll = true

@@ -1,0 +1,558 @@
+package asset
+
+import (
+	"context"
+	"fmt"
+	"net/mail"
+	"strings"
+
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/scope"
+
+	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+)
+
+// AssetGroupService handles asset group business logic.
+type AssetGroupService struct {
+	repo   assetgroupdom.Repository
+	logger *logger.Logger
+
+	// Scope rule reconciler callback (set by services.go wiring)
+	scopeRuleReconciler scope.RuleGroupReconcilerFunc
+
+	// Layer 2 data scope for group contents (nil = unrestricted).
+	dataScope *datascope.Enforcer
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer: a restricted member
+// sees only the in-scope assets and findings of a group.
+func (s *AssetGroupService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
+}
+
+// NewAssetGroupService creates a new asset group service.
+func NewAssetGroupService(repo assetgroupdom.Repository, log *logger.Logger) *AssetGroupService {
+	return &AssetGroupService{
+		repo:   repo,
+		logger: log,
+	}
+}
+
+// SetScopeRuleReconciler sets the scope rule reconciler callback.
+// Called when asset group membership changes to re-evaluate scope rules.
+func (s *AssetGroupService) SetScopeRuleReconciler(fn scope.RuleGroupReconcilerFunc) {
+	s.scopeRuleReconciler = fn
+}
+
+// CreateAssetGroupInput represents input for creating an asset group.
+type CreateAssetGroupInput struct {
+	TenantID     string
+	Name         string   `validate:"required,min=1,max=255"`
+	Description  string   `validate:"max=1000"`
+	Environment  string   `validate:"required,asset_group_environment"`
+	Criticality  string   `validate:"required,asset_group_criticality"`
+	BusinessUnit string   `validate:"max=255"`
+	Owner        string   `validate:"max=255"`
+	OwnerEmail   string   `validate:"omitempty,email,max=255"`
+	Tags         []string `validate:"max=20,dive,max=50"`
+	AssetIDs     []string `validate:"dive,uuid"`
+}
+
+// UpdateAssetGroupInput represents input for updating an asset group.
+type UpdateAssetGroupInput struct {
+	Name         *string `validate:"omitempty,min=1,max=255"`
+	Description  *string `validate:"omitempty,max=1000"`
+	Environment  *string `validate:"omitempty,asset_group_environment"`
+	Criticality  *string `validate:"omitempty,asset_group_criticality"`
+	BusinessUnit *string `validate:"omitempty,max=255"`
+	Owner        *string `validate:"omitempty,max=255"`
+	// Email format is checked in UpdateAssetGroup only when non-empty; an empty
+	// string is an explicit "clear the owner email" and must be allowed through.
+	OwnerEmail *string  `validate:"omitempty,max=255"`
+	Tags       []string `validate:"omitempty,max=20,dive,max=50"`
+}
+
+// ListAssetGroupsInput represents input for listing asset groups.
+type ListAssetGroupsInput struct {
+	TenantID       string
+	Search         string
+	Environments   []string
+	Criticalities  []string
+	BusinessUnit   string
+	BusinessUnitID string
+	Owner          string
+	Tags           []string
+	HasFindings    *bool
+	MinRiskScore   *int
+	MaxRiskScore   *int
+	Sort           string
+	Page           int `validate:"min=1"`
+	PerPage        int `validate:"min=1,max=100"`
+}
+
+// ListAssetGroupsOutput represents output from listing asset groups.
+type ListAssetGroupsOutput struct {
+	Groups []*assetgroupdom.AssetGroup
+	Total  int64
+	Page   int
+	Pages  int
+}
+
+// CreateAssetGroup creates a new asset group.
+func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAssetGroupInput) (*assetgroupdom.AssetGroup, error) {
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+
+	env, ok := assetgroupdom.ParseEnvironment(input.Environment)
+	if !ok {
+		return nil, fmt.Errorf("%w: invalid environment", shared.ErrValidation)
+	}
+
+	crit, ok := assetgroupdom.ParseCriticality(input.Criticality)
+	if !ok {
+		return nil, fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
+	}
+
+	// Check for duplicate name
+	exists, err := s.repo.ExistsByName(ctx, tenantID, input.Name)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("%w: asset group with this name already exists", shared.ErrAlreadyExists)
+	}
+
+	group, err := assetgroupdom.NewAssetGroupWithTenant(tenantID, input.Name, env, crit)
+	if err != nil {
+		return nil, err
+	}
+
+	group.UpdateDescription(input.Description)
+	group.UpdateBusinessUnit(input.BusinessUnit)
+	group.UpdateOwner(input.Owner, input.OwnerEmail)
+	if len(input.Tags) > 0 {
+		group.SetTags(input.Tags)
+	}
+
+	if err := s.repo.Create(ctx, group); err != nil {
+		return nil, err
+	}
+
+	// Add assets to group if provided
+	if len(input.AssetIDs) > 0 {
+		assetIDs := make([]shared.ID, 0, len(input.AssetIDs))
+		for _, idStr := range input.AssetIDs {
+			id, err := shared.IDFromString(idStr)
+			if err != nil {
+				s.logger.Warn("invalid asset ID", "id", idStr, "error", err)
+				continue
+			}
+			assetIDs = append(assetIDs, id)
+		}
+		if len(assetIDs) > 0 {
+			if err := s.repo.AddAssets(ctx, group.ID(), assetIDs); err != nil {
+				s.logger.Error("failed to add assets to group", "group_id", group.ID(), "error", err)
+			}
+			// Recalculate counts
+			if err := s.repo.RecalculateCounts(ctx, group.ID()); err != nil {
+				s.logger.Error("failed to recalculate counts", "group_id", group.ID(), "error", err)
+			}
+			// Refresh group from database
+			if refreshed, err := s.repo.GetByTenantAndID(ctx, tenantID, group.ID()); err == nil && refreshed != nil {
+				group = refreshed
+			}
+		}
+	}
+
+	s.logger.Info("asset group created", "id", group.ID(), "name", input.Name)
+	return group, nil
+}
+
+// GetAssetGroup retrieves an asset group by tenant and ID.
+func (s *AssetGroupService) GetAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) (*assetgroupdom.AssetGroup, error) {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.repo.GetByTenantAndID(ctx, tenantID, id)
+}
+
+// UpdateAssetGroup updates an existing asset group.
+func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID, input UpdateAssetGroupInput) (*assetgroupdom.AssetGroup, error) {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	group, err := s.repo.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.Name != nil {
+		if err := group.UpdateName(*input.Name); err != nil {
+			return nil, err
+		}
+	}
+
+	if input.Description != nil {
+		group.UpdateDescription(*input.Description)
+	}
+
+	if input.Environment != nil {
+		env, ok := assetgroupdom.ParseEnvironment(*input.Environment)
+		if !ok {
+			return nil, fmt.Errorf("%w: invalid environment", shared.ErrValidation)
+		}
+		if err := group.UpdateEnvironment(env); err != nil {
+			return nil, err
+		}
+	}
+
+	if input.Criticality != nil {
+		crit, ok := assetgroupdom.ParseCriticality(*input.Criticality)
+		if !ok {
+			return nil, fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
+		}
+		if err := group.UpdateCriticality(crit); err != nil {
+			return nil, err
+		}
+	}
+
+	if input.BusinessUnit != nil {
+		group.UpdateBusinessUnit(*input.BusinessUnit)
+	}
+
+	if input.Owner != nil || input.OwnerEmail != nil {
+		owner := group.Owner()
+		email := group.OwnerEmail()
+		if input.Owner != nil {
+			owner = *input.Owner
+		}
+		if input.OwnerEmail != nil {
+			// An explicit empty string clears the owner email. Only validate the
+			// address format when a non-empty value is supplied — the handler no
+			// longer runs the `email` struct-tag rule because `omitempty` does not
+			// skip a non-nil *string pointing at "" (it rejected legitimate clears).
+			if e := strings.TrimSpace(*input.OwnerEmail); e != "" {
+				if _, err := mail.ParseAddress(e); err != nil {
+					return nil, fmt.Errorf("%w: invalid owner email", shared.ErrValidation)
+				}
+			}
+			email = *input.OwnerEmail
+		}
+		group.UpdateOwner(owner, email)
+	}
+
+	if input.Tags != nil {
+		group.SetTags(input.Tags)
+	}
+
+	if err := s.repo.Update(ctx, tenantID, group); err != nil {
+		return nil, err
+	}
+
+	s.logger.Info("asset group updated", "id", id)
+	return group, nil
+}
+
+// DeleteAssetGroup deletes an asset group within the given tenant scope.
+// Security: tenantID required so the SQL DELETE is tenant-scoped (S-1 audit).
+func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) error {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
+		return err
+	}
+	s.logger.Info("asset group deleted", "id", id, "tenant_id", tenantIDStr)
+	return nil
+}
+
+// ListAssetGroups lists asset groups with filtering and pagination.
+func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAssetGroupsInput) (*ListAssetGroupsOutput, error) {
+	filter := assetgroupdom.NewFilter().WithTenantID(input.TenantID)
+
+	if input.Search != "" {
+		filter = filter.WithSearch(input.Search)
+	}
+
+	if len(input.Environments) > 0 {
+		envs := make([]assetgroupdom.Environment, 0, len(input.Environments))
+		for _, e := range input.Environments {
+			if env, ok := assetgroupdom.ParseEnvironment(e); ok {
+				envs = append(envs, env)
+			}
+		}
+		if len(envs) > 0 {
+			filter = filter.WithEnvironments(envs...)
+		}
+	}
+
+	if len(input.Criticalities) > 0 {
+		crits := make([]assetgroupdom.Criticality, 0, len(input.Criticalities))
+		for _, c := range input.Criticalities {
+			if crit, ok := assetgroupdom.ParseCriticality(c); ok {
+				crits = append(crits, crit)
+			}
+		}
+		if len(crits) > 0 {
+			filter = filter.WithCriticalities(crits...)
+		}
+	}
+
+	if input.BusinessUnit != "" {
+		filter = filter.WithBusinessUnit(input.BusinessUnit)
+	}
+
+	if input.BusinessUnitID != "" {
+		filter = filter.WithBusinessUnitID(input.BusinessUnitID)
+	}
+
+	if len(input.Tags) > 0 {
+		filter = filter.WithTags(input.Tags...)
+	}
+
+	if input.HasFindings != nil {
+		filter = filter.WithHasFindings(*input.HasFindings)
+	}
+
+	if input.MinRiskScore != nil {
+		filter.MinRiskScore = input.MinRiskScore
+	}
+	if input.MaxRiskScore != nil {
+		filter.MaxRiskScore = input.MaxRiskScore
+	}
+
+	opts := assetgroupdom.NewListOptions()
+	if input.Sort != "" {
+		sortOpt := pagination.NewSortOption(assetgroupdom.AllowedSortFields()).Parse(input.Sort)
+		opts = opts.WithSort(sortOpt)
+	}
+
+	page := pagination.New(input.Page, input.PerPage)
+
+	result, err := s.repo.List(ctx, filter, opts, page)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListAssetGroupsOutput{
+		Groups: result.Data,
+		Total:  result.Total,
+		Page:   result.Page,
+		Pages:  result.TotalPages,
+	}, nil
+}
+
+// GetAssetGroupStats retrieves aggregated statistics.
+func (s *AssetGroupService) GetAssetGroupStats(ctx context.Context, tenantID string) (*assetgroupdom.Stats, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	return s.repo.GetStats(ctx, tid)
+}
+
+// verifyGroupTenant ensures the group belongs to the given tenant before any
+// membership operation. The asset_group_members queries are keyed only by
+// group_id (the join table has no tenant_id), so without this guard a caller
+// could read or mutate another tenant's group by supplying its UUID (IDOR).
+// Returns assetgroup.ErrNotFound (→ 404) when the group is not in the tenant.
+func (s *AssetGroupService) verifyGroupTenant(ctx context.Context, tenantIDStr string, groupID shared.ID) error {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	if _, err := s.repo.GetByTenantAndID(ctx, tenantID, groupID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// AddAssetsToGroup adds assets to a group.
+func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, tenantID string, groupID shared.ID, assetIDs []string) error {
+	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
+		return err
+	}
+
+	ids := make([]shared.ID, 0, len(assetIDs))
+	for _, idStr := range assetIDs {
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	if err := s.repo.AddAssets(ctx, groupID, ids); err != nil {
+		return err
+	}
+
+	// Recalculate counts
+	if err := s.repo.RecalculateCounts(ctx, groupID); err != nil {
+		return err
+	}
+
+	// Trigger scope rule reconciliation for asset group membership change (async)
+	if s.scopeRuleReconciler != nil {
+		gid := groupID
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
+				}
+			}()
+			s.scopeRuleReconciler(context.Background(), gid)
+		}()
+	}
+
+	return nil
+}
+
+// RemoveAssetsFromGroup removes assets from a group.
+func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID string, groupID shared.ID, assetIDs []string) error {
+	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
+		return err
+	}
+
+	ids := make([]shared.ID, 0, len(assetIDs))
+	for _, idStr := range assetIDs {
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	if err := s.repo.RemoveAssets(ctx, groupID, ids); err != nil {
+		return err
+	}
+
+	// Recalculate counts
+	if err := s.repo.RecalculateCounts(ctx, groupID); err != nil {
+		return err
+	}
+
+	// Trigger scope rule reconciliation for asset group membership change (async)
+	if s.scopeRuleReconciler != nil {
+		gid := groupID
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
+				}
+			}()
+			s.scopeRuleReconciler(context.Background(), gid)
+		}()
+	}
+
+	return nil
+}
+
+// GetGroupAssets retrieves assets in a group.
+func (s *AssetGroupService) GetGroupAssets(ctx context.Context, tenantID string, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupAsset], error) {
+	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
+		return pagination.Result[*assetgroupdom.GroupAsset]{}, err
+	}
+	tid, _ := shared.IDFromString(tenantID) // validated by verifyGroupTenant
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return pagination.Result[*assetgroupdom.GroupAsset]{}, fmt.Errorf("resolve data scope: %w", err)
+	}
+	page := pagination.New(pageNum, perPage)
+	return s.repo.GetGroupAssets(ctx, groupID, page, scope)
+}
+
+// GetGroupFindings retrieves findings for assets in a group.
+func (s *AssetGroupService) GetGroupFindings(ctx context.Context, tenantID string, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupFinding], error) {
+	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
+		return pagination.Result[*assetgroupdom.GroupFinding]{}, err
+	}
+	tid, _ := shared.IDFromString(tenantID) // validated by verifyGroupTenant
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return pagination.Result[*assetgroupdom.GroupFinding]{}, fmt.Errorf("resolve data scope: %w", err)
+	}
+	page := pagination.New(pageNum, perPage)
+	return s.repo.GetGroupFindings(ctx, groupID, page, scope)
+}
+
+// BulkUpdateInput represents input for bulk updating asset groups.
+type BulkUpdateInput struct {
+	GroupIDs    []string
+	Environment *string `validate:"omitempty,asset_group_environment"`
+	Criticality *string `validate:"omitempty,asset_group_criticality"`
+}
+
+// BulkUpdateAssetGroups updates multiple asset groups.
+func (s *AssetGroupService) BulkUpdateAssetGroups(ctx context.Context, tenantID string, input BulkUpdateInput) *BulkGroupResult {
+	res := &BulkGroupResult{}
+	for _, idStr := range input.GroupIDs {
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			res.fail(idStr, "invalid group ID")
+			continue
+		}
+
+		_, err = s.UpdateAssetGroup(ctx, tenantID, id, UpdateAssetGroupInput{
+			Environment: input.Environment,
+			Criticality: input.Criticality,
+		})
+		if err != nil {
+			s.logger.Warn("bulk update failed for group", "id", idStr, "error", err)
+			res.fail(idStr, err.Error())
+			continue
+		}
+		res.Succeeded++
+	}
+	return res
+}
+
+// BulkDeleteAssetGroups deletes multiple asset groups.
+func (s *AssetGroupService) BulkDeleteAssetGroups(ctx context.Context, tenantIDStr string, groupIDs []string) *BulkGroupResult {
+	res := &BulkGroupResult{}
+	for _, idStr := range groupIDs {
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			res.fail(idStr, "invalid group ID")
+			continue
+		}
+
+		if err := s.DeleteAssetGroup(ctx, tenantIDStr, id); err != nil {
+			s.logger.Warn("bulk delete failed for group", "id", idStr, "error", err)
+			res.fail(idStr, err.Error())
+			continue
+		}
+		res.Succeeded++
+	}
+	return res
+}
+
+// BulkGroupResult reports the outcome of a best-effort bulk asset-group
+// operation: how many items succeeded/failed and a per-item error for each
+// failure, so callers can tell which IDs failed and why (rather than only a
+// success count).
+type BulkGroupResult struct {
+	Succeeded int      `json:"succeeded"`
+	Failed    int      `json:"failed"`
+	Errors    []string `json:"errors,omitempty"`
+}
+
+func (r *BulkGroupResult) fail(id, msg string) {
+	r.Failed++
+	r.Errors = append(r.Errors, fmt.Sprintf("%s: %s", id, msg))
+}

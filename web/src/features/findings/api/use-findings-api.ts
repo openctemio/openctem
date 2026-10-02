@@ -1,0 +1,604 @@
+/**
+ * Finding API Hooks
+ *
+ * SWR hooks for fetching and mutating finding data from backend
+ *
+ * Tenant is now determined from JWT token (token-based tenant)
+ */
+
+'use client'
+
+import useSWR, { type SWRConfiguration } from 'swr'
+import useSWRMutation from 'swr/mutation'
+import { get, post, patch } from '@/lib/api/client'
+import { handleApiError } from '@/lib/api/error-handler'
+import { useTenant } from '@/context/tenant-provider'
+import type {
+  ApiFinding,
+  ApiFindingListResponse,
+  ApiFindingComment,
+  FindingApiFilters,
+  CreateFindingInput,
+  UpdateFindingStatusInput,
+  UpdateFindingSeverityInput,
+  AssignFindingInput,
+  AddCommentInput,
+} from './finding-api.types'
+import type { ApiApproval, ApprovalStatus } from '../types/finding.types'
+
+// ============================================
+// SWR CONFIGURATION
+// ============================================
+
+const defaultConfig: SWRConfiguration = {
+  revalidateOnFocus: false,
+  revalidateOnReconnect: true,
+  // Don't retry on client errors (4xx) - only retry on server/network errors
+  shouldRetryOnError: (error) => {
+    // Don't retry on 4xx errors (client errors like 403, 404, etc.)
+    if (error?.statusCode >= 400 && error?.statusCode < 500) {
+      return false
+    }
+    // Retry on 5xx or network errors
+    return true
+  },
+  errorRetryCount: 3,
+  errorRetryInterval: 1000,
+  dedupingInterval: 2000,
+  onError: (error) => {
+    handleApiError(error, {
+      showToast: true,
+      logError: true,
+    })
+  },
+}
+
+// ============================================
+// ENDPOINT BUILDERS
+// ============================================
+
+export function buildFindingsEndpoint(filters?: FindingApiFilters): string {
+  const baseUrl = '/api/v1/findings'
+
+  if (!filters) return baseUrl
+
+  const params = new URLSearchParams()
+
+  if (filters.asset_id) params.set('asset_id', filters.asset_id)
+  if (filters.branch_id) params.set('branch_id', filters.branch_id)
+  if (filters.branch_id && filters.branch_status && filters.branch_status !== 'all')
+    params.set('branch_status', filters.branch_status)
+  if (filters.component_id) params.set('component_id', filters.component_id)
+  if (filters.vulnerability_id) params.set('vulnerability_id', filters.vulnerability_id)
+  if (filters.source_id) params.set('source_id', filters.source_id)
+  if (filters.tool_name) params.set('tool_name', filters.tool_name)
+  if (filters.rule_id) params.set('rule_id', filters.rule_id)
+  if (filters.scan_id) params.set('scan_id', filters.scan_id)
+  if (filters.file_path) params.set('file_path', filters.file_path)
+  if (filters.search) params.set('search', filters.search)
+  if (filters.page) params.set('page', String(filters.page))
+  if (filters.per_page) params.set('per_page', String(filters.per_page))
+
+  if (filters.severities?.length) params.set('severities', filters.severities.join(','))
+  if (filters.statuses?.length) params.set('statuses', filters.statuses.join(','))
+  if (filters.exclude_statuses?.length)
+    params.set('exclude_statuses', filters.exclude_statuses.join(','))
+  if (filters.sources?.length) params.set('sources', filters.sources.join(','))
+
+  // CTEM prioritization filters (RFC-017)
+  if (filters.priority_classes?.length)
+    params.set('priority_classes', filters.priority_classes.join(','))
+  if (filters.is_in_kev) params.set('is_in_kev', 'true')
+  if (filters.is_reachable) params.set('is_reachable', 'true')
+  if (filters.assigned_to_me) params.set('assigned_to_me', 'true')
+  // Backend query key is singular `sla_status` (comma-separated); maps to the
+  // FindingFilter.SLAStatuses list server-side.
+  if (filters.sla_statuses?.length) params.set('sla_status', filters.sla_statuses.join(','))
+  if (filters.epss_min != null) params.set('epss_min', String(filters.epss_min))
+  if (filters.finding_ids?.length) params.set('finding_ids', filters.finding_ids.join(','))
+  if (filters.cve_ids?.length) params.set('cve_ids', filters.cve_ids.join(','))
+  if (filters.finding_types?.length) params.set('finding_types', filters.finding_types.join(','))
+  if (filters.sort) params.set('sort', filters.sort)
+
+  const queryString = params.toString()
+  return queryString ? `${baseUrl}?${queryString}` : baseUrl
+}
+
+function buildFindingEndpoint(findingId: string): string {
+  return `/api/v1/findings/${findingId}`
+}
+
+function buildAssetFindingsEndpoint(
+  assetId: string,
+  sort?: string,
+  page?: number,
+  perPage?: number
+): string {
+  const baseUrl = `/api/v1/assets/${assetId}/findings`
+  const params = new URLSearchParams()
+
+  if (sort) params.set('sort', sort)
+  if (page) params.set('page', String(page))
+  if (perPage) params.set('per_page', String(perPage))
+
+  const queryString = params.toString()
+  return queryString ? `${baseUrl}?${queryString}` : baseUrl
+}
+
+// ============================================
+// FETCHER FUNCTIONS
+// ============================================
+
+export async function fetchFindings(url: string): Promise<ApiFindingListResponse> {
+  return get<ApiFindingListResponse>(url)
+}
+
+async function fetchFinding(url: string): Promise<ApiFinding> {
+  return get<ApiFinding>(url)
+}
+
+// ============================================
+// FINDING HOOKS
+// ============================================
+
+/**
+ * Fetch findings list for current tenant
+ *
+ * @example
+ * ```typescript
+ * function FindingList() {
+ *   const { data, error, isLoading } = useFindingsApi({ page: 1, severities: ['critical', 'high'] })
+ *
+ *   if (isLoading) return <Loading />
+ *   if (error) return <Error error={error} />
+ *
+ *   return (
+ *     <ul>
+ *       {data?.data.map(finding => (
+ *         <li key={finding.id}>{finding.message}</li>
+ *       ))}
+ *     </ul>
+ *   )
+ * }
+ * ```
+ */
+export function useFindingsApi(filters?: FindingApiFilters, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+
+  // Ensure user has a tenant before making requests
+  const key = currentTenant ? buildFindingsEndpoint(filters) : null
+
+  return useSWR<ApiFindingListResponse>(key, fetchFindings, { ...defaultConfig, ...config })
+}
+
+/**
+ * Fetch a single finding by ID
+ */
+export function useFindingApi(findingId: string | null, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+
+  // Ensure user has a tenant before making requests
+  const key = currentTenant && findingId ? buildFindingEndpoint(findingId) : null
+
+  return useSWR<ApiFinding>(key, fetchFinding, { ...defaultConfig, ...config })
+}
+
+/**
+ * Fetch findings for a specific asset
+ */
+export function useAssetFindingsApi(
+  assetId: string | null,
+  sort?: string,
+  page?: number,
+  perPage?: number,
+  config?: SWRConfiguration
+) {
+  const { currentTenant } = useTenant()
+
+  // Ensure user has a tenant before making requests
+  const key =
+    currentTenant && assetId ? buildAssetFindingsEndpoint(assetId, sort, page, perPage) : null
+
+  return useSWR<ApiFindingListResponse>(key, fetchFindings, { ...defaultConfig, ...config })
+}
+
+// ============================================
+// MUTATION HOOKS
+// ============================================
+
+/**
+ * Create a new finding
+ */
+export function useCreateFindingApi() {
+  const { currentTenant } = useTenant()
+
+  // Ensure user has a tenant before making requests
+  return useSWRMutation(
+    currentTenant ? '/api/v1/findings' : null,
+    async (url: string, { arg }: { arg: CreateFindingInput }) => {
+      return post<ApiFinding>(url, arg)
+    }
+  )
+}
+
+/**
+ * Update finding status
+ */
+export function useUpdateFindingStatusApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  // Ensure user has a tenant before making requests
+  return useSWRMutation(
+    currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/status` : null,
+    async (url: string, { arg }: { arg: UpdateFindingStatusInput }) => {
+      return patch<ApiFinding>(url, arg)
+    }
+  )
+}
+
+/**
+ * Update finding severity
+ */
+export function useUpdateFindingSeverityApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/severity` : null,
+    async (url: string, { arg }: { arg: UpdateFindingSeverityInput }) => {
+      return patch<ApiFinding>(url, arg)
+    }
+  )
+}
+
+/**
+ * Assign finding to a user
+ */
+export function useAssignFindingApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/assign` : null,
+    async (url: string, { arg }: { arg: AssignFindingInput }) => {
+      return post<ApiFinding>(url, arg)
+    }
+  )
+}
+
+/**
+ * Unassign finding from current assignee
+ */
+export function useUnassignFindingApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/unassign` : null,
+    async (url: string) => {
+      return post<ApiFinding>(url, {})
+    }
+  )
+}
+
+/**
+ * Request a verification scan on the asset associated with a fix_applied finding.
+ */
+export interface RequestVerificationScanInput {
+  scanner_name?: string
+  workflow_id?: string
+}
+
+export interface RequestVerificationScanResult {
+  finding_id: string
+  asset_id: string
+  asset_name: string
+  pipeline_run_id: string
+  scan_id: string
+}
+
+export function useRequestVerificationScanApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/request-verification` : null,
+    async (url: string, { arg }: { arg: RequestVerificationScanInput }) => {
+      return post<RequestVerificationScanResult>(url, arg)
+    }
+  )
+}
+
+// ============================================
+// VALIDATION (CTEM Stage-4)
+// ============================================
+
+/** Result of requesting a validation (safe-check) run for a finding. */
+export interface RequestValidationResult {
+  finding_id: string
+  command_id: string
+  status: string
+}
+
+/**
+ * Request a CTEM Stage-4 validation run for a finding (RFC-011).
+ * POST /api/v1/findings/{id}/validate — dispatches a safe-check job to a sensor;
+ * the outcome is applied to the finding asynchronously when the sensor reports back.
+ */
+export function useRequestValidationApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/validate` : null,
+    async (url: string) => {
+      return post<RequestValidationResult>(url, {})
+    }
+  )
+}
+
+/**
+ * True when an error returned by {@link useRequestValidationApi} indicates that
+ * no validation-capable sensor is currently online for the tenant. The API
+ * signals this as a 400 wrapping `ErrNoValidationSensor` whose message contains
+ * "no validation-capable sensor is online". Callers surface a deploy-a-sensor
+ * hint instead of a generic failure toast.
+ */
+export function isNoValidationSensorError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  return /no validation-capable sensor/i.test(message)
+}
+
+/** A single validation-evidence record recorded against a finding. */
+export interface ValidationEvidenceItem {
+  id: string
+  finding_id: string
+  executor_kind: string
+  technique: string
+  outcome: string
+  summary: string
+  created_at: string
+  started_at?: string
+  ended_at?: string
+  // Detection correlation verdict — answers "did any control OBSERVE this
+  // validation?", a different question from `outcome` ("is the exposure still
+  // reachable?"). See api internal/app/validation/detection.go. Values:
+  // observed | not_observed | no_telemetry_source | not_applicable |
+  // not_evaluated. `detection_is_gap` is the precomputed safe predicate
+  // (true only for not_observed) so the UI never gets the comparison wrong.
+  // Both optional so the panel degrades gracefully against an older API.
+  detection_status?: string
+  detection_is_gap?: boolean
+}
+
+interface ValidationEvidenceResponse {
+  evidence: ValidationEvidenceItem[]
+}
+
+/**
+ * Fetch the validation evidence recorded for a finding.
+ * GET /api/v1/findings/{id}/evidence
+ */
+export function useFindingValidationEvidenceApi(
+  findingId: string | null,
+  config?: SWRConfiguration
+) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/evidence` : null
+
+  return useSWR<ValidationEvidenceResponse>(
+    key,
+    (url: string) => get<ValidationEvidenceResponse>(url),
+    { ...defaultConfig, ...config }
+  )
+}
+
+/**
+ * Input for creating an external ticket from a finding. `project_key` is
+ * optional — when omitted the backend routes to the tenant's configured default
+ * project / routing rules. `provider` defaults to "jira" server-side.
+ */
+export interface CreateFindingTicketInput {
+  provider?: string
+  project_key?: string
+  issue_type?: string
+}
+
+/** Response from creating a ticket from a finding. */
+export interface FindingTicketInfo {
+  finding_id: string
+  ticket_key: string
+  ticket_url: string
+  linked_at: string
+}
+
+/**
+ * Create (and link) an external ticket from a finding.
+ * POST /api/v1/findings/{id}/create-ticket
+ */
+export function useCreateFindingTicketApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/create-ticket` : null,
+    async (url: string, { arg }: { arg: CreateFindingTicketInput }) => {
+      return post<FindingTicketInfo>(url, arg)
+    }
+  )
+}
+
+// ============================================
+// COMMENT HOOKS
+// ============================================
+
+/**
+ * Add comment to a finding
+ */
+export function useAddFindingCommentApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `${buildFindingEndpoint(findingId)}/comments` : null,
+    async (url: string, { arg }: { arg: AddCommentInput }) => {
+      return post<ApiFindingComment>(url, arg)
+    }
+  )
+}
+
+// ============================================
+// FINDING STATS HOOKS
+// ============================================
+
+import type { FindingStatsResponse } from './finding-api.types'
+
+export async function fetchFindingStats(url: string): Promise<FindingStatsResponse> {
+  return get<FindingStatsResponse>(url)
+}
+
+/**
+ * Filters supported by the /findings/stats endpoint.
+ *
+ * The backend currently supports:
+ *  - assetId: scope the counts to a single asset (used by the
+ *    /findings page when filtered by `?assetId=…` so the severity
+ *    cards reflect the filtered table, not the global tenant counts).
+ *  - sources: scope every count to these finding sources (used by the
+ *    Exposures type pages, which each show one type of finding). An older
+ *    API ignores the param and answers tenant-wide; see
+ *    `useFindingTypeStats` for how that is detected.
+ *
+ * Add new filters here as the backend grows.
+ */
+export interface FindingStatsFilters {
+  assetId?: string | null
+  sources?: readonly string[] | null
+}
+
+/** `/api/v1/findings/stats` with the given filters as query params. */
+export function buildFindingStatsUrl(filters?: FindingStatsFilters): string {
+  const params = new URLSearchParams()
+  if (filters?.assetId) params.set('asset_id', filters.assetId)
+  if (filters?.sources && filters.sources.length > 0) {
+    params.set('sources', filters.sources.join(','))
+  }
+  const queryString = params.toString()
+  return queryString ? `/api/v1/findings/stats?${queryString}` : '/api/v1/findings/stats'
+}
+
+/**
+ * Fetch finding stats (total, by severity, by status, by source)
+ *
+ * Pass filters to scope the stats. Without filters this returns
+ * tenant-wide counts. The cache key includes the serialized filters
+ * so different filter combinations don't trample each other in SWR.
+ */
+export function useFindingStatsApi(filters?: FindingStatsFilters, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+
+  const url = buildFindingStatsUrl(filters)
+
+  const key = currentTenant ? url : null
+
+  return useSWR<FindingStatsResponse>(key, fetchFindingStats, { ...defaultConfig, ...config })
+}
+
+// ============================================
+// CACHE UTILITIES
+// ============================================
+
+/**
+ * Invalidate findings cache
+ */
+export async function invalidateFindingsCache() {
+  const { mutate } = await import('swr')
+  await mutate((key) => typeof key === 'string' && key.includes('/findings'), undefined, {
+    revalidate: true,
+  })
+}
+
+// ============================================
+// APPROVAL HOOKS
+// ============================================
+
+/**
+ * Request approval for a finding status change
+ */
+export function useRequestApproval(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant ? `/api/v1/findings/${findingId}/approvals` : null,
+    async (
+      url: string,
+      { arg }: { arg: { requested_status: string; justification: string; expires_at?: string } }
+    ) => {
+      const response = await post(url, arg)
+      return response
+    }
+  )
+}
+
+/**
+ * Approve a pending approval
+ */
+export function useApproveStatus(approvalId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant ? `/api/v1/approvals/${approvalId}/approve` : null,
+    async (url: string) => {
+      const response = await post(url, {})
+      return response
+    }
+  )
+}
+
+/**
+ * Reject a pending approval
+ */
+export function useRejectApproval(approvalId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant ? `/api/v1/approvals/${approvalId}/reject` : null,
+    async (url: string, { arg }: { arg: { reason: string } }) => {
+      const response = await post(url, arg)
+      return response
+    }
+  )
+}
+
+/**
+ * List approvals for the current tenant (paginated, filterable by status)
+ */
+export function usePendingApprovals(page = 1, perPage = 20, status?: ApprovalStatus) {
+  const { currentTenant } = useTenant()
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) })
+  if (status) params.set('status', status)
+  return useSWR<{ data: ApiApproval[]; total: number; page: number; per_page: number }>(
+    currentTenant ? `/api/v1/approvals?${params}` : null,
+    get,
+    { ...defaultConfig, refreshInterval: 30000 }
+  )
+}
+
+/**
+ * List approvals for a specific finding
+ */
+export function useFindingApprovals(findingId: string | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWR<ApiApproval[]>(
+    currentTenant && findingId ? `/api/v1/findings/${findingId}/approvals` : null,
+    get,
+    defaultConfig
+  )
+}
+
+/**
+ * Cancel own approval request
+ */
+export function useCancelApproval(approvalId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant ? `/api/v1/approvals/${approvalId}/cancel` : null,
+    async (url: string) => {
+      return post(url, {})
+    }
+  )
+}

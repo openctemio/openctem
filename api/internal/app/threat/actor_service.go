@@ -1,0 +1,99 @@
+// Package threat implements the application service for the threat bounded context — orchestrates pkg/domain/threat entities and cross-cutting concerns (audit, notifications, RBAC).
+package threat
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/threatactor"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+)
+
+// ActorService manages threat actor intelligence.
+type ActorService struct {
+	repo   threatactor.Repository
+	logger *logger.Logger
+}
+
+// NewActorService creates a new threat actor service.
+func NewActorService(repo threatactor.Repository, log *logger.Logger) *ActorService {
+	return &ActorService{repo: repo, logger: log}
+}
+
+// CreateActorInput holds input for creating a threat actor.
+type CreateActorInput struct {
+	TenantID         string
+	Name             string
+	Aliases          []string
+	Description      string
+	ActorType        string
+	Sophistication   string
+	Motivation       string
+	CountryOfOrigin  string
+	MitreGroupID     string
+	TTPs             []threatactor.TTP
+	TargetIndustries []string
+	TargetRegions    []string
+	Tags             []string
+}
+
+// CreateActor creates a new threat actor.
+func (s *ActorService) CreateActor(ctx context.Context, input CreateActorInput) (*threatactor.ThreatActor, error) {
+	tid, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	actor, err := threatactor.NewThreatActor(tid, input.Name, threatactor.ActorType(input.ActorType))
+	if err != nil {
+		return nil, err
+	}
+
+	actor.Update(input.Name, input.Description, threatactor.ActorType(input.ActorType))
+	actor.SetIntel(input.Sophistication, input.Motivation, input.CountryOfOrigin, input.MitreGroupID)
+	actor.SetTTPs(input.TTPs)
+	actor.SetTargeting(input.TargetIndustries, input.TargetRegions)
+
+	if err := s.repo.Create(ctx, actor); err != nil {
+		return nil, fmt.Errorf("failed to create threat actor: %w", err)
+	}
+
+	return actor, nil
+}
+
+// GetActor retrieves a threat actor by ID.
+func (s *ActorService) GetActor(ctx context.Context, tenantID, actorID string) (*threatactor.ThreatActor, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	aid, err := shared.IDFromString(actorID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid actor id", shared.ErrValidation)
+	}
+	return s.repo.GetByID(ctx, tid, aid)
+}
+
+// ListActors lists threat actors with filtering.
+func (s *ActorService) ListActors(ctx context.Context, tenantID string, filter threatactor.Filter, page pagination.Pagination) (pagination.Result[*threatactor.ThreatActor], error) {
+	tid, _ := shared.IDFromString(tenantID)
+	filter.TenantID = &tid
+	return s.repo.List(ctx, filter, page)
+}
+
+// DeleteActor deletes a threat actor.
+func (s *ActorService) DeleteActor(ctx context.Context, tenantID, actorID string) error {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	aid, err := shared.IDFromString(actorID)
+	if err != nil {
+		// A malformed id must be a 400, not a silent no-op DELETE that returns
+		// 204 and makes the caller believe something was deleted.
+		return fmt.Errorf("%w: invalid actor id", shared.ErrValidation)
+	}
+	return s.repo.Delete(ctx, tid, aid)
+}

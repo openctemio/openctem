@@ -1,0 +1,10 @@
+# Also publish port 80 on the gateway, so http://<host> redirects to HTTPS
+# (every TLS mode except http). With OPENCTEM_TLS_MODE=acme it also serves
+# the HTTP-01 challenge (port 443 alone already works for Let's Encrypt
+# through TLS-ALPN-01). The redirect assumes HTTPS on the default port 443.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml up -d
+services:
+  gateway:
+    ports:
+      - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_HTTP_PORT:-80}:80"

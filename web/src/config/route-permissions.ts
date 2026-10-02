@@ -1,0 +1,782 @@
+/**
+ * Route Permission Mapping
+ *
+ * Maps routes to their required permissions and modules.
+ * Used by RouteGuard to check if user can access a route.
+ *
+ * Access Control Layers (checked in order):
+ * 1. Module (Licensing) - Does tenant's plan include this module?
+ * 2. Permission (RBAC) - Does user have the required permission?
+ *
+ * Pattern matching:
+ * - Exact match: '/settings/audit-log' matches only that path
+ * - Wildcard: '/assets/*' matches '/assets/domains', '/assets/cloud', etc.
+ * - Double wildcard: '/settings/**' matches all nested paths
+ *
+ * Priority:
+ * - More specific patterns match first (longer paths)
+ * - Exact matches take precedence over wildcards
+ */
+
+import { Permission } from '@/lib/permissions'
+
+export interface RoutePermissionConfig {
+  /** Required permission to access this route (RBAC layer) */
+  permission: string
+  /** Required module from tenant's plan (Licensing layer) */
+  module?: string
+  /** Optional: Redirect to this path if permission denied (default: show access denied) */
+  redirectTo?: string
+  /** Optional: Custom message to show when access denied */
+  message?: string
+}
+
+/**
+ * Module IDs (matches backend licensing module IDs)
+ *
+ * NOTE: Only include modules that are actually in the licensing system.
+ * Core features like "team", "billing" are NOT licensed modules - they're
+ * always available and only controlled by RBAC permissions.
+ */
+export const Module = {
+  Dashboard: 'dashboard',
+  Assets: 'assets',
+  Findings: 'findings',
+  Scans: 'scans',
+  Sensors: 'sensors',
+  Reports: 'reports',
+  Audit: 'audit',
+  Components: 'components',
+  Pentest: 'pentest',
+  Credentials: 'credentials',
+  // Exposures (non-CVE security issues) is its own toggleable module. The API
+  // gates /api/v1/exposures on ModuleExposures, so the route guard + sidebar
+  // must key off the same module — not `findings`, which used to be a stale
+  // mirror that let the toggle 403 the API while leaving the nav visible.
+  Exposures: 'exposures',
+  Remediation: 'remediation',
+  ThreatIntel: 'threat_intel',
+  // IOC catalogue — its own backend module (`iocs`, migration 000156)
+  // that gates /api/v1/iocs. Distinct from `threat_intel` so an operator
+  // can run threat-intel enrichment without exposing the runtime IOC
+  // catalogue, and so the ModuleIOCs toggle gates a real page.
+  Iocs: 'iocs',
+  // SLA is a real optional module (api gates registerSLARoutes on ModuleSLA).
+  Sla: 'sla',
+  Integrations: 'integrations',
+  Compliance: 'compliance',
+  // Migration 000161 additions — these need their own constants so
+  // the route guard checks the same module the sidebar binds to.
+  // Mismatched module names → "Feature Not Available" while sidebar
+  // shows the entry (the bug this list was extended for).
+  AttackSurface: 'attack_surface',
+  ScopeConfig: 'scope_config',
+  BusinessServices: 'business_services',
+  CTEMCycles: 'ctem_cycles',
+  AttackerProfiles: 'attacker_profiles',
+  Relationships: 'relationships',
+  // Scoping split-outs (api migration 000214) — each toggleable on its
+  // own instead of sharing scope_config / attack_surface.
+  BusinessUnits: 'business_units',
+  CrownJewels: 'crown_jewels',
+  ThreatModel: 'threat_model',
+  PriorityRules: 'priority_rules',
+  RiskAnalysis: 'risk_analysis',
+  RiskScoring: 'risk_scoring',
+  BusinessImpact: 'business_impact',
+  CompensatingControls: 'compensating_controls',
+  Workflows: 'workflows',
+  RemediationTasks: 'remediation_tasks',
+  ExecutiveSummary: 'executive_summary',
+  CTEMMaturity: 'ctem_maturity',
+  MITRECoverage: 'mitre_coverage',
+  SBOMExport: 'sbom_export',
+  ScannerTemplates: 'scanner_templates',
+  TemplateSources: 'template_sources',
+  ScanPipelines: 'scan_pipelines',
+  AttackSimulation: 'attack_simulation',
+  ControlTesting: 'control_testing',
+} as const
+
+/**
+ * Route to permission mapping
+ *
+ * Key: Route pattern (supports * and ** wildcards)
+ * Value: Permission and module configuration
+ */
+export const routePermissions: Record<string, RoutePermissionConfig> = {
+  // ========================================
+  // Dashboard
+  // Dashboard is a core feature - no module check required
+  // Only RBAC permission check is needed
+  // ========================================
+  '/': {
+    permission: Permission.DashboardRead,
+    // NOTE: Removed module requirement - Dashboard is always available
+    // Module check was causing "Feature Not Available" for users with
+    // dashboard:read permission but tenant without dashboard module in plan
+  },
+
+  // ========================================
+  // Scoping Phase — each scoping feature is its own module post-000161
+  // ========================================
+  // The Scoping overview: one summary call gated on assets:read, no module
+  // (each checklist row hides when its own module is off).
+  '/scoping': {
+    permission: Permission.AssetsRead,
+  },
+  '/attack-surface': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
+  '/exposure-chains': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
+  '/attack-paths': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
+  '/attack-surface/external': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
+  '/asset-groups': {
+    permission: Permission.AssetGroupsRead,
+    module: Module.Assets,
+  },
+  '/asset-groups/**': {
+    permission: Permission.AssetGroupsRead,
+    module: Module.Assets,
+  },
+  '/business-units': {
+    permission: Permission.AssetsRead,
+    module: Module.BusinessUnits,
+  },
+  '/business-units/**': {
+    permission: Permission.AssetsRead,
+    module: Module.BusinessUnits,
+  },
+  '/crown-jewels': {
+    permission: Permission.AssetsRead,
+    module: Module.CrownJewels,
+  },
+  '/crown-jewels/**': {
+    permission: Permission.AssetsRead,
+    module: Module.CrownJewels,
+  },
+  '/scope-config': {
+    permission: Permission.ScopeRead,
+    module: Module.ScopeConfig,
+  },
+  '/business-services': {
+    permission: Permission.BusinessServicesRead,
+    module: Module.BusinessServices,
+  },
+  '/business-services/**': {
+    permission: Permission.BusinessServicesRead,
+    module: Module.BusinessServices,
+  },
+  '/cycles': {
+    permission: Permission.CTEMCyclesRead,
+    module: Module.CTEMCycles,
+  },
+  '/cycles/**': {
+    permission: Permission.CTEMCyclesRead,
+    module: Module.CTEMCycles,
+  },
+  '/attacker-profiles': {
+    permission: Permission.AttackerProfilesRead,
+    module: Module.AttackerProfiles,
+  },
+  '/attacker-profiles/**': {
+    permission: Permission.AttackerProfilesRead,
+    module: Module.AttackerProfiles,
+  },
+  '/threat-model': {
+    permission: Permission.AssetsRead,
+    module: Module.ThreatModel,
+  },
+  '/threat-model/**': {
+    permission: Permission.AssetsRead,
+    module: Module.ThreatModel,
+  },
+  '/relationships/**': {
+    permission: Permission.AssetsRead,
+    module: Module.Relationships,
+  },
+
+  // ========================================
+  // Discovery Phase - Assets (Module: assets)
+  // ========================================
+  '/assets': {
+    permission: Permission.AssetsRead,
+    module: Module.Assets,
+  },
+  '/assets/**': {
+    permission: Permission.AssetsRead,
+    module: Module.Assets,
+  },
+  '/settings/scanning/credentials': {
+    // API enforces scans:secret_store:read (SecretStoreRead), not
+    // findings:credentials:read — match the sidebar and the backend.
+    permission: Permission.SecretStoreRead,
+    module: Module.Scans,
+  },
+
+  // ========================================
+  // Discovery Phase - Scans (Module: scans)
+  // ========================================
+  '/scans': {
+    permission: Permission.ScansRead,
+    module: Module.Scans,
+  },
+  '/scans/**': {
+    permission: Permission.ScansRead,
+    module: Module.Scans,
+  },
+
+  // ========================================
+  // Discovery Phase - Exposures (Module: exposures)
+  // ========================================
+  '/exposures': {
+    permission: Permission.FindingsRead,
+    module: Module.Exposures,
+  },
+  '/exposures/**': {
+    permission: Permission.FindingsRead,
+    module: Module.Exposures,
+  },
+
+  // ========================================
+  // Discovery Phase - Credentials (Module: credentials)
+  // ========================================
+  '/credentials': {
+    permission: Permission.CredentialsRead,
+    module: Module.Credentials,
+  },
+  '/credentials/**': {
+    permission: Permission.CredentialsRead,
+    module: Module.Credentials,
+  },
+
+  // ========================================
+  // Discovery Phase - Components (Module: components)
+  // ========================================
+  '/components': {
+    permission: Permission.ComponentsRead,
+    module: Module.Components,
+  },
+  '/components/**': {
+    permission: Permission.ComponentsRead,
+    module: Module.Components,
+  },
+
+  // ========================================
+  // Prioritization Phase (Module: threat_intel)
+  // Backend uses VulnerabilitiesRead for threat intel routes
+  // ========================================
+  '/threat-intel': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.ThreatIntel,
+  },
+  // IOC catalogue page — its own module (`iocs`) so the ModuleIOCs
+  // toggle gates it end-to-end. Exact match takes precedence over the
+  // `/threat-intel/**` wildcard below. Permission is threat_intel:read,
+  // matching what the backend enforces on /api/v1/iocs.
+  '/threat-intel/iocs': {
+    permission: Permission.ThreatIntelRead,
+    module: Module.Iocs,
+  },
+  // Detections (Detect & Respond) — tenant-wide IOC match feed. Same `iocs`
+  // module + threat_intel:read as the catalogue; backend gates /api/v1/iocs/matches.
+  '/threat-intel/detections': {
+    permission: Permission.ThreatIntelRead,
+    module: Module.Iocs,
+  },
+  '/threat-intel/**': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.ThreatIntel,
+  },
+  '/business-impact': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.BusinessImpact,
+  },
+  // A CTEM working object in Prioritization (was /settings/priority-rules).
+  '/priority-rules': {
+    permission: Permission.PriorityRulesRead,
+    module: Module.PriorityRules,
+  },
+  '/priority-rules/**': {
+    permission: Permission.PriorityRulesRead,
+    module: Module.PriorityRules,
+  },
+
+  // ========================================
+  // Validation Phase (Module: pentest)
+  // ========================================
+  '/pentest/**': {
+    permission: Permission.PentestRead,
+    module: Module.Pentest,
+  },
+  // Create/edit forms require write permission (route-level defense-in-depth;
+  // these longer patterns take precedence over '/pentest/**').
+  '/pentest/findings/new': {
+    permission: Permission.PentestFindingsWrite,
+    module: Module.Pentest,
+  },
+  '/pentest/findings/*/edit': {
+    permission: Permission.PentestFindingsWrite,
+    module: Module.Pentest,
+  },
+  // Validation overview: the coverage KPI is findings:read; each module's
+  // section on the page checks its own module.
+  '/validation': {
+    permission: Permission.FindingsRead,
+  },
+  '/validation/retests': {
+    permission: Permission.PentestRead,
+    module: Module.Pentest,
+  },
+  '/validation/attack-coverage': {
+    permission: Permission.PentestRead,
+    module: Module.MITRECoverage,
+  },
+  // Finding library (finding templates), under Settings › Pentest methodology.
+  // Longer patterns win over '/settings/pentest'.
+  '/settings/pentest/templates': {
+    permission: Permission.PentestRead,
+    module: Module.Pentest,
+  },
+  '/settings/pentest/templates/new': {
+    permission: Permission.PentestTemplatesWrite,
+    module: Module.Pentest,
+  },
+  '/settings/pentest/templates/*/edit': {
+    permission: Permission.PentestTemplatesWrite,
+    module: Module.Pentest,
+  },
+  '/attack-simulation': {
+    permission: Permission.PentestRead,
+    module: Module.AttackSimulation,
+  },
+  '/simulation/scenarios': {
+    permission: Permission.PentestRead,
+    module: Module.AttackSimulation,
+  },
+  '/control-testing': {
+    permission: Permission.PentestRead,
+    module: Module.ControlTesting,
+  },
+  '/controls': {
+    permission: Permission.CompensatingControlsRead,
+    module: Module.CompensatingControls,
+  },
+  '/controls/**': {
+    permission: Permission.CompensatingControlsRead,
+    module: Module.CompensatingControls,
+  },
+
+  // ========================================
+  // Mobilization Phase (Module: remediation)
+  // ========================================
+  '/remediation': {
+    permission: Permission.RemediationRead,
+    module: Module.RemediationTasks,
+  },
+  '/remediation/**': {
+    permission: Permission.RemediationRead,
+    module: Module.RemediationTasks,
+  },
+  '/remediations': {
+    permission: Permission.RemediationRead,
+    module: Module.RemediationTasks,
+  },
+  '/remediations/**': {
+    permission: Permission.RemediationRead,
+    module: Module.RemediationTasks,
+  },
+  '/pipelines': {
+    permission: Permission.PipelinesRead,
+    module: Module.ScanPipelines,
+  },
+  '/pipelines/**': {
+    permission: Permission.PipelinesRead,
+    module: Module.ScanPipelines,
+  },
+  '/workflows': {
+    permission: Permission.WorkflowsRead,
+    module: Module.Workflows,
+  },
+  '/workflows/**': {
+    permission: Permission.WorkflowsRead,
+    module: Module.Workflows,
+  },
+  '/sla': {
+    permission: Permission.SLARead,
+    module: Module.Sla,
+  },
+  '/exceptions': {
+    permission: Permission.SuppressionsRead,
+    module: Module.Findings,
+  },
+  '/exceptions/**': {
+    permission: Permission.SuppressionsRead,
+    module: Module.Findings,
+  },
+
+  // ========================================
+  // Insights - Findings (Module: findings)
+  // ========================================
+  '/findings': {
+    permission: Permission.FindingsRead,
+    module: Module.Findings,
+  },
+  '/findings/**': {
+    permission: Permission.FindingsRead,
+    module: Module.Findings,
+  },
+
+  // ========================================
+  // Insights - Reports (Module: reports)
+  // ========================================
+  '/reports': {
+    permission: Permission.ReportsRead,
+    module: Module.Reports,
+  },
+  '/reports/**': {
+    permission: Permission.ReportsRead,
+    module: Module.Reports,
+  },
+
+  // ========================================
+  // Compliance (Module: compliance)
+  // Direct URL access must enforce permission — sidebar filtering alone
+  // is not enough since users can navigate via URL.
+  // ========================================
+  '/compliance': {
+    permission: Permission.ComplianceFrameworksRead,
+    module: Module.Compliance,
+  },
+  '/compliance/**': {
+    permission: Permission.ComplianceFrameworksRead,
+    module: Module.Compliance,
+  },
+  '/insights/reports/compliance': {
+    permission: Permission.ComplianceReportsRead,
+    module: Module.Compliance,
+  },
+
+  // ========================================
+  // Insights — extended dashboards (each its own module post-000161)
+  // ========================================
+  // Program Health is a core outcome scorecard — gated on dashboard read only
+  // (no dedicated module) so it is always available to anyone who can see the
+  // dashboard, without needing a new backend module registration.
+  '/insights/program-health': {
+    permission: Permission.DashboardRead,
+  },
+  // Data Quality is a core CTEM Discovery hygiene scorecard over the shared
+  // data-quality endpoint — gated on dashboard read only (no dedicated module),
+  // exactly like Program Health, so it is always available with the dashboard.
+  '/insights/data-quality': {
+    permission: Permission.DashboardRead,
+  },
+  // Analytics facades over shared dashboard data — not linked in nav but
+  // reachable by URL, so gate on dashboard read instead of leaving fail-open.
+  '/trending': {
+    permission: Permission.DashboardRead,
+  },
+  '/progress': {
+    permission: Permission.DashboardRead,
+  },
+  '/insights/analytics/mttr': {
+    permission: Permission.DashboardRead,
+  },
+  '/insights/executive': {
+    permission: Permission.DashboardRead,
+    module: Module.ExecutiveSummary,
+  },
+  '/insights/ctem-maturity': {
+    permission: Permission.DashboardRead,
+    module: Module.CTEMMaturity,
+  },
+  '/components/sbom-export': {
+    permission: Permission.ComponentsRead,
+    module: Module.SBOMExport,
+  },
+
+  // ========================================
+  // Settings - Sensors (Module: sensors)
+  // The API gates /api/v1/sensors with sensors:* and serves the sensors module
+  // to members holding sensors:read; gating on the scans module would lock out
+  // a member who may read sensors but not scans.
+  // ========================================
+  '/sensors': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
+  '/sensors/**': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
+  // /runners renders the same sensor/runner inventory as /sensors (typeFilter)
+  // — mirror its guard so it isn't left fail-open.
+  '/runners': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
+  '/settings/scanning/profiles': {
+    permission: Permission.ScanProfilesRead,
+    module: Module.Scans,
+  },
+  '/settings/scanning/profiles/**': {
+    permission: Permission.ScanProfilesRead,
+    module: Module.Scans,
+  },
+  '/settings/scanning/tools': {
+    permission: Permission.ToolsRead,
+    module: Module.Scans,
+  },
+  '/settings/scanning/tools/**': {
+    permission: Permission.ToolsRead,
+    module: Module.Scans,
+  },
+  '/settings/scanning/capabilities': {
+    permission: Permission.ToolsRead,
+    module: Module.Scans,
+  },
+  '/settings/scanning/capabilities/**': {
+    permission: Permission.ToolsRead,
+    module: Module.Scans,
+  },
+  // Scanner content policy (RFC-031): a sensors setting, so the sensors
+  // guard; saving needs sensors:write (checked by the page and the API).
+  '/settings/scanning/content': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
+
+  // ========================================
+  // Settings - Organization (Core feature, no module required)
+  // Team management is always available, controlled by RBAC only
+  // ========================================
+  // Organization › General and Access › Authentication (both were tabs of
+  // /settings/tenant). Viewing needs team:update; saving the security
+  // settings is owner-only in the API and the page.
+  '/settings/general': {
+    permission: Permission.TeamUpdate,
+    message: 'You need admin privileges to access organization settings.',
+  },
+  '/settings/authentication': {
+    permission: Permission.TeamUpdate,
+    message: 'You need admin privileges to access authentication settings.',
+  },
+  '/settings/modules': {
+    permission: Permission.TeamUpdate,
+  },
+  // The user's own notification settings live at /account/notifications
+  // (/settings/notifications 308s there) and carry no entry: /account pages are
+  // personal and open to every signed-in user. The org-level channels
+  // (Slack/Teams/webhook) live under /settings/integrations/notifications and
+  // stay gated by the integrations entries below.
+  '/settings/sla-policies': {
+    permission: Permission.SLARead,
+    module: Module.Sla,
+  },
+  '/settings/pentest': {
+    permission: Permission.PentestWrite,
+    module: Module.Pentest,
+    message: 'You need pentest write access to manage pentest settings.',
+  },
+  '/settings/members': {
+    permission: Permission.MembersRead,
+  },
+  '/settings/members/**': {
+    permission: Permission.MembersRead,
+  },
+  '/settings/roles': {
+    permission: Permission.RolesRead,
+  },
+  '/settings/roles/**': {
+    permission: Permission.RolesRead,
+  },
+  // Access control is three distinct resources with distinct API permissions —
+  // gate each path on its own read permission rather than one coarse GroupsRead.
+  // Teams, with Assignment rules as a tab (the tab is hidden without
+  // assignment_rules:read; its API calls carry their own permission).
+  '/settings/teams': {
+    permission: Permission.GroupsRead,
+  },
+  '/settings/teams/**': {
+    permission: Permission.GroupsRead,
+  },
+  '/settings/access-control/permission-sets': {
+    permission: Permission.PermissionSetsRead,
+  },
+  '/settings/access-control/permission-sets/**': {
+    permission: Permission.PermissionSetsRead,
+  },
+
+  // ========================================
+  // Settings - Audit Log (Admin/Owner only, no module required)
+  // Audit is a core feature, controlled by RBAC only
+  // ========================================
+  '/settings/audit-log': {
+    permission: Permission.AuditRead,
+    message: 'Audit logs require admin or owner privileges.',
+  },
+  '/settings/audit-log/**': {
+    permission: Permission.AuditRead,
+    message: 'Audit logs require admin or owner privileges.',
+  },
+
+  // ========================================
+  // Settings - Billing (Admin/Owner only, no module required)
+  // Billing is a core feature, controlled by RBAC only
+  // ========================================
+  '/settings/billing': {
+    permission: Permission.BillingRead,
+    message: 'Billing information requires admin or owner privileges.',
+  },
+  '/settings/billing/**': {
+    permission: Permission.BillingRead,
+    message: 'Billing information requires admin or owner privileges.',
+  },
+
+  // ========================================
+  // Settings - Access: machine and directory access. No module gate: the API
+  // gates none of these on the integrations module (api routes/misc.go
+  // registerAPIKeyRoutes, routes/scim.go), so a tenant that turns
+  // Integrations off keeps its API keys and SCIM.
+  // ========================================
+  '/settings/api-keys': {
+    permission: Permission.ApiKeysRead,
+  },
+  // MCP access is issued as API keys (oct_ keys).
+  '/settings/mcp': {
+    permission: Permission.ApiKeysRead,
+  },
+  // Members and viewers see a read-only page; token management is owner/admin
+  // in the API (RequireAdmin) and in the page.
+  '/settings/scim': {
+    permission: Permission.MembersRead,
+  },
+
+  // ========================================
+  // Settings - Integrations (Module: integrations)
+  // ========================================
+  '/settings/integrations': {
+    permission: Permission.IntegrationsRead,
+    module: Module.Integrations,
+  },
+  '/settings/integrations/**': {
+    permission: Permission.IntegrationsRead,
+    module: Module.Integrations,
+  },
+
+  // ========================================
+  // Settings — scanner orchestration (each its own module post-000161)
+  // ========================================
+  '/settings/scanning/templates': {
+    permission: Permission.ScannerTemplatesRead,
+    module: Module.ScannerTemplates,
+  },
+  '/settings/scanning/templates/**': {
+    permission: Permission.ScannerTemplatesRead,
+    module: Module.ScannerTemplates,
+  },
+  '/settings/scanning/template-sources': {
+    permission: Permission.TemplateSourcesRead,
+    module: Module.TemplateSources,
+  },
+  '/settings/scanning/template-sources/**': {
+    permission: Permission.TemplateSourcesRead,
+    module: Module.TemplateSources,
+  },
+
+  // Risk scoring config — its own module
+  '/settings/risk-scoring': {
+    permission: Permission.TeamUpdate,
+    module: Module.RiskScoring,
+  },
+  '/settings/risk-scoring/**': {
+    permission: Permission.TeamUpdate,
+    module: Module.RiskScoring,
+  },
+
+  // Asset lifecycle settings — no dedicated module, gated purely on
+  // team:update because the worker can transition asset status.
+  '/settings/asset-lifecycle': {
+    permission: Permission.TeamUpdate,
+  },
+  '/settings/asset-lifecycle/**': {
+    permission: Permission.TeamUpdate,
+  },
+}
+
+/**
+ * Match a pathname against route permission patterns
+ *
+ * @param pathname - The current pathname (e.g., '/settings/audit-log')
+ * @returns The matching route config or undefined if no match
+ */
+export function matchRoutePermission(pathname: string): RoutePermissionConfig | undefined {
+  // Normalize pathname (remove trailing slash)
+  const normalizedPath =
+    pathname.endsWith('/') && pathname !== '/' ? pathname.slice(0, -1) : pathname
+
+  // First, try exact match
+  if (routePermissions[normalizedPath]) {
+    return routePermissions[normalizedPath]
+  }
+
+  // Then, try pattern matching (sorted by specificity - longer patterns first)
+  const patterns = Object.keys(routePermissions)
+    .filter((p) => p.includes('*'))
+    .sort((a, b) => b.length - a.length)
+
+  for (const pattern of patterns) {
+    if (matchPattern(pattern, normalizedPath)) {
+      return routePermissions[pattern]
+    }
+  }
+
+  return undefined
+}
+
+/**
+ * Match a pathname against a pattern with wildcards
+ *
+ * Supports:
+ * - '*' matches a single path segment
+ * - '**' matches any number of segments
+ *
+ * @param pattern - Route pattern (e.g., '/assets/*', '/settings/**')
+ * @param pathname - Actual pathname to match
+ */
+function matchPattern(pattern: string, pathname: string): boolean {
+  // Convert pattern to regex
+  const regexPattern = pattern
+    // Escape special regex characters except * and /
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    // Replace ** with a marker
+    .replace(/\*\*/g, '__DOUBLE_STAR__')
+    // Replace * with single segment match
+    .replace(/\*/g, '[^/]+')
+    // Replace marker with multi-segment match
+    .replace(/__DOUBLE_STAR__/g, '.*')
+
+  const regex = new RegExp(`^${regexPattern}$`)
+  return regex.test(pathname)
+}
+
+/**
+ * Get all routes that require a specific permission
+ * Useful for debugging and documentation
+ */
+export function getRoutesForPermission(permission: string): string[] {
+  return Object.entries(routePermissions)
+    .filter(([, config]) => config.permission === permission)
+    .map(([route]) => route)
+}

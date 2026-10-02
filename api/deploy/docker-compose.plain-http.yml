@@ -1,0 +1,15 @@
+# Plain HTTP gateway, ONLY behind an existing proxy or load balancer that
+# terminates TLS for browsers and sensors. Requires, in .env:
+#
+#   OPENCTEM_TLS_MODE=http
+#   OPENCTEM_ALLOW_PLAIN_HTTP=true
+#   OPENCTEM_TRUSTED_PROXIES=<your proxy's address or CIDR>   (client IPs)
+#
+#   docker compose -f docker-compose.yml -f docker-compose.plain-http.yml up -d
+#
+# Bind GATEWAY_BIND to the interface your proxy uses (e.g. 127.0.0.1 when it
+# runs on this host) so the unencrypted port is not reachable by anyone else.
+services:
+  gateway:
+    ports: !override
+      - "${GATEWAY_BIND:-127.0.0.1}:${GATEWAY_HTTP_PORT:-8081}:80"

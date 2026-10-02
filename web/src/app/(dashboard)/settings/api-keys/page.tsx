@@ -1,0 +1,521 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Main } from '@/components/layout'
+import {
+  PageHeader,
+  EmptyState,
+  DataTable,
+  DataTableColumnHeader,
+  RelativeTime,
+  StackedCell,
+  ErrorState,
+} from '@/features/shared'
+import { StatsCard } from '@/features/shared/components/stats-card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  KeyRound,
+  Plus,
+  ShieldCheck,
+  AlertTriangle,
+  Eye,
+  Ban,
+  Trash2,
+  Copy,
+  Check,
+} from 'lucide-react'
+import {
+  useApiKeys,
+  useCreateApiKey,
+  useRevokeApiKey,
+  useDeleteApiKey,
+} from '@/features/api-keys/api/use-api-keys'
+import type { APIKey } from '@/features/api-keys/types/api-key.types'
+import { toast } from 'sonner'
+import { copyToClipboard } from '@/lib/clipboard'
+
+const AVAILABLE_SCOPES = [
+  'assets:read',
+  'findings:read',
+  'scans:read',
+  'integrations:read',
+  'assets:write',
+  'findings:write',
+  'scans:write',
+]
+
+const EXPIRY_OPTIONS = [
+  { value: '30', label: '30 days' },
+  { value: '90', label: '90 days' },
+  { value: '365', label: '1 year' },
+  { value: '0', label: 'Never' },
+]
+
+function isExpired(k: APIKey): boolean {
+  return !!k.expires_at && new Date(k.expires_at).getTime() < Date.now()
+}
+
+function isActive(k: APIKey): boolean {
+  return k.status !== 'revoked' && !k.revoked_at && !isExpired(k)
+}
+
+function StatusBadge({ k }: { k: APIKey }) {
+  if (k.status === 'revoked' || k.revoked_at) {
+    return <Badge className="border-0 bg-red-500/10 text-red-600 dark:text-red-400">Revoked</Badge>
+  }
+  if (isExpired(k)) {
+    return (
+      <Badge className="border-0 bg-orange-500/10 text-orange-600 dark:text-orange-400">
+        Expired
+      </Badge>
+    )
+  }
+  return (
+    <Badge className="border-0 bg-green-500/10 text-green-600 dark:text-green-400">Active</Badge>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// Generate dialog + one-time reveal
+// ─────────────────────────────────────────────────────────
+
+function GenerateKeyDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onCreated: (plaintext: string) => void
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [expires, setExpires] = useState('90')
+  const [scopes, setScopes] = useState<string[]>(['assets:read', 'findings:read'])
+  const { trigger, isMutating } = useCreateApiKey()
+
+  function toggleScope(s: string) {
+    setScopes((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]))
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name) return toast.error('Name is required')
+    if (scopes.length === 0) return toast.error('Select at least one scope')
+    try {
+      const res = await trigger({
+        name,
+        description: description || undefined,
+        scopes,
+        expires_in_days: Number(expires),
+      })
+      onCreated(res?.key ?? '')
+      onOpenChange(false)
+      setName('')
+      setDescription('')
+      setExpires('90')
+      setScopes(['assets:read', 'findings:read'])
+    } catch {
+      toast.error('Failed to create API key')
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Generate API key</DialogTitle>
+          <DialogDescription>
+            Scope the key to the minimum permissions needed. The secret is shown once.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="key-name">Name</Label>
+            <Input
+              id="key-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="CI pipeline"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="key-desc">Description (optional)</Label>
+            <Input
+              id="key-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="key-expiry">Expires</Label>
+            <Select value={expires} onValueChange={setExpires}>
+              <SelectTrigger id="key-expiry">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EXPIRY_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Scopes</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {AVAILABLE_SCOPES.map((s) => (
+                <label key={s} className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={scopes.includes(s)} onCheckedChange={() => toggleScope(s)} />
+                  <span className="font-mono text-xs">{s}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isMutating}>
+              {isMutating ? 'Generating...' : 'Generate'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RevealKeyDialog({ value, onClose }: { value: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    await copyToClipboard(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <Dialog open={!!value} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Copy your API key</DialogTitle>
+          <DialogDescription>
+            This is the only time the full key is shown. Store it securely.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
+          <code className="flex-1 break-all text-xs">{value}</code>
+          <Button size="icon" variant="ghost" onClick={copy} title="Copy">
+            {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+          </Button>
+        </div>
+        <DialogFooter>
+          <Button onClick={onClose}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// Row actions (revoke / delete) — inline prominent buttons
+// ─────────────────────────────────────────────────────────
+
+function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const { trigger: revoke, isMutating: revoking } = useRevokeApiKey()
+  const { trigger: del, isMutating: deleting } = useDeleteApiKey()
+
+  async function handleRevoke() {
+    try {
+      await revoke(k.id)
+      toast.success('Key revoked')
+      onChanged()
+    } catch {
+      toast.error('Failed to revoke')
+    }
+  }
+  async function handleDelete() {
+    try {
+      await del(k.id)
+      toast.success('Key deleted')
+      setDeleteOpen(false)
+      onChanged()
+    } catch {
+      toast.error('Failed to delete')
+    }
+  }
+
+  return (
+    <div className="flex justify-end gap-1">
+      {isActive(k) && (
+        <Can permission={Permission.ApiKeysWrite}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRevoke}
+            disabled={revoking}
+            title="Revoke"
+          >
+            <Ban className="h-4 w-4 text-warning" />
+          </Button>
+        </Can>
+      )}
+      <Can permission={Permission.ApiKeysDelete}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setDeleteOpen(true)}
+          title="Delete"
+          className="text-destructive hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </Can>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Delete ${k.name}?`}
+        desc="Any client using this key will immediately lose access. This cannot be undone."
+        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        destructive
+        isLoading={deleting}
+        handleConfirm={() => void handleDelete()}
+      />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────────────────
+
+function LoadingSkeleton() {
+  return (
+    <Main>
+      <Skeleton className="mb-6 h-8 w-48" />
+      <div className="grid gap-4 md:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 rounded-lg" />
+        ))}
+      </div>
+      <Skeleton className="mt-6 h-64 rounded-lg" />
+    </Main>
+  )
+}
+
+export default function APIKeysPage() {
+  const { data, error, isLoading, mutate } = useApiKeys()
+  // Owners and administrators see every key of the organization; anyone else
+  // gets only their own keys from the API, and cannot mint or revoke keys.
+  const { can, isAdmin } = usePermissions()
+  const canGenerate = can(Permission.ApiKeysWrite)
+  const ownKeysOnly = !isAdmin()
+  const [genOpen, setGenOpen] = useState(false)
+  const [newKey, setNewKey] = useState('')
+
+  const keys = useMemo(() => data?.data ?? [], [data])
+
+  const columns = useMemo<ColumnDef<APIKey>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        cell: ({ row }) => (
+          <StackedCell
+            primary={row.original.name}
+            secondary={<code>{row.original.key_prefix}…</code>}
+          />
+        ),
+      },
+      {
+        id: 'scopes',
+        header: 'Scopes',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex flex-wrap gap-1">
+            {row.original.scopes.slice(0, 3).map((s) => (
+              <Badge key={s} variant="secondary" className="font-mono text-[10px]">
+                {s}
+              </Badge>
+            ))}
+            {row.original.scopes.length > 3 && (
+              <Badge variant="outline" className="text-[10px]">
+                +{row.original.scopes.length - 3}
+              </Badge>
+            )}
+          </div>
+        ),
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        enableSorting: false,
+        cell: ({ row }) => <StatusBadge k={row.original} />,
+      },
+      {
+        accessorKey: 'last_used_at',
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Last used" />,
+        cell: ({ row }) =>
+          row.original.last_used_at ? (
+            <RelativeTime date={row.original.last_used_at} />
+          ) : (
+            <span className="text-muted-foreground text-xs">Never</span>
+          ),
+      },
+      {
+        accessorKey: 'expires_at',
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Expires" />,
+        cell: ({ row }) =>
+          row.original.expires_at ? (
+            <RelativeTime date={row.original.expires_at} />
+          ) : (
+            <span className="text-muted-foreground text-xs">Never</span>
+          ),
+      },
+      {
+        id: 'actions',
+        header: () => <div className="text-end">Actions</div>,
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => <KeyRowActions k={row.original} onChanged={() => mutate()} />,
+      },
+    ],
+    [mutate]
+  )
+
+  const stats = useMemo(() => {
+    const active = keys.filter(isActive).length
+    const expired = keys.filter(isExpired).length
+    const scopes = new Set<string>()
+    keys.forEach((k) => k.scopes.forEach((s) => scopes.add(s)))
+    return { total: keys.length, active, expired, scopes: scopes.size }
+  }, [keys])
+
+  if (isLoading) return <LoadingSkeleton />
+  // A failed read must not render as "No API keys yet" with all-zero stats —
+  // an admin could conclude none exist and mint a duplicate key.
+  if (error)
+    return (
+      <Main>
+        <PageHeader title="API keys" description="Keys for scripts and tools that call the API." />
+        <ErrorState title="API keys" error={error} onRetry={() => void mutate()} />
+      </Main>
+    )
+
+  return (
+    <Main>
+      <PageHeader title="API keys" description="Keys for scripts and tools that call the API.">
+        {canGenerate && (
+          <Button size="sm" onClick={() => setGenOpen(true)}>
+            <Plus className="me-2 h-4 w-4" />
+            Generate API Key
+          </Button>
+        )}
+      </PageHeader>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-4">
+        <StatsCard title="Total Keys" value={stats.total} icon={KeyRound} description="All keys" />
+        <StatsCard
+          title="Active Keys"
+          value={stats.active}
+          icon={ShieldCheck}
+          changeType={stats.active > 0 ? 'positive' : 'neutral'}
+          description="Currently valid"
+        />
+        <StatsCard
+          title="Expired Keys"
+          value={stats.expired}
+          icon={AlertTriangle}
+          changeType={stats.expired > 0 ? 'negative' : 'neutral'}
+          description="Need rotation"
+        />
+        <StatsCard
+          title="Unique Scopes"
+          value={stats.scopes}
+          icon={Eye}
+          description="Permissions granted"
+        />
+      </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5" />
+            API Key Management
+          </CardTitle>
+          <CardDescription>
+            {ownKeysOnly
+              ? 'Your own keys. Owners and administrators see and manage every key in the organization.'
+              : 'Each key is scoped to specific permissions and can be set to expire automatically.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {keys.length === 0 ? (
+            <EmptyState
+              icon={KeyRound}
+              title="No API keys yet"
+              description={
+                canGenerate
+                  ? 'Generate a scoped key for programmatic access to the API.'
+                  : 'Ask an owner or administrator if you need a key.'
+              }
+              card={false}
+              action={
+                canGenerate ? (
+                  <Button size="sm" onClick={() => setGenOpen(true)}>
+                    <Plus className="me-2 h-4 w-4" />
+                    Generate API Key
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={keys}
+              searchPlaceholder="Search API keys..."
+              emptyMessage="No API keys"
+              emptyDescription="No API keys match your search."
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <GenerateKeyDialog
+        open={genOpen}
+        onOpenChange={setGenOpen}
+        onCreated={(plaintext) => {
+          setNewKey(plaintext)
+          mutate()
+        }}
+      />
+      <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
+    </Main>
+  )
+}

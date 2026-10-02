@@ -1,0 +1,834 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"sync"
+	"time"
+
+	"github.com/openctemio/openctem/api/internal/app/command"
+
+	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/app/defectdojo"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/scancoverage"
+	"github.com/openctemio/openctem/api/internal/app/sla"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
+	"github.com/openctemio/openctem/api/internal/infra/jobs"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+)
+
+// ddTenantSyncerAdapter adapts *defectdojo.SyncService (which returns a
+// SyncResult) to the scheduler's error-only TenantSyncer, so the controller
+// package need not import app/defectdojo.
+type ddTenantSyncerAdapter struct{ svc *defectdojo.SyncService }
+
+func (a ddTenantSyncerAdapter) SyncTenant(ctx context.Context, tenantID shared.ID) error {
+	_, err := a.svc.SyncTenant(ctx, tenantID)
+	return err
+}
+
+// controllerMetrics returns the process-wide controller metrics collector.
+//
+// It is memoised because controller.NewPrometheusMetrics uses promauto, which
+// registers on the Prometheus default registerer and panics on a duplicate
+// registration. NewWorkers is called once by the server, but a test (or any
+// future second composition root) that builds Workers twice would otherwise
+// take the process down.
+var controllerMetrics = sync.OnceValue(func() controller.Metrics {
+	return controller.NewPrometheusMetrics("openctem")
+})
+
+// Workers holds all background worker instances.
+type Workers struct {
+	JobWorker                 *jobs.Worker
+	SensorHealthChecker       *jobs.SensorHealthChecker
+	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
+	ScanScheduler             *app.ScanScheduler
+	CommandExpirationChecker  *command.ExpirationChecker
+	OutboxScheduler           *outbox.Scheduler
+	FindingLifecycleScheduler *app.FindingLifecycleScheduler
+	NotificationCleanupTicker *time.Ticker
+	notificationService       *app.NotificationService
+	// SessionCleanupTicker periodically deletes expired/revoked
+	// sessions and refresh tokens. Without this the tables grow
+	// unboundedly because logout marks rows as 'revoked' (not deleted)
+	// and refresh-token rotation marks old rows as 'used' (not deleted).
+	// SessionService.CleanupExpiredSessions() exists in the codebase
+	// but was never wired into a worker until this hookup.
+	SessionCleanupTicker *time.Ticker
+	sessionService       *app.SessionService
+	ControllerManager    *controller.Manager
+
+	// cleanupStopCh signals the ticker-driven cleanup goroutines (notification
+	// + session) to exit; cleanupWG lets Stop() join them. time.Ticker.Stop()
+	// does not close its channel, so a bare `for range ticker.C` loop would
+	// leak the goroutine — these let them shut down cleanly.
+	cleanupStopCh chan struct{}
+	cleanupWG     sync.WaitGroup
+
+	// AssetLifecycleWorker is exposed so the HTTP layer can invoke
+	// the dry-run endpoint against the same worker instance the
+	// cron controller uses. Keeps us from double-constructing the
+	// worker and, more importantly, means settings changes observed
+	// by the cron side are visible to the dry-run side on the next
+	// tick.
+	AssetLifecycleWorker *assetapp.AssetLifecycleWorker
+}
+
+// WorkerDeps contains dependencies needed to create workers.
+type WorkerDeps struct {
+	Config   *config.Config
+	Log      *logger.Logger
+	DB       *sql.DB
+	Repos    *Repositories
+	Services *Services
+}
+
+// adminAuditRetentionConfig maps the operator-facing ADMIN_AUDIT_RETENTION_*
+// settings onto the controller config.
+//
+// This used to be a literal with DryRun hardcoded to true, so admin_audit_logs
+// grew forever and no environment variable could change that. DryRun still
+// DEFAULTS to true (see config.AdminAuditRetentionConfig) — the point is that
+// an operator can now turn it off.
+func adminAuditRetentionConfig(cfg *config.Config, log *logger.Logger) *controller.AuditRetentionControllerConfig {
+	return &controller.AuditRetentionControllerConfig{
+		Interval:      cfg.AdminAuditRetention.Interval,
+		RetentionDays: cfg.AdminAuditRetention.RetentionDays,
+		BatchSize:     cfg.AdminAuditRetention.BatchSize,
+		DryRun:        cfg.AdminAuditRetention.DryRun,
+		Logger:        log.With("controller", "admin-audit-retention"),
+	}
+}
+
+// NewWorkers initializes all background workers.
+func NewWorkers(deps *WorkerDeps) (*Workers, error) {
+	cfg := deps.Config
+	log := deps.Log
+	repos := deps.Repos
+	svc := deps.Services
+
+	w := &Workers{}
+
+	// Initialize the job worker. This is unconditional on purpose: the asynq
+	// server consumes AI-triage, Jira-sync and GitHub-sync tasks as well as
+	// email, and those are enqueued regardless of SMTP. Gating the worker on
+	// svc.Email meant a default deployment (SMTP_ENABLED=false) enqueued those
+	// tasks and never consumed them. jobs.NewWorker logs which handlers it had
+	// to skip.
+	var err error
+	w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize sensor health checker if worker is enabled
+	if cfg.Worker.Enabled {
+		w.SensorHealthChecker = jobs.NewSensorHealthChecker(repos.Sensor, &cfg.Worker, log)
+		log.Info("sensor health checker initialized",
+			"heartbeat_timeout", cfg.Worker.HeartbeatTimeout,
+			"check_interval", cfg.Worker.HealthCheckInterval,
+		)
+	}
+
+	// Initialize AI triage recovery job if AI triage service is available
+	if svc.AITriage != nil && cfg.AITriage.RecoveryEnabled {
+		w.AITriageRecoveryJob = jobs.NewAITriageRecoveryJob(svc.AITriage, &cfg.AITriage, log)
+		log.Info("AI triage recovery job initialized",
+			"interval", cfg.AITriage.RecoveryInterval,
+			"stuck_duration", cfg.AITriage.RecoveryStuckDuration,
+			"batch_size", cfg.AITriage.RecoveryBatchSize,
+		)
+	}
+
+	// Initialize scan scheduler
+	w.ScanScheduler = app.NewScanScheduler(
+		repos.Scan,
+		svc.Scan,
+		app.ScanSchedulerConfig{
+			CheckInterval: time.Minute,
+			BatchSize:     50,
+		},
+		log,
+	)
+
+	// Initialize command expiration checker
+	w.CommandExpirationChecker = command.NewExpirationChecker(
+		repos.Command,
+		svc.Pipeline,
+		command.ExpirationCheckerConfig{
+			CheckInterval: time.Minute,
+			// Owns platform-job queue expiry too, because expiring a job has to
+			// tell the owning pipeline run why. Previously JobRecoveryController's
+			// MaxQueueMinutes, where the expiry notified nobody.
+			MaxQueueMinutes: 60,
+		},
+		log,
+	)
+
+	// Initialize notification scheduler
+	w.OutboxScheduler = outbox.NewScheduler(
+		svc.Outbox,
+		outbox.DefaultSchedulerConfig(),
+		log,
+	)
+
+	// Initialize finding lifecycle scheduler
+	// Handles feature branch finding expiry
+	w.FindingLifecycleScheduler = app.NewFindingLifecycleScheduler(
+		repos.Finding,
+		repos.Tenant,
+		app.DefaultFindingLifecycleSchedulerConfig(),
+		log,
+	)
+
+	// Store notification service reference for cleanup worker
+	w.notificationService = svc.Notification
+
+	// Store session service reference for the session cleanup worker.
+	// Started in Workers.Start() — see comment on SessionCleanupTicker.
+	w.sessionService = svc.Session
+
+	// Note: Template sync uses lazy sync on scan trigger, no background worker needed.
+	// Templates are synced on-demand when a scan uses custom templates.
+
+	// Initialize controller manager for background tasks.
+	//
+	// Metrics is the single seam through which every registered controller is
+	// observed — Manager.reconcileOnce records duration/items/errors per
+	// controller name, and skips all of it when Metrics is nil. It was nil, so
+	// none of the background controllers were observable: a reaper that errors
+	// on every tick looked identical to one with nothing to do. The collectors
+	// register on the Prometheus default registerer, which is what /metrics
+	// serves.
+	w.ControllerManager = controller.NewManager(&controller.ManagerConfig{
+		Logger:  log.With("component", "controller-manager"),
+		Metrics: controllerMetrics(),
+	})
+
+	// Register controllers
+	sensorHealth := controller.NewSensorHealthController(
+		repos.Sensor,
+		svc.Audit,
+		&controller.SensorHealthControllerConfig{
+			Interval:     30 * time.Second,
+			StaleTimeout: 90 * time.Second,
+			Logger:       log.With("controller", "sensor-health"),
+		},
+	)
+	// sensor.offline was a subscribable event type that nothing emitted; the
+	// controller is the one place that sees the online -> offline transition.
+	if svc.Outbox != nil {
+		sensorHealth.SetNotifier(svc.Outbox)
+	}
+	// The offline transition also goes on the sensor's activity timeline.
+	if svc.Sensor != nil {
+		sensorHealth.SetEventRecorder(svc.Sensor)
+	}
+	w.ControllerManager.Register(sensorHealth)
+
+	w.ControllerManager.Register(controller.NewJobRecoveryController(
+		repos.Command,
+		&controller.JobRecoveryControllerConfig{
+			Interval:              60 * time.Second,
+			StuckThresholdMinutes: 30,
+			MaxRetries:            3,
+			Logger:                log.With("controller", "job-recovery"),
+		},
+	))
+
+	// Scan timeout controller: enforces per-scan timeout_seconds on running pipeline_runs
+	w.ControllerManager.Register(controller.NewScanTimeoutController(
+		repos.PipelineRun,
+		&controller.ScanTimeoutControllerConfig{
+			Interval: 60 * time.Second,
+			Logger:   log.With("controller", "scan-timeout"),
+		},
+	))
+
+	// Scan retry controller: dispatches automatic retries for failed scans
+	// with retry budget remaining (uses exponential backoff)
+	w.ControllerManager.Register(controller.NewScanRetryController(
+		repos.PipelineRun,
+		svc.Scan, // scan service implements RetryDispatcher
+		&controller.ScanRetryControllerConfig{
+			Interval:  60 * time.Second,
+			BatchSize: 100,
+			Logger:    log.With("controller", "scan-retry"),
+		},
+	))
+
+	// Coverage scheduler: license-aware rolling Tenable scan coverage (RFC-007).
+	// Dispatches license-sized batches to runners for coverage-enabled, unlimited
+	// (Nessus Pro) Tenable integrations and advances the rotation cursor. Capped
+	// engines (Tenable.sc) are skipped until active-IP accounting ships.
+	w.ControllerManager.Register(controller.NewCoverageScheduler(
+		repos.Integration,
+		repos.ScanCoverage,
+		scancoverage.NewDispatcher(repos.Command),
+		&controller.CoverageSchedulerConfig{
+			Interval: 5 * time.Minute,
+			Logger:   log.With("controller", "coverage-scheduler"),
+		},
+	))
+
+	// Report scheduler: runs due report_schedules, renders the executive summary,
+	// and emails it to recipients. Only registered when email is configured
+	// (otherwise every run would fail delivery). This is the controller that was
+	// missing — schedules could be created in the UI but never executed.
+	if svc.Email != nil && svc.Email.IsConfigured() {
+		w.ControllerManager.Register(controller.NewReportScheduler(
+			repos.ReportSchedule,
+			repos.Finding,
+			svc.Email,
+			nil,        // TenantNamer optional; report header falls back to tenant id
+			svc.Module, // ModuleGuard: skip tenants without the reports module
+			controller.ReportSchedulerConfig{Interval: time.Minute},
+			log,
+		))
+	}
+
+	w.ControllerManager.Register(controller.NewDataExpirationController(
+		repos.Suppression,
+		repos.ScopeExcl,
+		repos.Audit,
+		&controller.DataExpirationControllerConfig{
+			Interval:           1 * time.Hour,
+			AuditRetentionDays: 365,
+			Logger:             log.With("controller", "data-expiration"),
+		},
+	))
+
+	w.ControllerManager.Register(controller.NewRoleSyncController(
+		deps.DB,
+		&controller.RoleSyncControllerConfig{
+			Interval: 1 * time.Hour,
+			Logger:   log.With("controller", "role-sync"),
+		},
+	))
+
+	// Domain re-verify sweep (SSO P1): periodically re-checks verified domains;
+	// a domain whose TXT record vanished is downgraded to failed (fail-closed),
+	// so a lapsed/hijacked domain loses SSO JIT authority.
+	if svc.DomainVerify != nil {
+		w.ControllerManager.Register(controller.NewDomainReverifyController(
+			svc.DomainVerify,
+			&controller.DomainReverifyControllerConfig{
+				Interval:  12 * time.Hour,
+				Staleness: 24 * time.Hour,
+				BatchSize: 100,
+				Logger:    log.With("controller", "domain-reverify"),
+			},
+		))
+	}
+
+	w.ControllerManager.Register(controller.NewApprovalExpirationController(
+		repos.FindingApproval,
+		repos.Finding,
+		&controller.ApprovalExpirationControllerConfig{
+			Interval:  1 * time.Hour,
+			BatchSize: 100,
+			Logger:    log.With("controller", "approval-expiration"),
+		},
+	))
+
+	// Asset identity model: derive identifiers for assets that predate it and
+	// queue suspected duplicates for review (never merges).
+	w.ControllerManager.Register(controller.NewAssetIdentityBackfillController(
+		ingest.NewIdentityBackfill(repos.AssetIdentityBackfill, repos.AssetIdentifier, repos.AssetDedup,
+			log.With("controller", "asset-identity-backfill")),
+	))
+
+	w.ControllerManager.Register(controller.NewScopeReconciliationController(
+		repos.AccessControl,
+		svc.ScopeRule,
+		&controller.ScopeReconciliationControllerConfig{
+			Interval: 30 * time.Minute,
+			Logger:   log.With("controller", "scope-reconciliation"),
+		},
+	))
+
+	// RFC-013 Phase 2c: periodically pull due DefectDojo integrations so the
+	// co-existence sync is hands-off (nil-safe when the sync service is absent).
+	if svc.DefectDojoSync != nil {
+		w.ControllerManager.Register(controller.NewDefectDojoSyncController(
+			repos.Integration,
+			ddTenantSyncerAdapter{svc: svc.DefectDojoSync},
+			log,
+		))
+	}
+
+	// Threat intel — daily EPSS + KEV refresh + auto-escalate KEV findings
+	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
+		svc.ThreatIntel,
+		repos.KEVEscalator,
+		svc.ReclassifyQueue,
+		log.With("controller", "threat-intel-refresh"),
+	))
+
+	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
+	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
+	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
+		svc.CTEMID,
+		log.With("controller", "ctem-id-refresh"),
+	))
+
+	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data
+	// external-exposure connector. Per tenant it queries crt.sh for the tenant's
+	// domain assets (SSRF-guarded, rate-limited, body-bounded) and emits
+	// subdomain_discovered + certificate_expiring ExposureEvents. Inert until a
+	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
+	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
+		w.ControllerManager.Register(controller.NewCertMonitorController(
+			svc.CertMonitor,
+			repos.Tenant,
+			&controller.CertMonitorControllerConfig{
+				Interval:    cfg.Worker.CertMonitorInterval,
+				Logger:      log.With("controller", "cert-monitor"),
+				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
+			},
+		))
+	}
+
+	// Owner resolution — resolve owner_ref (email) to owner_id for assets
+	w.ControllerManager.Register(controller.NewOwnerResolutionController(
+		deps.DB,
+		log.With("controller", "owner-resolution"),
+	))
+
+	// Scheduled SCM repository/branch sync — disabled unless SCM_SYNC_INTERVAL
+	// is set. Imports repos + branches for connected SCM integrations and flips
+	// connections to "error" when their tokens expire.
+	if cfg.Worker.SCMSyncInterval > 0 && svc.Integration != nil {
+		w.ControllerManager.Register(controller.NewSCMSyncController(
+			svc.Integration,
+			cfg.Worker.SCMSyncInterval,
+			log.With("controller", "scm-sync"),
+		))
+	}
+
+	// B1/B2 priority reclassification sweep — drains the in-memory
+	// queue populated by ControlChangePublisher (and future EPSS/KEV/
+	// rule producers) and re-runs ClassifyFinding on the scoped set.
+	// Nil-safe only against a missing queue/reclassifier — svc itself
+	// is a required argument to NewWorkers (an earlier redundant
+	// svc != nil check confused staticcheck; the function dereferences
+	// svc unconditionally above this point).
+	if svc.ReclassifyQueue != nil && svc.Reclassifier != nil {
+		w.ControllerManager.Register(controller.NewPriorityReclassifyController(
+			svc.ReclassifyQueue,
+			svc.Reclassifier,
+			&controller.PriorityReclassifyConfig{
+				Logger: log.With("controller", "priority-reclassify"),
+			},
+		))
+
+		// Periodic *producer* for the same queue: on a low-frequency timer it
+		// enqueues one whole-tenant reclassify per active tenant. Without this
+		// the consumer above has nothing to drain except discrete producer
+		// events (control-change, KEV/EPSS refresh), so never-classified
+		// findings (priority_class IS NULL) and slow EPSS drift are never
+		// re-swept. Nil-safe on a missing queue/tenant repo.
+		if repos.Tenant != nil {
+			w.ControllerManager.Register(controller.NewPriorityReclassifySweepController(
+				svc.ReclassifyQueue,
+				repos.Tenant,
+				&controller.PriorityReclassifySweepConfig{
+					Interval: 12 * time.Hour,
+					Logger:   log.With("controller", "priority-reclassify-sweep"),
+				},
+			))
+		}
+	}
+
+	// SLA escalation — marks overdue findings as breached every 15 min (RFC-005 Gap 7).
+	// B4: attach outbox publisher so each breach fans out as
+	// a notification. Nil-safe when Outbox service isn't configured.
+	slaEscalation := controller.NewSLAEscalationController(
+		deps.DB,
+		log.With("controller", "sla-escalation"),
+	)
+	if svc != nil && svc.Outbox != nil {
+		slaEscalation.SetBreachPublisher(sla.NewBreachOutboxAdapter(svc.Outbox))
+		// Also fan out "approaching deadline" warnings (previously the warning
+		// pass updated sla_status but notified no one).
+		slaEscalation.SetWarningPublisher(sla.NewWarningOutboxAdapter(svc.Outbox))
+	}
+	w.ControllerManager.Register(slaEscalation)
+
+	// Risk snapshot — computes daily risk/MTTR/SLA metrics per tenant (RFC-005 Gap 4)
+	w.ControllerManager.Register(controller.NewRiskSnapshotController(
+		deps.DB,
+		log.With("controller", "risk-snapshot"),
+	))
+
+	// Remediation progress — periodically refresh campaign finding counts and
+	// auto-complete campaigns whose findings are all resolved.
+	if svc != nil && svc.RemediationCampaign != nil {
+		w.ControllerManager.Register(controller.NewRemediationProgressController(
+			svc.RemediationCampaign,
+			30*time.Minute,
+			log.With("controller", "remediation-progress"),
+		))
+	}
+
+	// Control test scheduler — daily sweep to mark stale detection coverage as overdue
+	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
+		repos.ControlTest,
+		&controller.ControlTestSchedulerConfig{
+			Interval:    24 * time.Hour,
+			StaleDays:   30,
+			BatchSize:   500,
+			Logger:      log.With("controller", "control-test-scheduler"),
+			ModuleGuard: svc.Module, // skip tenants without the control-testing module
+		},
+	))
+
+	// F-13: Priority-class audit log retention. Prevents unbounded growth of
+	// priority_class_audit_log — every classification/enrichment writes a row.
+	w.ControllerManager.Register(controller.NewPriorityAuditRetentionController(
+		repos.PriorityAudit,
+		&controller.PriorityAuditRetentionConfig{
+			Interval:      24 * time.Hour,
+			RetentionDays: 180,
+			Logger:        log.With("controller", "priority-audit-retention"),
+		},
+	))
+
+	// Sensor activity timeline retention: sensor_events past 90 days.
+	if repos.SensorEvent != nil {
+		w.ControllerManager.Register(controller.NewSensorEventRetentionController(
+			repos.SensorEvent,
+			&controller.SensorEventRetentionConfig{
+				Interval:      6 * time.Hour,
+				RetentionDays: 90,
+				Logger:        log.With("controller", "sensor-event-retention"),
+			},
+		))
+	}
+
+	// Platform job queue priority rebalancing. Without this the platform
+	// command queue stays strictly FIFO and a noisy tenant can starve
+	// quieter ones. Runs every 60 s — cheap SQL update, safe default.
+	w.ControllerManager.Register(controller.NewQueuePriorityController(
+		repos.Command,
+		&controller.QueuePriorityControllerConfig{
+			Interval: 60 * time.Second,
+			Logger:   log.With("controller", "queue-priority"),
+		},
+	))
+
+	// Admin-audit-log retention. Complements DataExpirationController
+	// (which handles tenant audit_logs) by pruning the platform-level
+	// admin_audit_logs table on the same 365-day window.
+	//
+	// Every knob is operator-configurable (ADMIN_AUDIT_RETENTION_*).
+	// DryRun defaults to true so an upgrade never silently starts deleting
+	// audit history: the controller reports what it WOULD delete and an
+	// operator promotes to ADMIN_AUDIT_RETENTION_DRY_RUN=false once the
+	// counts look right. Previously DryRun was hardcoded true with no way
+	// to turn it off, so admin_audit_logs grew forever.
+	if cfg.AdminAuditRetention.Enabled {
+		arCfg := adminAuditRetentionConfig(cfg, log)
+		w.ControllerManager.Register(controller.NewAuditRetentionController(repos.AdminAuditLog, arCfg))
+		log.Info("admin audit retention controller registered",
+			"retention_days", arCfg.RetentionDays,
+			"dry_run", arCfg.DryRun,
+			"interval", arCfg.Interval,
+		)
+	}
+
+	// Audit hash-chain integrity verification. The admin endpoint
+	// GET /api/v1/audit-logs/verify is pull-based; this controller
+	// runs the same VerifyChain on every active tenant once an hour
+	// and emits an ERROR-level log (SIEM alert keyword
+	// "audit_chain_break") for every break. Closes the MTTD gap for
+	// tamper events where the endpoint is never called.
+	w.ControllerManager.Register(controller.NewAuditChainVerifyController(
+		svc.Audit,
+		repos.Tenant,
+		&controller.AuditChainVerifyControllerConfig{
+			Interval:       time.Hour,
+			PerTenantLimit: 10000,
+			Logger:         log.With("controller", "audit-chain-verify"),
+		},
+	))
+
+	// Asset lifecycle worker. Demotes assets that no scanner or
+	// integration has re-observed within each tenant's configured
+	// threshold. Backward compatible by default: a tenant that has
+	// not enabled the feature in its settings is skipped entirely
+	// inside the worker, so registering this controller is safe for
+	// every deployment even before operators opt in.
+	lifecycleWorker := assetapp.NewAssetLifecycleWorker(deps.DB, repos.Tenant, log)
+	lifecycleWorker.SetAuditService(svc.Audit)
+	lifecycleWorker.SetStateHistoryRepository(repos.AssetStateHistory)
+	w.ControllerManager.Register(controller.NewAssetLifecycleController(
+		lifecycleWorker,
+		repos.Tenant,
+		&controller.AssetLifecycleControllerConfig{
+			Interval: 24 * time.Hour,
+			Logger:   log.With("controller", "asset-lifecycle"),
+		},
+	))
+	// Expose the worker to the HTTP layer so the admin dry-run
+	// endpoint can call it without a duplicate instance.
+	w.AssetLifecycleWorker = lifecycleWorker
+
+	// Asset-graph enrichment. Infers high-confidence Exposes (host→service)
+	// and RunsOn (application→host) edges from data scanners already ingest,
+	// so the attack-path / exposure-chain / reachability engines have edges
+	// beyond DNS to traverse over historical assets. Idempotent (edges use
+	// ON CONFLICT DO NOTHING); ambiguous matches are filed as suggestions for
+	// operator review rather than auto-applied.
+	if svc.RelationshipSuggestion != nil {
+		w.ControllerManager.Register(controller.NewGraphEnrichmentController(
+			svc.RelationshipSuggestion,
+			repos.Tenant,
+			&controller.GraphEnrichmentControllerConfig{
+				Interval:    time.Hour,
+				Logger:      log.With("controller", "graph-enrichment"),
+				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
+			},
+		))
+	}
+
+	// Threat-model refresh. Regenerates each tenant's tenant-wide threat model
+	// so it reflects the latest exposure chains and asset-graph edges (e.g.
+	// edges the graph-enrichment pass above just inferred). Without this,
+	// threat_model_threats only changes on manual API-triggered generation,
+	// starving the priority-classification threat-model oracle of fresh data.
+	// The generator has built-in no-op detection (InputHash), so a slower
+	// cadence than graph-enrichment keeps cost down without going stale.
+	if svc.ThreatModel != nil {
+		w.ControllerManager.Register(controller.NewThreatModelRefreshController(
+			svc.ThreatModel,
+			repos.Tenant,
+			&controller.ThreatModelRefreshControllerConfig{
+				Interval:    2 * time.Hour,
+				Logger:      log.With("controller", "threat-model-refresh"),
+				ModuleGuard: svc.Module, // skip tenants without the threat-model module
+			},
+		))
+	}
+
+	// Async-ingest worker (RFC-005). Drains the ingest_jobs queue through the
+	// normal ingest pipeline. Safe to register unconditionally: until the
+	// accept path enqueues jobs (async mode), the queue is empty and the
+	// worker reconciles to zero. Bounded batch/per-tick caps are the
+	// backpressure that protects the DB pool under heavy ingest.
+	if svc.Ingest != nil && repos.IngestJob != nil {
+		jobs := ingest.NewJobProcessor(svc.Ingest)
+		// Protocol v2 results jobs (RFC-026) run on the same queue whatever
+		// INGEST_MODE is, whenever v2 results are enabled.
+		if cfg.Ingest.V2Results && repos.IngestReport != nil {
+			jobs.SetV2(ingest.NewV2JobProcessor(svc.Ingest, repos.IngestReport, repos.IngestJob,
+				protov2.DefaultLimits(), ingest.BlindingGuard{
+					Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
+				}, log))
+		}
+		w.ControllerManager.Register(controller.NewIngestWorkerController(
+			repos.IngestJob,
+			jobs,
+			&controller.IngestWorkerControllerConfig{
+				Interval:     2 * time.Second,
+				BatchSize:    5,
+				MaxPerTick:   50,
+				LeaseTimeout: 5 * time.Minute,
+				Logger:       log.With("controller", "ingest-worker"),
+			},
+		))
+	}
+
+	return w, nil
+}
+
+// Start starts all background workers.
+func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
+	// Start job worker
+	if w.JobWorker != nil {
+		go func() {
+			log.Info("starting job worker")
+			if err := w.JobWorker.Start(); err != nil {
+				log.Error("job worker error", "error", err)
+			}
+		}()
+	}
+
+	// Start sensor health checker
+	if w.SensorHealthChecker != nil {
+		w.SensorHealthChecker.Start()
+	}
+
+	// Start AI triage recovery job
+	if w.AITriageRecoveryJob != nil {
+		w.AITriageRecoveryJob.Start()
+	}
+
+	// Start scan scheduler
+	w.ScanScheduler.Start()
+
+	// Start command expiration checker
+	w.CommandExpirationChecker.Start()
+
+	// Start notification scheduler
+	w.OutboxScheduler.Start()
+
+	// Start finding lifecycle scheduler
+	w.FindingLifecycleScheduler.Start()
+
+	// Shared stop channel for the ticker-driven cleanup goroutines below.
+	w.cleanupStopCh = make(chan struct{})
+
+	// Start notification cleanup worker (runs daily, 90-day retention)
+	if w.notificationService != nil {
+		w.NotificationCleanupTicker = time.NewTicker(24 * time.Hour)
+		w.cleanupWG.Add(1)
+		go func() {
+			defer w.cleanupWG.Done()
+			for {
+				select {
+				case <-w.cleanupStopCh:
+					return
+				case <-w.NotificationCleanupTicker.C:
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					deleted, err := w.notificationService.CleanupOld(cleanupCtx, 90)
+					if err != nil {
+						log.Error("notification cleanup failed", "error", err)
+					} else if deleted > 0 {
+						log.Info("notification cleanup completed", "deleted", deleted)
+					}
+					cancel()
+				}
+			}
+		}()
+		log.Info("notification cleanup worker started", "interval", "24h", "retention_days", 90)
+	}
+
+	// Start session + refresh-token cleanup worker.
+	//
+	// PURPOSE: delete rows that the regular code paths leave behind.
+	// Logout marks sessions as 'revoked' (UPDATE, not DELETE). Refresh
+	// token rotation marks the old token as used (UPDATE, not DELETE).
+	// Without this worker the sessions and refresh_tokens tables grow
+	// unboundedly with every login.
+	//
+	// SCHEDULE: every hour. Cheap query (single DELETE filtered by
+	// expires_at + status), runs against indexed columns. Hourly
+	// keeps the tables tight without spamming the DB. We also fire
+	// once at startup so a freshly-deployed server reclaims any
+	// backlog from when this worker didn't exist.
+	if w.sessionService != nil {
+		runCleanup := func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			sessionsDeleted, tokensDeleted, err := w.sessionService.CleanupExpiredSessions(cleanupCtx)
+			if err != nil {
+				log.Error("session cleanup failed", "error", err)
+				return
+			}
+			if sessionsDeleted > 0 || tokensDeleted > 0 {
+				log.Info("session cleanup completed",
+					"sessions_deleted", sessionsDeleted,
+					"refresh_tokens_deleted", tokensDeleted,
+				)
+			}
+		}
+		w.SessionCleanupTicker = time.NewTicker(1 * time.Hour)
+		w.cleanupWG.Add(1)
+		go func() {
+			defer w.cleanupWG.Done()
+			// Initial run on startup to clear historical backlog. Done INSIDE the
+			// tracked goroutine (not a bare `go runCleanup()`) so graceful shutdown
+			// — Workers.Stop() → cleanupWG.Wait() — waits for it to finish before
+			// the DB is torn down, instead of leaving it racing a closed pool.
+			runCleanup()
+			for {
+				select {
+				case <-w.cleanupStopCh:
+					return
+				case <-w.SessionCleanupTicker.C:
+					runCleanup()
+				}
+			}
+		}()
+		log.Info("session cleanup worker started", "interval", "1h")
+	}
+
+	// Start controller manager
+	if err := w.ControllerManager.Start(ctx); err != nil {
+		return err
+	}
+	log.Info("controller manager started", "controllers", w.ControllerManager.ControllerNames())
+
+	return nil
+}
+
+// Stop stops all background workers gracefully.
+func (w *Workers) Stop(log *logger.Logger) {
+	// Stop job worker first
+	if w.JobWorker != nil {
+		log.Info("stopping job worker...")
+		w.JobWorker.Shutdown()
+		log.Info("job worker stopped")
+	}
+
+	// Stop sensor health checker
+	if w.SensorHealthChecker != nil {
+		w.SensorHealthChecker.Stop()
+	}
+
+	// Stop AI triage recovery job
+	if w.AITriageRecoveryJob != nil {
+		w.AITriageRecoveryJob.Stop()
+	}
+
+	// Stop scan scheduler
+	log.Info("stopping scan scheduler...")
+	w.ScanScheduler.Stop()
+	log.Info("scan scheduler stopped")
+
+	// Stop command expiration checker
+	log.Info("stopping command expiration checker...")
+	w.CommandExpirationChecker.Stop()
+	log.Info("command expiration checker stopped")
+
+	// Stop notification scheduler
+	log.Info("stopping notification scheduler...")
+	w.OutboxScheduler.Stop()
+	log.Info("notification scheduler stopped")
+
+	// Stop finding lifecycle scheduler
+	log.Info("stopping finding lifecycle scheduler...")
+	w.FindingLifecycleScheduler.Stop()
+	log.Info("finding lifecycle scheduler stopped")
+
+	// Stop the ticker-driven cleanup workers. Signal them to exit, stop the
+	// tickers, then join — time.Ticker.Stop() alone doesn't close the channel,
+	// so the goroutines need the stop signal to actually return.
+	if w.cleanupStopCh != nil {
+		log.Info("stopping cleanup workers...")
+		close(w.cleanupStopCh)
+		if w.NotificationCleanupTicker != nil {
+			w.NotificationCleanupTicker.Stop()
+		}
+		if w.SessionCleanupTicker != nil {
+			w.SessionCleanupTicker.Stop()
+		}
+		w.cleanupWG.Wait()
+		log.Info("cleanup workers stopped")
+	}
+
+	// Stop controller manager
+	log.Info("stopping controller manager...")
+	if err := w.ControllerManager.Stop(); err != nil {
+		log.Error("controller manager stop error", "error", err)
+	}
+	log.Info("controller manager stopped")
+}

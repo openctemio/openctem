@@ -1,0 +1,6 @@
+# Verified false positives (fingerprint = commit:file:rule:line). Add a line
+# here only after confirming the match is not a real credential.
+# Throwaway CI values, replaced in the next commit by per-run openssl secrets.
+a3259a357b33a44c832ab98a2d2c9bfc137c3191:.github/workflows/ci.yml:generic-api-key:322
+# A list of URL scheme prefixes the asset normaliser strips, not a connection string.
+5a9f295a3cbbee6b0997adbbfb244b036eedccd1:pkg/domain/asset/normalize.go:redis-connection-string:368

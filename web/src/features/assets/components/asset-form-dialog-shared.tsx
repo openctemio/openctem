@@ -1,0 +1,488 @@
+'use client'
+
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { normalizeAssetName } from '@/features/assets/lib/normalize'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { AssetGroupSelect } from '@/features/asset-groups'
+import type { FormFieldConfig } from '../types/page-config.types'
+import type { Asset } from '../types'
+import { IMPACT_RATING_OPTIONS } from '../types'
+
+interface AssetFormDialogSharedProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description?: string
+  fields: FormFieldConfig[]
+  asset?: Asset | null
+  assetType?: string // For normalize preview (RFC-001)
+  onSubmit: (data: Record<string, unknown>) => Promise<boolean>
+  isSubmitting: boolean
+  includeGroupSelect?: boolean
+}
+
+// Universal CTEM classification fields shown on every asset form regardless of
+// per-type config. The backend infers these on ingest, but an operator must be
+// able to set/override them — previously they were hardcoded on create
+// (medium/internal/unknown) and never editable.
+const CRITICALITY_OPTIONS = [
+  { value: 'critical', label: 'Critical' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+]
+const SCOPE_OPTIONS = [
+  { value: 'internal', label: 'Internal' },
+  { value: 'external', label: 'External' },
+  { value: 'cloud', label: 'Cloud' },
+  { value: 'partner', label: 'Partner' },
+  { value: 'vendor', label: 'Vendor' },
+  { value: 'shadow', label: 'Shadow IT' },
+]
+const EXPOSURE_OPTIONS = [
+  { value: 'public', label: 'Public' },
+  { value: 'restricted', label: 'Restricted' },
+  { value: 'private', label: 'Private' },
+  { value: 'isolated', label: 'Isolated' },
+  { value: 'unknown', label: 'Unknown' },
+]
+
+// CTEM Scoping critical-asset register: CIA impact ratings (api #467). A
+// dimension may be left unrated. Radix <SelectItem> can't use an empty
+// value, so an explicit "Not rated" option carries a sentinel that we map
+// back to '' (the value the backend interprets as "clear/unset").
+const IMPACT_UNRATED = 'unrated'
+const CIA_FIELDS = [
+  {
+    name: 'impactConfidentiality' as const,
+    label: 'Confidentiality Impact',
+  },
+  { name: 'impactIntegrity' as const, label: 'Integrity Impact' },
+  { name: 'impactAvailability' as const, label: 'Availability Impact' },
+]
+
+function getInitialValues(
+  fields: FormFieldConfig[],
+  asset?: Asset | null
+): Record<string, string | boolean | number> {
+  const values: Record<string, string | boolean | number> = {}
+  for (const field of fields) {
+    if (asset) {
+      const raw = field.isMetadata
+        ? (asset.metadata as Record<string, unknown>)?.[field.name]
+        : (asset[field.name as keyof typeof asset] as unknown)
+      if (field.type === 'boolean') {
+        values[field.name] = raw === true
+      } else if (field.type === 'tags' && Array.isArray(raw)) {
+        values[field.name] = raw.join(', ')
+      } else {
+        values[field.name] = raw != null ? String(raw) : ''
+      }
+    } else {
+      values[field.name] = field.defaultValue ?? (field.type === 'boolean' ? false : '')
+    }
+  }
+  // owner_ref is a top-level Asset field exposed by the backend; surface it
+  // in every form regardless of per-type config so users can label ownership
+  // without us threading it through 24 separate config files.
+  values.ownerRef = asset?.ownerRef ?? ''
+  // Universal CTEM classification — prefill from the asset (edit) or sensible
+  // defaults (create) so the operator sees and can change what the backend inferred.
+  values.criticality = asset?.criticality ?? 'medium'
+  values.scope = asset?.scope ?? 'internal'
+  values.exposure = asset?.exposure ?? 'unknown'
+  // CIA impact ratings — default to '' (not rated). Stored as '' | rating.
+  values.impactConfidentiality = asset?.impactConfidentiality ?? ''
+  values.impactIntegrity = asset?.impactIntegrity ?? ''
+  values.impactAvailability = asset?.impactAvailability ?? ''
+  return values
+}
+
+export function AssetFormDialogShared({
+  open,
+  onOpenChange,
+  title,
+  description,
+  assetType,
+  fields,
+  asset,
+  onSubmit,
+  isSubmitting,
+  includeGroupSelect,
+}: AssetFormDialogSharedProps) {
+  const [formData, setFormData] = useState<Record<string, string | boolean | number>>(() =>
+    getInitialValues(fields, asset)
+  )
+  const [groupId, setGroupId] = useState(asset?.groupId || '')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (open) {
+      setFormData(getInitialValues(fields, asset))
+      setGroupId(asset?.groupId || '')
+      setErrors({})
+    }
+  }, [open, asset, fields])
+
+  const handleChange = useCallback((name: string, value: string | boolean | number) => {
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }, [])
+
+  // Validate required fields
+  const validate = useCallback((): boolean => {
+    const newErrors: Record<string, string> = {}
+    for (const field of fields) {
+      if (!field.required) continue
+      const raw = formData[field.name]
+      if (field.type === 'boolean') continue // booleans always have a value
+      if (raw === undefined || raw === '' || raw === null) {
+        newErrors[field.name] = `${field.label} is required`
+      }
+    }
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }, [fields, formData])
+
+  // Tags dedup and length validation
+  const sanitizeTags = useCallback((raw: string): string[] => {
+    return [
+      ...new Set(
+        raw
+          .split(',')
+          // Backend caps each tag at 50 chars (CreateAssetRequest dive,max=50);
+          // truncate to match so valid-looking input isn't rejected with a 400.
+          .map((s) => s.trim().slice(0, 50))
+          .filter(Boolean)
+      ),
+    ]
+  }, [])
+
+  const handleSubmit = async () => {
+    if (!validate()) return
+
+    const data: Record<string, unknown> = {}
+
+    for (const field of fields) {
+      const raw = formData[field.name]
+      if (field.type === 'tags' && typeof raw === 'string') {
+        data[field.name] = sanitizeTags(raw)
+      } else if (field.type === 'number' && typeof raw === 'string') {
+        data[field.name] = raw ? Number(raw) : undefined
+      } else {
+        data[field.name] = raw
+      }
+    }
+
+    // Forward owner_ref. Trim and only send when non-empty so we don't reset
+    // a previously-set value to '' on partial updates.
+    const ownerRefRaw = formData.ownerRef
+    if (typeof ownerRefRaw === 'string') {
+      const trimmed = ownerRefRaw.trim().slice(0, 500)
+      data.ownerRef = trimmed || undefined
+    }
+
+    // Forward the universal CTEM classification so create/update persist what
+    // the operator chose instead of hardcoded defaults.
+    data.criticality = formData.criticality
+    data.scope = formData.scope
+    data.exposure = formData.exposure
+
+    // Forward CIA impact ratings. '' means "not rated" — for update the
+    // backend treats '' as clear, and for create it's simply omitted.
+    for (const cia of CIA_FIELDS) {
+      data[cia.name] = formData[cia.name] ?? ''
+    }
+
+    if (includeGroupSelect) {
+      data.groupId = groupId
+    }
+
+    const success = await onSubmit(data)
+    if (success) {
+      onOpenChange(false)
+    }
+  }
+
+  // Check if form is valid (for disabling submit button)
+  const hasRequiredEmpty = useMemo(() => {
+    return fields.some((f) => {
+      if (!f.required || f.type === 'boolean') return false
+      const raw = formData[f.name]
+      return raw === undefined || raw === '' || raw === null
+    })
+  }, [fields, formData])
+
+  const renderField = (field: FormFieldConfig) => {
+    const value = formData[field.name]
+
+    switch (field.type) {
+      case 'textarea':
+        return (
+          <Textarea
+            id={field.name}
+            value={String(value ?? '')}
+            onChange={(e) => handleChange(field.name, e.target.value)}
+            placeholder={field.placeholder}
+            rows={3}
+          />
+        )
+
+      case 'select':
+        return (
+          <Select value={String(value ?? '')} onValueChange={(v) => handleChange(field.name, v)}>
+            <SelectTrigger>
+              <SelectValue
+                placeholder={field.placeholder || `Select ${field.label.toLowerCase()}`}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options?.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )
+
+      case 'boolean':
+        return (
+          <div className="flex items-center gap-2 pt-2">
+            <Checkbox
+              id={field.name}
+              checked={value === true}
+              onCheckedChange={(checked) => handleChange(field.name, checked === true)}
+            />
+            <Label htmlFor={field.name} className="text-sm font-normal cursor-pointer">
+              {field.placeholder || field.label}
+            </Label>
+          </div>
+        )
+
+      case 'number':
+        return (
+          <Input
+            id={field.name}
+            type="number"
+            value={String(value ?? '')}
+            onChange={(e) => handleChange(field.name, e.target.value)}
+            placeholder={field.placeholder}
+          />
+        )
+
+      case 'tags':
+        return (
+          <Input
+            id={field.name}
+            value={String(value ?? '')}
+            onChange={(e) => handleChange(field.name, e.target.value)}
+            placeholder={field.placeholder || 'Comma-separated values'}
+            maxLength={500}
+          />
+        )
+
+      default:
+        return (
+          <Input
+            id={field.name}
+            value={String(value ?? '')}
+            onChange={(e) => handleChange(field.name, e.target.value)}
+            placeholder={field.placeholder}
+            maxLength={255}
+          />
+        )
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {/*
+            Always render DialogDescription. Radix requires either a
+            description or `aria-describedby={undefined}` on DialogContent;
+            without it React logs a "Missing Description" warning. The
+            previous version only rendered it when the parent passed a
+            description prop, leaving Edit dialog (no description prop)
+            triggering the warning.
+          */}
+          <DialogDescription>
+            {description ?? `Fill in the form below and save to apply your changes.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          {fields.map((field) => (
+            <div key={field.name} className={field.fullWidth ? '' : ''}>
+              {field.type !== 'boolean' && (
+                <Label htmlFor={field.name} className="text-sm font-medium">
+                  {field.label}
+                  {field.required && <span className="text-red-500 ms-1">*</span>}
+                </Label>
+              )}
+              <div className="mt-1.5">{renderField(field)}</div>
+              {errors[field.name] && (
+                <p className="text-xs text-red-500 mt-1">{errors[field.name]}</p>
+              )}
+              {/* Normalize preview for name field (RFC-001) */}
+              {field.name === 'name' &&
+                assetType &&
+                formData.name &&
+                (() => {
+                  const normalized = normalizeAssetName(String(formData.name), assetType)
+                  if (normalized && normalized !== String(formData.name)) {
+                    return (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Will be saved as:{' '}
+                        <code className="bg-muted px-1 rounded">{normalized}</code>
+                      </p>
+                    )
+                  }
+                  return null
+                })()}
+            </div>
+          ))}
+
+          {/* Universal CTEM classification — settable on every asset type. The
+              backend infers these on ingest; here the operator can override. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {(
+              [
+                { name: 'criticality', label: 'Criticality', options: CRITICALITY_OPTIONS },
+                { name: 'scope', label: 'Scope', options: SCOPE_OPTIONS },
+                { name: 'exposure', label: 'Exposure', options: EXPOSURE_OPTIONS },
+              ] as const
+            ).map((f) => (
+              <div key={f.name}>
+                <Label className="text-sm font-medium">{f.label}</Label>
+                <div className="mt-1.5">
+                  <Select
+                    value={String(formData[f.name] ?? '')}
+                    onValueChange={(v) => handleChange(f.name, v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={`Select ${f.label.toLowerCase()}`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {f.options.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* CTEM Scoping — CIA business-impact ratings (api #467). Each
+              dimension is optional; "Not rated" leaves it unset. Distinct
+              from Criticality above (one overall level) — these capture the
+              consequence of losing Confidentiality, Integrity, or
+              Availability independently. */}
+          <div>
+            <Label className="text-sm font-medium">Business Impact (CIA)</Label>
+            <div className="mt-1.5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {CIA_FIELDS.map((f) => {
+                const current = String(formData[f.name] ?? '')
+                return (
+                  <div key={f.name}>
+                    <Label htmlFor={f.name} className="text-xs text-muted-foreground">
+                      {f.label}
+                    </Label>
+                    <div className="mt-1">
+                      <Select
+                        value={current === '' ? IMPACT_UNRATED : current}
+                        onValueChange={(v) => handleChange(f.name, v === IMPACT_UNRATED ? '' : v)}
+                      >
+                        <SelectTrigger id={f.name}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={IMPACT_UNRATED}>Not rated</SelectItem>
+                          {IMPACT_RATING_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Optional — how severe the impact would be if this asset&apos;s confidentiality,
+              integrity, or availability were compromised.
+            </p>
+          </div>
+
+          {/* Owner reference — universal field for all asset types. Free-text
+              label like a team name, contact email, or cost center. */}
+          <div>
+            <Label htmlFor="ownerRef" className="text-sm font-medium">
+              Owner Reference
+            </Label>
+            <div className="mt-1.5">
+              <Input
+                id="ownerRef"
+                value={String(formData.ownerRef ?? '')}
+                onChange={(e) => handleChange('ownerRef', e.target.value)}
+                placeholder="Team / contact / cost center"
+                maxLength={500}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Optional — used for ownership tracking and reporting.
+            </p>
+          </div>
+
+          {/* Group is a create-time convenience only. On edit we have no way to
+              show/reconcile an asset's *current* group membership (it isn't part
+              of the asset record and is many-to-many), so showing the picker
+              there would imply a change that silently no-ops. Manage membership
+              of an existing asset from the Asset Groups page instead. */}
+          {includeGroupSelect && !asset && (
+            <div>
+              <Label className="text-sm font-medium">Group</Label>
+              <div className="mt-1.5">
+                <AssetGroupSelect value={groupId} onValueChange={setGroupId} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting || hasRequiredEmpty}>
+            {isSubmitting ? 'Saving...' : asset ? 'Save Changes' : 'Create'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

@@ -1,0 +1,814 @@
+openapi: 3.1.0
+info:
+  title: OpenCTEM sensor protocol v2
+  version: "2"
+  description: |
+    Sensor protocol v2: results ingest (RFC-026,
+    docs/rfcs/RFC-026-sensor-results-ingest.md) and the control plane —
+    heartbeat, commands, suppressions, fingerprint queries, key renewal
+    (RFC-029, docs/rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md).
+    Control-plane bodies are JSON, decoded leniently (unknown members are
+    ignored); clients must ignore unknown response members. Hand-maintained: the
+    generated swagger.yaml is Swagger 2.0 with basePath /api/v1 and cannot
+    describe /api/v2. tools/lint/openapicontract fails when this document and
+    the registered /api/v2/sensor routes disagree.
+
+    Sensors send CTIS only, chosen by Content-Type
+    (application/vnd.openctem.ctis.v1+json). Every PUT needs Content-Length
+    and Content-Digest (RFC 9530, over the bytes as sent, i.e. compressed when
+    Content-Encoding is gzip or zstd). The report id is a lower-case UUID the
+    sensor chooses; it is the idempotency key. Errors are RFC 9457 problems.
+    Only sensor keys authenticate here; user tokens, cookies and oct_ keys get
+    401. Every response carries OpenCTEM-Protocol: 2. Mounted only when
+    SENSOR_PROTOCOL_V2_RESULTS is on.
+servers:
+  - url: /
+security:
+  - sensorKey: []
+paths:
+  /api/v2/sensor/hello:
+    get:
+      summary: Protocol level, features and limits
+      operationId: sensorV2Hello
+      responses:
+        "200":
+          description: What this server speaks.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hello" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/results/{report_id}:
+    parameters:
+      - $ref: "#/components/parameters/ReportID"
+    put:
+      summary: A whole report in one request (one segment + implicit commit)
+      operationId: sensorV2PutReport
+      parameters: &putHeaders
+        - $ref: "#/components/parameters/ContentDigest"
+        - $ref: "#/components/parameters/ContentEncoding"
+      requestBody: &ctisBody
+        required: true
+        content:
+          application/vnd.openctem.ctis.v1+json:
+            schema:
+              description: A complete CTIS v1 report (schemas/ctis/v1/report.json). tool is required; metadata.id is empty or the report id.
+              type: object
+      responses: &putResponses
+        "200": { $ref: "#/components/responses/StatusReplay" }
+        "202": { $ref: "#/components/responses/StatusAccepted" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "411": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "415": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "500": { $ref: "#/components/responses/Problem" }
+    get:
+      summary: Status resource of a report
+      operationId: sensorV2Status
+      responses:
+        "200":
+          description: Current status. Retry-After is set while the state is not final.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      summary: Abandon an uncommitted segmented report
+      operationId: sensorV2Abandon
+      description: The report becomes expired. Its upserts stay; it never auto-resolves.
+      responses:
+        "204": { description: Abandoned. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/results/{report_id}/segments/{seq}:
+    parameters:
+      - $ref: "#/components/parameters/ReportID"
+      - $ref: "#/components/parameters/Seq"
+    put:
+      summary: One segment of a segmented report
+      description: Every segment is a complete CTIS document with the same tool and metadata and the assets its findings reference.
+      operationId: sensorV2PutSegment
+      parameters: *putHeaders
+      requestBody: *ctisBody
+      responses: *putResponses
+  /api/v2/sensor/results/{report_id}/commit:
+    parameters:
+      - $ref: "#/components/parameters/ReportID"
+    post:
+      summary: Close a segmented report
+      operationId: sensorV2Commit
+      requestBody: &commitBody
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommitRequest" }
+      responses: &commitResponses
+        "200": { $ref: "#/components/responses/StatusReplay" }
+        "202": { $ref: "#/components/responses/StatusAccepted" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/commands/{command_id}/results/{report_id}:
+    parameters:
+      - $ref: "#/components/parameters/CommandID"
+      - $ref: "#/components/parameters/ReportID"
+    put:
+      summary: A whole report bound to a command this sensor claimed
+      operationId: sensorV2PutCommandReport
+      parameters: *putHeaders
+      requestBody: *ctisBody
+      responses: *putResponses
+  /api/v2/sensor/commands/{command_id}/results/{report_id}/segments/{seq}:
+    parameters:
+      - $ref: "#/components/parameters/CommandID"
+      - $ref: "#/components/parameters/ReportID"
+      - $ref: "#/components/parameters/Seq"
+    put:
+      summary: One segment of a command-bound report
+      operationId: sensorV2PutCommandSegment
+      parameters: *putHeaders
+      requestBody: *ctisBody
+      responses: *putResponses
+  /api/v2/sensor/commands/{command_id}/results/{report_id}/commit:
+    parameters:
+      - $ref: "#/components/parameters/CommandID"
+      - $ref: "#/components/parameters/ReportID"
+    post:
+      summary: Close a command-bound segmented report
+      operationId: sensorV2CommitCommand
+      requestBody: *commitBody
+      responses: *commitResponses
+  /api/v2/sensor/heartbeat:
+    post:
+      summary: Heartbeat (the doorbell is always on)
+      operationId: sensorV2Heartbeat
+      description: The v1 heartbeat body; every member optional, an empty body is valid. A disabled sensor gets 200 with status paused and actions [pause]; it is refused on every other route.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HeartbeatRequest" }
+      responses:
+        "200":
+          description: Hints for the sensor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HeartbeatResponse" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "415": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/manifest:
+    put:
+      summary: Register what this sensor is (feature "manifest", RFC-033)
+      operationId: sensorV2PutManifest
+      description: >-
+        The sensor's manifest: build, platform, resources, concurrency ceiling,
+        sensor-wide capabilities and its tools (kind, version, installed,
+        capabilities, target types, content versions). Sent after hello and
+        before the first heartbeat, again when it changes and when a
+        heartbeat answer carries the action send_manifest. Idempotent by
+        content. Unknown members, tools and capabilities are ignored and
+        listed in the answer, never an error. At most 256 KiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Manifest" }
+      responses:
+        "200":
+          description: The digest stored (echo it as the heartbeat's manifest_digest) and what was kept.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManifestResponse" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "415": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+    get:
+      summary: The current manifest digest and the policy as it stands now (RFC-033 §6.12)
+      operationId: sensorV2GetManifest
+      description: >-
+        Re-read when the heartbeat's config_version changes: the administrator's
+        tool, capability or capacity settings changed the policy. 404
+        manifest-not-found when the sensor registered no manifest.
+      responses:
+        "200":
+          description: The current digest, policy and heartbeat form.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManifestStateResponse" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/commands:
+    get:
+      summary: Commands this sensor may claim now
+      operationId: sensorV2PollCommands
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: Claimable commands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommandList" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/commands/{command_id}/claim:
+    parameters:
+      - $ref: "#/components/parameters/TransitionCommandID"
+    post:
+      summary: Claim a command (pending → acknowledged)
+      operationId: sensorV2ClaimCommand
+      description: Idempotent. 409 command-claimed when another sensor won the claim.
+      responses: &transitionResponses
+        "200":
+          description: The command after the transition, or unchanged on a replay.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Command" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "415": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/commands/{command_id}/start:
+    parameters:
+      - $ref: "#/components/parameters/TransitionCommandID"
+    post:
+      summary: Start a command (acknowledged → running)
+      operationId: sensorV2StartCommand
+      responses: *transitionResponses
+  /api/v2/sensor/commands/{command_id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/TransitionCommandID"
+    post:
+      summary: Complete a command (running → completed)
+      operationId: sensorV2CompleteCommand
+      description: A replay with a semantically equal result is 200; a different result is 409 transition-conflict. Body up to 4 MiB.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result: { description: Any JSON value. }
+      responses: *transitionResponses
+  /api/v2/sensor/commands/{command_id}/fail:
+    parameters:
+      - $ref: "#/components/parameters/TransitionCommandID"
+    post:
+      summary: Fail a command (acknowledged, running, or pending and pinned to this sensor → failed)
+      operationId: sensorV2FailCommand
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                error_message: { type: string, description: Stored up to 4 KiB. }
+      responses: *transitionResponses
+  /api/v2/sensor/commands/{command_id}/release:
+    parameters:
+      - $ref: "#/components/parameters/TransitionCommandID"
+    post:
+      summary: Hand a claimed or running command back to the queue (acknowledged/running → pending, unpinned; feature "release", RFC-030 §5.12)
+      description: >-
+        Only the sensor that holds the command may release it. The command
+        returns to the queue at once (its scan zone kept) instead of waiting
+        for the stuck-command reaper; a draining sensor releases what it will
+        not finish. A repeat after the release answers the command as it is
+        now. A finished command answers 409 invalid-transition.
+      operationId: sensorV2ReleaseCommand
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, description: "Why (draining, shutdown, canceled, politeness, ...). Stored up to 200 bytes." }
+      responses: *transitionResponses
+  /api/v2/sensor/suppressions:
+    get:
+      summary: Active suppression rules of the sensor's tenant
+      operationId: sensorV2Suppressions
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: The rules, with a strong ETag.
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuppressionList" }
+        "304": { description: Unchanged since the ETag in If-None-Match. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/fingerprints/check:
+    post:
+      summary: Which fingerprints already exist (read-only)
+      operationId: sensorV2CheckFingerprints
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fingerprints: { type: array, maxItems: 50000, items: { type: string } }
+      responses:
+        "200":
+          description: Existing and missing fingerprints.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [existing, missing]
+                properties:
+                  existing: { type: array, items: { type: string } }
+                  missing: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/fingerprints/baseline-diff:
+    post:
+      summary: Which fingerprints are new against a base branch (read-only)
+      operationId: sensorV2BaselineDiff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                repository: { type: string }
+                base_branch: { type: string }
+                fingerprints: { type: array, maxItems: 50000, items: { type: string } }
+      responses:
+        "200":
+          description: New and pre-existing fingerprints.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [new_fingerprints, pre_existing_fingerprints, base_branch_scanned]
+                properties:
+                  new_fingerprints: { type: array, items: { type: string } }
+                  pre_existing_fingerprints: { type: array, items: { type: string } }
+                  base_branch_scanned: { type: boolean }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/keys:
+    post:
+      summary: Renew this sensor's key (the new key is shown once)
+      operationId: sensorV2RenewKey
+      description: With a key TTL the presented key stays valid until its own expiry (overlap); without one it is replaced.
+      responses:
+        "201":
+          description: The new key. Cache-Control is no-store.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_key, expires_at]
+                properties:
+                  api_key: { type: string }
+                  expires_at: { type: [string, "null"], format: date-time }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    sensorKey:
+      type: http
+      scheme: bearer
+      description: The sensor API key (rda_…), as in protocol v1. X-API-Key is accepted too.
+  parameters:
+    ReportID:
+      name: report_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+    CommandID:
+      name: command_id
+      in: path
+      required: true
+      description: A command assigned to and claimed by this sensor, open or finished less than 15 minutes ago. Anything else is 404.
+      schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+    TransitionCommandID:
+      name: command_id
+      in: path
+      required: true
+      description: A command of this sensor's tenant that is unassigned or assigned to this sensor. Another sensor's or tenant's command is 404.
+      schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+    Seq:
+      name: seq
+      in: path
+      required: true
+      schema: { type: integer, minimum: 0, maximum: 255 }
+    ContentDigest:
+      name: Content-Digest
+      in: header
+      required: true
+      schema: { type: string, example: "sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:" }
+    ContentEncoding:
+      name: Content-Encoding
+      in: header
+      required: false
+      schema: { type: string, enum: [gzip, zstd] }
+  responses:
+    StatusAccepted:
+      description: Stored and queued. Location names the status resource; Retry-After advises the poll delay.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Status" }
+    StatusReplay:
+      description: An identical replay; nothing new was stored.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Status" }
+    Problem:
+      description: RFC 9457 problem. The type URI is https://openctem.io/problems/ingest/<name> (RFC-026) or https://openctem.io/problems/sensor/<name> (RFC-029).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    ItemError:
+      type: object
+      required: [pointer, code, detail]
+      properties:
+        segment: { type: integer }
+        pointer: { type: string, description: RFC 6901 pointer built from indices and field names only. }
+        code: { type: string }
+        detail: { type: string, description: A fixed template; never quotes the sensor's bytes. }
+    Problem:
+      type: object
+      required: [type, title, status, detail, retryable]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        errors: { type: array, items: { $ref: "#/components/schemas/ItemError" } }
+        limit: { type: integer, description: The limit a 413 or a too-many-items exceeded. }
+        state: { type: string, description: The command's current state on an invalid-transition. }
+        retryable: { type: boolean }
+    Counts:
+      type: object
+      properties:
+        assets: { type: integer }
+        findings: { type: integer }
+    Status:
+      type: object
+      required: [report_id, state, segments, accepted, rejected, quarantined, auto_resolved, errors, errors_truncated, received_at, updated_at]
+      properties:
+        report_id: { type: string }
+        command_id: { type: string }
+        state: { type: string, enum: [receiving, queued, processing, completed, failed, expired] }
+        segments:
+          type: object
+          properties:
+            received: { type: integer }
+            expected: { type: integer }
+        accepted: { $ref: "#/components/schemas/Counts" }
+        rejected: { $ref: "#/components/schemas/Counts" }
+        quarantined: { $ref: "#/components/schemas/Counts" }
+        auto_resolved: { type: integer }
+        auto_resolve: { type: string, enum: [applied, held, skipped] }
+        errors: { type: array, items: { $ref: "#/components/schemas/ItemError" } }
+        errors_truncated: { type: boolean }
+        received_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CommitRequest:
+      type: object
+      required: [segment_count, segment_digests]
+      additionalProperties: false
+      properties:
+        segment_count: { type: integer, minimum: 1, maximum: 256 }
+        segment_digests:
+          type: array
+          description: The sha-256 Content-Digest member of each segment, in segment order.
+          items: { type: string }
+    Limits:
+      type: object
+      properties:
+        max_content_bytes: { type: integer }
+        max_decompressed_bytes: { type: integer }
+        max_compression_ratio: { type: number }
+        max_zstd_window_bytes: { type: integer }
+        max_json_depth: { type: integer }
+        max_findings_per_segment: { type: integer }
+        max_assets_per_segment: { type: integer }
+        max_segments_per_report: { type: integer }
+        max_findings_per_report: { type: integer }
+        max_assets_per_report: { type: integer }
+        max_open_reports_per_sensor: { type: integer }
+        max_segments_in_flight: { type: integer }
+        max_item_errors: { type: integer }
+        uncommitted_ttl_seconds: { type: integer }
+        max_control_body_bytes: { type: integer }
+        max_fingerprints_per_request: { type: integer }
+    Hello:
+      type: object
+      properties:
+        protocol: { type: integer, const: 2 }
+        features: { type: array, items: { type: string } }
+        media_types: { type: array, items: { type: string } }
+        encodings: { type: array, items: { type: string } }
+        digests: { type: array, items: { type: string } }
+        limits: { $ref: "#/components/schemas/Limits" }
+        deprecations:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              deprecated_at: { type: string, format: date-time }
+              sunset_at: { type: string, format: date-time }
+    HeartbeatRequest:
+      type: object
+      properties:
+        content:
+          type: array
+          description: >-
+            Slim heartbeat (RFC-033 §6.12): with tools left out, each tool's
+            content freshness, merged into the stored tools' content.
+          items:
+            type: object
+            required: [tool, name]
+            properties:
+              tool: { type: string }
+              name: { type: string }
+              version: { type: string }
+              updated_at: { type: string, format: date-time }
+              fetched_at: { type: string, format: date-time }
+              checked_at: { type: string, format: date-time }
+              source: { type: string }
+              digest: { type: string }
+              managed: { type: boolean }
+              error: { type: string }
+        manifest_digest:
+          type: string
+          maxLength: 71
+          description: >-
+            The digest PUT /manifest returned (feature "manifest", RFC-033).
+            When it is not the platform's current one the answer carries the
+            action send_manifest. Absent: the platform derives the manifest
+            from this heartbeat's tools.
+        name: { type: string }
+        status: { type: string }
+        version: { type: string }
+        hostname: { type: string }
+        instance_id:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._-]+$'
+          description: >-
+            Random id the sensor process picks at start (sdk-go v0.12+). Two live
+            instances alternating on one key flag the sensor as a cloned
+            identity (RFC-032 Phase 0). Optional; without it the platform
+            observes the hostname.
+        message: { type: string }
+        scanners: { type: array, items: { type: string } }
+        collectors: { type: array, items: { type: string } }
+        uptime_seconds: { type: integer }
+        total_scans: { type: integer }
+        errors: { type: integer }
+        cpu_percent: { type: number }
+        memory_percent: { type: number }
+        active_jobs: { type: integer }
+        region: { type: string }
+        disk_read_mbps: { type: number }
+        disk_write_mbps: { type: number }
+        network_rx_mbps: { type: number }
+        network_tx_mbps: { type: number }
+        outbox:
+          type: object
+          properties:
+            pending_count: { type: integer }
+            pending_bytes: { type: integer }
+            oldest_age_seconds: { type: integer }
+            dead_letter_count: { type: integer }
+            evicted_count: { type: integer }
+        resources:
+          description: The machine as the SDK measured it (container limits when in one); feature "load", RFC-030 §5.8. Clamped; display and selection input.
+          type: object
+          properties:
+            cpu_cores: { type: number }
+            cpu_used_pct: { type: number }
+            mem_total_bytes: { type: integer }
+            mem_available_bytes: { type: integer }
+            load1: { type: number }
+            disk_free_bytes: { type: integer }
+        capacity:
+          description: The sensor's job slots and per-tool cost; while fresh (3 min) slots_free can only lower what dispatch offers.
+          type: object
+          properties:
+            slots_total: { type: integer }
+            slots_free: { type: integer }
+            active_jobs: { type: integer }
+            per_tool:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  est_cpu_s: { type: number }
+                  est_mem_bytes: { type: integer }
+                  throughput_targets_per_min: { type: number }
+        queue:
+          description: The sensor's local work queue (display only).
+          type: object
+          properties:
+            claimed: { type: integer }
+            running: { type: integer }
+            queued_local: { type: integer }
+            oldest_age_seconds: { type: integer }
+    Manifest:
+      type: object
+      required: [schema]
+      description: RFC-033 §6.2. Every member but schema is optional; unknown members are ignored and listed.
+      properties:
+        schema: { type: integer, enum: [1] }
+        sensor:
+          type: object
+          properties:
+            name: { type: string }
+            version: { type: string }
+            commit: { type: string }
+            build_time: { type: string, format: date-time }
+        sdk:
+          type: object
+          properties:
+            name: { type: string }
+            version: { type: string }
+        platform:
+          type: object
+          properties:
+            os: { type: string }
+            arch: { type: string }
+        resources:
+          type: object
+          description: What the sensor may use (container limits when in one). Display and selection input, not capacity.
+          properties:
+            cpu_cores: { type: number }
+            mem_total_bytes: { type: integer }
+        concurrency:
+          type: object
+          properties:
+            ceiling: { type: integer, minimum: 0, maximum: 100, description: The operator's cap (SENSOR_MAX_JOBS); 0 when none. What the sensor runs now is the heartbeat's capacity.slots_total. }
+            model: { type: string, enum: [dynamic, fixed] }
+        capabilities: { type: array, maxItems: 64, items: { type: string }, description: Sensor-wide capabilities (served whatever the tools, e.g. validate). }
+        tools:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string }
+              kind: { type: string, enum: [scanner, collector] }
+              version: { type: string }
+              installed: { type: boolean }
+              capabilities: { type: array, maxItems: 32, items: { type: string } }
+              target_types: { type: array, maxItems: 16, items: { type: string } }
+              content:
+                type: array
+                items:
+                  type: object
+                  required: [name]
+                  properties:
+                    name: { type: string }
+                    version: { type: string }
+                    digest: { type: string }
+                    source: { type: string }
+                    managed: { type: boolean }
+    ManifestPolicy:
+      type: object
+      description: The sensor's effective tools, capabilities and capacity (its report narrowed by the administrator's settings). The SDK refuses commands whose tool (payload scanner, else preferred_tool) is not in allowed_tools (owner decision O2).
+      required: [allowed_tools, allowed_capabilities, max_jobs]
+      properties:
+        allowed_tools: { type: array, items: { type: string } }
+        allowed_capabilities: { type: array, items: { type: string } }
+        max_jobs: { type: integer }
+    ManifestHeartbeat:
+      type: object
+      required: [omit_inventory]
+      properties:
+        omit_inventory: { type: boolean, description: "While heartbeats echo the digest they may leave out tools, capabilities and max_concurrent_jobs and send the content block instead (owner decision O3). False under the kill switch SENSOR_SLIM_HEARTBEAT=false." }
+    ManifestStateResponse:
+      type: object
+      required: [manifest_digest, policy, heartbeat]
+      properties:
+        manifest_digest: { type: string }
+        policy: { $ref: "#/components/schemas/ManifestPolicy" }
+        heartbeat: { $ref: "#/components/schemas/ManifestHeartbeat" }
+    ManifestResponse:
+      type: object
+      required: [manifest_digest, changed, accepted, ignored, policy, heartbeat]
+      properties:
+        policy: { $ref: "#/components/schemas/ManifestPolicy" }
+        heartbeat: { $ref: "#/components/schemas/ManifestHeartbeat" }
+        manifest_digest: { type: string, description: '"sha256:" + hex over the canonical JSON of the manifest as received.' }
+        changed: { type: boolean, description: False when it was already the current manifest. }
+        accepted:
+          type: object
+          required: [tools, capabilities]
+          properties:
+            tools: { type: array, items: { type: string } }
+            capabilities: { type: array, items: { type: string }, description: The flat list dispatch reads. }
+        ignored:
+          type: array
+          items:
+            type: object
+            required: [path, reason]
+            properties:
+              path: { type: string }
+              value: { type: string }
+              reason: { type: string, enum: [unknown-member, unknown-tool, invalid-name, unknown-capability, limit] }
+    HeartbeatResponse:
+      type: object
+      required: [sensor_id, tenant_id, status, pending_jobs, next_heartbeat_seconds, actions, config_version]
+      properties:
+        sensor_id: { type: string }
+        tenant_id: { type: string }
+        status: { type: string, enum: [ok, paused] }
+        pending_jobs: { type: integer }
+        next_heartbeat_seconds: { type: integer }
+        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest (RFC-033: PUT /manifest; only for a sensor that sent manifest_digest, or one that sent a slim heartbeat while slim heartbeats are switched off); ignore unknown values" } }
+        config_version: { type: string }
+    Command:
+      type: object
+      required: [id, type, priority, status, sensor_id, payload, created_at]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        priority: { type: string }
+        status: { type: string, enum: [pending, acknowledged, running, completed, failed, canceled, expired] }
+        sensor_id: { type: [string, "null"] }
+        payload: { description: The command content as stored. }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        acknowledged_at: { type: [string, "null"], format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        error_message: { type: string }
+        result: { description: The completion result, or null. }
+    CommandList:
+      type: object
+      required: [commands]
+      properties:
+        commands: { type: array, items: { $ref: "#/components/schemas/Command" } }
+    SuppressionList:
+      type: object
+      required: [count, rules]
+      properties:
+        count: { type: integer }
+        rules:
+          type: array
+          items:
+            type: object
+            properties:
+              rule_id: { type: string }
+              tool_name: { type: string }
+              path_pattern: { type: string }
+              asset_id: { type: string }
+              expires_at: { type: string, format: date-time }

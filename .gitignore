@@ -1,99 +1,26 @@
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-bin/
-dist/
+# Root-level ignores. api/.gitignore and web/.gitignore keep their own
+# language-specific rules; this file covers what bites at the root.
 
-# Test binary
-*.test
-
-# Output of the go coverage tool
-*.out
-coverage.html
-coverage.txt
-
-# Go workspace file
-go.work
-go.work.sum
-
-# Dependency directories
-vendor/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# Environment
+# Secrets / env (whitelist examples)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!*.env.example
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Temporary files
-tmp/
-temp/
-
-# Build
-build/
-
-# Debug
-__debug_bin*
-debug
-
-# Air (hot reload)
-# .air.toml
-
-# SDK
-sdk/
-sdk-go/
-sdk-go
-
-# Built binary (at root level only)
-/server
-load.test
-# Compiled binaries
-cmd/server/server
-
-# Root-level binaries left by `go build ./cmd/<name>/` — the build drops the
-# binary in the working dir, and a stray `git add -A` then commits an 8MB ELF
-# (chainaudit reached develop this way in #418). Anchored to root so cmd/<name>/
-# source dirs are untouched.
-/bootstrap-admin
-/bootstrap-tenant
-/chainaudit
-/encrypt-credentials
-/gen-relationships
-/openctem-admin
-/seed
-
-vendor
+# Local Go workspace files (GOWORK=off is the CI default)
 go.work
 go.work.sum
 
-# User-uploaded attachments
-data/
+# Sibling checkouts that CI's Security Gates job (and local security-lint runs)
+# place next to api/: <root>/{api,agent,sdk-go}
+/agent/
+/sdk-go/
 
-# Claude code
-./.claude/settings.local.json
-.claude/worktrees/
+# Editors / OS
+.DS_Store
+.idea/
+*.swp
 
-# Claude Code local (per-developer) settings — never commit
-.claude/settings.local.json
-
-# E2E test runtime artifacts
-scripts/tests/.e2e_results.tsv
-scripts/tests/.e2e_results.tsv.fails
-scripts/tests/.e2e_runlog.txt
+# Worktrees created inside the checkout by mistake
+/.worktrees/
+/worktrees/

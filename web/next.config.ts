@@ -1,0 +1,189 @@
+import { createRequire } from 'node:module'
+
+import type { NextConfig } from 'next'
+import { validateEnv } from './src/lib/env'
+import { LEGACY_ROUTE_REDIRECTS } from './src/config/legacy-routes'
+
+// Optional bundle analyzer - only used when ANALYZE=true
+let withBundleAnalyzer = (config: NextConfig) => config
+if (process.env.ANALYZE === 'true') {
+  try {
+    // createRequire rather than a bare require(): this file is an ES module, and
+    // the analyzer is an optional devDependency that must stay behind a
+    // try/catch, so a static import is not an option either.
+    const bundleAnalyzer = createRequire(import.meta.url)('@next/bundle-analyzer')
+    withBundleAnalyzer = bundleAnalyzer({ enabled: true })
+  } catch {
+    console.warn(
+      'Bundle analyzer not available - install @next/bundle-analyzer to use ANALYZE=true'
+    )
+  }
+}
+
+// Validate environment variables at build time
+// This will throw an error if required vars are missing or invalid
+if (process.env.NODE_ENV !== 'test') {
+  validateEnv()
+}
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  // The dev-only "N" badge sat over the sidebar's last rows on phones. The
+  // local stack runs `next dev`, so it showed there too.
+  devIndicators: false,
+  // Note: reactCompiler requires babel-plugin-react-compiler package
+  // Disabled until package is added to dependencies
+
+  /**
+   * Output Configuration for Docker
+   *
+   * 'standalone' mode creates a minimal production build with only required dependencies
+   * This significantly reduces Docker image size
+   * @see https://nextjs.org/docs/app/api-reference/next-config-js/output
+   */
+  output: 'standalone',
+
+  /**
+   * Renamed routes. Bookmarks keep working: /agents 308s to /sensors, and moved
+   * settings pages 308 to their new home, path and query kept.
+   * @see src/config/legacy-routes.ts
+   */
+  async redirects() {
+    return LEGACY_ROUTE_REDIRECTS
+  },
+
+  /**
+   * WebSocket on the UI's own origin (/api/v1/ws). In `next dev` this rewrite
+   * proxies the upgrade to the API; it is read when the dev server starts.
+   * Production builds leave it out: rewrites are frozen into the build, so the
+   * production entry (server-with-ws.mjs) forwards the upgrade instead, to the
+   * BACKEND_API_URL of the running deployment.
+   */
+  async rewrites() {
+    if (process.env.NODE_ENV === 'production')
+      return { beforeFiles: [], afterFiles: [], fallback: [] }
+    const backend = (process.env.BACKEND_API_URL || 'http://localhost:8080').replace(/\/+$/, '')
+    return {
+      // Before the /api/v1/[...path] route handler, which cannot proxy upgrades.
+      beforeFiles: [{ source: '/api/v1/ws', destination: `${backend}/api/v1/ws` }],
+      afterFiles: [],
+      fallback: [],
+    }
+  },
+
+  /**
+   * Security Headers
+   *
+   * Implements security best practices to protect against common vulnerabilities
+   * @see https://nextjs.org/docs/app/api-reference/next-config-js/headers
+   */
+  async headers() {
+    return [
+      {
+        // Apply security headers to all routes
+        source: '/:path*',
+        headers: [
+          // Prevent clickjacking attacks
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          // Prevent MIME type sniffing
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          // Control referrer information
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          // Control which features and APIs can be used
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+          // Content Security Policy - Prevents XSS attacks
+          // API calls go through /api/proxy (same-origin) so connect-src 'self' is sufficient.
+          //
+          // Script-src narrowing: 'unsafe-eval' is required only by the
+          // dev HMR runtime (Turbopack evaluates modules at runtime);
+          // production bundles do not need it. 'unsafe-inline' is kept
+          // because Next.js 16 still emits inline bootstrapping scripts
+          // for hydration — dropping it requires the nonce-per-request
+          // flow in proxy.ts (tracked as a follow-up). Removing just
+          // 'unsafe-eval' in prod already closes the most abused eval()
+          // gadgets without breaking hydration.
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self'",
+              process.env.NODE_ENV === 'development'
+                ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
+                : "script-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", // Tailwind + Google Fonts
+              "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com", // Google Fonts stylesheets
+              "img-src 'self' data: https:",
+              "font-src 'self' data: https://fonts.gstatic.com", // Google Fonts files
+              (() => {
+                if (process.env.NODE_ENV === 'development') {
+                  return "connect-src 'self' http: ws: wss:" // Dev: allow all for HMR
+                }
+                // Prod: derive allowed origins from existing config
+                const origins: string[] = ["'self'"]
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL
+                const backendUrl = process.env.BACKEND_API_URL
+                const wsUrl = process.env.NEXT_PUBLIC_WS_BASE_URL
+                // Add app URL origins (HTTPS + WSS)
+                if (appUrl) {
+                  try {
+                    const u = new URL(appUrl)
+                    origins.push(`https://${u.hostname}`)
+                    origins.push(`wss://${u.hostname}`)
+                    // Also allow API port if different (e.g., :8080)
+                    if (backendUrl) {
+                      const b = new URL(backendUrl)
+                      if (b.port && b.port !== '443') {
+                        origins.push(`https://${u.hostname}:${b.port}`)
+                        origins.push(`wss://${u.hostname}:${b.port}`)
+                      }
+                    }
+                  } catch {
+                    /* ignore invalid URL */
+                  }
+                }
+                // WebSocket on separate host/port (e.g., NEXT_PUBLIC_WS_BASE_URL=https://ws.example.com:9090)
+                if (wsUrl) {
+                  try {
+                    const w = new URL(wsUrl)
+                    origins.push(`wss://${w.host}`)
+                    origins.push(`https://${w.host}`)
+                  } catch {
+                    /* ignore invalid URL */
+                  }
+                }
+                // Fallback: if no URL config provided, allow all HTTPS/WSS
+                // (self-hosted platform — backend auth is the real gate, not CSP)
+                if (origins.length === 1) origins.push('https:', 'wss:')
+                return `connect-src ${origins.join(' ')}`
+              })(),
+              "frame-ancestors 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+            ].join('; '),
+          },
+        ],
+      },
+    ]
+  },
+  // Allowed dev origins for HMR/dev assets. Next.js 16 blocks cross-origin dev
+  // requests by default (including HMR WebSockets from LAN IPs), so each developer
+  // can add their IPs via NEXT_ALLOWED_DEV_ORIGINS=ip1,ip2 in .env.local.
+  // Wildcards are not supported — you must enumerate IPs/hostnames.
+  allowedDevOrigins: (process.env.NEXT_ALLOWED_DEV_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+}
+
+export default withBundleAnalyzer(nextConfig)

@@ -1,0 +1,334 @@
+/**
+ * Tenant Settings Types
+ *
+ * Type definitions for tenant/organization settings
+ */
+
+// ============================================
+// GENERAL SETTINGS
+// ============================================
+
+export interface GeneralSettings {
+  timezone: string
+  language: string
+  industry: string
+  website: string
+}
+
+export interface UpdateGeneralSettingsInput {
+  timezone?: string
+  language?: string
+  industry?: string
+  website?: string
+}
+
+// ============================================
+// SECURITY SETTINGS
+// ============================================
+
+/**
+ * Email verification mode controls whether new users in this tenant must
+ * verify their email address before login.
+ *   - "auto"   = require verification iff SMTP is configured (default)
+ *   - "always" = always require verification (operator must configure SMTP)
+ *   - "never"  = never require verification (closed/internal deployments)
+ */
+export type EmailVerificationMode = 'auto' | 'always' | 'never'
+
+export interface SecuritySettings {
+  mfa_required: boolean
+  session_timeout_min: number
+  ip_whitelist: string[]
+  allowed_domains: string[]
+  email_verification_mode: EmailVerificationMode
+  /**
+   * The caller's IP as the API sees it (read-only, GET only). Shown next to the
+   * IP allowlist so an owner does not lock themselves out.
+   */
+  current_ip?: string
+}
+
+export interface UpdateSecuritySettingsInput {
+  mfa_required?: boolean
+  session_timeout_min?: number
+  ip_whitelist?: string[]
+  allowed_domains?: string[]
+  email_verification_mode?: EmailVerificationMode
+}
+
+/**
+ * What members who are in no team (access group) see. Owners and admins always
+ * see everything; members in a team see that team's assets either way.
+ * GET/PATCH /tenants/{tenant}/settings/data-scope (owner/admin).
+ */
+export type MembersWithoutGroupSee = 'everything' | 'nothing'
+
+export interface DataScopePolicy {
+  members_without_group_see: MembersWithoutGroupSee
+}
+
+// ============================================
+// API SETTINGS
+// ============================================
+
+export type WebhookEvent =
+  | 'finding.created'
+  | 'finding.resolved'
+  | 'finding.updated'
+  | 'scan.completed'
+  | 'scan.failed'
+  | 'asset.discovered'
+  | 'asset.updated'
+  | 'member.joined'
+  | 'member.removed'
+
+export interface APISettings {
+  api_key_enabled: boolean
+  webhook_url: string
+  webhook_events: WebhookEvent[]
+  /** The signing secret is write-only: the API reports only whether one is set. */
+  webhook_secret_configured?: boolean
+}
+
+export interface UpdateAPISettingsInput {
+  api_key_enabled?: boolean
+  webhook_url?: string
+  webhook_secret?: string
+  webhook_events?: string[]
+}
+
+// ============================================
+// BRANDING SETTINGS
+// ============================================
+
+export interface BrandingSettings {
+  primary_color: string
+  logo_dark_url: string
+  logo_data?: string // Base64 encoded logo image
+}
+
+export interface UpdateBrandingSettingsInput {
+  primary_color?: string
+  logo_dark_url?: string
+  logo_data?: string | null // Base64 encoded logo, null to remove
+}
+
+// ============================================
+// RISK SCORING SETTINGS
+// ============================================
+
+export interface ComponentWeights {
+  exposure: number
+  criticality: number
+  findings: number
+  ctem: number
+}
+
+export interface ExposureScoreConfig {
+  public: number
+  restricted: number
+  private: number
+  isolated: number
+  unknown: number
+}
+
+export interface ExposureMultiplierConfig {
+  public: number
+  restricted: number
+  private: number
+  isolated: number
+  unknown: number
+}
+
+export interface CriticalityScoreConfig {
+  critical: number
+  high: number
+  medium: number
+  low: number
+  none: number
+}
+
+export interface SeverityWeightConfig {
+  critical: number
+  high: number
+  medium: number
+  low: number
+  info: number
+}
+
+export interface FindingImpactConfig {
+  mode: 'count' | 'severity_weighted'
+  per_finding_points: number
+  finding_cap: number
+  severity_weights: SeverityWeightConfig
+}
+
+export interface CTEMPointsConfig {
+  enabled: boolean
+  internet_accessible: number
+  pii_exposed: number
+  phi_exposed: number
+  high_risk_compliance: number
+  restricted_data: number
+}
+
+export interface RiskLevelConfig {
+  critical_min: number
+  high_min: number
+  medium_min: number
+  low_min: number
+}
+
+/**
+ * How the exposure multiplier composes with the weighted base score.
+ *   - "multiply"          = historical `raw × multiplier` (default; may pin at 100)
+ *   - "amplify_headroom"  = de-saturated `raw + (multiplier−1)·(100−raw)`; the
+ *                           exposure boost fills the remaining headroom instead of
+ *                           overflowing past 100, improving ranking at the top.
+ * Empty/absent is treated as "multiply".
+ */
+export type ScoreCompositionMode = 'multiply' | 'amplify_headroom'
+
+export interface RiskScoringSettings {
+  preset?: string
+  weights: ComponentWeights
+  exposure_scores: ExposureScoreConfig
+  exposure_multipliers: ExposureMultiplierConfig
+  criticality_scores: CriticalityScoreConfig
+  finding_impact: FindingImpactConfig
+  ctem_points: CTEMPointsConfig
+  risk_levels: RiskLevelConfig
+  score_composition_mode?: ScoreCompositionMode
+  /**
+   * When true, a finding on an asset with no assigned owner is never classified
+   * below P2 priority. It is a strict floor (only ever raises a P3 to P2, never
+   * lowers anything and never touches P0/P1). Off by default (opt-in).
+   */
+  floor_unowned_at_p2?: boolean
+}
+
+export interface RiskScorePreviewItem {
+  asset_id: string
+  asset_name: string
+  asset_type: string
+  current_score: number
+  new_score: number
+  delta: number
+}
+
+export interface PreviewResponse {
+  assets: RiskScorePreviewItem[]
+  sample_count: number
+  total_assets: number
+}
+
+export interface RecalculateResponse {
+  assets_updated: number
+}
+
+export interface PresetInfo {
+  name: string
+  config: RiskScoringSettings
+}
+
+// ============================================
+// COMBINED SETTINGS
+// ============================================
+
+export interface PentestConfigOption {
+  value: string
+  label: string
+}
+
+export interface PentestSettings {
+  campaign_types?: PentestConfigOption[]
+  methodologies?: PentestConfigOption[]
+}
+
+export interface TenantSettings {
+  general: GeneralSettings
+  security: SecuritySettings
+  api: APISettings
+  branding: BrandingSettings
+  risk_scoring: RiskScoringSettings
+  pentest?: PentestSettings
+}
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+export const VALID_TIMEZONES = [
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Asia/Ho_Chi_Minh', label: 'Vietnam (GMT+7)' },
+  { value: 'Asia/Bangkok', label: 'Bangkok (GMT+7)' },
+  { value: 'Asia/Singapore', label: 'Singapore (GMT+8)' },
+  { value: 'Asia/Tokyo', label: 'Japan (GMT+9)' },
+  { value: 'Asia/Seoul', label: 'Korea (GMT+9)' },
+  { value: 'Asia/Shanghai', label: 'China (GMT+8)' },
+  { value: 'Europe/London', label: 'London (GMT+0)' },
+  { value: 'Europe/Paris', label: 'Paris (GMT+1)' },
+  { value: 'America/New_York', label: 'New York (GMT-5)' },
+  { value: 'America/Los_Angeles', label: 'Los Angeles (GMT-8)' },
+] as const
+
+export const VALID_LANGUAGES = [
+  { value: 'en', label: 'English' },
+  { value: 'vi', label: 'Tieng Viet' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'zh', label: 'Chinese' },
+] as const
+
+export const VALID_INDUSTRIES = [
+  { value: 'technology', label: 'Technology' },
+  { value: 'finance', label: 'Finance & Banking' },
+  { value: 'healthcare', label: 'Healthcare' },
+  { value: 'ecommerce', label: 'E-commerce' },
+  { value: 'government', label: 'Government' },
+  { value: 'education', label: 'Education' },
+  { value: 'manufacturing', label: 'Manufacturing' },
+  { value: 'retail', label: 'Retail' },
+  { value: 'other', label: 'Other' },
+] as const
+
+export const SESSION_TIMEOUT_OPTIONS = [
+  { value: 15, label: '15 minutes' },
+  { value: 30, label: '30 minutes' },
+  { value: 60, label: '1 hour' },
+  { value: 120, label: '2 hours' },
+  { value: 240, label: '4 hours' },
+  { value: 480, label: '8 hours' },
+] as const
+
+export const WEBHOOK_EVENTS: { value: WebhookEvent; label: string; description: string }[] = [
+  {
+    value: 'finding.created',
+    label: 'Finding Created',
+    description: 'When a new vulnerability finding is created',
+  },
+  {
+    value: 'finding.resolved',
+    label: 'Finding Resolved',
+    description: 'When a finding is marked as resolved',
+  },
+  { value: 'finding.updated', label: 'Finding Updated', description: 'When a finding is updated' },
+  {
+    value: 'scan.completed',
+    label: 'Scan Completed',
+    description: 'When a security scan completes',
+  },
+  { value: 'scan.failed', label: 'Scan Failed', description: 'When a security scan fails' },
+  {
+    value: 'asset.discovered',
+    label: 'Asset Discovered',
+    description: 'When a new asset is discovered',
+  },
+  { value: 'asset.updated', label: 'Asset Updated', description: 'When an asset is updated' },
+  {
+    value: 'member.joined',
+    label: 'Member Joined',
+    description: 'When a new member joins the team',
+  },
+  { value: 'member.removed', label: 'Member Removed', description: 'When a member is removed' },
+]

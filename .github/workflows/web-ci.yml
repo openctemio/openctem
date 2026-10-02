@@ -1,0 +1,155 @@
+name: Web CI
+
+# The Next.js app lives in web/. Same shape as api-ci.yml: always starts, the
+# `changes` job gates the real jobs, `Web CI OK` is the single required check.
+#
+# The API's OpenAPI spec (api/api/openapi/swagger.yaml) counts as a web input:
+# the web wire types are generated from it, so a spec change must regenerate
+# web/src/lib/api/generated/api.types.ts in the SAME pull request, and tsc then
+# proves the web app still compiles against the new contract. This replaces the
+# old vendored copy, check:spec-vendored and the sync-api-spec workflow.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  changes:
+    name: Detect web changes
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.f.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: f
+        working-directory: .
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: bash .github/scripts/changed.sh web web/ api/api/openapi/swagger.yaml .github/workflows/web- .github/scripts/
+
+  quality:
+    name: Quality Checks
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # check-palette-drift needs the merge base
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Unconditional on purpose: a committed file vs a pure function of another
+      # committed file (the API's spec, in this same repository).
+      - name: Generated API types match api/api/openapi/swagger.yaml
+        run: npm run check:api-types
+
+      - name: Run type check
+        run: npm run type-check
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Prettier check
+        run: npm run format:check
+
+      # PR-only on purpose (see the history of web/scripts/check-palette-drift.sh).
+      - name: Check palette drift
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          base="$(bash ../.github/scripts/effective-base.sh web "origin/${{ github.base_ref }}")"
+          bash scripts/check-palette-drift.sh "$base"
+
+  test:
+    name: Test
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test -- --run --coverage --passWithNoTests
+      - name: Upload coverage
+        uses: codecov/codecov-action@v7
+        with:
+          directory: web/coverage
+          flags: web
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  build:
+    name: Build
+    needs: [changes, quality, test]
+    if: needs.changes.outputs.web == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Cache Next.js build
+        uses: actions/cache@v6
+        with:
+          path: web/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/src/**/*.ts', 'web/src/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('web/package-lock.json') }}-
+            ${{ runner.os }}-nextjs-
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8080' }}
+
+  web-ok:
+    name: Web CI OK
+    if: always()
+    needs: [changes, quality, test, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All web jobs passed or were skipped
+        working-directory: .
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null
