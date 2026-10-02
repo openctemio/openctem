@@ -411,7 +411,7 @@ for a listed feature and v1 for the rest.
 
 Every heartbeat records the protocol it arrived on and the client's
 `User-Agent` (printable ASCII, ≤ 256 bytes) in `sensors.protocol_version`,
-`protocol_client` and `protocol_seen_at` (migration 000247), in the
+`protocol_client` and `protocol_seen_at` (migration 000248), in the
 heartbeat update that already runs. `GET /api/v1/sensors` and
 `GET /api/v1/sensors/{id}` return
 
