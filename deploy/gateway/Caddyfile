@@ -154,4 +154,16 @@
 	flush_interval -1
 }
 
+# Port 80 for TLS modes internal and files, which turn off Caddy's automatic
+# redirect: a browser that types http://<host> is sent to HTTPS instead of
+# getting "connection refused". Nothing is served over plain HTTP, and the
+# container port is reachable only when docker-compose.http-redirect.yml
+# publishes it. Mode acme gets the same from Caddy itself.
+(http_redirect) {
+	http:// {
+		# 308, not 301: a client's POST/PUT stays a POST/PUT.
+		redir https://{host}{uri} 308
+	}
+}
+
 import modes/{$OPENCTEM_TLS_MODE}.site
