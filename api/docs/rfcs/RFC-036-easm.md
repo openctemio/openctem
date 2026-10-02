@@ -605,7 +605,7 @@ Discovery › **Attack Surface** becomes the EASM workspace (no URL change for
   action, freshness by tier, recent changes.
 - **Inventory:** `/assets` filtered `exposure=public`, plus attribution
   columns. Replaces `/attack-surface/external` (which gets a 308 redirect,
-  following ui#591's pattern).
+  following openctemio/ui#591's pattern).
 - **Review:** candidate table with an evidence drawer, bulk actions, rule chips.
 - **Graph:** seed-rooted, expand-on-click, colour by state/severity. Reuses the
   graph component planned for attack paths.

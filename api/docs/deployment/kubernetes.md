@@ -376,7 +376,7 @@ spec:
               service: { name: openctem-ui, port: { number: 3000 } }
 ```
 
-## Horizontal Pod Autoscaler (see [Scaling Guide](../../../docs/operations/SCALING.md))
+## Horizontal Pod Autoscaler (see [Scaling Guide](https://github.com/openctemio/docs/blob/main/operations/SCALING.md))
 
 ```yaml
 # k8s/hpa.yaml
@@ -452,5 +452,5 @@ kubectl set image -n openctem deployment/openctem-api \
 
 ## Related Documentation
 
-- [Scaling Guide](../../../docs/operations/SCALING.md) -- Capacity planning and database scaling
+- [Scaling Guide](https://github.com/openctemio/docs/blob/main/operations/SCALING.md) -- Capacity planning and database scaling
 - [API Documentation](../api/README.md) -- REST API endpoint reference

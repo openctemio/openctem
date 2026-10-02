@@ -5,7 +5,7 @@
 # deploy/docker-compose.yml instead. This file runs the API alone and does not
 # publish it; put it behind the gateway (deploy/gateway) or your own proxy.
 #
-# Option 1: Pull from Docker Hub (recommended for deployment):
+# Option 1: Pull the published images from GHCR (recommended for deployment):
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # Option 2: Build locally:
@@ -43,7 +43,7 @@ services:
   # a stale schema. Keep MIGRATIONS_VERSION in lock-step with API_VERSION.
   # See docs/deployment/safe-deploy-and-migrations.md.
   migrate:
-    image: openctemio/migrations:${MIGRATIONS_VERSION:-${API_VERSION:-latest}}
+    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${MIGRATIONS_VERSION:-${API_VERSION:-latest}}
     build:
       context: .
       dockerfile: Dockerfile.migrations
@@ -70,8 +70,11 @@ services:
   # API Application (Production)
   # ---------------------------------------------------------------------------
   app:
-    # Pull from Docker Hub by default, build locally if --build flag is used
-    image: openctemio/api:${API_VERSION:-latest}
+    # Pull from GHCR by default, build locally if --build flag is used.
+    # Releases from the monorepo are ghcr.io/openctemio/openctem-api; the legacy
+    # name below gets identical copies during the transition window and is the
+    # only one with v0.8.0 and earlier. Set API_IMAGE to switch.
+    image: ${API_IMAGE:-ghcr.io/openctemio/api}:${API_VERSION:-latest}
     build:
       context: .
       dockerfile: Dockerfile

@@ -1,5 +1,5 @@
 # Feature Roadmap
 
-> **MOVED**: This document has been moved to the main docs folder.
+> **MOVED**: This document has been moved to the API docs folder.
 >
-> Please see: [/docs/ROADMAP.md](../../docs/ROADMAP.md)
+> Please see: [api/docs/ROADMAP.md](../../api/docs/ROADMAP.md)

@@ -128,4 +128,4 @@ table beneath it. Derive counts from the list query instead.
 
 - api#372 — reconciled the three definitions of `findings.source`
 - api#373 — stopped recording every unknown scanner as SAST; added `va`
-- ui#336 — filters in the URL, multi-select source
+- openctemio/ui#336 — filters in the URL, multi-select source
