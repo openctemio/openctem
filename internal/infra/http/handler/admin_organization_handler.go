@@ -310,7 +310,9 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 	middleware.SetAuditResource(r.Context(), t.ID(), t.Name())
 	resp := AdminCreateOrganizationResponse{}
 	if ownerCreated {
-		setup, serr := h.provisioning.ReissueSetupLink(r.Context(), t.ID().String(), owner.ID().String(), adminAuditContext(r, t.ID().String()))
+		// No organization caller: the platform console issues the new
+		// owner's first link.
+		setup, serr := h.provisioning.ReissueSetupLink(r.Context(), t.ID().String(), owner.ID().String(), "", adminAuditContext(r, t.ID().String()))
 		if serr != nil {
 			// The organization exists; the owner can still use forgot-password
 			// or the console can issue a link again.

@@ -334,8 +334,12 @@ func Register(
 	// permission version is confirmed-stale (e.g. a role was revoked or an
 	// admin demoted). Without it, permissions baked into the JWT stay live
 	// until the token expires. Fails open on a Redis outage (see GetChecked).
+	// A stale token's admin flag and role are re-read from the database
+	// (tenantRepo, not the membership cache), so a demoted admin loses the
+	// admin bypass on the next request, reads included.
 	if permCache != nil && permVersion != nil {
-		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).EnrichPermissions
+		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).
+			WithTeamRoleReader(tenantRepo).EnrichPermissions
 	}
 
 	// Per-request SSO enforcement (defense-in-depth). Re-applies the mint-time

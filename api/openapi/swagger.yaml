@@ -27256,7 +27256,9 @@ paths:
     post:
       description: Replaces the one-time set-password link of an account an administrator
         created that has never been used and belongs to this organization only. Owner/admin
-        only. 400 for any other account (its owner recovers it with forgot-password).
+        only; an owner or administrator account, or one holding a role the caller could
+        not grant, needs an owner (403). 400 for any other account (its owner recovers
+        it with forgot-password).
       parameters:
       - description: Tenant ID or slug
         in: path
@@ -27277,6 +27279,10 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
         "404":

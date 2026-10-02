@@ -2,11 +2,13 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -18,10 +20,27 @@ const permSyncTimeout = 2 * time.Second
 // It enriches the request context with permissions from Redis cache
 // and sets the X-Permission-Stale header when JWT version doesn't match Redis version.
 type PermissionSyncMiddleware struct {
-	permCache   *app.PermissionCacheService
-	permVersion *app.PermissionVersionService
-	logger      *logger.Logger
+	permCache   permissionFetcher
+	permVersion permissionVersionReader
+	// teamRoles re-derives the team role (owner/admin/...) of a stale token
+	// from the database. See WithTeamRoleReader.
+	teamRoles TeamRoleReader
+	logger    *logger.Logger
 }
+
+// permissionFetcher and permissionVersionReader are the parts of the
+// permission cache and version services the middleware uses.
+type permissionFetcher interface {
+	GetPermissionsWithFallback(ctx context.Context, tenantID, userID string) ([]string, error)
+}
+
+type permissionVersionReader interface {
+	GetChecked(ctx context.Context, tenantID, userID string) (int, bool)
+}
+
+// TeamRoleReader reads a user's current membership (and so team role) in a
+// tenant. tenant.Repository satisfies it.
+type TeamRoleReader = MembershipReader
 
 // PermSyncContextKey is a context key for permission sync data.
 const (
@@ -47,11 +66,61 @@ func NewPermissionSyncMiddleware(
 	permVersion *app.PermissionVersionService,
 	log *logger.Logger,
 ) *PermissionSyncMiddleware {
+	return newPermissionSyncMiddleware(permVersion, permCache, nil, log)
+}
+
+func newPermissionSyncMiddleware(
+	permVersion permissionVersionReader,
+	permCache permissionFetcher,
+	teamRoles TeamRoleReader,
+	log *logger.Logger,
+) *PermissionSyncMiddleware {
 	return &PermissionSyncMiddleware{
 		permCache:   permCache,
 		permVersion: permVersion,
+		teamRoles:   teamRoles,
 		logger:      log.With("middleware", "permission_sync"),
 	}
+}
+
+// WithTeamRoleReader sets where a stale token's team role is re-read from.
+// Pass the database-backed repository, not a cache: this runs only for tokens
+// whose permission version is stale, i.e. right after a role change. Without a
+// reader, a stale token is refused (409) on every method.
+func (m *PermissionSyncMiddleware) WithTeamRoleReader(r TeamRoleReader) *PermissionSyncMiddleware {
+	m.teamRoles = r
+	return m
+}
+
+// writeStale answers 409 permissions_stale: the client refreshes its token and
+// retries.
+func writeStale(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	_, _ = w.Write([]byte(`{"code":"permissions_stale","message":"Your session is using outdated permissions. Refresh your token and retry."}`))
+}
+
+// currentTeamRole re-reads the user's team role from the database.
+func (m *PermissionSyncMiddleware) currentTeamRole(ctx context.Context, tenantID, userID string) (string, error) {
+	if m.teamRoles == nil {
+		return "", errNoTeamRoleReader
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return "", err
+	}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return "", err
+	}
+	membership, err := m.teamRoles.GetMembership(ctx, uid, tid)
+	if err != nil {
+		return "", err
+	}
+	if membership.IsSuspended() {
+		return "", errMembershipSuspended
+	}
+	return membership.Role().String(), nil
 }
 
 // EnrichPermissions fetches permissions from Redis cache and adds them to context.
@@ -134,11 +203,25 @@ func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Han
 					"user_id", userID, "tenant_id", tenantID,
 					"method", r.Method, "path", r.URL.Path,
 					"jwt_version", jwtPermVersion, "current_version", currentVersion)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusConflict)
-				_, _ = w.Write([]byte(`{"code":"permissions_stale","message":"Your session is using outdated permissions. Refresh your token and retry."}`))
+				writeStale(w)
 				return
 			}
+
+			// A safe method with a stale token: the token's admin flag and
+			// role may describe a role the user no longer holds (a demoted
+			// admin, audit H2). Re-derive both from the database; if that is
+			// not possible, refuse like a stale write.
+			lookupCtx, cancelLookup := context.WithTimeout(ctx, permSyncTimeout)
+			role, err := m.currentTeamRole(lookupCtx, tenantID, userID)
+			cancelLookup()
+			if err != nil {
+				m.logger.Warn("stale token: team role unavailable, refusing",
+					"user_id", userID, "tenant_id", tenantID, "error", err)
+				writeStale(w)
+				return
+			}
+			ctx = context.WithValue(ctx, RoleKey, role)
+			ctx = context.WithValue(ctx, IsAdminKey, role == "owner" || role == "admin")
 		}
 
 		// Fetch permissions from cache/DB with timeout to prevent DoS
@@ -146,25 +229,40 @@ func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Han
 		permissions, err := m.permCache.GetPermissionsWithFallback(fetchCtx, tenantID, userID)
 		cancel() // Always cancel to release resources
 		if err != nil {
-			m.logger.Warn("failed to get permissions, using empty list",
+			if isStale {
+				// The token's own permissions are known to be outdated.
+				m.logger.Warn("stale token and permissions unavailable, refusing",
+					"user_id", userID, "tenant_id", tenantID, "error", err)
+				writeStale(w)
+				return
+			}
+			// The token is current, so its permissions are too: keep them
+			// (a cache/DB outage is not a revocation).
+			m.logger.Warn("failed to get permissions, keeping the token's",
 				"user_id", userID,
 				"tenant_id", tenantID,
 				"error", err,
 			)
-			permissions = []string{}
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
 		}
 
-		// Store in context
+		// Store in context. Once FetchedPermissionsKey is set, HasPermission
+		// uses only this fresh set and never the token's embedded array, so a
+		// revoked permission stops working for reads too (audit F9).
 		ctx = context.WithValue(ctx, FetchedPermissionsKey, permissions)
 		ctx = context.WithValue(ctx, PermVersionKey, currentVersion)
 		ctx = context.WithValue(ctx, PermStaleKey, isStale)
-
-		// Also update PermissionsKey so existing HasPermission works
 		ctx = context.WithValue(ctx, PermissionsKey, permissions)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+var (
+	errNoTeamRoleReader    = errors.New("no team role reader configured")
+	errMembershipSuspended = errors.New("membership is suspended")
+)
 
 // (isSafeMethod is defined in csrf.go in this package — same semantics:
 // read methods are allowed through stale-permission window, write

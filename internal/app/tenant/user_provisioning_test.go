@@ -119,6 +119,11 @@ type provRoles struct {
 	err     error
 	foreign map[string]bool // role ids that belong to another tenant
 	checked int
+	authErr error // returned by AuthorizeAccountAction
+}
+
+func (g *provRoles) AuthorizeAccountAction(context.Context, string, string, string) error {
+	return g.authErr
 }
 
 func (g *provRoles) ValidateRolesForTenant(_ context.Context, _ string, roleIDs []string) error {
@@ -366,7 +371,7 @@ func TestReissueSetupLink_PendingAccount_ReplacesToken(t *testing.T) {
 	u := createdUser(t, svc, tr, ur)
 	oldHash := *u.PasswordResetToken()
 
-	res, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), u.ID().String(), auditapp.AuditContext{})
+	res, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), u.ID().String(), "", auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("ReissueSetupLink: %v", err)
 	}
@@ -380,7 +385,7 @@ func TestReissueSetupLink_UsedAccountRefused(t *testing.T) {
 	u := createdUser(t, svc, tr, ur)
 	_ = u.SetPasswordHash("hash")
 
-	if _, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), u.ID().String(), auditapp.AuditContext{}); !errors.Is(err, ErrNotPendingSetup) {
+	if _, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), u.ID().String(), "", auditapp.AuditContext{}); !errors.Is(err, ErrNotPendingSetup) {
 		t.Fatalf("an account with a password must be refused, got %v", err)
 	}
 }
@@ -390,7 +395,7 @@ func TestReissueSetupLink_AccountInAnotherOrganizationRefused(t *testing.T) {
 	u := createdUser(t, svc, tr, ur)
 	tr.others = []tenantdom.UserMembership{{TenantID: shared.NewID().String()}}
 
-	if _, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), u.ID().String(), auditapp.AuditContext{}); !errors.Is(err, ErrNotPendingSetup) {
+	if _, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), u.ID().String(), "", auditapp.AuditContext{}); !errors.Is(err, ErrNotPendingSetup) {
 		t.Fatalf("an account that also belongs to another organization must be refused, got %v", err)
 	}
 }
@@ -400,7 +405,72 @@ func TestReissueSetupLink_NonMemberNotFound(t *testing.T) {
 	stranger, _ := userdom.NewProvisionedLocalUser("s@corp.com", "S")
 	_ = ur.Create(context.Background(), stranger)
 
-	if _, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), stranger.ID().String(), auditapp.AuditContext{}); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), stranger.ID().String(), "", auditapp.AuditContext{}); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("a non-member must be not found, got %v", err)
+	}
+}
+
+// addMember gives the fixture tenant a member with the given team role.
+func addMember(t *testing.T, tr *provTenantRepo, role tenantdom.Role) shared.ID {
+	t.Helper()
+	uid := shared.NewID()
+	m, err := tenantdom.NewMembership(uid, tr.tenant.ID(), role, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr.memberships[uid.String()] = m
+	return uid
+}
+
+// M1: the set-password link takes the pending account over, so an
+// administrator may not obtain one for an owner or administrator account.
+func TestReissueSetupLink_CallerBoundedByTargetRole(t *testing.T) {
+	ctx := context.Background()
+	svc, tr, ur, roles, _ := provFixture(t)
+	u := createdUser(t, svc, tr, ur)
+	tid := tr.tenant.ID().String()
+	admin := addMember(t, tr, tenantdom.RoleAdmin).String()
+	owner := addMember(t, tr, tenantdom.RoleOwner).String()
+	viewer := addMember(t, tr, tenantdom.RoleViewer).String()
+
+	// Pending viewer: an admin may reissue.
+	if res, err := svc.ReissueSetupLink(ctx, tid, u.ID().String(), admin, auditapp.AuditContext{}); err != nil || res.SetupToken == "" {
+		t.Fatalf("admin -> pending viewer: %v", err)
+	}
+	// A non-admin caller never may.
+	if _, err := svc.ReissueSetupLink(ctx, tid, u.ID().String(), viewer, auditapp.AuditContext{}); !errors.Is(err, ErrSetupLinkForbidden) {
+		t.Fatalf("viewer caller: want forbidden, got %v", err)
+	}
+	// A caller outside the organization never may.
+	if _, err := svc.ReissueSetupLink(ctx, tid, u.ID().String(), shared.NewID().String(), auditapp.AuditContext{}); !errors.Is(err, ErrSetupLinkForbidden) {
+		t.Fatalf("non-member caller: want forbidden, got %v", err)
+	}
+	// The role ceiling refuses: no token.
+	roles.authErr = fmt.Errorf("%w: carries team:delete", shared.ErrForbidden)
+	if res, err := svc.ReissueSetupLink(ctx, tid, u.ID().String(), admin, auditapp.AuditContext{}); !errors.Is(err, ErrSetupLinkForbidden) || res != nil {
+		t.Fatalf("role beyond the caller's grants: want forbidden and no result, got %v", err)
+	}
+	roles.authErr = nil
+
+	// Pending owner / admin targets need an owner.
+	for _, role := range []tenantdom.Role{tenantdom.RoleOwner, tenantdom.RoleAdmin} {
+		m := tr.memberships[u.ID().String()]
+		if err := m.UpdateRole(role); err != nil {
+			// UpdateRole refuses owner; rebuild the membership instead.
+			nm, nerr := tenantdom.NewMembership(u.ID(), tr.tenant.ID(), role, nil)
+			if nerr != nil {
+				t.Fatal(nerr)
+			}
+			tr.memberships[u.ID().String()] = nm
+		}
+		if res, err := svc.ReissueSetupLink(ctx, tid, u.ID().String(), admin, auditapp.AuditContext{}); !errors.Is(err, ErrSetupLinkForbidden) || res != nil {
+			t.Fatalf("admin -> pending %s: want forbidden and no token, got %v", role, err)
+		}
+		if res, err := svc.ReissueSetupLink(ctx, tid, u.ID().String(), owner, auditapp.AuditContext{}); err != nil || res.SetupToken == "" {
+			t.Fatalf("owner -> pending %s: %v", role, err)
+		}
+		if res, err := svc.ReissueSetupLink(ctx, tid, u.ID().String(), "", auditapp.AuditContext{}); err != nil || res.SetupToken == "" {
+			t.Fatalf("platform console -> pending %s: %v", role, err)
+		}
 	}
 }

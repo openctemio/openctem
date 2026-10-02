@@ -1596,6 +1596,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithRolePermissionVersionService(s.PermVersion),
 		app.WithRolePermissionCacheService(s.PermCache),
 		app.WithRoleMembershipReader(s.MembershipCache),
+		app.WithRoleMembershipCacheInvalidator(s.MembershipCache),
 	)
 
 	// Bound every oct_ key by what its user holds now, not at mint time.

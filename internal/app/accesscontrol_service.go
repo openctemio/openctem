@@ -77,6 +77,7 @@ var (
 	WithRoleMembershipReader              = accesscontrol.WithRoleMembershipReader
 	WithRolePermissionCacheService        = accesscontrol.WithRolePermissionCacheService
 	WithRolePermissionVersionService      = accesscontrol.WithRolePermissionVersionService
+	WithRoleMembershipCacheInvalidator    = accesscontrol.WithRoleMembershipCacheInvalidator
 
 	ComputeContentHash    = accesscontrol.ComputeContentHash
 	GenerateBundleVersion = accesscontrol.GenerateBundleVersion

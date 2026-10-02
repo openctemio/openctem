@@ -155,3 +155,40 @@ func (s *RoleService) authorizeRoleSetChange(ctx context.Context, a grantActor, 
 	}
 	return nil
 }
+
+// AuthorizeAccountAction checks that actorID may act on targetUserID's account
+// in ways that amount to taking it over, such as issuing a set-password link
+// for an account that has never signed in. The actor must be able to grant
+// every role the target holds, and a target holding the owner or admin system
+// role needs an owner. An empty actorID is a system path (the platform
+// console) and is allowed.
+func (s *RoleService) AuthorizeAccountAction(ctx context.Context, tenantID, actorID, targetUserID string) error {
+	if actorID == "" {
+		return nil
+	}
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	uid, err := roledom.ParseID(targetUserID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
+	}
+	actor, err := s.loadGrantActor(ctx, tid, actorID)
+	if err != nil {
+		return err
+	}
+	roles, err := s.roleRepo.GetUserRoles(ctx, tid, uid)
+	if err != nil {
+		return fmt.Errorf("load target roles: %w", err)
+	}
+	for _, r := range roles {
+		if (r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID) && !actor.owner {
+			return fmt.Errorf("%w: only an owner can act on an owner's or administrator's account", ErrGrantForbidden)
+		}
+		if err := actor.mayGrant(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
