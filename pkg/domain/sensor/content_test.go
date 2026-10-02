@@ -282,3 +282,32 @@ func TestCapabilityReportCarriesContent(t *testing.T) {
 		t.Fatalf("flattened = %+v", flat)
 	}
 }
+
+// Sensors up to v0.6.1 report managed content that is still being installed
+// with the error "not installed yet". It is missing, not a failed refresh.
+func TestReportedContent_NotInstalledYetIsNotAnError(t *testing.T) {
+	a := &Sensor{Reported: CapabilityReport{Tools: []ReportedTool{{Name: "nuclei", Content: []ReportedContent{
+		{Name: "nuclei-templates", Managed: true, Error: "not installed yet"},
+		{Name: "other", Managed: true, Version: "v1", Error: "not installed yet"},
+	}}}}}
+	got := a.ReportedContent()
+	if got[0].Error != "" {
+		t.Errorf("version-less content: error %q, want none", got[0].Error)
+	}
+	if got[1].Error == "" {
+		t.Error("content with a version keeps its error")
+	}
+	flagged := false
+	for _, r := range a.contentReasons(time.Now(), nil) {
+		if !strings.Contains(r.Message, "nuclei templates") {
+			continue
+		}
+		flagged = true
+		if r.Code != ReasonContentStale || strings.Contains(r.Message, "failed") {
+			t.Errorf("reason %+v: want missing (content_stale), not a failed refresh", r)
+		}
+	}
+	if !flagged {
+		t.Error("missing managed content is still flagged by the age limit")
+	}
+}

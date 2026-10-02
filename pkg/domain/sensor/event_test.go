@@ -131,3 +131,36 @@ func TestActivityCursorRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// What live showed after a container re-create (sensor v0.6.1): managed
+// content first reports "not installed yet" while its first download runs,
+// then a version. The first is not a failure, and the install is an update.
+func TestDiffHeartbeat_ContentFirstInstall(t *testing.T) {
+	report := func(c ReportedContent) *CapabilityReport {
+		c.Managed = true
+		return &CapabilityReport{Tools: []ReportedTool{{Name: "trivy", Installed: true, Content: []ReportedContent{c}}}}
+	}
+	prev := diffSensor()
+	prev.Reported = *report(ReportedContent{Name: "trivy-db", Version: "2026-10-01"})
+
+	installing := DiffHeartbeat(prev, HeartbeatObservation{At: time.Now(), Report: report(ReportedContent{Name: "trivy-db", Error: legacyNotInstalledYet})})
+	if e, ok := typesOf(installing)[EventContentRefreshFailed]; ok {
+		t.Fatalf("a first install in progress is not a failure: %+v", e)
+	}
+
+	prev.Reported = *report(ReportedContent{Name: "trivy-db", Error: legacyNotInstalledYet})
+	got := typesOf(DiffHeartbeat(prev, HeartbeatObservation{At: time.Now(), Report: report(ReportedContent{Name: "trivy-db", Version: "2026-10-02"})}))
+	e, ok := got[EventContentUpdated]
+	if !ok {
+		t.Fatalf("installing the first version records content_updated; got %+v", got)
+	}
+	if e.Summary != "Content installed: trivy-db" {
+		t.Errorf("summary %q", e.Summary)
+	}
+
+	// A real failure after nothing was installed is still a failure.
+	got = typesOf(DiffHeartbeat(prev, HeartbeatObservation{At: time.Now(), Report: report(ReportedContent{Name: "trivy-db", Error: "registry unreachable"})}))
+	if _, ok := got[EventContentRefreshFailed]; !ok {
+		t.Error("real failure missing")
+	}
+}

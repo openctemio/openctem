@@ -202,10 +202,26 @@ func (a *Sensor) ReportedContent() []ReportedContent {
 	for _, t := range a.Reported.Tools {
 		for _, c := range t.Content {
 			c.Tool = t.Name
-			out = append(out, c)
+			out = append(out, normalizeContent(c))
 		}
 	}
 	return out
+}
+
+// legacyNotInstalledYet is what sensors up to v0.6.1 report as the error of
+// managed content whose first download has not finished (or not started).
+// It is not a failed refresh: nothing has failed yet.
+const legacyNotInstalledYet = "not installed yet"
+
+// normalizeContent drops that placeholder error from content that has no
+// version, so it reads as missing (still flagged by the age limit) and not
+// as a refresh failure. A real error, or any error on installed content, is
+// kept.
+func normalizeContent(c ReportedContent) ReportedContent {
+	if c.Version == "" && c.Error == legacyNotInstalledYet {
+		c.Error = ""
+	}
+	return c
 }
 
 // SupportsContentRefresh reports whether the sensor accepts refresh_content
