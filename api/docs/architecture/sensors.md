@@ -1126,6 +1126,21 @@ inside it. Use one zone per segment (scan-zones.md).
     are never shown in the audit.
   - Permissions: `sensors:egress:read|write|delete`, admin and owner only.
 
+## Tool settings (RFC-038, proposed)
+
+> Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
+> **proposed, nothing shipped yet.**
+
+Today a tool's options are not managed by the platform: the sensor's
+wrappers take them from host env vars or code, and the SDK copies only
+`allow_interactsh` and `exclude` from a command's `config` into
+`core.ScanOptions`; other `scanner_config` / scan-profile `options` keys
+are ignored. The design: each tool declares a typed settings schema,
+registered by digest in the manifest; admins edit a generated form on the
+sensor's page; the api validates and audits, then pushes a signed,
+versioned settings document that the sensor re-validates, stores and
+applies from the next job, reporting the applied version.
+
 ## Control plane under load (RFC-035)
 
 A sensor's scanners can saturate its CPU, memory and disk, and the sensor
