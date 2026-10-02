@@ -266,6 +266,14 @@ type HeartbeatRequest struct {
 	Resources *sensor.ReportedResources `json:"resources,omitempty"`
 	Capacity  *sensor.ReportedCapacity  `json:"capacity,omitempty"`
 	Queue     *sensor.ReportedQueue     `json:"queue,omitempty"`
+
+	// Build information, optional (docs/architecture/sensors.md "Build
+	// information"): sdk {name, version} and sensor {name, version, commit,
+	// build_time}. Kept raw and read leniently: a member of an unexpected
+	// shape is ignored rather than failing the heartbeat. Untrusted; sensors
+	// that omit it are read from their User-Agent.
+	SDK    json.RawMessage `json:"sdk,omitempty" swaggertype:"object"`
+	Sensor json.RawMessage `json:"sensor,omitempty" swaggertype:"object"`
 }
 
 // loadReport returns the heartbeat's load report, nil when it carried none.
@@ -275,6 +283,33 @@ func (req *HeartbeatRequest) loadReport() *sensor.LoadReport {
 		return nil
 	}
 	return l
+}
+
+// heartbeatBuildMember is the shape of the sdk and sensor members.
+type heartbeatBuildMember struct {
+	Name      any `json:"name"`
+	Version   any `json:"version"`
+	Commit    any `json:"commit"`
+	BuildTime any `json:"build_time"`
+}
+
+// buildReport reads the heartbeat's sdk and sensor members; a member that is
+// not an object, or a field that is not a string, is ignored.
+func (req *HeartbeatRequest) buildReport() sensor.BuildReport {
+	str := func(v any) string {
+		s, _ := v.(string)
+		return s
+	}
+	var out sensor.BuildReport
+	var sdk, sen heartbeatBuildMember
+	if len(req.SDK) > 0 && json.Unmarshal(req.SDK, &sdk) == nil {
+		out.SDKName, out.SDKVersion = str(sdk.Name), str(sdk.Version)
+	}
+	if len(req.Sensor) > 0 && json.Unmarshal(req.Sensor, &sen) == nil {
+		out.SensorName, out.SensorVersion = str(sen.Name), str(sen.Version)
+		out.Commit, out.BuildTime = str(sen.Commit), str(sen.BuildTime)
+	}
+	return out
 }
 
 // HeartbeatTool is one tool of a heartbeat's tool inventory.

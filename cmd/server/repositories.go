@@ -95,7 +95,9 @@ type Repositories struct {
 	// Sensors & Commands
 	Sensor       *postgres.SensorRepository
 	SensorAPIKey *postgres.SensorAPIKeyRepository
-	Command      *postgres.CommandRepository
+	// SensorEvent is the sensor activity timeline (sensor_events).
+	SensorEvent *postgres.SensorEventRepository
+	Command     *postgres.CommandRepository
 	// SensorContentPolicy is the tenant scanner content policy (RFC-031).
 	SensorContentPolicy *postgres.SensorContentPolicyRepository
 	IngestJob           *postgres.IngestJobRepository
@@ -318,6 +320,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Sensors & Commands
 		Sensor:              postgres.NewSensorRepository(db),
 		SensorAPIKey:        postgres.NewSensorAPIKeyRepository(db),
+		SensorEvent:         postgres.NewSensorEventRepository(db),
 		Command:             postgres.NewCommandRepository(db),
 		SensorContentPolicy: postgres.NewSensorContentPolicyRepository(db),
 		IngestJob:           postgres.NewIngestJobRepository(db),

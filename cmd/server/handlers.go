@@ -577,7 +577,10 @@ func sensorInstallImage(cfg *config.Config, log *logger.Logger) string {
 // three idle heartbeat intervals (at least 90s).
 func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.HealthPolicy {
 	sc := cfg.SensorConfig
-	for name, v := range map[string]string{"SENSOR_LATEST_VERSION": sc.LatestVersion, "SENSOR_MIN_VERSION": sc.MinVersion} {
+	for name, v := range map[string]string{
+		"SENSOR_LATEST_VERSION": sc.LatestVersion, "SENSOR_MIN_VERSION": sc.MinVersion,
+		"SENSOR_SDK_LATEST_VERSION": sc.SDKLatestVersion, "SENSOR_SDK_MIN_VERSION": sc.SDKMinVersion,
+	} {
 		if v != "" && !sensordom.IsReleaseVersion(v) {
 			log.Warn("ignoring sensor release setting that is not a version (want e.g. v0.4.2, or none)",
 				"setting", name, "value", v)
@@ -585,10 +588,12 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 	}
 	offline := cfg.Worker.HeartbeatTimeout
 	return sensordom.HealthPolicy{
-		OnlineWindow:  sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
-		OfflineAfter:  offline,
-		LatestVersion: sc.LatestVersion,
-		MinVersion:    sc.MinVersion,
+		OnlineWindow:     sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
+		OfflineAfter:     offline,
+		LatestVersion:    sc.LatestVersion,
+		MinVersion:       sc.MinVersion,
+		SDKLatestVersion: sc.SDKLatestVersion,
+		SDKMinVersion:    sc.SDKMinVersion,
 	}.Normalized()
 }
 

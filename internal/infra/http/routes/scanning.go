@@ -281,6 +281,9 @@ func registerSensorManagementRoutes(
 		}
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead))
+		// Activity timeline. Audit-log items are added only for callers that
+		// also hold audit:read (the handler checks it).
+		r.GET("/{id}/activity", h.Activity, middleware.Require(permission.SensorsRead))
 
 		// Available capabilities for tenant (aggregated from all accessible sensors)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))

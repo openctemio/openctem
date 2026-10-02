@@ -261,8 +261,9 @@ at least 90s, at most the timeout. `GET /sensors/stats` returns both thresholds
 **Health reasons** (`health_reasons[]`: `code`, `severity`, `message`), listed
 whatever the state: `outbox_backlog` (results waiting over an hour),
 `outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
-7 days), `version_unsupported`, `no_tools` (a scanning daemon with no tools),
-`error_reported`. A heartbeating sensor with any reason is `degraded`.
+7 days), `version_unsupported`, `sdk_unsupported` (see "Build information"),
+`no_tools` (a scanning daemon with no tools), `error_reported`. A heartbeating
+sensor with any reason is `degraded`.
 
 **Release channel**: `SENSOR_LATEST_VERSION` (default: the newest sensor release
 when the API was built, `none` turns it off) and `SENSOR_MIN_VERSION` (default
@@ -285,6 +286,88 @@ connects from.
 Shared platform sensors (`is_platform_sensor`) are in neither; their capacity
 is `GET /api/v1/platform/stats`, shown on its own page. The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
+
+## Build information
+
+The platform knows which sensor product, version, commit and SDK each sensor
+runs (`pkg/domain/sensor/build.go`, `ResolveBuild`). A heartbeat (v1 and v2,
+additive and optional) may carry:
+
+```json
+{"sdk": {"name": "openctem-sdk-go", "version": "0.9.0"},
+ "sensor": {"name": "openctemio-sensor", "version": "0.5.0", "commit": "abc1234", "build_time": "2026-10-01T12:00:00Z"}}
+```
+
+The members are read leniently: a member of another shape, or a field that is
+not a string, is ignored, never a reason to refuse the heartbeat. Every part a
+heartbeat leaves empty is taken from the User-Agent the SDK sends
+(`<product>/<version> openctem-sdk-go/<sdk version>`), so sensors that predate
+the members are populated too; the generic `sdk/1.0` of older SDKs carries
+nothing. Values are untrusted and reduced to safe tokens: names
+`[a-z0-9._-]` (64), versions must be release versions and are normalized
+(`v0.9.0`), commits hex (7-40), build times RFC 3339 no later than a day ahead.
+The top-level `version` member stays the sensor version (`sensors.version`);
+`sensor.version` and then the User-Agent product version are used only when
+it is empty. Stored in `sensors.sdk_name`, `sdk_version`, `sensor_product`,
+`sensor_commit`, `sensor_build_time` (migration 000255); an empty part leaves
+the stored value.
+
+**SDK policy**: `SENSOR_SDK_MIN_VERSION` and `SENSOR_SDK_LATEST_VERSION`
+(default none; `none` turns one off). `sdk_status` per sensor is `unsupported`
+(below the minimum: health reason `sdk_unsupported`, so a heartbeating sensor
+is `degraded`), `outdated` (below the latest), `current`, or `unknown` (no SDK
+version known). The sensor responses carry `sdk_name`, `sdk_version`,
+`sdk_status`, `sensor_product`, `sensor_commit`, `sensor_build_time`; the stats
+add `sdk_min_version`, `sdk_latest_version`, `by_sdk_version` (`unknown` for
+none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)
+filters on it.
+
+## Activity
+
+`GET /api/v1/sensors/{id}/activity?types=&cursor=&limit=` is the sensor's
+timeline, newest first (`sensors:read`). It merges three sources, none copied
+into another:
+
+| Category | Types | Source |
+|---|---|---|
+| `status` | `online`, `offline`, `restarted` | `sensor_events` |
+| `updates` | `version_changed`, `sdk_version_changed`, `protocol_changed`, `tools_changed`, `capacity_changed`, `content_updated`, `content_refresh_failed` | `sensor_events` |
+| `jobs` | `job_claimed`, `job_completed`, `job_failed`, `job_canceled`, `job_expired` | `commands` (`acknowledged_at`, `completed_at`) |
+| `people` | `audit` | `audit_logs` |
+
+The audit log keeps administrator actions; operational history lives in
+`sensor_events` (migration 000255) so the tamper-evident chain stays lean.
+The server writes events, never the sensor:
+
+- **Heartbeat diff** (`sensor.DiffHeartbeat`, called from `UpdateHeartbeat`
+  with the row it already reads): a restart (`process_started_at` moved more
+  than 15s forward, with the downtime since the last heartbeat), a new sensor
+  version (upgrade / downgrade), SDK version, protocol (`1 -> 2`), installed
+  tools (added / removed / version bumps), effective job capacity, and scanner
+  content versions or refresh errors. A part the heartbeat does not carry, or
+  that was never reported before, is not a change.
+- **Health transitions**: `online` when a heartbeat arrives for a sensor that
+  was not online (with how long it was offline), `offline` when the health
+  checker marks it offline. `stale` is computed on read and has no event.
+
+**Limits**: identical consecutive events (the latest event of the same
+category has the same type, and the same summary for updates) within 10
+minutes fold into one row (`repeat_count`, `last_at`); at most 30 rows per
+sensor per category per hour, the rest are dropped, so a flapping sensor
+cannot crowd out its updates. `sensor-event-retention` deletes events after 90
+days. Platform sensors (no tenant) record nothing. A failed event or audit
+write is logged as a warning and never fails the heartbeat.
+
+**Audit items** are returned only when the caller also holds `audit:read`
+(owners and administrators); `audit_included` in the response says whether
+they were. They include rows written before the rename (`agent.*`, resource
+type `agent`), returned under their current names; a historical
+`connected`/`disconnected` row is a `status` item (`online`/`offline`), and one
+the server also wrote as an event appears once, as the event.
+
+**Paging**: `next_cursor` is opaque (the last item's time and key); each
+source is cut at the cursor and limited on its own, then merged, so pages
+never skip or repeat an item. `limit` is 1-100 (default 30).
 
 ## Install snippets
 

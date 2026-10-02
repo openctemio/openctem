@@ -211,6 +211,14 @@ type SensorConfigConfig struct {
 	// (SENSOR_MIN_VERSION, default empty = no minimum). A heartbeating sensor
 	// below it shows as degraded with "version unsupported".
 	MinVersion string
+	// SDKMinVersion is the oldest SDK release still supported
+	// (SENSOR_SDK_MIN_VERSION, default empty = no minimum). A heartbeating
+	// sensor built with an older SDK shows as degraded with "sdk_unsupported".
+	SDKMinVersion string
+	// SDKLatestVersion is the newest SDK release (SENSOR_SDK_LATEST_VERSION,
+	// default empty). A sensor built with an older SDK has sdk_status
+	// "outdated"; empty turns that comparison off.
+	SDKLatestVersion string
 
 	// Image is the sensor image repository the install snippets run
 	// (SENSOR_IMAGE, default ghcr.io/openctemio/sensor). The tag is
@@ -817,6 +825,8 @@ func Load() (*Config, error) {
 			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
 			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
 			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", "")),
+			SDKMinVersion:           sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", "")),
+			SDKLatestVersion:        sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", "")),
 			Image:                   getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
 			CACertFile:              getEnv("SENSOR_CA_CERT_FILE", ""),
 		},

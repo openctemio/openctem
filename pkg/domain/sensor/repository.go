@@ -24,6 +24,9 @@ type Filter struct {
 	Labels          map[string]string
 	Search          string
 	HasCapacity     *bool // Filter by sensors that have job capacity
+	// SDKVersion filters on the reported SDK version (normalized); "" matches
+	// sensors whose SDK version is unknown. nil: no filter.
+	SDKVersion *string
 }
 
 // HeartbeatUpdate is the set of columns a heartbeat is allowed to write.
@@ -72,6 +75,9 @@ type HeartbeatUpdate struct {
 	// leaves the stored report untouched, and so does each part of it that
 	// was not reported.
 	Load *LoadReport
+	// Build is the resolved build information (build.go); each empty part
+	// leaves the stored value untouched.
+	Build BuildInfo
 }
 
 // MaxReportedUptime caps the uptime a heartbeat may report (ten years); a

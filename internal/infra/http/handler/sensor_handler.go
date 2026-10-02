@@ -21,6 +21,10 @@ import (
 	"github.com/openctemio/api/pkg/validator"
 )
 
+// sdkVersionUnknown is the by_sdk_version key and sdk_version filter value
+// for sensors whose SDK version is unknown.
+const sdkVersionUnknown = "unknown"
+
 // SensorHandler handles HTTP requests for sensors.
 type SensorHandler struct {
 	service         *app.SensorService
@@ -220,6 +224,17 @@ type SensorResponse struct {
 	// ContentRefreshSupported: the sensor manages content, so it accepts
 	// POST /sensors/{id}/content/refresh.
 	ContentRefreshSupported bool `json:"content_refresh_supported"`
+
+	// Build information the sensor reported on its heartbeat, or that was
+	// read from its User-Agent (older sensors). "" / null when unknown.
+	SDKName    string `json:"sdk_name"`
+	SDKVersion string `json:"sdk_version"`
+	// SDKStatus compares sdk_version with SENSOR_SDK_MIN_VERSION and
+	// SENSOR_SDK_LATEST_VERSION.
+	SDKStatus       string  `json:"sdk_status" enums:"current,outdated,unsupported,unknown"`
+	SensorProduct   string  `json:"sensor_product"`
+	SensorCommit    string  `json:"sensor_commit"`
+	SensorBuildTime *string `json:"sensor_build_time"`
 }
 
 // SensorContentResponse is one piece of scanner content on a sensor. The
@@ -292,7 +307,7 @@ type SensorProtocolResponse struct {
 // stable (clients map it to their own wording and fix actions); message is a
 // plain-English fallback.
 type SensorHealthReasonResponse struct {
-	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,version_unsupported,no_tools,error_reported,content_stale,content_refresh_failed"`
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,version_unsupported,sdk_unsupported,no_tools,error_reported,content_stale,content_refresh_failed"`
 	Severity string `json:"severity" enums:"warning,critical"`
 	Message  string `json:"message"`
 }
@@ -441,6 +456,17 @@ func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 		input.Tools = parseQueryArray(tools)
 	}
 
+	if v, ok := r.URL.Query()["sdk_version"]; ok && len(v) > 0 {
+		sdk := strings.TrimSpace(v[0])
+		if strings.EqualFold(sdk, sdkVersionUnknown) {
+			sdk = ""
+		} else if sdk = sensor.NormalizeVersion(sdk); !sensor.IsReleaseVersion(sdk) {
+			apierror.BadRequest("sdk_version must be a version (e.g. v0.9.0) or unknown").WriteJSON(w)
+			return
+		}
+		input.SDKVersion = &sdk
+	}
+
 	if hasCapacity := r.URL.Query().Get("has_capacity"); hasCapacity != "" {
 		val := hasCapacity == queryParamTrue
 		input.HasCapacity = &val
@@ -503,6 +529,16 @@ type SensorStatsResponse struct {
 	// one older than offline_after_seconds is offline, stale in between.
 	OnlineWindowSeconds int `json:"online_window_seconds"`
 	OfflineAfterSeconds int `json:"offline_after_seconds"`
+
+	// SDKMinVersion and SDKLatestVersion are the SDK policy
+	// (SENSOR_SDK_MIN_VERSION, SENSOR_SDK_LATEST_VERSION); "" when not set.
+	SDKMinVersion    string `json:"sdk_min_version"`
+	SDKLatestVersion string `json:"sdk_latest_version"`
+	// BySDKVersion counts sensors per reported SDK version ("unknown" when
+	// none); its keys are the values GET /sensors?sdk_version= accepts.
+	BySDKVersion map[string]int `json:"by_sdk_version"`
+	// BySDKStatus counts sensors per SDK status (every status present).
+	BySDKStatus map[string]int `json:"by_sdk_status"`
 }
 
 // GetStats handles GET /api/v1/sensors/stats
@@ -557,10 +593,21 @@ func (h *SensorHandler) addFleetSummary(resp *SensorStatsResponse, sensors []*se
 		string(sensor.VersionLatest): 0, string(sensor.VersionUpdateAvailable): 0,
 		string(sensor.VersionUnsupported): 0, string(sensor.VersionUnknown): 0,
 	}
+	resp.BySDKVersion = map[string]int{}
+	resp.BySDKStatus = make(map[string]int, len(sensor.AllSDKStatuses()))
+	for _, st := range sensor.AllSDKStatuses() {
+		resp.BySDKStatus[string(st)] = 0
+	}
 	for _, a := range sensors {
 		hl := a.AssessHealth(now, p)
 		resp.ByState[string(hl.State)]++
 		resp.ByVersionStatus[string(hl.VersionStatus)]++
+		resp.BySDKStatus[string(hl.SDKStatus)]++
+		sdkKey := a.Build.SDKVersion
+		if sdkKey == "" {
+			sdkKey = sdkVersionUnknown
+		}
+		resp.BySDKVersion[sdkKey]++
 		enabled := hl.State != sensor.StateDisabled && hl.State != sensor.StateRevoked
 		if enabled && len(hl.Reasons) > 0 {
 			resp.NeedsAttention++
@@ -573,6 +620,8 @@ func (h *SensorHandler) addFleetSummary(resp *SensorStatsResponse, sensors []*se
 	}
 	resp.LatestVersion = p.LatestVersion
 	resp.MinVersion = p.MinVersion
+	resp.SDKMinVersion = p.SDKMinVersion
+	resp.SDKLatestVersion = p.SDKLatestVersion
 	resp.OnlineWindowSeconds = int(p.OnlineWindow / time.Second)
 	resp.OfflineAfterSeconds = int(p.OfflineAfter / time.Second)
 }
@@ -854,6 +903,12 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		StartedAt:        rfc3339Ptr(a.StartedAt),
 		UptimeSeconds:    health.UptimeSeconds,
 		IsPlatformSensor: a.IsPlatformSensor,
+		SDKName:          a.Build.SDKName,
+		SDKVersion:       a.Build.SDKVersion,
+		SDKStatus:        string(health.SDKStatus),
+		SensorProduct:    a.Build.Product,
+		SensorCommit:     a.Build.Commit,
+		SensorBuildTime:  rfc3339Ptr(a.Build.BuildTime),
 	}
 	for _, r := range health.Reasons {
 		resp.HealthReasons = append(resp.HealthReasons, SensorHealthReasonResponse{

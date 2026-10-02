@@ -3232,6 +3232,19 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_openctemio_api_pkg_domain_sensor.ReportedCapacity:
+    properties:
+      active_jobs:
+        type: integer
+      per_tool:
+        additionalProperties:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ToolCost'
+        type: object
+      slots_free:
+        type: integer
+      slots_total:
+        type: integer
+    type: object
   github_com_openctemio_api_pkg_domain_sensor.ReportedContent:
     properties:
       checked_at:
@@ -3266,6 +3279,32 @@ definitions:
       version:
         type: string
     type: object
+  github_com_openctemio_api_pkg_domain_sensor.ReportedQueue:
+    properties:
+      claimed:
+        type: integer
+      oldest_age_seconds:
+        type: integer
+      queued_local:
+        type: integer
+      running:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ReportedResources:
+    properties:
+      cpu_cores:
+        type: number
+      cpu_used_pct:
+        type: number
+      disk_free_bytes:
+        type: integer
+      load1:
+        type: number
+      mem_available_bytes:
+        type: integer
+      mem_total_bytes:
+        type: integer
+    type: object
   github_com_openctemio_api_pkg_domain_sensor.ReportedTool:
     properties:
       content:
@@ -3281,6 +3320,15 @@ definitions:
         type: string
       version:
         type: string
+    type: object
+  github_com_openctemio_api_pkg_domain_sensor.ToolCost:
+    properties:
+      est_cpu_s:
+        type: number
+      est_mem_bytes:
+        type: integer
+      throughput_targets_per_min:
+        type: number
     type: object
   github_com_openctemio_api_pkg_domain_templatesource.GitSourceConfig:
     properties:
@@ -7935,6 +7983,8 @@ definitions:
         items:
           type: string
         type: array
+      capacity:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedCapacity'
       collectors:
         items:
           type: string
@@ -7975,12 +8025,33 @@ definitions:
           disk, waiting to be delivered). Optional: SDKs without an outbox omit
           it, and a heartbeat without it leaves the stored snapshot untouched.
           Display data only; values are clamped before they are stored.
+      queue:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedQueue'
       region:
         type: string
+      resources:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedResources'
+        description: |-
+          The sensor's load, computed by the SDK (RFC-030 §5.8), all optional:
+          the machine's resources (container limits when it runs in one), its
+          job slots and per-tool cost, and its local work queue. Untrusted:
+          clamped before it is stored, and it can only lower what dispatch
+          hands the sensor.
       scanners:
         items:
           type: string
         type: array
+      sdk:
+        description: |-
+          Build information, optional (docs/architecture/sensors.md "Build
+          information"): sdk {name, version} and sensor {name, version, commit,
+          build_time}. Kept raw and read leniently: a member of an unexpected
+          shape is ignored rather than failing the heartbeat. Untrusted; sensors
+          that omit it are read from their User-Agent.
+        type: object
+      sensor:
+        type: object
       status:
         type: string
       tools:
@@ -10346,6 +10417,64 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.SensorActivityItemResponse:
+    properties:
+      action:
+        type: string
+      actor:
+        type: string
+      at:
+        type: string
+      category:
+        enum:
+        - people
+        - status
+        - updates
+        - jobs
+        type: string
+      details:
+        additionalProperties: {}
+        type: object
+      id:
+        type: string
+      last_at:
+        type: string
+      repeat_count:
+        type: integer
+      result:
+        type: string
+      source:
+        enum:
+        - sensor
+        - audit
+        - job
+        type: string
+      summary:
+        type: string
+      type:
+        description: |-
+          Type: online, offline, restarted (status); version_changed,
+          sdk_version_changed, protocol_changed, tools_changed,
+          capacity_changed, content_updated, content_refresh_failed (updates);
+          job_claimed, job_completed, job_failed, job_canceled, job_expired
+          (jobs); audit (people).
+        type: string
+    type: object
+  internal_infra_http_handler.SensorActivityResponse:
+    properties:
+      audit_included:
+        description: |-
+          AuditIncluded is false when the caller cannot read the audit log:
+          administrator actions (people) are then left out.
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorActivityItemResponse'
+        type: array
+      next_cursor:
+        description: NextCursor fetches the next (older) page; "" when there is none.
+        type: string
+    type: object
   internal_infra_http_handler.SensorConfigTemplatesResponse:
     properties:
       api_key_included:
@@ -10462,6 +10591,7 @@ definitions:
         - key_expired
         - key_expiring
         - version_unsupported
+        - sdk_unsupported
         - no_tools
         - error_reported
         - content_stale
@@ -10474,6 +10604,19 @@ definitions:
         - warning
         - critical
         type: string
+    type: object
+  internal_infra_http_handler.SensorLoadResponse:
+    properties:
+      capacity:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedCapacity'
+      fresh:
+        type: boolean
+      queue:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedQueue'
+      reported_at:
+        type: string
+      resources:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedResources'
     type: object
   internal_infra_http_handler.SensorOutboxResponse:
     properties:
@@ -10605,11 +10748,24 @@ definitions:
       last_seen_at:
         description: Statistics
         type: string
+      load:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.SensorLoadResponse'
+        description: |-
+          Load is the load the sensor last reported on its heartbeat
+          (resources, capacity, local queue); null when it never reported one.
+          fresh is false once it is older than 3 minutes (dispatch then ignores
+          it).
       load_factor:
         description: 0.0 to 1.0
         type: number
       max_concurrent_jobs:
-        description: Load balancing
+        description: |-
+          Load balancing. current_jobs is the number of commands the sensor
+          holds now (acknowledged or running), counted by the platform;
+          available_slots is what dispatch may still hand it: its effective
+          capacity minus current_jobs, and no more than the free slots of a
+          fresh load report (RFC-030 §5.8).
         type: integer
       memory_percent:
         type: number
@@ -10645,6 +10801,29 @@ definitions:
           reported it has (RFC-029 §4.3.1), null when it never reported;
           Effective is what dispatch uses: the report narrowed by the
           administrator's settings (the settings alone without a report).
+      sdk_name:
+        description: |-
+          Build information the sensor reported on its heartbeat, or that was
+          read from its User-Agent (older sensors). "" / null when unknown.
+        type: string
+      sdk_status:
+        description: |-
+          SDKStatus compares sdk_version with SENSOR_SDK_MIN_VERSION and
+          SENSOR_SDK_LATEST_VERSION.
+        enum:
+        - current
+        - outdated
+        - unsupported
+        - unknown
+        type: string
+      sdk_version:
+        type: string
+      sensor_build_time:
+        type: string
+      sensor_commit:
+        type: string
+      sensor_product:
+        type: string
       started_at:
         description: |-
           StartedAt is when the sensor process started (from the uptime its
@@ -10721,6 +10900,18 @@ definitions:
         additionalProperties:
           type: integer
         type: object
+      by_sdk_status:
+        additionalProperties:
+          type: integer
+        description: BySDKStatus counts sensors per SDK status (every status present).
+        type: object
+      by_sdk_version:
+        additionalProperties:
+          type: integer
+        description: |-
+          BySDKVersion counts sensors per reported SDK version ("unknown" when
+          none); its keys are the values GET /sensors?sdk_version= accepts.
+        type: object
       by_state:
         additionalProperties:
           type: integer
@@ -10774,6 +10965,13 @@ definitions:
           state ladder: a heartbeat at most online_window_seconds old is online,
           one older than offline_after_seconds is offline, stale in between.
         type: integer
+      sdk_latest_version:
+        type: string
+      sdk_min_version:
+        description: |-
+          SDKMinVersion and SDKLatestVersion are the SDK policy
+          (SENSOR_SDK_MIN_VERSION, SENSOR_SDK_LATEST_VERSION); "" when not set.
+        type: string
       total:
         type: integer
     type: object
@@ -25801,6 +25999,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Activate sensor
+      tags:
+      - Sensors
+  /sensors/{id}/activity:
+    get:
+      description: 'What happened to a sensor, newest first: status changes (online,
+        offline, restarts), updates (version, SDK, protocol, tools, capacity, content),
+        jobs it claimed and finished, and administrator actions from the audit log.
+        Audit items are included only when the caller holds audit:read.'
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Categories, comma-separated: people, status, updates, jobs (default
+          all)'
+        in: query
+        name: types
+        type: string
+      - description: next_cursor of the previous page
+        in: query
+        name: cursor
+        type: string
+      - default: 30
+        description: Page size (1-100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorActivityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Sensor activity timeline
       tags:
       - Sensors
   /sensors/{id}/config-templates:

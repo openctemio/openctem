@@ -175,6 +175,10 @@ services:
       # file is absent in the other modes and the snippets then skip it).
       SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.4.2}
       SENSOR_MIN_VERSION: ${SENSOR_MIN_VERSION:-}
+      # SDK policy: a sensor built with an SDK below the minimum shows as
+      # degraded ("SDK below minimum"); below the latest it is "outdated".
+      SENSOR_SDK_MIN_VERSION: ${SENSOR_SDK_MIN_VERSION:-}
+      SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-}
       SENSOR_CA_CERT_FILE: /ca/openctem-root-ca.crt
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]

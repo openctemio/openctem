@@ -227,6 +227,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc.Outbox != nil {
 		sensorHealth.SetNotifier(svc.Outbox)
 	}
+	// The offline transition also goes on the sensor's activity timeline.
+	if svc.Sensor != nil {
+		sensorHealth.SetEventRecorder(svc.Sensor)
+	}
 	w.ControllerManager.Register(sensorHealth)
 
 	w.ControllerManager.Register(controller.NewJobRecoveryController(
@@ -496,6 +500,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Logger:        log.With("controller", "priority-audit-retention"),
 		},
 	))
+
+	// Sensor activity timeline retention: sensor_events past 90 days.
+	if repos.SensorEvent != nil {
+		w.ControllerManager.Register(controller.NewSensorEventRetentionController(
+			repos.SensorEvent,
+			&controller.SensorEventRetentionConfig{
+				Interval:      6 * time.Hour,
+				RetentionDays: 90,
+				Logger:        log.With("controller", "sensor-event-retention"),
+			},
+		))
+	}
 
 	// Platform job queue priority rebalancing. Without this the platform
 	// command queue stays strictly FIFO and a noisy tenant can starve

@@ -221,6 +221,7 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		UserAgent:     r.UserAgent(),
 		Report:        req.capabilityReport(),
 		Load:          req.loadReport(),
+		Build:         req.buildReport(),
 	}
 }
 

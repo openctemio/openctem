@@ -232,6 +232,8 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	},
 	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
 	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	// type has a format CHECK, not a list of literals.
+	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
 }
 
 var (

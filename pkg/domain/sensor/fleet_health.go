@@ -54,6 +54,7 @@ const (
 	ReasonKeyExpired         HealthReasonCode = "key_expired"
 	ReasonKeyExpiring        HealthReasonCode = "key_expiring"
 	ReasonVersionUnsupported HealthReasonCode = "version_unsupported"
+	ReasonSDKUnsupported     HealthReasonCode = "sdk_unsupported"
 	ReasonNoTools            HealthReasonCode = "no_tools"
 	ReasonErrorReported      HealthReasonCode = "error_reported"
 )
@@ -98,6 +99,11 @@ type HealthPolicy struct {
 	// (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION); empty = not configured.
 	LatestVersion string
 	MinVersion    string
+	// SDKLatestVersion and SDKMinVersion are the SDK policy
+	// (SENSOR_SDK_LATEST_VERSION, SENSOR_SDK_MIN_VERSION); empty = not
+	// configured. A heartbeating sensor below the minimum is degraded.
+	SDKLatestVersion string
+	SDKMinVersion    string
 	// Content is the tenant's scanner content policy (content.go); nil uses
 	// the platform default.
 	Content *ContentPolicy
@@ -126,6 +132,8 @@ func (p HealthPolicy) Normalized() HealthPolicy {
 	}
 	p.LatestVersion = releaseOrEmpty(p.LatestVersion)
 	p.MinVersion = releaseOrEmpty(p.MinVersion)
+	p.SDKLatestVersion = releaseOrEmpty(p.SDKLatestVersion)
+	p.SDKMinVersion = releaseOrEmpty(p.SDKMinVersion)
 	return p
 }
 
@@ -159,6 +167,8 @@ type HealthAssessment struct {
 	// Version is the reported version in normalized form ("" if none).
 	Version       string
 	VersionStatus VersionStatus
+	// SDKStatus compares the SDK version with the SDK policy.
+	SDKStatus SDKStatus
 	// UptimeSeconds is how long the sensor process had been running at its
 	// last heartbeat; nil unless it is heartbeating and reported its uptime.
 	UptimeSeconds *int64
@@ -169,8 +179,9 @@ func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
 	out := HealthAssessment{
 		Version:       NormalizeVersion(a.Version),
 		VersionStatus: ClassifyVersion(a.Version, p.LatestVersion, p.MinVersion),
+		SDKStatus:     ClassifySDK(a.Build.SDKVersion, p.SDKLatestVersion, p.SDKMinVersion),
 	}
-	out.Reasons = a.healthReasons(now, p, out.VersionStatus)
+	out.Reasons = a.healthReasons(now, p, out.VersionStatus, out.SDKStatus)
 
 	heartbeating := false
 	switch {
@@ -209,7 +220,7 @@ func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
 }
 
 // healthReasons lists the problems that make a heartbeating sensor degraded.
-func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus) []HealthReason {
+func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, sdk SDKStatus) []HealthReason {
 	reasons := make([]HealthReason, 0, 2)
 	add := func(code HealthReasonCode, severity, msg string) {
 		reasons = append(reasons, HealthReason{Code: code, Severity: severity, Message: msg})
@@ -249,6 +260,16 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus) 
 		add(ReasonVersionUnsupported, SeverityCritical, fmt.Sprintf(
 			"Version %s is older than the minimum supported version %s. Upgrade the sensor.",
 			NormalizeVersion(a.Version), p.MinVersion))
+	}
+
+	if sdk == SDKUnsupported {
+		name := a.Build.SDKName
+		if name == "" {
+			name = "SDK"
+		}
+		add(ReasonSDKUnsupported, SeverityWarning, fmt.Sprintf(
+			"%s %s is below the minimum supported SDK version %s. Upgrade the sensor to a build with a newer SDK.",
+			name, a.Build.SDKVersion, p.SDKMinVersion))
 	}
 
 	if len(a.EffectiveTools()) == 0 && !a.Type.IsCollector() && a.IsDaemon() {

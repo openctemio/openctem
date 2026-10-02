@@ -571,6 +571,8 @@ internal/infra/postgres/           # sensor_repository, sensor_apikey_repository
 internal/infra/controller/         # sensor_health
 internal/infra/http/handler/       # sensor_handler (management), ingest/command/scansession (v1)
 internal/infra/http/routes/        # scanning.go: /api/v1/sensors + v1 mounts
+pkg/domain/sensor/event.go, activity.go, build.go  # activity timeline (heartbeat diff), build/SDK info
+internal/infra/postgres/sensor_event_repository.go  # sensor_events + merged timeline (events, commands, audit)
 pkg/domain/scanzone/               # scan zones: range validation, router (RFC-023 Phase 1)
 internal/app/scan/zones.go         # trigger-time zone routing, batching, pinning
 internal/app/scanzone/             # zone CRUD, sensor assignment, coverage
