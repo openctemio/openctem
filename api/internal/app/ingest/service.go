@@ -614,9 +614,6 @@ func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData
 	if !identified && len(report.Findings) > 0 {
 		return nil, ErrSARIFNoRepository
 	}
-	// FromSARIF drops result.kind and result.baselineState; the findings
-	// table stores both.
-	applySARIFResultFields(report, sarifData)
 
 	// Use the unified ingestion pipeline
 	return s.Ingest(ctx, agt, Input{Report: report})
