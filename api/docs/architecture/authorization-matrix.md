@@ -327,6 +327,19 @@ the billing page in the UI.
 > document (`execProtocolKey`), so JSON, flow-style YAML, escaped or
 > differently-cased keys cannot hide them.
 
+#### Scans and commands: secret-looking config values
+
+| Endpoint | Permission Required | `scanner_config` secrets |
+|----------|---------------------|--------------------------|
+| `GET /api/v1/scans` · `/{id}` · `/{id}/export` | `scans:read` | masked (`********`) unless the caller has `scans:write` |
+| `GET /api/v1/commands` · `/{id}` | `commands:read` | `payload` masked the same way unless the caller has `scans:write` |
+| `PUT /api/v1/scans/{id}` | `scans:write` | a `********` where the stored value would be masked keeps the stored value |
+
+> Masked values are exactly those listed in `scanner_config_warnings`
+> (`pkg/domain/scan/config_secrets.go`, `config_redact.go`). Owners and
+> admins pass `scans:write` through the usual bypass. Sensor command claims
+> are not user responses and carry the real values.
+
 #### Vulnerabilities (`/api/v1/vulnerabilities`) - Global
 
 | Endpoint | Permission Required |
