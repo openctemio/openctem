@@ -386,7 +386,7 @@ touching any gate. In short:
 - Never rely on the module gate for security — it is fail-open by design.
 - Never widen a route's gate to "make a role work" — adjust the role's grant via seed/migration.
 - No `expires_at`/time-boxed grants and no permission-set deny-gate (deliberate — see the doc).
-- Don't flip data-scope or admin/owner unification without signoff — both are deferred behavior changes.
+- Don't change an organization's data-scope policy (`tenants.members_without_group_see`: existing orgs `everything`, new orgs `nothing`) in a migration, and don't unify admin/owner oracles, without signoff.
 
 ---
 

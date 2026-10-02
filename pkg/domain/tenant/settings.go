@@ -298,14 +298,10 @@ type SecuritySettings struct {
 	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
 	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
 
-	// RestrictedDataScope switches the per-user data scope from fail-OPEN to
-	// fail-CLOSED. Default false = today's behavior: a non-admin with no asset
-	// assignment sees ALL of the tenant's assets/findings. When true, a non-admin
-	// sees ONLY the assets they're assigned (directly or via a group) and their
-	// findings — no assignment ⇒ no data (Tenable's "No Access" default).
-	// Admins/owners always bypass. ENABLE ONLY AFTER assigning members to groups
-	// with the assets they need, or they will see nothing. See the operator guide.
-	RestrictedDataScope bool `json:"restricted_data_scope"`
+	// The data-scope policy ("members without an access group see: everything |
+	// nothing") is the tenants.members_without_group_see column (migration
+	// 000247), not a settings key. A restricted_data_scope key left in stored
+	// JSON was folded into that column by the migration and is ignored.
 
 	// EmailVerificationMode controls whether new users must verify their email.
 	//   "auto"   = (default) require verification IFF SMTP is configured (smart)

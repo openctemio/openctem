@@ -253,13 +253,14 @@ func membershipAdminLookup(tenants tenant.Repository) datascope.AdminLookup {
 	}
 }
 
-// dataScopePolicyAdapter reports a tenant's fail-open/closed data-scope policy
-// (tenant Settings → Security.RestrictedDataScope) to the asset & finding
-// services. It's read on the non-admin data-scope path, so it caches per tenant
-// with a short TTL to avoid a tenant GetByID on every scoped list/stats request
-// (mirrors the module gate's cache). Default (missing/false) = fail-open.
+// dataScopePolicyAdapter reports a tenant's data-scope policy for members
+// without an access group (tenants.members_without_group_see: "nothing" =
+// fail-closed) to the data-scope enforcer and the asset & finding services.
+// It's read on the non-admin data-scope path, so it caches per tenant with a
+// short TTL (mirrors the module gate's cache); a policy change invalidates the
+// entry at once.
 type dataScopePolicyAdapter struct {
-	tenants tenant.Repository
+	tenants tenantapp.DataScopePolicyStore
 	mu      sync.RWMutex
 	cache   map[string]dataScopeCacheEntry
 	ttl     time.Duration
@@ -270,7 +271,7 @@ type dataScopeCacheEntry struct {
 	exp        time.Time
 }
 
-func newDataScopePolicyAdapter(tenants tenant.Repository) *dataScopePolicyAdapter {
+func newDataScopePolicyAdapter(tenants tenantapp.DataScopePolicyStore) *dataScopePolicyAdapter {
 	return &dataScopePolicyAdapter{
 		tenants: tenants,
 		cache:   make(map[string]dataScopeCacheEntry),
@@ -294,15 +295,22 @@ func (a *dataScopePolicyAdapter) RestrictedDataScope(ctx context.Context, tenant
 	if err != nil {
 		return false
 	}
-	t, err := a.tenants.GetByID(ctx, tid)
-	if err != nil || t == nil {
+	policy, err := a.tenants.GetMembersWithoutGroupSee(ctx, tid)
+	if err != nil {
 		return false
 	}
-	restricted := t.TypedSettings().Security.RestrictedDataScope
+	restricted := tenant.RestrictsMembersWithoutGroup(policy)
 	a.mu.Lock()
 	a.cache[tenantID] = dataScopeCacheEntry{restricted: restricted, exp: now.Add(a.ttl)}
 	a.mu.Unlock()
 	return restricted
+}
+
+// Invalidate drops the cached policy of one tenant (called after it changes).
+func (a *dataScopePolicyAdapter) Invalidate(tenantID string) {
+	a.mu.Lock()
+	delete(a.cache, tenantID)
+	a.mu.Unlock()
 }
 
 // moduleBundleStore adapts the tenant repository to module.BundleStore, storing
@@ -547,6 +555,9 @@ type Services struct {
 	// writes and on indirect lists (asset groups, attack surface, exposures,
 	// dashboards, notifications, WebSocket finding channels).
 	DataScope *datascope.Enforcer
+	// DataScopePolicy caches each organization's "members without an access
+	// group see" policy; invalidated when an administrator changes it.
+	DataScopePolicy *dataScopePolicyAdapter
 
 	// Assets
 	Asset                  *app.AssetService
@@ -812,6 +823,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithTenantAuditService(s.Audit),
 		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
 	)
+	s.Tenant.SetDataScopePolicyStore(repos.Tenant)
 
 	// Initialize asset services
 	s.Asset = app.NewAssetService(repos.Asset, log)
@@ -824,6 +836,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Per-tenant fail-open/closed data-scope policy (default fail-open). Shared
 	// instance so asset + finding services read one cache.
 	dataScopePolicy := newDataScopePolicyAdapter(repos.Tenant)
+	s.DataScopePolicy = dataScopePolicy
 	s.Asset.SetDataScopePolicy(dataScopePolicy)
 	// One Layer 2 enforcer for every service: the caller comes from the HTTP
 	// auth context, so the admin decision is the auth layer's.

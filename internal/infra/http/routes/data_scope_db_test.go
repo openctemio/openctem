@@ -34,6 +34,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/notification"
 	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 	"github.com/openctemio/api/pkg/validator"
@@ -57,15 +58,25 @@ type dsHarness struct {
 	tenant, owner, memberA, memberFree, memberStrict shared.ID
 	assetA, assetB, findingA, findingB               shared.ID
 	exposureA, exposureB, group                      shared.ID
-
-	strict map[shared.ID]bool // tenant -> RestrictedDataScope
 }
 
+// dsStrictPolicy reads the organization's policy (members without an access
+// group see everything | nothing) straight from the database, uncached.
 type dsStrictPolicy struct{ h *dsHarness }
 
-func (p dsStrictPolicy) RestrictedDataScope(_ context.Context, tenantID string) bool {
+func (p dsStrictPolicy) RestrictedDataScope(ctx context.Context, tenantID string) bool {
 	id, err := shared.IDFromString(tenantID)
-	return err == nil && p.h.strict[id]
+	if err != nil {
+		return false
+	}
+	v, err := postgres.NewTenantRepository(&postgres.DB{DB: p.h.db}).GetMembersWithoutGroupSee(ctx, id)
+	return err == nil && tenant.RestrictsMembersWithoutGroup(v)
+}
+
+// setPolicy sets what members without an access group see in the harness tenant.
+func (h *dsHarness) setPolicy(v string) {
+	h.t.Helper()
+	h.exec(`UPDATE tenants SET members_without_group_see = $2 WHERE id = $1`, h.tenant.String(), v)
 }
 
 // dsMemberPerms is what a generous custom "member" role holds: every
@@ -106,7 +117,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	if err := sqldb.PingContext(context.Background()); err != nil {
 		t.Skipf("cannot reach DATABASE_URL: %v", err)
 	}
-	h := &dsHarness{t: t, db: sqldb, strict: map[shared.ID]bool{}}
+	h := &dsHarness{t: t, db: sqldb}
 	h.seed()
 
 	db := &postgres.DB{DB: sqldb}
@@ -197,7 +208,9 @@ func (h *dsHarness) seed() {
 	h.exposureA, h.exposureB, h.group = shared.NewID(), shared.NewID(), shared.NewID()
 	t := h.tenant.String()
 
-	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, t, "ds-"+t)
+	// An organization that existed before the "nothing" default: its members
+	// without an access group see everything.
+	h.exec(`INSERT INTO tenants (id, name, slug, members_without_group_see) VALUES ($1, $2, $2, 'everything')`, t, "ds-"+t)
 	h.t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = h.db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, t)
@@ -505,7 +518,7 @@ func TestDataScope_IndirectLists_FilterForScopedMemberOnly(t *testing.T) {
 
 func TestDataScope_StrictTenant_MemberWithoutGroupSeesNothing(t *testing.T) {
 	h := newDSHarness(t)
-	h.strict[h.tenant] = true
+	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	if status, _ := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/findings/"+h.findingA.String()+"/comments", nil); status != http.StatusNotFound {
 		t.Errorf("strict tenant, member without group: finding comments = %d, want 404", status)
 	}

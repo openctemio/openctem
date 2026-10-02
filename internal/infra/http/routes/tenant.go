@@ -145,6 +145,11 @@ func registerTenantRoutes(
 		r.GET("/settings/modules/bundles", h.GetModuleBundles, middleware.RequireTeamAdmin())
 		r.POST("/settings/modules/bundles", h.SubscribeModuleBundles, middleware.RequireTeamAdmin())
 
+		// Data scope of members without an access group ("everything" |
+		// "nothing"); owners/admins always see everything.
+		r.GET("/settings/data-scope", h.GetDataScopePolicy, middleware.RequireTeamAdmin())
+		r.PATCH("/settings/data-scope", h.UpdateDataScopePolicy, middleware.RequireTeamAdmin())
+
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())
 		r.PATCH("/settings/api", h.UpdateAPISettings, middleware.RequireTeamOwner())

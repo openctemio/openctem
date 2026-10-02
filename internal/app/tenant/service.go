@@ -88,7 +88,10 @@ type TenantService struct {
 	// warning is logged): the never-lock-out guarantee still holds because the
 	// owner is always break-glass exempt at the enforcement gate.
 	ssoPathChecker SSOPathChecker
-	logger         *logger.Logger
+	// dataScopePolicy stores "members without an access group see:
+	// everything | nothing" (tenants.members_without_group_see).
+	dataScopePolicy DataScopePolicyStore
+	logger          *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -298,6 +301,65 @@ func (s *TenantService) bumpPermissionVersion(ctx context.Context, tenantID, use
 }
 
 // logAudit logs an audit event if audit service is configured.
+// DataScopePolicyStore persists the organization's data-scope policy
+// (tenants.members_without_group_see). Implemented by the tenant repository.
+type DataScopePolicyStore interface {
+	GetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID) (string, error)
+	SetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID, value string) error
+}
+
+// SetDataScopePolicyStore wires the data-scope policy store. Without it the
+// policy endpoints report the service as not configured.
+func (s *TenantService) SetDataScopePolicyStore(store DataScopePolicyStore) {
+	s.dataScopePolicy = store
+}
+
+// GetDataScopePolicy returns what members without an access group see in the
+// organization: "everything" or "nothing".
+func (s *TenantService) GetDataScopePolicy(ctx context.Context, tenantID string) (string, error) {
+	if s.dataScopePolicy == nil {
+		return "", fmt.Errorf("%w: data scope policy is not configured", shared.ErrInternal)
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	return s.dataScopePolicy.GetMembersWithoutGroupSee(ctx, tid)
+}
+
+// UpdateDataScopePolicy sets what members without an access group see
+// ("everything" or "nothing") and records the change in the audit log. Owners
+// and admins are never affected by it. A no-op change is not audited.
+func (s *TenantService) UpdateDataScopePolicy(ctx context.Context, tenantID, value string, actx auditapp.AuditContext) (string, error) {
+	if err := tenantdom.ValidateMembersWithoutGroupSee(value); err != nil {
+		return "", err
+	}
+	old, err := s.GetDataScopePolicy(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	if old == value {
+		return value, nil
+	}
+	tid, _ := shared.IDFromString(tenantID) // validated by GetDataScopePolicy
+	if err := s.dataScopePolicy.SetMembersWithoutGroupSee(ctx, tid, value); err != nil {
+		return "", err
+	}
+
+	s.logger.Info("data scope policy updated", "tenant_id", tenantID, "from", old, "to", value)
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithSeverity(audit.SeverityHigh).
+		WithMessage(fmt.Sprintf("Members without an access group now see %s (was %s)", value, old)).
+		WithChanges(&audit.Changes{
+			Before: map[string]any{"members_without_group_see": old},
+			After:  map[string]any{"members_without_group_see": value},
+		}).
+		WithMetadata("setting", "members_without_group_see")
+	s.logAudit(ctx, actx, event)
+	return value, nil
+}
+
 func (s *TenantService) logAudit(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) {
 	if s.auditService == nil {
 		return

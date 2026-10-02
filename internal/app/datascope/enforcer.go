@@ -8,8 +8,9 @@
 //   - administrators (owner/admin) and internal calls with no user are
 //     never restricted;
 //   - a member with at least one scope row sees only those assets;
-//   - a member with no scope row sees everything, unless the tenant turned
-//     on RestrictedDataScope, in which case they see nothing (fail-closed).
+//   - a member with no scope row sees what the organization's policy says
+//     (tenants.members_without_group_see): everything (fail-open) or
+//     nothing (fail-closed).
 //
 // Every service that reads or writes an asset-bound row by id, or lists
 // such rows indirectly, goes through one Enforcer instead of repeating the
