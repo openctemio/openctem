@@ -302,3 +302,62 @@ func (s *jsonStringsScanner) Scan(src any) error {
 	}
 	return json.Unmarshal(b, s.dst)
 }
+
+// An unpinned scan for a tool is offered (poll and doorbell count) only to
+// sensors that have the tool, once they report their inventory; a sensor
+// that never reported is offered it as before.
+func TestReportedCaps_PollOffersToolScansOnlyToSensorsWithTheTool(t *testing.T) {
+	h := newCtlHarness(t)
+	ctx := context.Background()
+	has := h.newLimitedSensor(h.tenantID, "has-nuclei", nil, nil, 0)
+	h.heartbeatV2(has, map[string]any{"tools": []map[string]any{{"name": "nuclei", "installed": true}}})
+	lacks := h.newLimitedSensor(h.tenantID, "lacks-nuclei", []string{"nuclei"}, nil, 0)
+	h.heartbeatV2(lacks, map[string]any{"tools": []map[string]any{{"name": "nuclei", "installed": false}, {"name": "semgrep", "installed": true}}})
+	old := h.newLimitedSensor(h.tenantID, "old", nil, nil, 0)
+
+	cmd, err := h.cmds.Create(ctx, command.CreateInput{TenantID: h.tenantID, Type: "scan", Priority: "normal",
+		Payload: json.RawMessage(`{"scanner":"nuclei","target":"https://example.test"}`), ExpiresIn: 3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := h.cmds.Create(ctx, command.CreateInput{TenantID: h.tenantID, Type: "health_check", Priority: "normal",
+		Payload: json.RawMessage(`{}`), ExpiresIn: 3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	poll := func(s ctlSensor) []string {
+		t.Helper()
+		resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/commands", nil)
+		h.want(resp, raw, 200, "")
+		var l struct {
+			Commands []struct {
+				ID string `json:"id"`
+			} `json:"commands"`
+		}
+		_ = json.Unmarshal(raw, &l)
+		var out []string
+		for _, c := range l.Commands {
+			out = append(out, c.ID)
+		}
+		return out
+	}
+	if got := poll(has); !slices.Contains(got, cmd.ID.String()) {
+		t.Fatalf("the sensor with nuclei is not offered the nuclei scan: %v", got)
+	}
+	if got := poll(lacks); slices.Contains(got, cmd.ID.String()) || !slices.Contains(got, other.ID.String()) {
+		t.Fatalf("the sensor without nuclei: %v (must not see the scan, must see the tool-less command)", got)
+	}
+	if got := poll(old); !slices.Contains(got, cmd.ID.String()) {
+		t.Fatalf("an old sensor lost the scan it was offered before: %v", got)
+	}
+	// The doorbell counts what the poll offers.
+	resp, raw := h.call(lacks.key, http.MethodPost, "/api/v2/sensor/heartbeat", map[string]any{"status": "running"})
+	h.want(resp, raw, 200, "")
+	var hb struct {
+		PendingJobs int `json:"pending_jobs"`
+	}
+	_ = json.Unmarshal(raw, &hb)
+	if hb.PendingJobs != 1 {
+		t.Fatalf("doorbell pending_jobs = %d for the sensor without nuclei, want 1 (the health check)", hb.PendingJobs)
+	}
+}
