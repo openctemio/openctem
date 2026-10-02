@@ -101,6 +101,10 @@ func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *CTEMCycleHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(id); err != nil {
+		apierror.NotFound("cycle not found").WriteJSON(w)
+		return
+	}
 
 	row := h.db.QueryRowContext(r.Context(),
 		`SELECT `+ctemCycleColumns+`
@@ -523,27 +527,37 @@ func (h *CTEMCycleHandler) computeValidationCoverage(
 	return postgres.ValidationCoverageByPriority(ctx, h.db, tenantID, startDate, endDate)
 }
 
-// GetScope retrieves the scope snapshot for a cycle.
+// GetScope retrieves the scope snapshot for a cycle, with each asset's name,
+// type and criticality.
+// @Summary      Get a cycle's scope snapshot
+// @Tags         CTEM Cycles
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Cycle ID"  format(uuid)
+// @Success      200  {array}   CTEMScopeSnapshotResponse
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Router       /ctem-cycles/{id}/scope [get]
 func (h *CTEMCycleHandler) GetScope(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	// Verify cycle belongs to tenant
-	var exists bool
-	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM ctem_cycles WHERE tenant_id = $1 AND id = $2)",
-		tenantID, id,
-	).Scan(&exists); err != nil || !exists {
-		apierror.NotFound("cycle not found").WriteJSON(w)
+	if !h.cycleBelongsToTenant(r.Context(), w, tenantID, id) {
 		return
 	}
 
+	// The cycle join repeats the tenant check in the query itself. Assets are
+	// LEFT JOINed: a snapshot row outlives a deleted asset (no FK), and then
+	// the name, type and criticality come back empty.
 	rows, err := h.db.QueryContext(r.Context(),
-		`SELECT id, asset_id, scope_target_id, included_at
-		   FROM ctem_cycle_scope_snapshots
-		  WHERE cycle_id = $1
-		  ORDER BY included_at`,
-		id,
+		`SELECT s.id, s.asset_id, s.scope_target_id, s.included_at,
+		        COALESCE(a.name, ''), COALESCE(a.asset_type, ''), COALESCE(a.criticality, '')
+		   FROM ctem_cycle_scope_snapshots s
+		   JOIN ctem_cycles c ON c.id = s.cycle_id AND c.tenant_id = $2
+		   LEFT JOIN assets a ON a.id = s.asset_id AND a.tenant_id = $2
+		  WHERE s.cycle_id = $1
+		  ORDER BY s.included_at, s.id`,
+		id, tenantID,
 	)
 	if err != nil {
 		h.logger.Error("ctem cycle get scope", "error", err)
@@ -556,7 +570,8 @@ func (h *CTEMCycleHandler) GetScope(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s CTEMScopeSnapshotResponse
 		var scopeTargetID sql.NullString
-		if err := rows.Scan(&s.ID, &s.AssetID, &scopeTargetID, &s.IncludedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.AssetID, &scopeTargetID, &s.IncludedAt,
+			&s.AssetName, &s.AssetType, &s.AssetCriticality); err != nil {
 			h.logger.Error("ctem cycle scope scan", "error", err)
 			apierror.InternalServerError("internal error").WriteJSON(w)
 			return
@@ -586,18 +601,16 @@ func (h *CTEMCycleHandler) LinkProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify cycle belongs to tenant
-	var exists bool
-	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM ctem_cycles WHERE tenant_id = $1 AND id = $2)",
-		tenantID, id,
-	).Scan(&exists); err != nil || !exists {
-		apierror.NotFound("cycle not found").WriteJSON(w)
+	if !h.cycleBelongsToTenant(r.Context(), w, tenantID, id) {
 		return
 	}
 
-	// Link only profiles that belong to the same tenant
+	// Link only profiles that belong to the same tenant. A malformed id is
+	// skipped like a foreign one instead of failing the uuid cast with a 500.
 	for _, profileID := range req.ProfileIDs {
+		if _, err := uuid.Parse(profileID); err != nil {
+			continue
+		}
 		_, err := h.db.ExecContext(r.Context(),
 			`INSERT INTO ctem_cycle_attacker_profiles (cycle_id, profile_id)
 			 SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM attacker_profiles WHERE id = $2 AND tenant_id = $3)
@@ -854,4 +867,8 @@ type CTEMScopeSnapshotResponse struct {
 	AssetID       string    `json:"asset_id"`
 	ScopeTargetID string    `json:"scope_target_id,omitempty"`
 	IncludedAt    time.Time `json:"included_at"`
+	// Asset fields, empty when the asset has since been deleted.
+	AssetName        string `json:"asset_name"`
+	AssetType        string `json:"asset_type"`
+	AssetCriticality string `json:"asset_criticality"`
 }
