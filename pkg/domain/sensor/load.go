@@ -81,6 +81,15 @@ type LoadReport struct {
 	ReportedAt *time.Time `json:"reported_at,omitempty"`
 }
 
+// SlotsTotal is the job slots the report gives (what the sensor can run
+// now), 0 when it gives none.
+func (l *LoadReport) SlotsTotal() int {
+	if l == nil || l.Capacity == nil {
+		return 0
+	}
+	return max(l.Capacity.SlotsTotal, 0)
+}
+
 // IsEmpty reports whether nothing was reported.
 func (l *LoadReport) IsEmpty() bool {
 	return l == nil || (l.Resources == nil && l.Capacity == nil && l.Queue == nil)

@@ -3329,6 +3329,14 @@ definitions:
     type: object
   github_com_openctemio_api_pkg_domain_sensor.ReportedTool:
     properties:
+      capabilities:
+        description: |-
+          Capabilities are what this tool serves besides its own name ("dast",
+          "validate:nuclei"), known names only; nil when the sensor did not say
+          (sdk-go before v0.13 reports only the sensor's flat list).
+        items:
+          type: string
+        type: array
       content:
         description: |-
           Content is the scanner content the tool scans with (RFC-031,
@@ -3338,6 +3346,9 @@ definitions:
         type: array
       installed:
         type: boolean
+      kind:
+        description: 'Kind is "scanner" or "collector"; "" when the sensor did not say.'
+        type: string
       name:
         type: string
       version:
@@ -8101,6 +8112,13 @@ definitions:
     type: object
   internal_infra_http_handler.HeartbeatTool:
     properties:
+      capabilities:
+        description: |-
+          Capabilities are what the tool serves besides its name (sdk-go
+          v0.13+); sanitized against the capability registry like the flat list.
+        items:
+          type: string
+        type: array
       content:
         description: Content is the scanner content the tool scans with (RFC-031).
         items:
@@ -8108,6 +8126,9 @@ definitions:
         type: array
       installed:
         type: boolean
+      kind:
+        description: 'Kind is "scanner" or "collector" (sdk-go v0.10+).'
+        type: string
       name:
         type: string
       version:

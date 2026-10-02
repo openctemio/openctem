@@ -24,10 +24,12 @@ func TestSensorEffectiveColumnsMatchDomain(t *testing.T) {
 
 	lists := [][]string{nil, {}, {"nuclei"}, {"nuclei", "semgrep"}, {"semgrep", "trivy"}}
 	maxes := []int{0, 1, 5, 50}
+	slots := []int{0, 3, 64} // capacity.slots_total; 0: no load report
 	n := 0
 	for _, declared := range lists[1:] { // declared is NOT NULL (default '{}')
 		for _, reported := range lists {
-			for _, rmax := range maxes {
+			for i, rmax := range maxes {
+				slot := slots[(n+i)%len(slots)]
 				n++
 				a, err := sensor.NewSensor(tenantID, fmt.Sprintf("parity-%d", n), sensor.SensorTypeWorker, "", declared, declared, sensor.ExecutionModeDaemon)
 				if err != nil {
@@ -49,7 +51,11 @@ func TestSensorEffectiveColumnsMatchDomain(t *testing.T) {
 				if !rep.HasReport() {
 					rep = nil
 				}
-				if ok, err := repo.UpdateHeartbeat(ctx, a.ID, sensor.HeartbeatUpdate{TenantID: &tenantID, Report: rep}); err != nil || !ok {
+				var load *sensor.LoadReport
+				if slot > 0 {
+					load = &sensor.LoadReport{Capacity: &sensor.ReportedCapacity{SlotsTotal: slot, SlotsFree: slot}}
+				}
+				if ok, err := repo.UpdateHeartbeat(ctx, a.ID, sensor.HeartbeatUpdate{TenantID: &tenantID, Report: rep, Load: load}); err != nil || !ok {
 					t.Fatalf("heartbeat: %v %v", ok, err)
 				}
 				got, err := repo.GetByID(ctx, a.ID)
@@ -63,7 +69,7 @@ func TestSensorEffectiveColumnsMatchDomain(t *testing.T) {
 					a.ID.String()).Scan(&dbTools, &dbCaps, &dbMax); err != nil {
 					t.Fatal(err)
 				}
-				name := fmt.Sprintf("declared=%v reported=%v max=%d", declared, reported, rmax)
+				name := fmt.Sprintf("declared=%v reported=%v max=%d slots=%d", declared, reported, rmax, slot)
 				if !slices.Equal([]string(dbTools), got.EffectiveTools()) {
 					t.Errorf("%s: tools db=%v domain=%v", name, dbTools, got.EffectiveTools())
 				}
@@ -152,5 +158,68 @@ func TestRoutableSensors_UseReportedTools(t *testing.T) {
 	}
 	if list := got[z.ID]; len(list) != 1 || list[0].ID != reportsNuclei {
 		t.Fatalf("routable = %+v; want only the in-zone sensor that reports nuclei", list)
+	}
+}
+
+// The live case behind RFC-033: a 4-core sensor reported the SDK's upper
+// bound (64) as its ceiling and 4 slots; the administrator's limit is 5.
+// Dispatch capacity is the 4 it can run, in the column and in the domain,
+// and the per-tool kind and capabilities of its report are kept.
+func TestEffectiveMaxJobs_BoundedBySlots(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	tenantID := seedTestTenant(ctx, t, db)
+	repo := NewSensorRepository(&DB{DB: db})
+
+	for _, tc := range []struct {
+		name                  string
+		admin, ceiling, slots int
+		want                  int
+	}{
+		{"live: ceiling 64, slots 4, admin 5", 5, 64, 4, 4},
+		{"no ceiling reported", 5, 0, 4, 4},
+		{"slots above the admin limit", 5, 0, 8, 5},
+		{"operator ceiling below the slots", 10, 2, 4, 2},
+		{"no load report: as before", 5, 64, 0, 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, err := sensor.NewSensor(tenantID, "slots-"+shared.NewID().String()[:8], sensor.SensorTypeWorker, "", []string{}, []string{}, sensor.ExecutionModeDaemon)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.SetAPIKey("hash-"+a.ID.String(), "rda_x")
+			a.SetMaxConcurrentJobs(tc.admin)
+			if err := repo.Create(ctx, a); err != nil {
+				t.Fatal(err)
+			}
+			rep := &sensor.CapabilityReport{
+				Tools: []sensor.ReportedTool{{Name: "nuclei", Kind: sensor.ToolKindScanner, Version: "v3.11.1", Installed: true,
+					Capabilities: []string{"dast", "validate:nuclei"}}},
+				Capabilities:      []string{"nuclei", "dast", "validate:nuclei"},
+				MaxConcurrentJobs: tc.ceiling,
+			}
+			var load *sensor.LoadReport
+			if tc.slots > 0 {
+				load = &sensor.LoadReport{Capacity: &sensor.ReportedCapacity{SlotsTotal: tc.slots, SlotsFree: tc.slots}}
+			}
+			if ok, err := repo.UpdateHeartbeat(ctx, a.ID, sensor.HeartbeatUpdate{TenantID: &tenantID, Report: rep, Load: load}); err != nil || !ok {
+				t.Fatalf("heartbeat: %v %v", ok, err)
+			}
+			var dbMax int
+			if err := db.QueryRowContext(ctx, `SELECT effective_max_jobs FROM sensors WHERE id = $1`, a.ID.String()).Scan(&dbMax); err != nil {
+				t.Fatal(err)
+			}
+			got, err := repo.GetByID(ctx, a.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if dbMax != tc.want || got.EffectiveMaxConcurrentJobs() != tc.want {
+				t.Fatalf("effective max jobs: db=%d domain=%d, want %d", dbMax, got.EffectiveMaxConcurrentJobs(), tc.want)
+			}
+			tools := got.Reported.Tools
+			if len(tools) != 1 || tools[0].Kind != sensor.ToolKindScanner || !slices.Equal(tools[0].Capabilities, []string{"dast", "validate:nuclei"}) {
+				t.Fatalf("reported tools = %+v", tools)
+			}
+		})
 	}
 }
