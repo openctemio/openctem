@@ -66,7 +66,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 api/
 ├── cmd/
 │   ├── server/                # Main API server
-│   └── bootstrap-admin/       # Creates the first platform administrator
+│   └── bootstrap-admin/       # Creates the first platform administrators and organization
 ├── internal/
 │   ├── app/                   # Application services (business logic, 40+ services)
 │   ├── config/                # Configuration loading
@@ -168,7 +168,8 @@ docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/re
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` |
-| `AUTH_ALLOW_REGISTRATION` | `true` | Allow public registration. **Set `false` in production** — use invitation flow instead |
+| `AUTH_ALLOW_REGISTRATION` | `false` | Allow public self-registration. Keep it off in production: administrators create users, invite them, or the organization's SSO admits them |
+| `TENANT_CREATION_MODE` | `admin_only` | Who creates organizations: `admin_only` (the platform administrator, from the console or `bootstrap-admin -org-*`) or `self_service` (any signed-in user; SaaS/trial opt-in) |
 | `AI_PLATFORM_PROVIDER` | — | AI triage: `claude`, `openai`, `gemini` |
 | `SMTP_ENABLED` | `false` | Enable email notifications (required for invitations) |
 | `RATE_LIMIT_RPS` | `100` | Rate limit (requests/second) |
@@ -176,14 +177,18 @@ docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/re
 
 ### Production User Management
 
-In production, disable public registration and use the invitation system:
+Public registration and self-service organizations are off by default:
 
 ```env
-AUTH_ALLOW_REGISTRATION=false   # No public signup
-SMTP_ENABLED=true               # Required for invitation emails
+AUTH_ALLOW_REGISTRATION=false      # No public signup (the default)
+TENANT_CREATION_MODE=admin_only    # Only the platform administrator creates organizations (the default)
+SMTP_ENABLED=true                  # Emails set-password links and invitations
 ```
 
-**Flow**: Admin creates invitation → User receives email → User clicks link → Account created → User joins tenant.
+**Flow**: the platform administrator creates the organization and its owner
+(`bootstrap-admin -org-*` at install, then the console) → the owner sets a
+password through a one-time link → the owner (or an organization admin) creates
+users, invites them, or configures SSO.
 
 ```bash
 # API: Create invitation (requires team:admin permission)
@@ -303,8 +308,10 @@ make auto-ssl
 # 5. Start production
 make prod-up
 
-# 6. Create the first admin and its break-glass backup (see Bootstrap Admin below)
-docker compose exec api /app/bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com
+# 6. Create the first admin, its break-glass backup and the first organization
+#    (see Bootstrap Admin below)
+docker compose exec api /app/bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com \
+  -org-name="Example Corp" -org-owner-email=owner@example.com
 ```
 
 ### Kubernetes (Helm)
@@ -330,17 +337,19 @@ kubectl create secret generic openctem-redis-secrets \
   --namespace openctem \
   --from-literal=password=$(openssl rand -hex 24)
 
-# 2. Install with bootstrap admin (first-time only)
-helm install openctem ../setup/kubernetes/helm/openctem \
+# 2. Install with the bootstrap Job (first-time only); chart: openctemio/helm-charts
+helm install openctem openctem/openctem \
   --namespace openctem \
-  --set bootstrapAdmin.enabled=true \
-  --set bootstrapAdmin.email=admin@example.com \
-  --set bootstrapAdmin.backupEmail=breakglass@example.com \
-  --set ingress.hosts[0].host=openctem.yourdomain.com
+  --set api.bootstrapAdmin.enabled=true \
+  --set api.bootstrapAdmin.email=admin@example.com \
+  --set api.bootstrapAdmin.backupEmail=breakglass@example.com \
+  --set api.bootstrapAdmin.org.name="Example Corp" \
+  --set api.bootstrapAdmin.org.ownerEmail=owner@example.com
 
-# 3. Get the administrator's temporary password (shown once), then sign in on
-#    /login and set up two-step verification when you open the admin console
-kubectl logs job/openctem-bootstrap-admin -n openctem
+# 3. Read the temporary passwords and the owner's set-password link (shown
+#    once), then delete the Job. The Job is kept after it succeeds for this.
+kubectl logs job/openctem-api-bootstrap-admin -n openctem
+kubectl delete job/openctem-api-bootstrap-admin -n openctem
 ```
 
 ### Bootstrap Admin (First-time Setup)
@@ -367,18 +376,45 @@ keys. The run is idempotent: existing administrators are reported and left
 alone, so re-running with `-backup-email` adds a backup to an existing install.
 `-backup-email` is required unless `-no-backup` is passed explicitly.
 
+A platform administrator belongs to no organization, so the same run can also
+create the **first organization** (`-org-name`, `-org-owner-email`; the slug is
+derived from the name unless `-org-slug` is given). It goes through the same
+service as the console's Organizations → Create: the owner's membership and
+role are written with the organization, and `tenant.created` / `user.created`
+are audited in it. A new owner account gets a one-time set-password link
+(valid 24 hours): emailed when SMTP is configured (`SMTP_*`), otherwise printed
+once (as `$SMTP_BASE_URL/set-password?token=...`). An organization whose slug
+exists is reported and left alone. The owner's email must not be an
+administrator's.
+
+First install, end to end:
+
+1. Run the migrations (compose and the Helm chart do it before the API starts).
+2. `bootstrap-admin -email … -backup-email … -org-name … -org-owner-email …`
+3. The administrator signs in on `/login` with the temporary password, changes
+   it, and enrolls an authenticator app when opening the console at `/admin`.
+   Store the break-glass credentials offline.
+4. The organization owner opens the set-password link, chooses a password and
+   signs in on `/login`.
+5. The owner creates or invites users and configures the organization; the
+   administrator configures the organization's SSO from the console and
+   creates further organizations there.
+
 **Docker Compose:**
 ```bash
 docker compose exec api /app/bootstrap-admin \
-  -email=admin@example.com -backup-email=breakglass@example.com
+  -email=admin@example.com -backup-email=breakglass@example.com \
+  -org-name="Example Corp" -org-owner-email=owner@example.com
 ```
 
 **Kubernetes (during helm install):**
 ```bash
-helm install openctem ./openctem \
-  --set bootstrapAdmin.enabled=true \
-  --set bootstrapAdmin.email=admin@example.com \
-  --set bootstrapAdmin.backupEmail=breakglass@example.com
+helm install openctem openctem/openctem \
+  --set api.bootstrapAdmin.enabled=true \
+  --set api.bootstrapAdmin.email=admin@example.com \
+  --set api.bootstrapAdmin.backupEmail=breakglass@example.com \
+  --set api.bootstrapAdmin.org.name="Example Corp" \
+  --set api.bootstrapAdmin.org.ownerEmail=owner@example.com
 ```
 
 **Kubernetes (after install):**
@@ -406,6 +442,10 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
 | `-no-backup` | — | Skip the break-glass backup (not recommended; prints a warning) |
 | `-force` | — | Delete and re-create an existing admin with the same email (and its sign-in account) |
 | `-link` | — | Link an administrator created before sign-in accounts (v0.8 and older) to a new one and reactivate it (keeps role and authenticator) |
+| `-org-name` | `ORG_NAME` | Create the first organization (needs `-org-owner-email`) |
+| `-org-slug` | `ORG_SLUG` | Its URL slug (derived from the name when empty) |
+| `-org-owner-email` | `ORG_OWNER_EMAIL` | Its owner; a new account gets a one-time set-password link |
+| `-org-owner-name` | `ORG_OWNER_NAME` | Display name for a new owner account |
 
 ## Security
 

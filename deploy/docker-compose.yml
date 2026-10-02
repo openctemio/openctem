@@ -161,6 +161,9 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required (openssl rand -hex 64)}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required (openssl rand -hex 32)}
       AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}
+      # Who creates organizations: admin_only (platform administrator: console or
+      # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).
+      TENANT_CREATION_MODE: ${TENANT_CREATION_MODE:-admin_only}
       SMTP_ENABLED: ${SMTP_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}

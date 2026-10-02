@@ -108,8 +108,10 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Reque
 		TenantCreationMode:  h.tenantCreationMode,
 		RegistrationEnabled: h.registrationEnabled,
 	}
-	if resp.TenantCreationMode == "" {
-		resp.TenantCreationMode = config.TenantCreationSelfService
+	// Report what the server enforces: anything but an explicit self_service
+	// is admin-only.
+	if resp.TenantCreationMode != config.TenantCreationSelfService {
+		resp.TenantCreationMode = config.TenantCreationAdminOnly
 	}
 
 	w.Header().Set("Content-Type", "application/json")

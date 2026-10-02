@@ -1,5 +1,6 @@
 // Package adminbootstrap creates the first platform administrators and their
-// break-glass backup (the bootstrap-admin command, RFC-022 revision 4).
+// break-glass backup (the bootstrap-admin command, RFC-022 revision 4), and
+// optionally the first organization with its owner (see organization.go).
 package adminbootstrap
 
 import (
@@ -14,6 +15,8 @@ import (
 
 	"github.com/google/uuid"
 
+	tenantapp "github.com/openctemio/api/internal/app/tenant"
+	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/password"
 )
 
@@ -27,6 +30,20 @@ type Options struct {
 	NoBackup    bool
 	Force       bool
 	LinkOnly    bool
+
+	// The first organization (optional). OrgName and OrgOwnerEmail go
+	// together; OrgSlug is derived from OrgName when empty.
+	OrgName       string
+	OrgSlug       string
+	OrgOwnerEmail string
+	OrgOwnerName  string
+	// OrgSetupMailer emails the owner's one-time set-password link; nil (or
+	// no SMTP) prints the link instead.
+	OrgSetupMailer tenantapp.AccountSetupMailer
+	// UIBaseURL is the web UI origin used to print the set-password link.
+	UIBaseURL string
+	// Logger receives service warnings (nil: discarded).
+	Logger *logger.Logger
 }
 
 // Normalize validates the inputs and fills defaults.
@@ -52,6 +69,9 @@ func (o *Options) Normalize() error {
 		o.Name = strings.Split(o.Email, "@")[0]
 	}
 	if o.LinkOnly {
+		if o.hasOrg() {
+			return errors.New("-org-* flags cannot be combined with -link: run them without -link")
+		}
 		return nil
 	}
 	switch {
@@ -68,7 +88,7 @@ func (o *Options) Normalize() error {
 	if o.BackupName == "" && o.BackupEmail != "" {
 		o.BackupName = strings.Split(o.BackupEmail, "@")[0]
 	}
-	return nil
+	return o.normalizeOrg()
 }
 
 // adminSpec is one administrator to create.
@@ -98,6 +118,11 @@ func Run(ctx context.Context, db *sql.DB, o Options, out io.Writer) error {
 			return err
 		}
 	}
+	if o.hasOrg() {
+		if err := ensureOrganization(ctx, db, o, out); err != nil {
+			return err
+		}
+	}
 	if o.NoBackup {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "WARNING: no break-glass backup administrator was created. Keep at least two")
@@ -109,6 +134,10 @@ func Run(ctx context.Context, db *sql.DB, o Options, out io.Writer) error {
 	if !o.NoBackup {
 		fmt.Fprintln(out, "Store the break-glass credentials offline (e.g. a sealed envelope or a vault).")
 		fmt.Fprintln(out, "Every break-glass sign-in is audited with high severity and alerted to the other administrators.")
+	}
+	if !o.hasOrg() {
+		fmt.Fprintln(out, "Organizations are created by a platform administrator: in the console (Organizations),")
+		fmt.Fprintln(out, "or by re-running this command with -org-name and -org-owner-email.")
 	}
 	return nil
 }

@@ -18,12 +18,17 @@ import (
 // call, so these tests need no service.
 
 func TestTenantCreateRefusedInAdminOnlyMode(t *testing.T) {
-	h := NewTenantHandler(nil, validator.New(), logger.NewNop())
-	h.SetAdminOnlyTenantCreation(true)
-	rec := httptest.NewRecorder()
-	h.Create(rec, httptest.NewRequest(http.MethodPost, "/api/v1/tenants", strings.NewReader(`{"name":"X","slug":"x-org"}`)))
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status %d, want 403", rec.Code)
+	for name, configure := range map[string]func(*TenantHandler){
+		"admin_only":               func(h *TenantHandler) { h.SetSelfServiceTenantCreation(false) },
+		"not configured (default)": func(*TenantHandler) {},
+	} {
+		h := NewTenantHandler(nil, validator.New(), logger.NewNop())
+		configure(h)
+		rec := httptest.NewRecorder()
+		h.Create(rec, httptest.NewRequest(http.MethodPost, "/api/v1/tenants", strings.NewReader(`{"name":"X","slug":"x-org"}`)))
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: status %d, want 403", name, rec.Code)
+		}
 	}
 }
 

@@ -13,19 +13,21 @@
 # harness exercises is frozen and must never need changes here.
 #
 # Requires: a migrated database, the API running at COMPAT_API_URL, curl, jq,
-# and the bootstrap-tenant binary. Usage:
+# and the bootstrap-admin binary (it creates the organization the way a first
+# install does). Usage:
 #   COMPAT_API_URL=http://127.0.0.1:8080 DATABASE_URL=postgres://... \
-#   BOOTSTRAP_TENANT_BIN=./bin/bootstrap-tenant scripts/compat-v1.sh
+#   BOOTSTRAP_ADMIN_BIN=./bin/bootstrap-admin scripts/compat-v1.sh
 set -euo pipefail
 
 API="${COMPAT_API_URL:?COMPAT_API_URL is required}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
-BOOTSTRAP_TENANT_BIN="${BOOTSTRAP_TENANT_BIN:?BOOTSTRAP_TENANT_BIN is required}"
+BOOTSTRAP_ADMIN_BIN="${BOOTSTRAP_ADMIN_BIN:?BOOTSTRAP_ADMIN_BIN is required}"
 HARNESS_DIR="$(cd "$(dirname "$0")/../tests/compat/v1" && pwd)"
 
-EMAIL="compat-owner@openctem-test.local"
+RUN="$(date +%s)-$$"
+EMAIL="compat-owner-$RUN@openctem-test.local"
 PASSWORD="CompatP@ss123!"
-SLUG="compat-v1-$(date +%s)"
+SLUG="compat-v1-$RUN"
 WORK="$(mktemp -d)"
 JAR="$WORK/cookies"
 trap 'rm -rf "$WORK"' EXIT
@@ -48,8 +50,16 @@ call() {
 }
 
 echo "== provisioning (management API)"
-"$BOOTSTRAP_TENANT_BIN" -db="$DATABASE_URL" -email="$EMAIL" -password="$PASSWORD" \
-	-team="Compat V1" -slug="$SLUG" -force >/dev/null
+# A platform administrator plus the organization and its owner, as at first
+# install. Without SMTP the owner's one-time set-password link is printed;
+# the owner sets a password through it like a person would.
+# SMTP_ENABLED=false keeps the link on stdout even where SMTP is configured.
+setup=$(SMTP_ENABLED=false "$BOOTSTRAP_ADMIN_BIN" -db="$DATABASE_URL" \
+	-email="compat-admin-$RUN@openctem-test.local" -no-backup \
+	-org-name="Compat V1" -org-slug="$SLUG" -org-owner-email="$EMAIL")
+SETUP_TOKEN=$(grep -o 'set-password?token=[^[:space:]]*' <<<"$setup" | head -1 | sed 's/.*token=//')
+[ -n "$SETUP_TOKEN" ] || fail "bootstrap-admin printed no set-password link"
+call POST /api/v1/auth/reset-password "{\"token\":\"$SETUP_TOKEN\",\"new_password\":\"$PASSWORD\"}" >/dev/null
 
 TENANT_ID=$(call POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" |
 	jq -r --arg s "$SLUG" '.tenants[] | select(.slug==$s) | .id')

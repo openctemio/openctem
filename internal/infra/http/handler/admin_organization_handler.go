@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	tenantapp "github.com/openctemio/api/internal/app/tenant"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/admin"
@@ -265,61 +266,33 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
-	owner, err := h.users.GetByEmail(r.Context(), req.OwnerEmail)
-	ownerCreated := false
+	created, err := tenantapp.NewOrganizationCreator(h.tenants, h.provisioning, h.users, h.logger).
+		Create(r.Context(), tenantapp.CreateOrganizationInput{
+			Name: req.Name, Slug: req.Slug, Description: req.Description,
+			OwnerEmail: req.OwnerEmail, OwnerName: req.OwnerName,
+		}, adminAuditContext(r, ""))
 	if err != nil {
-		if !errors.Is(err, shared.ErrNotFound) {
-			apierror.InternalError(err).WriteJSON(w)
-			return
-		}
-		if h.provisioning == nil {
-			apierror.BadRequest("owner_email must belong to an existing user").WriteJSON(w)
-			return
-		}
-		// No account yet: create one for the owner. The password is set
-		// through a one-time link issued once the organization exists.
-		owner, err = h.provisioning.CreateAccount(r.Context(), req.OwnerEmail, req.OwnerName)
-		if err != nil {
-			if shared.IsValidation(err) {
-				apierror.BadRequest(err.Error()).WriteJSON(w)
-				return
-			}
-			h.logger.Error("create owner account", "error", sanitizeLogField(err.Error()))
-			apierror.InternalError(err).WriteJSON(w)
-			return
-		}
-		ownerCreated = true
-	}
-	t, err := h.tenants.CreateTenant(r.Context(), app.CreateTenantInput{
-		Name: req.Name, Slug: req.Slug, Description: req.Description,
-	}, owner.ID(), adminAuditContext(r, ""))
-	if err != nil {
-		if ownerCreated {
-			h.provisioning.DiscardAccount(r.Context(), owner.ID())
-		}
-		if shared.IsValidation(err) {
+		switch {
+		case errors.Is(err, tenant.ErrPlatformAdminMembership):
+			apierror.Conflict("Platform administrators cannot belong to an organization. Use another owner email.").WriteJSON(w)
+		case errors.Is(err, app.ErrAccountExists):
+			apierror.Conflict("An account with this email was just created. Try again.").WriteJSON(w)
+		case shared.IsValidation(err):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
-			return
+		default:
+			h.logger.Error("create organization", "error", sanitizeLogField(err.Error()))
+			apierror.InternalError(err).WriteJSON(w)
 		}
-		h.logger.Error("create organization", "error", sanitizeLogField(err.Error()))
-		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	t := created.Tenant
 	middleware.SetAuditResource(r.Context(), t.ID(), t.Name())
 	resp := AdminCreateOrganizationResponse{}
-	if ownerCreated {
-		// The platform console issues the new owner's first link under the
-		// first-owner rule: emailed only when the organization can send email.
-		setup, serr := h.provisioning.IssueFirstOwnerSetupLink(r.Context(), t, owner, adminAuditContext(r, t.ID().String()))
-		if serr != nil {
-			// The organization exists; the owner can still use forgot-password.
-			h.logger.Error("issue owner setup link", "error", sanitizeLogField(serr.Error()))
-		} else {
-			resp.OwnerSetup = &AdminOwnerSetupResponse{EmailSent: setup.EmailSent, EmailFailed: setup.EmailFailed, SetupToken: setup.SetupToken}
-			if setup.SetupToken != "" {
-				exp := setup.SetupExpiresAt
-				resp.OwnerSetup.SetupExpiresAt = &exp
-			}
+	if setup := created.OwnerSetup; setup != nil {
+		resp.OwnerSetup = &AdminOwnerSetupResponse{EmailSent: setup.EmailSent, EmailFailed: setup.EmailFailed, SetupToken: setup.SetupToken}
+		if setup.SetupToken != "" {
+			exp := setup.SetupExpiresAt
+			resp.OwnerSetup.SetupExpiresAt = &exp
 		}
 	}
 	o, err := h.orgs.GetOrganization(r.Context(), t.ID())

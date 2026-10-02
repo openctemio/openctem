@@ -510,20 +510,3 @@ func (s *Service) CheckSLACompliance(
 
 	return result, nil
 }
-
-// CreateDefaultTenantPolicy creates a default SLA policy for a new tenant.
-func (s *Service) CreateDefaultTenantPolicy(ctx context.Context, tenantID string) (*sladom.Policy, error) {
-	return s.CreateSLAPolicy(ctx, CreatePolicyInput{
-		TenantID:            tenantID,
-		Name:                "Default SLA Policy",
-		Description:         "Default remediation timeline policy",
-		IsDefault:           true,
-		CriticalDays:        sladom.DefaultSLADays["critical"],
-		HighDays:            sladom.DefaultSLADays["high"],
-		MediumDays:          sladom.DefaultSLADays["medium"],
-		LowDays:             sladom.DefaultSLADays["low"],
-		InfoDays:            sladom.DefaultSLADays["info"],
-		WarningThresholdPct: 80,
-		EscalationEnabled:   false,
-	})
-}

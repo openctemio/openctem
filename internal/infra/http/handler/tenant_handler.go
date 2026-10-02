@@ -41,9 +41,10 @@ type TenantHandler struct {
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
 	logger          *logger.Logger
-	// adminOnlyCreation refuses POST /tenants: organizations are created by the
-	// platform administrator (TENANT_CREATION_MODE=admin_only).
-	adminOnlyCreation bool
+	// selfServiceCreation allows POST /tenants (TENANT_CREATION_MODE=
+	// self_service). Off by default: organizations are then created by the
+	// platform administrator only.
+	selfServiceCreation bool
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
 	provisioning *app.UserProvisioningService
@@ -62,10 +63,10 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 	h.invalidateSecurityPolicy = fn
 }
 
-// SetAdminOnlyTenantCreation reserves organization creation for the platform
-// administrator (TENANT_CREATION_MODE=admin_only).
-func (h *TenantHandler) SetAdminOnlyTenantCreation(adminOnly bool) {
-	h.adminOnlyCreation = adminOnly
+// SetSelfServiceTenantCreation lets signed-in users create organizations
+// (TENANT_CREATION_MODE=self_service). Without it POST /tenants is refused.
+func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
+	h.selfServiceCreation = enabled
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -427,7 +428,7 @@ func writeToggleErrorJSON(w http.ResponseWriter, e *module.ToggleError) {
 
 // Create handles POST /api/v1/tenants
 func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if h.adminOnlyCreation {
+	if !h.selfServiceCreation {
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 		return
 	}
