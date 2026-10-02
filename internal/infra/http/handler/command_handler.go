@@ -648,7 +648,7 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 			h.logger.Error("failed to record validation evidence",
 				"command_id", cmd.ID.String(),
 				"finding_id", payload.FindingID,
-				"error", err,
+				"error", logger.SanitizeError(err),
 			)
 		}
 	}()
@@ -788,7 +788,7 @@ func (h *CommandHandler) triggerPipelineFailed(ctx context.Context, cmd *command
 
 	if !payload.IsRoutable() {
 		h.logger.Debug("failed command carries no pipeline routing keys; error will not reach the run",
-			"command_id", cmd.ID.String(), "error", errorMessage)
+			"command_id", cmd.ID.String(), "error", logger.SanitizeText(errorMessage))
 		return
 	}
 

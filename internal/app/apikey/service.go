@@ -199,7 +199,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	s.logger.Info("api key created",
 		"id", key.ID().String(),
 		"tenant_id", key.TenantID().String(),
-		"name", key.Name(),
+		"name", logger.SanitizeValue(key.Name()),
 		"prefix", prefix,
 	)
 	if s.audit != nil && input.AuditContext != nil {
@@ -435,7 +435,7 @@ func (s *Service) Delete(ctx context.Context, id, tenantIDStr string, auditCtx .
 		return err
 	}
 
-	s.logger.Info("api key deleted", "id", id)
+	s.logger.Info("api key deleted", "id", logger.SanitizeValue(id))
 	if s.audit != nil && len(auditCtx) > 0 && auditCtx[0] != nil {
 		_ = s.audit.LogAPIKeyDeleted(ctx, *auditCtx[0], keyID.String())
 	}

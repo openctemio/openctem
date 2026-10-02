@@ -383,7 +383,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// Security: Return success-like result to prevent email enumeration
 	existingUser, err := s.userRepo.GetByEmail(ctx, email)
 	if err == nil && existingUser != nil {
-		s.logger.Info("registration attempt for existing email", "email", email)
+		s.logger.Info("registration attempt for existing email", "email", logger.SanitizeValue(email))
 		// Constant-time defense: spend the same bcrypt cost the real
 		// registration path pays when hashing the new password, so account
 		// existence cannot be inferred from response latency (AUTHZ-6).
@@ -1685,7 +1685,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	s.logger.Info("first team created",
 		"user_id", u.ID().String(),
 		"tenant_id", newTenant.ID().String(),
-		"tenant_name", newTenant.Name(),
+		"tenant_name", logger.SanitizeValue(newTenant.Name()),
 	)
 	s.audit(ctx, auditapp.AuditContext{
 		TenantID:   newTenant.ID().String(),

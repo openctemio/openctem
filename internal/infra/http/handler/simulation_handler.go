@@ -355,7 +355,7 @@ func (h *SimulationHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
-		h.logger.Error("simulation handler error", "error", err)
+		h.logger.Error("simulation handler error", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("internal error").WriteJSON(w)
 	}
 }

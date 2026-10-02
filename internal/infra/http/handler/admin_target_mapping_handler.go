@@ -250,7 +250,7 @@ func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Reques
 			apierror.Conflict("target type " + req.TargetType + " is already mapped to asset type " + req.AssetType).WriteJSON(w)
 			return
 		}
-		h.logger.Error("failed to create target mapping", "error", err)
+		h.logger.Error("failed to create target mapping", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}

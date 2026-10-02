@@ -121,7 +121,7 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 	setup, err := c.provisioning.IssueFirstOwnerSetupLink(ctx, t, owner, actx)
 	if err != nil {
 		// The organization exists; the owner can still use forgot-password.
-		c.logger.Error("issue owner setup link", "tenant_id", t.ID().String(), "error", err)
+		c.logger.Error("issue owner setup link", "tenant_id", t.ID().String(), "error", logger.SanitizeError(err))
 		return res, nil
 	}
 	res.OwnerSetup = setup

@@ -124,7 +124,7 @@ type CreateSensorOutput struct {
 
 // CreateSensor creates a new sensor and generates an API key.
 func (s *SensorService) CreateSensor(ctx context.Context, input CreateSensorInput) (*CreateSensorOutput, error) {
-	s.logger.Info("creating sensor", "name", input.Name, "type", input.Type)
+	s.logger.Info("creating sensor", "name", logger.SanitizeValue(input.Name), "type", logger.SanitizeValue(input.Type))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -962,7 +962,7 @@ func (s *SensorService) ActivateSensor(ctx context.Context, tenantID, sensorID s
 		_ = s.auditService.LogSensorActivated(ctx, *auditCtx, sensorID, a.Name)
 	}
 
-	s.logger.Info("sensor activated", "sensor_id", sensorID)
+	s.logger.Info("sensor activated", "sensor_id", logger.SanitizeValue(sensorID))
 	return a, nil
 }
 
@@ -987,7 +987,7 @@ func (s *SensorService) DisableSensor(ctx context.Context, tenantID, sensorID, r
 		_ = s.auditService.LogSensorDeactivated(ctx, *auditCtx, sensorID, a.Name, reason)
 	}
 
-	s.logger.Info("sensor disabled", "sensor_id", sensorID, "reason", reason)
+	s.logger.Info("sensor disabled", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
 	return a, nil
 }
 
@@ -1012,7 +1012,7 @@ func (s *SensorService) RevokeSensor(ctx context.Context, tenantID, sensorID, re
 		_ = s.auditService.LogSensorRevoked(ctx, *auditCtx, sensorID, a.Name, reason)
 	}
 
-	s.logger.Info("sensor revoked", "sensor_id", sensorID, "reason", reason)
+	s.logger.Info("sensor revoked", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
 	return a, nil
 }
 

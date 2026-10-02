@@ -477,7 +477,7 @@ func (p *AssetProcessor) processBatch(
 			}
 			renames = append(renames, pendingRename{a: existing, old: oldName, new: existing.Name(), via: via})
 			p.logger.Info("asset renamed by identity match",
-				"id", existing.ID().String(), "old_name", oldName, "new_name", existing.Name(), "matched_by", via)
+				"id", existing.ID().String(), "old_name", oldName, "new_name", logger.SanitizeValue(existing.Name()), "matched_by", via)
 		}
 		// createNew inserts this report asset as a new asset.
 		createNew := func() {
@@ -530,7 +530,7 @@ func (p *AssetProcessor) processBatch(
 					// Names are unique per tenant, so the report still lands on
 					// this asset; its conflicting identifier is not recorded.
 					p.logger.Warn("asset name matches an asset with a different identifier",
-						"name", normalizedName, "asset_id", nameMatch.ID().String(), "kind", string(k))
+						"name", logger.SanitizeValue(normalizedName), "asset_id", nameMatch.ID().String(), "kind", string(k))
 				}
 			}
 			mergeInto(nameMatch)
@@ -560,7 +560,7 @@ func (p *AssetProcessor) processBatch(
 			result, corrErr := p.correlator.CorrelateHostRecent(ctx, tenantID, normalizedName, props, cfg, recency)
 			if corrErr != nil {
 				p.logger.Warn("IP correlation failed, creating new asset",
-					"name", normalizedName, "error", corrErr)
+					"name", logger.SanitizeValue(normalizedName), "error", corrErr)
 			}
 			if result != nil && len(result.Ambiguous) > 1 {
 				// Several assets share the IP: no match, and a review for
@@ -605,7 +605,7 @@ func (p *AssetProcessor) processBatch(
 			}
 
 			if corrErr != nil {
-				p.logger.Warn("extended correlation failed", "name", normalizedName, "type", coreType, "error", corrErr)
+				p.logger.Warn("extended correlation failed", "name", logger.SanitizeValue(normalizedName), "type", coreType, "error", corrErr)
 			}
 
 			if result != nil && result.Matched != nil {
@@ -903,7 +903,7 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 	if err != nil {
 		p.logger.Warn("failed to batch create root domain assets",
 			"count", len(newDomains),
-			"error", err,
+			"error", logger.SanitizeError(err),
 		)
 		// Remove from existingMap since creation failed
 		for _, a := range newDomains {
@@ -1115,7 +1115,7 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 	if len(newIPs) > 0 {
 		created, _, persistedIDs, err := p.repo.UpsertBatch(ctx, newIPs)
 		if err != nil {
-			p.logger.Warn("failed to create IP assets from DNS resolution", "error", err)
+			p.logger.Warn("failed to create IP assets from DNS resolution", "error", logger.SanitizeError(err))
 			for _, a := range newIPs {
 				delete(existingMap, a.Name())
 			}
@@ -1357,7 +1357,7 @@ func (p *AssetProcessor) createAssetFromFindingValues(report *ctis.Report) *ctis
 
 		if p.logger != nil {
 			p.logger.Debug("creating asset from finding values",
-				"value", sanitizedValue,
+				"value", logger.SanitizeText(sanitizedValue),
 				"type", info.assetType,
 				"finding_count", info.count,
 			)
@@ -1505,7 +1505,7 @@ func (p *AssetProcessor) createAssetFromPathInference(report *ctis.Report) *ctis
 
 				if p.logger != nil {
 					p.logger.Debug("inferred project from common path prefix",
-						"project_name", projectName,
+						"project_name", logger.SanitizeValue(projectName),
 						"common_prefix", sanitizedPrefix,
 						"path_count", len(paths),
 					)
@@ -1782,7 +1782,7 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset)
 	if c.DataClassification != "" {
 		if err := a.SetDataClassification(asset.DataClassification(c.DataClassification)); err != nil {
 			p.logger.Warn("invalid data_classification from scanner",
-				"value", c.DataClassification, "asset", a.Name(), "error", err)
+				"value", logger.SanitizeValue(c.DataClassification), "asset", logger.SanitizeValue(a.Name()), "error", err)
 		}
 	}
 	if c.PIIExposed {

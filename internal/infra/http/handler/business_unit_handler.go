@@ -157,7 +157,7 @@ func (h *BusinessUnitHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
-		h.logger.Error("business unit error", "error", err)
+		h.logger.Error("business unit error", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("internal error").WriteJSON(w)
 	}
 }

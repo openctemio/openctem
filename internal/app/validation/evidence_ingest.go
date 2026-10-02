@@ -80,7 +80,7 @@ func (s *EvidenceIngestService) Ingest(
 	if aerr != nil {
 		s.logger.Warn("validation evidence recorded but finding status unchanged",
 			"tenant_id", tenantID.String(), "finding_id", findingID.String(),
-			"outcome", string(ev.Outcome), "error", aerr)
+			"outcome", logger.SanitizeValue(string(ev.Outcome)), "error", aerr)
 		return IngestResult{Stored: stored, StatusChanged: false}, nil
 	}
 	return IngestResult{Stored: stored, StatusChanged: res.Stood, Downgraded: res.Downgraded}, nil

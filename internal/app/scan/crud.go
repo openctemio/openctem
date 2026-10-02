@@ -8,6 +8,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 	"github.com/openctemio/api/pkg/validator"
 )
@@ -446,7 +447,7 @@ func (s *Service) checkScanSensorAvailability(ctx context.Context, tenantID shar
 	if !sensorAvail.Available {
 		s.logger.Warn("no sensor available for scan",
 			"tenant_id", tenantID.String(),
-			"tool", toolToCheck,
+			"tool", logger.SanitizeValue(toolToCheck),
 			"message", sensorAvail.Message,
 		)
 	}

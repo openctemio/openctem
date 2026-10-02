@@ -444,7 +444,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		}()
 	}
 
-	s.logger.Info("asset created", "id", a.ID().String(), "name", a.Name())
+	s.logger.Info("asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()))
 	return a, nil
 }
 
@@ -765,7 +765,7 @@ func (s *AssetService) correlateByIPOrHostname(ctx context.Context, tenantID sha
 			if looksLikeIP(found.Name()) {
 				_ = found.UpdateName(name)
 				s.logger.Info("asset correlated by hostname, renamed from IP",
-					"hostname", name, "old_name", found.Name(), "id", found.ID().String())
+					"hostname", name, "old_name", logger.SanitizeValue(found.Name()), "id", found.ID().String())
 			}
 			return found
 		}
@@ -862,7 +862,7 @@ func (s *AssetService) mergeAndUpdateExisting(
 		return nil, fmt.Errorf("failed to update existing asset: %w", err)
 	}
 
-	s.logger.Info("asset upserted (updated existing)", "id", existing.ID().String(), "name", existing.Name())
+	s.logger.Info("asset upserted (updated existing)", "id", existing.ID().String(), "name", logger.SanitizeValue(existing.Name()))
 	return existing, nil
 }
 
@@ -1780,7 +1780,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 		return nil, nil, fmt.Errorf("failed to create repository extension: %w", err)
 	}
 
-	s.logger.Info("repository asset created", "id", a.ID().String(), "name", a.Name(), "fullName", input.FullName)
+	s.logger.Info("repository asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()), "fullName", input.FullName)
 	return a, repoExt, nil
 }
 
@@ -2117,7 +2117,7 @@ func (s *AssetService) UpdateRepositoryExtension(ctx context.Context, tenantID, 
 		return nil, fmt.Errorf("failed to update repository extension: %w", err)
 	}
 
-	s.logger.Info("repository extension updated", "assetID", assetID)
+	s.logger.Info("repository extension updated", "assetID", logger.SanitizeValue(assetID))
 	return repoExt, nil
 }
 
@@ -2343,7 +2343,7 @@ func (s *AssetService) updateExistingRepositoryAsset(
 
 	s.logger.Info("updated existing repository asset with SCM data",
 		"asset_id", existingAsset.ID().String(),
-		"name", existingAsset.Name(),
+		"name", logger.SanitizeValue(existingAsset.Name()),
 		"fullName", input.FullName,
 	)
 

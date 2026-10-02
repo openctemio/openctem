@@ -883,8 +883,8 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 				ipAddress,
 			); err != nil {
 				h.logger.Error("failed to send password reset email",
-					"email", email,
-					"error", err,
+					"email", logger.SanitizeValue(email),
+					"error", logger.SanitizeError(err),
 				)
 				// Don't reveal the error to prevent enumeration
 			}

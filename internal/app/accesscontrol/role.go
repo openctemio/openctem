@@ -967,7 +967,7 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 		}
 		if err := s.ensureTenantMember(ctx, uidStr, input.TenantID); err != nil {
 			s.logger.Warn("skipping bulk role assignment for non-member",
-				"tenant_id", input.TenantID, "user_id", uidStr, "error", err)
+				"tenant_id", input.TenantID, "user_id", logger.SanitizeValue(uidStr), "error", err)
 			skipped++
 			continue
 		}

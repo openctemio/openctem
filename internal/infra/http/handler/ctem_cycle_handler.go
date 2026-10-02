@@ -391,7 +391,7 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 		}
 		// Advisory mode: log so operators can see the gap without being blocked.
 		h.logger.Warn("cycle close: coverage SLO below threshold (advisory, not enforced)",
-			"cycle_id", id, "tenant_id", tenantID, "breach", sloErr.Error())
+			"cycle_id", logger.SanitizeValue(id), "tenant_id", tenantID, "breach", sloErr.Error())
 	}
 
 	row := h.db.QueryRowContext(r.Context(),
