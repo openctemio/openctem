@@ -148,6 +148,24 @@ func registerCTEMCycleRoutes(
 		// Feedback-to-scope: record scope-refinement notes at review/close.
 		r.POST("/{id}/scope-refinement", h.UpdateScopeRefinement, middleware.Require(permission.CTEMCyclesWrite))
 		r.GET("/{id}/scope", h.GetScope, middleware.Require(permission.CTEMCyclesRead))
+		r.GET("/{id}/profiles", h.ListProfiles, middleware.Require(permission.CTEMCyclesRead))
 		r.POST("/{id}/profiles", h.LinkProfile, middleware.Require(permission.CTEMCyclesWrite))
+		r.DELETE("/{id}/profiles/{profileId}", h.UnlinkProfile, middleware.Require(permission.CTEMCyclesWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerScopingRoutes registers the Scoping overview. Like the Program
+// Health scorecards it has no module gate: it only counts what the tenant's
+// scoping registers hold, and reads assets (assets:read).
+func registerScopingRoutes(
+	router Router,
+	h *handler.ScopingHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/scoping", func(r Router) {
+		r.GET("/summary", h.GetSummary, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }

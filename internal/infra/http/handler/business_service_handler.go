@@ -50,7 +50,8 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 		`SELECT id, name, description, criticality, compliance_scope,
 		        handles_pii, handles_phi, handles_financial,
 		        availability_target, rpo_minutes, rto_minutes,
-		        owner_name, owner_email, created_at, updated_at
+		        owner_name, owner_email, created_at, updated_at,
+		        `+businessServiceAssetCountColumn+`
 		   FROM business_services
 		  WHERE tenant_id = $1
 		  ORDER BY created_at DESC
@@ -92,7 +93,8 @@ func (h *BusinessServiceHandler) Get(w http.ResponseWriter, r *http.Request) {
 		`SELECT id, name, description, criticality, compliance_scope,
 		        handles_pii, handles_phi, handles_financial,
 		        availability_target, rpo_minutes, rto_minutes,
-		        owner_name, owner_email, created_at, updated_at
+		        owner_name, owner_email, created_at, updated_at,
+		        `+businessServiceAssetCountColumn+`
 		   FROM business_services
 		  WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id,
@@ -138,7 +140,8 @@ func (h *BusinessServiceHandler) Create(w http.ResponseWriter, r *http.Request) 
 		 RETURNING id, name, description, criticality, compliance_scope,
 		           handles_pii, handles_phi, handles_financial,
 		           availability_target, rpo_minutes, rto_minutes,
-		           owner_name, owner_email, created_at, updated_at`,
+		           owner_name, owner_email, created_at, updated_at,
+		           `+businessServiceAssetCountColumn,
 		tenantID, req.Name, req.Description, req.Criticality,
 		pq.StringArray(req.ComplianceScope),
 		req.HandlesPII, req.HandlesPHI, req.HandlesFinancial,
@@ -189,7 +192,8 @@ func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) 
 		 RETURNING id, name, description, criticality, compliance_scope,
 		           handles_pii, handles_phi, handles_financial,
 		           availability_target, rpo_minutes, rto_minutes,
-		           owner_name, owner_email, created_at, updated_at`,
+		           owner_name, owner_email, created_at, updated_at,
+		           `+businessServiceAssetCountColumn,
 		tenantID, id, req.Name, req.Description, req.Criticality,
 		pq.StringArray(req.ComplianceScope),
 		req.HandlesPII, req.HandlesPHI, req.HandlesFinancial,
@@ -417,6 +421,8 @@ type BusinessServiceResponse struct {
 	OwnerEmail         string    `json:"owner_email,omitempty"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
+	// AssetCount is the number of distinct assets linked to the service.
+	AssetCount int `json:"asset_count"`
 }
 
 // BusinessServiceAssetLink is the JSON response describing an asset link.
@@ -427,6 +433,15 @@ type BusinessServiceAssetLink struct {
 	DependencyType string    `json:"dependency_type"`
 	CreatedAt      time.Time `json:"created_at"`
 }
+
+// businessServiceAssetCountColumn is the number of distinct tenant assets
+// linked to the service, as a correlated subquery on the business_services
+// row (List, Get, and the RETURNING of Create/Update), so a list page costs
+// one query. scanBusinessService reads it last.
+const businessServiceAssetCountColumn = `(SELECT COUNT(DISTINCT bsa.asset_id)
+		   FROM business_service_assets bsa
+		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = business_services.tenant_id
+		  WHERE bsa.service_id = business_services.id) AS asset_count`
 
 // rowScanner matches both *sql.Row and *sql.Rows Scan signatures.
 type rowScanner interface {
@@ -448,6 +463,7 @@ func scanBusinessService(s rowScanner) (BusinessServiceResponse, error) {
 		&bs.HandlesPII, &bs.HandlesPHI, &bs.HandlesFinancial,
 		&availabilityTarget, &rpoMinutes, &rtoMinutes,
 		&ownerName, &ownerEmail, &bs.CreatedAt, &bs.UpdatedAt,
+		&bs.AssetCount,
 	)
 	if err != nil {
 		return bs, err

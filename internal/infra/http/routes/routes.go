@@ -164,6 +164,7 @@ type Handlers struct {
 	VerificationChecklist *handler.VerificationChecklistHandler // nil if not initialized
 	PriorityRule          *handler.PriorityRuleHandler          // nil if not initialized
 	ThreatModel           *handler.ThreatModelHandler           // nil if not initialized
+	Scoping               *handler.ScopingHandler               // nil if not initialized
 
 	// Asset Import (Nessus, K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
@@ -576,6 +577,11 @@ func Register(
 	// CTEM Cycle routes (RFC-005)
 	if h.CTEMCycle != nil {
 		registerCTEMCycleRoutes(router, h.CTEMCycle, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCTEMCycles))
+	}
+
+	// Scoping overview (no module gate, like Program Health)
+	if h.Scoping != nil {
+		registerScopingRoutes(router, h.Scoping, authMiddleware, userSync)
 	}
 
 	// Priority Rule routes (RFC-004)

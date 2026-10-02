@@ -614,6 +614,125 @@ func (h *CTEMCycleHandler) LinkProfile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ListProfiles lists the attacker profiles linked to a cycle, each in the
+// shape GET /attacker-profiles/{id} returns. Only the tenant's own profiles
+// (including its built-in is_default ones) can be linked, so only those are
+// listed.
+// @Summary      List a cycle's attacker profiles
+// @Tags         CTEM Cycles
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Cycle ID"  format(uuid)
+// @Success      200  {object}  CTEMCycleProfilesResponse
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Router       /ctem-cycles/{id}/profiles [get]
+func (h *CTEMCycleHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+	if !h.cycleBelongsToTenant(r.Context(), w, tenantID, id) {
+		return
+	}
+
+	rows, err := h.db.QueryContext(r.Context(),
+		`SELECT ap.id, ap.name, ap.profile_type, ap.description, ap.capabilities, ap.assumptions,
+		        ap.is_default, ap.created_by, ap.created_at, ap.updated_at
+		   FROM ctem_cycle_attacker_profiles cap
+		   JOIN attacker_profiles ap ON ap.id = cap.profile_id AND ap.tenant_id = $2
+		  WHERE cap.cycle_id = $1
+		  ORDER BY ap.is_default DESC, ap.name`,
+		id, tenantID,
+	)
+	if err != nil {
+		h.logger.Error("ctem cycle list profiles", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	defer rows.Close() //nolint:errcheck
+
+	items := make([]AttackerProfileResponse, 0)
+	for rows.Next() {
+		p, err := scanAttackerProfile(rows)
+		if err != nil {
+			h.logger.Error("ctem cycle profile scan", "error", err)
+			apierror.InternalServerError("internal error").WriteJSON(w)
+			return
+		}
+		items = append(items, p)
+	}
+	if err := rows.Err(); err != nil {
+		h.logger.Error("ctem cycle profile rows", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, CTEMCycleProfilesResponse{Data: items})
+}
+
+// UnlinkProfile removes an attacker profile from a cycle. Removing a profile
+// that is not linked is a no-op (204), like linking one twice.
+// @Summary      Unlink an attacker profile from a cycle
+// @Tags         CTEM Cycles
+// @Security     BearerAuth
+// @Param        id         path  string  true  "Cycle ID"    format(uuid)
+// @Param        profileId  path  string  true  "Profile ID"  format(uuid)
+// @Success      204
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Router       /ctem-cycles/{id}/profiles/{profileId} [delete]
+func (h *CTEMCycleHandler) UnlinkProfile(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+	profileID := chi.URLParam(r, "profileId")
+	if !h.cycleBelongsToTenant(r.Context(), w, tenantID, id) {
+		return
+	}
+	if _, err := uuid.Parse(profileID); err != nil {
+		apierror.NotFound("attacker profile not found").WriteJSON(w)
+		return
+	}
+
+	if _, err := h.db.ExecContext(r.Context(),
+		`DELETE FROM ctem_cycle_attacker_profiles
+		  WHERE cycle_id = $1 AND profile_id = $2`,
+		id, profileID,
+	); err != nil {
+		h.logger.Error("ctem cycle unlink profile", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// cycleBelongsToTenant writes 404 and returns false unless the cycle exists
+// in the tenant. A malformed id is a 404, not a database error.
+func (h *CTEMCycleHandler) cycleBelongsToTenant(ctx context.Context, w http.ResponseWriter, tenantID, id string) bool {
+	if _, err := uuid.Parse(id); err != nil {
+		apierror.NotFound("cycle not found").WriteJSON(w)
+		return false
+	}
+	var exists bool
+	if err := h.db.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM ctem_cycles WHERE tenant_id = $1 AND id = $2)",
+		tenantID, id,
+	).Scan(&exists); err != nil {
+		h.logger.Error("ctem cycle lookup", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	if !exists {
+		apierror.NotFound("cycle not found").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// CTEMCycleProfilesResponse is the body of GET /ctem-cycles/{id}/profiles.
+type CTEMCycleProfilesResponse struct {
+	Data []AttackerProfileResponse `json:"data"`
+}
+
 // ─── Internal Helpers ───
 
 // transitionStatus performs a state transition on a cycle.
