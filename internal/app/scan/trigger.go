@@ -297,6 +297,17 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	}
 	routing.record(runContext)
 
+	// Outside zones too, a scanner that reads one target per job gets one
+	// command per target, not one command that scans only the first.
+	if plan == nil {
+		if plan, err = perTargetPlan(sc, resolved.Targets); err != nil {
+			return nil, err
+		}
+		if plan != nil {
+			recordPerTargetPlan(plan, runContext)
+		}
+	}
+
 	// Use the system quick scan template for tracking
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
 
