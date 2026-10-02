@@ -159,6 +159,43 @@ func TestContentReasons(t *testing.T) {
 	}
 }
 
+// sdk-go ContentInfo.Stale: old content the sensor keeps confirming as the
+// newest release (nuclei-templates whose latest release is 15 days old) is
+// not stale; once the confirmation is older than the limit too, it is.
+func TestContentStale_CheckedAt(t *testing.T) {
+	hp := testPolicy()
+	s := daemon(ago(10 * time.Second))
+	nt := ReportedContent{Tool: "nuclei", Name: ContentNucleiTemplates, Version: "v10.4.9",
+		UpdatedAt: ago(15 * 24 * time.Hour), CheckedAt: ago(time.Hour), Managed: true}
+	withContent(s, []ReportedContent{nt})
+	if h := s.AssessHealth(testNow, hp); len(h.Reasons) != 0 || h.State != StateOnline {
+		t.Fatalf("confirmed newest release flagged: %s %v", h.State, codes(h.Reasons))
+	}
+	v := s.ContentViews(testNow, DefaultContentPolicy())[0]
+	if v.Stale || v.CheckedAt == nil {
+		t.Fatalf("view %+v", v)
+	}
+
+	nt.CheckedAt = ago(15 * 24 * time.Hour)
+	nt.Error = "github unreachable"
+	withContent(s, []ReportedContent{nt})
+	h := s.AssessHealth(testNow, hp)
+	if !hasCode(h.Reasons, ReasonContentStale) {
+		t.Fatalf("unconfirmed for 15d: %v", codes(h.Reasons))
+	}
+	want := "The nuclei templates are 15d old (limit 14d). The sensor has not confirmed a newer version for 15d. The last refresh failed: github unreachable."
+	if h.Reasons[0].Message != want {
+		t.Errorf("message = %q", h.Reasons[0].Message)
+	}
+
+	// A checked_at in the far future is dropped at ingest.
+	future := testNow.Add(72 * time.Hour)
+	out := SanitizeReportedContent([]ReportedContent{{Tool: "nuclei", Name: ContentNucleiTemplates, CheckedAt: &future}}, testNow)
+	if out[0].CheckedAt != nil {
+		t.Errorf("future checked_at kept: %v", out[0].CheckedAt)
+	}
+}
+
 func TestSupportsContentRefresh(t *testing.T) {
 	s := &Sensor{}
 	if s.SupportsContentRefresh() {

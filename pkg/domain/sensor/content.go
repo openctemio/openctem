@@ -82,6 +82,10 @@ type ReportedContent struct {
 	Version   string     `json:"version,omitempty"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 	FetchedAt *time.Time `json:"fetched_at,omitempty"`
+	// CheckedAt is when the sensor last confirmed with its source that this
+	// is still the newest (or pinned) version: old content is not stale
+	// while it keeps being confirmed (sdk-go ContentInfo.Stale).
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
 	Source    string     `json:"source,omitempty"`
 	Digest    string     `json:"digest,omitempty"`
 	// Managed is true when the sensor controls the content (it refreshes,
@@ -143,6 +147,7 @@ func SanitizeReportedContent(items []ReportedContent, now time.Time) []ReportedC
 		}
 		c.UpdatedAt = saneTime(c.UpdatedAt, now)
 		c.FetchedAt = saneTime(c.FetchedAt, now)
+		c.CheckedAt = saneTime(c.CheckedAt, now)
 		out = append(out, c)
 	}
 	return out
@@ -221,8 +226,12 @@ type ContentView struct {
 	AgeSeconds *int64
 	// MaxAgeHours is the policy limit (0: no limit).
 	MaxAgeHours int
-	// Stale: managed content older than the limit.
+	// Stale: managed content older than the limit that the sensor has not
+	// confirmed as the newest version within the limit either.
 	Stale bool
+	// Unconfirmed is how long ago the sensor last confirmed the content
+	// (nil: never), for the health message.
+	Unconfirmed *time.Duration
 	// PinnedVersion is the version the policy pins ("" when none).
 	PinnedVersion string
 	// PinMismatch: a version is pinned and the sensor reports another.
@@ -243,10 +252,19 @@ func (a *Sensor) ContentViews(now time.Time, policy ContentPolicy) []ContentView
 func viewContent(c ReportedContent, now time.Time, policy ContentPolicy) ContentView {
 	pin := policy.Pin(c.Name)
 	v := ContentView{ReportedContent: c, MaxAgeHours: pin.MaxAgeHours, PinnedVersion: pin.Version}
+	maxAge := time.Duration(pin.MaxAgeHours) * time.Hour
+	if c.CheckedAt != nil {
+		d := max(now.Sub(*c.CheckedAt), 0)
+		v.Unconfirmed = &d
+	}
 	if age, ok := c.Age(now); ok {
 		secs := int64(age / time.Second)
 		v.AgeSeconds = &secs
-		if c.Managed && pin.MaxAgeHours > 0 && age > time.Duration(pin.MaxAgeHours)*time.Hour {
+		// The same rule as sdk-go ContentInfo.Stale: older than the limit
+		// AND not confirmed current within it. The newest release of a
+		// template set may itself be older than the limit.
+		if c.Managed && pin.MaxAgeHours > 0 && age > maxAge &&
+			(v.Unconfirmed == nil || *v.Unconfirmed > maxAge) {
 			v.Stale = true
 		}
 	} else if c.Managed && pin.MaxAgeHours > 0 && c.Version == "" {
