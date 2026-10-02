@@ -264,6 +264,8 @@ type HeartbeatTool struct {
 	Name      string `json:"name"`
 	Version   string `json:"version,omitempty"`
 	Installed bool   `json:"installed"`
+	// Content is the scanner content the tool scans with (RFC-031).
+	Content []sensor.ReportedContent `json:"content,omitempty"`
 }
 
 // capabilityReport returns the heartbeat's capability report, nil when it
@@ -281,7 +283,7 @@ func (req *HeartbeatRequest) capabilityReport() *sensor.CapabilityReportInput {
 			if i >= sensor.MaxReportedTools {
 				break
 			}
-			in.Tools = append(in.Tools, sensor.ReportedTool{Name: t.Name, Version: t.Version, Installed: t.Installed})
+			in.Tools = append(in.Tools, sensor.ReportedTool{Name: t.Name, Version: t.Version, Installed: t.Installed, Content: t.Content})
 		}
 	}
 	if in.IsEmpty() {

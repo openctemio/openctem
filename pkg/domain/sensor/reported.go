@@ -45,6 +45,9 @@ type ReportedTool struct {
 	Name      string `json:"name"`
 	Version   string `json:"version,omitempty"`
 	Installed bool   `json:"installed"`
+	// Content is the scanner content the tool scans with (RFC-031,
+	// content.go); nil when the sensor reported none for it.
+	Content []ReportedContent `json:"content,omitempty"`
 }
 
 // CapabilityReport is what a sensor last reported, sanitized. A nil slice
@@ -259,7 +262,8 @@ func (in CapabilityReportInput) Sanitize(knownTools, knownCaps map[string]bool) 
 			if !validToolName(name) || !knownTools[name] {
 				continue
 			}
-			rt := ReportedTool{Name: name, Version: sanitizeReportedVersion(t.Version), Installed: t.Installed}
+			rt := ReportedTool{Name: name, Version: sanitizeReportedVersion(t.Version), Installed: t.Installed,
+				Content: sanitizeToolContent(name, t.Content, time.Now())}
 			if j, dup := idx[name]; dup {
 				// Duplicates: installed wins, then a known version.
 				if rt.Installed && !out.Tools[j].Installed {

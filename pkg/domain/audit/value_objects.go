@@ -140,6 +140,12 @@ const (
 	// POST /agent/renew (self-service, kubelet-style), as opposed to the admin
 	// hard rotation recorded by ActionSensorKeyRegenerated.
 	ActionSensorKeyRenewed Action = "sensor.key_renewed"
+	// ActionSensorContentRefreshRequested records an administrator asking a
+	// sensor (or the fleet) to refresh its scanner content (RFC-031).
+	ActionSensorContentRefreshRequested Action = "sensor.content_refresh_requested"
+	// ActionSensorContentPolicyUpdated records a change of the tenant's
+	// scanner content policy (RFC-031).
+	ActionSensorContentPolicyUpdated Action = "sensor.content_policy_updated"
 
 	// Scan zone actions (RFC-023): every change to a zone or to which sensors
 	// serve it.
@@ -344,6 +350,7 @@ func (a Action) IsValid() bool {
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -429,7 +436,8 @@ func (a Action) Category() string {
 		return "data"
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
-		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed:
+		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:

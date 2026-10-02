@@ -98,6 +98,9 @@ type HealthPolicy struct {
 	// (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION); empty = not configured.
 	LatestVersion string
 	MinVersion    string
+	// Content is the tenant's scanner content policy (content.go); nil uses
+	// the platform default.
+	Content *ContentPolicy
 }
 
 // DefaultHealthPolicy returns the default thresholds with no release channel.
@@ -257,6 +260,8 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus) 
 		}
 		add(ReasonNoTools, SeverityWarning, msg)
 	}
+
+	reasons = append(reasons, a.contentReasons(now, p.Content)...)
 
 	if a.Health == SensorHealthError {
 		msg := "The sensor reported an error."
