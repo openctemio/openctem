@@ -9,6 +9,8 @@ name: All-in-one CI
 # Without this, a change to a Dockerfile, the gateway or the supervisor would
 # first be exercised by the release tag. Same shape as the other workflows:
 # always starts, `changes` gates the job, `All-in-one OK` reports either way.
+# web/package.json is an image input on its own: web/Dockerfile runs its
+# `build` script, and web-ci.yml builds only on push, never on a pull request.
 
 on:
   push:
@@ -39,8 +41,8 @@ jobs:
           EVENT_BEFORE: ${{ github.event.before }}
         run: >-
           bash .github/scripts/changed.sh images
-          deploy/ api/deploy/gateway/ api/Dockerfile api/.dockerignore api/go.mod
-          web/Dockerfile web/.dockerignore web/package-lock.json web/server-with-ws.mjs web/next.config.ts
+          deploy/ api/deploy/gateway/ api/Dockerfile api/.dockerignore api/go.mod api/go.sum
+          web/Dockerfile web/.dockerignore web/package.json web/package-lock.json web/server-with-ws.mjs web/next.config.ts
           .github/scripts/smoke- .github/workflows/allinone-ci.yml
 
   images:
