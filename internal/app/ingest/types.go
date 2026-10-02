@@ -94,6 +94,10 @@ type Options struct {
 	// DeferAutoResolve: no auto-resolve during ingest. A v2 report resolves
 	// stale findings once, when it is committed (Service.CommitV2Report).
 	DeferAutoResolve bool
+	// DeferSensorStats: the sensor's totals are not updated per ingest. A v2
+	// report counts once, as one scan, when it completes (it may arrive in
+	// many segments).
+	DeferSensorStats bool
 }
 
 // GetBranchInfo returns branch info from Input or Report metadata.

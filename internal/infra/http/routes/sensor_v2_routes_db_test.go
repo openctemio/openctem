@@ -596,3 +596,45 @@ func TestSensorV2_RateLimitAndQueueFull(t *testing.T) {
 	resp, raw = q.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), good)
 	q.expect(resp, raw, 429, "queue-full")
 }
+
+// A completed v2 report counts toward the sensor's totals once, as a v1
+// ingest does. The v2 path counted every segment as a scan, so a report sent
+// in N segments added N scans (the drawer's "Scans to date").
+func TestSensorV2_CompletedReportCountsTowardSensorTotals(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{})
+	totals := func() (scans, findings int64) {
+		t.Helper()
+		if err := h.db.QueryRow(`SELECT total_scans, total_findings FROM sensors WHERE id = $1`, h.sensorID).
+			Scan(&scans, &findings); err != nil {
+			t.Fatalf("totals: %v", err)
+		}
+		return scans, findings
+	}
+	scans0, findings0 := totals()
+
+	id := newReportID()
+	base := "/api/v2/sensor/results/" + id
+	s0, s1 := v2Segment("semgrep", "1.0", "a"), v2Segment("semgrep", "1.0", "b", "c")
+	for seq, body := range [][]byte{s0, s1} {
+		resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), body)
+		h.expect(resp, raw, 202, "")
+	}
+	b, _ := json.Marshal(protov2.CommitRequest{SegmentCount: 2, SegmentDigests: []string{digestOf(s0), digestOf(s1)}})
+	resp, raw := h.do(http.MethodPost, base+"/commit", nil, func(r *http.Request) {
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		r.ContentLength = int64(len(b))
+		r.Header.Set("Content-Type", "application/json")
+	})
+	h.expect(resp, raw, 202, "")
+
+	h.work(id)
+	scans, findings := totals()
+	if scans-scans0 != 1 || findings-findings0 != 3 {
+		t.Fatalf("after one report of 2 segments: +%d scans, +%d findings; want +1, +3", scans-scans0, findings-findings0)
+	}
+	// A late retry of the report's jobs does not count it again.
+	h.work(id)
+	if scans2, findings2 := totals(); scans2 != scans || findings2 != findings {
+		t.Fatalf("retry counted again: %d/%d -> %d/%d", scans, findings, scans2, findings2)
+	}
+}
