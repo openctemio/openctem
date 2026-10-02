@@ -334,6 +334,16 @@ export interface QuickScanRequest {
   workflow_id?: string
 }
 
+/** POST /scans/quick: the run started and the (unsaved) scan it belongs to. */
+export interface QuickScanResponse {
+  pipeline_run_id: string
+  scan_id: string
+  /** Always empty: quick scans no longer create an asset group. */
+  asset_group_id?: string
+  status: string
+  target_count: number
+}
+
 // ============================================
 // FILTER TYPES
 // ============================================

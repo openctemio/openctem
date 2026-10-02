@@ -18,6 +18,9 @@ type Filter struct {
 	Status       *Status
 	Tags         []string
 	Search       string
+	// ExcludeAdHoc leaves out quick scans that were never saved (Scan.AdHoc):
+	// the Configurations list shows saved configurations only.
+	ExcludeAdHoc bool
 }
 
 // Stats represents aggregated statistics for scans.

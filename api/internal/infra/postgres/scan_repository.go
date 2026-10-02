@@ -89,9 +89,9 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
-			created_by, created_at, updated_at, scan_zone_id
+			created_by, created_at, updated_at, scan_zone_id, ad_hoc
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -131,6 +131,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		s.CreatedAt,
 		s.UpdatedAt,
 		nullableIDString(s.ScanZoneID),
+		s.AdHoc,
 	)
 
 	if err != nil {
@@ -261,7 +262,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
-		    updated_at = $26, scan_zone_id = $28
+		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -294,6 +295,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		s.UpdatedAt,
 		s.TenantID.String(), // $27 — tenant scope: never update another tenant's scan
 		nullableIDString(s.ScanZoneID),
+		s.AdHoc, // $29
 	)
 
 	if err != nil {
@@ -469,7 +471,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 			COUNT(*) FILTER (WHERE status = 'paused') as paused,
 			COUNT(*) FILTER (WHERE status = 'disabled') as disabled
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 	`
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
 		&stats.Total, &stats.Active, &stats.Paused, &stats.Disabled,
@@ -482,7 +484,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 	scheduleQuery := `
 		SELECT schedule_type, COUNT(*)
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 		GROUP BY schedule_type
 	`
 	scheduleRows, err := r.db.QueryContext(ctx, scheduleQuery, tenantID.String())
@@ -507,7 +509,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 	scanTypeQuery := `
 		SELECT scan_type, COUNT(*)
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 		GROUP BY scan_type
 	`
 	scanTypeRows, err := r.db.QueryContext(ctx, scanTypeQuery, tenantID.String())
@@ -661,7 +663,7 @@ func (r *ScanRepository) selectQuery() string {
 		       max_retries, retry_backoff_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
-		       created_by, created_at, updated_at, scan_zone_id
+		       created_by, created_at, updated_at, scan_zone_id, ad_hoc
 		FROM scans
 	`
 }
@@ -739,6 +741,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.CreatedAt,
 		&s.UpdatedAt,
 		&scanZoneID,
+		&s.AdHoc,
 	)
 	if err != nil {
 		return nil, err
@@ -868,6 +871,10 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 		conditions = append(conditions, fmt.Sprintf("tags && $%d", argIndex))
 		args = append(args, pq.Array(filter.Tags))
 		argIndex++
+	}
+
+	if filter.ExcludeAdHoc {
+		conditions = append(conditions, "ad_hoc = false")
 	}
 
 	if filter.Search != "" {

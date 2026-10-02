@@ -10376,8 +10376,21 @@ definitions:
     required:
     - private_key
     type: object
+  internal_infra_http_handler.SaveScanRequest:
+    properties:
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
+      ad_hoc:
+        description: 'AdHoc: an unsaved quick scan (not listed as a configuration
+          until saved).'
+        type: boolean
       asset_group_id:
         description: Primary asset group (legacy)
         type: string
@@ -14416,8 +14429,8 @@ paths:
   /admin/version:
     get:
       description: 'The running API build: release tag (or "<tag>-dev+<commit>" on
-        a development build), short commit, build time and channel (release, rc
-        or dev).'
+        a development build), short commit, build time and channel (release, rc or
+        dev).'
       produces:
       - application/json
       responses:
@@ -24541,6 +24554,10 @@ paths:
         in: query
         name: search
         type: string
+      - description: Also list unsaved quick scans (ad_hoc)
+        in: query
+        name: include_ad_hoc
+        type: boolean
       - default: 1
         description: Page number
         in: query
@@ -25050,6 +25067,53 @@ paths:
       security:
       - BearerAuth: []
       summary: Get latest scan run
+      tags:
+      - Scans
+  /scans/{id}/save:
+    post:
+      consumes:
+      - application/json
+      description: Turns an ad-hoc quick scan into a saved scan configuration with
+        the given name ("Save as scan"). Its runs stay attached. Refused for a scan
+        that is already a configuration.
+      parameters:
+      - description: Quick scan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Configuration name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SaveScanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Save a quick scan as a configuration
       tags:
       - Scans
   /scans/{id}/trigger:
@@ -30041,8 +30105,8 @@ paths:
   /version:
     get:
       description: 'The running API build: release tag (or "<tag>-dev+<commit>" on
-        a development build), short commit, build time and channel (release, rc
-        or dev).'
+        a development build), short commit, build time and channel (release, rc or
+        dev).'
       produces:
       - application/json
       responses:

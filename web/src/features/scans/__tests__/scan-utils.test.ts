@@ -10,18 +10,9 @@
 
 import { describe, it, expect } from 'vitest'
 import { getCompatibilityStatus } from '../types/scan.types'
+import { parseTargets } from '../components/quick-scan-dialog'
 
-// =============================================================================
-// parseTargets — extracted from quick-scan-dialog.tsx
-// =============================================================================
-
-/** Parse targets from text, supporting newline, comma, and semicolon separators. */
-function parseTargets(text: string): string[] {
-  return text
-    .split(/[\n,;]+/)
-    .map((t) => t.trim())
-    .filter(Boolean)
-}
+// parseTargets — the real function from quick-scan-dialog.tsx
 
 describe('parseTargets', () => {
   it('parses newline-separated targets', () => {
