@@ -21,19 +21,21 @@ type Repository interface {
 	Create(ctx context.Context, n *Notification) error
 
 	// List returns notifications visible to a user (with audience filtering and read status).
+	// The user's preferences (in-app on/off, muted types, minimum severity) are applied.
 	// Group membership is resolved via subquery internally, eliminating an extra DB roundtrip.
 	List(ctx context.Context, tenantID, userID shared.ID, filter ListFilter, page pagination.Pagination) (pagination.Result[*Notification], error)
 
-	// UnreadCount returns the number of unread notifications for a user.
+	// UnreadCount returns the number of unread notifications for a user, with the
+	// same preference filtering as List.
 	// Group membership is resolved via subquery internally, eliminating an extra DB roundtrip.
 	UnreadCount(ctx context.Context, tenantID, userID shared.ID) (int, error)
 
 	// ListRecipients returns the users who should receive a real-time push of
 	// the notification: the members of its audience (the addressed user, the
 	// members of the addressed group, or every active tenant member for
-	// audience "all"). It applies the same audience rule as List and
-	// UnreadCount, so a push never reaches someone whose inbox would not show
-	// the notification.
+	// audience "all") whose preferences allow it. It applies the same
+	// audience and preference rules as List and UnreadCount, so a push never
+	// reaches someone whose inbox would not show the notification.
 	ListRecipients(ctx context.Context, n *Notification) ([]shared.ID, error)
 
 	// MarkAsRead marks a single notification as read for a user.

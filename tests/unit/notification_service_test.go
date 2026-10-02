@@ -105,7 +105,8 @@ func (m *mockNotificationRepo) List(_ context.Context, tenantID, userID shared.I
 	}, nil
 }
 
-// ListRecipients mirrors the postgres implementation: the audience's members.
+// ListRecipients mirrors the postgres implementation: the audience's members,
+// filtered by each member's stored preferences.
 func (m *mockNotificationRepo) ListRecipients(_ context.Context, n *notification.Notification) ([]shared.ID, error) {
 	m.recipientCalls++
 	if m.recipientsErr != nil {
@@ -120,7 +121,14 @@ func (m *mockNotificationRepo) ListRecipients(_ context.Context, n *notification
 	case notification.AudienceGroup:
 		audience = m.groupMembers[*n.AudienceID()]
 	}
-	return audience, nil
+	out := make([]shared.ID, 0, len(audience))
+	for _, uid := range audience {
+		if p, ok := m.preferences[fmt.Sprintf("%s:%s", n.TenantID(), uid)]; ok && !p.Allows(n.NotificationType(), n.Severity()) {
+			continue
+		}
+		out = append(out, uid)
+	}
+	return out, nil
 }
 
 func (m *mockNotificationRepo) UnreadCount(_ context.Context, _, _ shared.ID) (int, error) {
@@ -1256,6 +1264,45 @@ func TestNotify_AudienceGroup(t *testing.T) {
 	}
 }
 
+// Each recipient's preferences decide whether the push reaches them.
+func TestNotify_PushRespectsPreferences(t *testing.T) {
+	tenantID := shared.NewID()
+	plain, off, muted, floor := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+
+	repo := newMockNotificationRepo()
+	repo.tenantMembers = []shared.ID{plain, off, muted, floor}
+	set := func(uid shared.ID, inApp bool, mutedTypes []string, minSev string) {
+		repo.preferences[fmt.Sprintf("%s:%s", tenantID, uid)] =
+			notification.ReconstitutePref(tenantID, uid, inApp, "none", mutedTypes, minSev, time.Now())
+	}
+	set(off, false, nil, "")
+	set(muted, true, []string{notification.TypeScanCompleted}, "")
+	set(floor, true, nil, notification.SeverityHigh)
+
+	cases := []struct {
+		typ, sev string
+		want     []shared.ID
+	}{
+		{notification.TypeScanCompleted, notification.SeverityCritical, []shared.ID{plain, floor}},
+		{notification.TypeScanFailed, notification.SeverityMedium, []shared.ID{plain, muted}},
+		{notification.TypeScanFailed, notification.SeverityHigh, []shared.ID{plain, muted, floor}},
+	}
+	for _, tc := range cases {
+		ws := newMockWSBroadcaster()
+		svc := newTestNotificationService(repo, ws)
+		err := svc.Notify(context.Background(), notification.NotificationParams{
+			TenantID: tenantID, Audience: notification.AudienceAll,
+			NotificationType: tc.typ, Severity: tc.sev, Title: "t",
+		})
+		if err != nil {
+			t.Fatalf("notify: %v", err)
+		}
+		if got, want := pushedChannels(ws.calls), userChannels(tenantID, tc.want...); !slices.Equal(got, want) {
+			t.Errorf("%s/%s pushed to %v, want %v", tc.typ, tc.sev, got, want)
+		}
+	}
+}
+
 // If recipients cannot be resolved the notification is still stored (the inbox
 // shows it) and nothing is pushed anywhere, in particular not to a shared
 // channel as a fallback.
@@ -1277,6 +1324,29 @@ func TestNotify_RecipientLookupFails_NoPush(t *testing.T) {
 	}
 	if len(ws.calls) != 0 {
 		t.Errorf("expected no push, got %v", pushedChannels(ws.calls))
+	}
+}
+
+func TestPreferences_Allows(t *testing.T) {
+	tid, uid := shared.NewID(), shared.NewID()
+	cases := []struct {
+		name     string
+		prefs    *notification.Preferences
+		typ, sev string
+		want     bool
+	}{
+		{"nil prefs allow", nil, notification.TypeFindingNew, notification.SeverityInfo, true},
+		{"defaults allow", notification.DefaultPreferences(tid, uid), notification.TypeFindingNew, notification.SeverityInfo, true},
+		{"in-app off blocks", notification.ReconstitutePref(tid, uid, false, "none", nil, "", time.Now()), notification.TypeFindingNew, notification.SeverityCritical, false},
+		{"muted type blocks", notification.ReconstitutePref(tid, uid, true, "none", []string{notification.TypeFindingNew}, "", time.Now()), notification.TypeFindingNew, notification.SeverityCritical, false},
+		{"other type passes", notification.ReconstitutePref(tid, uid, true, "none", []string{notification.TypeFindingNew}, "", time.Now()), notification.TypeScanFailed, notification.SeverityInfo, true},
+		{"below floor blocks", notification.ReconstitutePref(tid, uid, true, "none", nil, notification.SeverityHigh, time.Now()), notification.TypeFindingNew, notification.SeverityMedium, false},
+		{"at floor passes", notification.ReconstitutePref(tid, uid, true, "none", nil, notification.SeverityHigh, time.Now()), notification.TypeFindingNew, notification.SeverityHigh, true},
+	}
+	for _, tc := range cases {
+		if got := tc.prefs.Allows(tc.typ, tc.sev); got != tc.want {
+			t.Errorf("%s: Allows(%s, %s) = %v, want %v", tc.name, tc.typ, tc.sev, got, tc.want)
+		}
 	}
 }
 
