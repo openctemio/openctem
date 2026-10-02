@@ -332,6 +332,9 @@ func registerWebSocketRoutes(
 	// because each ticket is atomically consumed on first redemption. We
 	// intentionally skip the JWT auth chain here so that a leaked query-
 	// string token is no longer an accepted credential for WS upgrades.
+	// The tenant gates ran when the ticket was issued (/auth/ws-token,
+	// wsTokenMiddlewares); the ticket middleware re-checks active
+	// membership for the ticket's user+tenant at upgrade.
 	if wsTicketMiddleware != nil {
 		router.Group("/api/v1/ws", func(r Router) {
 			r.GET("/", h.ServeWS)
