@@ -286,13 +286,18 @@ const commandToolSQL = `COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLI
 // aliased alias work for. It is the one place that decides it, for the poll,
 // the claim, the heartbeat doorbell and the zone predicate.
 //
-// It is the sensor's effective tools (RFC-029 §4.3.1, migration 000253):
-// the tools it reports installed, narrowed by its tool limit (sensors.tools;
-// an empty limit allows every reported tool), or the tools set on it when it
-// never reported. The trigger's availability check (HasSensorForTool) and
-// the selector read the same column.
+// It is the tools the sensor VERIFIED: the ones its own probe reported
+// installed (heartbeat tools[] or the RFC-033 manifest), narrowed by its tool
+// limit (sensors.tools; an empty limit allows every reported tool). That is
+// effective_tools (RFC-029 §4.3.1, migration 000253) for a sensor that
+// reported. A sensor that never reported has no verified tool: its
+// effective_tools fall back to the tools the administrator declared, which
+// nothing checked, so dispatch reads none from it (live: a declared-only
+// sensor failed 24 trivy commands with "scanner not found: trivy"). The
+// trigger's availability check (HasSensorForTool), the selector and the zone
+// router use this same expression.
 func sensorDispatchTools(alias string) string {
-	return alias + ".effective_tools"
+	return `(CASE WHEN ` + alias + `.reported_tool_names IS NULL THEN ARRAY[]::text[] ELSE ` + alias + `.effective_tools END)`
 }
 
 // toolClaimPredicate is the tool gate (RFC-030 B5): keep a command only if it

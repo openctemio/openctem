@@ -598,7 +598,7 @@ func (r *SensorRepository) FindByCapabilities(ctx context.Context, tenantID shar
 	}
 
 	if tool != "" {
-		query += fmt.Sprintf(" AND $%d = ANY(effective_tools)", argIndex)
+		query += fmt.Sprintf(" AND $%d = ANY("+sensorDispatchTools("sensors")+")", argIndex)
 		args = append(args, tool)
 	}
 
@@ -665,7 +665,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
-		  AND $2 = ANY(effective_tools)
+		  AND $2 = ANY(` + sensorDispatchTools("sensors") + `)
 		  AND ` + sensorFreeSlotsSQL("sensors") + ` > 0
 		ORDER BY ` + sensorFreeSlotsSQL("sensors") + ` DESC,
 		         ` + sensorToolThroughputSQL("sensors", "$2") + ` DESC NULLS LAST,
@@ -707,7 +707,7 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 	}
 
 	if tool != "" {
-		query += fmt.Sprintf(" AND $%d = ANY(effective_tools)", argIndex)
+		query += fmt.Sprintf(" AND $%d = ANY("+sensorDispatchTools("sensors")+")", argIndex)
 		args = append(args, tool)
 	}
 
@@ -1201,7 +1201,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 // Only sensors with health='online' are considered - meaning daemon is running and recently sent heartbeat.
 func (r *SensorRepository) GetAvailableToolsForTenant(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	query := `
-		SELECT DISTINCT unnest(effective_tools) AS tool_name
+		SELECT DISTINCT unnest(` + sensorDispatchTools("sensors") + `) AS tool_name
 		FROM sensors
 		WHERE tenant_id = $1
 		  AND status = 'active'
@@ -1241,7 +1241,7 @@ func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared
 			  AND status = 'active'
 			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
-			  AND $2 = ANY(effective_tools)
+			  AND $2 = ANY(` + sensorDispatchTools("sensors") + `)
 		)
 	`
 

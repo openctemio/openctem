@@ -132,7 +132,9 @@ func (h *ctlHarness) newSensor(tenantID, name string) ctlSensor {
 	if err != nil {
 		h.t.Fatalf("create sensor: %v", err)
 	}
-	return ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey}
+	s := ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey}
+	h.verifyTools(s)
+	return s
 }
 
 // newCommand creates a scan command in tenantID, pinned to sensorID unless
