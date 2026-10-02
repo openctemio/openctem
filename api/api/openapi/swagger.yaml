@@ -3929,7 +3929,8 @@ definitions:
       channel:
         enum:
         - release
-        - development
+        - rc
+        - dev
         example: release
         type: string
       commit:
@@ -14129,8 +14130,9 @@ paths:
       - Admin Users
   /admin/version:
     get:
-      description: 'The running API build: release tag (or "<tag>-dev" on a development
-        build), short commit, build time and channel.'
+      description: 'The running API build: release tag (or "<tag>-dev+<commit>" on
+        a development build), short commit, build time and channel (release, rc
+        or dev).'
       produces:
       - application/json
       responses:
@@ -29712,8 +29714,9 @@ paths:
       - Users
   /version:
     get:
-      description: 'The running API build: release tag (or "<tag>-dev" on a development
-        build), short commit, build time and channel.'
+      description: 'The running API build: release tag (or "<tag>-dev+<commit>" on
+        a development build), short commit, build time and channel (release, rc
+        or dev).'
       produces:
       - application/json
       responses:

@@ -1742,7 +1742,7 @@ export interface paths {
     }
     /**
      * API version
-     * @description The running API build: release tag (or "<tag>-dev" on a development build), short commit, build time and channel.
+     * @description The running API build: release tag (or "<tag>-dev+<commit>" on a development build), short commit, build time and channel (release, rc or dev).
      */
     get: {
       parameters: {
@@ -28634,7 +28634,7 @@ export interface paths {
     }
     /**
      * API version
-     * @description The running API build: release tag (or "<tag>-dev" on a development build), short commit, build time and channel.
+     * @description The running API build: release tag (or "<tag>-dev+<commit>" on a development build), short commit, build time and channel (release, rc or dev).
      */
     get: {
       parameters: {
@@ -31382,7 +31382,7 @@ export interface components {
        * @example release
        * @enum {string}
        */
-      channel?: 'release' | 'development'
+      channel?: 'release' | 'rc' | 'dev'
       /** @example 4d2f4b02 */
       commit?: string
       /** @example v0.9.0 */
