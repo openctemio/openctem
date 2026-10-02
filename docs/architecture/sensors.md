@@ -570,6 +570,7 @@ reports it on the heartbeat inside its tool inventory:
 "tools": [{"name": "trivy", "version": "0.69.3", "installed": true,
   "content": [{"name": "trivy-db", "version": "2026-10-02T01:05:41Z",
     "updated_at": "2026-10-02T01:05:41Z", "fetched_at": "2026-10-02T04:59:26Z",
+    "checked_at": "2026-10-02T05:30:00Z",
     "source": "mirror.gcr.io/aquasec/trivy-db:2", "digest": "sha256:3b16…",
     "managed": true, "error": ""}]}]
 ```
@@ -610,15 +611,20 @@ so it is not sent one. Policy updates and refresh requests are audited
 (`sensor.content_policy_updated`, `sensor.content_refresh_requested`).
 
 **Read model.** Every sensor response has `content` (never null): per tool and
-content the reported fields plus `age_seconds`, `max_age_hours`, `stale`,
+content the reported fields (including `checked_at`) plus `age_seconds`, `max_age_hours`, `stale`,
 `pinned_version`, `pin_mismatch`, judged against the tenant's policy, and
 `content_refresh_supported`.
 
 **Health reasons** (`pkg/domain/sensor/content_health.go`), both `warning`, so
 an online sensor becomes `degraded`:
 
-- `content_stale`: managed content older than its limit (or none installed
-  yet): "The trivy DB is 3d old (limit 2d). The last refresh failed: …".
+- `content_stale`: managed content older than its limit **and** not
+  confirmed current within it (`checked_at`: when the sensor last confirmed
+  with its source that this is still the newest or pinned version; the same
+  rule as sdk-go `ContentInfo.Stale`), or none installed yet. A template set
+  whose newest release is 15 days old is not stale while the sensor keeps
+  confirming it. "The nuclei templates are 15d old (limit 14d). The sensor has
+  not confirmed a newer version for 15d. The last refresh failed: …".
 - `content_refresh_failed`: the last refresh failed but the content is still
   within its limit: "Refreshing the nuclei templates failed: checksum
   mismatch. Scans use v10.4.8."
