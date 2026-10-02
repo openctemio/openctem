@@ -1,10 +1,10 @@
 # RFC-033 — Sensor manifest: register what a sensor is once, heartbeat a digest
 
-> Status: **Proposed** (2026-10-02). Phase 0 (defect fixes): api#714,
-> sdk-go#106 (merged), ui#589, sensor#99. Phase 1 needs no owner decision
-> (§10.1); its api part is implemented with this RFC and its sdk-go part in
-> a companion PR (§8.1). §10.2 lists the owner's decisions, which govern
-> Phases 2 to 4.
+> Status: **Accepted** (2026-10-02; owner decisions in §10.2). Proposed
+> 2026-10-02 in api#718.
+> - Phase 0 (defect fixes) is live: api#714, sdk-go#106, ui#589, sensor v0.6.3.
+> - Phase 1 is merged: api#718 (migration 000258, live) and sdk-go#108.
+> - Phase 2 is designed in §6.12 and in implementation.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md) (protocol
 > v2, hello, §4.3.1 sensor-reported capabilities), [RFC-030](RFC-030-scan-work-distribution.md)
@@ -343,6 +343,89 @@ visible failure, where today the sensor would run a tool the administrator
 disallowed. A sensor whose policy is older than the heartbeat's
 `config_version` re-reads it before it claims again.
 
+### 6.12 Phase 2 as decided (O1–O4)
+
+**Policy echo (O2).**
+
+- Both the `PUT /api/v2/sensor/manifest` answer and a new
+  `GET /api/v2/sensor/manifest` carry:
+  - `policy: {allowed_tools, allowed_capabilities, max_jobs}`: the sensor's
+    effective tools, capabilities and capacity, so the administrator's
+    narrowing is already applied.
+  - `heartbeat: {omit_inventory}`: see "Slim heartbeat" below.
+- `GET` answers for the stored current manifest, or 404 `manifest-not-found`
+  when there is none (the sensor then PUTs).
+- The SDK keeps the policy and re-reads it with `GET` on the first heartbeat
+  whose `config_version` differs from the one it read the policy under. The
+  administrator changing tools, capabilities or the limit already changes
+  `config_version`.
+
+**Refusal on the sensor (O2).** A command names a tool when its payload has
+`scanner`, or else `preferred_tool`. This is the same rule as the platform's
+tool gate (`commandToolSQL`), and the name goes through
+`CanonicalScannerName`. If a policy is known and the tool is not in
+`allowed_tools`, the SDK claims and starts the command, then reports it
+**failed** with `tool-not-allowed: <tool> is not allowed on this sensor by the
+platform's policy`. It never runs it. A command that names no tool (a
+validation, a collection) and a sensor that has no policy yet are not gated.
+The failure is visible on the job and in the activity timeline. Silently
+leaving the command pending would hide the platform bug that dispatched it.
+
+**Slim heartbeat (O3).**
+
+- After an answer with `omit_inventory: true`, and while the heartbeat
+  echoes the acknowledged digest, the SDK leaves `tools`, `capabilities`
+  and `max_concurrent_jobs` out of the heartbeat. An absent list already
+  means "keep the stored value" (migration 000253), so the platform keeps the
+  manifest's projection.
+- What still changes between manifests is each piece of content's freshness:
+  `checked_at`, `fetched_at`, the last refresh `error` (RFC-031 health). This
+  goes in a compact `content` member, `[{tool, name, version, updated_at,
+  fetched_at, checked_at, source, digest, managed, error}]`. The platform
+  merges it into the stored tools' content, so `content_stale` and
+  `content_refresh_failed` keep working.
+- A tool installed or removed, or a version or content version that changed,
+  is a manifest change. It reaches the platform as a new `PUT`, not as a
+  heartbeat.
+- **Kill switch:** `SENSOR_SLIM_HEARTBEAT=false` on the platform (default
+  `true`). Answers then say `omit_inventory: false`, and a heartbeat that
+  arrives slim gets `send_manifest`. The sensor re-registers, reads
+  `omit_inventory: false` and goes back to full heartbeats within one
+  interval.
+- A platform from before Phase 2 never says `omit_inventory: true`, so a newer
+  SDK never slims against it.
+
+**Re-approval (O1).** None. When a registered manifest replaces the previous
+one, the platform records one **`manifest_changed`** event (category
+`updates`) with the diff:
+
+- tools added and removed
+- version changes
+- per-tool capabilities added and removed
+- sensor-wide capabilities
+- ceiling, platform and build
+
+Both digests go in its details. Content versions keep their own
+`content_updated` events. What a new tool may do is still decided by the
+administrator's tool limit: a tool outside it shows as "installed but not
+allowed". Manifests derived from heartbeats keep the heartbeat's
+`tools_changed` and `capacity_changed` events (§6.6), so nothing is recorded
+twice.
+
+**Resources (O4).** `resources` (CPU cores, memory) are part of the manifest
+read with `sensors:read`, as hostname and IP are.
+
+**UI.** The sensor drawer's "Manifest" section shows:
+
+- the current digest, its source and since when
+- resources, ceiling and model
+- tools with kind, version, installed state, capabilities and content
+  versions
+- sensor-wide capabilities and ignored items
+- the version history, with a diff of each version against the one before it
+
+The Activity timeline renders `manifest_changed` with its diff.
+
 ### 6.8 Routing by tool and target type (Phase 3, with RFC-030)
 
 - A tool declares the target types it scans through an optional SDK
@@ -429,7 +512,7 @@ nothing else.
 |---|---|---|---|
 | **P0** (done, in review) | D1–D3 fixes (§3.2): ceiling vs slots in SDK and API, per-tool kind and capabilities end to end, nuclei and recon version parsing, UI wording and chips. api#714, sdk-go#106, ui#589, sensor#99. | S (done) | low |
 | **P1** | API: migration (`sensor_manifests`, `sensors.manifest_digest`, `manifest_at`, `manifest_source`), `PUT /api/v2/sensor/manifest` with `accepted`/`ignored`, `manifest` feature, heartbeat `manifest_digest` + `send_manifest`, derived manifests, version-diff events, management reads `GET /api/v1/sensors/{id}/manifest` and `/manifests`. SDK: `core.Manifest`, `BuildManifest`, digest, `client.PutManifest`, `BaseSensor` register / echo / re-send. Sensor: SDK bump. Docs. | M (api ≈ 3 d, sdk ≈ 2 d) | low: additive, the heartbeat stays full |
-| **P2** | Slim heartbeat after acknowledgement. `policy` in the answer + `GET /api/v2/sensor/manifest`. SDK refuses disallowed tools (`tool-not-allowed`). UI manifest section with history diff; ui#583 review reads the manifest. | M | medium: slimming must be exact, so it is gated on `manifest` acknowledged per sensor and kill-switchable (`SENSOR_SLIM_HEARTBEAT`) |
+| **P2** | §6.12: slim heartbeat after acknowledgement with a `content` freshness block, `policy` + `heartbeat.omit_inventory` in the answer + `GET /api/v2/sensor/manifest`, SDK refuses disallowed tools (`tool-not-allowed`), `manifest_changed` event, UI manifest section with history diff. | M | medium: slimming must be exact, so it is gated on `omit_inventory` acknowledged per sensor and kill-switchable (`SENSOR_SLIM_HEARTBEAT`) |
 | **P3** | `core.TargetTyper` + target types for the bundled scanners; target-type registry check; RFC-030 selection by capability × target type with the chosen tool written into the command. | M–L | medium: routing change, behind the RFC-030 rollout |
 | **P4** | RFC-032 tie: manifest in the enroll request, approval shows it and records its digest; signing key fingerprint stored per version; re-approval policy per O1. | S on top of RFC-032 P1/P2 | low |
 
@@ -438,9 +521,13 @@ nothing else.
 | Part | State |
 |---|---|
 | api: migration 000258 (`sensor_manifests`, `sensors.manifest_*`), `PUT /api/v2/sensor/manifest`, feature `manifest`, heartbeat `manifest_digest` + `send_manifest`, derived manifests, version-diff events with digests, `GET /api/v1/sensors/{id}/manifest[s]`, `manifest_digest/at/source` on the sensor response | implemented with this RFC (DB tests `sensor_manifest_db_test.go`, unit tests `manifest_test.go`) |
-| sdk-go: `core.Manifest`, `BuildManifest`, `client.PutManifest`, `BaseSensor` register / echo / re-send, conformance fake | sdk-go `feat/sensor-manifest` (the digest is pinned to the same value by a test on both sides); until it ships, every SDK sensor gets derived manifests |
+| sdk-go: `core.Manifest`, `BuildManifest`, `client.PutManifest`, `BaseSensor` register / echo / re-send, conformance fake | sdk-go#108 (merged; the digest is pinned to the same value by a test on both sides) |
 | sensor | SDK bump only. Verified end to end: a sensor built with the SDK branch registered against this API (`source = sensor`, ceiling 0, model dynamic, 4 tools); a second version followed when its content manager installed nuclei templates and the trivy DB |
 | ui | Phase 2 (manifest section) |
+
+Phase 0 and Phase 1 are live (2026-10-02): sensor v0.6.3 shows nuclei
+v3.11.1 with per-tool capabilities, effective capacity is 4, and a
+heartbeat-derived manifest exists for sensor-docker-01.
 
 ## 9. Alternatives considered
 
@@ -486,13 +573,25 @@ Also decided here:
 - `ignored` items are visible to administrators in the API and, from Phase 2,
   in the UI.
 
-### 10.2 Owner decisions (needed before Phase 2 / 4; recommendation first)
+### 10.2 Owner decisions (2026-10-02)
+
+The owner accepted each recommendation below as written. §6.12 is the
+resulting Phase 2 design.
+
+| # | Decision |
+|---|---|
+| O1 | **No re-approval** when a manifest adds a tool or changes its build. The change is recorded as an event (`manifest_changed`), and the administrator's tool limit still governs what the tool may do. |
+| O2 | **The SDK refuses** commands for tools outside the platform's policy. The platform returns the policy (allowed tools, capabilities, capacity) in the manifest answer and on `GET /api/v2/sensor/manifest`. |
+| O3 | **Slim heartbeats.** Once the manifest is acknowledged, heartbeats drop the tool list. This is per sensor and has a server kill switch (`SENSOR_SLIM_HEARTBEAT`). |
+| O4 | **Resources** (CPU, memory) from the manifest are visible to `sensors:read`. |
+
+The questions as they were put, with the recommendation:
 
 | # | Question | Recommendation |
 |---|---|---|
 | O1 | When an **approved** sensor's manifest adds a tool, or changes its build, should the sensor need **re-approval** before it receives jobs for it? | **No re-approval.** Narrowing already prevents widening: the token's tool ceiling and the admin's tool list still apply, and a new tool outside them shows as "installed but not allowed" with one-click Allow. Record a `tools_changed` event, and offer an optional tenant setting "notify me when a sensor's tools change". Re-approval on every template release or version bump would train admins to click through. |
 | O2 | Should the SDK **refuse** commands for tools outside the platform's policy (M10), turning a platform-side dispatch bug into a failed job rather than a run? | **Yes**, in Phase 2. It is cheap and visible, and it matches RFC-023's "enforced on the sensor too" principle. The failure carries the typed reason, so it is not a silent drop. |
-| O3 | **Slim heartbeats** (Phase 2): drop the inventory from heartbeats once the manifest is acknowledged? It saves ≈ 90 % of heartbeat bytes. The cost is that older platform builds (before Phase 2) would not see tool changes from a sensor on a newer SDK until the next manifest `PUT`. | **Yes**, gated per sensor on the acknowledged digest and the platform's `manifest` feature, with a server kill switch. |
+| O3 | **Slim heartbeats** (Phase 2): drop the inventory from heartbeats once the manifest is acknowledged? It saves most of the heartbeat's bytes. | **Yes**, gated per sensor on an answer that says so (a platform from before Phase 2 never does), with a server kill switch. |
 | O4 | Should the manifest's `resources` (cores, memory) be **shown to tenant users** with `sensors:read`, or only to administrators? It is host sizing information, comparable to the hostname and IP already shown. | Show to `sensors:read`, as hostname and IP are today. |
 
 ## 11. Sources
