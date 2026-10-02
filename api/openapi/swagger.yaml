@@ -3237,6 +3237,104 @@ definitions:
       reason:
         type: string
     type: object
+  github_com_openctemio_api_pkg_domain_scoping.AssetSummary:
+    properties:
+      in_business_unit:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_scoping.BoundarySummary:
+    properties:
+      exclusions:
+        type: integer
+      targets:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_scoping.CountSummary:
+    properties:
+      total:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_scoping.CrownJewelSummary:
+    properties:
+      total:
+        type: integer
+      with_owner:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_scoping.CycleSummary:
+    properties:
+      attacker_profiles:
+        description: AttackerProfiles is the number of profiles linked to the cycle.
+        type: integer
+      end_date:
+        type: string
+      exclusions:
+        type: integer
+      id:
+        type: string
+      in_scope_services:
+        type: integer
+      name:
+        type: string
+      objectives:
+        description: Charter array lengths.
+        type: integer
+      scope_assets:
+        description: |-
+          ScopeAssets is the number of rows in the cycle's scope snapshot (zero
+          until the cycle is activated).
+        type: integer
+      start_date:
+        type: string
+      status:
+        type: string
+      success_criteria:
+        type: integer
+      threat_scenarios:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_scoping.ServiceSummary:
+    properties:
+      total:
+        type: integer
+      with_assets:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_scoping.Summary:
+    properties:
+      active_cycle:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.CycleSummary'
+        description: |-
+          ActiveCycle is the cycle the scope is being written for: the tenant's
+          active cycle, else the most recent one in review, else the most recent
+          one in planning. Nil when there is none of those.
+      assets:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.AssetSummary'
+      attacker_profiles:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.CountSummary'
+      boundary:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.BoundarySummary'
+      business_services:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.ServiceSummary'
+      business_units:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.CountSummary'
+      crown_jewels:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.CrownJewelSummary'
+      cycles:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.CountSummary'
+      threat_models:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.ThreatModelSummary'
+    type: object
+  github_com_openctemio_api_pkg_domain_scoping.ThreatModelSummary:
+    properties:
+      crown_jewels_covered:
+        type: integer
+      total:
+        type: integer
+    type: object
   github_com_openctemio_api_pkg_domain_sensor.CapabilityMismatch:
     properties:
       capabilities_not_reported:
@@ -4751,6 +4849,30 @@ definitions:
         example: 12
         type: integer
     type: object
+  internal_infra_http_handler.AttackerProfileResponse:
+    properties:
+      assumptions:
+        type: string
+      capabilities:
+        additionalProperties: {}
+        type: object
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      profile_type:
+        type: string
+      updated_at:
+        type: string
+    type: object
   internal_infra_http_handler.AuditLogListResponse:
     properties:
       data:
@@ -5190,6 +5312,13 @@ definitions:
         type: string
       ransomware_use:
         type: string
+    type: object
+  internal_infra_http_handler.CTEMCycleProfilesResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AttackerProfileResponse'
+        type: array
     type: object
   internal_infra_http_handler.CTEMCycleResponse:
     properties:
@@ -18310,6 +18439,66 @@ paths:
       summary: Close CTEM cycle
       tags:
       - CTEM Cycles
+  /ctem-cycles/{id}/profiles:
+    get:
+      parameters:
+      - description: Cycle ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CTEMCycleProfilesResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List a cycle's attacker profiles
+      tags:
+      - CTEM Cycles
+  /ctem-cycles/{id}/profiles/{profileId}:
+    delete:
+      parameters:
+      - description: Cycle ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Profile ID
+        format: uuid
+        in: path
+        name: profileId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Unlink an attacker profile from a cycle
+      tags:
+      - CTEM Cycles
   /custom-tools:
     get:
       consumes:
@@ -25624,6 +25813,31 @@ paths:
       summary: Bulk delete scope targets
       tags:
       - Scope
+  /scoping/summary:
+    get:
+      description: 'Tenant-wide readiness counts for CTEM scoping: the cycle in focus
+        and its charter, crown jewels and their owners, business services and units,
+        the boundary, attacker profiles, threat models and cycles.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scoping.Summary'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Scoping overview
+      tags:
+      - Scoping
   /secret-store:
     get:
       consumes:

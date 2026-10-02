@@ -66,25 +66,11 @@ func (h *AttackerProfileHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]AttackerProfileResponse, 0, perPage)
 	for rows.Next() {
-		var p AttackerProfileResponse
-		var desc, assumptions, createdBy sql.NullString
-		var capabilities []byte
-		if err := rows.Scan(
-			&p.ID, &p.Name, &p.ProfileType, &desc, &capabilities, &assumptions,
-			&p.IsDefault, &createdBy, &p.CreatedAt, &p.UpdatedAt,
-		); err != nil {
+		p, err := scanAttackerProfile(rows)
+		if err != nil {
 			h.logger.Error("attacker profile scan", "error", err)
 			apierror.InternalServerError("internal error").WriteJSON(w)
 			return
-		}
-		p.Description = desc.String
-		p.Assumptions = assumptions.String
-		p.CreatedBy = createdBy.String
-		if capabilities != nil {
-			_ = json.Unmarshal(capabilities, &p.Capabilities)
-		}
-		if p.Capabilities == nil {
-			p.Capabilities = map[string]any{}
 		}
 		items = append(items, p)
 	}
@@ -102,20 +88,13 @@ func (h *AttackerProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	var p AttackerProfileResponse
-	var desc, assumptions, createdBy sql.NullString
-	var capabilities []byte
-
-	err := h.db.QueryRowContext(r.Context(),
+	p, err := scanAttackerProfile(h.db.QueryRowContext(r.Context(),
 		`SELECT id, name, profile_type, description, capabilities, assumptions,
 		        is_default, created_by, created_at, updated_at
 		   FROM attacker_profiles
 		  WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id,
-	).Scan(
-		&p.ID, &p.Name, &p.ProfileType, &desc, &capabilities, &assumptions,
-		&p.IsDefault, &createdBy, &p.CreatedAt, &p.UpdatedAt,
-	)
+	))
 	if err != nil {
 		if err == sql.ErrNoRows { //nolint:errorlint
 			apierror.NotFound("attacker profile not found").WriteJSON(w)
@@ -124,6 +103,24 @@ func (h *AttackerProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("attacker profile get", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
+	}
+
+	writeJSON(w, http.StatusOK, p)
+}
+
+// scanAttackerProfile scans the column list id, name, profile_type,
+// description, capabilities, assumptions, is_default, created_by, created_at,
+// updated_at. Shared by the profile endpoints and the cycle profile list so
+// both return the same shape.
+func scanAttackerProfile(scanner ctemRowScanner) (AttackerProfileResponse, error) {
+	var p AttackerProfileResponse
+	var desc, assumptions, createdBy sql.NullString
+	var capabilities []byte
+	if err := scanner.Scan(
+		&p.ID, &p.Name, &p.ProfileType, &desc, &capabilities, &assumptions,
+		&p.IsDefault, &createdBy, &p.CreatedAt, &p.UpdatedAt,
+	); err != nil {
+		return p, err
 	}
 	p.Description = desc.String
 	p.Assumptions = assumptions.String
@@ -134,8 +131,7 @@ func (h *AttackerProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if p.Capabilities == nil {
 		p.Capabilities = map[string]any{}
 	}
-
-	writeJSON(w, http.StatusOK, p)
+	return p, nil
 }
 
 // Create creates a new attacker profile.

@@ -417,6 +417,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
+		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log),
 
 		// Platform Stats (tenant-scoped platform sensor statistics)
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Sensor, log),

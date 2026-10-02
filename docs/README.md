@@ -22,6 +22,7 @@
 - [Change Detection](architecture/change-detection.md) - What changed in the attack surface: state history views, `asset_discovered` / `scan_completed` triggers, throttled new-internet-facing-asset notification
 - [Scan Orchestration](architecture/scan-orchestration.md) - Pipeline execution, agent coordination
 - [CTEM Program Metrics](architecture/program-metrics.md) - MTTD for new internet-facing assets, MTTR for validated exposures, owner acceptance rate: exact definitions, tenant scoping, "—" for not measurable, and why time-to-break attack paths is not computed
+- [Scoping Overview](architecture/scoping-overview.md) - `GET /scoping/summary` readiness counts (exact definitions, tenant-wide like Program Health) and the cycle attacker-profile list/link/unlink endpoints
 - [Scan Coverage (Tenable)](architecture/scan-coverage.md) - License-aware rolling coverage, Nessus Pro + Tenable.sc, .nessus→CTIS converter
 - [Sensors](architecture/sensors.md) - Sensor vocabulary (scanner/agent/collector roles), code layout, protocol v2 (RFC-026 results, [RFC-029](rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) whole surface) and the deprecated protocol v1 legacy package (RFC-023)
 - [Scan Zones](architecture/scan-zones.md) - Tenant address ranges → zone sensors: narrowest-zone routing and batching at trigger time, the zone claim predicate, run completion over batches, coverage view, UI contract (RFC-023 Phase 1)
