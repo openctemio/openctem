@@ -73,7 +73,9 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 	// Register sets package-level chain parts; put them back afterwards.
 	saved := []Middleware{csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware,
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware}
+	savedKeyAuth := apiKeyOrJWT
 	t.Cleanup(func() {
+		apiKeyOrJWT = savedKeyAuth
 		csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware = saved[0], saved[1], saved[2]
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware = saved[3], saved[4], saved[5]
 	})
@@ -164,7 +166,7 @@ func (h *authzPolicyHarness) member(tenantID, membershipRole string) policyUser 
 		}
 	}
 	tok, err := h.gen.GenerateTenantScopedAccessTokenWithPermissions(u.id, email, "Authz policy IT", uuid.NewString(),
-		jwt.TenantMembership{TenantID: tenantID, Role: membershipRole}, perms, nil, isAdmin, 0, "password")
+		jwt.TenantMembership{TenantID: tenantID, Role: membershipRole}, perms, isAdmin, 0, "password")
 	if err != nil {
 		h.t.Fatalf("mint token: %v", err)
 	}
