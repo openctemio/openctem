@@ -1001,6 +1001,50 @@ inside it. Use one zone per segment (scan-zones.md).
     are never shown in the audit.
   - Permissions: `sensors:egress:read|write|delete`, admin and owner only.
 
+## Control plane under load (RFC-035)
+
+A sensor's scanners can saturate its CPU, memory and disk, and the sensor
+still has to heartbeat. [RFC-035](../rfcs/RFC-035-sensor-control-plane-under-load.md)
+measured where this breaks and splits the fix into sensor-side (SDK) and
+platform-side work.
+
+**What the platform does today**:
+
+- The health controller (`internal/infra/controller/sensor_health.go`, every
+  30 s) marks a sensor `offline` 90 s after its last heartbeat. This is
+  hard-coded in `cmd/server/workers.go`.
+- On that transition it notifies `sensor.offline`, writes the audit and
+  activity events, and releases pending work pinned to the sensor.
+- `stale` (fleet health) therefore lasts at most one controller tick (RFC-035
+  B2).
+- The doorbell's "loaded" advice (`SENSOR_HEARTBEAT_LOADED_INTERVAL`, 120 s)
+  is longer than those 90 s (B1). Until RFC-035 D2 lands, keep it below 45 s
+  on installations where the doorbell query can be slow.
+- `running` commands of a sensor that died are not recovered before the run
+  timeout (B5); RFC-030 leases address it.
+
+**What the SDK does** (sdk-go, RFC-035 Phase 1):
+
+| | |
+|---|---|
+| Heartbeat client | Its own `http.Client`: a clone of the API client's transport (proxy, TLS, dial guard) with its own connection pool. `Config.ControlTimeout`, default 15 s. |
+| Failure | At most 1 retry (an idle connection the platform closed). After a failed heartbeat, the next one follows in about 10 s (`core.HeartbeatRetryDelay`, jittered), never later than the interval. A rejected key backs off through the auth gate as before. |
+| Report building | Tool version probes run in the background after the first one (`ToolRegistry.SetBackgroundRefresh`). The manifest exchange is bounded by 15 s. |
+| `control` member | Additive; ignored by the API until RFC-035 Phase 2: `{"interval_s","gap_s","lag_ms","build_ms","rtt_ms","failures"}`. `lag_ms` is how late the heartbeat timer fired (the sensor waiting for a CPU); `build_ms` is report building. |
+| Scanner processes | Linux: process group at nice +10, best-effort I/O level 7, `oom_score_adj` 500, set right after start. `SENSOR_SCANNER_PRIORITY=normal` turns it off. |
+| Slots | Leave memory free for the sensor: a tenth of its memory, 256 MiB to 1 GiB (`resource.DefaultReservedMem`). |
+
+**What the platform will do** (Phase 2, owner decisions D1–D6):
+
+- Convict a sensor against the interval the platform itself advised
+  (`heartbeat_due_at`).
+- Use a `late` → `stale` → `offline` ladder, with `sensor.offline` notified
+  only at `offline`.
+- Never advise beyond the deadline.
+- Skip conviction while the platform itself is slow.
+- Store and show `control`, with `heartbeat_late` and `control_slow` health
+  reasons.
+
 ## History written in the old vocabulary
 
 Hash-chained audit rows (`agent.*`, resource type `agent`) and append-only
