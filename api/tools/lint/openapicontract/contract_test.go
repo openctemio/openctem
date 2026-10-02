@@ -234,3 +234,19 @@ func TestSensorProtocolV2Documented(t *testing.T) {
 		}
 	}
 }
+
+// The probes live on the root router. They used to be annotated and mapped
+// back to /health by a special case, so the spec advertised GET /api/v1/health
+// and GET /api/v1/ready, both of which 404, while this gate passed. With the
+// special case gone, an annotated /health maps to /api/v1/health and fails the
+// "no registered route" check, as it should.
+func TestRootProbesAreNotPartOfTheDocumentedSurface(t *testing.T) {
+	for _, p := range []string{"/health", "/ready"} {
+		if got := openapicontract.SpecToRoute(p); got != "/api/v1"+p {
+			t.Errorf("SpecToRoute(%q) = %q; an annotation is always served under %s", p, got, openapicontract.BasePath)
+		}
+		if _, ok := openapicontract.RouteToSpec(p); ok {
+			t.Errorf("RouteToSpec(%q) reports a documented path; root probes are outside the API spec", p)
+		}
+	}
+}

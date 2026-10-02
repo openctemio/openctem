@@ -37,6 +37,11 @@ const (
 	// tenant requires two-factor authentication and the user has not set it
 	// up. The client signs the user in again, which leads to enrollment.
 	CodeMFAEnrollmentRequired Code = "MFA_ENROLLMENT_REQUIRED"
+	// CodeApprovalRequired is a 403 for a change that only an approver may
+	// make (e.g. marking a finding false positive). Distinct from
+	// CodeForbidden so the UI can explain the approval workflow instead of
+	// showing a generic permission error.
+	CodeApprovalRequired Code = "APPROVAL_REQUIRED"
 )
 
 // Error represents a standardized API error.

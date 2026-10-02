@@ -7362,7 +7362,7 @@ export interface paths {
     }
     /**
      * List OAuth providers
-     * @description Returns list of available and configured OAuth providers
+     * @description Returns the configured OAuth providers. Served only when social login (OAuth) is configured on this server; otherwise the route is not registered and returns 404. GET /auth/providers is always available and reports which login methods exist.
      */
     get: {
       parameters: {
@@ -7381,6 +7381,13 @@ export interface paths {
           content: {
             'application/json': components['schemas']['internal_infra_http_handler.ProvidersResponse']
           }
+        }
+        /** @description OAuth is not configured on this server */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
         }
       }
     }
@@ -13791,45 +13798,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/health': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Health check
-     * @description Returns the health status of the service (liveness probe)
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.HealthResponse']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/integrations': {
     parameters: {
       query?: never
@@ -16743,54 +16711,6 @@ export interface paths {
           }
           content: {
             'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse'][]
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ready': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Readiness check
-     * @description Checks all dependencies and returns 503 if any are unhealthy
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ReadyResponse']
-          }
-        }
-        /** @description Service Unavailable */
-        503: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ReadyResponse']
           }
         }
       }
@@ -32305,11 +32225,6 @@ export interface components {
       /** @description Fingerprints that don't exist */
       missing?: string[]
     }
-    'internal_infra_http_handler.CheckResult': {
-      duration?: string
-      error?: string
-      status?: string
-    }
     'internal_infra_http_handler.CheckScopeRequest': {
       asset_type: string
       value: string
@@ -33529,10 +33444,6 @@ export interface components {
       tenant_id?: string
       updated_at?: string
     }
-    'internal_infra_http_handler.HealthResponse': {
-      status?: string
-      timestamp?: string
-    }
     'internal_infra_http_handler.HeartbeatOutbox': {
       /** @description DeadLetterCount is the number of items the platform refused for good. */
       dead_letter_count?: number
@@ -34343,13 +34254,6 @@ export interface components {
       counts?: components['schemas']['internal_infra_http_handler.FindingCountsResponse']
       passed?: boolean
       reason?: string
-    }
-    'internal_infra_http_handler.ReadyResponse': {
-      checks?: {
-        [key: string]: components['schemas']['internal_infra_http_handler.CheckResult']
-      }
-      status?: string
-      timestamp?: string
     }
     'internal_infra_http_handler.ReconIngestRequest': {
       dns_records?: components['schemas']['internal_infra_http_handler.DNSRecordResult'][]

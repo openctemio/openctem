@@ -5576,15 +5576,6 @@ definitions:
           type: string
         type: array
     type: object
-  internal_infra_http_handler.CheckResult:
-    properties:
-      duration:
-        type: string
-      error:
-        type: string
-      status:
-        type: string
-    type: object
   internal_infra_http_handler.CheckScopeRequest:
     properties:
       asset_type:
@@ -8232,13 +8223,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  internal_infra_http_handler.HealthResponse:
-    properties:
-      status:
-        type: string
-      timestamp:
-        type: string
-    type: object
   internal_infra_http_handler.HeartbeatOutbox:
     properties:
       dead_letter_count:
@@ -9697,17 +9681,6 @@ definitions:
       passed:
         type: boolean
       reason:
-        type: string
-    type: object
-  internal_infra_http_handler.ReadyResponse:
-    properties:
-      checks:
-        additionalProperties:
-          $ref: '#/definitions/internal_infra_http_handler.CheckResult'
-        type: object
-      status:
-        type: string
-      timestamp:
         type: string
     type: object
   internal_infra_http_handler.ReconIngestRequest:
@@ -17380,7 +17353,10 @@ paths:
       - OAuth
   /auth/oauth/providers:
     get:
-      description: Returns list of available and configured OAuth providers
+      description: Returns the configured OAuth providers. Served only when social
+        login (OAuth) is configured on this server; otherwise the route is not registered
+        and returns 404. GET /auth/providers is always available and reports which
+        login methods exist.
       produces:
       - application/json
       responses:
@@ -17388,6 +17364,8 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/internal_infra_http_handler.ProvidersResponse'
+        "404":
+          description: OAuth is not configured on this server
       summary: List OAuth providers
       tags:
       - OAuth
@@ -21066,19 +21044,6 @@ paths:
       summary: Trigger manual group sync
       tags:
       - groups
-  /health:
-    get:
-      description: Returns the health status of the service (liveness probe)
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.HealthResponse'
-      summary: Health check
-      tags:
-      - Health
   /integrations:
     get:
       consumes:
@@ -22747,23 +22712,6 @@ paths:
       summary: List system permission sets
       tags:
       - permission-sets
-  /ready:
-    get:
-      description: Checks all dependencies and returns 503 if any are unhealthy
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ReadyResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ReadyResponse'
-      summary: Readiness check
-      tags:
-      - Health
   /repositories/{repository_id}/branches:
     get:
       description: Retrieves all branches for a repository

@@ -164,6 +164,8 @@ services:
       AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required (openssl rand -hex 64)}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required (openssl rand -hex 32)}
+      # Old key(s) while rotating APP_ENCRYPTION_KEY (docs/deployment/encryption-key-rotation.md).
+      APP_ENCRYPTION_KEY_PREVIOUS: ${APP_ENCRYPTION_KEY_PREVIOUS:-}
       AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}
       # Who creates organizations: admin_only (platform administrator: console or
       # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).

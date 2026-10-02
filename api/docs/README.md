@@ -75,6 +75,7 @@
 
 ### Deployment
 - [Safe Deploy & Migrations](deployment/safe-deploy-and-migrations.md) - Canonical safe-deploy sequence, expand-contract rules, schema-check semantics, dirty-migration recovery, rollback
+- [Rotating APP_ENCRYPTION_KEY](deployment/encryption-key-rotation.md) - What the key protects, `cmd/rekey` (dry run, apply, sweep), `APP_ENCRYPTION_KEY_PREVIOUS`, and the zero-downtime runbook
 - [Docker](deployment/docker.md) - Docker & Docker Compose (dev/prod)
 - [Kubernetes](deployment/kubernetes.md) - K8s manifests
 

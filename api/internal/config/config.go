@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
@@ -768,6 +769,15 @@ type EncryptionConfig struct {
 	// in dev. Production NEVER allows plaintext (initEncryptor enforces).
 	// Env var: APP_ALLOW_PLAINTEXT_CREDENTIALS
 	AllowPlaintext bool
+
+	// PreviousKeys are earlier encryption keys, kept only while a key
+	// rotation is in progress: values encrypted under them stay readable,
+	// and token hashes peppered with them keep verifying, while new values
+	// use Key. Each is auto-detected like Key (raw 32, hex 64, base64 44).
+	// Remove them once cmd/rekey has re-encrypted the stored values and the
+	// tokens issued under the old key have been rotated.
+	// Env var: APP_ENCRYPTION_KEY_PREVIOUS (comma-separated)
+	PreviousKeys []string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1076,6 +1086,7 @@ func Load() (*Config, error) {
 			Key:            getEnv("APP_ENCRYPTION_KEY", ""),
 			KeyFormat:      getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
 			AllowPlaintext: getEnvBool("APP_ALLOW_PLAINTEXT_CREDENTIALS", false),
+			PreviousKeys:   getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
 		},
 		Webhooks: WebhooksConfig{
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
@@ -1331,6 +1342,16 @@ func (c *Config) validateEncryption() error {
 		}
 	default:
 		return fmt.Errorf("APP_ENCRYPTION_KEY_FORMAT must be 'raw', 'hex', or 'base64', got '%s'", format)
+	}
+
+	for i, prev := range c.Encryption.PreviousKeys {
+		if _, err := crypto.ParseKey(prev, ""); err != nil {
+			// Never echo the key itself.
+			return fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d is not a valid key (expected 32 raw, 64 hex or 44 base64 characters)", i+1)
+		}
+		if prev == c.Encryption.Key {
+			return fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d equals APP_ENCRYPTION_KEY", i+1)
+		}
 	}
 
 	return nil

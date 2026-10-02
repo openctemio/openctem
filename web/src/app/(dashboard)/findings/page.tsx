@@ -1,5 +1,6 @@
 'use client'
 
+import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
@@ -795,6 +796,16 @@ function FindingsContent() {
     }
   }
 
+  // Bulk endpoints answer 200 even when the server refused some findings (for
+  // example a change to false positive that needs approval), so the toast is
+  // driven by the reported counts.
+  const showBulkResult = (summary: BulkSummary) => {
+    const opts = summary.description ? { description: summary.description } : undefined
+    if (summary.kind === 'success') toast.success(summary.message, opts)
+    else if (summary.kind === 'warning') toast.warning(summary.message, opts)
+    else toast.error(summary.message, opts)
+  }
+
   const handleBulkAssign = async (userId: string) => {
     const findingIds = selectedFindingIds
     if (findingIds.length === 0 || !userId.trim()) return
@@ -807,7 +818,13 @@ function FindingsContent() {
         body: JSON.stringify({ finding_ids: findingIds, user_id: userId.trim() }),
       })
       if (!response.ok) throw new Error('Failed to assign findings')
-      toast.success(`Assigned ${findingIds.length} findings`)
+      showBulkResult(
+        summarizeBulkResult(
+          await response.json().catch(() => undefined),
+          findingIds.length,
+          'Assigned'
+        )
+      )
       clearSelection()
       mutateFindings()
     } catch (error) {
@@ -827,7 +844,13 @@ function FindingsContent() {
         body: JSON.stringify({ finding_ids: findingIds, status }),
       })
       if (!response.ok) throw new Error('Failed to update findings')
-      toast.success(`Updated ${findingIds.length} findings to ${status}`)
+      showBulkResult(
+        summarizeBulkResult(
+          await response.json().catch(() => undefined),
+          findingIds.length,
+          'Updated'
+        )
+      )
       clearSelection()
       mutateFindings()
       mutateStats()

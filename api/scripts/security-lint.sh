@@ -259,18 +259,20 @@ check_env_files_tracked() {
 }
 
 # ---------------------------------------------------------------------------
-# Rule 4: agent dangerousToolFlags must include the audit-required set.
+# Rule 4: the scanner extra-args guard must include the audit-required set.
 #
 # The audit (Pass-6 P6-1, P6-10) identified the flag classes attackers
 # abuse for SSRF / path-traversal / privilege escalation via user-
 # supplied ExtraArgs. If someone refactors the map and drops a flag,
 # the runtime validator will silently permit that arg on the scanner
-# CLI. We pin the minimum viable set here.
+# CLI. We pin the minimum viable set here. The set lives in sdk-go
+# (core.DangerousToolFlags, applied by every SDK scanner); it moved there
+# from the sensor's platform-mode executor when sensor#107 removed that mode.
 # ---------------------------------------------------------------------------
 check_agent_dangerous_flags() {
-    local f="agent/internal/executor/vulnscan.go"
+    local f="sdk-go/pkg/core/extra_args.go"
     if [[ ! -f "$f" ]]; then
-        say_skip "Rule 4: $f not found; cannot verify agent dangerous-flag set"
+        say_skip "Rule 4: $f not found; cannot verify the scanner extra-args flag set"
         return
     fi
     local required=(
@@ -288,10 +290,10 @@ check_agent_dangerous_flags() {
         fi
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
-        say_fail "Rule 4: agent dangerousToolFlags missing required entries: ${missing[*]}"
+        say_fail "Rule 4: core.DangerousToolFlags missing required entries: ${missing[*]}"
         return
     fi
-    say_pass "Rule 4: agent dangerousToolFlags contains required SSRF/RCE flag set"
+    say_pass "Rule 4: core.DangerousToolFlags contains the required SSRF/RCE flag set"
 }
 
 # ---------------------------------------------------------------------------
