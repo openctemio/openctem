@@ -37,8 +37,14 @@ func registerExposureRoutes(
 
 		// State transitions
 		r.POST("/{id}/resolve", h.Resolve, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/accept", h.Accept, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.Require(permission.FindingsWrite))
+		// Accepting the risk of, or dismissing, an exposure is the same
+		// disposition a finding can only reach through the approval workflow
+		// (FindingStatus.RequiresApproval: accepted / false_positive), so it
+		// needs the approver permission, not findings:write. Exposures have no
+		// request/approve records of their own; the approver sets the state
+		// directly, with the reason recorded in the state history.
+		r.POST("/{id}/accept", h.Accept, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/reactivate", h.Reactivate, middleware.Require(permission.FindingsWrite))
 
 		// CTEM-ID tag: associate a standardized exposure-catalog id with this

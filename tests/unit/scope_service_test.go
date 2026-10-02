@@ -834,6 +834,37 @@ func TestScopeServiceApproveExclusion(t *testing.T) {
 	})
 }
 
+// The user who requested a scope exclusion cannot approve it themselves
+// (separation of duties, as for finding status approvals).
+func TestScopeServiceApproveExclusion_RequesterCannotSelfApprove(t *testing.T) {
+	svc, _, er, _, _ := newTestScopeService()
+	tenantID := shared.NewID()
+	requester := shared.NewID().String()
+	exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "prod.example.com", "maintenance window", nil, requester)
+	er.exclusions[exc.ID().String()] = exc
+
+	_, err := svc.ApproveExclusion(context.Background(), exc.ID().String(), tenantID.String(), requester)
+	if !errors.Is(err, scopedom.ErrExclusionSelfApproval) || !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("self-approval: got %v, want ErrExclusionSelfApproval (forbidden)", err)
+	}
+	if er.exclusions[exc.ID().String()].IsApproved() {
+		t.Fatal("exclusion marked approved after a refused self-approval")
+	}
+
+	other := shared.NewID().String()
+	approved, err := svc.ApproveExclusion(context.Background(), exc.ID().String(), tenantID.String(), other)
+	if err != nil {
+		t.Fatalf("approval by another user: %v", err)
+	}
+	if approved.ApprovedBy() != other {
+		t.Fatalf("approved by %q, want %q", approved.ApprovedBy(), other)
+	}
+
+	if _, err := svc.ApproveExclusion(context.Background(), exc.ID().String(), tenantID.String(), ""); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("approval without an approver: got %v, want a validation error", err)
+	}
+}
+
 // TestScopeServiceActivateDeactivateExclusion tests exclusion status changes.
 //
 // Run with: go test -v ./tests/unit -run TestScopeServiceActivateDeactivateExclusion

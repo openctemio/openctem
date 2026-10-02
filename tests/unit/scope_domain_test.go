@@ -351,7 +351,9 @@ func TestExclusionUpdateMethods(t *testing.T) {
 	})
 
 	t.Run("Approve", func(t *testing.T) {
-		exc.Approve("admin1")
+		if err := exc.Approve("admin1"); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
 		if !exc.IsApproved() {
 			t.Error("expected approved")
 		}

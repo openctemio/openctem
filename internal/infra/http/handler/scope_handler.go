@@ -320,6 +320,10 @@ func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string
 		apierror.Conflict(resource + " already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, scopedom.ErrExclusionSelfApproval):
+		apierror.Forbidden("You cannot approve a scope exclusion you requested").WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden("Access denied").WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
@@ -813,6 +817,7 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 // @Param        id   path      string  true  "Exclusion ID"
 // @Success      200  {object}  ScopeExclusionResponse
 // @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error "The caller requested this exclusion (separation of duties)"
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth

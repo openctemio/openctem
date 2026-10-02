@@ -475,7 +475,9 @@ func (s *Service) ApproveExclusion(ctx context.Context, exclusionID string, tena
 		return nil, err
 	}
 
-	exclusion.Approve(approvedBy)
+	if err := exclusion.Approve(approvedBy); err != nil {
+		return nil, err
+	}
 
 	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
 		return nil, fmt.Errorf("failed to approve scope exclusion: %w", err)

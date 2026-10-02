@@ -167,6 +167,31 @@ Details: [api-keys.md](./api-keys.md).
 > four granular perms onto every role that already held `findings:write`, so the
 > tightening is honest-not-breaking: nobody lost an action they could perform before.
 
+#### Exposures (`/api/v1/exposures`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/exposures` · `/{id}` · `/stats` · `/{id}/history` | `findings:read` |
+| `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `PUT /{id}/ctem-id` | `findings:write` |
+| `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` | `findings:approve` |
+| `DELETE /api/v1/exposures/{id}` | `findings:delete` |
+
+> Accepted and false-positive are the dispositions a finding reaches only
+> through the approval workflow (`FindingStatus.RequiresApproval`: request with
+> `findings:write`, approve with `findings:approve`, never your own request).
+> Exposures have no request/approve records, so these two transitions are
+> gated on the approver permission itself: a `findings:write` holder (member)
+> gets 403 and must ask an approver. The reason is kept in the exposure's state
+> history. Unlike findings, an approver sets the state directly (no second
+> person); a full request/approve flow for exposures would need its own
+> records.
+
+#### Scope exclusions (`/api/v1/scope/exclusions`)
+
+`POST /api/v1/scope/exclusions/{id}/approve` is gated on `scope:write`, and the
+service refuses an approval by the user who requested the exclusion
+(`created_by`) with 403 — the same separation of duties as finding approvals.
+
 #### Scan zones (`/api/v1/scan-zones`, RFC-023)
 
 | Endpoint | Permission Required |
