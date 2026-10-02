@@ -229,7 +229,7 @@ stable.
   `…Capabilities…`), the command poll's capability gate (v1 and v2), the
   sensor list filters and the platform capacity stats. The database computes
   the rule in generated columns `effective_tools`, `effective_capabilities`
-  and `effective_max_jobs` (migration 000250). The domain computes it in
+  and `effective_max_jobs` (migration 000253). The domain computes it in
   `Sensor.Effective*`, and a DB test keeps the two in step.
 - **Management API:** `GET /api/v1/sensors[/{id}]` keeps `tools`,
   `capabilities` and `max_concurrent_jobs` as the administrator's settings (the
