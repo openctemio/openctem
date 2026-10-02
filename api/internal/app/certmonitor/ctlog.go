@@ -2,11 +2,12 @@ package certmonitor
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -143,8 +144,23 @@ func retryDelay(attempt int, lastErr error) time.Duration {
 	if d > retryCap {
 		d = retryCap
 	}
-	// Full jitter in [d/2, d].
-	return d/2 + time.Duration(rand.Int64N(int64(d/2)+1)) //nolint:gosec // jitter, not security
+	// Jitter in [d/2, d].
+	return d/2 + jitter(d/2)
+}
+
+// jitter returns a uniformly random duration in [0, max]. It reads
+// crypto/rand: the value only spreads retries, but one random source for the
+// codebase keeps the weak-random ban simple. If the system source fails, the
+// wait is the full max, which is still a valid back-off.
+func jitter(maxD time.Duration) time.Duration {
+	if maxD <= 0 {
+		return 0
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(maxD)+1))
+	if err != nil {
+		return maxD
+	}
+	return time.Duration(n.Int64())
 }
 
 // parseRetryAfter reads a Retry-After header given in seconds. The HTTP-date

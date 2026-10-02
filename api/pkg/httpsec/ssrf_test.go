@@ -234,7 +234,8 @@ func TestSafeHTTPClientWithHeaderTimeout(t *testing.T) {
 	if !ok || tr.ResponseHeaderTimeout != 50*time.Second || c.Timeout != 60*time.Second {
 		t.Fatalf("client = %+v", c)
 	}
-	if _, err := c.Get("http://localhost:9/"); err == nil || !strings.Contains(err.Error(), "ssrf guard") {
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://localhost:9/", nil)
+	if _, err := c.Do(req); err == nil || !strings.Contains(err.Error(), "ssrf guard") {
 		t.Fatalf("localhost not refused: %v", err)
 	}
 	if d := SafeHTTPClientWithHeaderTimeout(time.Second, 0).Transport.(*http.Transport).ResponseHeaderTimeout; d != 15*time.Second {

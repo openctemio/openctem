@@ -528,3 +528,20 @@ func TestMonitorTenant_SkipsWhenTenantLocked(t *testing.T) {
 		t.Errorf("after the lock was free: %d queries, lock still held=%v", ct.count(), st.held)
 	}
 }
+
+func TestJitterBounds(t *testing.T) {
+	if jitter(0) != 0 || jitter(-time.Second) != 0 {
+		t.Fatal("non-positive max must give 0")
+	}
+	seen := map[time.Duration]bool{}
+	for i := 0; i < 200; i++ {
+		d := jitter(10 * time.Millisecond)
+		if d < 0 || d > 10*time.Millisecond {
+			t.Fatalf("jitter %s out of [0,10ms]", d)
+		}
+		seen[d] = true
+	}
+	if len(seen) < 10 {
+		t.Fatalf("jitter is not spreading: %d distinct values", len(seen))
+	}
+}
