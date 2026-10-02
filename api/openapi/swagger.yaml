@@ -3232,8 +3232,49 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_openctemio_api_pkg_domain_sensor.ReportedContent:
+    properties:
+      checked_at:
+        description: |-
+          CheckedAt is when the sensor last confirmed with its source that this
+          is still the newest (or pinned) version: old content is not stale
+          while it keeps being confirmed (sdk-go ContentInfo.Stale).
+        type: string
+      digest:
+        type: string
+      error:
+        description: Error is the last refresh failure (the sensor keeps the old version).
+        type: string
+      fetched_at:
+        type: string
+      managed:
+        description: |-
+          Managed is true when the sensor controls the content (it refreshes,
+          verifies and swaps it); false when the tool fetches it by itself.
+        type: boolean
+      name:
+        type: string
+      source:
+        type: string
+      tool:
+        description: |-
+          Tool is the tool the content belongs to ("trivy", "nuclei"). Empty
+          while stored inside its ReportedTool; set by Sensor.ReportedContent.
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
   github_com_openctemio_api_pkg_domain_sensor.ReportedTool:
     properties:
+      content:
+        description: |-
+          Content is the scanner content the tool scans with (RFC-031,
+          content.go); nil when the sensor reported none for it.
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedContent'
+        type: array
       installed:
         type: boolean
       name:
@@ -5385,6 +5426,47 @@ definitions:
         type: string
       vulnerability_count:
         type: integer
+    type: object
+  internal_infra_http_handler.ContentPinBody:
+    properties:
+      max_age_hours:
+        type: integer
+      rulesets:
+        items:
+          type: string
+        type: array
+      version:
+        type: string
+    type: object
+  internal_infra_http_handler.ContentPolicyBody:
+    properties:
+      content:
+        additionalProperties:
+          $ref: '#/definitions/internal_infra_http_handler.ContentPinBody'
+        type: object
+      refresh_interval_hours:
+        type: integer
+    type: object
+  internal_infra_http_handler.ContentPolicyResponse:
+    properties:
+      commands_created:
+        description: 'CommandsCreated / Skipped: only on PUT with apply_now.'
+        type: integer
+      defaults:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ContentPolicyBody'
+        description: Defaults is the platform default.
+      policy:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ContentPolicyBody'
+        description: Policy is the effective policy (defaults filled in).
+      skipped:
+        type: integer
+      updated_at:
+        description: UpdatedAt / UpdatedBy are null while the tenant uses the defaults.
+        type: string
+      updated_by:
+        type: string
     type: object
   internal_infra_http_handler.CreateAssetGroupRequest:
     properties:
@@ -7608,6 +7690,16 @@ definitions:
         description: Replacement string
         type: string
     type: object
+  internal_infra_http_handler.FleetRefreshContentResponse:
+    properties:
+      commands_created:
+        type: integer
+      skipped:
+        description: |-
+          Skipped: sensors that do not manage content, are disabled or revoked,
+          or already have a refresh queued.
+        type: integer
+    type: object
   internal_infra_http_handler.ForgotPasswordRequest:
     properties:
       email:
@@ -7911,6 +8003,11 @@ definitions:
     type: object
   internal_infra_http_handler.HeartbeatTool:
     properties:
+      content:
+        description: Content is the scanner content the tool scans with (RFC-031).
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_sensor.ReportedContent'
+        type: array
       installed:
         type: boolean
       name:
@@ -9265,6 +9362,25 @@ definitions:
       url:
         type: string
     type: object
+  internal_infra_http_handler.RefreshContentRequest:
+    properties:
+      content:
+        items:
+          type: string
+        type: array
+      force:
+        type: boolean
+    type: object
+  internal_infra_http_handler.RefreshContentResponse:
+    properties:
+      already_pending:
+        description: |-
+          AlreadyPending: a refresh was already queued for the sensor; that
+          command is returned and no new one was created.
+        type: boolean
+      command_id:
+        type: string
+    type: object
   internal_infra_http_handler.RefreshTokenRequest:
     properties:
       refresh_token:
@@ -10271,6 +10387,52 @@ definitions:
       yaml:
         type: string
     type: object
+  internal_infra_http_handler.SensorContentResponse:
+    properties:
+      age_seconds:
+        type: integer
+      checked_at:
+        description: |-
+          CheckedAt is when the sensor last confirmed this is still the newest
+          (or pinned) version; stale needs both an age and a confirmation
+          older than max_age_hours.
+        type: string
+      digest:
+        type: string
+      error:
+        description: Error is the last refresh failure ("" when the last refresh worked).
+        type: string
+      fetched_at:
+        type: string
+      managed:
+        description: |-
+          Managed: the sensor refreshes, verifies and pins it; false when the
+          tool fetches its content itself (never stale-flagged).
+        type: boolean
+      max_age_hours:
+        type: integer
+      name:
+        enum:
+        - trivy-db
+        - trivy-java-db
+        - nuclei-templates
+        - semgrep-rules
+        type: string
+      pin_mismatch:
+        type: boolean
+      pinned_version:
+        type: string
+      source:
+        type: string
+      stale:
+        type: boolean
+      tool:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
   internal_infra_http_handler.SensorDisableRequest:
     properties:
       reason:
@@ -10302,6 +10464,8 @@ definitions:
         - version_unsupported
         - no_tools
         - error_reported
+        - content_stale
+        - content_refresh_failed
         type: string
       message:
         type: string
@@ -10377,6 +10541,19 @@ definitions:
         description: |-
           CapabilityMismatch lists settings the sensor's report contradicts
           (a tool set here that the sensor does not have); omitted when none.
+      content:
+        description: |-
+          Content is the scanner content the sensor reports (trivy DB, nuclei
+          templates, semgrep rules; RFC-031), one entry per tool and content,
+          judged against the tenant's content policy. Never null.
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorContentResponse'
+        type: array
+      content_refresh_supported:
+        description: |-
+          ContentRefreshSupported: the sensor manages content, so it accepts
+          POST /sensors/{id}/content/refresh.
+        type: boolean
       cpu_percent:
         description: System metrics
         type: number
@@ -11435,6 +11612,17 @@ definitions:
       vulnerability_count:
         minimum: 0
         type: integer
+    type: object
+  internal_infra_http_handler.UpdateContentPolicyRequest:
+    properties:
+      apply_now:
+        description: |-
+          ApplyNow sends the policy to every sensor that manages content now (a
+          refresh_content command each, not forced). Otherwise sensors get it
+          with their next refresh request.
+        type: boolean
+      policy:
+        $ref: '#/definitions/internal_infra_http_handler.ContentPolicyBody'
     type: object
   internal_infra_http_handler.UpdateCredentialRequest:
     properties:
@@ -25660,6 +25848,49 @@ paths:
       summary: Get sensor configuration templates
       tags:
       - Sensors
+  /sensors/{id}/content/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Queue a refresh_content command for the sensor (trivy DB, nuclei
+        templates, semgrep rules). 409 when the sensor manages no content (an older
+        sensor) or is disabled. A refresh already queued is returned instead of a
+        new one.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Content to refresh
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.RefreshContentRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.RefreshContentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Refresh a sensor's scanner content
+      tags:
+      - Sensors
   /sensors/{id}/deactivate:
     post:
       consumes:
@@ -25798,6 +26029,87 @@ paths:
       summary: Get available capabilities
       tags:
       - sensors
+  /sensors/content-policy:
+    get:
+      description: 'The tenant''s scanner content policy (RFC-031): refresh interval,
+        and per content the maximum age, a pinned version and semgrep rulesets. Defaults
+        are filled in.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ContentPolicyResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get the scanner content policy
+      tags:
+      - Sensors
+    put:
+      consumes:
+      - application/json
+      description: Replace the tenant's scanner content policy. With apply_now every
+        sensor that manages content gets a refresh_content command carrying it.
+      parameters:
+      - description: Policy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateContentPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ContentPolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update the scanner content policy
+      tags:
+      - Sensors
+  /sensors/content/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Queue a refresh_content command for every sensor of the tenant
+        that manages content and has none queued.
+      parameters:
+      - description: Content to refresh
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.RefreshContentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FleetRefreshContentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Refresh scanner content on every sensor
+      tags:
+      - Sensors
   /sensors/stats:
     get:
       description: Returns aggregated stats for the tenant's sensors (status, health,

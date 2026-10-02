@@ -96,7 +96,9 @@ type Repositories struct {
 	Sensor       *postgres.SensorRepository
 	SensorAPIKey *postgres.SensorAPIKeyRepository
 	Command      *postgres.CommandRepository
-	IngestJob    *postgres.IngestJobRepository
+	// SensorContentPolicy is the tenant scanner content policy (RFC-031).
+	SensorContentPolicy *postgres.SensorContentPolicyRepository
+	IngestJob           *postgres.IngestJobRepository
 	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
 	IngestReport *postgres.IngestReportRepository
 
@@ -314,11 +316,12 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Notification: postgres.NewNotificationRepository(db),
 
 		// Sensors & Commands
-		Sensor:       postgres.NewSensorRepository(db),
-		SensorAPIKey: postgres.NewSensorAPIKeyRepository(db),
-		Command:      postgres.NewCommandRepository(db),
-		IngestJob:    postgres.NewIngestJobRepository(db),
-		IngestReport: postgres.NewIngestReportRepository(db),
+		Sensor:              postgres.NewSensorRepository(db),
+		SensorAPIKey:        postgres.NewSensorAPIKeyRepository(db),
+		Command:             postgres.NewCommandRepository(db),
+		SensorContentPolicy: postgres.NewSensorContentPolicyRepository(db),
+		IngestJob:           postgres.NewIngestJobRepository(db),
+		IngestReport:        postgres.NewIngestReportRepository(db),
 
 		// Scan coverage rotation (RFC-007)
 		ScanCoverage: postgres.NewScanCoverageRepository(db),

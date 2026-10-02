@@ -62,6 +62,10 @@ const (
 	// finding (safe-check / nuclei / adversary emulation) and reports an outcome
 	// that is mapped back into validation evidence on completion.
 	CommandTypeValidate CommandType = "validate"
+	// CommandTypeRefreshContent asks one sensor to refresh its scanner
+	// content (trivy DB, nuclei templates, semgrep rules) under the tenant's
+	// content policy (RFC-031). Always pinned to the sensor.
+	CommandTypeRefreshContent CommandType = "refresh_content"
 )
 
 // CommandStatus represents the status of a command.

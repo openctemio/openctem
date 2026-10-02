@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	sensorapp "github.com/openctemio/api/internal/app/sensor"
+
 	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 
@@ -607,7 +609,9 @@ type Services struct {
 	Sensor   *app.SensorService
 	ScanZone *scanzoneapp.Service
 	Command  *command.Service
-	Ingest   *ingest.Service
+	// SensorContent is the scanner content policy and refresh (RFC-031).
+	SensorContent *sensorapp.ContentService
+	Ingest        *ingest.Service
 
 	// Scanning & Pipelines
 	ScanProfile     *app.ScanProfileService
@@ -1315,6 +1319,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// load_score recomputed on every heartbeat.
 	s.Sensor.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 	s.Command = command.NewService(repos.Command, log, command.WithSensorLookup(repos.Sensor))
+	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)

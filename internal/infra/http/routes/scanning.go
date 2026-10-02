@@ -256,7 +256,7 @@ func registerSensorRoutes(
 func registerSensorManagementRoutes(
 	router Router,
 	h *handler.SensorHandler,
-	_ interface{}, // analyticsHandler removed in OSS
+	content *handler.SensorContentHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -270,6 +270,15 @@ func registerSensorManagementRoutes(
 		// Tenant-wide aggregated stats — must be registered BEFORE /{id} so
 		// chi doesn't treat "stats" as a path param.
 		r.GET("/stats", h.GetStats, middleware.Require(permission.SensorsRead))
+		// Scanner content (RFC-031): the tenant policy and refresh requests.
+		// Before /{id} for the same reason. Writes queue commands for the
+		// fleet, so they need sensors:write (owners and administrators).
+		if content != nil {
+			r.GET("/content-policy", content.GetPolicy, middleware.Require(permission.SensorsRead))
+			r.PUT("/content-policy", content.UpdatePolicy, middleware.Require(permission.SensorsWrite))
+			r.POST("/content/refresh", content.RefreshFleet, middleware.Require(permission.SensorsWrite))
+			r.POST("/{id}/content/refresh", content.RefreshSensor, middleware.Require(permission.SensorsWrite))
+		}
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead))
 

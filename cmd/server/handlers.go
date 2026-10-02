@@ -118,6 +118,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Command handler with pipeline service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
+	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
+	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	commandHandler.SetPipelineService(svc.Pipeline)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
@@ -285,7 +287,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Sensors & Commands
 		Command:          commandHandler,
-		Sensor:           newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log),
+		Sensor:           sensorHandler,
+		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		Ingest:           ingestHandler,
 		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, log),

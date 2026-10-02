@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -34,9 +35,12 @@ type SensorHandler struct {
 	// healthPolicy holds the thresholds and release channel the computed
 	// state, health reasons and version status use.
 	healthPolicy sensor.HealthPolicy
-	now          func() time.Time
-	validator    *validator.Validator
-	logger       *logger.Logger
+	// contentPolicies supplies the tenant's scanner content policy for the
+	// content view and health (RFC-031); nil uses the platform default.
+	contentPolicies ContentPolicySource
+	now             func() time.Time
+	validator       *validator.Validator
+	logger          *logger.Logger
 }
 
 // NewSensorHandler creates a new SensorHandler.
@@ -55,6 +59,30 @@ func NewSensorHandler(service *app.SensorService, v *validator.Validator, log *l
 // health reasons and version status. Unset values take the defaults.
 func (h *SensorHandler) SetHealthPolicy(p sensor.HealthPolicy) {
 	h.healthPolicy = p.Normalized()
+}
+
+// ContentPolicySource returns a tenant's effective scanner content policy.
+type ContentPolicySource interface {
+	EffectivePolicy(ctx context.Context, tenantID shared.ID) sensor.ContentPolicy
+}
+
+// SetContentPolicySource wires the tenant content policy (RFC-031).
+func (h *SensorHandler) SetContentPolicySource(src ContentPolicySource) {
+	h.contentPolicies = src
+}
+
+// policyFor is the health policy for one tenant: the handler's thresholds
+// and release channel, plus the tenant's content policy.
+func (h *SensorHandler) policyFor(ctx context.Context, tenantID string) sensor.HealthPolicy {
+	p := h.healthPolicy
+	if h.contentPolicies == nil {
+		return p
+	}
+	if tid, err := shared.IDFromString(tenantID); err == nil {
+		cp := h.contentPolicies.EffectivePolicy(ctx, tid)
+		p.Content = &cp
+	}
+	return p
 }
 
 // SetTemplateService injects the sensor config template service.
@@ -175,6 +203,42 @@ type SensorResponse struct {
 	// CapabilityMismatch lists settings the sensor's report contradicts
 	// (a tool set here that the sensor does not have); omitted when none.
 	CapabilityMismatch *sensor.CapabilityMismatch `json:"capability_mismatch,omitempty"`
+
+	// Content is the scanner content the sensor reports (trivy DB, nuclei
+	// templates, semgrep rules; RFC-031), one entry per tool and content,
+	// judged against the tenant's content policy. Never null.
+	Content []SensorContentResponse `json:"content"`
+	// ContentRefreshSupported: the sensor manages content, so it accepts
+	// POST /sensors/{id}/content/refresh.
+	ContentRefreshSupported bool `json:"content_refresh_supported"`
+}
+
+// SensorContentResponse is one piece of scanner content on a sensor. The
+// reported fields come from the sensor (sanitized); age_seconds, stale,
+// max_age_hours, pinned_version and pin_mismatch are computed against the
+// tenant's content policy.
+type SensorContentResponse struct {
+	Tool      string  `json:"tool"`
+	Name      string  `json:"name" enums:"trivy-db,trivy-java-db,nuclei-templates,semgrep-rules"`
+	Version   string  `json:"version"`
+	UpdatedAt *string `json:"updated_at"`
+	FetchedAt *string `json:"fetched_at"`
+	// CheckedAt is when the sensor last confirmed this is still the newest
+	// (or pinned) version; stale needs both an age and a confirmation
+	// older than max_age_hours.
+	CheckedAt *string `json:"checked_at"`
+	Source    string  `json:"source"`
+	Digest    string  `json:"digest"`
+	// Managed: the sensor refreshes, verifies and pins it; false when the
+	// tool fetches its content itself (never stale-flagged).
+	Managed bool `json:"managed"`
+	// Error is the last refresh failure ("" when the last refresh worked).
+	Error         string `json:"error"`
+	AgeSeconds    *int64 `json:"age_seconds"`
+	MaxAgeHours   int    `json:"max_age_hours"`
+	Stale         bool   `json:"stale"`
+	PinnedVersion string `json:"pinned_version"`
+	PinMismatch   bool   `json:"pin_mismatch"`
 }
 
 // SensorReportedResponse is a sensor's last capability report. A list is
@@ -209,7 +273,7 @@ type SensorProtocolResponse struct {
 // stable (clients map it to their own wording and fix actions); message is a
 // plain-English fallback.
 type SensorHealthReasonResponse struct {
-	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,version_unsupported,no_tools,error_reported"`
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,version_unsupported,no_tools,error_reported,content_stale,content_refresh_failed"`
 	Severity string `json:"severity" enums:"warning,critical"`
 	Message  string `json:"message"`
 }
@@ -278,7 +342,7 @@ func (h *SensorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := &CreateSensorResponse{
-		Sensor: h.toSensorResponse(output.Sensor),
+		Sensor: h.toSensorResponse(r.Context(), output.Sensor),
 		APIKey: output.APIKey,
 	}
 
@@ -311,7 +375,7 @@ func (h *SensorHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(h.toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(r.Context(), a))
 }
 
 // List handles GET /api/v1/sensors
@@ -370,8 +434,9 @@ func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := make([]*SensorResponse, len(result.Data))
+	policy, now := h.policyFor(r.Context(), tenantID), h.now()
 	for i, a := range result.Data {
-		items[i] = h.toSensorResponse(a)
+		items[i] = sensorResponseAt(a, policy, now)
 	}
 
 	resp := map[string]any{
@@ -455,7 +520,7 @@ func (h *SensorHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		ActiveJobs:      stats.ActiveJobs,
 		OnlineActive:    stats.OnlineActive,
 	}
-	h.addFleetSummary(&resp, sensors)
+	h.addFleetSummary(&resp, sensors, h.policyFor(r.Context(), tenantID))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -463,8 +528,7 @@ func (h *SensorHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // addFleetSummary fills the per-sensor breakdowns of the stats response.
-func (h *SensorHandler) addFleetSummary(resp *SensorStatsResponse, sensors []*sensor.Sensor) {
-	p := h.healthPolicy
+func (h *SensorHandler) addFleetSummary(resp *SensorStatsResponse, sensors []*sensor.Sensor, p sensor.HealthPolicy) {
 	now := h.now()
 	resp.ByState = make(map[string]int, len(sensor.AllStates()))
 	for _, st := range sensor.AllStates() {
@@ -552,7 +616,7 @@ func (h *SensorHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(h.toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(r.Context(), a))
 }
 
 // Delete handles DELETE /api/v1/sensors/{id}
@@ -640,7 +704,7 @@ func (h *SensorHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(h.toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(r.Context(), a))
 }
 
 // SensorDisableRequest represents the request body for disabling a sensor.
@@ -679,7 +743,7 @@ func (h *SensorHandler) Disable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(h.toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(r.Context(), a))
 }
 
 // SensorRevokeRequest represents the request body for revoking a sensor.
@@ -718,13 +782,13 @@ func (h *SensorHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(h.toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(r.Context(), a))
 }
 
 // toSensorResponse converts a sensor entity to response, with the state,
 // health reasons and version status computed now under the handler's policy.
-func (h *SensorHandler) toSensorResponse(a *sensor.Sensor) *SensorResponse {
-	return sensorResponseAt(a, h.healthPolicy, h.now())
+func (h *SensorHandler) toSensorResponse(ctx context.Context, a *sensor.Sensor) *SensorResponse {
+	return sensorResponseAt(a, h.policyFor(ctx, a.TenantID.String()), h.now())
 }
 
 // sensorResponseAt converts a sensor entity to response at a given time.
@@ -777,6 +841,7 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 			Code: string(r.Code), Severity: r.Severity, Message: r.Message,
 		})
 	}
+	resp.Content, resp.ContentRefreshSupported = contentResponse(a, policy, now)
 
 	if a.IPAddress != nil {
 		resp.IPAddress = a.IPAddress.String()
@@ -833,6 +898,27 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 	}
 
 	return resp
+}
+
+// contentResponse is the content view of a sensor under the policy (the
+// tenant's content policy, the platform default when nil).
+func contentResponse(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Time) ([]SensorContentResponse, bool) {
+	cp := sensor.DefaultContentPolicy()
+	if policy.Content != nil {
+		cp = *policy.Content
+	}
+	views := a.ContentViews(now, cp.WithDefaults(sensor.DefaultContentPolicy()))
+	out := make([]SensorContentResponse, 0, len(views))
+	for _, v := range views {
+		out = append(out, SensorContentResponse{
+			Tool: v.Tool, Name: v.Name, Version: v.Version,
+			UpdatedAt: rfc3339Ptr(v.UpdatedAt), FetchedAt: rfc3339Ptr(v.FetchedAt), CheckedAt: rfc3339Ptr(v.CheckedAt),
+			Source: v.Source, Digest: v.Digest, Managed: v.Managed, Error: v.Error,
+			AgeSeconds: v.AgeSeconds, MaxAgeHours: v.MaxAgeHours, Stale: v.Stale,
+			PinnedVersion: v.PinnedVersion, PinMismatch: v.PinMismatch,
+		})
+	}
+	return out, a.SupportsContentRefresh()
 }
 
 // rfc3339Ptr formats an optional time as RFC 3339 UTC, or nil.
