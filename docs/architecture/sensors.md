@@ -526,7 +526,7 @@ only narrow it:
 - effective concurrency = min(reported, `max_concurrent_jobs`)
 - not reported (old SDK): the administrator's values, unchanged
 
-Storage (migration 000250): `reported_tools` (jsonb), `reported_tool_names`,
+Storage (migration 000252): `reported_tools` (jsonb), `reported_tool_names`,
 `reported_capabilities`, `reported_max_jobs`, `reported_os`, `reported_arch`,
 `reported_at`, and the generated columns `effective_tools`,
 `effective_capabilities`, `effective_max_jobs`, built with

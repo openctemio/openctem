@@ -1,6 +1,6 @@
 package postgres
 
-// The effective_* generated columns (migration 000250) must compute the same
+// The effective_* generated columns (migration 000252) must compute the same
 // narrowing rule as Sensor.Effective* (pkg/domain/sensor/reported.go): the
 // dispatch queries read the columns, the poll and the API read the methods.
 

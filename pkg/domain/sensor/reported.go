@@ -13,7 +13,7 @@ package sensor
 // A sensor that reports nothing (an SDK from before the report) keeps the
 // administrator's values, so nothing changes for it. The same rule is
 // computed by the database (generated columns effective_tools,
-// effective_capabilities, effective_max_jobs, migration 000250) for the
+// effective_capabilities, effective_max_jobs, migration 000252) for the
 // dispatch queries; sensor_reported_caps_db_test.go keeps the two in step.
 
 import (

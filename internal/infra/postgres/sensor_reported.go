@@ -3,7 +3,7 @@ package postgres
 // Sensor-reported capabilities (docs/rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md
 // §4.3.1): reading and writing the reported_* columns, and the catalog
 // lookup that sanitizes a report. Dispatch queries read the generated
-// effective_* columns (migration 000250).
+// effective_* columns (migration 000252).
 
 import (
 	"context"

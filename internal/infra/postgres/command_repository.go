@@ -282,7 +282,7 @@ const commandToolSQL = `COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLI
 // aliased alias work for. It is the one place that decides it, for the poll,
 // the claim, the heartbeat doorbell and the zone predicate.
 //
-// It is the sensor's effective tools (RFC-029 §4.3.1, migration 000250):
+// It is the sensor's effective tools (RFC-029 §4.3.1, migration 000252):
 // the tools it reports installed, narrowed by its tool limit (sensors.tools;
 // an empty limit allows every reported tool), or the tools set on it when it
 // never reported. The trigger's availability check (HasSensorForTool) and
