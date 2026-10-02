@@ -150,6 +150,14 @@ if header_present 'x-content-type-options: nosniff'; then ok "nosniff"; else bad
 if header_present 'server:'; then bad "Server header present"; else ok "no Server header"; fi
 if header_present 'via:'; then bad "Via header present"; else ok "no Via header"; fi
 
+echo "== Plain HTTP only redirects to HTTPS"
+gwip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")"
+for path in /login /api/v1/agent/heartbeat; do
+	got="$(docker run --rm --network "$net" curlimages/curl:latest -s -m 5 -o /dev/null \
+		--resolve "gateway.test:80:$gwip" -w '%{http_code} %{redirect_url}' "http://gateway.test$path" 2>/dev/null || true)"
+	if [ "$got" = "308 https://gateway.test$path" ]; then ok "http $path -> $got"; else bad "http $path -> '$got', want 308 https://gateway.test$path"; fi
+done
+
 echo "== Internal CA created"
 ca="$(docker exec "$run-gw" sh -c 'ls -l /data/caddy/pki/authorities/local/root.crt' 2>/dev/null || true)"
 if [ -n "$ca" ]; then ok "root CA created"; else bad "root CA not created"; fi

@@ -10,8 +10,9 @@
 #   docker compose up -d
 #
 # Optional overlays:
-#   docker-compose.http-redirect.yml  also publish :80 (HTTP->HTTPS redirect,
-#                                     ACME HTTP-01); for OPENCTEM_TLS_MODE=acme
+#   docker-compose.http-redirect.yml  also publish :80: http:// redirects to
+#                                     HTTPS (TLS modes internal, files, acme)
+#                                     and ACME HTTP-01 (acme)
 #   docker-compose.plain-http.yml     OPENCTEM_TLS_MODE=http behind your own
 #                                     TLS proxy (explicit opt-in)
 #
