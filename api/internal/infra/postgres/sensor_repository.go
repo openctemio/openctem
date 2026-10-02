@@ -78,7 +78,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		a.StatusMessage,
 		a.IsPlatformSensor,
 		a.APIKeyHash,
-		a.APIKeyPrefix,
+		a.InlineKeyPrefix,
 		metadata,
 		labels,
 		config,
@@ -94,7 +94,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		a.ErrorCount,
 		a.CreatedAt,
 		a.UpdatedAt,
-		nullTime(a.KeyExpiresAt),
+		nullTime(a.InlineKeyExpiresAt),
 	)
 
 	if err != nil {
@@ -796,7 +796,8 @@ func (r *SensorRepository) selectQuery() string {
 		       api_key_last_used_at, host(api_key_last_used_ip),
 		       instance_id, instance_state, identity_cloned_at,
 		       manifest_digest, manifest_at, manifest_source,
-		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at
+		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at,
+		       ` + sensorActiveKeySQL("sensors") + ` AS active_key
 		FROM sensors
 	`
 }
@@ -959,6 +960,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		hbDueAt          sql.NullTime
 		control          []byte
 		controlAt        sql.NullTime
+		activeKey        []byte
 	)
 
 	err := row.Scan(
@@ -976,7 +978,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&isPlatformSensor,
 		&tier,
 		&a.APIKeyHash,
-		&a.APIKeyPrefix,
+		&a.InlineKeyPrefix,
 		&metadata,
 		&labels,
 		&config,
@@ -1036,6 +1038,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&hbDueAt,
 		&control,
 		&controlAt,
+		&activeKey,
 	)
 
 	if err != nil {
@@ -1106,7 +1109,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		a.LastErrorAt = &lastErrorAt.Time
 	}
 	if keyExpiresAt.Valid {
-		a.KeyExpiresAt = &keyExpiresAt.Time
+		a.InlineKeyExpiresAt = &keyExpiresAt.Time
 	}
 	if processStarted.Valid {
 		a.StartedAt = &processStarted.Time
@@ -1153,6 +1156,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		a.IdentityClonedAt = &identityCloned.Time
 	}
 	a.ManifestDigest, a.ManifestSource = manifestDigest.String, manifestSource.String
+	a.ActiveKey = parseActiveKey(activeKey)
 	if manifestAt.Valid {
 		a.ManifestAt = &manifestAt.Time
 	}

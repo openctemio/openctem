@@ -215,7 +215,7 @@ func (m *sensorSvcMockRepo) UpdateKeyExpiry(_ context.Context, id shared.ID, exp
 	if !ok || !a.Status.CanAuthenticate() { // status='active' guard
 		return nil
 	}
-	a.KeyExpiresAt = expiresAt
+	a.InlineKeyExpiresAt = expiresAt
 	return nil
 }
 
@@ -543,7 +543,7 @@ func TestSensorService_CreateSensor_Success(t *testing.T) {
 		t.Error("expected API key hash to be set")
 	}
 
-	if out.Sensor.APIKeyPrefix == "" {
+	if out.Sensor.InlineKeyPrefix == "" {
 		t.Error("expected API key prefix to be set")
 	}
 
@@ -1372,7 +1372,7 @@ func TestSensor_IsKeyExpired(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			a := &sensor.Sensor{KeyExpiresAt: tc.expires}
+			a := &sensor.Sensor{InlineKeyExpiresAt: tc.expires}
 			if got := a.IsKeyExpired(); got != tc.want {
 				t.Errorf("IsKeyExpired() = %v, want %v", got, tc.want)
 			}
@@ -1395,7 +1395,7 @@ func TestSensorService_RenewAPIKey_NoTTL_NeverExpires(t *testing.T) {
 	if expiresAt != nil {
 		t.Errorf("expected nil expiry with no TTL configured, got %v", expiresAt)
 	}
-	if repo.sensors[a.ID.String()].KeyExpiresAt != nil {
+	if repo.sensors[a.ID.String()].InlineKeyExpiresAt != nil {
 		t.Error("expected stored KeyExpiresAt to be nil with no TTL")
 	}
 }
@@ -1420,7 +1420,7 @@ func TestSensorService_RenewAPIKey_WithTTL_SetsExpiry(t *testing.T) {
 	if !expiresAt.After(before.Add(59 * time.Minute)) {
 		t.Errorf("expected expiry ~1h out, got %v (before=%v)", expiresAt, before)
 	}
-	stored := repo.sensors[a.ID.String()].KeyExpiresAt
+	stored := repo.sensors[a.ID.String()].InlineKeyExpiresAt
 	if stored == nil || !stored.Equal(*expiresAt) {
 		t.Errorf("expected persisted KeyExpiresAt %v to match returned %v", stored, expiresAt)
 	}
@@ -1442,7 +1442,7 @@ func TestSensorService_AuthenticateByAPIKey_ExpiredKey(t *testing.T) {
 	}
 
 	past := time.Now().Add(-1 * time.Hour)
-	out.Sensor.KeyExpiresAt = &past
+	out.Sensor.InlineKeyExpiresAt = &past
 	repo.sensors[out.Sensor.ID.String()] = out.Sensor
 
 	_, err = svc.AuthenticateByAPIKey(context.Background(), out.APIKey)
@@ -1470,7 +1470,7 @@ func TestSensorService_AuthenticateByAPIKey_UnexpiredKey(t *testing.T) {
 	}
 
 	future := time.Now().Add(1 * time.Hour)
-	out.Sensor.KeyExpiresAt = &future
+	out.Sensor.InlineKeyExpiresAt = &future
 	repo.sensors[out.Sensor.ID.String()] = out.Sensor
 
 	if _, err := svc.AuthenticateByAPIKey(context.Background(), out.APIKey); err != nil {
@@ -2205,8 +2205,8 @@ func TestSensorService_APIKeyFormat(t *testing.T) {
 
 	// Verify prefix format: "rda_" + first 8 hex chars
 	expectedPrefix := out.APIKey[:12]
-	if out.Sensor.APIKeyPrefix != expectedPrefix {
-		t.Errorf("expected prefix %q, got %q", expectedPrefix, out.Sensor.APIKeyPrefix)
+	if out.Sensor.InlineKeyPrefix != expectedPrefix {
+		t.Errorf("expected prefix %q, got %q", expectedPrefix, out.Sensor.InlineKeyPrefix)
 	}
 }
 
@@ -2510,12 +2510,12 @@ func TestSensorService_RenewAPIKey_Overlap_RetiresInlineKeyOnce(t *testing.T) {
 		t.Errorf("expected inline key retired exactly once, got %d UpdateKeyExpiry calls", repo.updateKeyExpiryCalls)
 	}
 	stored := repo.sensors[out.Sensor.ID.String()]
-	if stored.KeyExpiresAt == nil {
+	if stored.InlineKeyExpiresAt == nil {
 		t.Fatal("expected inline key to have an expiry after overlap renewal")
 	}
 	// And the retirement grace is bounded (≤ ~15m out), not pushed to a full TTL.
-	if time.Until(*stored.KeyExpiresAt) > 20*time.Minute {
-		t.Errorf("inline expiry pushed too far out (%v) — retirement re-extended?", time.Until(*stored.KeyExpiresAt))
+	if time.Until(*stored.InlineKeyExpiresAt) > 20*time.Minute {
+		t.Errorf("inline expiry pushed too far out (%v) — retirement re-extended?", time.Until(*stored.InlineKeyExpiresAt))
 	}
 }
 

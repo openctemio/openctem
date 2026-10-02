@@ -66,11 +66,11 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get by hash: %v", err)
 	}
-	if got.KeyExpiresAt == nil {
+	if got.InlineKeyExpiresAt == nil {
 		t.Fatal("expected KeyExpiresAt to round-trip, got nil")
 	}
-	if !got.KeyExpiresAt.Equal(exp) {
-		t.Errorf("KeyExpiresAt mismatch: got %v, want %v", got.KeyExpiresAt.UTC(), exp.UTC())
+	if !got.InlineKeyExpiresAt.Equal(exp) {
+		t.Errorf("KeyExpiresAt mismatch: got %v, want %v", got.InlineKeyExpiresAt.UTC(), exp.UTC())
 	}
 
 	// Change the key with a new expiry (key columns change only through
@@ -83,8 +83,8 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get by new hash: %v", err)
 	}
-	if got2.KeyExpiresAt == nil || !got2.KeyExpiresAt.Equal(newExp) {
-		t.Errorf("updated KeyExpiresAt mismatch: got %v, want %v", got2.KeyExpiresAt, newExp.UTC())
+	if got2.InlineKeyExpiresAt == nil || !got2.InlineKeyExpiresAt.Equal(newExp) {
+		t.Errorf("updated KeyExpiresAt mismatch: got %v, want %v", got2.InlineKeyExpiresAt, newExp.UTC())
 	}
 
 	// A never-expiring key (nil) must also round-trip as nil.
@@ -95,8 +95,8 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get by nil-expiry hash: %v", err)
 	}
-	if got3.KeyExpiresAt != nil {
-		t.Errorf("expected nil KeyExpiresAt after SetAPIKey, got %v", got3.KeyExpiresAt)
+	if got3.InlineKeyExpiresAt != nil {
+		t.Errorf("expected nil KeyExpiresAt after SetAPIKey, got %v", got3.InlineKeyExpiresAt)
 	}
 
 	// UpdateKeyExpiry on an ACTIVE sensor sets the column.
@@ -104,8 +104,8 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	if err := repo.UpdateKeyExpiry(ctx, a.ID, &guardExp); err != nil {
 		t.Fatalf("UpdateKeyExpiry (active): %v", err)
 	}
-	if got, _ := repo.GetByID(ctx, a.ID); got.KeyExpiresAt == nil || !got.KeyExpiresAt.Equal(guardExp) {
-		t.Errorf("expected UpdateKeyExpiry to set expiry on active sensor, got %v", got.KeyExpiresAt)
+	if got, _ := repo.GetByID(ctx, a.ID); got.InlineKeyExpiresAt == nil || !got.InlineKeyExpiresAt.Equal(guardExp) {
+		t.Errorf("expected UpdateKeyExpiry to set expiry on active sensor, got %v", got.InlineKeyExpiresAt)
 	}
 
 	// Status guard: once the sensor is revoked, UpdateKeyExpiry is a no-op — it
@@ -117,8 +117,8 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	if err := repo.UpdateKeyExpiry(ctx, a.ID, &future); err != nil {
 		t.Fatalf("UpdateKeyExpiry (revoked): %v", err)
 	}
-	if got, _ := repo.GetByID(ctx, a.ID); got.KeyExpiresAt == nil || got.KeyExpiresAt.Equal(future) {
-		t.Errorf("status guard failed: revoked sensor's key_expires_at was rewritten to %v", got.KeyExpiresAt)
+	if got, _ := repo.GetByID(ctx, a.ID); got.InlineKeyExpiresAt == nil || got.InlineKeyExpiresAt.Equal(future) {
+		t.Errorf("status guard failed: revoked sensor's key_expires_at was rewritten to %v", got.InlineKeyExpiresAt)
 	}
 }
 
