@@ -217,7 +217,7 @@ func TestSensorContent_HeartbeatAndPoll_DB(t *testing.T) {
 	h.heartbeatV2(s, map[string]any{"status": "running", "tools": []map[string]any{
 		{"name": "trivy", "version": "0.69.3", "installed": true, "content": []map[string]any{
 			{"name": "trivy-db", "version": "2026-10-02T01:05:41Z", "updated_at": "2026-10-02T01:05:41Z",
-				"fetched_at": "2026-10-02T04:59:26Z", "source": "mirror.gcr.io/aquasec/trivy-db:2",
+				"fetched_at": "2026-10-02T04:59:26Z", "checked_at": "2026-10-02T05:30:00Z", "source": "mirror.gcr.io/aquasec/trivy-db:2",
 				"digest": "sha256:3b169afdc4a0862bcd1dd493d9fedb5ba26be377f9d541cb3fdde9e2bebadfab", "managed": true},
 			{"name": "NOT valid", "managed": true},
 		}},
@@ -227,7 +227,7 @@ func TestSensorContent_HeartbeatAndPoll_DB(t *testing.T) {
 	}})
 	got := h.load(s)
 	content := got.ReportedContent()
-	if len(content) != 2 || content[0].Tool != "trivy" || content[0].Digest == "" || content[0].UpdatedAt == nil ||
+	if len(content) != 2 || content[0].Tool != "trivy" || content[0].Digest == "" || content[0].UpdatedAt == nil || content[0].CheckedAt == nil ||
 		content[1].Tool != "nuclei" || content[1].Digest != "" || content[1].Error != "checksum mismatch" {
 		t.Fatalf("stored content %+v", content)
 	}

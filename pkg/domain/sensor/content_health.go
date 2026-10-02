@@ -45,6 +45,9 @@ func (a *Sensor) contentReasons(now time.Time, policy *ContentPolicy) []HealthRe
 					humanDuration(time.Duration(*v.AgeSeconds)*time.Second),
 					humanDuration(time.Duration(v.MaxAgeHours)*time.Hour))
 			}
+			if v.Unconfirmed != nil {
+				msg += fmt.Sprintf(" The sensor has not confirmed a newer version for %s.", humanDuration(*v.Unconfirmed))
+			}
 			if errText != "" {
 				msg += " The last refresh failed: " + errText + "."
 			} else {

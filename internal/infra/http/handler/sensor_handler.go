@@ -223,6 +223,10 @@ type SensorContentResponse struct {
 	Version   string  `json:"version"`
 	UpdatedAt *string `json:"updated_at"`
 	FetchedAt *string `json:"fetched_at"`
+	// CheckedAt is when the sensor last confirmed this is still the newest
+	// (or pinned) version; stale needs both an age and a confirmation
+	// older than max_age_hours.
+	CheckedAt *string `json:"checked_at"`
 	Source    string  `json:"source"`
 	Digest    string  `json:"digest"`
 	// Managed: the sensor refreshes, verifies and pins it; false when the
@@ -908,7 +912,7 @@ func contentResponse(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Time
 	for _, v := range views {
 		out = append(out, SensorContentResponse{
 			Tool: v.Tool, Name: v.Name, Version: v.Version,
-			UpdatedAt: rfc3339Ptr(v.UpdatedAt), FetchedAt: rfc3339Ptr(v.FetchedAt),
+			UpdatedAt: rfc3339Ptr(v.UpdatedAt), FetchedAt: rfc3339Ptr(v.FetchedAt), CheckedAt: rfc3339Ptr(v.CheckedAt),
 			Source: v.Source, Digest: v.Digest, Managed: v.Managed, Error: v.Error,
 			AgeSeconds: v.AgeSeconds, MaxAgeHours: v.MaxAgeHours, Stale: v.Stale,
 			PinnedVersion: v.PinnedVersion, PinMismatch: v.PinMismatch,
