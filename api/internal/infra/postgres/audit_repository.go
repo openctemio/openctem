@@ -766,9 +766,9 @@ func (r *AuditRepository) ApplyChainRebaseline(ctx context.Context, rb audit.Cha
 	return nil
 }
 
-// ListChainEntries returns chain rows ordered by position ASC. Used by
-// the verify endpoint to walk the chain.
-func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]audit.ChainEntry, error) {
+// ListChainEntries returns one keyset page of chain rows (chain_position >
+// afterPosition) ordered by position ASC. Callers walk the chain page by page.
+func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.ID, afterPosition int64, limit int) ([]audit.ChainEntry, error) {
 	const defaultChainEntriesLimit = 1000
 	const maxChainEntriesLimit = 10_000
 	if limit <= 0 {
@@ -780,10 +780,11 @@ func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.
 		SELECT audit_log_id, tenant_id, prev_hash, hash, chain_position, created_at
 		  FROM audit_log_chain
 		 WHERE tenant_id = $1
+		   AND chain_position > $2
 		 ORDER BY chain_position ASC
-		 LIMIT $2
+		 LIMIT $3
 	`
-	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), limit)
+	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), afterPosition, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list chain entries: %w", err)
 	}

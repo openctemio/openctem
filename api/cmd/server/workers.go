@@ -554,9 +554,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.Audit,
 		repos.Tenant,
 		&controller.AuditChainVerifyControllerConfig{
-			Interval:       time.Hour,
-			PerTenantLimit: 10000,
-			Logger:         log.With("controller", "audit-chain-verify"),
+			Interval: time.Hour,
+			// PerTenantLimit unset: walk every chain in full. A cap here
+			// left everything past the first 10,000 entries unverified.
+			// Logger: the controller adds its own "controller" attribute.
+			Logger: log,
 		},
 	))
 
