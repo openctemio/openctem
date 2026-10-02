@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/config"
@@ -171,5 +172,30 @@ func TestAuthProviders_AdvertisesWiredProviders(t *testing.T) {
 				t.Errorf("authorization_url client_id = %q, want %q", got, p.name+"-client-id")
 			}
 		})
+	}
+}
+
+// /auth/providers is a config read the UI makes on many screens. It must not
+// share the login limiter (5 per minute per IP): it used to, so reading it
+// spent the caller's login budget and a user who opened a few pages got 429
+// on the login itself. Ten reads in a row all succeed, and are cacheable.
+func TestAuthProviders_NotOnTheLoginLimiter(t *testing.T) {
+	cfg := oauthTestConfig()
+	cfg.RateLimit = config.RateLimitConfig{Enabled: true, RequestsPerSec: 100, Burst: 200, CleanupInterval: time.Minute}
+	router := infrahttp.NewChiRouter()
+	registerAuthRoutes(router, Handlers{}, cfg, AuthConfig{}, nil, logger.NewNop())
+	mux := router.(interface{ Handler() http.Handler }).Handler()
+
+	for i := 1; i <= 10; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", nil)
+		req.RemoteAddr = "203.0.113.7:4000"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("read %d: status %d, want 200 (still on the login limiter?)", i, rec.Code)
+		}
+		if i == 1 && rec.Header().Get("Cache-Control") != "public, max-age=60" {
+			t.Errorf("Cache-Control = %q", rec.Header().Get("Cache-Control"))
+		}
 	}
 }
