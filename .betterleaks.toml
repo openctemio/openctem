@@ -11,6 +11,10 @@ paths = [
     # Test files with fake credentials
     '''.*_test\.go$''',
     '''.*\.test\.go$''',
+    # Frontend unit tests and fixtures (web/ after the monorepo import)
+    '''.*\.test\.tsx?$''',
+    '''.*/__tests__/.*''',
+    '''.*/mock-data/.*''',
     # Documentation
     '''.*\.md$''',
     # Example/template files
@@ -38,6 +42,8 @@ regexes = [
     '''\$\{.*\}''',
     # GitHub Personal Access Token placeholder (ghp_xxxx...)
     '''ghp_x{10,}''',
+    # Ephemeral Postgres service container used by CI jobs
+    '''^secret$''',
 ]
 
 # Allow specific commits (use sparingly)
