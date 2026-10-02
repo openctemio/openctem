@@ -24,6 +24,7 @@ export const dynamic = 'force-dynamic'
 import { isInSwitchCooldown } from '@/lib/api/switch-cooldown'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
+import { proxyBackendPath } from '@/lib/api/proxy-path'
 import {
   isSensorProtocolPath,
   SENSOR_PROTOCOL_REFUSAL,
@@ -190,7 +191,13 @@ async function proxyRequest(
     return NextResponse.json(SENSOR_PROTOCOL_REFUSAL, { status: SENSOR_PROTOCOL_REFUSAL_STATUS })
   }
 
-  const path = params.path.join('/')
+  const path = proxyBackendPath(params.path)
+  if (path === null) {
+    return NextResponse.json(
+      { error: 'INVALID_PATH', code: 'INVALID_PATH', message: 'Invalid request path' },
+      { status: 400 }
+    )
+  }
   const url = new URL(request.url)
   // Route is /api/v1/[...path], so we need to add /api/v1/ prefix for backend
   const backendUrl = `${env.api.url}/api/v1/${path}${url.search}`
