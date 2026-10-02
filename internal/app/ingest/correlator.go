@@ -145,7 +145,7 @@ func (c *AssetCorrelator) CorrelateHostRecent(
 	// Guard: too many IPs → suspicious
 	if len(ips) > cfg.MaxIPsPerAsset {
 		c.logger.Warn("asset has too many IPs, skipping correlation",
-			"name", incomingName, "ip_count", len(ips))
+			"name", logger.SanitizeValue(incomingName), "ip_count", len(ips))
 		return &CorrelationResult{}, nil
 	}
 

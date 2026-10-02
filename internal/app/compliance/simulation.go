@@ -462,7 +462,7 @@ func (s *SimulationService) FinalizeRun(ctx context.Context, tenantID, runID sha
 		}
 	}
 	s.logger.Info("simulation run finalized from live safe-check",
-		"run_id", runID.String(), "outcome", outcome, "result", string(result))
+		"run_id", runID.String(), "outcome", logger.SanitizeValue(outcome), "result", string(result))
 	return nil
 }
 

@@ -1161,7 +1161,7 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 			)
 		} else {
 			s.logger.Info("invitation email queued",
-				"email", input.Email,
+				"email", logger.SanitizeValue(input.Email),
 				"invitation_id", invitation.ID().String(),
 			)
 		}

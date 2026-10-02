@@ -431,7 +431,7 @@ func (s *SSOService) envProvider(orgSlug string, provider identityproviderdom.Pr
 	if isNonSpecificEntraTenant(cfg.TenantID) {
 		if len(cfg.AllowedDomains) == 0 {
 			s.logger.Warn("env Entra fallback refused: non-specific directory requires SSO_ENTRA_ALLOWED_DOMAINS",
-				"tenant_slug", orgSlug, "directory", cfg.TenantID)
+				"tenant_slug", logger.SanitizeValue(orgSlug), "directory", cfg.TenantID)
 			return nil
 		}
 		autoProvision = false // never auto-provision from a multi-tenant authority

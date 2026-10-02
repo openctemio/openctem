@@ -378,3 +378,28 @@ func SanitizeValue(s string) string {
 		return r
 	}, s)
 }
+
+// SanitizeText strips CR/LF from free-form text that may quote user input (a
+// sensor-reported error message, a parser fragment) and bounds it to 1024
+// bytes, so it cannot forge log lines. Use SanitizeValue for short
+// identifiers and names; use this when the full message matters.
+func SanitizeText(s string) string {
+	const maxLen = 1024
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
+}
+
+// SanitizeError renders err for a log attribute through SanitizeText, so an
+// error that quotes user input (a name, a parser fragment, a URL) cannot forge
+// log lines. Error chains are long and the tail usually carries the cause,
+// hence the larger bound than SanitizeValue. A nil error yields "".
+func SanitizeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return SanitizeText(err.Error())
+}

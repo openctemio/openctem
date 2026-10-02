@@ -44,7 +44,7 @@ func MetricsAuth(public bool, token string, log *logger.Logger) func(http.Handle
 			// Constant-time compare to avoid leaking the token via timing.
 			if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
 				if log != nil {
-					log.Debug("metrics auth: rejected unauthenticated scrape", "ip", extractIP(r))
+					log.Debug("metrics auth: rejected unauthenticated scrape", "ip", logger.SanitizeValue(extractIP(r)))
 				}
 				// 404 rather than 401 so the endpoint is not advertised.
 				apierror.NotFound("resource").WriteJSON(w)

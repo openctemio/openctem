@@ -289,7 +289,7 @@ func (h *AdminUserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("admin deleted",
-		"admin_id", idStr,
+		"admin_id", logger.SanitizeValue(idStr),
 		"deleted_by", currentAdmin.Email())
 
 	w.WriteHeader(http.StatusNoContent)

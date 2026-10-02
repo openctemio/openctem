@@ -140,7 +140,7 @@ func (s *MembershipCacheService) Invalidate(
 	key := s.cacheKey(tid, uid)
 	if err := s.cache.Delete(ctx, key); err != nil {
 		s.log.Warn("failed to invalidate membership cache",
-			"tenant_id", tenantID, "user_id", userID, "error", err)
+			"tenant_id", tenantID, "user_id", logger.SanitizeValue(userID), "error", err)
 	}
 }
 

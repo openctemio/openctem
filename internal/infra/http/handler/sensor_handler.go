@@ -1044,7 +1044,7 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 		CACert:  caPEM,
 	})
 	if err != nil {
-		h.logger.Error("failed to render sensor config templates", "error", err, "sensor_id", sensorID)
+		h.logger.Error("failed to render sensor config templates", "error", logger.SanitizeError(err), "sensor_id", logger.SanitizeValue(sensorID))
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}

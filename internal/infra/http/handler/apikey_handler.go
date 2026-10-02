@@ -317,7 +317,7 @@ func (h *APIKeyHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case shared.IsValidation(err):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
-		h.logger.Error("api key service error", "error", err)
+		h.logger.Error("api key service error", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("Internal server error").WriteJSON(w)
 	}
 }

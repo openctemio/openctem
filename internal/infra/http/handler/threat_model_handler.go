@@ -277,7 +277,7 @@ func (h *ThreatModelHandler) Generate(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("scope reference not found").WriteJSON(w)
 			return
 		}
-		h.logger.Error("generate threat model", "error", err)
+		h.logger.Error("generate threat model", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("generation failed").WriteJSON(w)
 		return
 	}

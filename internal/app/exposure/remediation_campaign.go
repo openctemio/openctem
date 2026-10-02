@@ -160,6 +160,10 @@ func sanitizeLogValue(s string) string {
 	if len(s) > maxLen {
 		s = s[:maxLen]
 	}
+	// The explicit ReplaceAll pair is the form CodeQL go/log-injection accepts
+	// as a barrier; strings.Map below then drops the remaining control chars.
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r < 0x20 {
 			return -1
@@ -355,7 +359,7 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		// without waiting for the reconcile sweep.
 		campaign.SetFindingFilter(input.FindingFilter)
 		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
-			s.logger.Warn("recompute after re-scope failed", "id", campaignID, "error", rerr)
+			s.logger.Warn("recompute after re-scope failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(rerr))
 		}
 	}
 	if input.AssignedTo != nil || input.AssignedTeam != nil {

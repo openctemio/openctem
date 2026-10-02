@@ -1142,7 +1142,14 @@ func (h *IngestHandler) writeIngestError(w http.ResponseWriter, msg string, err 
 	errText := sanitizeLogField(err.Error())
 	logAttrs := make([]any, 0, len(attrs)+2)
 	logAttrs = append(logAttrs, "error", errText)
-	logAttrs = append(logAttrs, attrs...)
+	// Callers already sanitize sensor-supplied strings; re-sanitizing every
+	// string attr here keeps the guarantee local instead of per call site.
+	for _, a := range attrs {
+		if s, ok := a.(string); ok {
+			a = sanitizeLogField(s)
+		}
+		logAttrs = append(logAttrs, a)
+	}
 
 	var de *shared.DomainError
 	switch {

@@ -89,7 +89,7 @@ func (s *GroupService) ResolveGroup(ctx context.Context, tenantID shared.ID, in 
 		idStrs[i] = id.String()
 	}
 
-	s.logger.Info("resolving remediation group", "tenant", tenantID.String(), "key", sanitizeLogValue(in.Key), "count", len(idStrs), "status", status)
+	s.logger.Info("resolving remediation group", "tenant", tenantID.String(), "key", sanitizeLogValue(in.Key), "count", len(idStrs), "status", logger.SanitizeValue(status))
 	return s.resolver.BulkUpdateFindingsStatus(ctx, tenantID.String(), finding.BulkUpdateStatusInput{
 		FindingIDs:          idStrs,
 		Status:              status,
@@ -108,6 +108,10 @@ func sanitizeLogValue(s string) string {
 	if len(s) > maxLen {
 		s = s[:maxLen]
 	}
+	// The explicit ReplaceAll pair is the form CodeQL go/log-injection accepts
+	// as a barrier; strings.Map below then drops the remaining control chars.
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r < 0x20 {
 			return -1
