@@ -161,8 +161,10 @@ func toAdminOrganizationResponse(o *admin.Organization) AdminOrganizationRespons
 // the email is prefixed so the organization's own audit log shows who did it.
 func adminAuditContext(r *http.Request, tenantID string) app.AuditContext {
 	actx := app.AuditContext{
-		TenantID:  tenantID,
-		ActorIP:   r.RemoteAddr,
+		TenantID: tenantID,
+		// The resolved client IP (forwarding headers only from a trusted
+		// proxy), not the proxy's socket address.
+		ActorIP:   middleware.ClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
 	}

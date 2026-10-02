@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/audit"
 	samldom "github.com/openctemio/api/pkg/domain/samlprovider"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/httpsec"
@@ -28,7 +29,13 @@ type SAMLHandler struct {
 	cookieCfg   CookieConfig
 	frontendURL string // origin the browser is redirected to after login
 	publicURL   string // configured public origin (APP_URL); see samlBaseURL
+	audit       *app.AuditService
 	logger      *logger.Logger
+}
+
+// SetAuditService records SAML config changes in the organization's audit log.
+func (h *SAMLHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
 }
 
 // SetPublicURL sets the configured public origin (APP_URL) the SP URLs are
@@ -294,6 +301,17 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to save SAML configuration").WriteJSON(w)
 		return
 	}
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
+		app.NewSuccessEvent(audit.ActionSSOSAMLConfigUpdated, audit.ResourceTypeSAMLConfig, p.ID().String()).
+			WithResourceName(p.IDPEntityID()).
+			WithMessage("SAML single sign-on configuration saved").
+			WithMetadata("idp_entity_id", p.IDPEntityID()).
+			WithMetadata("idp_sso_url", p.IDPSSOURL()).
+			WithMetadata("idp_certificate_sha256", certificateFingerprint(p.IDPCertificate())).
+			WithMetadata("allowed_domains", p.AllowedDomains()).
+			WithMetadata("default_role", p.DefaultRole()).
+			WithMetadata("auto_provision", p.AutoProvision()).
+			WithMetadata("enabled", p.Enabled()))
 	writeJSON(w, http.StatusOK, toSAMLConfigView(p))
 }
 
@@ -316,5 +334,8 @@ func (h *SAMLHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to delete SAML configuration").WriteJSON(w)
 		return
 	}
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
+		app.NewSuccessEvent(audit.ActionSSOSAMLConfigDeleted, audit.ResourceTypeSAMLConfig, tenantID.String()).
+			WithMessage("SAML single sign-on configuration deleted"))
 	w.WriteHeader(http.StatusNoContent)
 }

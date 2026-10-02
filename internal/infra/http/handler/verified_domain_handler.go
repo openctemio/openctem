@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/auth/domainverify"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/api/pkg/logger"
@@ -16,7 +18,22 @@ import (
 // VerifiedDomainHandler handles tenant-scoped domain-ownership verification.
 type VerifiedDomainHandler struct {
 	service *domainverify.Service
+	audit   *app.AuditService
 	logger  *logger.Logger
+}
+
+// SetAuditService records verified-domain changes in the organization's audit
+// log.
+func (h *VerifiedDomainHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
+}
+
+func domainAuditEvent(action audit.Action, vd *verifieddomain.VerifiedDomain, message string) app.AuditEvent {
+	return app.NewSuccessEvent(action, audit.ResourceTypeVerifiedDomain, vd.ID().String()).
+		WithResourceName(vd.Domain()).
+		WithMessage(message).
+		WithMetadata("domain", vd.Domain()).
+		WithMetadata("status", string(vd.Status()))
 }
 
 // NewVerifiedDomainHandler creates a new VerifiedDomainHandler.
@@ -75,6 +92,8 @@ func (h *VerifiedDomainHandler) AddDomain(w http.ResponseWriter, r *http.Request
 		h.handleError(w, err)
 		return
 	}
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainAdded, vd,
+		"Domain '"+vd.Domain()+"' added for verification"))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -137,6 +156,12 @@ func (h *VerifiedDomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
+	// Only a successful verification changes trust (SSO JIT and allowed
+	// domains rely on it); a check that did not find the record is not logged.
+	if vd.IsVerified() {
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainVerified, vd,
+			"Domain '"+vd.Domain()+"' verified"))
+	}
 
 	txt := domainverify.Instructions(vd.Domain(), vd.VerificationToken())
 	w.Header().Set("Content-Type", "application/json")
@@ -163,9 +188,27 @@ func (h *VerifiedDomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Look it up first so the audit entry can name what was removed.
+	var removed *verifieddomain.VerifiedDomain
+	if all, lerr := h.service.List(r.Context(), tenantID); lerr == nil {
+		for _, d := range all {
+			if d.ID() == id {
+				removed = d
+				break
+			}
+		}
+	}
 	if err := h.service.Delete(r.Context(), tenantID, id); err != nil {
 		h.handleError(w, err)
 		return
+	}
+	if removed != nil {
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainDeleted, removed,
+			"Domain '"+removed.Domain()+"' removed"))
+	} else {
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
+			app.NewSuccessEvent(audit.ActionSSOVerifiedDomainDeleted, audit.ResourceTypeVerifiedDomain, id.String()).
+				WithMessage("Verified domain removed"))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

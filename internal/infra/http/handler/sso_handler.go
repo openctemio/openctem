@@ -8,6 +8,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/identityprovider"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -15,7 +16,30 @@ import (
 // SSOHandler handles per-tenant SSO authentication requests.
 type SSOHandler struct {
 	ssoService *app.SSOService
+	audit      *app.AuditService
 	logger     *logger.Logger
+}
+
+// SetAuditService records identity-provider changes in the organization's
+// audit log.
+func (h *SSOHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
+}
+
+// providerAuditEvent describes an identity provider for the audit log. The
+// client secret is never included.
+func providerAuditEvent(action audit.Action, ip *identityprovider.IdentityProvider, message string) app.AuditEvent {
+	return app.NewSuccessEvent(action, audit.ResourceTypeIdentityProvider, ip.ID()).
+		WithResourceName(ip.DisplayName()).
+		WithMessage(message).
+		WithMetadata("provider", string(ip.Provider())).
+		WithMetadata("client_id", ip.ClientID()).
+		WithMetadata("issuer_url", ip.IssuerURL()).
+		WithMetadata("tenant_identifier", ip.TenantIdentifier()).
+		WithMetadata("allowed_domains", ip.AllowedDomains()).
+		WithMetadata("auto_provision", ip.AutoProvision()).
+		WithMetadata("default_role", ip.DefaultRole()).
+		WithMetadata("is_active", ip.IsActive())
 }
 
 // NewSSOHandler creates a new SSOHandler.
@@ -268,6 +292,8 @@ func (h *SSOHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 		h.handleAdminError(w, err)
 		return
 	}
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, providerAuditEvent(audit.ActionSSOIdentityProviderCreated, ip,
+		"Identity provider '"+ip.DisplayName()+"' created"))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -390,6 +416,9 @@ func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 		h.handleAdminError(w, err)
 		return
 	}
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, providerAuditEvent(audit.ActionSSOIdentityProviderUpdated, ip,
+		"Identity provider '"+ip.DisplayName()+"' updated").
+		WithMetadata("client_secret_changed", req.ClientSecret != nil && *req.ClientSecret != ""))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h.toProviderResponse(ip))
@@ -414,9 +443,19 @@ func (h *SSOHandler) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read it first so the audit entry can name what was removed.
+	existing, _ := h.ssoService.GetProvider(r.Context(), tenantID, id)
 	if err := h.ssoService.DeleteProvider(r.Context(), tenantID, id); err != nil {
 		h.handleAdminError(w, err)
 		return
+	}
+	if existing != nil {
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, providerAuditEvent(audit.ActionSSOIdentityProviderDeleted, existing,
+			"Identity provider '"+existing.DisplayName()+"' deleted"))
+	} else {
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
+			app.NewSuccessEvent(audit.ActionSSOIdentityProviderDeleted, audit.ResourceTypeIdentityProvider, id).
+				WithMessage("Identity provider deleted"))
 	}
 
 	w.WriteHeader(http.StatusNoContent)

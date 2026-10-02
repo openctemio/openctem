@@ -1131,6 +1131,11 @@ func toProvisionedUserResponse(p *app.ProvisionedUser) ProvisionedUserResponse {
 		resp.MembershipID = p.Membership.ID().String()
 		resp.Role = p.Membership.Role().String()
 	}
+	// Report the role actually granted (e.g. "admin"), not the membership
+	// label, which stays "member" for the admin RBAC role.
+	if p.EffectiveRole != "" {
+		resp.Role = p.EffectiveRole
+	}
 	if p.SetupToken != "" {
 		exp := p.SetupExpiresAt
 		resp.SetupToken = p.SetupToken
