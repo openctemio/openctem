@@ -207,6 +207,9 @@ type Sensor struct {
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"
 	LastOfflineAt *time.Time // When sensor went offline (heartbeat timeout)
 	LastErrorAt   *time.Time
+	// StartedAt is when the sensor process started, derived from the
+	// uptime_seconds of its last heartbeat (nil when it never reported one).
+	StartedAt     *time.Time
 	TotalFindings int64
 	TotalScans    int64
 	ErrorCount    int64

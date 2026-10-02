@@ -11,16 +11,19 @@ import (
 
 // Filter represents filter options for listing sensors.
 type Filter struct {
-	TenantID      *shared.ID
-	Type          *SensorType
-	Status        *SensorStatus // Admin-controlled: active, disabled, revoked
-	Health        *SensorHealth // Automatic: unknown, online, offline, error
-	ExecutionMode *ExecutionMode
-	Capabilities  []string
-	Tools         []string
-	Labels        map[string]string
-	Search        string
-	HasCapacity   *bool // Filter by sensors that have job capacity
+	TenantID *shared.ID
+	// ExcludePlatform leaves out shared platform sensors (is_platform_sensor):
+	// a tenant's sensor list shows the tenant's own sensors only.
+	ExcludePlatform bool
+	Type            *SensorType
+	Status          *SensorStatus // Admin-controlled: active, disabled, revoked
+	Health          *SensorHealth // Automatic: unknown, online, offline, error
+	ExecutionMode   *ExecutionMode
+	Capabilities    []string
+	Tools           []string
+	Labels          map[string]string
+	Search          string
+	HasCapacity     *bool // Filter by sensors that have job capacity
 }
 
 // HeartbeatUpdate is the set of columns a heartbeat is allowed to write.
@@ -52,6 +55,23 @@ type HeartbeatUpdate struct {
 	// stored protocol telemetry untouched. UserAgent is already sanitized.
 	Protocol  int
 	UserAgent string
+
+	// UptimeSeconds is how long the sensor process has been running, as the
+	// heartbeat reported it (already clamped). 0 leaves the stored start time
+	// untouched: SDKs that do not report it send nothing.
+	UptimeSeconds int64
+}
+
+// MaxReportedUptime caps the uptime a heartbeat may report (ten years); a
+// larger value is an error or a hostile sensor, and is ignored.
+const MaxReportedUptime = 10 * 365 * 24 * 60 * 60
+
+// ClampUptime returns the reported uptime when it is plausible, else 0.
+func ClampUptime(seconds int64) int64 {
+	if seconds <= 0 || seconds > MaxReportedUptime {
+		return 0
+	}
+	return seconds
 }
 
 // Repository defines the interface for sensor persistence.

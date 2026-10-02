@@ -10173,6 +10173,27 @@ definitions:
         maxLength: 500
         type: string
     type: object
+  internal_infra_http_handler.SensorHealthReasonResponse:
+    properties:
+      code:
+        enum:
+        - outbox_backlog
+        - outbox_dead_letters
+        - outbox_evicted
+        - key_expired
+        - key_expiring
+        - version_unsupported
+        - no_tools
+        - error_reported
+        type: string
+      message:
+        type: string
+      severity:
+        enum:
+        - warning
+        - critical
+        type: string
+    type: object
   internal_infra_http_handler.SensorOutboxResponse:
     properties:
       dead_letter_count:
@@ -10187,6 +10208,17 @@ definitions:
         type: integer
       reported_at:
         type: string
+    type: object
+  internal_infra_http_handler.SensorProtocolResponse:
+    properties:
+      deprecated:
+        type: boolean
+      seen_at:
+        type: string
+      user_agent:
+        type: string
+      version:
+        type: integer
     type: object
   internal_infra_http_handler.SensorRegenerateAPIKeyResponse:
     properties:
@@ -10219,15 +10251,36 @@ definitions:
       health:
         description: 'Automatic: unknown, online, offline, error'
         type: string
+      health_reasons:
+        description: |-
+          HealthReasons lists the problems found (never null): an outbox backlog
+          or lost results, an expired or expiring key, a version below the
+          minimum, no scan tools, an error the sensor reported.
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorHealthReasonResponse'
+        type: array
       hostname:
         type: string
       id:
         type: string
       ip_address:
         type: string
+      is_platform_sensor:
+        description: IsPlatformSensor marks shared platform infrastructure.
+        type: boolean
+      key_expires_at:
+        description: KeyExpiresAt is when the current API key stops working; null
+          = never.
+        type: string
       labels:
         additionalProperties: {}
         type: object
+      last_error_at:
+        description: LastErrorAt is when the sensor last reported an error.
+        type: string
+      last_offline_at:
+        description: LastOfflineAt is when the sensor was last marked offline.
+        type: string
       last_seen_at:
         description: Statistics
         type: string
@@ -10253,7 +10306,37 @@ definitions:
           results: dead_letter_count > 0, evicted_count > 0, or
           oldest_age_seconds > 3600. False when there is no snapshot.
         type: boolean
+      protocol:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.SensorProtocolResponse'
+        description: |-
+          Protocol is what the platform last saw of the sensor's protocol
+          (RFC-029 §5.3); null before the first heartbeat that recorded it.
+          deprecated is true for protocol v1: the sensor needs an upgrade.
       region:
+        type: string
+      started_at:
+        description: |-
+          StartedAt is when the sensor process started (from the uptime its
+          heartbeat reports); null when it never reported one.
+        type: string
+      state:
+        description: |-
+          State is the computed operational state: online, degraded, stale,
+          offline, idle (a CI sensor between runs), never_connected, disabled or
+          revoked. Online means a heartbeat within the online window (see
+          GET /sensors/stats online_window_seconds); stale is older than that but
+          within the heartbeat timeout; degraded is heartbeating with at least
+          one health reason.
+        enum:
+        - online
+        - degraded
+        - stale
+        - offline
+        - idle
+        - never_connected
+        - disabled
+        - revoked
         type: string
       status:
         description: 'Admin-controlled: active, disabled, revoked'
@@ -10274,7 +10357,20 @@ definitions:
         type: string
       updated_at:
         type: string
+      uptime_seconds:
+        description: |-
+          UptimeSeconds is the process uptime at the last heartbeat; null unless
+          the sensor is heartbeating and reports its uptime.
+        type: integer
       version:
+        type: string
+      version_status:
+        description: VersionStatus compares the version with the release channel.
+        enum:
+        - latest
+        - update_available
+        - unsupported
+        - unknown
         type: string
     type: object
   internal_infra_http_handler.SensorRevokeRequest:
@@ -10295,6 +10391,13 @@ definitions:
         additionalProperties:
           type: integer
         type: object
+      by_state:
+        additionalProperties:
+          type: integer
+        description: |-
+          ByState counts sensors per computed state (every state is present,
+          zeros included); the same state GET /sensors returns per sensor.
+        type: object
       by_status:
         additionalProperties:
           type: integer
@@ -10303,7 +10406,43 @@ definitions:
         additionalProperties:
           type: integer
         type: object
+      by_version_status:
+        additionalProperties:
+          type: integer
+        description: ByVersionStatus counts sensors per version status.
+        type: object
+      can_take_jobs:
+        description: |-
+          CanTakeJobs counts sensors that can be dispatched work now: enabled,
+          long-running (not one-shot CI) and online or degraded.
+        type: integer
+      job_slots:
+        type: integer
+      jobs_running:
+        description: |-
+          JobsRunning is the sum of current jobs on those sensors, JobSlots the
+          sum of their max concurrent jobs.
+        type: integer
+      latest_version:
+        description: |-
+          LatestVersion and MinVersion are the release channel
+          (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION); "" when not configured.
+        type: string
+      min_version:
+        type: string
+      needs_attention:
+        description: NeedsAttention counts enabled sensors with at least one health
+          reason.
+        type: integer
+      offline_after_seconds:
+        type: integer
       online_active:
+        type: integer
+      online_window_seconds:
+        description: |-
+          OnlineWindowSeconds and OfflineAfterSeconds are the thresholds of the
+          state ladder: a heartbeat at most online_window_seconds old is online,
+          one older than offline_after_seconds is offline, stale in between.
         type: integer
       total:
         type: integer
@@ -24118,6 +24257,10 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: The caller requested this exclusion (separation of duties)
           schema:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
         "404":

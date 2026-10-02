@@ -235,6 +235,57 @@ Code: `pkg/domain/sensor/outbox.go` (`OutboxStats`, `Clamp`, `Warning`),
 `internal/infra/postgres/sensor_repository.go` (`UpdateHeartbeat`),
 `internal/infra/http/handler/sensor_handler.go` (`SensorOutboxResponse`).
 
+## Fleet health (Sensors page)
+
+`GET /api/v1/sensors`, `GET /api/v1/sensors/{id}` and `GET /api/v1/sensors/stats`
+carry a computed view of each sensor, so every client shows the same answer to
+"can this sensor take work, and if not, why". Nothing here is stored; it is
+computed on read (`pkg/domain/sensor/fleet_health.go`, `AssessHealth`).
+
+**State ladder** (`state`), first match wins:
+
+| State | When |
+|---|---|
+| `revoked`, `disabled` | admin status |
+| `never_connected` | no heartbeat yet |
+| `online` | last heartbeat within the online window |
+| `degraded` | heartbeating and at least one health reason |
+| `idle` | a one-shot (CI, `standalone`/`runner`) sensor between runs: it connects only while it runs, so no heartbeat is normal |
+| `stale` | older than the online window, within `WORKER_HEARTBEAT_TIMEOUT` |
+| `offline` | older than `WORKER_HEARTBEAT_TIMEOUT`, or marked offline by the health checker |
+
+The online window is three idle heartbeat intervals (`SENSOR_HEARTBEAT_INTERVAL`),
+at least 90s, at most the timeout. `GET /sensors/stats` returns both thresholds
+(`online_window_seconds`, `offline_after_seconds`) so clients can explain them.
+
+**Health reasons** (`health_reasons[]`: `code`, `severity`, `message`), listed
+whatever the state: `outbox_backlog` (results waiting over an hour),
+`outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
+7 days), `version_unsupported`, `no_tools` (a scanning daemon with no tools),
+`error_reported`. A heartbeating sensor with any reason is `degraded`.
+
+**Release channel**: `SENSOR_LATEST_VERSION` (default: the newest sensor release
+when the API was built, `none` turns it off) and `SENSOR_MIN_VERSION` (default
+none). `version` is normalized to one form (`0.4.2`, `v0.4.2` and `vv0.4.2` all
+read `v0.4.2`); `version_status` is `latest`, `update_available`, `unsupported`
+or `unknown` (no version, a dev build, or no channel). A git-describe build
+(`v0.4.2-3-gabc1234`) counts as its tag. Both settings are in the stats
+response (`latest_version`, `min_version`).
+
+**Other fields**: `key_expires_at`, `last_offline_at`, `last_error_at`,
+`started_at` and `uptime_seconds` (from the heartbeat's `uptime_seconds`, stored
+as `sensors.process_started_at`, migration 000249), `is_platform_sensor`.
+`ip_address` is the heartbeat's client address under the trusted-proxy rule
+(`SERVER_TRUSTED_PROXIES`): behind the built-in gateway it is the address the
+gateway saw (`X-Real-IP`), so a sensor running in a container on the platform
+host shows the container network's gateway address, which is where it really
+connects from.
+
+**Stats** count the same rows the list returns: the tenant's own sensors.
+Shared platform sensors (`is_platform_sensor`) are in neither; their capacity
+is `GET /api/v1/platform/stats`, shown on its own page. The stats also add `by_state` (every state, zeros included), `by_version_status`,
+`needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
+
 ## Protocol v2 results ingest
 
 [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (decisions in its §10.1).

@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
+	sensordom "github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/logger"
 	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 	"github.com/openctemio/api/pkg/validator"
@@ -533,8 +534,30 @@ func newSensorHandlerWithTemplates(
 		publicAPIURL = cfg.App.URL
 	}
 	h.SetPublicAPIURL(publicAPIURL)
+	h.SetHealthPolicy(sensorHealthPolicy(cfg, log))
 
 	return h
+}
+
+// sensorHealthPolicy maps the heartbeat settings and the sensor release
+// channel onto the fleet-health thresholds: offline after
+// WORKER_HEARTBEAT_TIMEOUT (what the health checker uses), online within
+// three idle heartbeat intervals (at least 90s).
+func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.HealthPolicy {
+	sc := cfg.SensorConfig
+	for name, v := range map[string]string{"SENSOR_LATEST_VERSION": sc.LatestVersion, "SENSOR_MIN_VERSION": sc.MinVersion} {
+		if v != "" && !sensordom.IsReleaseVersion(v) {
+			log.Warn("ignoring sensor release setting that is not a version (want e.g. v0.4.2, or none)",
+				"setting", name, "value", v)
+		}
+	}
+	offline := cfg.Worker.HeartbeatTimeout
+	return sensordom.HealthPolicy{
+		OnlineWindow:  sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
+		OfflineAfter:  offline,
+		LatestVersion: sc.LatestVersion,
+		MinVersion:    sc.MinVersion,
+	}.Normalized()
 }
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign

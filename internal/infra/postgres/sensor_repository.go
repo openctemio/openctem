@@ -364,6 +364,11 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    protocol_version = CASE WHEN $15::smallint > 0 THEN $15::smallint ELSE protocol_version END,
 		    protocol_client = CASE WHEN $15::smallint > 0 THEN NULLIF($16, '') ELSE protocol_client END,
 		    protocol_seen_at = CASE WHEN $15::smallint > 0 THEN NOW() ELSE protocol_seen_at END,
+		    -- Process start time from the reported uptime; 0 (not reported)
+		    -- keeps the stored value.
+		    process_started_at = CASE WHEN $17::bigint > 0
+		        THEN NOW() - make_interval(secs => $17::bigint::double precision)
+		        ELSE process_started_at END,
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -382,6 +387,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		heartbeatIP(hb.IPAddress),
 		outbox,
 		heartbeatProtocol(hb.Protocol), hb.UserAgent,
+		sensor.ClampUptime(hb.UptimeSeconds),
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -676,7 +682,8 @@ func (r *SensorRepository) selectQuery() string {
 		       total_findings, total_scans, error_count,
 		       created_at, updated_at, key_expires_at,
 		       outbox_stats, outbox_reported_at,
-		       protocol_version, protocol_client, protocol_seen_at
+		       protocol_version, protocol_client, protocol_seen_at,
+		       process_started_at
 		FROM sensors
 	`
 }
@@ -690,6 +697,10 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, filter.TenantID.String())
 		argIndex++
+	}
+
+	if filter.ExcludePlatform {
+		conditions = append(conditions, "is_platform_sensor = FALSE")
 	}
 
 	if filter.Type != nil {
@@ -797,6 +808,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		protocolVersion  sql.NullInt16
 		protocolUA       sql.NullString
 		protocolSeenAt   sql.NullTime
+		processStarted   sql.NullTime
 	)
 
 	err := row.Scan(
@@ -846,6 +858,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&protocolVersion,
 		&protocolUA,
 		&protocolSeenAt,
+		&processStarted,
 	)
 
 	if err != nil {
@@ -917,6 +930,9 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	}
 	if keyExpiresAt.Valid {
 		a.KeyExpiresAt = &keyExpiresAt.Time
+	}
+	if processStarted.Valid {
+		a.StartedAt = &processStarted.Time
 	}
 
 	if len(outboxStats) > 0 {
@@ -1224,6 +1240,8 @@ func (r *SensorRepository) GetTenantSensorStats(ctx context.Context, tenantID sh
 WITH tenant_sensors AS (
   SELECT id, status, health, type, execution_mode, current_jobs, last_seen_at
   FROM sensors
+  -- The same rows GET /sensors lists: the tenant's own sensors, without
+  -- shared platform sensors (those have their own page).
   WHERE tenant_id = $1 AND is_platform_sensor = FALSE
 )
 SELECT category, key, value FROM (

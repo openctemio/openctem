@@ -1,0 +1,304 @@
+package sensor
+
+import (
+	"testing"
+	"time"
+)
+
+var testNow = time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+
+func testPolicy() HealthPolicy {
+	return HealthPolicy{
+		OnlineWindow:     90 * time.Second,
+		OfflineAfter:     5 * time.Minute,
+		KeyExpiryWarning: 7 * 24 * time.Hour,
+		LatestVersion:    "v0.4.2",
+		MinVersion:       "v0.4.0",
+	}.Normalized()
+}
+
+func ago(d time.Duration) *time.Time {
+	t := testNow.Add(-d)
+	return &t
+}
+
+func daemon(lastSeen *time.Time) *Sensor {
+	return &Sensor{
+		Type:          SensorTypeWorker,
+		ExecutionMode: ExecutionModeDaemon,
+		Status:        SensorStatusActive,
+		Health:        SensorHealthOnline,
+		Tools:         []string{"nuclei"},
+		Version:       "v0.4.2",
+		LastSeenAt:    lastSeen,
+	}
+}
+
+func codes(rs []HealthReason) []HealthReasonCode {
+	out := make([]HealthReasonCode, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, r.Code)
+	}
+	return out
+}
+
+func hasCode(rs []HealthReason, c HealthReasonCode) bool {
+	for _, r := range rs {
+		if r.Code == c {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAssessHealth_StateLadder(t *testing.T) {
+	p := testPolicy()
+	cases := []struct {
+		name   string
+		sensor func() *Sensor
+		want   State
+	}{
+		{"online: heartbeat 10s ago", func() *Sensor { return daemon(ago(10 * time.Second)) }, StateOnline},
+		{"online at the window edge", func() *Sensor { return daemon(ago(90 * time.Second)) }, StateOnline},
+		{"stale: just past the online window", func() *Sensor { return daemon(ago(91 * time.Second)) }, StateStale},
+		{"stale at the offline edge", func() *Sensor { return daemon(ago(5 * time.Minute)) }, StateStale},
+		{"offline past the heartbeat timeout", func() *Sensor { return daemon(ago(5*time.Minute + time.Second)) }, StateOffline},
+		{"offline: checker marked it, time not yet past", func() *Sensor {
+			s := daemon(ago(2 * time.Minute))
+			s.Health = SensorHealthOffline
+			return s
+		}, StateOffline},
+		{"never connected", func() *Sensor { return daemon(nil) }, StateNeverConnected},
+		{"disabled wins over heartbeat", func() *Sensor {
+			s := daemon(ago(5 * time.Second))
+			s.Status = SensorStatusDisabled
+			return s
+		}, StateDisabled},
+		{"revoked wins over everything", func() *Sensor {
+			s := daemon(nil)
+			s.Status = SensorStatusRevoked
+			return s
+		}, StateRevoked},
+		{"CI runner between runs is idle, not offline", func() *Sensor {
+			s := daemon(ago(3 * time.Hour))
+			s.Type, s.ExecutionMode = SensorTypeRunner, ExecutionModeStandalone
+			return s
+		}, StateIdle},
+		{"CI runner during a run is online", func() *Sensor {
+			s := daemon(ago(20 * time.Second))
+			s.Type, s.ExecutionMode = SensorTypeRunner, ExecutionModeStandalone
+			return s
+		}, StateOnline},
+		{"CI runner that never ran", func() *Sensor {
+			s := daemon(nil)
+			s.Type, s.ExecutionMode = SensorTypeRunner, ExecutionModeStandalone
+			return s
+		}, StateNeverConnected},
+		{"heartbeating with an outbox backlog is degraded", func() *Sensor {
+			s := daemon(ago(5 * time.Second))
+			s.Outbox = &OutboxStats{PendingCount: 148, OldestAgeSeconds: 8040}
+			return s
+		}, StateDegraded},
+		{"stale stays stale even with problems", func() *Sensor {
+			s := daemon(ago(3 * time.Minute))
+			s.Outbox = &OutboxStats{DeadLetterCount: 2}
+			return s
+		}, StateStale},
+		{"heartbeat in the future (clock skew) counts as online", func() *Sensor {
+			future := testNow.Add(30 * time.Second)
+			return daemon(&future)
+		}, StateOnline},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.sensor().AssessHealth(testNow, p).State; got != c.want {
+				t.Errorf("state = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestAssessHealth_DegradedReasons(t *testing.T) {
+	p := testPolicy()
+
+	t.Run("healthy sensor has no reasons and an empty, non-nil list", func(t *testing.T) {
+		a := daemon(ago(5*time.Second)).AssessHealth(testNow, p)
+		if a.Reasons == nil || len(a.Reasons) != 0 {
+			t.Fatalf("reasons = %#v, want empty non-nil", a.Reasons)
+		}
+		if a.State != StateOnline {
+			t.Fatalf("state = %q", a.State)
+		}
+	})
+
+	t.Run("outbox: backlog, dead letters, evictions", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Outbox = &OutboxStats{PendingCount: 3, OldestAgeSeconds: 4000, DeadLetterCount: 1, EvictedCount: 2}
+		a := s.AssessHealth(testNow, p)
+		for _, c := range []HealthReasonCode{ReasonOutboxBacklog, ReasonOutboxDeadLetters, ReasonOutboxEvicted} {
+			if !hasCode(a.Reasons, c) {
+				t.Errorf("missing %s in %v", c, codes(a.Reasons))
+			}
+		}
+		if a.State != StateDegraded {
+			t.Errorf("state = %q", a.State)
+		}
+	})
+
+	t.Run("a small fresh outbox is fine", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Outbox = &OutboxStats{PendingCount: 2, OldestAgeSeconds: 30}
+		if a := s.AssessHealth(testNow, p); len(a.Reasons) != 0 || a.State != StateOnline {
+			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
+		}
+	})
+
+	t.Run("key expiring within 7 days", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		exp := testNow.Add(6 * 24 * time.Hour)
+		s.KeyExpiresAt = &exp
+		a := s.AssessHealth(testNow, p)
+		if !hasCode(a.Reasons, ReasonKeyExpiring) || a.State != StateDegraded {
+			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
+		}
+	})
+
+	t.Run("key expiring in 30 days is fine", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		exp := testNow.Add(30 * 24 * time.Hour)
+		s.KeyExpiresAt = &exp
+		if a := s.AssessHealth(testNow, p); len(a.Reasons) != 0 {
+			t.Errorf("reasons=%v", codes(a.Reasons))
+		}
+	})
+
+	t.Run("expired key is reported even when offline", func(t *testing.T) {
+		s := daemon(ago(time.Hour))
+		exp := testNow.Add(-time.Minute)
+		s.KeyExpiresAt = &exp
+		a := s.AssessHealth(testNow, p)
+		if a.State != StateOffline || !hasCode(a.Reasons, ReasonKeyExpired) {
+			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
+		}
+		if hasCode(a.Reasons, ReasonKeyExpiring) {
+			t.Error("an expired key is not also 'expiring'")
+		}
+	})
+
+	t.Run("version below the minimum", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Version = "0.3.0"
+		a := s.AssessHealth(testNow, p)
+		if a.VersionStatus != VersionUnsupported || !hasCode(a.Reasons, ReasonVersionUnsupported) || a.State != StateDegraded {
+			t.Errorf("version=%q state=%q reasons=%v", a.VersionStatus, a.State, codes(a.Reasons))
+		}
+		if a.Version != "v0.3.0" {
+			t.Errorf("normalized version = %q", a.Version)
+		}
+	})
+
+	t.Run("an available update is not a health problem", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Version = "v0.4.1"
+		a := s.AssessHealth(testNow, p)
+		if a.VersionStatus != VersionUpdateAvailable || len(a.Reasons) != 0 || a.State != StateOnline {
+			t.Errorf("version=%q state=%q reasons=%v", a.VersionStatus, a.State, codes(a.Reasons))
+		}
+	})
+
+	t.Run("a scanning daemon without tools", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Tools = nil
+		if a := s.AssessHealth(testNow, p); !hasCode(a.Reasons, ReasonNoTools) || a.State != StateDegraded {
+			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
+		}
+	})
+
+	t.Run("a collector needs no scan tools", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Type, s.Tools = SensorTypeCollector, nil
+		if a := s.AssessHealth(testNow, p); len(a.Reasons) != 0 {
+			t.Errorf("reasons=%v", codes(a.Reasons))
+		}
+	})
+
+	t.Run("sensor-reported error", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Health = SensorHealthError
+		s.StatusMessage = "trivy db download failed"
+		a := s.AssessHealth(testNow, p)
+		if !hasCode(a.Reasons, ReasonErrorReported) || a.State != StateDegraded {
+			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
+		}
+	})
+
+	t.Run("every reason has a severity and a message", func(t *testing.T) {
+		s := daemon(ago(5 * time.Second))
+		s.Tools, s.Version, s.Health = nil, "0.1.0", SensorHealthError
+		exp := testNow.Add(time.Hour)
+		s.KeyExpiresAt = &exp
+		s.Outbox = &OutboxStats{PendingCount: 1, OldestAgeSeconds: 9999, DeadLetterCount: 1, EvictedCount: 1}
+		for _, r := range s.AssessHealth(testNow, p).Reasons {
+			if r.Message == "" || (r.Severity != SeverityWarning && r.Severity != SeverityCritical) {
+				t.Errorf("reason %+v", r)
+			}
+		}
+	})
+}
+
+func TestAssessHealth_Uptime(t *testing.T) {
+	p := testPolicy()
+	s := daemon(ago(10 * time.Second))
+	started := testNow.Add(-(6*24*time.Hour + 3*time.Hour))
+	s.StartedAt = &started
+	a := s.AssessHealth(testNow, p)
+	if a.UptimeSeconds == nil {
+		t.Fatal("uptime missing for a heartbeating sensor")
+	}
+	// Up to the last heartbeat, not to now: what the sensor reported.
+	want := int64((6*24*time.Hour + 3*time.Hour - 10*time.Second).Seconds())
+	if *a.UptimeSeconds != want {
+		t.Errorf("uptime = %d, want %d", *a.UptimeSeconds, want)
+	}
+
+	off := daemon(ago(time.Hour))
+	off.StartedAt = &started
+	if a := off.AssessHealth(testNow, p); a.UptimeSeconds != nil {
+		t.Errorf("an offline sensor has no uptime, got %d", *a.UptimeSeconds)
+	}
+
+	none := daemon(ago(time.Second))
+	if a := none.AssessHealth(testNow, p); a.UptimeSeconds != nil {
+		t.Error("uptime invented for a sensor that never reported one")
+	}
+}
+
+func TestHealthPolicy_Normalized(t *testing.T) {
+	p := HealthPolicy{}.Normalized()
+	if p.OnlineWindow != DefaultOnlineWindow || p.OfflineAfter != DefaultOfflineAfter || p.KeyExpiryWarning != DefaultKeyExpiryWarning {
+		t.Errorf("defaults = %+v", p)
+	}
+	// The online window never exceeds the offline timeout.
+	p = HealthPolicy{OnlineWindow: 10 * time.Minute, OfflineAfter: time.Minute}.Normalized()
+	if p.OnlineWindow != time.Minute {
+		t.Errorf("online window = %s, want clamped to 1m", p.OnlineWindow)
+	}
+	// Versions are kept in normalized form; garbage is dropped.
+	p = HealthPolicy{LatestVersion: "0.4.2", MinVersion: "not-a-version"}.Normalized()
+	if p.LatestVersion != "v0.4.2" || p.MinVersion != "" {
+		t.Errorf("versions = %q / %q", p.LatestVersion, p.MinVersion)
+	}
+}
+
+func TestOnlineWindowFor(t *testing.T) {
+	// Never shorter than 90s; follows a slow idle heartbeat; never past the timeout.
+	if got := OnlineWindowFor(30*time.Second, 5*time.Minute); got != 90*time.Second {
+		t.Errorf("30s idle -> %s", got)
+	}
+	if got := OnlineWindowFor(60*time.Second, 5*time.Minute); got != 3*time.Minute {
+		t.Errorf("60s idle -> %s", got)
+	}
+	if got := OnlineWindowFor(5*time.Minute, 5*time.Minute); got != 5*time.Minute {
+		t.Errorf("5m idle -> %s", got)
+	}
+}

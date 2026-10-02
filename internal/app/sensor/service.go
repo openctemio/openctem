@@ -204,11 +204,15 @@ func (s *SensorService) ListSensors(ctx context.Context, input ListSensorsInput)
 	}
 
 	filter := sensordom.Filter{
-		TenantID:     &tenantID,
-		Capabilities: input.Capabilities,
-		Tools:        input.Tools,
-		Search:       input.Search,
-		HasCapacity:  input.HasCapacity,
+		TenantID: &tenantID,
+		// The tenant's own sensors. Shared platform sensors are not the
+		// tenant's to manage; their capacity has its own view (GET
+		// /platform/stats), and the sensor stats count the same rows.
+		ExcludePlatform: true,
+		Capabilities:    input.Capabilities,
+		Tools:           input.Tools,
+		Search:          input.Search,
+		HasCapacity:     input.HasCapacity,
 	}
 
 	if input.Type != "" {
@@ -345,6 +349,10 @@ type SensorHeartbeatData struct {
 	// (RFC-029 §5.3). Protocol 0 leaves the stored values untouched.
 	Protocol  int
 	UserAgent string
+
+	// UptimeSeconds is the process uptime the heartbeat reported; 0 when it
+	// did not report one. Clamped before it is stored.
+	UptimeSeconds int64
 }
 
 // UpdateHeartbeat updates sensor metrics from heartbeat.
@@ -413,6 +421,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Outbox:        outbox,
 		Protocol:      data.Protocol,
 		UserAgent:     sensordom.SanitizeUserAgent(data.UserAgent),
+		UptimeSeconds: sensordom.ClampUptime(data.UptimeSeconds),
 	})
 	if err != nil {
 		return err
@@ -1100,6 +1109,29 @@ func (s *SensorService) GetTenantSensorStats(ctx context.Context, tenantID strin
 		return nil, fmt.Errorf("failed to get tenant sensor stats: %w", err)
 	}
 	return stats, nil
+}
+
+// maxFleetListing bounds ListAllSensors: far above any real fleet, low enough
+// that a runaway tenant cannot make one stats request read without limit.
+const maxFleetListing = 5000
+
+// ListAllSensors returns the tenant's sensors (the rows GET /sensors lists),
+// page by page, up to maxFleetListing. Used for fleet-wide breakdowns that are
+// computed per sensor (the health state depends on the current time).
+func (s *SensorService) ListAllSensors(ctx context.Context, tenantID string) ([]*sensordom.Sensor, error) {
+	const perPage = 100
+	var all []*sensordom.Sensor
+	for page := 1; len(all) < maxFleetListing; page++ {
+		res, err := s.ListSensors(ctx, ListSensorsInput{TenantID: tenantID, Page: page, PerPage: perPage})
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, res.Data...)
+		if len(res.Data) < perPage || int64(len(all)) >= res.Total {
+			break
+		}
+	}
+	return all, nil
 }
 
 // GetPlatformStats returns aggregate statistics for platform sensors accessible to the tenant.
