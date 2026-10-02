@@ -42,6 +42,14 @@ func (r *FindingRepository) ListFindingGroups(
 }
 
 // statusCountCols returns the common status count columns for GROUP BY queries.
+// cveSeverityRank orders a finding's severity (this tenant's observation, then
+// the shared catalog) worst-first; groups take the worst of their findings.
+// 5 also covers info and anything unrecognized.
+const cveSeverityRank = `CASE COALESCE(f.severity, v.severity)
+				WHEN 'critical' THEN 1 WHEN 'high' THEN 2
+				WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
+			END`
+
 func statusCountCols() string {
 	return `
 		COUNT(*) as total,
@@ -212,26 +220,27 @@ func (r *FindingRepository) groupByCVE(
 	query := fmt.Sprintf(`
 		SELECT
 			f.cve_id as group_key,
-			COALESCE(v.title, f.cve_id) as label,
-			-- This tenant's observation first, the shared catalog second
-			-- (global-catalog-trust.md): v.severity is whatever the first
-			-- reporting tenant said, and is never NULL, so it used to win.
-			COALESCE(f.severity, v.severity) as severity,
-			COALESCE(MAX(f.cvss_score), v.cvss_score),
-			COALESCE(MAX(f.epss_score), v.epss_score),
-			(COALESCE(v.exploit_available, false) OR COALESCE(BOOL_OR(f.metadata->>'scanner_exploit_available' = 'true'), false)),
-			(COALESCE(BOOL_OR(f.is_in_kev), false) OR v.cisa_kev_date_added IS NOT NULL) as cisa_kev,
+			COALESCE(MAX(v.title), f.cve_id) as label,
+			-- One row per CVE: findings of the same CVE can differ in their
+			-- catalog link (vulnerability_id NULL vs set) and severity, and
+			-- grouping on those split one CVE into several groups with the
+			-- same key. Aggregate instead. Severity is the worst one, this
+			-- tenant's observation first and the shared catalog second
+			-- (global-catalog-trust.md).
+			(ARRAY['critical','high','medium','low','info'])[MIN(`+cveSeverityRank+`)] as severity,
+			COALESCE(MAX(f.cvss_score), MAX(v.cvss_score)),
+			COALESCE(MAX(f.epss_score), MAX(v.epss_score)),
+			(COALESCE(BOOL_OR(v.exploit_available), false) OR COALESCE(BOOL_OR(f.metadata->>'scanner_exploit_available' = 'true'), false)),
+			(COALESCE(BOOL_OR(f.is_in_kev), false) OR BOOL_OR(v.cisa_kev_date_added IS NOT NULL)) as cisa_kev,
 			%s
 		FROM findings f
 		LEFT JOIN vulnerabilities v ON v.id = f.vulnerability_id
 		WHERE f.tenant_id = $1 AND f.cve_id IS NOT NULL AND f.source != 'pentest' %s
-		GROUP BY f.cve_id, v.id, v.title, v.severity, f.severity, v.cvss_score, v.epss_score, v.exploit_available, v.cisa_kev_date_added
+		GROUP BY f.cve_id
 		ORDER BY
-			CASE COALESCE(f.severity, v.severity)
-				WHEN 'critical' THEN 1 WHEN 'high' THEN 2
-				WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
-			END,
-			COUNT(DISTINCT f.asset_id) DESC
+			MIN(`+cveSeverityRank+`),
+			COUNT(DISTINCT f.asset_id) DESC,
+			f.cve_id
 		LIMIT $%d OFFSET $%d
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
 
@@ -702,7 +711,9 @@ func (r *FindingRepository) FindRelatedCVEs(
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.cve_id = $2 AND f.component_id IS NOT NULL %s
 		)
-		SELECT f.cve_id, COALESCE(v.title, f.cve_id), COALESCE(f.severity, v.severity), COUNT(*) as finding_count
+		SELECT f.cve_id, COALESCE(MAX(v.title), f.cve_id),
+			(ARRAY['critical','high','medium','low','info'])[MIN(`+cveSeverityRank+`)],
+			COUNT(*) as finding_count
 		FROM findings f
 		JOIN source_components sc ON sc.component_id = f.component_id
 		LEFT JOIN vulnerabilities v ON v.id = f.vulnerability_id
@@ -712,13 +723,11 @@ func (r *FindingRepository) FindRelatedCVEs(
 			AND f.status IN ('new', 'confirmed', 'in_progress')
 			AND f.source != 'pentest'
 			%s
-		GROUP BY f.cve_id, v.id, v.title, v.severity, f.severity
+		GROUP BY f.cve_id
 		ORDER BY
-			CASE COALESCE(f.severity, v.severity)
-				WHEN 'critical' THEN 1 WHEN 'high' THEN 2
-				WHEN 'medium' THEN 3 ELSE 4
-			END,
-			COUNT(*) DESC
+			MIN(`+cveSeverityRank+`),
+			COUNT(*) DESC,
+			f.cve_id
 		LIMIT 10
 	`, sourceWhere, extraWhere)
 
