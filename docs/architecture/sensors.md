@@ -579,7 +579,7 @@ Content names: `trivy-db`, `trivy-java-db`, `nuclei-templates`,
 `semgrep-rules`. `managed: false` is content the tool fetches by itself (semgrep
 `--config auto`): shown, never flagged stale.
 
-**Storage.** Inside `sensors.reported_tools` (migration 000250): each tool's
+**Storage.** Inside `sensors.reported_tools` (the sensor-reported capabilities migration): each tool's
 `content` member, sanitized by `CapabilityReportInput.Sanitize` →
 `sanitizeToolContent` (names `[a-z0-9-]`, at most 8 per tool, version 128 /
 source 256 / error 256 bytes, a digest only when `sha256:<hex>`, timestamps no

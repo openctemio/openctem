@@ -1,7 +1,7 @@
 -- Scanner content (docs/rfcs/RFC-031-managed-sensor-updates.md): the data a
 -- sensor's tools scan with (trivy DB, nuclei templates, semgrep rules): the
 -- tenant's content policy and the refresh_content command. What a sensor
--- reports is stored inside sensors.reported_tools (000250: each tool's
+-- reports is stored inside sensors.reported_tools (the sensor_reported_capabilities migration: each tool's
 -- "content" member), so no column is added here.
 --
 -- Additive: a new table, one more allowed command type, an index.
