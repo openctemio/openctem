@@ -13,9 +13,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LoginForm } from './login-form'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
+import { useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 
 vi.mock('../api/use-auth-providers')
 vi.mock('@/features/sso/api/use-sso-api')
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
+}))
 const loginAction = vi.fn()
 const verifyMfaAction = vi.fn()
 const startMfaEnrollmentAction = vi.fn()
@@ -258,5 +263,44 @@ describe('LoginForm two-factor step', () => {
     expect(confirmMfaEnrollmentAction).toHaveBeenCalledWith('654321')
     expect(finishMfaEnrollmentAction).toHaveBeenCalledTimes(1)
     expect(startMfaEnrollmentAction).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ?error= used to be shown verbatim, so a crafted link put any text on the
+// sign-in page. Only a known code's message is shown now.
+describe('LoginForm ?error= message', () => {
+  beforeEach(() => {
+    setAuthProviders(null)
+    mockUseTenantSSOProviders.mockReturnValue({
+      data: undefined,
+    } as ReturnType<typeof useTenantSSOProviders>)
+    vi.mocked(toast.error).mockClear()
+  })
+  afterEach(() => {
+    vi.mocked(useSearchParams).mockImplementation(
+      () => new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>
+    )
+  })
+
+  const withParams = (q: string) =>
+    vi
+      .mocked(useSearchParams)
+      .mockImplementation(
+        () => new URLSearchParams(q) as unknown as ReturnType<typeof useSearchParams>
+      )
+
+  it('shows the message of a known code', () => {
+    withParams('error=callback_failed')
+    render(<LoginForm />)
+    expect(toast.error).toHaveBeenCalledWith(
+      'Sign-in could not be completed. Try again, or contact your administrator.'
+    )
+  })
+
+  it('never shows attacker-chosen text', () => {
+    withParams('error=' + encodeURIComponent('Account locked. Call +1 555 0100 now'))
+    render(<LoginForm />)
+    expect(toast.error).toHaveBeenCalledTimes(1)
+    expect(toast.error).toHaveBeenCalledWith('Sign-in failed. Try again.')
   })
 })

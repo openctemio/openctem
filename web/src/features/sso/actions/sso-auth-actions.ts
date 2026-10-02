@@ -18,6 +18,7 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
 import { setServerCookie } from '@/lib/cookies-server'
@@ -240,7 +241,7 @@ export async function initiateSSOLogin(
   const result = await getSSOAuthorizeUrl(provider, orgSlug, redirectTo)
 
   if (!result.success) {
-    redirect(`/login?error=${encodeURIComponent(result.error)}&org=${encodeURIComponent(orgSlug)}`)
+    redirect(loginErrorHref('start_failed', { org: orgSlug }))
   }
 
   redirect(result.data.authorizationUrl)
