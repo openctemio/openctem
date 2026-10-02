@@ -310,7 +310,7 @@ export function ThreatActorsPanel() {
 }
 
 // ── Detail sheet ────────────────────────────────────────────────────────────
-function ThreatActorDetailSheet({
+export function ThreatActorDetailSheet({
   actor,
   open,
   onOpenChange,
