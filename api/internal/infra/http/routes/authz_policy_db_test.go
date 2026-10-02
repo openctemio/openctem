@@ -411,7 +411,7 @@ func TestAuthzPolicy_SCIMTokensAreOwnerOnly_DB(t *testing.T) {
 }
 
 // Custom templates are trusted code (owner decision 2026-10-02, migration
-// 000261): a template decides which hosts a sensor contacts and what it
+// 000262): a template decides which hosts a sensor contacts and what it
 // sends. Members and viewers read templates and sources; only owners and
 // administrators write them, and only they may embed one in a command.
 func TestAuthzPolicy_CustomTemplatesAreAdminOnly_DB(t *testing.T) {

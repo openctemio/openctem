@@ -300,7 +300,7 @@ the billing page in the UI.
 > **A stored credential goes only where someone entitled to it pointed it.**
 > A sync decrypts the source's `credential_id` and sends it to the source's
 > URL (bearer/basic/API key, git token or SSH key, S3 keys). Members used to
-> hold `scans:sources:write` (removed by migration `000261`, see rule 10) and
+> hold `scans:sources:write` (removed by migration `000262`, see rule 10) and
 > still hold `scans:secret_store:write`; a custom role may carry both. The
 > route gates alone would then let its holder send any stored secret to a
 > server they run. `template.SourceService` therefore checks, on create and
@@ -1034,7 +1034,7 @@ Tenable.sc's RBAC.
     contacts and what it sends, so only owners and administrators author one:
     `scans:templates:write` (scanner templates) and `scans:sources:write`
     (template sources, which pull templates from a URL) are owner/admin only;
-    migration `000261` removed both from member. Members and viewers keep
+    migration `000262` removed both from member. Members and viewers keep
     `scans:templates:read` / `scans:sources:read` and pick approved templates
     for a scan by id (`scanner_config.custom_template_ids`). `POST
     /api/v1/commands` refuses a payload that embeds `custom_templates`

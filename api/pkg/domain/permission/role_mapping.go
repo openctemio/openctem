@@ -198,7 +198,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScanProfilesRead, ScanProfilesWrite,
 		// Template sources and scanner templates: read only. A custom
 		// template is code the sensors run, so writing one is owner/admin
-		// only (owner decision 2026-10-02, migration 000261).
+		// only (owner decision 2026-10-02, migration 000262).
 		SourcesRead,
 		ToolsRead,
 		TenantToolsRead, TenantToolsWrite,
