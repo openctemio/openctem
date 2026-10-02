@@ -763,6 +763,10 @@ type Services struct {
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *app.SAMLService
 
+	// Admin-console SAML / identity-provider changes wait for an owner of
+	// the organization (RFC-022).
+	SSOChange *app.SSOChangeService
+
 	// SCIM 2.0 provisioning (RFC-009)
 	SCIMToken        *scim.TokenService
 	SCIMProvisioning *scim.ProvisioningService
@@ -1958,6 +1962,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
+
+	// A platform administrator's SAML / identity-provider change waits for an
+	// owner of the organization; owners are told in-app (and by email, wired
+	// in main once the email service exists).
+	s.SSOChange = app.NewSSOChangeService(repos.SSOChange, s.SAML, s.SSO, repos.Tenant, repos.Tenant, log)
+	s.SSOChange.SetNotificationService(s.Notification)
 
 	// Wire the SSO-path checker so TenantService can refuse enabling sso_enforced
 	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so

@@ -27,8 +27,14 @@ default** — an operator enables SAML only after validating it against their Id
 | `default_role` | role for auto-provisioned users (`admin`/`member`/`viewer`; never `owner`) |
 | `auto_provision`, `enabled` | provision-on-login + master switch |
 
-Admin API (JWT, owner/admin): `GET`/`PUT`/`DELETE /api/v1/settings/saml`. The
-PUT validates the certificate (parseable PEM X.509) and the role.
+Admin API (platform admin console, RFC-022):
+`GET`/`PUT`/`DELETE /api/v1/admin/tenants/{tenantId}/sso/saml`. The PUT
+validates the certificate (parseable PEM X.509) and the role. On an
+organization that has an owner, the PUT does **not** change the live config: it
+stores a pending change (202) that an owner approves or rejects (RFC-022
+revision 7; see `sso-authentication.md`). The owner sees the new signing
+certificate's SHA-256 to compare with their IdP. An organization without an
+owner yet gets it applied directly.
 
 ## SP metadata
 

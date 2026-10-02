@@ -51,6 +51,9 @@ const (
 	TypeCampaignMemberRoleChange = "campaign_member_role_change"
 	TypeSLABreach                = "sla_breach"
 	TypeSystemAlert              = "system_alert"
+	// TypeSSOChangePending tells an organization owner that a platform
+	// administrator proposed an SSO change that waits for their approval.
+	TypeSSOChangePending = "sso_change_pending"
 )
 
 // Notification represents an in-app notification.
@@ -255,7 +258,7 @@ func IsValidType(t string) bool {
 		TypeAssetDiscovered,
 		TypeMemberInvited, TypeMemberJoined, TypeRoleChanged,
 		TypeCampaignMemberAdded, TypeCampaignMemberRemoved, TypeCampaignMemberRoleChange,
-		TypeSLABreach, TypeSystemAlert:
+		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending:
 		return true
 	}
 	return false

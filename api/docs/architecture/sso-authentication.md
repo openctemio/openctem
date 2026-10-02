@@ -82,6 +82,24 @@ required" guard. The owner break-glass at login is unchanged. The
 `sso_enabled` / `sso_provider` / `sso_config_url` security fields were removed:
 they were written but never read by the login path.
 
+### Changes wait for an owner of the organization (RFC-022 revision 7)
+
+The platform administrator configures SSO, but cannot change who can sign in to
+an organization that already has an owner. A SAML config save
+(`PUT .../sso/saml`) or an identity-provider create/update
+(`POST`/`PUT .../sso/identity-providers`) is stored as a pending change
+(`sso_pending_changes`, 202) and every active owner is notified (in-app
+`sso_change_pending`, plus email when SMTP is configured; never a secret). An
+owner approves or rejects it under Settings › SSO approvals
+(`/api/v1/tenants/{t}/settings/sso/changes/{id}/approve|reject`, owner only,
+re-checked in the database); approval writes the live config and marks the
+change approved in one transaction. Changes expire after 7 days; a newer
+submission supersedes an older one. An organization with no active owner yet
+(first-time setup) gets the change applied directly. Deleting a SAML config or
+an identity provider, SSO enforcement and verified domains apply directly.
+Code: `internal/app/auth/sso_change.go`, `internal/infra/postgres/sso_change_repository.go`,
+`internal/infra/http/handler/sso_change_handler.go`.
+
 ## Configuration resolution (tenant → env fallback)
 
 `SSOService.resolveProvider(tenantID, provider)` returns the **effective**

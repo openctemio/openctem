@@ -163,6 +163,12 @@ func registerAdminRoutes(
 				r.PUT("/{tenantId}/sso/saml", h.SAML.SetConfig, write("organization.saml_update")...)
 				r.DELETE("/{tenantId}/sso/saml", h.SAML.DeleteConfig, write("organization.saml_delete")...)
 			}
+			// SAML and identity-provider creates/updates from here wait for an
+			// owner of the organization (unless it has no owner yet); the
+			// admin sees what is pending.
+			if h.SSOChange != nil {
+				r.GET("/{tenantId}/sso/changes", h.SSOChange.AdminList, read...)
+			}
 			if h.SSO != nil {
 				r.GET("/{tenantId}/sso/identity-providers", h.SSO.ListProviders, read...)
 				r.POST("/{tenantId}/sso/identity-providers", h.SSO.CreateProvider, write("organization.idp_create")...)
