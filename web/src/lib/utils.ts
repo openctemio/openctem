@@ -206,7 +206,7 @@ function escapeCSVField(value: string): string {
   // @, tab, or CR is interpreted as a formula by Excel/Sheets and can execute
   // (e.g. =cmd|'/C calc'!A1). Scanner- and user-controlled strings end up in
   // exports, so prefix such values with a single quote to force a literal.
-  if (/^[=+\-@\t\r]/.test(v)) {
+  if (/^\s*[=+\-@\t\r]/.test(v)) {
     v = "'" + v
   }
   // If value contains comma, quote, or newline, wrap in quotes and escape internal quotes

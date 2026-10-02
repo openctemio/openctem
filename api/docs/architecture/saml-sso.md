@@ -46,6 +46,14 @@ is the shared tail for any externally-authenticated identity:
   invite / SCIM-provisioned user, so it can later set a password or be claimed);
 - **account-takeover guard** — a password-backed local account is **rejected**
   (a federated assertion must not log into someone's password account);
+- an **existing** account is admitted only when it is already a member of the
+  organization **and** its email domain is DNS-verified for that organization.
+  Membership alone is not enough: users are global, an organization can make
+  someone a member (accepted invitation, SCIM, admin add) without owning their
+  identity, and the session is exchangeable for every organization the account
+  belongs to. Without the domain check, an organization holding its own IdP
+  signing key could sign in as any passwordless member and pivot into their
+  other organizations;
 - a brand-new email is admitted only through just-in-time provisioning:
   `auto_provision` on, the email domain DNS-verified for the organization, and
   inside the organization's `Security.AllowedDomains` (RFC-025). Otherwise the

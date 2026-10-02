@@ -176,35 +176,69 @@ type ChainVerifyResult struct {
 	OK       bool
 }
 
+// chainPageSize is how many chain rows are loaded per keyset page while
+// walking a chain. It bounds memory per page; it does NOT bound how much of the
+// chain is walked.
+const chainPageSize = 1000
+
+// walkChain calls fn for every chain entry of tenantID in chain_position order,
+// loading the chain one keyset page at a time. maxEntries <= 0 walks the whole
+// chain; a positive value stops after that many entries.
+//
+// The chain used to be read with a single LIMIT 10000 query ordered oldest
+// first. Once a tenant (or the system chain, which takes every login) passed
+// 10,000 entries, everything written after that was never verified again — the
+// oldest rows were re-checked every hour while the newest, the ones an intruder
+// would edit, were never looked at. Rebaseline had the same cap, so re-signing
+// a long chain rewrote the first 10,000 rows and left the 10,001st pointing at
+// a hash that no longer existed.
+func (s *AuditService) walkChain(ctx context.Context, tenantID shared.ID, maxEntries int, fn func(auditdom.ChainEntry) error) error {
+	var after int64
+	seen := 0
+	for {
+		page := chainPageSize
+		if maxEntries > 0 && maxEntries-seen < page {
+			page = maxEntries - seen
+		}
+		if page <= 0 {
+			return nil
+		}
+		entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, after, page)
+		if err != nil {
+			return fmt.Errorf("list chain entries: %w", err)
+		}
+		for _, e := range entries {
+			if err := fn(e); err != nil {
+				return err
+			}
+			after = e.ChainPosition
+			seen++
+		}
+		if len(entries) < page {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+}
+
 // VerifyChain walks the audit_log_chain entries for a tenant in
 // chain_position order and confirms each stored hash matches the hash
 // recomputed from the original audit_logs row. A single tampered audit
 // row surfaces as (at least) one break; downstream entries typically
 // break too because prev_hash no longer links.
 //
-// Limit bounds memory for large tenants; pagination support is a
-// follow-up. Zero/negative limit means "use default 10_000". Values
-// above maxVerifyChainLimit are clamped — same cap is also enforced at
-// the handler and repository layers (defense in depth, closes CodeQL
-// go/uncontrolled-allocation-size sink at the make() site).
+// limit <= 0 walks the whole chain (what the periodic verifier does); a
+// positive limit verifies only the first limit entries. The chain is read in
+// keyset pages, so memory is bounded by the page size, not the chain length.
 func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limit int) (*ChainVerifyResult, error) {
-	const maxVerifyChainLimit = 10_000
-	if limit <= 0 {
-		limit = maxVerifyChainLimit
-	} else if limit > maxVerifyChainLimit {
-		limit = maxVerifyChainLimit
-	}
-	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list chain entries: %w", err)
-	}
-
 	res := &ChainVerifyResult{
 		TenantID: tenantID.String(),
-		Total:    len(entries),
 	}
 	var prevStored string
-	for _, e := range entries {
+	err := s.walkChain(ctx, tenantID, limit, func(e auditdom.ChainEntry) error {
+		res.Total++
 		// 1. Fetch the original audit_log. If it's gone, flag it — a
 		//    deleted row is a tamper signal (FK ON DELETE RESTRICT
 		//    blocks it in production but not in every path).
@@ -228,7 +262,7 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 				Reason:        "audit_log_missing",
 			})
 			prevStored = e.Hash
-			continue
+			return nil //nolint:nilerr // a missing source row is reported as a break, and the walk continues
 		}
 
 		// 2. Recompute hash from the audit_log fields + stored prev_hash.
@@ -264,6 +298,10 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 			res.Verified++
 		}
 		prevStored = e.Hash
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	res.OK = len(res.Breaks) == 0
 	return res, nil
@@ -341,28 +379,22 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 	s.chainMu.Lock()
 	defer s.chainMu.Unlock()
 
-	const maxRebaselineLimit = 10_000
-	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, maxRebaselineLimit)
-	if err != nil {
-		return nil, fmt.Errorf("list chain entries: %w", err)
-	}
-
 	rb := auditdom.ChainRebaseline{
-		ID:           shared.NewID(),
-		TenantID:     tenantID,
-		EntriesTotal: len(entries),
+		ID:       shared.NewID(),
+		TenantID: tenantID,
 	}
 	if id, err := shared.IDFromString(actorID); err == nil && !id.IsZero() {
 		rb.ActorID = &id
 	}
 
 	prev := ""
-	for _, e := range entries {
+	err := s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
+		rb.EntriesTotal++
 		log, err := s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
 		if err != nil || log == nil {
 			// A missing source row is a real tamper signal — refuse to
 			// re-baseline over it. Nothing has been written yet.
-			return nil, fmt.Errorf("cannot re-baseline: %w: audit log %s (position %d)",
+			return fmt.Errorf("cannot re-baseline: %w: audit log %s (position %d)",
 				auditdom.ErrChainSourceMissing, e.AuditLogID.String(), e.ChainPosition)
 		}
 		payload := fmt.Sprintf("%s|%s|%s|%s",
@@ -384,6 +416,10 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 		}
 		prev = newHash
 		rb.LastChainPosition = e.ChainPosition
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	if err := s.auditRepo.ApplyChainRebaseline(ctx, rb); err != nil {
@@ -391,7 +427,7 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 	}
 	return &RebaselineResult{
 		RebaselineID:     rb.ID.String(),
-		EntriesTotal:     len(entries),
+		EntriesTotal:     rb.EntriesTotal,
 		EntriesRewritten: len(rb.Rewrites),
 	}, nil
 }

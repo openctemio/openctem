@@ -2470,6 +2470,7 @@ func TestSSOService_CompleteFederatedLogin_ReusesPasswordlessUser(t *testing.T) 
 
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), userRepo,
 		newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	svc.SetDomainVerifier(ssoUnitVerifier{"example.com": true})
 	tn := createTestTenant("acme")
 
 	res, err := svc.CompleteFederatedLogin(context.Background(), tn, "invited@example.com", "Invited", "member", false)

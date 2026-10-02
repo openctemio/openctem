@@ -100,24 +100,33 @@ make dev
 
 ### Installation
 
+Commit-time git hooks are the repository's `.githooks/` (shared by `api/` and
+`web/`). Enable them once, from the repository root:
+
 ```bash
-# Install pre-commit hooks (auto-installs dependencies on Linux)
-make pre-commit-install
+make hooks        # git config core.hooksPath .githooks (make setup does this too)
 ```
 
-This command automatically:
-- Installs `pip` (if on Ubuntu/Debian)
-- Installs `pre-commit` tool
-- Installs `Go` (if not present)
-- Installs `betterleaks` for secret detection
-- Installs `trivy` for vulnerability scanning
-- Installs `hadolint` for Dockerfile linting
+`.githooks/pre-commit` runs `gofmt -l` on staged Go files (and type-check +
+lint-staged for staged `web/` files); `.githooks/commit-msg` rejects AI
+attribution lines.
+
+The heavier security hooks in `api/.pre-commit-config.yaml` are run **on demand**,
+not on every commit. To install their tools:
+
+```bash
+make pre-commit-install   # in api/
+```
+
+This installs (if missing) `pip` (Ubuntu/Debian), `pre-commit`, Go, `betterleaks`,
+`trivy` and `hadolint`, then enables `.githooks`. It does **not** run
+`pre-commit install`: that command refuses to work while `core.hooksPath` is set.
 
 ### Usage
 
 | Command | Description |
 |---------|-------------|
-| `make pre-commit-run` | Run all hooks on all files |
+| `make pre-commit-run` | Run all hooks in `api/.pre-commit-config.yaml` on all files |
 | `make pre-commit-update` | Update hooks to latest versions |
 | `make security-scan` | Full security scan (betterleaks + gosec + trivy) |
 | `make secrets` | Run betterleaks only |
@@ -143,8 +152,8 @@ Installs:
 # 1. Install tools
 make install-tools
 
-# 2. Install pre-commit hooks
-make pre-commit-install
+# 2. Enable the git hooks (from the repository root)
+make -C .. hooks
 
 # 3. Setup database
 make db-setup-dev
@@ -206,7 +215,7 @@ Database configuration is loaded from `.env` file:
 
 ### Pre-commit installation fails
 
-If `make pre-commit-install` fails:
+If `make pre-commit-install` fails while installing tools:
 1. Ensure you're on a supported platform (Ubuntu/Debian or macOS)
 2. On Ubuntu, the Makefile will auto-install pip
 3. On macOS, ensure Homebrew is installed

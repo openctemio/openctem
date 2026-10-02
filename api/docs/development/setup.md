@@ -8,12 +8,21 @@
 
 ## Quick Setup
 
+The API is the `api/` directory of the
+[`openctemio/openctem`](https://github.com/openctemio/openctem) monorepo; the web
+console is `web/`. Every command on this page runs **in `api/`** (the compose
+files, `.env.example` and this Makefile are there, not at the repository root).
+From the root, `make setup` installs both components and enables the git hooks
+(`.githooks/`), `make dev-api` / `make dev-web` run each side, and
+`make api-<target>` runs any target below. See
+[Repositories](repositories.md) for the layout.
+
 ### Option 1: Docker (Recommended)
 
 ```bash
 # 1. Clone
 git clone https://github.com/openctemio/openctem.git
-cd openctem
+cd openctem/api   # the API lives in api/ of the openctem monorepo
 
 # 2. Setup env
 cp .env.example .env
@@ -28,7 +37,7 @@ make docker-dev
 ```bash
 # 1. Clone
 git clone https://github.com/openctemio/openctem.git
-cd openctem
+cd openctem/api   # the API lives in api/ of the openctem monorepo
 
 # 2. Install tools
 make install-tools

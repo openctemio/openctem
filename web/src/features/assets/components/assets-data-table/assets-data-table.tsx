@@ -1,5 +1,6 @@
 'use client'
 
+import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import React, { useState, useMemo, useCallback } from 'react'
 import {
   ColumnDef,
@@ -320,17 +321,11 @@ export function AssetsDataTable({
       tags: asset.tags?.join(', '),
       createdAt: asset.createdAt,
     }))
-    const csv = [
-      Object.keys(data[0] || {}).join(','),
-      ...data.map((row) => Object.values(row).join(',')),
-    ].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${assetType}-assets.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const csv = buildCsv(
+      Object.keys(data[0] || {}),
+      data.map((row) => Object.values(row))
+    )
+    downloadCsv(csv, `${assetType}-assets.csv`)
     toast.success('Exported to CSV')
   }, [filteredAssets, assetType])
 

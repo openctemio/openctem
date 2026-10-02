@@ -28,9 +28,10 @@ type AuditChainVerifyControllerConfig struct {
 	// compliance regime demands tighter MTTD for tamper events.
 	Interval time.Duration
 
-	// PerTenantLimit is the maximum chain entries walked per tenant per
-	// run. Matches the AuditService cap (10_000). Memory-bound; raise
-	// only after benchmarking.
+	// PerTenantLimit caps the chain entries walked per tenant per run.
+	// 0 (the default) walks the whole chain. The chain is read in keyset
+	// pages, so memory does not grow with chain length; a positive cap
+	// leaves every entry past it unverified, so only set one deliberately.
 	PerTenantLimit int
 
 	Logger *logger.Logger
@@ -87,9 +88,6 @@ func NewAuditChainVerifyController(
 	}
 	if cfg.Interval == 0 {
 		cfg.Interval = time.Hour
-	}
-	if cfg.PerTenantLimit == 0 {
-		cfg.PerTenantLimit = 10_000
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = logger.NewNop()

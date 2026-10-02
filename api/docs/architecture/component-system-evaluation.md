@@ -89,8 +89,8 @@ Actual:
 | **No depth filtering** | LOW | Cannot query `?depth=1` for direct only |
 
 ### Handler Code Location
-- `/home/ubuntu/projects/openctemio/api/internal/infra/http/handler/component_handler.go` (lines 34-54)
-- `/home/ubuntu/projects/openctemio/api/internal/infra/http/handler/vulnerability_handler.go` (lines 224-320)
+- `api/internal/infra/http/handler/component_handler.go` (lines 34-54)
+- `api/internal/infra/http/handler/vulnerability_handler.go` (lines 224-320)
 
 ---
 
@@ -110,8 +110,8 @@ Actual:
 | **No component-finding link** | MEDIUM | Findings and components are siloed |
 
 ### UI Files
-- `/home/ubuntu/projects/openctemio/ui/src/features/components/components/component-table.tsx`
-- `/home/ubuntu/projects/openctemio/ui/src/features/components/types/component.types.ts`
+- `web/src/features/components/components/component-table.tsx`
+- `web/src/features/components/types/component.types.ts`
 
 ---
 
@@ -319,9 +319,9 @@ api/internal/infra/postgres/component_repository.go # Add depth filter
 
 ### Medium-term (P3)
 ```
-ui/src/features/components/components/dependency-tree.tsx # New component
-ui/src/features/components/api/component-api.types.ts     # Update types
-ui/src/features/components/components/component-table.tsx # Add depth column
+web/src/features/components/components/dependency-tree.tsx # New component
+web/src/features/components/api/component-api.types.ts     # Update types
+web/src/features/components/components/component-table.tsx # Add depth column
 ```
 
 ---

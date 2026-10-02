@@ -106,6 +106,7 @@ var (
 	ErrSSODomainNotAllowed             = auth.ErrSSODomainNotAllowed
 	ErrAccountLinkRequiresVerification = auth.ErrAccountLinkRequiresVerification
 	ErrSSOFederatedTakeover            = auth.ErrSSOFederatedTakeover
+	ErrSSOFederatedDomainUnverified    = auth.ErrSSOFederatedDomainUnverified
 	ErrSSOExchangeFailed               = auth.ErrSSOExchangeFailed
 	ErrSSOInvalidDefaultRole           = auth.ErrSSOInvalidDefaultRole
 	ErrSSOInvalidRedirectURI           = auth.ErrSSOInvalidRedirectURI

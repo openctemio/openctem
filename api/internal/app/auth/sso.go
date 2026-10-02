@@ -1271,6 +1271,23 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant,
 		}
 	}
 
+	// Same provider type, but the login cannot be matched to the IdP the
+	// account is bound to: the account has no recorded issuer (legacy,
+	// Keycloak-synced, or created without an id_token), or this login carried no
+	// id_token. Every Okta/generic OIDC IdP collapses to the same provider type,
+	// so without a binding the type match proves nothing — any organization's
+	// IdP could assert this email. Require the organization to have DNS-proven
+	// the email domain before adopting (and, below, binding) the account.
+	if existingProvider == expectedProvider {
+		if bound := existingUser.FederatedIssuer(); bound == nil || *bound == "" || userInfo.Issuer == "" {
+			if err := s.requireFederatedDomainProof(ctx, t, userInfo.Email); err != nil {
+				s.logger.Warn("SSO login blocked: account has no matching IdP binding and the email domain is not DNS-verified for this organization",
+					"sso_provider", expectedProvider)
+				return nil, fmt.Errorf("%w: %w", ErrAccountLinkRequiresVerification, err)
+			}
+		}
+	}
+
 	if userInfo.Issuer != "" {
 		if bound := existingUser.FederatedIssuer(); bound != nil && *bound != "" {
 			if *bound != userInfo.Issuer {
@@ -1463,6 +1480,31 @@ var ErrSSOFederatedTakeover = errors.New("email is registered with a password; f
 // malicious tenant from forging an assertion for another tenant's user.
 var ErrSSOFederatedNotMember = errors.New("federated login not permitted: user is not a member of this organization")
 
+// ErrSSOFederatedDomainUnverified is returned when a federated login matches an
+// existing account whose email domain the organization has not DNS-verified:
+// the organization's IdP cannot vouch for an identity on a domain it does not
+// own.
+var ErrSSOFederatedDomainUnverified = errors.New("federated login not permitted: email domain is not verified for this organization")
+
+// requireFederatedDomainProof reports whether the organization t has DNS-proven
+// the domain of email. Fail-closed: an unparseable email, an unwired or failing
+// verifier, or an unverified domain all refuse.
+func (s *SSOService) requireFederatedDomainProof(ctx context.Context, t *tenantdom.Tenant, email string) error {
+	at := strings.LastIndex(email, "@")
+	if t == nil || at < 0 {
+		return ErrSSOFederatedDomainUnverified
+	}
+	emailDomain := strings.ToLower(strings.TrimSpace(email[at+1:]))
+	if emailDomain == "" || s.domainVerifier == nil {
+		return ErrSSOFederatedDomainUnverified
+	}
+	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, t.ID().String(), emailDomain)
+	if err != nil || !verified {
+		return ErrSSOFederatedDomainUnverified
+	}
+	return nil
+}
+
 // CompleteFederatedLogin issues an OpenCTEM session for an externally
 // authenticated identity (e.g. a validated SAML assertion). It finds-or-creates
 // a claimable passwordless user, blocks takeover of password-backed local
@@ -1497,6 +1539,19 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 					"user_id", u.ID().String(), "tenant_id", t.ID().String())
 				return nil, ErrSSOFederatedNotMember
 			}
+		}
+		// Membership alone does not let this organization's IdP speak for the
+		// account. Users are global: an organization can make someone a member
+		// (an accepted invitation, SCIM, an admin add) without owning their
+		// identity, and a session minted here is exchangeable for every other
+		// organization the account belongs to. So the organization must have
+		// DNS-proven the email domain — the same proof the OIDC path demands
+		// before it claims an existing passwordless account
+		// (requireClaimableOwnershipProof) and that JIT demands for new users.
+		if err := s.requireFederatedDomainProof(ctx, t, email); err != nil {
+			s.logger.Warn("federated login refused: email domain is not DNS-verified for this organization",
+				"user_id", u.ID().String(), "tenant_id", t.ID().String())
+			return nil, err
 		}
 		syncFederatedProfile(u, name)
 		u.UpdateLastLogin()
