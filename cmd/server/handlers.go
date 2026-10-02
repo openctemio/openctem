@@ -423,6 +423,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// SSO handler (always initialized - uses DB-stored provider configs)
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
+		// Identity-provider changes go to the organization's audit log.
+		handlers.SSO.SetAuditService(svc.Audit)
 	}
 
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
@@ -435,6 +437,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Verified-domain handler (SSO P1 domain-ownership verification)
 	if svc.DomainVerify != nil {
 		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
+		handlers.VerifiedDomain.SetAuditService(svc.Audit)
 	}
 
 	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the
@@ -448,6 +451,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 		// SP entity ID / ACS URL come from APP_URL, never from client headers.
 		handlers.SAML.SetPublicURL(cfg.App.URL)
+		handlers.SAML.SetAuditService(svc.Audit)
 		if cfg.App.URL == "" && cfg.IsProduction() {
 			log.Warn("saml: APP_URL is not set; SP URLs fall back to the request Host (forwarded headers only from SERVER_TRUSTED_PROXIES). Set APP_URL to the public API origin.")
 		}

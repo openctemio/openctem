@@ -102,6 +102,11 @@ type CreateUserInput struct {
 type ProvisionedUser struct {
 	User       *userdom.User
 	Membership *tenantdom.Membership
+	// EffectiveRole is the role the user actually has in the organization
+	// after the grant (the highest granted role, as login and the member list
+	// report it). It can differ from Membership.Role(), the coarse label: the
+	// system admin RBAC role keeps a "member" label.
+	EffectiveRole string
 	// EmailSent is true when the set-password link was emailed to the user.
 	EmailSent bool
 	// SetupToken is set only when the link was NOT emailed: it is returned once
@@ -199,6 +204,12 @@ func (s *UserProvisioningService) CreateUser(ctx context.Context, in CreateUserI
 		return nil, err
 	}
 	result.Membership = membership
+	result.EffectiveRole = membership.Role().String()
+	if effective, gerr := s.tenants.GetMembership(ctx, u.ID(), tenantID); gerr == nil && effective != nil {
+		result.EffectiveRole = effective.Role().String()
+	} else if gerr != nil {
+		s.logger.Warn("read effective role of created user", "tenant_id", tenantID.String(), "error", gerr)
+	}
 
 	actx.TenantID = tenantID.String()
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, u.ID().String()).

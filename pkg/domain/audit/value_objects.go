@@ -169,6 +169,18 @@ const (
 	ActionTemplateSourceCredentialAttached Action = "template_source.credential_attached"
 	ActionTemplateSourceCredentialDetached Action = "template_source.credential_detached"
 
+	// Organization SSO trust (SAML, OIDC identity providers, verified
+	// domains). Usually changed by a platform administrator on the
+	// organization's behalf, and always recorded in the organization's log.
+	ActionSSOSAMLConfigUpdated       Action = "sso.saml_config_updated"
+	ActionSSOSAMLConfigDeleted       Action = "sso.saml_config_deleted"
+	ActionSSOIdentityProviderCreated Action = "sso.identity_provider_created"
+	ActionSSOIdentityProviderUpdated Action = "sso.identity_provider_updated"
+	ActionSSOIdentityProviderDeleted Action = "sso.identity_provider_deleted"
+	ActionSSOVerifiedDomainAdded     Action = "sso.verified_domain_added"
+	ActionSSOVerifiedDomainVerified  Action = "sso.verified_domain_verified"
+	ActionSSOVerifiedDomainDeleted   Action = "sso.verified_domain_deleted"
+
 	// Group actions
 	ActionGroupCreated Action = "group.created"
 	ActionGroupUpdated Action = "group.updated"
@@ -339,6 +351,9 @@ func (a Action) IsValid() bool {
 		ActionCredentialRevealed,
 		ActionTemplateSourceCredentialAttached, ActionTemplateSourceCredentialDetached,
 		ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
+		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
+		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
+		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
@@ -441,6 +456,10 @@ func (a Action) Category() string {
 		return "mcp"
 	case ActionAuditChainRebaselined:
 		return "audit"
+	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
+		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
+		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted:
+		return "sso"
 	}
 	return "unknown"
 }
@@ -486,6 +505,9 @@ const (
 	ResourceTypeMCPTool          ResourceType = "mcp_tool"
 	ResourceTypeMCPPrompt        ResourceType = "mcp_prompt"
 	ResourceTypeAPIKey           ResourceType = "api_key"
+	ResourceTypeSAMLConfig       ResourceType = "saml_config"
+	ResourceTypeIdentityProvider ResourceType = "identity_provider"
+	ResourceTypeVerifiedDomain   ResourceType = "verified_domain"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
 	ResourceTypeAuditChain     ResourceType = "audit_chain"
@@ -510,6 +532,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
+		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource:
 		return true
 	}
@@ -575,7 +598,10 @@ func SeverityForAction(a Action) Severity {
 		return SeverityCritical
 
 	// High - privilege changes and pipeline failures
-	case ActionUserSuspended, ActionUserDeactivated,
+	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
+		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
+		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,

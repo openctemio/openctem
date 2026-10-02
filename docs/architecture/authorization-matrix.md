@@ -522,7 +522,15 @@ tenant, and **clears the user id** (the principal is the admin identity, not an
 organization member, and those handlers write `created_by` columns that
 reference `users(id)`). Writes are
 recorded in `admin_audit_logs`, and in the organization's own audit log with
-`actor_email = platform-admin:<email>` and `actor_id` NULL.
+`actor_email = platform-admin:<email>`, `actor_id` NULL and `actor_ip` the
+resolved client IP (forwarding headers only from a trusted proxy). The
+organization's log gets: `sso.saml_config_updated` / `_deleted`,
+`sso.identity_provider_created` / `_updated` / `_deleted`,
+`sso.verified_domain_added` / `_verified` / `_deleted` (severity high; written
+by the SAML, SSO and verified-domain handlers), `tenant.settings_updated` for
+SSO enforcement, and `user.created` for console-created users. Client secrets
+and certificates are never logged — an IdP update records
+`client_secret_changed`, a SAML save records the certificate's SHA-256.
 
 | Endpoint | Required Role |
 |----------|---------------|
