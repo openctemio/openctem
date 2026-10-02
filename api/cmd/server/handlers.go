@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -248,6 +249,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		EASM:          handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),

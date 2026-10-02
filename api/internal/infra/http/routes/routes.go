@@ -62,6 +62,7 @@ type Handlers struct {
 	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
 	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
 	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
+	EASM             *handler.EASMHandler             // RFC-036 overview; nil if not initialized
 	Docs             *handler.DocsHandler             // API documentation handler
 	Command          *handler.CommandHandler          // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
@@ -636,6 +637,9 @@ func Register(
 	// Attack Surface routes (tenant from JWT token)
 	if h.AttackSurface != nil {
 		registerAttackSurfaceRoutes(router, h.AttackSurface, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASM != nil {
+		registerEASMRoutes(router, h.EASM, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Command routes (tenant from JWT token)

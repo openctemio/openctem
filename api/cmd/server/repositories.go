@@ -180,6 +180,7 @@ type Repositories struct {
 	VerifiedDomain *postgres.VerifiedDomainRepository
 	CTMonitorState *postgres.CTMonitorStateRepository
 	Attribution    *postgres.AttributionRepository
+	EASMSummary    *postgres.EASMSummaryRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -400,6 +401,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),
+		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

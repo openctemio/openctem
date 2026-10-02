@@ -10794,6 +10794,63 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/easm/summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * EASM overview
+     * @description The external attack surface in one call: surface assets by type and internet-facing services, attribution (confirmed, awaiting review and the age of the oldest review item, dependency, monitor only, rejected), assets first seen in the last 7/30 days and since the latest CTEM cycle started, open external exposures by severity and type, the top open risks, and how fresh the Certificate-Transparency monitoring is. Narrowed to the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Summary']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/exposures': {
     parameters: {
       query?: never
@@ -30746,6 +30803,64 @@ export interface components {
       is_current?: boolean
       last_activity_at?: string
       user_agent?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock': {
+      candidate?: number
+      confirmed?: number
+      dependency?: number
+      legacy?: number
+      monitor_only?: number
+      needs_review?: number
+      rejected?: number
+      review_oldest_since?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock': {
+      by_severity?: {
+        [key: string]: number
+      }
+      by_type?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.TypeCount'][]
+      open?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock': {
+      ct_domains_watched?: number
+      ct_failing?: number
+      ct_never_succeeded?: number
+      ct_oldest_success?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.NewBlock': {
+      cycle_start?: string
+      last_7_days?: number
+      last_30_days?: number
+      since_cycle?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.Risk': {
+      asset_id?: string
+      asset_name?: string
+      id?: string
+      last_seen?: string
+      severity?: string
+      title?: string
+      type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.Summary': {
+      attribution?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock']
+      exposures?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock']
+      generated_at?: string
+      monitoring?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock']
+      new?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.NewBlock']
+      surface?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock']
+      top_risks?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Risk'][]
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock': {
+      by_type?: {
+        [key: string]: number
+      }
+      exposed_services?: number
+      total?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.TypeCount': {
+      count?: number
+      type?: string
     }
     'github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput': {
       /**
