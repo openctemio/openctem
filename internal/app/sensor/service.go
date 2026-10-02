@@ -107,7 +107,8 @@ func (s *SensorService) recordEvents(ctx context.Context, events []sensordom.Eve
 // operation they record, but a lost audit row must not be silent.
 func (s *SensorService) warnAudit(err error, action, sensorID string) {
 	if err != nil {
-		s.logger.Warn("failed to write sensor audit event", "action", action, "sensor_id", sensorID, "error", err)
+		s.logger.Warn("failed to write sensor audit event", "action", logger.SanitizeValue(action),
+			"sensor_id", logger.SanitizeValue(sensorID), "error", logger.SanitizeError(err))
 	}
 }
 

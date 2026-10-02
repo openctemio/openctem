@@ -1070,7 +1070,7 @@ func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden("").WriteJSON(w)
 	default:
-		h.logger.Error("service error", "error", err)
+		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }
