@@ -1,6 +1,6 @@
 # RFC-037 — Versioning rule and release train
 
-> Status: **Accepted** (owner decisions 2026-10-02, §8). Implementation in
+> Status: **Accepted** (owner decisions 2026-10-02, §8; design PR #787). Implementation in
 > progress (§9).
 > Scope: `openctemio/openctem` (api + web), `openctemio/sdk-go`,
 > `openctemio/sensor`, `openctemio/helm-charts`, `openctemio/docs`.
