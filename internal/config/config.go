@@ -201,7 +201,22 @@ type SensorConfigConfig struct {
 	// load" and advises HeartbeatLoadedInterval. SENSOR_HEARTBEAT_SLOW_QUERY
 	// (default 250ms).
 	HeartbeatSlowQuery time.Duration
+
+	// LatestVersion is the newest sensor release (SENSOR_LATEST_VERSION,
+	// default DefaultSensorLatestVersion). The Sensors page compares each
+	// sensor's version with it ("update available"). Empty turns the
+	// comparison off.
+	LatestVersion string
+	// MinVersion is the oldest sensor release still supported
+	// (SENSOR_MIN_VERSION, default empty = no minimum). A heartbeating sensor
+	// below it shows as degraded with "version unsupported".
+	MinVersion string
 }
+
+// DefaultSensorLatestVersion is the newest sensor release when this API was
+// built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
+// the platform is upgraded; set it to "none" to turn the comparison off.
+const DefaultSensorLatestVersion = "v0.4.2"
 
 // ServerConfig holds HTTP server configuration.
 type ServerConfig struct {
@@ -785,6 +800,8 @@ func Load() (*Config, error) {
 			HeartbeatMinInterval:    getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
 			HeartbeatMaxInterval:    getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
 			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
+			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
+			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", "")),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),
@@ -1537,6 +1554,16 @@ func resolveRenamedEnv(lookup func(string) (string, bool), set func(string, stri
 func dirExists(path string) bool {
 	st, err := os.Stat(path)
 	return err == nil && st.IsDir()
+}
+
+// sensorVersionSetting reads a SENSOR_*_VERSION value: "none" or "off" means
+// not set (so the compiled-in default can be turned off).
+func sensorVersionSetting(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "none", "off":
+		return ""
+	}
+	return strings.TrimSpace(v)
 }
 
 func getEnv(key, defaultValue string) string {

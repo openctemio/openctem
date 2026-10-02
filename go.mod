@@ -95,7 +95,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
@@ -109,5 +108,6 @@ require (
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.2.0
 	github.com/xuri/excelize/v2 v2.11.0
+	golang.org/x/mod v0.41.0
 	golang.org/x/tools v0.50.0
 )

@@ -24,17 +24,30 @@ type SensorHandler struct {
 	service         *app.SensorService
 	templateService *app.SensorConfigTemplateService
 	publicAPIURL    string // Public URL sensors will connect to (defaults to API_URL env var)
-	validator       *validator.Validator
-	logger          *logger.Logger
+	// healthPolicy holds the thresholds and release channel the computed
+	// state, health reasons and version status use.
+	healthPolicy sensor.HealthPolicy
+	now          func() time.Time
+	validator    *validator.Validator
+	logger       *logger.Logger
 }
 
 // NewSensorHandler creates a new SensorHandler.
 func NewSensorHandler(service *app.SensorService, v *validator.Validator, log *logger.Logger) *SensorHandler {
 	return &SensorHandler{
-		service:   service,
-		validator: v,
-		logger:    log.With("handler", "sensor"),
+		service:      service,
+		healthPolicy: sensor.DefaultHealthPolicy(),
+		now:          time.Now,
+		validator:    v,
+		logger:       log.With("handler", "sensor"),
 	}
+}
+
+// SetHealthPolicy sets the heartbeat windows and the sensor release channel
+// (SENSOR_LATEST_VERSION / SENSOR_MIN_VERSION) used for the computed state,
+// health reasons and version status. Unset values take the defaults.
+func (h *SensorHandler) SetHealthPolicy(p sensor.HealthPolicy) {
+	h.healthPolicy = p.Normalized()
 }
 
 // SetTemplateService injects the sensor config template service.
@@ -104,6 +117,34 @@ type SensorResponse struct {
 	// (RFC-029 §5.3); null before the first heartbeat that recorded it.
 	// deprecated is true for protocol v1: the sensor needs an upgrade.
 	Protocol *SensorProtocolResponse `json:"protocol"`
+
+	// State is the computed operational state: online, degraded, stale,
+	// offline, idle (a CI sensor between runs), never_connected, disabled or
+	// revoked. Online means a heartbeat within the online window (see
+	// GET /sensors/stats online_window_seconds); stale is older than that but
+	// within the heartbeat timeout; degraded is heartbeating with at least
+	// one health reason.
+	State string `json:"state" enums:"online,degraded,stale,offline,idle,never_connected,disabled,revoked"`
+	// HealthReasons lists the problems found (never null): an outbox backlog
+	// or lost results, an expired or expiring key, a version below the
+	// minimum, no scan tools, an error the sensor reported.
+	HealthReasons []SensorHealthReasonResponse `json:"health_reasons"`
+	// VersionStatus compares the version with the release channel.
+	VersionStatus string `json:"version_status" enums:"latest,update_available,unsupported,unknown"`
+	// KeyExpiresAt is when the current API key stops working; null = never.
+	KeyExpiresAt *string `json:"key_expires_at"`
+	// LastOfflineAt is when the sensor was last marked offline.
+	LastOfflineAt *string `json:"last_offline_at"`
+	// LastErrorAt is when the sensor last reported an error.
+	LastErrorAt *string `json:"last_error_at"`
+	// StartedAt is when the sensor process started (from the uptime its
+	// heartbeat reports); null when it never reported one.
+	StartedAt *string `json:"started_at"`
+	// UptimeSeconds is the process uptime at the last heartbeat; null unless
+	// the sensor is heartbeating and reports its uptime.
+	UptimeSeconds *int64 `json:"uptime_seconds"`
+	// IsPlatformSensor marks shared platform infrastructure.
+	IsPlatformSensor bool `json:"is_platform_sensor"`
 }
 
 // SensorProtocolResponse is the protocol telemetry of a sensor's last
@@ -114,6 +155,15 @@ type SensorProtocolResponse struct {
 	UserAgent  string `json:"user_agent"`
 	SeenAt     string `json:"seen_at"`
 	Deprecated bool   `json:"deprecated"`
+}
+
+// SensorHealthReasonResponse is one problem found on a sensor. code is
+// stable (clients map it to their own wording and fix actions); message is a
+// plain-English fallback.
+type SensorHealthReasonResponse struct {
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,version_unsupported,no_tools,error_reported"`
+	Severity string `json:"severity" enums:"warning,critical"`
+	Message  string `json:"message"`
 }
 
 // SensorOutboxResponse is a sensor's last reported outbox state. Values are
@@ -180,7 +230,7 @@ func (h *SensorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := &CreateSensorResponse{
-		Sensor: toSensorResponse(output.Sensor),
+		Sensor: h.toSensorResponse(output.Sensor),
 		APIKey: output.APIKey,
 	}
 
@@ -213,7 +263,7 @@ func (h *SensorHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(a))
 }
 
 // List handles GET /api/v1/sensors
@@ -273,7 +323,7 @@ func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]*SensorResponse, len(result.Data))
 	for i, a := range result.Data {
-		items[i] = toSensorResponse(a)
+		items[i] = h.toSensorResponse(a)
 	}
 
 	resp := map[string]any{
@@ -287,7 +337,8 @@ func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// SensorStatsResponse mirrors sensor.TenantSensorStats with snake_case JSON.
+// SensorStatsResponse is the fleet summary for the tenant's sensors. It
+// counts the same sensors GET /sensors lists.
 type SensorStatsResponse struct {
 	Total           int            `json:"total"`
 	ByStatus        map[string]int `json:"by_status"`
@@ -296,6 +347,30 @@ type SensorStatsResponse struct {
 	ByExecutionMode map[string]int `json:"by_execution_mode"`
 	ActiveJobs      int            `json:"active_jobs"`
 	OnlineActive    int            `json:"online_active"`
+
+	// ByState counts sensors per computed state (every state is present,
+	// zeros included); the same state GET /sensors returns per sensor.
+	ByState map[string]int `json:"by_state"`
+	// ByVersionStatus counts sensors per version status.
+	ByVersionStatus map[string]int `json:"by_version_status"`
+	// NeedsAttention counts enabled sensors with at least one health reason.
+	NeedsAttention int `json:"needs_attention"`
+	// CanTakeJobs counts sensors that can be dispatched work now: enabled,
+	// long-running (not one-shot CI) and online or degraded.
+	CanTakeJobs int `json:"can_take_jobs"`
+	// JobsRunning is the sum of current jobs on those sensors, JobSlots the
+	// sum of their max concurrent jobs.
+	JobsRunning int `json:"jobs_running"`
+	JobSlots    int `json:"job_slots"`
+	// LatestVersion and MinVersion are the release channel
+	// (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION); "" when not configured.
+	LatestVersion string `json:"latest_version"`
+	MinVersion    string `json:"min_version"`
+	// OnlineWindowSeconds and OfflineAfterSeconds are the thresholds of the
+	// state ladder: a heartbeat at most online_window_seconds old is online,
+	// one older than offline_after_seconds is offline, stale in between.
+	OnlineWindowSeconds int `json:"online_window_seconds"`
+	OfflineAfterSeconds int `json:"offline_after_seconds"`
 }
 
 // GetStats handles GET /api/v1/sensors/stats
@@ -317,6 +392,12 @@ func (h *SensorHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sensors, err := h.service.ListAllSensors(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
 	resp := SensorStatsResponse{
 		Total:           stats.Total,
 		ByStatus:        stats.ByStatus,
@@ -326,10 +407,43 @@ func (h *SensorHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		ActiveJobs:      stats.ActiveJobs,
 		OnlineActive:    stats.OnlineActive,
 	}
+	h.addFleetSummary(&resp, sensors)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// addFleetSummary fills the per-sensor breakdowns of the stats response.
+func (h *SensorHandler) addFleetSummary(resp *SensorStatsResponse, sensors []*sensor.Sensor) {
+	p := h.healthPolicy
+	now := h.now()
+	resp.ByState = make(map[string]int, len(sensor.AllStates()))
+	for _, st := range sensor.AllStates() {
+		resp.ByState[string(st)] = 0
+	}
+	resp.ByVersionStatus = map[string]int{
+		string(sensor.VersionLatest): 0, string(sensor.VersionUpdateAvailable): 0,
+		string(sensor.VersionUnsupported): 0, string(sensor.VersionUnknown): 0,
+	}
+	for _, a := range sensors {
+		hl := a.AssessHealth(now, p)
+		resp.ByState[string(hl.State)]++
+		resp.ByVersionStatus[string(hl.VersionStatus)]++
+		enabled := hl.State != sensor.StateDisabled && hl.State != sensor.StateRevoked
+		if enabled && len(hl.Reasons) > 0 {
+			resp.NeedsAttention++
+		}
+		if (hl.State == sensor.StateOnline || hl.State == sensor.StateDegraded) && !a.IsOneShot() {
+			resp.CanTakeJobs++
+			resp.JobsRunning += a.CurrentJobs
+			resp.JobSlots += a.MaxConcurrentJobs
+		}
+	}
+	resp.LatestVersion = p.LatestVersion
+	resp.MinVersion = p.MinVersion
+	resp.OnlineWindowSeconds = int(p.OnlineWindow / time.Second)
+	resp.OfflineAfterSeconds = int(p.OfflineAfter / time.Second)
 }
 
 // UpdateSensorRequest represents the request body for updating a sensor.
@@ -390,7 +504,7 @@ func (h *SensorHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(a))
 }
 
 // Delete handles DELETE /api/v1/sensors/{id}
@@ -478,7 +592,7 @@ func (h *SensorHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(a))
 }
 
 // SensorDisableRequest represents the request body for disabling a sensor.
@@ -517,7 +631,7 @@ func (h *SensorHandler) Disable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(a))
 }
 
 // SensorRevokeRequest represents the request body for revoking a sensor.
@@ -556,11 +670,18 @@ func (h *SensorHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toSensorResponse(a))
+	json.NewEncoder(w).Encode(h.toSensorResponse(a))
 }
 
-// toSensorResponse converts a sensor entity to response.
-func toSensorResponse(a *sensor.Sensor) *SensorResponse {
+// toSensorResponse converts a sensor entity to response, with the state,
+// health reasons and version status computed now under the handler's policy.
+func (h *SensorHandler) toSensorResponse(a *sensor.Sensor) *SensorResponse {
+	return sensorResponseAt(a, h.healthPolicy, h.now())
+}
+
+// sensorResponseAt converts a sensor entity to response at a given time.
+func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Time) *SensorResponse {
+	health := a.AssessHealth(now, policy)
 	resp := &SensorResponse{
 		ID:            a.ID.String(),
 		TenantID:      a.TenantID.String(),
@@ -575,7 +696,7 @@ func toSensorResponse(a *sensor.Sensor) *SensorResponse {
 		StatusMessage: a.StatusMessage,
 		APIKeyPrefix:  a.APIKeyPrefix,
 		Labels:        a.Labels,
-		Version:       a.Version,
+		Version:       health.Version, // one form: "v0.4.2"
 		Hostname:      a.Hostname,
 		// System metrics
 		CPUPercent:    a.CPUPercent,
@@ -592,6 +713,21 @@ func toSensorResponse(a *sensor.Sensor) *SensorResponse {
 		ErrorCount:    a.ErrorCount,
 		CreatedAt:     a.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:     a.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		// Computed fleet health
+		State:            string(health.State),
+		HealthReasons:    make([]SensorHealthReasonResponse, 0, len(health.Reasons)),
+		VersionStatus:    string(health.VersionStatus),
+		KeyExpiresAt:     rfc3339Ptr(a.KeyExpiresAt),
+		LastOfflineAt:    rfc3339Ptr(a.LastOfflineAt),
+		LastErrorAt:      rfc3339Ptr(a.LastErrorAt),
+		StartedAt:        rfc3339Ptr(a.StartedAt),
+		UptimeSeconds:    health.UptimeSeconds,
+		IsPlatformSensor: a.IsPlatformSensor,
+	}
+	for _, r := range health.Reasons {
+		resp.HealthReasons = append(resp.HealthReasons, SensorHealthReasonResponse{
+			Code: string(r.Code), Severity: r.Severity, Message: r.Message,
+		})
 	}
 
 	if a.IPAddress != nil {
@@ -625,6 +761,15 @@ func toSensorResponse(a *sensor.Sensor) *SensorResponse {
 	}
 
 	return resp
+}
+
+// rfc3339Ptr formats an optional time as RFC 3339 UTC, or nil.
+func rfc3339Ptr(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.UTC().Format(time.RFC3339)
+	return &s
 }
 
 // handleValidationError converts validation errors to API errors.

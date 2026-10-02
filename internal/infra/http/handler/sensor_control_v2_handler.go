@@ -204,6 +204,7 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		NetworkRxMBPS: req.NetworkRxMBPS,
 		NetworkTxMBPS: req.NetworkTxMBPS,
 		Outbox:        req.Outbox.toOutboxStats(),
+		UptimeSeconds: req.Uptime,
 		Protocol:      protocol,
 		UserAgent:     r.UserAgent(),
 	}
