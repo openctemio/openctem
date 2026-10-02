@@ -1652,11 +1652,6 @@ export const pipelineRunEndpoints = {
   get: (runId: string) => `/api/v1/pipeline-runs/${runId}`,
 
   /**
-   * Get step runs for a pipeline run
-   */
-  stepRuns: (runId: string) => `/api/v1/pipeline-runs/${runId}/steps`,
-
-  /**
    * Trigger a new pipeline run
    * Note: Uses /api/v1/pipelines/{id}/runs endpoint
    */
@@ -1666,11 +1661,6 @@ export const pipelineRunEndpoints = {
    * Cancel a running pipeline
    */
   cancel: (runId: string) => `/api/v1/pipeline-runs/${runId}/cancel`,
-
-  /**
-   * Retry a failed pipeline run
-   */
-  retry: (runId: string) => `/api/v1/pipeline-runs/${runId}/retry`,
 } as const
 
 /**

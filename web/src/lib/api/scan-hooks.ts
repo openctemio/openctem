@@ -441,20 +441,6 @@ export function useScanSessionStats(since?: string, config?: SWRConfiguration) {
 // DELETE. It had no callers. Cancel a run via pipelineRunEndpoints.cancel.
 
 /**
- * Retry a failed scan session
- */
-export function useRetryScanSession(sessionId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && sessionId ? `/api/v1/scan-sessions/${sessionId}/retry` : null,
-    async (url: string) => {
-      return post<ScanSession>(url, {})
-    }
-  )
-}
-
-/**
  * Invalidate scan sessions cache
  */
 export async function invalidateScanSessionsCache() {

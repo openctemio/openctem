@@ -326,20 +326,6 @@ export function useCancelPipelineRun(runId: string) {
   )
 }
 
-/**
- * Retry a failed pipeline run
- */
-export function useRetryPipelineRun(runId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && runId ? pipelineRunEndpoints.retry(runId) : null,
-    async (url: string) => {
-      return post<PipelineRun>(url, {})
-    }
-  )
-}
-
 // ============================================
 // SCAN MANAGEMENT HOOKS
 // ============================================

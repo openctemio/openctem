@@ -84,11 +84,6 @@ export {
   useUpdateCurrentUser,
 
   // User management hooks (admin)
-  useUser,
-  useUsers,
-  useCreateUser,
-  useUpdateUser,
-  useDeleteUser,
 
   // Tenant hooks (base)
   useTenants,
@@ -107,7 +102,6 @@ export {
   mutateMultiple,
   clearAllCache,
   optimisticUpdate,
-  useInfiniteUsers,
   useDependentData,
   usePolling,
 
@@ -191,22 +185,8 @@ export type {
 } from './security-endpoints'
 
 // ============================================
-// PROJECT ENDPOINTS & HOOKS
+// PROJECT TYPES
 // ============================================
-
-export { projectEndpoints } from './project-endpoints'
-
-export {
-  useProjects,
-  useProject,
-  useCreateProject,
-  useUpdateProject,
-  useDeleteProject,
-  getProjectsListKey,
-  getProjectKey,
-  invalidateProjectsCache,
-  defaultProjectSwrConfig,
-} from './project-hooks'
 
 export type {
   Project,
@@ -431,7 +411,6 @@ export {
   usePipelineRun,
   useTriggerPipelineRun,
   useCancelPipelineRun,
-  useRetryPipelineRun,
 
   // Scan management hooks
   useScanManagementStats,
