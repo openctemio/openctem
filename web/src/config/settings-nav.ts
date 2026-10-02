@@ -230,6 +230,17 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
       },
       {
+        // Owners approve or reject SSO changes the platform administrator
+        // proposed (RFC-022 revision 7); the page tells admins it is owner only.
+        id: 'sso-approvals',
+        title: 'SSO approvals',
+        description: 'Approve or reject sign-in changes proposed by the platform administrator.',
+        url: '/settings/sso-approvals',
+        icon: ShieldCheck,
+        permission: Permission.TeamUpdate,
+        keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
+      },
+      {
         id: 'api-keys',
         title: 'API keys',
         description: 'Keys for scripts and tools that call the API.',

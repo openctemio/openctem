@@ -146,6 +146,8 @@
   "settings.desc.authentication": "Xác thực hai lớp, thời lượng phiên và giới hạn đăng nhập.",
   "settings.item.scim": "Đồng bộ thư mục (SCIM)",
   "settings.desc.scim": "Cấp tài khoản thành viên từ nhà cung cấp định danh của bạn.",
+  "settings.item.sso-approvals": "Phê duyệt SSO",
+  "settings.desc.sso-approvals": "Phê duyệt hoặc từ chối thay đổi đăng nhập do quản trị viên nền tảng đề xuất.",
   "settings.item.api-keys": "Khóa API",
   "settings.desc.api-keys": "Khóa cho các script và công cụ gọi API.",
   "settings.item.mcp": "Truy cập AI (MCP)",
