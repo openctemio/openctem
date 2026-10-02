@@ -23,6 +23,11 @@ import (
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
+// sensorStaleTimeout is how long after its last heartbeat the health
+// controller marks a sensor offline. The doorbell never advises an interval
+// above half of it (heartbeatDoorbellConfig).
+const sensorStaleTimeout = 90 * time.Second
+
 // ddTenantSyncerAdapter adapts *defectdojo.SyncService (which returns a
 // SyncResult) to the scheduler's error-only TenantSyncer, so the controller
 // package need not import app/defectdojo.
@@ -218,7 +223,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.Audit,
 		&controller.SensorHealthControllerConfig{
 			Interval:     30 * time.Second,
-			StaleTimeout: 90 * time.Second,
+			StaleTimeout: sensorStaleTimeout,
 			Logger:       log.With("controller", "sensor-health"),
 		},
 	)
