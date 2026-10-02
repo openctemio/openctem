@@ -95,7 +95,7 @@ func TestContentService_RefreshSensor(t *testing.T) {
 	}
 	c := cmds.created[0]
 	if c.Type != command.CommandTypeRefreshContent || c.SensorID == nil || *c.SensorID != ok.ID || c.ExpiresAt == nil ||
-		c.ExpiresAt.Sub(time.Now()) < 23*time.Hour {
+		time.Until(*c.ExpiresAt) < 23*time.Hour {
 		t.Fatalf("command = %+v", c)
 	}
 	var payload struct {
