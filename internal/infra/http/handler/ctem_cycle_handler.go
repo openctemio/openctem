@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -206,8 +208,11 @@ func (h *CTEMCycleHandler) Update(w http.ResponseWriter, r *http.Request) {
 // enabling per-service cycle metrics and CTEM-correct targeted scoping
 // instead of "freeze everything the tenant owns".
 //
-// Fallback: when `in_scope_services` is empty, behaviour is unchanged —
-// every tenant asset is snapshotted and scope_target_id is NULL.
+// Entries that are not UUIDs (charters from before the service picker held
+// names) are skipped with a warning instead of failing the whole insert.
+//
+// Fallback: when `in_scope_services` is empty, or none of its entries is a
+// UUID, every tenant asset is snapshotted and scope_target_id is NULL.
 func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -238,7 +243,19 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 			"cycle_id", id, "error", err)
 		charterRaw = nil
 	}
-	inScopeServices := extractInScopeServices(charterRaw)
+	inScopeServices, droppedServices := partitionServiceIDs(extractInScopeServices(charterRaw))
+	if len(droppedServices) > 0 {
+		// Charters written before the service picker stored names, not IDs.
+		// One non-UUID entry used to fail the whole ::uuid[] cast, so the
+		// cycle activated with an empty snapshot. Snapshot from the valid
+		// IDs and say what was skipped.
+		h.logger.Warn("cycle charter in_scope_services has non-UUID entries; skipping them",
+			"cycle_id", sanitizeLogField(id),
+			"skipped_count", len(droppedServices),
+			"skipped", sanitizeLogField(strings.Join(capStrings(droppedServices, maxLoggedServiceIDs), ", ")),
+			"valid_count", len(inScopeServices),
+		)
+	}
 
 	var (
 		result     sql.Result
@@ -255,6 +272,7 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 			INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id, scope_target_id)
 			SELECT $1, bsa.asset_id, bsa.service_id
 			  FROM business_service_assets bsa
+			  JOIN business_services bs ON bs.id = bsa.service_id AND bs.tenant_id = $2
 			  JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $2
 			 WHERE bsa.service_id = ANY($3::uuid[])
 			ON CONFLICT DO NOTHING
@@ -307,6 +325,35 @@ func extractInScopeServices(raw []byte) []string {
 		}
 	}
 	return out
+}
+
+// maxLoggedServiceIDs bounds how many skipped charter entries a log line
+// carries.
+const maxLoggedServiceIDs = 10
+
+// partitionServiceIDs splits charter in_scope_services into entries that
+// parse as UUIDs (usable in the snapshot's ::uuid[] filter) and the rest.
+// When no valid entry remains, the caller falls back to the all-assets
+// snapshot, exactly as for an empty list.
+func partitionServiceIDs(ids []string) (valid, invalid []string) {
+	valid = make([]string, 0, len(ids))
+	for _, s := range ids {
+		// Canonical form only: uuid.Parse also takes "urn:uuid:..." which
+		// Postgres rejects, and that would fail the whole insert again.
+		if _, err := uuid.Parse(s); err != nil || len(s) != 36 {
+			invalid = append(invalid, s)
+			continue
+		}
+		valid = append(valid, s)
+	}
+	return valid, invalid
+}
+
+func capStrings(ss []string, n int) []string {
+	if len(ss) > n {
+		return ss[:n]
+	}
+	return ss
 }
 
 func scopeModeLabel(inScope []string) string {

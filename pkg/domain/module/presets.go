@@ -13,6 +13,10 @@ package module
 //      (Transitively — via TransitiveDependencies.)
 //   3. Every core module is implicitly enabled (admins cannot opt out).
 //   4. Preset IDs are unique.
+//   5. A preset that enables any scoping module (crown jewels, scope
+//      config, threat model, business services/units, attacker
+//      profiles) also enables ctem_cycles: the cycle is the object a
+//      scope is written for, so scoping without cycles has no anchor.
 //
 // Adding a preset: append to ModulePresets, add a row to the UI preset
 // picker, run tests. No migration needed — tenants pull fresh from Go.
@@ -217,7 +221,7 @@ var presetAssetInventory = ModulePreset{
 		// default-on so prior scope_config / attack_surface visibility is kept).
 		"business_units", "crown_jewels", "threat_model",
 		// Scoping — map assets to business context
-		"attack_surface", "scope_config", "business_services", "relationships",
+		"attack_surface", "scope_config", "ctem_cycles", "business_services", "relationships",
 		// Discovery
 		"components", "branches",
 		// Insights — asset-level reporting only
@@ -259,7 +263,7 @@ var presetVMEssentials = ModulePreset{
 		// Scoping — even a basic VM team needs an asset surface view
 		// to know "what's in scope this scan cycle". Skip business
 		// services + attacker profiles (those are CTEM-level concerns).
-		"attack_surface", "scope_config", "relationships",
+		"attack_surface", "scope_config", "ctem_cycles", "relationships",
 		// Discovery
 		"components", "branches", "credentials",
 		// Prioritization
@@ -304,7 +308,7 @@ var presetASM = ModulePreset{
 		// default-on so prior scope_config / attack_surface visibility is kept).
 		"business_units", "crown_jewels", "threat_model",
 		// Scoping (full — ASM is all about scoping)
-		"attack_surface", "scope_config", "business_services",
+		"attack_surface", "scope_config", "ctem_cycles", "business_services",
 		"relationships", "attacker_profiles",
 		// Discovery
 		"components", "credentials",
@@ -420,7 +424,7 @@ var presetASPM = ModulePreset{
 		// default-on so prior scope_config / attack_surface visibility is kept).
 		"business_units", "crown_jewels", "threat_model",
 		// Scoping — apps/services map
-		"attack_surface", "scope_config", "business_services", "relationships",
+		"attack_surface", "scope_config", "ctem_cycles", "business_services", "relationships",
 		// Discovery — the AppSec surface: components, repos, secrets
 		"components", "branches", "credentials",
 		// Prioritization — full app-finding lifecycle
@@ -466,7 +470,7 @@ var presetSBOM = ModulePreset{
 		// default-on so prior scope_config / attack_surface visibility is kept).
 		"business_units", "crown_jewels", "threat_model",
 		// Scoping — repos belong to apps/services, need that map
-		"attack_surface", "scope_config", "business_services", "relationships",
+		"attack_surface", "scope_config", "ctem_cycles", "business_services", "relationships",
 		// Discovery — component-heavy
 		"components", "branches", "credentials",
 		// Prioritization
@@ -511,7 +515,7 @@ var presetCSPM = ModulePreset{
 		// default-on so prior scope_config / attack_surface visibility is kept).
 		"business_units", "crown_jewels", "threat_model",
 		// Scoping
-		"attack_surface", "scope_config", "business_services", "relationships",
+		"attack_surface", "scope_config", "ctem_cycles", "business_services", "relationships",
 		// Discovery — cloud-native asset types
 		"components", "credentials",
 		// Prioritization
@@ -562,7 +566,7 @@ var presetCompliance = ModulePreset{
 		// default-on so prior scope_config / attack_surface visibility is kept).
 		"business_units", "crown_jewels", "threat_model",
 		// Scoping — controls audit specific assets
-		"attack_surface", "scope_config", "business_services",
+		"attack_surface", "scope_config", "ctem_cycles", "business_services",
 		// Compliance
 		"compliance",
 		// Validation
