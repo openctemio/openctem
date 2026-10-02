@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/notification"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
 )
 
 // In-app notifications are pushed over the WebSocket hub. These tests run the
@@ -31,9 +32,11 @@ import (
 //   - user-targeted: only that user, and nobody can subscribe to another
 //     user's channel;
 //   - group-targeted: only the group's members;
-//   - audience "all": every member, each on their own channel.
+//   - audience "all": every member, filtered by each one's preferences;
+//   - preferences (in-app off, muted type, minimum severity) apply the same
+//     way to the inbox list, the unread count and the push.
 //
-// Run with: go test -v ./tests/integration -run TestNotificationWS
+// Run with: go test -v ./tests/integration -run 'TestNotificationWS|TestNotificationPreferences'
 
 type wsHarness struct {
 	t        *testing.T
@@ -314,4 +317,172 @@ func TestNotificationWS_AudienceAllReachesEveryMemberOnOwnChannel(t *testing.T) 
 			t.Errorf("%s got it on %v, want own channel %s", name, got[0]["_channel"], want)
 		}
 	}
+}
+
+// visibleTo returns the titles in the user's inbox and the unread count.
+func (h *wsHarness) visibleTo(userID shared.ID) ([]string, int) {
+	h.t.Helper()
+	ctx := context.Background()
+	res, err := h.svc.ListNotifications(ctx, h.tenantID, userID, notification.ListFilter{}, pagination.New(1, 100))
+	if err != nil {
+		h.t.Fatalf("list: %v", err)
+	}
+	out := make([]string, 0, len(res.Data))
+	for _, n := range res.Data {
+		out = append(out, n.Title())
+	}
+	count, err := h.svc.GetUnreadCount(ctx, h.tenantID, userID)
+	if err != nil {
+		h.t.Fatalf("unread count: %v", err)
+	}
+	return out, count
+}
+
+func TestNotificationPreferences_AppliedToListCountAndPush(t *testing.T) {
+	inAppOff := false
+	high := notification.SeverityHigh
+
+	cases := []struct {
+		name  string
+		prefs app.UpdatePreferencesInput
+		// sent notifications (type, severity, title) and which titles the
+		// user must still see.
+		send []notification.NotificationParams
+		want []string
+	}{
+		{
+			name:  "in-app disabled",
+			prefs: app.UpdatePreferencesInput{InAppEnabled: &inAppOff},
+			send: []notification.NotificationParams{
+				{Title: "crit", Severity: notification.SeverityCritical},
+				{Title: "info", Severity: notification.SeverityInfo},
+			},
+			want: nil,
+		},
+		{
+			name:  "muted type",
+			prefs: app.UpdatePreferencesInput{MutedTypes: []string{notification.TypeScanCompleted}},
+			send: []notification.NotificationParams{
+				{Title: "scan-done", NotificationType: notification.TypeScanCompleted},
+				{Title: "scan-failed", NotificationType: notification.TypeScanFailed},
+			},
+			want: []string{"scan-failed"},
+		},
+		{
+			name:  "minimum severity high",
+			prefs: app.UpdatePreferencesInput{MinSeverity: &high},
+			send: []notification.NotificationParams{
+				{Title: "sev-critical", Severity: notification.SeverityCritical},
+				{Title: "sev-high", Severity: notification.SeverityHigh},
+				{Title: "sev-medium", Severity: notification.SeverityMedium},
+				{Title: "sev-info", Severity: notification.SeverityInfo},
+			},
+			want: []string{"sev-critical", "sev-high"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newWSHarness(t)
+			alice, bob := h.member("alice"), h.member("bob")
+			if _, err := h.svc.UpdatePreferences(context.Background(), h.tenantID, bob, tc.prefs); err != nil {
+				t.Fatalf("save preferences: %v", err)
+			}
+			a, b := h.watch(alice), h.watch(bob)
+
+			sent := make([]string, 0, len(tc.send))
+			for _, p := range tc.send {
+				p.Audience = notification.AudienceAll
+				h.notify(p)
+				sent = append(sent, p.Title)
+			}
+
+			// Bob (with the preference): list, badge and push all agree.
+			list, count := h.visibleTo(bob)
+			pushed := titles(b.events(pushWindow))
+			if !sameSet(list, tc.want) {
+				t.Errorf("bob list = %v, want %v", list, tc.want)
+			}
+			if count != len(tc.want) {
+				t.Errorf("bob unread count = %d, want %d", count, len(tc.want))
+			}
+			if !sameSet(pushed, tc.want) {
+				t.Errorf("bob push = %v, want %v", pushed, tc.want)
+			}
+
+			// Alice (defaults) still gets everything: the filter is per user.
+			list, count = h.visibleTo(alice)
+			if !sameSet(list, sent) || count != len(sent) {
+				t.Errorf("alice list = %v (unread %d), want all of %v", list, count, sent)
+			}
+			if pushed := titles(a.events(pushWindow)); !sameSet(pushed, sent) {
+				t.Errorf("alice push = %v, want %v", pushed, sent)
+			}
+		})
+	}
+}
+
+// The SQL filter is the twin of Preferences.Allows; check every combination
+// of stored preference and notification against the Go definition.
+func TestNotificationPreferences_SQLMatchesDomainRule(t *testing.T) {
+	h := newWSHarness(t)
+	ctx := context.Background()
+	severities := []string{
+		notification.SeverityCritical, notification.SeverityHigh, notification.SeverityMedium,
+		notification.SeverityLow, notification.SeverityInfo,
+	}
+	types := []string{notification.TypeFindingNew, notification.TypeScanFailed}
+	for _, typ := range types {
+		for _, sev := range severities {
+			h.notify(notification.NotificationParams{
+				Audience: notification.AudienceAll, NotificationType: typ, Severity: sev,
+				Title: typ + "/" + sev,
+			})
+		}
+	}
+
+	off, on := false, true
+	prefSets := []app.UpdatePreferencesInput{{InAppEnabled: &on}, {InAppEnabled: &off}}
+	for _, sev := range append([]string{""}, severities...) {
+		s := sev
+		prefSets = append(prefSets, app.UpdatePreferencesInput{MinSeverity: &s, MutedTypes: []string{notification.TypeScanFailed}})
+	}
+
+	for i, in := range prefSets {
+		uid := h.member(fmt.Sprintf("parity%d", i))
+		prefs, err := h.svc.UpdatePreferences(ctx, h.tenantID, uid, in)
+		if err != nil {
+			t.Fatalf("save preferences %d: %v", i, err)
+		}
+		var want []string
+		for _, typ := range types {
+			for _, sev := range severities {
+				if prefs.Allows(typ, sev) {
+					want = append(want, typ+"/"+sev)
+				}
+			}
+		}
+		got, count := h.visibleTo(uid)
+		if !sameSet(got, want) || count != len(want) {
+			t.Errorf("prefs %d (in_app=%v min=%q muted=%v): list %v (unread %d), want %v",
+				i, prefs.InAppEnabled(), prefs.MinSeverity(), prefs.MutedTypes(), got, count, want)
+		}
+	}
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, s := range a {
+		seen[s]++
+	}
+	for _, s := range b {
+		if seen[s] == 0 {
+			return false
+		}
+		seen[s]--
+	}
+	return true
 }

@@ -90,6 +90,7 @@ func (r *NotificationRepository) List(
 		FROM notifications n
 		LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.user_id = $2
 		LEFT JOIN notification_state ns ON ns.tenant_id = $1 AND ns.user_id = $2
+		LEFT JOIN notification_preferences np ON np.tenant_id = $1 AND np.user_id = $2
 		` + where + `
 		ORDER BY n.created_at DESC
 		LIMIT $` + fmt.Sprintf("%d", len(args)+1) + ` OFFSET $` + fmt.Sprintf("%d", len(args)+2)
@@ -142,11 +143,13 @@ func (r *NotificationRepository) UnreadCount(
 		FROM notifications n
 		LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.user_id = $2
 		LEFT JOIN notification_state ns ON ns.tenant_id = $1 AND ns.user_id = $2
+		LEFT JOIN notification_preferences np ON np.tenant_id = $1 AND np.user_id = $2
 		WHERE n.tenant_id = $1
 		  AND n.created_at > COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)
 		  AND nr.notification_id IS NULL
 		  AND n.created_at > NOW() - INTERVAL '30 days'
-		  AND (` + audienceClause + `)`
+		  AND (` + audienceClause + `)
+		  AND ` + preferenceFilter("n.notification_type", "n.severity")
 
 	var count int
 	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
@@ -156,8 +159,8 @@ func (r *NotificationRepository) UnreadCount(
 }
 
 // ListRecipients returns the active tenant members in the notification's
-// audience: the users a real-time push goes to. The audience rule is the one
-// List and UnreadCount apply,
+// audience whose preferences allow it: the users a real-time push goes to.
+// The audience and preference rules are the ones List and UnreadCount apply,
 // so a push never reaches anyone whose inbox would not show the notification.
 func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notification.Notification) ([]shared.ID, error) {
 	var audienceID *string
@@ -166,10 +169,11 @@ func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notifica
 		audienceID = &s
 	}
 
-	// $1 tenant, $2 audience, $3 audience_id.
+	// $1 tenant, $2 audience, $3 audience_id, $4 type, $5 severity.
 	query := `
 		SELECT tm.user_id
 		FROM tenant_members tm
+		LEFT JOIN notification_preferences np ON np.tenant_id = tm.tenant_id AND np.user_id = tm.user_id
 		WHERE tm.tenant_id = $1
 		  AND tm.status = 'active'
 		  AND (
@@ -180,9 +184,11 @@ func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notifica
 				INNER JOIN groups g ON g.id = gm.group_id
 				WHERE g.id = $3::uuid AND g.tenant_id = $1 AND g.is_active = true
 			))
-		  )`
+		  )
+		  AND ` + preferenceFilter("$4::text", "$5::text")
 
-	rows, err := r.db.QueryContext(ctx, query, n.TenantID(), n.Audience(), audienceID)
+	rows, err := r.db.QueryContext(ctx, query,
+		n.TenantID(), n.Audience(), audienceID, n.NotificationType(), n.Severity())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list notification recipients: %w", err)
 	}
@@ -364,11 +370,31 @@ func (r *NotificationRepository) buildAudienceClause() string {
 		`))`
 }
 
+// preferenceFilter returns the SQL predicate for "the user's notification
+// preferences allow a notification of type typeExpr and severity sevExpr".
+// It expects notification_preferences joined as np. With a LEFT JOIN a user
+// who never saved preferences gets the defaults: in-app on, nothing muted,
+// no severity floor. It is the SQL twin of notification.Preferences.Allows.
+func preferenceFilter(typeExpr, sevExpr string) string {
+	return `(COALESCE(np.in_app_enabled, TRUE)` +
+		` AND NOT COALESCE(np.muted_types @> jsonb_build_array(` + typeExpr + `), FALSE)` +
+		` AND (COALESCE(np.min_severity, '') = ''` +
+		` OR ` + severityRankSQL(sevExpr) + ` >= ` + severityRankSQL("np.min_severity") + `))`
+}
+
+// severityRankSQL mirrors notification.severityRank.
+func severityRankSQL(expr string) string {
+	return `(CASE ` + expr +
+		` WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3` +
+		` WHEN 'low' THEN 2 WHEN 'info' THEN 1 ELSE 0 END)`
+}
+
 func (r *NotificationRepository) buildWhereClause(tenantID, userID shared.ID, filter notification.ListFilter) (string, []any) {
 	args := []any{tenantID, userID}
 	audienceClause := r.buildAudienceClause()
 
-	where := `WHERE n.tenant_id = $1 AND n.created_at > NOW() - INTERVAL '30 days' AND (` + audienceClause + `)`
+	where := `WHERE n.tenant_id = $1 AND n.created_at > NOW() - INTERVAL '30 days' AND (` + audienceClause + `)` +
+		` AND ` + preferenceFilter("n.notification_type", "n.severity")
 
 	if filter.Severity != "" {
 		args = append(args, filter.Severity)

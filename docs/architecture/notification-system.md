@@ -438,10 +438,29 @@ are per user (`notification_reads`, `notification_state`,
 
 ### Who sees a notification
 
-A user sees a notification when they are in its audience. The same rule is
-applied by the inbox list (`NotificationRepository.List`), the unread badge
-(`NotificationRepository.UnreadCount`) and the real-time push
-(`NotificationRepository.ListRecipients`), so they never disagree.
+One rule decides it, applied in three places so they never disagree:
+
+| Path | Where |
+|------|-------|
+| Inbox list `GET /api/v1/notifications` | `NotificationRepository.List` |
+| Unread badge `GET /api/v1/notifications/unread-count` | `NotificationRepository.UnreadCount` |
+| Real-time push over the WebSocket | `NotificationRepository.ListRecipients` |
+
+A user sees a notification when they are in its audience **and** their
+preferences allow it:
+
+- `in_app_enabled = false` hides every in-app notification;
+- a type in `muted_types` is hidden;
+- a severity below `min_severity` is hidden (critical > high > medium > low > info).
+
+A user with no preferences row gets the defaults (everything shown). The SQL
+predicate (`preferenceFilter`) is the twin of `notification.Preferences.Allows`;
+`tests/integration/notification_ws_isolation_test.go` checks every combination
+against it.
+
+`email_digest` (`none` / `daily` / `weekly`) is stored but no digest sender
+exists yet, and no in-app notification is emailed individually, so the in-app
+filters above have no email path to apply to.
 
 ### Real-time push
 

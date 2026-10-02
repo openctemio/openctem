@@ -278,6 +278,17 @@ func severityRank(s string) int {
 	}
 }
 
+// Allows reports whether a notification of this type and severity should
+// reach the user in-app: the inbox list, the unread badge and the real-time
+// push. It is the single definition of what the stored preferences mean; the
+// repository's SQL filter mirrors it and is tested against it.
+func (p *Preferences) Allows(notifType, severity string) bool {
+	if p == nil {
+		return true
+	}
+	return p.inAppEnabled && !p.IsTypeMuted(notifType) && p.IsSeverityAllowed(severity)
+}
+
 // UserChannel is the WebSocket channel that carries one user's in-app
 // notifications within one tenant: "user:{tenant_id}:{user_id}". Only a
 // connection authenticated as that user in that tenant may subscribe to it.

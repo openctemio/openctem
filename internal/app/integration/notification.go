@@ -226,8 +226,9 @@ func (s *NotificationService) Notify(ctx context.Context, params notificationdom
 // It never uses a shared channel. The tenant channel reaches every member of
 // the tenant, and a group channel can be watched by people outside the group,
 // so a notification addressed to one user or one group sent there was readable
-// by everyone else in the tenant. The recipients are the audience the inbox
-// query uses, resolved by the repository.
+// by everyone else in the tenant. Fanning out per recipient also applies each
+// recipient's preferences (in-app off, muted types, minimum severity) to the
+// push, the same way the inbox list and unread count apply them.
 func (s *NotificationService) pushWebSocket(ctx context.Context, n *notificationdom.Notification) {
 	if s.wsHub == nil {
 		return
