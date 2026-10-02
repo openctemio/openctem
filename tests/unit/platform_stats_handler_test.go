@@ -287,3 +287,7 @@ func TestPlatformStatsHandler_GetStats_NoPlatformSensors(t *testing.T) {
 	assert.Equal(t, 0, resp.AvailableSlots)
 	assert.Empty(t, resp.TierStats, "tier_stats should be empty with no sensors")
 }
+
+func (m *mockSensorRepository) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
+	return map[string]bool{}, map[string]bool{}, nil
+}

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"slices"
 	"time"
 
 	auditapp "github.com/openctemio/api/internal/app/audit"
@@ -274,12 +275,18 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		a.Description = input.Description
 	}
 
-	if len(input.Capabilities) > 0 {
-		a.Capabilities = input.Capabilities
+	// Tools and capabilities are limits on what the sensor reports
+	// (RFC-029 §4.3.1). A list that is present replaces the limit; [] removes
+	// it (every tool / capability the sensor reports may be used). Absent
+	// (nil) leaves it as it is.
+	if input.Capabilities != nil && !slices.Equal(input.Capabilities, a.Capabilities) {
+		changes.Set("capabilities", a.Capabilities, input.Capabilities)
+		a.Capabilities = append([]string{}, input.Capabilities...)
 	}
 
-	if len(input.Tools) > 0 {
-		a.Tools = input.Tools
+	if input.Tools != nil && !slices.Equal(input.Tools, a.Tools) {
+		changes.Set("tools", a.Tools, input.Tools)
+		a.Tools = append([]string{}, input.Tools...)
 	}
 
 	// Revocation is permanent (ActivateSensor refuses it too). Without this a
@@ -353,6 +360,34 @@ type SensorHeartbeatData struct {
 	// UptimeSeconds is the process uptime the heartbeat reported; 0 when it
 	// did not report one. Clamped before it is stored.
 	UptimeSeconds int64
+
+	// Report is the capability report the heartbeat carried, untrusted; nil
+	// when it carried none. It is sanitized here against the tool catalog
+	// before it is stored (sensordom.CapabilityReportInput.Sanitize).
+	Report *sensordom.CapabilityReportInput
+}
+
+// sanitizeReport turns a heartbeat's capability report into what may be
+// stored: known tools and capabilities only, bounded sizes, clamped
+// concurrency. nil when there is nothing to store, or when the catalog
+// cannot be read (the stored report is then kept; the heartbeat itself
+// still succeeds).
+func (s *SensorService) sanitizeReport(ctx context.Context, a *sensordom.Sensor, in *sensordom.CapabilityReportInput) *sensordom.CapabilityReport {
+	if in == nil || in.IsEmpty() {
+		return nil
+	}
+	knownTools, knownCaps := map[string]bool{}, map[string]bool{}
+	if tools, caps := in.CatalogCandidates(); len(tools) > 0 || len(caps) > 0 {
+		var err error
+		knownTools, knownCaps, err = s.repo.KnownCapabilityNames(ctx, a.TenantID, tools, caps)
+		if err != nil {
+			s.logger.Warn("sensor capability report not stored: tool catalog unavailable",
+				"sensor_id", a.ID.String(), "error", err)
+			return nil
+		}
+	}
+	report := in.Sanitize(knownTools, knownCaps)
+	return &report
 }
 
 // UpdateHeartbeat updates sensor metrics from heartbeat.
@@ -422,6 +457,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Protocol:      data.Protocol,
 		UserAgent:     sensordom.SanitizeUserAgent(data.UserAgent),
 		UptimeSeconds: sensordom.ClampUptime(data.UptimeSeconds),
+		Report:        s.sanitizeReport(ctx, a, data.Report),
 	})
 	if err != nil {
 		return err

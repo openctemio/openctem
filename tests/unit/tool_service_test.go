@@ -2972,3 +2972,7 @@ func TestToolService_ListTenantToolConfigs_WithToolFilter(t *testing.T) {
 		t.Errorf("expected 1 config filtered by tool, got %d", result.Total)
 	}
 }
+
+func (m *toolSvcMockSensorRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
+	return map[string]bool{}, map[string]bool{}, nil
+}

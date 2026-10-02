@@ -294,7 +294,9 @@ func (r *ScanZoneRepository) UnassignSensor(ctx context.Context, tenantID, zoneI
 
 // RoutableSensors returns the sensors of each zone that can take a job now,
 // least busy first: fewest active commands pinned to it, then lowest
-// current_jobs/max_concurrent_jobs, then name.
+// current_jobs/effective capacity, then name. Tool and capacity are the
+// effective ones (what the sensor reports, narrowed by its settings;
+// RFC-029 §4.3.1); zone membership is never widened by a report.
 func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID shared.ID, zoneIDs []shared.ID, tool string) (map[shared.ID][]scanzone.SensorCandidate, error) {
 	out := make(map[shared.ID][]scanzone.SensorCandidate, len(zoneIDs))
 	if len(zoneIDs) == 0 {
@@ -305,7 +307,7 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		ids[i] = id.String()
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT zs.zone_id, s.id, s.name, s.current_jobs, s.max_concurrent_jobs,
+		SELECT zs.zone_id, s.id, s.name, s.current_jobs, s.effective_max_jobs,
 		       (SELECT count(*) FROM commands c
 		        WHERE c.tenant_id = $1 AND c.sensor_id = s.id
 		          AND c.status IN `+activeCommandStatuses+`) AS active_commands
@@ -318,9 +320,9 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		  AND s.last_seen_at IS NOT NULL
 		  AND (s.key_expires_at IS NULL OR s.key_expires_at > NOW())
 		  AND (s.execution_mode = 'daemon' OR s.type IN ('worker', 'collector'))
-		  AND ($3::text = '' OR $3::text = ANY(s.tools))
+		  AND ($3::text = '' OR $3::text = ANY(s.effective_tools))
 		ORDER BY zs.zone_id, active_commands ASC,
-		         (s.current_jobs::float / NULLIF(s.max_concurrent_jobs, 0)) ASC NULLS LAST,
+		         (s.current_jobs::float / NULLIF(s.effective_max_jobs, 0)) ASC NULLS LAST,
 		         s.name, s.id`,
 		tenantID.String(), pq.Array(ids), tool)
 	if err != nil {
