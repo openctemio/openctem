@@ -284,6 +284,8 @@ func registerSensorManagementRoutes(
 		// Activity timeline. Audit-log items are added only for callers that
 		// also hold audit:read (the handler checks it).
 		r.GET("/{id}/activity", h.Activity, middleware.Require(permission.SensorsRead))
+		// Heartbeat history (RFC-035): the Control channel sparkline.
+		r.GET("/{id}/heartbeat-history", h.HeartbeatHistory, middleware.Require(permission.SensorsRead))
 		// Manifest (RFC-033): the current one and its history.
 		r.GET("/{id}/manifest", h.Manifest, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}/manifests", h.Manifests, middleware.Require(permission.SensorsRead))
@@ -409,8 +411,10 @@ func registerPipelineRoutes(
 		r.GET("/", h.ListRuns, middleware.Require(permission.PipelinesRead))
 		r.GET("/{id}", h.GetRun, middleware.Require(permission.PipelinesRead))
 
-		// Write operations
-		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.PipelinesWrite))
+		// Write operations. Scan runs are pipeline runs, and this is how a
+		// scan run is stopped, so it also needs scans:write (owner decision
+		// D12, scans redesign 2026-10).
+		r.POST("/{id}/cancel", h.CancelRun, middleware.RequireAll(permission.PipelinesWrite, permission.ScansWrite))
 	}, tenantMiddlewares...)
 }
 

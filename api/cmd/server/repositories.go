@@ -97,7 +97,10 @@ type Repositories struct {
 	SensorAPIKey *postgres.SensorAPIKeyRepository
 	// SensorEvent is the sensor activity timeline (sensor_events).
 	SensorEvent *postgres.SensorEventRepository
-	Command     *postgres.CommandRepository
+	// SensorHeartbeatHistory is the per-sensor heartbeat history behind the
+	// Control channel sparkline (sensor_heartbeat_history, RFC-035).
+	SensorHeartbeatHistory *postgres.SensorHeartbeatHistoryRepository
+	Command                *postgres.CommandRepository
 	// SensorContentPolicy is the tenant scanner content policy (RFC-031).
 	SensorContentPolicy *postgres.SensorContentPolicyRepository
 	IngestJob           *postgres.IngestJobRepository
@@ -178,6 +181,7 @@ type Repositories struct {
 
 	// Domain-ownership verification (SSO P1, migration 000191)
 	VerifiedDomain *postgres.VerifiedDomainRepository
+	CTMonitorState *postgres.CTMonitorStateRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -318,13 +322,14 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Notification: postgres.NewNotificationRepository(db),
 
 		// Sensors & Commands
-		Sensor:              postgres.NewSensorRepository(db),
-		SensorAPIKey:        postgres.NewSensorAPIKeyRepository(db),
-		SensorEvent:         postgres.NewSensorEventRepository(db),
-		Command:             postgres.NewCommandRepository(db),
-		SensorContentPolicy: postgres.NewSensorContentPolicyRepository(db),
-		IngestJob:           postgres.NewIngestJobRepository(db),
-		IngestReport:        postgres.NewIngestReportRepository(db),
+		Sensor:                 postgres.NewSensorRepository(db),
+		SensorAPIKey:           postgres.NewSensorAPIKeyRepository(db),
+		SensorEvent:            postgres.NewSensorEventRepository(db),
+		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
+		Command:                postgres.NewCommandRepository(db),
+		SensorContentPolicy:    postgres.NewSensorContentPolicyRepository(db),
+		IngestJob:              postgres.NewIngestJobRepository(db),
+		IngestReport:           postgres.NewIngestReportRepository(db),
 
 		// Scan coverage rotation (RFC-007)
 		ScanCoverage: postgres.NewScanCoverageRepository(db),
@@ -396,6 +401,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// SSO Identity Providers
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
 		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
+		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

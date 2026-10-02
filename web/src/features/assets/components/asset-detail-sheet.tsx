@@ -8,27 +8,24 @@
 'use client'
 
 import * as React from 'react'
-import { FileText } from 'lucide-react'
+import { FileText, Hash, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { TabsCount } from '@/components/ui/tabs'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import {
-  SheetDetailToolbar,
-  DetailSheetHeader,
-  DetailSections,
+  DetailHeader,
   DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailTabs,
+  type DetailMenuItem,
+  type DetailTab,
 } from '@/features/shared'
 import { AssetStatusBadge, LifecycleSnoozeMenu } from '@/features/asset-lifecycle'
 import { AssetFindings } from './asset-findings'
-import {
-  TimelineSection,
-  TechnicalDetailsSection,
-  DangerZoneSection,
-  TagsSection,
-} from './sheet-sections'
+import { TimelineSection, TechnicalDetailsSection, TagsSection } from './sheet-sections'
 import { AssetMergeHistory } from './asset-merge-history'
 import { AssetIdentitySections } from './asset-identity-sections'
 import { RelationshipPreview } from './relationships'
@@ -41,7 +38,7 @@ import {
   DiscoverySection,
   PropertiesSection,
 } from './asset-overview-sections'
-import { getAssetTypeIcon, getAssetTypeLabel } from '../lib/asset-type-icon'
+import { getAssetTypeLabel } from '../lib/asset-type-icon'
 import { ClassificationBadges, CIABadges, ControlPlaneBadge } from './classification-badges'
 import { useAssetRelationships } from '../hooks'
 import type { Asset } from '../types/asset.types'
@@ -60,7 +57,10 @@ interface AssetDetailSheetProps<T extends Asset> {
   /** Callback when open state changes */
   onOpenChange: (open: boolean) => void
 
-  /** Header icon. Defaults to the asset type's icon. */
+  /**
+   * @deprecated Ignored. The drawer header follows the sensor drawer: name,
+   * state and type line, no icon tile.
+   */
   icon?: React.ElementType
 
   /**
@@ -169,14 +169,6 @@ function daysSinceLastSeen(iso?: string | null): number | undefined {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24))
 }
 
-function TabCount({ value }: { value: number }) {
-  return (
-    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none font-semibold tabular-nums">
-      {value}
-    </span>
-  )
-}
-
 // ============================================
 // Component
 // ============================================
@@ -185,7 +177,6 @@ export function AssetDetailSheet<T extends Asset>({
   asset,
   open,
   onOpenChange,
-  icon: iconProp,
   onEdit,
   onDelete,
   canEdit = true,
@@ -217,7 +208,6 @@ export function AssetDetailSheet<T extends Asset>({
 
   if (!asset) return null
 
-  const Icon = iconProp ?? getAssetTypeIcon(asset.type)
   const assetTypeName = assetTypeNameProp ?? getAssetTypeLabel(asset.type)
   const renderProperties = showProperties ?? overviewContent === undefined
 
@@ -233,235 +223,214 @@ export function AssetDetailSheet<T extends Asset>({
   const hasRelationships = relationships.length > 0
   const shouldShowRelationshipPreview = showRelationshipPreview ?? hasRelationships
 
-  // Every tab body scrolls on its own below the pinned header + tab strip.
-  const tabBody = 'mt-0 flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-6 sm:px-6'
+  const typeLine =
+    subtitle ||
+    asset.groupName ||
+    [assetTypeName, asset.subType && asset.subType !== asset.type && asset.subType]
+      .filter(Boolean)
+      .join(' · ')
+
+  const tabs: DetailTab[] = [
+    { value: 'overview', label: 'Overview' },
+    ...(showOwnersTab ? [{ value: 'owners', label: 'Owners' }] : []),
+    ...(extraTabs ?? []).map((t) => ({ value: t.value, label: t.label })),
+    {
+      value: 'relationships',
+      label: (
+        <>
+          Relations
+          {relationships.length > 0 && <TabsCount value={relationships.length} />}
+        </>
+      ),
+    },
+    ...(showFindingsTab
+      ? [
+          {
+            value: 'findings',
+            label: (
+              <>
+                Findings
+                {asset.findingCount > 0 && <TabsCount value={asset.findingCount} />}
+              </>
+            ),
+          },
+        ]
+      : []),
+    ...(showDetailsTab ? [{ value: 'details', label: 'Details' }] : []),
+  ]
+  const tab = tabs.some((t) => t.value === activeTab) ? activeTab : 'overview'
+
+  // Security and lifecycle actions go in the ⋯ menu (style contract §8).
+  const menu: DetailMenuItem[] = [
+    {
+      label: 'Copy ID',
+      icon: Hash,
+      onSelect: () => {
+        copyToClipboard(asset.id)
+        toast.success('Asset ID copied')
+      },
+    },
+  ]
+  if (canDelete) {
+    menu.push({
+      label: `Delete ${assetTypeName.toLowerCase()}`,
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: onDelete,
+    })
+  }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      {/* The shell is a flex column with no own scroll. The header and the
-          tab strip are shrink-0 (pinned), and only the active TabsContent
-          scrolls. Layout follows the Finding details drawer. */}
-      <SheetContent
-        className="flex w-full flex-col overflow-hidden p-0 sm:max-w-xl [&>button]:hidden"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <VisuallyHidden>
-          <SheetTitle>{assetTypeName} details</SheetTitle>
-          <SheetDescription>
-            {assetTypeName} detail panel for {asset.name}. Use the tabs to view stats, findings,
-            owners, relationships and metadata.
-          </SheetDescription>
-        </VisuallyHidden>
-
-        {/* Header — pinned at the top */}
-        <TooltipProvider>
-          <div className="shrink-0">
-            <SheetDetailToolbar
-              title={`${assetTypeName} details`}
-              onClose={() => onOpenChange(false)}
-              onEdit={canEdit ? onEdit : undefined}
-              onCopyId={() => {
-                copyToClipboard(asset.id)
-                toast.success('Asset ID copied')
-              }}
-            />
-
-            {/* Classification badges — scope/exposure/criticality plus the
-                CTEM Scoping register signals (control-plane flag + CIA
-                business-impact ratings), so the edit → verify loop is closed
-                (api #467). Lifecycle snooze shows on every asset so operators
-                can pause the worker during known offline windows. */}
-            <DetailSheetHeader
-              icon={Icon}
-              title={asset.name}
-              subtitle={
-                subtitle ||
-                asset.groupName ||
-                [assetTypeName, asset.subType && asset.subType !== asset.type && asset.subType]
-                  .filter(Boolean)
-                  .join(' · ')
-              }
-              status={
+    <TooltipProvider>
+      <DetailSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        panel={tab}
+        header={
+          <DetailHeader
+            title={asset.name}
+            badges={
+              <>
                 <AssetStatusBadge
                   status={asset.status}
                   daysSinceLastSeen={daysSinceLastSeen(asset.lastSeen)}
                 />
-              }
-              badges={
-                <>
-                  <ClassificationBadges
-                    scope={asset.scope}
-                    exposure={asset.exposure}
-                    criticality={asset.criticality}
-                    size="md"
-                    showTooltips
-                    className="flex-wrap"
-                  />
-                  {isControlPlane && <ControlPlaneBadge size="md" />}
-                  <CIABadges
-                    confidentiality={asset.impactConfidentiality}
-                    integrity={asset.impactIntegrity}
-                    availability={asset.impactAvailability}
-                    size="md"
-                    className="flex-wrap"
-                  />
-                </>
-              }
-              actions={
-                <>
-                  {quickActions}
-                  <LifecycleSnoozeMenu
-                    assetID={asset.id}
-                    isStaleOrInactive={asset.status === 'stale' || asset.status === 'inactive'}
-                  />
-                </>
-              }
-              className="pb-2"
-            />
-          </div>
-        </TooltipProvider>
-
-        {/* Tabs — flex-1 + min-h-0 lets the Tabs region take the remaining
-            height; the default line TabsList scrolls horizontally on phones. */}
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="flex min-h-0 flex-1 flex-col gap-0"
-        >
-          <div className="shrink-0 px-4 sm:px-6">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              {showOwnersTab && <TabsTrigger value="owners">Owners</TabsTrigger>}
-              {extraTabs?.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-              <TabsTrigger value="relationships">
-                Relations
-                {relationships.length > 0 && <TabCount value={relationships.length} />}
-              </TabsTrigger>
-              {showFindingsTab && (
-                <TabsTrigger value="findings">
-                  Findings
-                  {asset.findingCount > 0 && <TabCount value={asset.findingCount} />}
-                </TabsTrigger>
-              )}
-              {showDetailsTab && <TabsTrigger value="details">Details</TabsTrigger>}
-            </TabsList>
-          </div>
-
-          <TabsContent value="overview" className={tabBody}>
-            <DetailSections>
-              {/* Order follows the triage question: how risky, who owns it,
-                  what it is, how exposed, where it came from. */}
-              <RiskSummarySection
-                asset={asset}
-                onViewFindings={showFindingsTab ? () => setActiveTab('findings') : undefined}
-              />
-
-              {statsContent}
-
-              <OwnershipSection
-                asset={asset}
-                onManageOwners={showOwnersTab ? () => setActiveTab('owners') : undefined}
-              />
-
-              {asset.description && (
-                <DetailSection title="Description" icon={FileText}>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                    {asset.description}
-                  </p>
-                </DetailSection>
-              )}
-
-              <ExposureSection asset={asset} isControlPlane={isControlPlane} />
-
-              {overviewContent}
-
-              <DiscoverySection asset={asset} />
-
-              {renderProperties && <PropertiesSection properties={asset.metadata} />}
-
-              {shouldShowRelationshipPreview && (
-                <RelationshipPreview
-                  relationships={relationships}
-                  currentAssetId={asset.id}
-                  onViewAll={() => setActiveTab('relationships')}
-                  onAssetClick={onNavigateToAsset}
-                  maxItems={3}
+                {/* Classification and the CTEM scoping signals (control-plane
+                    flag, CIA business-impact ratings), api #467. */}
+                <ClassificationBadges
+                  scope={asset.scope}
+                  exposure={asset.exposure}
+                  criticality={asset.criticality}
+                  size="md"
+                  showTooltips
+                  className="flex-wrap"
                 />
-              )}
-
-              <TagsSection tags={asset.tags} suggestions={tagSuggestions} onSave={onUpdateTags} />
-            </DetailSections>
-          </TabsContent>
-
-          {showOwnersTab && (
-            <TabsContent value="owners" className={tabBody}>
-              <AssetOwnersTab assetId={asset.id} />
-            </TabsContent>
-          )}
-
-          {/* Extra Tabs — same flex-1 + scroll pattern as Overview */}
-          {extraTabs?.map((tab) => (
-            <TabsContent key={tab.value} value={tab.value} className={tabBody}>
-              {tab.content}
-            </TabsContent>
-          ))}
-
-          {/* Relationships Tab — self-contained container handles Add /
-              Edit / Delete dialogs internally. The only callback we
-              forward is onNavigateToAsset because the sheet itself
-              cannot swap its own selectedAsset. */}
-          <TabsContent value="relationships" className={tabBody}>
-            <AssetRelationshipsTab
-              assetId={asset.id}
-              sourceAsset={{ id: asset.id, name: asset.name, type: asset.type }}
-              onNavigateToAsset={onNavigateToAsset}
-            />
-          </TabsContent>
-
-          {/* Findings Tab */}
-          {showFindingsTab && (
-            <TabsContent value="findings" className={tabBody}>
-              <AssetFindings assetId={asset.id} assetName={asset.name} />
-            </TabsContent>
-          )}
-
-          {/* Details Tab */}
-          {showDetailsTab && (
-            <TabsContent value="details" className={tabBody}>
-              <DetailSections>
-                <TimelineSection
-                  firstSeen={asset.firstSeen}
-                  lastSeen={asset.lastSeen}
-                  createdAt={asset.createdAt}
-                  updatedAt={asset.updatedAt}
+                {isControlPlane && <ControlPlaneBadge size="md" />}
+                <CIABadges
+                  confidentiality={asset.impactConfidentiality}
+                  integrity={asset.impactIntegrity}
+                  availability={asset.impactAvailability}
+                  size="md"
+                  className="flex-wrap"
                 />
-                <TechnicalDetailsSection
-                  id={asset.id}
-                  type={asset.type}
-                  groupId={asset.groupId}
-                  subType={asset.subType}
-                  provider={asset.provider}
-                  externalId={asset.externalId}
-                  parentId={asset.parentId}
-                />
-                <AssetIdentitySections
-                  assetId={asset.id}
-                  assetName={asset.name}
-                  properties={asset.metadata}
-                />
-                <AssetMergeHistory assetId={asset.id} />
-                {canDelete && (
-                  <DangerZoneSection onDelete={onDelete} assetTypeName={assetTypeName} />
+              </>
+            }
+            meta={[typeLine]}
+            actions={
+              <>
+                {canEdit && (
+                  <Button size="sm" onClick={onEdit}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
                 )}
-              </DetailSections>
-            </TabsContent>
-          )}
-        </Tabs>
-      </SheetContent>
-    </Sheet>
+                {quickActions}
+                {/* Lifecycle snooze shows on every asset so operators can pause
+                    the worker during known offline windows. */}
+                <LifecycleSnoozeMenu
+                  assetID={asset.id}
+                  isStaleOrInactive={asset.status === 'stale' || asset.status === 'inactive'}
+                />
+              </>
+            }
+            menu={menu}
+            onClose={() => onOpenChange(false)}
+          />
+        }
+        tabs={<DetailTabs tabs={tabs} value={tab} onValueChange={setActiveTab} />}
+      >
+        {tab === 'overview' && (
+          <DetailSections>
+            {/* Order follows the triage question: how risky, who owns it,
+                what it is, how exposed, where it came from. */}
+            <RiskSummarySection
+              asset={asset}
+              onViewFindings={showFindingsTab ? () => setActiveTab('findings') : undefined}
+            />
+
+            {statsContent}
+
+            <OwnershipSection
+              asset={asset}
+              onManageOwners={showOwnersTab ? () => setActiveTab('owners') : undefined}
+            />
+
+            {asset.description && (
+              <DetailSection title="Description" icon={FileText}>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {asset.description}
+                </p>
+              </DetailSection>
+            )}
+
+            <ExposureSection asset={asset} isControlPlane={isControlPlane} />
+
+            {overviewContent}
+
+            <DiscoverySection asset={asset} />
+
+            {renderProperties && <PropertiesSection properties={asset.metadata} />}
+
+            {shouldShowRelationshipPreview && (
+              <RelationshipPreview
+                relationships={relationships}
+                currentAssetId={asset.id}
+                onViewAll={() => setActiveTab('relationships')}
+                onAssetClick={onNavigateToAsset}
+                maxItems={3}
+              />
+            )}
+
+            <TagsSection tags={asset.tags} suggestions={tagSuggestions} onSave={onUpdateTags} />
+          </DetailSections>
+        )}
+
+        {tab === 'owners' && <AssetOwnersTab assetId={asset.id} />}
+
+        {extraTabs?.map((t) =>
+          tab === t.value ? <React.Fragment key={t.value}>{t.content}</React.Fragment> : null
+        )}
+
+        {/* Self-contained: handles Add / Edit / Delete dialogs itself. The
+            sheet cannot swap its own selectedAsset, so navigation between
+            related assets goes to the parent. */}
+        {tab === 'relationships' && (
+          <AssetRelationshipsTab
+            assetId={asset.id}
+            sourceAsset={{ id: asset.id, name: asset.name, type: asset.type }}
+            onNavigateToAsset={onNavigateToAsset}
+          />
+        )}
+
+        {tab === 'findings' && <AssetFindings assetId={asset.id} assetName={asset.name} />}
+
+        {tab === 'details' && (
+          <DetailSections>
+            <TimelineSection
+              firstSeen={asset.firstSeen}
+              lastSeen={asset.lastSeen}
+              createdAt={asset.createdAt}
+              updatedAt={asset.updatedAt}
+            />
+            <TechnicalDetailsSection
+              id={asset.id}
+              type={asset.type}
+              groupId={asset.groupId}
+              subType={asset.subType}
+              provider={asset.provider}
+              externalId={asset.externalId}
+              parentId={asset.parentId}
+            />
+            <AssetIdentitySections
+              assetId={asset.id}
+              assetName={asset.name}
+              properties={asset.metadata}
+            />
+            <AssetMergeHistory assetId={asset.id} />
+          </DetailSections>
+        )}
+      </DetailSheet>
+    </TooltipProvider>
   )
 }

@@ -6,9 +6,9 @@ import { NextRequest } from 'next/server'
 
 vi.mock('@/lib/version/web-build-info', () => ({
   resolveWebBuildInfo: vi.fn(async () => ({
-    version: 'v0.8.0-dev',
+    version: 'v0.8.0-dev+4d2f4b02',
     commit: '4d2f4b02',
-    channel: 'development',
+    channel: 'dev',
   })),
 }))
 
@@ -36,9 +36,9 @@ describe('GET /api/version', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('Cache-Control')).toBe('no-store')
     await expect(res.json()).resolves.toEqual({
-      version: 'v0.8.0-dev',
+      version: 'v0.8.0-dev+4d2f4b02',
       commit: '4d2f4b02',
-      channel: 'development',
+      channel: 'dev',
     })
   })
 })

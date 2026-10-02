@@ -1,20 +1,29 @@
 'use client'
 
 import useSWR from 'swr'
+import { CircleAlert, Hash } from 'lucide-react'
+import { toast } from 'sonner'
 
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RunDispatchPanel } from '@/features/scan-zones'
-import { ErrorState, RunStatusBadge } from '@/features/shared'
+import {
+  DetailCallout,
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+  ErrorState,
+  RunStatusBadge,
+} from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { PipelineRun } from '@/lib/api/scan-types'
+import { copyToClipboard } from '@/lib/clipboard'
 
 interface RunDetailSheetProps {
   runId: string | null
@@ -23,6 +32,14 @@ interface RunDetailSheetProps {
 
 function formatTime(ts?: string) {
   return ts ? new Date(ts).toLocaleString() : '—'
+}
+
+function durationOf(run: PipelineRun): string | null {
+  if (!run.started_at || !run.completed_at) return null
+  const s = Math.max(0, (Date.parse(run.completed_at) - Date.parse(run.started_at)) / 1000)
+  if (!Number.isFinite(s)) return null
+  const m = Math.floor(s / 60)
+  return m > 0 ? `${m}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`
 }
 
 /**
@@ -40,68 +57,79 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
     (url: string) => get<PipelineRun>(url),
     { revalidateOnFocus: false }
   )
+  const duration = run ? durationOf(run) : null
 
   return (
-    <Sheet open={!!runId} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
-        <SheetHeader>
-          <SheetTitle>Scan run</SheetTitle>
-          <SheetDescription className="break-all font-mono text-xs">{runId}</SheetDescription>
-        </SheetHeader>
+    <DetailSheet
+      open={!!runId}
+      onOpenChange={onOpenChange}
+      header={
+        <DetailHeader
+          title="Scan run"
+          badges={run ? <RunStatusBadge status={run.status} /> : undefined}
+          meta={[run?.started_at ? `started ${formatTime(run.started_at)}` : null, duration]}
+          menu={
+            runId
+              ? [
+                  {
+                    label: 'Copy run ID',
+                    icon: Hash,
+                    onSelect: () => {
+                      copyToClipboard(runId)
+                      toast.success('Run ID copied')
+                    },
+                  },
+                ]
+              : []
+          }
+          onClose={() => onOpenChange(false)}
+        />
+      }
+    >
+      {error ? (
+        <ErrorState title="run" error={error} onRetry={() => void mutate()} />
+      ) : isLoading || !run ? (
+        <div className="space-y-3">
+          <Skeleton className="h-6 w-1/3" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {run.error_message && (
+            <DetailCallout tone="destructive" icon={CircleAlert} title="Run failed">
+              {run.error_message}
+            </DetailCallout>
+          )}
 
-        <div className="space-y-5 px-4 pb-6">
-          {error ? (
-            <ErrorState title="run" error={error} onRetry={() => void mutate()} />
-          ) : isLoading || !run ? (
-            <div className="space-y-3">
-              <Skeleton className="h-6 w-1/3" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-          ) : (
-            <>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <div>
-                  <dt className="text-xs text-muted-foreground">Status</dt>
-                  <dd className="mt-0.5">
-                    <RunStatusBadge status={run.status} />
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">Findings</dt>
-                  <dd className="mt-0.5 tabular-nums">{run.total_findings}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">Started</dt>
-                  <dd className="mt-0.5">{formatTime(run.started_at)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">Completed</dt>
-                  <dd className="mt-0.5">{formatTime(run.completed_at)}</dd>
-                </div>
-              </dl>
+          <DetailStatGrid aria-label="Key numbers">
+            <DetailStat label="Findings" value={run.total_findings} />
+            {duration && <DetailStat label="Duration" value={duration} />}
+          </DetailStatGrid>
 
-              {run.error_message && (
-                <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                  {run.error_message}
+          <DetailSections>
+            <DetailSection title="Dispatch">
+              {run.dispatch ? (
+                <RunDispatchPanel dispatch={run.dispatch} />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  This run recorded no dispatch details (runs from before target routing).
                 </p>
               )}
-
-              <section aria-labelledby="run-dispatch-heading" className="space-y-3">
-                <h3 id="run-dispatch-heading" className="text-base font-semibold">
-                  Dispatch
-                </h3>
-                {run.dispatch ? (
-                  <RunDispatchPanel dispatch={run.dispatch} />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    This run recorded no dispatch details (runs from before target routing).
-                  </p>
+            </DetailSection>
+            <DetailSection title="Timing">
+              <DetailFieldGrid>
+                <DetailField label="Started">{formatTime(run.started_at)}</DetailField>
+                <DetailField label="Completed">{formatTime(run.completed_at)}</DetailField>
+                {runId && (
+                  <DetailField label="Run ID" full>
+                    <DetailCopyId id={runId} label="Run ID" />
+                  </DetailField>
                 )}
-              </section>
-            </>
-          )}
+              </DetailFieldGrid>
+            </DetailSection>
+          </DetailSections>
         </div>
-      </SheetContent>
-    </Sheet>
+      )}
+    </DetailSheet>
   )
 }

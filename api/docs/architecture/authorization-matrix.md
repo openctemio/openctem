@@ -327,6 +327,19 @@ the billing page in the UI.
 > document (`execProtocolKey`), so JSON, flow-style YAML, escaped or
 > differently-cased keys cannot hide them.
 
+#### Scans and commands: secret-looking config values
+
+| Endpoint | Permission Required | `scanner_config` secrets |
+|----------|---------------------|--------------------------|
+| `GET /api/v1/scans` · `/{id}` · `/{id}/export` | `scans:read` | masked (`********`) unless the caller has `scans:write` |
+| `GET /api/v1/commands` · `/{id}` | `commands:read` | `payload` masked the same way unless the caller has `scans:write` |
+| `PUT /api/v1/scans/{id}` | `scans:write` | a `********` where the stored value would be masked keeps the stored value |
+
+> Masked values are exactly those listed in `scanner_config_warnings`
+> (`pkg/domain/scan/config_secrets.go`, `config_redact.go`). Owners and
+> admins pass `scans:write` through the usual bypass. Sensor command claims
+> are not user responses and carry the real values.
+
 #### Vulnerabilities (`/api/v1/vulnerabilities`) - Global
 
 | Endpoint | Permission Required |
@@ -432,6 +445,29 @@ cannot fingerprint the build. Release images stamp it with `-ldflags` from the
 tag; the dev container's air build stamps `<highest tag>-dev`; an unstamped
 binary reads the checkout's `.git` (`pkg/version`).
 
+### Real-time WebSocket (`/api/v1/auth/ws-token`, `/api/v1/ws`)
+
+A WebSocket ticket opens the tenant's real-time stream, so it is held to the
+same tenant gates as any JWT-tenant route.
+
+| Endpoint | Required Auth |
+|----------|---------------|
+| `GET /api/v1/auth/ws-token` | JWT session (no `oct_` keys) + tenant chain: SSO enforcement, organization IP allowlist, `RequireTenant`, active membership (`wsTokenMiddlewares`) |
+| `GET /api/v1/ws/?ticket=…` | Single-use ticket (Redis `GETDEL`, 30 s), bound to the user + tenant it was issued for; **active membership re-checked at upgrade** (`WSTicketAuth`) |
+
+- A suspended member, a user who is not a member of the token's tenant, a
+  caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`) and a
+  password session in an SSO-enforced tenant get no ticket.
+- A member suspended or removed between issue and upgrade gets 403 on the
+  upgrade. The upgrade does not re-run the IP allowlist (the ticket is
+  single-use and lives 30 s).
+- Without Redis (no ticket service) `/ws` falls back to a short-lived JWT and
+  the full `buildTokenTenantMiddlewares` chain.
+- After the upgrade, every channel subscription is authorized by
+  `websocket.Hub.defaultAuthorize` against the connection's user and tenant
+  (own `user:{tenant}:{user}` only, own `tenant:{id}` only, permission +
+  data scope for `finding:`/`triage:`, `scans:read` for `scan:`).
+
 ### Platform Admin Routes (`/api/v1/admin/*`)
 
 Platform admin routes are for OpenCTEM operators, NOT tenant users. They
@@ -469,6 +505,8 @@ Authorization is enforced at the **route layer** in
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+| `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
+| `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` | **super_admin** + a fresh console TOTP code in the body (step-up; a wrong code counts toward lockout). Refused 409 when a break is unexplained or the chain changed since the reviewed classification. Audited high in `admin_audit_logs` and as `audit.chain_rebaselined` in the organization's log |
 
 > The admin roster (`/admin/users`) is super_admin-only for reads as well as
 > writes: it exposes admin emails and last-used IPs, so listing
@@ -1012,7 +1050,11 @@ Tenable.sc's RBAC.
    role `SetUserRoles` drops): nobody may take away a role they could not have
    granted, so a delegated role manager cannot strip admin from an administrator;
    only an owner may change an owner's roles, and the tenant's owner keeps the
-   owner role. The handler-level check
+   owner role. **Deleting a custom role has the same ceiling** (`DeleteRole`,
+   owner decision 2026-10-02): `DELETE /api/v1/roles/{id}` needs
+   `team:roles:delete` *and* every permission (and full data access) the role
+   carries, so an administrator cannot delete an owner-built role holding
+   owner-only permissions (403); owners may delete any custom role. The handler-level check
    (`assertCanGrantPermissions`) lets administrators through, so the service is
    the enforcement point. SCIM mappings, SSO/SAML JIT and the membership-role
    update can never produce `owner`.

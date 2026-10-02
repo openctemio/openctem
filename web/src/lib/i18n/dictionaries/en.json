@@ -215,6 +215,7 @@
   "help.about.api": "API",
   "help.about.devBuild": "Development build",
   "help.about.release": "Release",
+  "help.about.rc": "Release candidate",
   "help.about.unavailable": "unavailable",
   "help.about.loading": "Loading version",
   "activity.listLabel": "Activity",
@@ -366,5 +367,10 @@
   "auth.loginError.missing_params": "The sign-in response was incomplete. Try again.",
   "auth.loginError.start_failed": "Sign-in could not be started. Try again, or contact your administrator.",
   "auth.loginError.callback_failed": "Sign-in could not be completed. Try again, or contact your administrator.",
-  "auth.loginError.generic": "Sign-in failed. Try again."
+  "auth.loginError.generic": "Sign-in failed. Try again.",
+  "sensors.activity.heartbeatRecovered": "Heartbeats back on time (was {state})",
+  "sensors.activity.heartbeatGap": "No heartbeat for {duration}",
+  "sensors.activity.wasLate": "late",
+  "sensors.activity.wasStale": "stale",
+  "sensors.activity.wasOffline": "offline"
 }

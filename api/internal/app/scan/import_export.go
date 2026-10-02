@@ -62,10 +62,23 @@ type ScanConfigExport struct {
 // configExportVersion is the current version of the export format.
 const configExportVersion = "1.0"
 
+// ExportOptions shape an export.
+type ExportOptions struct {
+	// RedactSecrets masks secret-looking scanner_config values (see
+	// scan.RedactConfigSecrets). Set for callers that may read a scan but
+	// not edit it.
+	RedactSecrets bool
+}
+
 // ExportConfig exports a scan configuration as JSON bytes.
 // It strips runtime data (status, results, timestamps) and returns
 // only the configuration fields needed to recreate the scan.
 func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) ([]byte, error) {
+	return s.ExportConfigWithOptions(ctx, tenantID, scanID, ExportOptions{})
+}
+
+// ExportConfigWithOptions is ExportConfig with options.
+func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID shared.ID, opts ExportOptions) ([]byte, error) {
 	s.logger.Info("exporting scan config", "scan_id", scanID.String())
 
 	sc, err := s.scanRepo.GetByTenantAndID(ctx, tenantID, scanID)
@@ -91,6 +104,9 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 		RetryBackoffSeconds: sc.RetryBackoffSeconds,
 		ExportedAt:          time.Now().UTC().Format(time.RFC3339),
 		Version:             configExportVersion,
+	}
+	if opts.RedactSecrets {
+		export.ScannerConfig = scan.RedactConfigSecrets(sc.ScannerConfig)
 	}
 
 	if sc.ProfileID != nil && !sc.ProfileID.IsZero() {

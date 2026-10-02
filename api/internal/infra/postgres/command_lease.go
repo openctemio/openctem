@@ -55,6 +55,66 @@ func (r *CommandRepository) RenewLeases(ctx context.Context, tenantID, sensorID 
 	return n, nil
 }
 
+// CommandsToCancel returns the ids among ids (a heartbeat's running list,
+// untrusted) that sensorID must stop: every well-formed id except the
+// commands this sensor still holds (acknowledged or running, or pending and
+// pinned to it: handed over, not claimed yet) and the ones it completed.
+// A re-queued command is pending with no sensor, so it is returned. A command of another tenant is reported like an unknown one, so
+// the answer says nothing about it. Malformed ids are dropped.
+func (r *CommandRepository) CommandsToCancel(ctx context.Context, tenantID, sensorID shared.ID, ids []string) ([]string, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, err := shared.IDFromString(id); err == nil {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT r.id
+		FROM unnest($3::text[]) AS r(id)
+		WHERE NOT EXISTS (
+			SELECT 1 FROM commands c
+			WHERE c.id = r.id::uuid AND c.tenant_id = $1 AND c.sensor_id = $2
+			  AND c.status IN ('pending', 'acknowledged', 'running', 'completed'))`,
+		tenantID.String(), sensorID.String(), pq.Array(valid))
+	if err != nil {
+		return nil, fmt.Errorf("failed to find commands to cancel: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan command id: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// CancelIfOpen writes cmd's cancellation (status canceled, completed_at)
+// only if the command is still pending, acknowledged or running, so a
+// result a sensor got accepted between the read and this write is never
+// overwritten. Returns whether it applied.
+func (r *CommandRepository) CancelIfOpen(ctx context.Context, cmd *command.Command) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET status = 'canceled', completed_at = $3, lease_expires_at = NULL
+		WHERE id = $1 AND tenant_id = $2
+		  AND status IN ('pending', 'acknowledged', 'running')`,
+		cmd.ID.String(), cmd.TenantID.String(), nullTime(cmd.CompletedAt))
+	if err != nil {
+		return false, fmt.Errorf("failed to cancel command: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	return n > 0, nil
+}
+
 // RequeueExpiredLeases puts every tenant command whose lease ran out back
 // to pending: unpinned, its zone kept, one more dispatch attempt (so
 // fail_exhausted_commands ends a command that keeps killing its sensors).

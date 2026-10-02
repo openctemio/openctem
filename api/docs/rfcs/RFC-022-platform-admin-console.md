@@ -368,6 +368,12 @@ the organization's SSO in the console.
   queue, System logs, Keys). Replaces the transitional `(dashboard)/admin` pages.
 - **Phase 4 — Entitlements.** Platform-set bundle ceiling per organization,
   fail-closed, that per-module overrides cannot exceed.
+- **Audit chain per organization** (implemented, owner-approved 2026-10-02).
+  Organizations → an organization → Audit chain classifies the organization's
+  audit hash-chain with the same code as `cmd/chainaudit` and lets a super
+  admin rebaseline it only when every break is explained, the chain is the one
+  reviewed, and a fresh console TOTP code is entered (the console's first
+  step-up). See `docs/architecture/audit-hash-chain.md`.
 
 ## Security notes
 
@@ -377,6 +383,12 @@ the organization's SSO in the console.
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes
   are written to `admin_audit_logs`.
+- Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
+  code from the console authenticator, single use (the sign-in replay guard),
+  counted toward lockout when wrong, audited as `console.step_up` /
+  `console.step_up_failed`. An administrator with no enrolled authenticator
+  (IdP-only sign-ins) gets 403 `STEP_UP_UNAVAILABLE`. First used by the audit
+  chain rebaseline.
 - Provisioning never links an existing account: it always creates a new one
   and refuses an email that already has an account. With self-registration an
   attacker could otherwise pre-register an administrator's email, own its

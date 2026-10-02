@@ -1,0 +1,133 @@
+name: Release Reminder
+
+# Every other Monday (api/docs/rfcs/RFC-037 §4.1): open or update the issue
+# "Release train vX.Y.Z" with the proposed version, the develop commit the
+# train would take, a changelog preview and the checklist. It never releases:
+# the owner runs Release Train.
+#
+# Train weeks are counted from the Monday in the repository variable
+# RELEASE_TRAIN_ANCHOR (YYYY-MM-DD, default 2026-10-05). Scheduled runs use the
+# default branch's copy of this file, so the schedule starts once a release
+# has brought it to main; run it by hand (force) any time.
+
+on:
+  schedule:
+    - cron: "0 1 * * 1" # Mondays 01:00 UTC (08:00 in Vietnam)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Open/update the issue even if this is not a train week"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-reminder
+  cancel-in-progress: false
+
+env:
+  RELEASE_SCRIPTS: .github/scripts/release
+
+jobs:
+  remind:
+    name: Release train issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+      issues: write
+    steps:
+      - name: Train week?
+        id: week
+        env:
+          ANCHOR: ${{ vars.RELEASE_TRAIN_ANCHOR || '2026-10-05' }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+        run: |
+          today="$(date -u +%Y-%m-%d)"
+          days=$(( ( $(date -u -d "$today" +%s) - $(date -u -d "$ANCHOR" +%s) ) / 86400 ))
+          if [ "$FORCE" = true ]; then
+            train=true
+          elif [ "$days" -lt 0 ]; then
+            train=false
+          else
+            [ $(( (days / 7) % 2 )) -eq 0 ] && train=true || train=false
+          fi
+          echo "train=$train" >> "$GITHUB_OUTPUT"
+          echo "today=$today" >> "$GITHUB_OUTPUT"
+          echo "Anchor ${ANCHOR}, today ${today} (${days} days): train week = ${train}"
+
+      - uses: actions/checkout@v7
+        if: steps.week.outputs.train == 'true'
+        with:
+          ref: develop
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Propose
+        id: propose
+        if: steps.week.outputs.train == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          sha="$(bash "$RELEASE_SCRIPTS/check-ci.sh" --newest-green origin/develop --max 30 2>/dev/null)"
+          ref="${sha:-origin/develop}"
+          bash "$RELEASE_SCRIPTS/next-version.sh" --ref "$ref" --notes "$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/version.env"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 3 ]; then
+            echo "nothing=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          cat "$RUNNER_TEMP/version.env" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the issue
+        if: steps.week.outputs.train == 'true' && steps.propose.outputs.nothing != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TODAY: ${{ steps.week.outputs.today }}
+          VERSION: ${{ steps.propose.outputs.NEXT_VERSION }}
+          LAST: ${{ steps.propose.outputs.LAST_TAG }}
+          BUMP: ${{ steps.propose.outputs.BUMP }}
+          COMMITS: ${{ steps.propose.outputs.COMMITS }}
+          SHA: ${{ steps.propose.outputs.sha }}
+        run: |
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/release-train.yml"
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "Release train of ${TODAY}. Proposed: **${VERSION}** (${BUMP}; last release ${LAST}, ${COMMITS} commits)."
+            echo
+            if [ -n "$SHA" ]; then
+              echo "The train would take develop at \`${SHA:0:12}\`, the newest commit with every required check green."
+            else
+              echo "**No develop commit among the last 30 has every required check green.** Fix CI first, or run with an explicit sha."
+            fi
+            echo
+            echo "### Checklist"
+            echo
+            echo "- [ ] Read the changelog preview below. A feature merged with a \`fix:\` title counts as a patch: override the version if needed."
+            echo "- [ ] [Run Release Train](${run_url}) (\`dry_run\` first if you want to see the plan). Use the workflow from \`develop\` until a release has brought it to \`main\`."
+            echo "- [ ] The release PR merges through the merge queue (merge commit, never squash)."
+            echo "- [ ] Merge the follow-up PRs: develop (versions.yaml, main merged back) and helm-charts (appVersion)."
+            echo "- [ ] Release notes or an upgrade page in openctemio/docs, if this release needs one."
+            echo
+            echo "This issue closes itself when the release is published (RFC-037)."
+            echo
+            cat "$RUNNER_TEMP/notes.md"
+          } | python3 "$RELEASE_SCRIPTS/sanitize-notes.py" | head -c 60000 > "$body"
+          title="Release train ${VERSION} (${TODAY})"
+          gh label create release-train --repo "$GITHUB_REPOSITORY" --color 0E8A16 \
+            --description "Biweekly release train (RFC-037)" --force >/dev/null
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --label release-train --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body"
+            echo "Updated #${existing}: ${title}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            url="$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label release-train --body-file "$body")"
+            echo "Opened ${url}: ${title}" >> "$GITHUB_STEP_SUMMARY"
+          fi

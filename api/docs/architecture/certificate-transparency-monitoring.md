@@ -2,17 +2,65 @@
 
 > The first fully-built external-exposure connector: a scheduled, per-tenant
 > poller that queries the **public crt.sh** Certificate-Transparency log
-> aggregator for a tenant's own registered domains and emits first-class
-> `ExposureEvent`s — no credentials, no agent, no customer consent. RFC-019.
+> aggregator (with **Cert Spotter** as the fallback) for a tenant's own domains
+> and emits first-class `ExposureEvent`s — no credentials, no sensor, no
+> traffic to the tenant's hosts. RFC-019; rotation, retries and fallback from
+> RFC-036 P0.
 
 ## What it does
 
-This is CTEM **Discovery** breadth ("exposure ≠ vulnerability"). For each of a
-tenant's domain assets it queries crt.sh and emits:
+This is CTEM **Discovery** breadth ("exposure ≠ vulnerability"). For each
+domain the tenant watches it queries CT and emits:
 
 - `subdomain_discovered` — a host below the apex found in a logged certificate
   (surfaces subdomains the tenant never scanned).
-- `certificate_expiring` — a certificate approaching expiry.
+- `certificate_expiring` — the host's newest certificate expires within 30 days.
+- `certificate_expired` — the host's newest certificate lapsed within the last
+  30 days and nothing replaced it (older lapses are retired hosts and are not
+  raised).
+
+## Which domains, and in what order
+
+The watched set is the union of the tenant's **domain assets**, **verified
+domains** (status `verified`) and **active domain scope targets** (`domain`,
+`subdomain`, `email_domain`; `*.` is stripped). Names are normalised and
+de-duplicated; a name whose parent is also watched is not queried separately
+(the parent's `%.parent` query already returns it), except a verified child
+under an unverified parent. Names without an ICANN public suffix (`.local`,
+`.internal`, `.test`, bare `co.uk`) are dropped: they cannot have public
+certificates.
+
+Each run queries at most `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (default 50)
+domains per tenant, picked from `ct_monitor_state` (migration 000266):
+
+1. a domain in failure back-off waits (12 h, 24 h, 48 h … 7 days);
+2. a domain queried successfully within 5/6 of the interval is not due, so an
+   API restart does not re-query everything;
+3. the rest are taken never-succeeded first, then oldest success, then oldest
+   attempt. With 120 domains and the default cap, every domain is queried
+   within three daily runs.
+
+A tenant's sweep also stops after 30 minutes; the domains it did not reach
+lead the next run. A per-tenant advisory lock keeps two API replicas from
+sweeping the same tenant at once.
+
+## Sources, retries and fallback
+
+| Step | Behaviour |
+|---|---|
+| crt.sh | `GET /?q=%.<domain>&output=json&deduplicate=Y`; up to 3 attempts on network errors, 408, 429 and 5xx, waiting 2 s → 30 s with jitter or the server's `Retry-After` (≤ 60 s). A 50 s response-header timeout (crt.sh is slow for busy domains) |
+| Cert Spotter | Used when crt.sh still fails: `GET /v1/issuances?domain=<d>&include_subdomains=true&expand=dns_names&expand=issuer`, unauthenticated free tier, up to 10 pages. A 429 stops Cert Spotter for the rest of that sweep. It lists only unexpired certificates, so it never yields `certificate_expired` |
+| Both fail | The failure and error are stored on the domain's state row and it backs off |
+
+Configuration: `CERT_MONITOR_ENABLED` (default true), `CERT_MONITOR_INTERVAL`
+(24h), `CERT_MONITOR_FEED_URL` (`https://crt.sh`),
+`CERT_MONITOR_CERTSPOTTER_URL` (`https://api.certspotter.com`, `off`
+disables), `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (50).
+
+Data-source note (RFC-036 O1): only the watched domain names are sent to crt.sh
+and Cert Spotter. Both are free public services; heavy commercial use of
+Cert Spotter needs an SSLMate key, which belongs to the per-tenant paid
+sources of P5.
 
 Source tag on everything emitted: `cert_transparency`
 (`internal/app/certmonitor/service.go`, `Source`).
@@ -24,11 +72,14 @@ never scanned.
 
 ## Safety & isolation
 
-- **SSRF-guarded egress:** the crt.sh query goes through
-  `httpsec.SafeHTTPClient` — it refuses RFC1918 / link-local addresses even
-  though crt.sh is public (defense against DNS rebinding of the configurable feed
-  URL). The response body is bounded and the sweep is politeness-rate-limited
-  between domains.
+- **SSRF-guarded egress:** every CT query dials through
+  `httpsec.SafeDialContext` — it refuses RFC1918 / link-local / metadata
+  addresses even though the sources are public (defense against DNS rebinding
+  of the configurable URLs). Bodies are capped at 48 MiB and the sweep waits
+  1 s between domains.
+- **Untrusted names:** a CT name is kept only if it is a syntactically valid
+  hostname at or below the queried domain; markup, control characters and
+  over-long labels are dropped before they reach an exposure.
 - **Tenant isolation:** the tenant is taken from the **asset being queried, never
   from the CT response**; every emitted exposure is stamped with that tenant.
 - **Fail-open:** a failure on one domain or one tenant is logged and skipped — it
@@ -41,7 +92,13 @@ never scanned.
 - **Controller:** `internal/infra/controller/cert_monitor_refresh.go` — a
   background sweep across all active tenants on a **24-hour** default cadence (CT
   data changes on the order of days). Each tenant is handled serially; a
-  per-tenant failure is skipped fail-open.
+  per-tenant failure is skipped fail-open. Tenants with the `attack_surface`
+  module disabled are skipped.
+- **Rotation state:** `internal/infra/postgres/ct_monitor_state_repository.go`
+  (table `ct_monitor_state`); sources and retries in
+  `internal/app/certmonitor/ctlog.go`, selection in `selection.go`.
+- **Assurance:** use cases, edge cases and the threat model with their tests
+  are in [RFC-036 appendix](../rfcs/RFC-036-appendix-assurance.md).
 
 ## Not yet built (RFC-019 Phase 2)
 
@@ -52,6 +109,4 @@ first-class asset are scoped but not implemented.
 
 - `data-sources.md` — the exposure-discovery model this plugs into.
 - RFC-019 (`docs/rfcs/RFC-019-certificate-transparency-discovery.md`).
-- [easm.md](easm.md) and RFC-036: where CT fits in the EASM pipeline, and the
-  known limit that only the first 50 domain assets per tenant are queried
-  (no rotation cursor yet; RFC-036 P0).
+- [easm.md](easm.md) and RFC-036: where CT fits in the EASM pipeline.
