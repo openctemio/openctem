@@ -131,7 +131,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
         {started ? (
           <div className="space-y-4 py-2">
             <div className="flex items-start gap-3 rounded-lg border p-3">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
               <div className="space-y-1 text-sm">
                 <p className="font-medium">Scan started on {started.target_count} target(s)</p>
                 <p className="text-muted-foreground">
