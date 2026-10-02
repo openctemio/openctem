@@ -10158,11 +10158,41 @@ definitions:
     type: object
   internal_infra_http_handler.SensorConfigTemplatesResponse:
     properties:
+      api_key_included:
+        description: |-
+          APIKeyIncluded is true when the snippets carry the key passed in
+          X-Sensor-API-Key; otherwise they read it from OPENCTEM_API_KEY.
+        type: boolean
+      api_url:
+        description: APIURL is the platform URL the snippets point the sensor at.
+        type: string
+      ca_certificate:
+        description: |-
+          CACertificate is the PEM of the platform's private CA the snippets
+          install (SENSOR_CA_CERT_FILE); "" when none is configured.
+        type: string
+      ca_fingerprint_sha256:
+        description: CAFingerprintSHA256 is the SHA-256 fingerprint of that CA, colon
+          hex.
+        type: string
       cli:
+        type: string
+      compose:
+        description: |-
+          Compose is a compose.yaml for the sensor; Kubernetes a Secret, PVC and
+          Deployment (a Job for a one-shot sensor); Helm the commands that turn
+          on the sensor bundled with the openctem chart.
         type: string
       docker:
         type: string
       env:
+        type: string
+      helm:
+        type: string
+      image:
+        description: Image is the sensor image the snippets run, with its pinned tag.
+        type: string
+      kubernetes:
         type: string
       yaml:
         type: string
@@ -25448,7 +25478,10 @@ paths:
       - Sensors
   /sensors/{id}/config-templates:
     get:
-      description: Returns rendered config templates for a sensor in multiple formats
+      description: 'Returns the install and configuration snippets for a sensor: docker
+        run, Compose, Kubernetes, Helm, YAML, env and CLI, pinned to the sensor image
+        of SENSOR_LATEST_VERSION, pointed at the public platform URL, and installing
+        the platform''s private CA when SENSOR_CA_CERT_FILE is set.'
       parameters:
       - description: Sensor ID
         in: path
@@ -25467,6 +25500,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/internal_infra_http_handler.SensorConfigTemplatesResponse'
+        "400":
+          description: X-Sensor-API-Key is malformed
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
         "404":
           description: Not Found
           schema:

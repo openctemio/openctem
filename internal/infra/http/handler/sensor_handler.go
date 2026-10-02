@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -24,6 +25,12 @@ type SensorHandler struct {
 	service         *app.SensorService
 	templateService *app.SensorConfigTemplateService
 	publicAPIURL    string // Public URL sensors will connect to (defaults to API_URL env var)
+	// sensorImage is the image the install snippets run, with its pinned
+	// tag (SENSOR_IMAGE + SENSOR_LATEST_VERSION).
+	sensorImage string
+	// caCertFile is the platform CA the snippets install (SENSOR_CA_CERT_FILE);
+	// empty when the platform certificate is publicly trusted.
+	caCertFile string
 	// healthPolicy holds the thresholds and release channel the computed
 	// state, health reasons and version status use.
 	healthPolicy sensor.HealthPolicy
@@ -59,6 +66,18 @@ func (h *SensorHandler) SetTemplateService(svc *app.SensorConfigTemplateService)
 // SetPublicAPIURL sets the public URL that sensor configs will reference.
 func (h *SensorHandler) SetPublicAPIURL(url string) {
 	h.publicAPIURL = url
+}
+
+// SetSensorImage sets the image reference (with tag) the install snippets run.
+func (h *SensorHandler) SetSensorImage(image string) {
+	h.sensorImage = image
+}
+
+// SetCACertificateFile sets the platform CA file the install snippets embed
+// (SENSOR_CA_CERT_FILE). It is read on each request, so a CA the gateway
+// exports after the API started is picked up.
+func (h *SensorHandler) SetCACertificateFile(path string) {
+	h.caCertFile = path
 }
 
 // CreateSensorRequest represents the request body for creating a sensor.
@@ -867,26 +886,54 @@ func (h *SensorHandler) GetAvailableCapabilities(w http.ResponseWriter, r *http.
 	json.NewEncoder(w).Encode(resp)
 }
 
-// SensorConfigTemplatesResponse holds the rendered sensor config templates.
+// SensorConfigTemplatesResponse holds the rendered install and configuration
+// snippets for one sensor, and what they were rendered with.
 type SensorConfigTemplatesResponse struct {
 	YAML   string `json:"yaml"`
 	Env    string `json:"env"`
 	Docker string `json:"docker"`
 	CLI    string `json:"cli"`
+	// Compose is a compose.yaml for the sensor; Kubernetes a Secret, PVC and
+	// Deployment (a Job for a one-shot sensor); Helm the commands that turn
+	// on the sensor bundled with the openctem chart.
+	Compose    string `json:"compose"`
+	Kubernetes string `json:"kubernetes"`
+	Helm       string `json:"helm"`
+	// Image is the sensor image the snippets run, with its pinned tag.
+	Image string `json:"image"`
+	// APIURL is the platform URL the snippets point the sensor at.
+	APIURL string `json:"api_url"`
+	// APIKeyIncluded is true when the snippets carry the key passed in
+	// X-Sensor-API-Key; otherwise they read it from OPENCTEM_API_KEY.
+	APIKeyIncluded bool `json:"api_key_included"`
+	// CACertificate is the PEM of the platform's private CA the snippets
+	// install (SENSOR_CA_CERT_FILE); "" when none is configured.
+	CACertificate string `json:"ca_certificate"`
+	// CAFingerprintSHA256 is the SHA-256 fingerprint of that CA, colon hex.
+	CAFingerprintSHA256 string `json:"ca_fingerprint_sha256"`
 }
 
+// sensorAPIKeyHeaderRegexp is the shape of a sensor API key. The header value
+// is embedded in shell snippets, so anything else is refused.
+var sensorAPIKeyHeaderRegexp = regexp.MustCompile(`^[A-Za-z0-9_-]{8,256}$`)
+
+// DefaultSensorImage is the install snippets' image when none is configured.
+const DefaultSensorImage = "ghcr.io/openctemio/sensor:v0.4.2"
+
 // GetConfigTemplates handles GET /api/v1/sensors/{id}/config-templates
-// Returns rendered configuration templates (YAML, env, Docker, CLI) for a sensor.
+// Returns rendered install and configuration snippets (docker run, Compose,
+// Kubernetes, Helm, YAML, env, CLI) for a sensor.
 // Templates are loaded from configs/sensor-templates/*.tmpl on the API host
 // and can be edited without rebuilding the frontend.
 //
 // @Summary Get sensor configuration templates
-// @Description Returns rendered config templates for a sensor in multiple formats
+// @Description Returns the install and configuration snippets for a sensor: docker run, Compose, Kubernetes, Helm, YAML, env and CLI, pinned to the sensor image of SENSOR_LATEST_VERSION, pointed at the public platform URL, and installing the platform's private CA when SENSOR_CA_CERT_FILE is set.
 // @Tags Sensors
 // @Produce json
 // @Param id path string true "Sensor ID"
 // @Param X-Sensor-API-Key header string false "Optional API key to embed in templates (only available right after creation/regeneration). MUST be sent as header, not query parameter."
 // @Success 200 {object} SensorConfigTemplatesResponse
+// @Failure 400 {object} apierror.Error "X-Sensor-API-Key is malformed"
 // @Failure 404 {object} apierror.Error
 // @Failure 500 {object} apierror.Error
 // @Failure 503 {object} apierror.Error "Template service not configured"
@@ -912,21 +959,36 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 	// logged by load balancers, proxies, CDNs, browser history, and referer
 	// headers — embedding a credential there is a known leakage vector.
 	// Caller passes the freshly issued key from sensor creation/regeneration
-	// in the X-Sensor-API-Key header. If absent, we render a placeholder.
-	apiKey := r.Header.Get("X-Sensor-API-Key")
-	if apiKey == "" {
-		apiKey = "<YOUR_API_KEY>"
+	// in the X-Sensor-API-Key header. If absent, the snippets read the key
+	// from $OPENCTEM_API_KEY.
+	apiKey := strings.TrimSpace(r.Header.Get("X-Sensor-API-Key"))
+	if apiKey != "" && !sensorAPIKeyHeaderRegexp.MatchString(apiKey) {
+		apierror.BadRequest("X-Sensor-API-Key is not a sensor API key").WriteJSON(w)
+		return
 	}
 
 	baseURL := h.publicAPIURL
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
 	}
+	image := h.sensorImage
+	if image == "" {
+		image = DefaultSensorImage
+	}
+
+	caPEM, caFingerprint, caErr := app.LoadSensorCACertificate(h.caCertFile)
+	if caErr != nil {
+		// Not fatal: the snippets then assume a publicly trusted certificate.
+		h.logger.Warn("sensor CA certificate not usable; install snippets omit it",
+			"path", h.caCertFile, "error", caErr)
+	}
 
 	rendered, err := h.templateService.Render(app.SensorTemplateData{
 		Sensor:  a,
 		APIKey:  apiKey,
 		BaseURL: baseURL,
+		Image:   image,
+		CACert:  caPEM,
 	})
 	if err != nil {
 		h.logger.Error("failed to render sensor config templates", "error", err, "sensor_id", sensorID)
@@ -935,11 +997,21 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 	}
 
 	resp := SensorConfigTemplatesResponse{
-		YAML:   rendered.YAML,
-		Env:    rendered.Env,
-		Docker: rendered.Docker,
-		CLI:    rendered.CLI,
+		YAML:                rendered.YAML,
+		Env:                 rendered.Env,
+		Docker:              rendered.Docker,
+		CLI:                 rendered.CLI,
+		Compose:             rendered.Compose,
+		Kubernetes:          rendered.Kubernetes,
+		Helm:                rendered.Helm,
+		Image:               image,
+		APIURL:              baseURL,
+		APIKeyIncluded:      apiKey != "",
+		CACertificate:       caPEM,
+		CAFingerprintSHA256: caFingerprint,
 	}
+	// The response can carry a freshly issued key: never cache it.
+	w.Header().Set("Cache-Control", "no-store")
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

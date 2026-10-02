@@ -286,6 +286,43 @@ Shared platform sensors (`is_platform_sensor`) are in neither; their capacity
 is `GET /api/v1/platform/stats`, shown on its own page. The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
+## Install snippets
+
+`GET /api/v1/sensors/{id}/config-templates` renders the snippets the Sensors
+page shows: `docker` (docker run), `compose` (compose.yaml), `kubernetes`
+(Secret + PVC + Deployment; a Job for a one-shot sensor), `helm` (turns on the
+sensor bundled with the openctem chart), `yaml` (sensor.yaml), `env`, `cli`.
+Templates: `configs/sensor-templates/*.tmpl` (editable on the API host,
+`SENSOR_CONFIG_TEMPLATES_DIR`); the built-in fallbacks in
+`internal/app/sensor/config_templates_builtin.go` are generated from them
+(`go generate ./internal/app/sensor/`, a test keeps them identical).
+
+Every snippet works as pasted for the release it pins (tests run `bash -n` on
+the shell ones and parse the YAML ones; `docker compose config` accepts the
+compose file):
+
+- **Image** `SENSOR_IMAGE` (default `ghcr.io/openctemio/sensor`) with the tag
+  `SENSOR_LATEST_VERSION`, never `latest`. The response's `image` says which.
+- **URL** `SENSOR_PUBLIC_API_URL`, else `APP_URL` (`api_url` in the response).
+- **Key** only when the caller passes the freshly issued key in
+  `X-Sensor-API-Key` (validated: key characters only, it lands in a shell
+  line); otherwise the snippets read `$OPENCTEM_API_KEY` and stop with a clear
+  message when it is unset. Compose keeps the key in `.env`, Kubernetes and
+  Helm in a Secret. The response is `Cache-Control: no-store`.
+- **CA** `SENSOR_CA_CERT_FILE`: the platform's private CA, e.g. the root the
+  built-in gateway exports in TLS mode internal (`deploy/docker-compose.yml`
+  mounts the export directory into the API read-only and sets
+  `/ca/openctem-root-ca.crt`). Only X.509 `CERTIFICATE` blocks are used (a
+  key in the file never leaks); the response carries `ca_certificate` and
+  `ca_fingerprint_sha256`. The snippets install it under
+  `/etc/openctem/certs` and set `SSL_CERT_DIR`, which adds it to the system
+  roots (the sensor still verifies public scan targets). Unset or unreadable:
+  the snippets assume a publicly trusted certificate.
+- **Outbox** a named volume / PVC at `/var/lib/openctem/outbox`, so results
+  survive a restart or an outage.
+- **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
+  `[a-z0-9_-]` are dropped. The name becomes a slug.
+
 ## Protocol v2 results ingest
 
 [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (decisions in its §10.1).

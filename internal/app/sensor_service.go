@@ -34,9 +34,11 @@ var (
 	NewSensorService               = sensor.NewSensorService
 	NewSensorSelector              = sensor.NewSensorSelector
 	NewSensorConfigTemplateService = sensor.NewSensorConfigTemplateService
-	ErrNoSensorAvailable           = sensor.ErrNoSensorAvailable
-	NewDoorbell                    = sensor.NewDoorbell
-	DefaultDoorbellConfig          = sensor.DefaultDoorbellConfig
+	// LoadSensorCACertificate reads the platform CA for the install snippets.
+	LoadSensorCACertificate = sensor.LoadCACertificate
+	ErrNoSensorAvailable    = sensor.ErrNoSensorAvailable
+	NewDoorbell             = sensor.NewDoorbell
+	DefaultDoorbellConfig   = sensor.DefaultDoorbellConfig
 )
 
 // Selection-mode constants re-exported for legacy callers.

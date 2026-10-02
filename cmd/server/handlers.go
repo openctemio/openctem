@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"net/url"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/internal/app/adminconsole"
@@ -535,8 +537,35 @@ func newSensorHandlerWithTemplates(
 	}
 	h.SetPublicAPIURL(publicAPIURL)
 	h.SetHealthPolicy(sensorHealthPolicy(cfg, log))
+	h.SetSensorImage(sensorInstallImage(cfg, log))
+	h.SetCACertificateFile(cfg.SensorConfig.CACertFile)
 
 	return h
+}
+
+// imageRepositoryRegexp is an image repository safe to put in a shell snippet.
+var imageRepositoryRegexp = regexp.MustCompile(`^[a-z0-9][a-z0-9._/:-]{0,254}$`)
+
+// sensorInstallImage is the image the install snippets run: SENSOR_IMAGE with
+// the release-channel tag (never "latest"). An unusable SENSOR_IMAGE falls
+// back to the published image.
+func sensorInstallImage(cfg *config.Config, log *logger.Logger) string {
+	repo := strings.TrimSpace(cfg.SensorConfig.Image)
+	if !imageRepositoryRegexp.MatchString(repo) || strings.Contains(repo, "@") {
+		if repo != "" {
+			log.Warn("ignoring SENSOR_IMAGE that is not an image repository", "value", repo)
+		}
+		repo = config.DefaultSensorImageRepository
+	}
+	// A tag in SENSOR_IMAGE is dropped: the tag is the release channel's.
+	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
+		repo = repo[:i]
+	}
+	tag := sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion)
+	if !sensordom.IsReleaseVersion(tag) {
+		tag = config.DefaultSensorLatestVersion
+	}
+	return repo + ":" + tag
 }
 
 // sensorHealthPolicy maps the heartbeat settings and the sensor release
