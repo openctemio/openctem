@@ -1,0 +1,443 @@
+name: API CI
+
+# The Go API lives in api/. This workflow ALWAYS starts (no `paths:` filter, which
+# would leave required checks Pending); the `changes` job decides whether the
+# real jobs run, and `API CI OK` is the single required check.
+# Job bodies are carried over from openctemio/api's ci.yml; see git log for the
+# reasoning behind each gate.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  merge_group:
+
+# A newer push to the same PR or branch cancels the older run. Tags (releases)
+# and the scheduled scan are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26.6"
+  GOWORK: "off"
+
+defaults:
+  run:
+    working-directory: api
+
+jobs:
+  changes:
+    name: Detect API changes
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.f.outputs.api }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: f
+        working-directory: .
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: bash .github/scripts/changed.sh api api/ .github/workflows/api- .github/scripts/
+
+  migrations:
+    name: Migration Safety
+    needs: changes
+    if: needs.changes.outputs.api == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need base branch for the diff
+
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
+      - name: Check for destructive migrations
+        env:
+          ALLOW_DESTRUCTIVE_MIGRATION: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destructive-migration') }}
+        run: |
+          BASE_REF="$(bash ../.github/scripts/effective-base.sh api "origin/${{ github.base_ref }}")"
+          export BASE_REF
+          bash scripts/check-migrations.sh
+
+  sql-schema:
+    name: SQL Schema Drift
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Prepare every SQL statement against a migrations-only database
+        run: bash scripts/check-sql-schema.sh
+
+  security-gates:
+    name: Security Gates
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      # security-lint.sh expects <root>/{api,agent,sdk-go}. The monorepo root
+      # already has api/; the two siblings are checked out next to it.
+      - name: Checkout monorepo
+        uses: actions/checkout@v7
+
+      - name: Checkout sensor (as agent/)
+        uses: actions/checkout@v7
+        with:
+          repository: openctemio/sensor
+          path: agent
+
+      - name: Checkout sdk-go
+        uses: actions/checkout@v7
+        with:
+          repository: openctemio/sdk-go
+          path: sdk-go
+
+      - name: Run security lint
+        working-directory: .
+        env:
+          SECLINT_ROOT: ${{ github.workspace }}
+          SECLINT_STRICT: "1"
+        run: bash api/scripts/security-lint.sh
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Run tenant-scope analyzer
+        run: go test ./tools/lint/getbyid/... -count=1
+
+      - name: Sensor vocabulary guard
+        run: go test ./tools/lint/sensorvocab/... -count=1
+
+  openapi:
+    name: OpenAPI Contract
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Spec matches the handler annotations
+        run: bash scripts/check-openapi.sh
+
+  # Gateway: the single public entry point (api/deploy/gateway). Validates the
+  # Caddyfile in every TLS mode, the entrypoint's refusals, and the routing
+  # table against stub upstreams; and that the production compose renders.
+  # The all-in-one image (deploy/allinone) embeds the same gateway files.
+  gateway:
+    name: Gateway Routing
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Routing smoke test
+        run: bash deploy/gateway/smoke-test.sh
+
+      - name: Production compose renders
+        working-directory: api/deploy
+        run: |
+          cp .env.example .env
+          sed -i -e 's/^DB_PASSWORD=.*/DB_PASSWORD=x/' -e 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=x/' \
+            -e 's/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=x/' -e 's/^APP_ENCRYPTION_KEY=.*/APP_ENCRYPTION_KEY=x/' \
+            -e 's/^CSRF_SECRET=.*/CSRF_SECRET=x/' .env
+          docker compose config -q
+          docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.plain-http.yml config -q
+          # Only the gateway publishes a port.
+          published="$(docker compose config --format json | jq -r '.services | to_entries[] | select(.value.ports != null and (.value.ports | length) > 0) | .key')"
+          echo "services with published ports: $published"
+          test "$published" = "gateway"
+
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # golangci-lint --new-from-rev needs the base branch
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+
+      - name: Run staticcheck
+        run: staticcheck ./...
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
+      - name: Run golangci-lint on new code
+        if: github.event_name == 'pull_request'
+        run: |
+          base="$(bash ../.github/scripts/effective-base.sh api "origin/${{ github.base_ref }}")"
+          make lint-new BASE_REF="$base"
+
+  test:
+    name: Test
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: openctem
+          # Job-scoped throwaway database: no password at all (trust auth on
+          # the service network), so no credential literal lives in the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Apply migrations to the test database
+        run: migrate -path migrations -database "$DATABASE_URL" up
+        env:
+          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: openctem
+          DB_NAME: app_test
+          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v6
+        with:
+          files: ./api/coverage.out
+          flags: api
+          fail_ci_if_error: false
+
+  compat-v1:
+    name: Protocol v1 Compatibility
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: openctem
+          # Job-scoped throwaway database: no password at all (trust auth on
+          # the service network), so no credential literal lives in the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: app_compat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://openctem@localhost:5432/app_compat?sslmode=disable
+      APP_ENV: development
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: openctem
+      DB_NAME: app_compat
+      DB_SSLMODE: disable
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      SERVER_PORT: 8080
+      AUTH_PROVIDER: local
+      AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            api/go.sum
+            api/tests/compat/v1/go.sum
+
+      - name: Generate secrets
+        run: |
+          echo "AUTH_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "APP_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Apply migrations
+        run: migrate -path migrations -database "$DATABASE_URL" up
+
+      - name: Build API and bootstrap-admin
+        run: go build -o bin/ ./cmd/server ./cmd/bootstrap-admin
+
+      - name: Start API
+        run: |
+          nohup ./bin/server > server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8080/health >/dev/null && exit 0
+            sleep 1
+          done
+          echo "API did not become healthy"; cat server.log; exit 1
+
+      - name: Run the last released SDK against this build
+        run: bash scripts/compat-v1.sh
+        env:
+          COMPAT_API_URL: http://127.0.0.1:8080
+          BOOTSTRAP_ADMIN_BIN: ./bin/bootstrap-admin
+
+      - name: API log on failure
+        if: failure()
+        run: tail -200 server.log
+
+  build:
+    name: Build
+    needs: [changes, lint, test]
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Build API Server
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/openctem ./cmd/server
+
+      - name: Build Bootstrap Admin
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/bootstrap-admin ./cmd/bootstrap-admin
+
+      - name: Upload API artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-linux-amd64
+          path: api/bin/openctem
+
+      - name: Upload Bootstrap Admin artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bootstrap-admin-linux-amd64
+          path: api/bin/bootstrap-admin
+
+  docker:
+    name: Docker Build
+    needs: [changes, build]
+    if: needs.changes.outputs.api == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: api
+          push: false
+          tags: openctem-api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+  # The ONE required status check for the API. Runs even when everything above
+  # was skipped (non-API change), and fails if any job failed or was cancelled.
+  # A skipped job is fine: it means the path filter or an event condition said
+  # it does not apply.
+  api-ok:
+    name: API CI OK
+    if: always()
+    needs: [changes, migrations, sql-schema, security-gates, openapi, gateway, lint, test, compat-v1, build, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All API jobs passed or were skipped
+        working-directory: .
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null

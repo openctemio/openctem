@@ -1,0 +1,176 @@
+name: Web Security
+
+# Carried over from openctemio/ui's security.yml. CodeQL moved to codeql.yml and
+# secret scanning to repo-security.yml.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  merge_group:
+  schedule:
+    - cron: '0 0 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  NODE_VERSION: '20'
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  changes:
+    name: Detect web changes
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.f.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: f
+        working-directory: .
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: bash .github/scripts/changed.sh web web/ .github/workflows/web- .github/scripts/
+
+  npm-audit:
+    name: NPM Audit
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+      - name: Run npm audit (JSON output)
+        run: npm audit --json > npm-audit-results.json || true
+      - name: Upload audit results
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-audit-results
+          path: web/npm-audit-results.json
+          retention-days: 30
+
+  trivy:
+    name: Trivy Vulnerability Scanner (web)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'web'
+          format: 'sarif'
+          output: 'trivy-web.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          scanners: 'vuln,secret,misconfig'
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-web.sarif'
+          category: trivy-web
+
+  eslint-security:
+    name: ESLint Security
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Install SARIF formatter
+        run: npm install --no-save @microsoft/eslint-formatter-sarif@3.1.0
+      - name: Run ESLint
+        run: npx eslint . --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif
+        continue-on-error: true
+      - name: Upload ESLint results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: web/eslint-results.sarif
+          category: eslint-web
+        continue-on-error: true
+
+  snyk:
+    name: Snyk Security Scan (web)
+    needs: changes
+    if: needs.changes.outputs.web == 'true' && vars.ENABLE_SNYK == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=web/package.json
+
+  docker-scan:
+    name: Docker Image Scan (web)
+    needs: changes
+    if: >-
+      needs.changes.outputs.web == 'true' && (
+      github.event_name == 'schedule'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'pull_request' && github.base_ref == 'main'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: web
+          push: false
+          load: true
+          tags: openctem-web:scan
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://localhost:8080
+      - name: Run Trivy on the image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'openctem-web:scan'
+          format: 'sarif'
+          output: 'trivy-docker-web.sarif'
+          severity: 'CRITICAL,HIGH'
+      - name: Upload Trivy Docker scan results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-docker-web.sarif'
+          category: docker-web

@@ -1,0 +1,44 @@
+name: API Fuzz
+
+# Nightly fuzzing of the parsers that read untrusted sensor bytes (the strict
+# CTIS decoder of protocol v2 results). Schedule + manual only, never on pull
+# requests. Schedules run from the default branch (main).
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  strict-ctis:
+    name: FuzzStrictCTIS (10 min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOWORK: 'off'
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.6'
+          cache: true
+          cache-dependency-path: api/go.sum
+      - name: Fuzz the strict CTIS decoder
+        run: go test ./internal/app/ingest/ -run '^$' -fuzz '^FuzzStrictCTIS$' -fuzztime 10m
+      - name: Upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-strict-ctis-crasher
+          path: api/internal/app/ingest/testdata/fuzz/
+          if-no-files-found: ignore

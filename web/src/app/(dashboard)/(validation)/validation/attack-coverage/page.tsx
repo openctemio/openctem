@@ -1,0 +1,625 @@
+'use client'
+
+import { useMemo } from 'react'
+import { Main } from '@/components/layout'
+import { PageHeader, StatsCard } from '@/features/shared'
+import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Shield, Target, AlertTriangle, Download, RefreshCw } from 'lucide-react'
+import { useAllPentestFindings } from '@/features/pentest/api/use-pentest-api'
+import type { ApiFinding } from '@/features/pentest/api/adapters'
+import { useSimulations, type Simulation } from '@/features/simulation/api/use-simulation-api'
+import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
+import {
+  MITRE_TACTICS,
+  OWASP_TO_MITRE,
+  getMitreTechnique,
+  getMitreTacticForTechnique,
+  type MitreTactic,
+} from '@/features/pentest/lib/mitre-attack'
+
+// ============================================
+// Types
+// ============================================
+
+interface TechniqueCell {
+  techniqueId: string
+  techniqueName: string
+  tacticId: string
+  findingCount: number
+  simulationCount: number
+  bypassed: number
+  detected: number
+  severities: string[]
+}
+
+type CoverageSource = 'all' | 'pentest' | 'simulation'
+
+// ============================================
+// Coverage computation
+// ============================================
+
+function buildCoverageMap(
+  findings: ApiFinding[],
+  simulations: Simulation[],
+  source: CoverageSource
+): Map<string, TechniqueCell> {
+  const map = new Map<string, TechniqueCell>()
+
+  const upsert = (
+    tacticId: string,
+    techniqueId: string,
+    techniqueName: string,
+    patch: Partial<TechniqueCell>
+  ) => {
+    const key = `${tacticId}::${techniqueId}`
+    const existing = map.get(key) ?? {
+      techniqueId,
+      techniqueName,
+      tacticId,
+      findingCount: 0,
+      simulationCount: 0,
+      bypassed: 0,
+      detected: 0,
+      severities: [],
+    }
+    map.set(key, {
+      ...existing,
+      findingCount: existing.findingCount + (patch.findingCount ?? 0),
+      simulationCount: existing.simulationCount + (patch.simulationCount ?? 0),
+      bypassed: existing.bypassed + (patch.bypassed ?? 0),
+      detected: existing.detected + (patch.detected ?? 0),
+      severities: patch.severities
+        ? [...existing.severities, ...patch.severities]
+        : existing.severities,
+    })
+  }
+
+  // Map pentest findings. Prefer the explicit ATT&CK technique the analyst
+  // tagged on the finding; only fall back to fuzzy OWASP → MITRE inference when
+  // no explicit technique is set.
+  if (source === 'all' || source === 'pentest') {
+    for (const finding of findings) {
+      if (finding.mitre_technique_id) {
+        const tactic = getMitreTacticForTechnique(finding.mitre_technique_id)
+        const tech = getMitreTechnique(finding.mitre_technique_id)
+        if (tactic) {
+          upsert(tactic.id, finding.mitre_technique_id, tech?.name ?? finding.mitre_technique_id, {
+            findingCount: 1,
+            severities: [finding.severity ?? 'info'],
+          })
+          continue
+        }
+        // Explicit technique not in our catalogue — fall through to OWASP inference.
+      }
+
+      const owasp = finding.owasp_category
+      if (!owasp) continue
+      // Find best matching OWASP key
+      const owaspKey =
+        Object.keys(OWASP_TO_MITRE).find((k) =>
+          owasp.toLowerCase().includes(k.split(':')[0].toLowerCase().replace('a0', 'a'))
+        ) ?? owasp
+      const mappings = OWASP_TO_MITRE[owaspKey] ?? []
+      for (const m of mappings) {
+        upsert(m.tacticId, m.techniqueId, m.techniqueName, {
+          findingCount: 1,
+          severities: [finding.severity ?? 'info'],
+        })
+      }
+    }
+  }
+
+  // Map simulations via direct mitre_technique_id
+  if (source === 'all' || source === 'simulation') {
+    for (const sim of simulations) {
+      if (!sim.mitre_technique_id || !sim.mitre_tactic) continue
+      const tactic = MITRE_TACTICS.find(
+        (t) => t.name.toLowerCase() === sim.mitre_tactic.toLowerCase() || t.id === sim.mitre_tactic
+      )
+      if (!tactic) continue
+      upsert(
+        tactic.id,
+        sim.mitre_technique_id,
+        sim.mitre_technique_name || sim.mitre_technique_id,
+        {
+          simulationCount: 1,
+          bypassed: sim.last_result === 'bypassed' ? 1 : 0,
+          detected: sim.last_result === 'detected' || sim.last_result === 'prevented' ? 1 : 0,
+        }
+      )
+    }
+  }
+
+  return map
+}
+
+// Heat colours come from the shared severity / criticality scales (the
+// "detected" state borrows criticality-low, the scale's reassuring end) rather
+// than page-local palette literals.
+const HEAT = {
+  none: 'bg-muted/30 hover:bg-muted/50',
+  lowMed: `${SEVERITY_DOT_COLORS.low} opacity-80 hover:opacity-100`,
+  high: `${SEVERITY_DOT_COLORS.high} opacity-80 hover:opacity-100`,
+  critical: `${SEVERITY_DOT_COLORS.critical} opacity-80 hover:opacity-100`,
+  partial: `${SEVERITY_DOT_COLORS.medium} opacity-80 hover:opacity-100`,
+  detected: `${CRITICALITY_DOT_COLORS.low} opacity-80 hover:opacity-100`,
+}
+
+function getCellColor(cell: TechniqueCell | undefined): string {
+  if (!cell) return HEAT.none
+  const total = cell.findingCount + cell.simulationCount
+  if (total === 0) return HEAT.none
+
+  // If any simulations: use detection outcome
+  if (cell.simulationCount > 0) {
+    const detectionRate = cell.detected / cell.simulationCount
+    if (cell.bypassed > 0 && cell.detected === 0) return HEAT.critical
+    if (detectionRate >= 0.8) return HEAT.detected
+    if (detectionRate >= 0.5) return HEAT.partial
+    return HEAT.high
+  }
+
+  // Pentest findings only: severity-based
+  const hasCritical = cell.severities.includes('critical')
+  const hasHigh = cell.severities.includes('high')
+  if (hasCritical) return HEAT.critical
+  if (hasHigh) return HEAT.high
+  return HEAT.lowMed
+}
+
+function getCellTextColor(cell: TechniqueCell | undefined): string {
+  if (!cell) return 'text-muted-foreground/40'
+  const total = cell.findingCount + cell.simulationCount
+  if (total === 0) return 'text-muted-foreground/40'
+  return 'text-white'
+}
+
+// ============================================
+// Sub-components
+// ============================================
+
+function LegendItem({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className={`h-3 w-3 rounded-sm ${color}`} />
+      <span className="text-muted-foreground text-xs">{label}</span>
+    </div>
+  )
+}
+
+function HeatmapCell({ cell }: { cell: TechniqueCell | undefined; tacticId: string }) {
+  const bgColor = getCellColor(cell)
+  const textColor = getCellTextColor(cell)
+  const total = cell ? cell.findingCount + cell.simulationCount : 0
+
+  if (!cell) {
+    return (
+      <div
+        className={`h-8 w-full rounded-sm border border-border/30 ${bgColor} transition-colors`}
+      />
+    )
+  }
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            className={`flex h-8 w-full cursor-default items-center justify-center rounded-sm border border-border/30 ${bgColor} transition-colors`}
+          >
+            <span className={`text-xs font-semibold ${textColor}`}>{total}</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs">
+          <div className="space-y-1 text-sm">
+            <p className="font-semibold">{cell.techniqueName}</p>
+            <p className="text-muted-foreground font-mono text-xs">{cell.techniqueId}</p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {cell.findingCount > 0 && (
+                <span className="text-xs">
+                  {cell.findingCount} pentest finding{cell.findingCount !== 1 ? 's' : ''}
+                </span>
+              )}
+              {cell.simulationCount > 0 && (
+                <>
+                  <span className="text-muted-foreground text-xs">|</span>
+                  <span className="text-xs">
+                    {cell.detected} detected, {cell.bypassed} bypassed
+                  </span>
+                </>
+              )}
+            </div>
+            {cell.severities.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-1">
+                {[...new Set(cell.severities)].map((sev) => (
+                  <Badge key={sev} variant="outline" className="text-xs capitalize">
+                    {sev}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+// ============================================
+// Per-tactic column
+// ============================================
+
+// Techniques grouped by tactic (static — derived from OWASP_TO_MITRE + simulation data)
+const TACTIC_TECHNIQUES: Record<string, { id: string; name: string }[]> = (() => {
+  const result: Record<string, { id: string; name: string }[]> = {}
+  for (const tactic of MITRE_TACTICS) {
+    result[tactic.id] = []
+  }
+  for (const mappings of Object.values(OWASP_TO_MITRE)) {
+    for (const m of mappings) {
+      const existing = result[m.tacticId]
+      if (existing && !existing.find((t) => t.id === m.techniqueId)) {
+        existing.push({ id: m.techniqueId, name: m.techniqueName })
+      }
+    }
+  }
+  return result
+})()
+
+// ============================================
+// Main page
+// ============================================
+
+function LoadingSkeleton() {
+  return (
+    <Main>
+      <Skeleton className="h-8 w-72" />
+      <Skeleton className="mt-2 h-4 w-96 max-w-full" />
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="mt-5 h-96 rounded-xl" />
+    </Main>
+  )
+}
+
+export default function MitreCoveragePage() {
+  // The source filter lives in the URL so a view can be linked.
+  const [sourceParam, setSourceParam] = useUrlFilter('source', 'all')
+  const source: CoverageSource =
+    sourceParam === 'pentest' || sourceParam === 'simulation' ? sourceParam : 'all'
+
+  // Attack simulation is a separate module. When it is off for the tenant this
+  // page still works from pentest findings alone — skip the simulations fetch
+  // (which would 403) and hide the simulation-only source.
+  const { moduleIds } = useTenantModules()
+  const simulationEnabled = moduleIds.includes('attack_simulation')
+
+  const {
+    data: findingsData,
+    isLoading: loadingFindings,
+    mutate: refreshFindings,
+  } = useAllPentestFindings({ per_page: 200 })
+  const {
+    data: simsData,
+    isLoading: loadingSims,
+    mutate: refreshSims,
+  } = useSimulations({ enabled: simulationEnabled })
+
+  const isLoading = loadingFindings || loadingSims
+
+  const findings = useMemo(() => findingsData?.data ?? [], [findingsData])
+  const simulations = useMemo(() => simsData?.data ?? [], [simsData])
+
+  const coverageMap = useMemo(
+    () => buildCoverageMap(findings, simulations, source),
+    [findings, simulations, source]
+  )
+
+  // Build enriched tactic techniques (include simulation- and finding-sourced techniques)
+  const enrichedTacticTechniques = useMemo(() => {
+    const result: Record<string, { id: string; name: string }[]> = {}
+    for (const tactic of MITRE_TACTICS) {
+      result[tactic.id] = [...(TACTIC_TECHNIQUES[tactic.id] ?? [])]
+    }
+    const addTechnique = (tacticId: string, id: string, name: string) => {
+      const list = result[tacticId]
+      if (list && !list.find((t) => t.id === id)) list.push({ id, name })
+    }
+    // Add finding-explicit techniques not already in the map
+    for (const finding of findings) {
+      if (!finding.mitre_technique_id) continue
+      const tactic = getMitreTacticForTechnique(finding.mitre_technique_id)
+      if (!tactic) continue
+      const tech = getMitreTechnique(finding.mitre_technique_id)
+      addTechnique(tactic.id, finding.mitre_technique_id, tech?.name ?? finding.mitre_technique_id)
+    }
+    // Add simulation techniques not already in the map
+    for (const sim of simulations) {
+      if (!sim.mitre_technique_id || !sim.mitre_tactic) continue
+      const tactic = MITRE_TACTICS.find(
+        (t) => t.name.toLowerCase() === sim.mitre_tactic.toLowerCase() || t.id === sim.mitre_tactic
+      )
+      if (!tactic) continue
+      addTechnique(
+        tactic.id,
+        sim.mitre_technique_id,
+        sim.mitre_technique_name || sim.mitre_technique_id
+      )
+    }
+    return result
+  }, [simulations, findings])
+
+  // Stats
+  const stats = useMemo(() => {
+    let covered = 0
+    let totalTechniques = 0
+    let bypassed = 0
+    let detected = 0
+
+    for (const tactic of MITRE_TACTICS) {
+      const techniques = enrichedTacticTechniques[tactic.id] ?? []
+      totalTechniques += techniques.length
+      for (const tech of techniques) {
+        const cell = coverageMap.get(`${tactic.id}::${tech.id}`)
+        if (cell && cell.findingCount + cell.simulationCount > 0) {
+          covered++
+        }
+        bypassed += cell?.bypassed ?? 0
+        detected += cell?.detected ?? 0
+      }
+    }
+
+    const coverage = totalTechniques > 0 ? Math.round((covered / totalTechniques) * 100) : 0
+    return { covered, totalTechniques, coverage, bypassed, detected }
+  }, [coverageMap, enrichedTacticTechniques])
+
+  const handleRefresh = () => {
+    void refreshFindings()
+    void refreshSims()
+  }
+
+  if (isLoading) return <LoadingSkeleton />
+
+  return (
+    <Main>
+      <PageHeader
+        title="ATT&CK coverage"
+        description={
+          simulationEnabled
+            ? 'Which ATT&CK techniques your pentest findings and attack simulations have exercised.'
+            : 'Which ATT&CK techniques your pentest findings have exercised.'
+        }
+      >
+        <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <RefreshCw className="h-4 w-4 sm:me-2" />
+          <span className="hidden sm:inline">Refresh</span>
+        </Button>
+        <Button variant="outline" size="sm" disabled title="Coming soon">
+          <Download className="h-4 w-4 sm:me-2" />
+          <span className="hidden sm:inline">Export</span>
+        </Button>
+      </PageHeader>
+
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatsCard
+          icon={Target}
+          title="Techniques covered"
+          value={`${stats.covered}/${stats.totalTechniques}`}
+          description={`${stats.coverage}% coverage`}
+        />
+        <StatsCard icon={Shield} title="Pentest findings" value={findings.length} />
+        <StatsCard
+          icon={AlertTriangle}
+          title="Simulations bypassed"
+          value={stats.bypassed}
+          valueClassName={stats.bypassed > 0 ? 'text-destructive' : undefined}
+        />
+        <StatsCard icon={Shield} title="Simulations detected" value={stats.detected} />
+      </div>
+
+      <Card className="mt-5">
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle>ATT&CK matrix</CardTitle>
+            <CardDescription>
+              Each cell is a technique; its colour shows coverage and severity.
+            </CardDescription>
+          </div>
+          {simulationEnabled && (
+            <Select value={source} onValueChange={setSourceParam}>
+              <SelectTrigger className="h-9 w-40" aria-label="Coverage source">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                <SelectItem value="pentest">Pentest only</SelectItem>
+                <SelectItem value="simulation">Simulation only</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <div className="flex w-full flex-wrap gap-x-4 gap-y-2">
+            <LegendItem color={HEAT.none} label="No coverage" />
+            <LegendItem color={HEAT.lowMed} label="Pentest finding (low/med)" />
+            <LegendItem color={HEAT.high} label="Pentest finding (high)" />
+            <LegendItem color={HEAT.critical} label="Critical / bypassed" />
+            {simulationEnabled && (
+              <>
+                <LegendItem color={HEAT.partial} label="Partially detected" />
+                <LegendItem color={HEAT.detected} label="Detected / prevented" />
+              </>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <div className="min-w-[900px]">
+            {/* Tactic headers */}
+            <div
+              className="mb-2 grid gap-1"
+              style={{ gridTemplateColumns: `repeat(${MITRE_TACTICS.length}, 1fr)` }}
+            >
+              {MITRE_TACTICS.map((tactic) => (
+                <TacticHeader key={tactic.id} tactic={tactic} />
+              ))}
+            </div>
+
+            {/* Technique rows — we render by row index across all tactics */}
+            <TechniqueGrid
+              tactics={MITRE_TACTICS}
+              enrichedTacticTechniques={enrichedTacticTechniques}
+              coverageMap={coverageMap}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detail table — covered techniques */}
+      {coverageMap.size > 0 && (
+        <Card className="mt-5">
+          <CardHeader>
+            <CardTitle>Covered techniques</CardTitle>
+            <CardDescription>
+              Techniques with at least one finding or simulation result.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y divide-border">
+              {[...coverageMap.values()]
+                .filter((c) => c.findingCount + c.simulationCount > 0)
+                .sort(
+                  (a, b) =>
+                    b.findingCount + b.simulationCount - (a.findingCount + a.simulationCount)
+                )
+                .map((cell) => {
+                  const tactic = MITRE_TACTICS.find((t) => t.id === cell.tacticId)
+                  return (
+                    <div
+                      key={`${cell.tacticId}::${cell.techniqueId}`}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="text-muted-foreground font-mono text-xs w-16 shrink-0">
+                          {cell.techniqueId}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{cell.techniqueName}</p>
+                          <p className="text-muted-foreground text-xs truncate">{tactic?.name}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {cell.findingCount > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {cell.findingCount} finding{cell.findingCount !== 1 ? 's' : ''}
+                          </Badge>
+                        )}
+                        {cell.simulationCount > 0 && (
+                          <>
+                            {cell.detected > 0 && (
+                              <Badge variant="secondary" className="tabular-nums">
+                                {cell.detected} detected
+                              </Badge>
+                            )}
+                            {cell.bypassed > 0 && (
+                              <Badge variant="outline" className="text-destructive tabular-nums">
+                                {cell.bypassed} bypassed
+                              </Badge>
+                            )}
+                          </>
+                        )}
+                        {cell.severities.length > 0 && (
+                          <div className="flex gap-1">
+                            {[...new Set(cell.severities)].map((sev) => (
+                              <Badge key={sev} variant="outline" className="text-xs capitalize">
+                                {sev}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </Main>
+  )
+}
+
+// ============================================
+// Tactic header
+// ============================================
+
+function TacticHeader({ tactic }: { tactic: MitreTactic }) {
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="bg-primary/10 rounded px-1 py-1.5 text-center">
+            <p className="text-primary truncate text-xs font-semibold">{tactic.shortName}</p>
+            <p className="text-muted-foreground font-mono text-[10px]">{tactic.id}</p>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p className="font-semibold">{tactic.name}</p>
+          <p className="text-muted-foreground text-xs">{tactic.description}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+// ============================================
+// Technique grid — renders rows across all tactics
+// ============================================
+
+function TechniqueGrid({
+  tactics,
+  enrichedTacticTechniques,
+  coverageMap,
+}: {
+  tactics: MitreTactic[]
+  enrichedTacticTechniques: Record<string, { id: string; name: string }[]>
+  coverageMap: Map<string, TechniqueCell>
+}) {
+  const maxRows = Math.max(...tactics.map((t) => (enrichedTacticTechniques[t.id] ?? []).length))
+
+  return (
+    <div className="space-y-1">
+      {Array.from({ length: maxRows }).map((_, rowIdx) => (
+        <div
+          key={rowIdx}
+          className="grid gap-1"
+          style={{ gridTemplateColumns: `repeat(${tactics.length}, 1fr)` }}
+        >
+          {tactics.map((tactic) => {
+            const techniques = enrichedTacticTechniques[tactic.id] ?? []
+            const tech = techniques[rowIdx]
+            if (!tech) {
+              return <div key={tactic.id} className="h-8" />
+            }
+            const cell = coverageMap.get(`${tactic.id}::${tech.id}`)
+            return <HeatmapCell key={tactic.id} cell={cell} tacticId={tactic.id} />
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}

@@ -1,0 +1,410 @@
+/**
+ * Login Form Component
+ *
+ * Handles user authentication with support for:
+ * - Local auth (email/password) via backend API
+ * - Social auth (Google, GitHub, Microsoft) via OAuth2
+ */
+
+'use client'
+
+import { useEffect, useState, useTransition } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { KeyRound, Loader2, LogIn } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/password-input'
+import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
+
+import { validateRedirectUrl } from '@/lib/redirect'
+
+// Import schema and server actions
+import { loginSchema, type LoginInput } from '../schemas/auth.schema'
+import { loginAction, type LoginResult, type MfaPurpose } from '../actions/local-auth-actions'
+import { MfaStep } from './mfa-step'
+import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth-actions'
+
+// SSO imports
+import { useAuthProviders } from '../api/use-auth-providers'
+import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
+import { initiateSSOLogin } from '@/features/sso/actions/sso-auth-actions'
+import { getProviderLabel, type SSOProviderType } from '@/features/sso/types/sso.types'
+
+// ============================================
+// TYPES
+// ============================================
+
+interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
+  /**
+   * URL to redirect to after successful login
+   * @default '/'
+   */
+  redirectTo?: string
+
+  /**
+   * Whether to show social login buttons (Google, GitHub, Microsoft)
+   * @default true
+   */
+  showSocialLogin?: boolean
+
+  /**
+   * Organization slug for SSO login (?org= parameter)
+   * When set, fetches and displays tenant-specific SSO providers
+   */
+  orgSlug?: string
+}
+
+// ============================================
+// SOCIAL PROVIDERS CONFIG
+// ============================================
+
+const socialProviders: {
+  id: SocialProvider
+  name: string
+  icon: React.ComponentType<{ className?: string }>
+}[] = [
+  { id: 'google', name: 'Google', icon: IconGoogle },
+  { id: 'github', name: 'GitHub', icon: IconGithub },
+  { id: 'microsoft', name: 'Microsoft', icon: IconMicrosoft },
+]
+
+/**
+ * Full page navigation after login, so the cookies set by the Server Action
+ * are picked up (router.push would keep the old auth state).
+ */
+function hardNavigate(url: string) {
+  window.location.href = url
+}
+
+// ============================================
+// COMPONENT
+// ============================================
+
+export function LoginForm({
+  className,
+  redirectTo = '/',
+  showSocialLogin = true,
+  orgSlug,
+  ...props
+}: LoginFormProps) {
+  const [isPending, startTransition] = useTransition()
+  const [loadingProvider, setLoadingProvider] = useState<SocialProvider | null>(null)
+  const [loadingSSOProvider, setLoadingSSOProvider] = useState<SSOProviderType | null>(null)
+  // Set when the password was right but a second factor is needed.
+  const [mfaPurpose, setMfaPurpose] = useState<MfaPurpose | null>(null)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Validate redirectTo to prevent open redirect attacks
+  const safeRedirectTo = validateRedirectUrl(redirectTo, '/')
+
+  // Fetch tenant-specific SSO providers when ?org= is present
+  const { data: ssoProviders } = useTenantSSOProviders(orgSlug ?? null)
+
+  // Fetch which social providers the backend actually has configured, so we
+  // only render buttons that will work (no 404 dead-affordances). Buttons are
+  // hidden while loading (data undefined) and only shown for providers === true.
+  const { data: authProviders } = useAuthProviders()
+  const enabledSocialProviders = authProviders
+    ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
+    : []
+
+  // Check for error from OAuth/SSO callback
+  const errorParam = searchParams.get('error')
+  useEffect(() => {
+    if (errorParam) {
+      toast.error(errorParam)
+    }
+  }, [errorParam])
+
+  // Form setup with centralized schema
+  const form = useForm<LoginInput>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+  })
+
+  /**
+   * Handle form submission for local auth
+   */
+  function onSubmit(data: LoginInput) {
+    startTransition(async () => {
+      const result = await loginAction({
+        email: data.email,
+        password: data.password,
+      })
+
+      if (result.success && result.mfaRequired && result.mfaPurpose) {
+        form.resetField('password')
+        setMfaPurpose(result.mfaPurpose)
+        return
+      }
+
+      handleLoginResult(result)
+    })
+  }
+
+  /**
+   * Route a finished login (password only, or after the second factor).
+   */
+  function handleLoginResult(result: LoginResult) {
+    if (result.success) {
+      // Store user data in sessionStorage for sidebar display
+      if (result.user) {
+        try {
+          sessionStorage.setItem(
+            'app_user',
+            JSON.stringify({
+              id: result.user.id,
+              name: result.user.name,
+              email: result.user.email,
+            })
+          )
+        } catch {
+          // Ignore sessionStorage errors
+        }
+      }
+
+      // Platform administrator: the admin console (it asks for the TOTP code).
+      if (result.platformAdmin) {
+        const toConsole = safeRedirectTo === '/admin' || safeRedirectTo.startsWith('/admin/')
+        hardNavigate(toConsole ? safeRedirectTo : '/admin')
+        return
+      }
+
+      // Case 1: Multiple tenants - redirect to tenant selection
+      if (result.requiresTenantSelection) {
+        toast.success('Please select a team to continue')
+        router.push('/select-tenant')
+        return
+      }
+
+      // Case 2: No tenants - check if user has a specific destination (e.g., invitation)
+      if (result.tenants && result.tenants.length === 0) {
+        // If returnTo is an invitation page, go there first (user can accept and get a tenant)
+        if (safeRedirectTo.includes('/invitations/')) {
+          toast.success('Logged in successfully')
+          hardNavigate(safeRedirectTo)
+          return
+        }
+        // Otherwise, onboarding: the create-team form, or (when only the
+        // platform administrator creates organizations) a notice to ask for
+        // access. The page decides, so this toast stays neutral.
+        toast.success('Logged in successfully')
+        hardNavigate('/onboarding/create-team')
+        return
+      }
+
+      // Case 3: Single tenant - proceed to dashboard
+      // IMPORTANT: Use window.location.href for full page navigation
+      // to ensure cookies set by Server Action are picked up properly
+      toast.success('Logged in successfully')
+      hardNavigate(safeRedirectTo)
+    } else {
+      toast.error(result.error || 'Login failed')
+    }
+  }
+
+  /**
+   * Handle social login (Google, GitHub, Microsoft)
+   */
+  async function handleSocialLogin(provider: SocialProvider) {
+    setLoadingProvider(provider)
+    try {
+      // This will redirect to the OAuth provider
+      await initiateSocialLogin(provider, safeRedirectTo)
+    } catch (error) {
+      setLoadingProvider(null)
+      console.error(`Social login error (${provider}):`, error)
+      toast.error(`Failed to sign in with ${provider}. Please try again.`)
+    }
+  }
+
+  /**
+   * Handle SSO login (Entra ID, Okta, Google Workspace)
+   */
+  async function handleSSOLogin(provider: SSOProviderType) {
+    if (!orgSlug) return
+    setLoadingSSOProvider(provider)
+    try {
+      await initiateSSOLogin(provider, orgSlug, safeRedirectTo)
+    } catch (error) {
+      setLoadingSSOProvider(null)
+      console.error(`SSO login error (${provider}):`, error)
+      toast.error(`Failed to sign in with ${getProviderLabel(provider)}. Please try again.`)
+    }
+  }
+
+  const isLoading = isPending || loadingProvider !== null || loadingSSOProvider !== null
+
+  if (mfaPurpose) {
+    return (
+      <div className={cn('grid gap-3', className)}>
+        <MfaStep
+          purpose={mfaPurpose}
+          onDone={handleLoginResult}
+          onCancel={(message) => {
+            setMfaPurpose(null)
+            if (message) toast.error(message)
+          }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <Form {...form}>
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className={cn('grid gap-3', className)}
+        {...props}
+      >
+        {/* Email Field */}
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Email</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="name@example.com"
+                  type="email"
+                  autoComplete="email"
+                  disabled={isLoading}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Password Field */}
+        <FormField
+          control={form.control}
+          name="password"
+          render={({ field }) => (
+            <FormItem className="relative">
+              <FormLabel>Password</FormLabel>
+              <FormControl>
+                <PasswordInput
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  disabled={isLoading}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+
+              {/* Forgot Password Link */}
+              <Link
+                href="/forgot-password"
+                className="text-muted-foreground absolute end-0 -top-0.5 text-sm font-medium hover:opacity-75 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+              >
+                Forgot password?
+              </Link>
+            </FormItem>
+          )}
+        />
+
+        {/* Submit Button */}
+        <Button className="mt-2" disabled={isLoading} type="submit">
+          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+          Sign in
+        </Button>
+
+        {/* Social Login Section — only shown for providers the backend has
+            configured. If none are configured (or still loading), the whole
+            block including the "or continue with" divider is hidden. */}
+        {showSocialLogin && enabledSocialProviders.length > 0 && (
+          <>
+            <div className="relative my-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background text-muted-foreground px-2">Or continue with</span>
+              </div>
+            </div>
+
+            <div
+              className="grid gap-2"
+              style={{
+                gridTemplateColumns: `repeat(${enabledSocialProviders.length}, minmax(0, 1fr))`,
+              }}
+            >
+              {enabledSocialProviders.map((provider) => (
+                <Button
+                  key={provider.id}
+                  variant="outline"
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => handleSocialLogin(provider.id)}
+                  className="relative"
+                >
+                  {loadingProvider === provider.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <provider.icon className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">{provider.name}</span>
+                </Button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* SSO Providers (when ?org= parameter is present) */}
+        {orgSlug && ssoProviders && ssoProviders.length > 0 && (
+          <>
+            <div className="relative my-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background text-muted-foreground px-2">Organization SSO</span>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              {ssoProviders.map((provider) => (
+                <Button
+                  key={provider.id}
+                  variant="outline"
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => handleSSOLogin(provider.provider)}
+                  className="w-full"
+                >
+                  {loadingSSOProvider === provider.provider ? (
+                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <KeyRound className="me-2 h-4 w-4" />
+                  )}
+                  Sign in with {provider.display_name}
+                </Button>
+              ))}
+            </div>
+          </>
+        )}
+      </form>
+    </Form>
+  )
+}

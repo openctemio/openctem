@@ -1,0 +1,106 @@
+name: All-in-one CI
+
+# Builds the three images exactly as docker-publish.yml does on a release
+# (openctem-api, openctem-web, then the all-in-one `openctem` assembled FROM
+# them with api/deploy/gateway as the gateway), loads them locally, and runs
+# the same smoke tests: native arch + ELF + executes, and the all-in-one in
+# both gateway modes against a real Postgres + Redis. Nothing is pushed.
+#
+# Without this, a change to a Dockerfile, the gateway or the supervisor would
+# first be exercised by the release tag. Same shape as the other workflows:
+# always starts, `changes` gates the job, `All-in-one OK` reports either way.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect image changes
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.f.outputs.images }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: f
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: >-
+          bash .github/scripts/changed.sh images
+          deploy/ api/deploy/gateway/ api/Dockerfile api/.dockerignore api/go.mod
+          web/Dockerfile web/.dockerignore web/package-lock.json web/server-with-ws.mjs web/next.config.ts
+          .github/scripts/smoke- .github/workflows/allinone-ci.yml
+
+  images:
+    name: Build and smoke-test images (amd64)
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: openctem
+          # Job-scoped throwaway database: no password at all (trust auth on
+          # the service network), so no credential literal lives in the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: app_smoke
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v7
+      # The default docker driver: images built here are visible to the next
+      # build's FROM without a registry.
+      - name: Build openctem-api
+        run: docker build -t local/openctem-api:ci --target production api
+      - name: Build openctem-web
+        run: docker build -t local/openctem-web:ci web
+      - name: Build openctem (all-in-one)
+        run: >-
+          docker buildx build --load -t local/openctem:ci
+          --build-context gateway=api/deploy/gateway
+          --build-arg API_IMAGE=local/openctem-api:ci
+          --build-arg WEB_IMAGE=local/openctem-web:ci
+          deploy/allinone
+      - name: Smoke test (arch, ELF, executes)
+        run: |
+          bash .github/scripts/smoke-image.sh openctem-api local/openctem-api:ci amd64
+          bash .github/scripts/smoke-image.sh openctem-web local/openctem-web:ci amd64
+          bash .github/scripts/smoke-image.sh openctem local/openctem:ci amd64
+      - name: All-in-one, both gateway modes, against Postgres + Redis
+        env:
+          SMOKE_NETWORK: host
+          DB_HOST: localhost
+          REDIS_HOST: localhost
+        run: bash .github/scripts/smoke-allinone.sh local/openctem:ci
+      - name: Image sizes
+        run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep '^local/'
+
+  allinone-ok:
+    name: All-in-one OK
+    if: always()
+    needs: [changes, images]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed or were skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null

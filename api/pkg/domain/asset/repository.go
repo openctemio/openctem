@@ -1,0 +1,508 @@
+package asset
+
+import (
+	"context"
+	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+)
+
+// LifecycleRepository is a narrow side-interface for RFC-004 Phase 0
+// operations that bypass the full Asset reconstruction path. Kept
+// separate from the main Repository so mock implementations in tests
+// do not have to add a method they don't use — mocks can embed a
+// no-op if they need to satisfy AssetService's constructor.
+//
+// The Postgres AssetRepository implements both interfaces; the
+// lifecycle worker and snooze endpoints accept LifecycleRepository
+// explicitly so only the call sites that need these operations pay
+// the coupling cost.
+type LifecycleRepository interface {
+	// SnoozeLifecycle updates lifecycle_paused_until without
+	// round-tripping through Asset reconstruction. pausedUntil=nil
+	// clears the snooze. When reactivate is true AND the current
+	// status is stale/inactive, status also flips to active in the
+	// same UPDATE — manual snooze expresses operator intent to
+	// treat the asset as alive.
+	SnoozeLifecycle(ctx context.Context, tenantID, assetID shared.ID, pausedUntil *time.Time, reactivate bool) error
+}
+
+// DisplayInfo is the minimal projection of an asset used to label other
+// resources (e.g. the asset column of a findings list) without loading the
+// full aggregate and its per-asset finding counts.
+type DisplayInfo struct {
+	ID   shared.ID
+	Name string
+	Type AssetType
+}
+
+// Repository defines the interface for asset persistence.
+// Alias: Store (preferred for new code)
+// Security: All methods that access tenant-scoped data require tenantID parameter.
+type Repository interface {
+	// Create persists a new asset.
+	Create(ctx context.Context, asset *Asset) error
+
+	// GetByID retrieves an asset by its ID within a tenant.
+	// Security: Requires tenantID to prevent cross-tenant data access.
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*Asset, error)
+
+	// GetDisplayInfoByIDs returns the display fields (name, type) of the
+	// given assets in ONE query, keyed by asset id. Ids that do not exist in
+	// the tenant are simply absent from the map.
+	// Security: Requires tenantID; assets of other tenants are never returned.
+	GetDisplayInfoByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]DisplayInfo, error)
+
+	// Update updates an existing asset.
+	// Security: Asset's TenantID is validated internally.
+	Update(ctx context.Context, asset *Asset) error
+
+	// Delete removes an asset by its ID within a tenant.
+	// Security: Requires tenantID to prevent cross-tenant deletion.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
+
+	// List retrieves assets with filtering, sorting, and pagination.
+	List(ctx context.Context, filter Filter, opts ListOptions, page pagination.Pagination) (pagination.Result[*Asset], error)
+
+	// Count returns the total number of assets matching the filter.
+	Count(ctx context.Context, filter Filter) (int64, error)
+
+	// ExistsByName checks if an asset with the given name exists within a tenant.
+	// Security: Requires tenantID to prevent cross-tenant enumeration.
+	ExistsByName(ctx context.Context, tenantID shared.ID, name string) (bool, error)
+
+	// GetByExternalID retrieves an asset by external ID and provider.
+	GetByExternalID(ctx context.Context, tenantID shared.ID, provider Provider, externalID string) (*Asset, error)
+
+	// GetByName retrieves an asset by name within a tenant.
+	GetByName(ctx context.Context, tenantID shared.ID, name string) (*Asset, error)
+
+	// FindRepositoryByRepoName finds a repository asset whose name ends with the given repo name.
+	// This is useful for matching sensor-created assets (e.g., "github.com-org/repo") with SCM imports (e.g., "repo").
+	FindRepositoryByRepoName(ctx context.Context, tenantID shared.ID, repoName string) (*Asset, error)
+
+	// FindRepositoryByFullName finds a repository asset that matches the given full name (org/repo format).
+	// It searches for assets whose name or external_id contains the full name pattern.
+	FindRepositoryByFullName(ctx context.Context, tenantID shared.ID, fullName string) (*Asset, error)
+
+	// FindByIP finds an existing asset by IP address.
+	// Searches: name, properties->>'ip', properties->'ip_address'->>'address'.
+	// Returns nil, nil if not found.
+	FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*Asset, error)
+
+	// FindByHostname finds an existing asset by hostname.
+	// Searches: name, properties->>'hostname', properties->'ip_address'->>'hostname'.
+	// Returns nil, nil if not found.
+	FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*Asset, error)
+
+	// ==========================================================================
+	// Batch Operations (for high-performance ingestion)
+	// ==========================================================================
+
+	// GetByNames retrieves multiple assets by their names within a tenant.
+	// Returns a map of name -> Asset for found assets.
+	GetByNames(ctx context.Context, tenantID shared.ID, names []string) (map[string]*Asset, error)
+
+	// UpsertBatch creates or updates multiple assets in a single operation.
+	// Uses PostgreSQL ON CONFLICT for atomic upsert behavior.
+	// Returns the number of created and updated assets, and persistedIDs: a
+	// map of asset name -> the AUTHORITATIVE id the row actually holds after the
+	// upsert. ON CONFLICT (tenant_id, name) keeps the pre-existing row's id, so a
+	// locally-generated id can lose a concurrent create race and never be
+	// persisted; callers MUST reconcile any id they hold against persistedIDs
+	// before linking child rows (e.g. findings) to it.
+	UpsertBatch(ctx context.Context, assets []*Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error)
+
+	// UpdateFindingCounts updates finding counts for multiple assets in batch.
+	// This is used after bulk finding ingestion to refresh asset statistics.
+	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
+
+	// ListDistinctTags returns distinct tags across all assets for a tenant.
+	// Supports prefix filtering for autocomplete and a limit for result size.
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error)
+
+	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
+	// This replaces the N+1 pattern of calling Count() per type.
+	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID) (map[string]AssetTypeStats, error)
+
+	// GetAverageRiskScore returns the average risk_score for all assets in a tenant.
+	// This replaces loading all assets into memory to compute the average.
+	GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error)
+
+	// BatchUpdateRiskScores updates risk scores for multiple assets in a single query.
+	// Uses PostgreSQL unnest() for efficient bulk updates.
+	BatchUpdateRiskScores(ctx context.Context, tenantID shared.ID, assets []*Asset) error
+
+	// BulkUpdateStatus atomically updates the status of multiple assets in a single transaction.
+	BulkUpdateStatus(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, status Status) (int64, error)
+
+	// GetAggregateStats computes all asset statistics using SQL aggregation.
+	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
+
+	// GetPropertyFacets returns distinct JSONB property keys and their top values for faceted filtering.
+	GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]PropertyFacet, error)
+
+	// ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
+	// Used exclusively by attack path scoring which needs the full set of assets
+	// in-memory. Columns are minimal (id, name, type, exposure, criticality,
+	// risk_score, is_crown_jewel, finding_count) to keep the query fast.
+	ListAllNodes(ctx context.Context, tenantID shared.ID) ([]AssetNode, error)
+}
+
+// AssetNode is a lightweight representation of an asset used for in-memory
+// graph traversal (attack path scoring). It carries only the fields needed
+// to build adjacency lists and compute path risk scores.
+type AssetNode struct {
+	ID           string
+	Name         string
+	AssetType    string
+	Exposure     string
+	Criticality  string
+	RiskScore    int
+	IsCrownJewel bool
+	FindingCount int
+}
+
+// PropertyFacet represents a property key with its distinct values for filtering UI.
+type PropertyFacet struct {
+	Key    string
+	Label  string
+	Values []string
+	Count  int
+}
+
+// AggregateStats holds all statistics computed via SQL aggregation.
+type AggregateStats struct {
+	Total         int
+	ByType        map[string]int
+	BySubType     map[string]int
+	ByStatus      map[string]int
+	ByCriticality map[string]int
+	ByScope       map[string]int
+	ByExposure    map[string]int
+	WithFindings  int
+	FindingsTotal int
+	HighRiskCount int
+	RiskScoreAvg  float64
+	// MetadataCounts: JSONB property value counts. Key=field, Value=map[value]count.
+	MetadataCounts map[string]map[string]int
+	// CTEM inventory facet counts. Boolean facets use keys "true"/"false";
+	// business unit keys are BU ids; classification/environment/provider use
+	// the stored value (or "unset" when NULL).
+	ByDataClassification map[string]int
+	ByEnvironment        map[string]int
+	ByProvider           map[string]int
+	ByInternetAccessible map[string]int
+	ByHasOwner           map[string]int
+	ByControlPlane       map[string]int
+	ByBusinessUnit       map[string]int
+}
+
+// AssetTypeStats holds per-type aggregate counts.
+type AssetTypeStats struct {
+	Total   int
+	Exposed int
+}
+
+// RepositoryExtensionRepository defines the interface for repository extension persistence.
+type RepositoryExtensionRepository interface {
+	// Create persists a new repository extension.
+	Create(ctx context.Context, repo *RepositoryExtension) error
+
+	// GetByAssetID retrieves a repository extension by asset ID.
+	GetByAssetID(ctx context.Context, assetID shared.ID) (*RepositoryExtension, error)
+
+	// Update updates an existing repository extension.
+	Update(ctx context.Context, repo *RepositoryExtension) error
+
+	// Delete removes a repository extension by asset ID.
+	Delete(ctx context.Context, assetID shared.ID) error
+
+	// GetByFullName retrieves a repository by full name.
+	GetByFullName(ctx context.Context, tenantID shared.ID, fullName string) (*RepositoryExtension, error)
+
+	// ListByTenant retrieves all repositories for a tenant.
+	ListByTenant(ctx context.Context, tenantID shared.ID, opts ListOptions, page pagination.Pagination) (pagination.Result[*RepositoryExtension], error)
+
+	// GetByAssetIDs retrieves repository extensions for multiple asset IDs in a single query.
+	// Returns a map keyed by asset ID. Missing entries indicate no extension exists for that asset.
+	GetByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]*RepositoryExtension, error)
+}
+
+// Filter defines the filtering options for listing assets.
+type Filter struct {
+	TenantID         *string             // Filter by tenant ID
+	Name             *string             // Filter by name (partial match)
+	Types            []AssetType         // Filter by asset types
+	Criticalities    []Criticality       // Filter by criticality levels
+	Statuses         []Status            // Filter by statuses
+	Scopes           []Scope             // Filter by scopes
+	Exposures        []Exposure          // Filter by exposure levels
+	Providers        []Provider          // Filter by providers
+	SyncStatuses     []SyncStatus        // Filter by sync statuses
+	Tags             []string            // Filter by tags
+	Search           *string             // Full-text search across name and description
+	MinRiskScore     *int                // Filter by minimum risk score
+	MaxRiskScore     *int                // Filter by maximum risk score
+	HasFindings      *bool               // Filter by whether asset has findings
+	ParentID         *string             // Filter by parent asset ID
+	IsCrownJewel     *bool               // Filter crown jewel assets
+	SubType          *string             // Filter by sub_type
+	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
+
+	// CTEM inventory dimensions (all optional; back-compat when unset).
+	BusinessUnitIDs      []string   // Filter by business_units membership (business_unit_assets)
+	HasOwner             *bool      // Filter assets with/without an assigned owner (asset_owners)
+	DataClassifications  []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
+	IsControlPlane       *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
+	IsInternetAccessible *bool      // Filter by the is_internet_accessible column
+	Environments         []string   // Filter by environment (production|staging|development|testing|dr)
+	LastSeenAfter        *time.Time // Filter assets last seen at/after this time (freshness)
+	LastSeenBefore       *time.Time // Filter assets last seen at/before this time (freshness)
+
+	// Layer 2: Data Scope - filter assets by user's group membership
+	// When set, only assets accessible to this user are returned.
+	// Backward compat: if user has no group assignments, all assets are visible.
+	DataScopeUserID *shared.ID
+
+	// DataScopeStrict makes the DataScopeUserID filter fail-CLOSED: a user with
+	// no accessible assets sees none (instead of the default fail-open "see all").
+	// Set by the service from the tenant's RestrictedDataScope policy. No-op
+	// unless DataScopeUserID is also set.
+	DataScopeStrict bool
+}
+
+// ListOptions contains options for listing assets (sorting).
+type ListOptions struct {
+	Sort *pagination.SortOption
+}
+
+// NewListOptions creates empty list options.
+func NewListOptions() ListOptions {
+	return ListOptions{}
+}
+
+// WithSort adds sorting options.
+func (o ListOptions) WithSort(sort *pagination.SortOption) ListOptions {
+	o.Sort = sort
+	return o
+}
+
+// AllowedSortFields returns the allowed sort fields for assets.
+func AllowedSortFields() map[string]string {
+	return map[string]string{
+		"name":          "name",
+		"created_at":    "created_at",
+		"updated_at":    "updated_at",
+		"criticality":   "criticality",
+		"status":        "status",
+		"type":          "asset_type",
+		"scope":         "scope",
+		"exposure":      "exposure",
+		"risk_score":    "risk_score",
+		"finding_count": "finding_count",
+		"first_seen":    "first_seen",
+		"last_seen":     "last_seen",
+		"provider":      "provider",
+		"sync_status":   "sync_status",
+		"last_synced":   "last_synced_at",
+	}
+}
+
+// NewFilter creates an empty filter.
+func NewFilter() Filter {
+	return Filter{}
+}
+
+// WithName adds a name filter.
+func (f Filter) WithName(name string) Filter {
+	f.Name = &name
+	return f
+}
+
+// WithTypes adds a types filter.
+func (f Filter) WithTypes(types ...AssetType) Filter {
+	f.Types = types
+	return f
+}
+
+// WithCriticalities adds a criticalities filter.
+func (f Filter) WithCriticalities(criticalities ...Criticality) Filter {
+	f.Criticalities = criticalities
+	return f
+}
+
+// WithStatuses adds a statuses filter.
+func (f Filter) WithStatuses(statuses ...Status) Filter {
+	f.Statuses = statuses
+	return f
+}
+
+// WithTags adds a tags filter.
+func (f Filter) WithTags(tags ...string) Filter {
+	f.Tags = tags
+	return f
+}
+
+// WithSearch adds a full-text search filter.
+func (f Filter) WithSearch(search string) Filter {
+	f.Search = &search
+	return f
+}
+
+// WithTenantID adds a tenant ID filter.
+func (f Filter) WithTenantID(tenantID string) Filter {
+	f.TenantID = &tenantID
+	return f
+}
+
+// WithScopes adds a scopes filter.
+func (f Filter) WithScopes(scopes ...Scope) Filter {
+	f.Scopes = scopes
+	return f
+}
+
+// WithExposures adds an exposures filter.
+func (f Filter) WithExposures(exposures ...Exposure) Filter {
+	f.Exposures = exposures
+	return f
+}
+
+// WithMinRiskScore adds a minimum risk score filter.
+func (f Filter) WithMinRiskScore(score int) Filter {
+	f.MinRiskScore = &score
+	return f
+}
+
+// WithMaxRiskScore adds a maximum risk score filter.
+func (f Filter) WithMaxRiskScore(score int) Filter {
+	f.MaxRiskScore = &score
+	return f
+}
+
+// WithHasFindings adds a has findings filter.
+func (f Filter) WithHasFindings(hasFindings bool) Filter {
+	f.HasFindings = &hasFindings
+	return f
+}
+
+// WithProviders adds a providers filter.
+func (f Filter) WithProviders(providers ...Provider) Filter {
+	f.Providers = providers
+	return f
+}
+
+// WithSyncStatuses adds a sync statuses filter.
+func (f Filter) WithSyncStatuses(statuses ...SyncStatus) Filter {
+	f.SyncStatuses = statuses
+	return f
+}
+
+// WithParentID adds a parent ID filter.
+func (f Filter) WithParentID(parentID string) Filter {
+	f.ParentID = &parentID
+	return f
+}
+
+// WithDataScopeUserID adds a data scope filter by user's group membership.
+func (f Filter) WithDataScopeUserID(id shared.ID) Filter {
+	f.DataScopeUserID = &id
+	return f
+}
+
+// WithDataScope narrows to a resolved data scope (nil = unchanged). A
+// resolved scope is always enforced strictly: the fail-open decision was
+// already taken when it was resolved.
+func (f Filter) WithDataScope(scope *shared.DataScope) Filter {
+	if scope != nil {
+		id := scope.UserID
+		f.DataScopeUserID = &id
+		f.DataScopeStrict = true
+	}
+	return f
+}
+
+// WithPropertiesFilter adds JSONB properties key=values filter pairs.
+func (f Filter) WithPropertiesFilter(kv map[string][]string) Filter {
+	f.PropertiesFilter = kv
+	return f
+}
+
+// WithBusinessUnitIDs filters by business_units membership.
+func (f Filter) WithBusinessUnitIDs(ids ...string) Filter {
+	f.BusinessUnitIDs = ids
+	return f
+}
+
+// WithHasOwner filters assets with (true) or without (false) an assigned owner.
+func (f Filter) WithHasOwner(hasOwner bool) Filter {
+	f.HasOwner = &hasOwner
+	return f
+}
+
+// WithDataClassifications filters by data classification level.
+func (f Filter) WithDataClassifications(classifications ...string) Filter {
+	f.DataClassifications = classifications
+	return f
+}
+
+// WithIsControlPlane filters assets that are (true) or are not (false) a control-plane dependency.
+func (f Filter) WithIsControlPlane(isControlPlane bool) Filter {
+	f.IsControlPlane = &isControlPlane
+	return f
+}
+
+// WithIsInternetAccessible filters by internet reachability.
+func (f Filter) WithIsInternetAccessible(v bool) Filter {
+	f.IsInternetAccessible = &v
+	return f
+}
+
+// WithEnvironments filters by environment.
+func (f Filter) WithEnvironments(environments ...string) Filter {
+	f.Environments = environments
+	return f
+}
+
+// WithLastSeenAfter filters assets last seen at/after t.
+func (f Filter) WithLastSeenAfter(t time.Time) Filter {
+	f.LastSeenAfter = &t
+	return f
+}
+
+// WithLastSeenBefore filters assets last seen at/before t.
+func (f Filter) WithLastSeenBefore(t time.Time) Filter {
+	f.LastSeenBefore = &t
+	return f
+}
+
+// IsEmpty returns true if no filters are set.
+func (f Filter) IsEmpty() bool {
+	return f.TenantID == nil &&
+		f.Name == nil &&
+		len(f.Types) == 0 &&
+		len(f.Criticalities) == 0 &&
+		len(f.Statuses) == 0 &&
+		len(f.Scopes) == 0 &&
+		len(f.Exposures) == 0 &&
+		len(f.Providers) == 0 &&
+		len(f.SyncStatuses) == 0 &&
+		len(f.Tags) == 0 &&
+		f.Search == nil &&
+		f.MinRiskScore == nil &&
+		f.MaxRiskScore == nil &&
+		f.HasFindings == nil &&
+		f.ParentID == nil &&
+		f.DataScopeUserID == nil &&
+		len(f.PropertiesFilter) == 0 &&
+		len(f.BusinessUnitIDs) == 0 &&
+		f.HasOwner == nil &&
+		len(f.DataClassifications) == 0 &&
+		f.IsControlPlane == nil &&
+		f.IsInternetAccessible == nil &&
+		len(f.Environments) == 0 &&
+		f.LastSeenAfter == nil &&
+		f.LastSeenBefore == nil
+}

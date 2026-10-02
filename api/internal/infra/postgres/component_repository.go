@@ -1,0 +1,1170 @@
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/api/pkg/domain/component"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+)
+
+const (
+	// MaxLicensesPerComponent limits the number of licenses that can be linked to a single component
+	MaxLicensesPerComponent = 50
+	// MaxLicenseNameLength limits the length of a license name
+	MaxLicenseNameLength = 255
+)
+
+// validLicensePattern matches valid SPDX-like license identifiers
+// Allows: alphanumeric, dash, underscore, dot, plus, parentheses
+var validLicensePattern = regexp.MustCompile(`^[a-zA-Z0-9\-_.+()]+$`)
+
+// ComponentRepository implements component.Repository using PostgreSQL.
+type ComponentRepository struct {
+	db *DB
+}
+
+// NewComponentRepository creates a new ComponentRepository.
+func NewComponentRepository(db *DB) *ComponentRepository {
+	return &ComponentRepository{db: db}
+}
+
+// Upsert records a component in the shared catalog and returns its id. The
+// catalog is shared by every tenant and the caller is a tenant's ingest or
+// SBOM import, so an existing row is never modified: the first report creates
+// it, and later reports only learn its id. A tenant's own data about the
+// component (licenses, path, dependency type) lives on its asset_components
+// rows. See docs/architecture/global-catalog-trust.md.
+func (r *ComponentRepository) Upsert(ctx context.Context, comp *component.Component) (shared.ID, error) {
+	metadata, err := json.Marshal(comp.Metadata())
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	query := `
+		INSERT INTO components (
+			id, purl, name, version, ecosystem, description, homepage,
+			vulnerability_count, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (purl) DO NOTHING
+		RETURNING id
+	`
+
+	var idStr string
+	err = r.db.QueryRowContext(ctx, query,
+		comp.ID().String(),
+		comp.PURL(),
+		comp.Name(),
+		comp.Version(),
+		comp.Ecosystem().String(),
+		nullString(comp.Description()),
+		nullString(comp.Homepage()),
+		comp.VulnerabilityCount(),
+		metadata,
+		comp.CreatedAt(),
+		comp.UpdatedAt(),
+	).Scan(&idStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Already in the catalog: DO NOTHING returns no row.
+		err = r.db.QueryRowContext(ctx, `SELECT id FROM components WHERE purl = $1`, comp.PURL()).Scan(&idStr)
+	}
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("failed to upsert component: %w", err)
+	}
+
+	parsedID, err := shared.IDFromString(idStr)
+	if err != nil {
+		return shared.ID{}, err
+	}
+	return parsedID, nil
+}
+
+// GetByPURL retrieves a global component by PURL.
+func (r *ComponentRepository) GetByPURL(ctx context.Context, purl string) (*component.Component, error) {
+	query := `
+		SELECT id, name, version, ecosystem, purl, description, homepage,
+			vulnerability_count, metadata, created_at, updated_at
+		FROM components
+		WHERE purl = $1
+	`
+	row := r.db.QueryRowContext(ctx, query, purl)
+	return r.scanComponent(row)
+}
+
+// GetByID retrieves a component by ID.
+func (r *ComponentRepository) GetByID(ctx context.Context, id shared.ID) (*component.Component, error) {
+	query := `
+		SELECT id, name, version, ecosystem, purl, description, homepage,
+			vulnerability_count, metadata, created_at, updated_at
+		FROM components
+		WHERE id = $1
+	`
+	row := r.db.QueryRowContext(ctx, query, id.String())
+	return r.scanComponent(row)
+}
+
+// EnsureLicenses validates license identifiers, adds the unknown ones to
+// the license dictionary (category and risk "unknown"; an existing entry is
+// never changed) and returns the valid ones, deduplicated, in input order.
+// Security: limits the count and validates each name (SPDX-like pattern).
+func (r *ComponentRepository) EnsureLicenses(ctx context.Context, licenses []string) ([]string, error) {
+	if len(licenses) == 0 {
+		return nil, nil
+	}
+	if len(licenses) > MaxLicensesPerComponent {
+		return nil, fmt.Errorf("too many licenses: %d exceeds maximum of %d", len(licenses), MaxLicensesPerComponent)
+	}
+
+	valid := make([]string, 0, len(licenses))
+	seen := make(map[string]bool, len(licenses))
+	for _, lic := range licenses {
+		lic = strings.TrimSpace(lic)
+		// Skip invalid names instead of failing the whole batch.
+		if lic == "" || seen[lic] || len(lic) > MaxLicenseNameLength || !validLicensePattern.MatchString(lic) {
+			continue
+		}
+		seen[lic] = true
+		if _, err := r.db.ExecContext(ctx, `
+			INSERT INTO licenses (id, spdx_id, name, category, risk)
+			VALUES ($1, $1, $1, 'unknown', 'unknown')
+			ON CONFLICT DO NOTHING`, lic); err != nil {
+			return valid, fmt.Errorf("failed to add license %s: %w", lic, err)
+		}
+		valid = append(valid, lic)
+	}
+	return valid, nil
+}
+
+// LinkAsset creates a record in asset_components table.
+// Uses a subquery to pull name/version/ecosystem/purl from the global components table.
+func (r *ComponentRepository) LinkAsset(ctx context.Context, dep *component.AssetDependency) error {
+	// license is the tenant's own observation; a re-scan that declares no
+	// license keeps the one already recorded.
+	query := `
+		INSERT INTO asset_components (
+			id, tenant_id, asset_id, component_id, path,
+			name, version, ecosystem, purl,
+			dependency_type, manifest_file, parent_component_id, depth,
+			created_at, updated_at, license
+		)
+		SELECT $1, $2, $3, $4, $5,
+			   c.name, c.version, c.ecosystem, c.purl,
+			   $6, $7, $8, $9,
+			   $10, $11, $12
+		FROM components c WHERE c.id = $4
+		ON CONFLICT (asset_id, component_id, path) DO UPDATE SET
+			dependency_type = EXCLUDED.dependency_type,
+			parent_component_id = EXCLUDED.parent_component_id,
+			depth = EXCLUDED.depth,
+			license = COALESCE(EXCLUDED.license, asset_components.license),
+			updated_at = NOW()
+	`
+
+	// Convert parent component ID to nullable string
+	var parentID *string
+	if dep.ParentComponentID() != nil {
+		pid := dep.ParentComponentID().String()
+		parentID = &pid
+	}
+
+	// Note: We use getters that we added to AssetDependency
+	_, err := r.db.ExecContext(ctx, query,
+		dep.ID().String(),
+		dep.TenantID().String(),
+		dep.AssetID().String(),
+		dep.ComponentID().String(),
+		dep.Path(),
+		dep.DependencyType().String(),
+		nullString(dep.ManifestFile()),
+		parentID,
+		dep.Depth(),
+		dep.CreatedAt(),
+		time.Now().UTC(),
+		nullString(truncateLicenseList(dep.License())),
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to link asset dependency: %w", err)
+	}
+	return nil
+}
+
+// GetDependency retrieves a dependency by ID.
+func (r *ComponentRepository) GetDependency(ctx context.Context, id shared.ID) (*component.AssetDependency, error) {
+	// We need to join with components to get full details
+	query := `
+		SELECT
+			ac.id, ac.tenant_id, ac.asset_id, ac.component_id, ac.path, ac.dependency_type, ac.manifest_file, ac.parent_component_id, ac.depth, ac.created_at, ac.updated_at,
+			c.id, c.name, c.version, c.ecosystem, c.purl, c.description, c.homepage, c.vulnerability_count, c.metadata, c.created_at, c.updated_at
+		FROM asset_components ac
+		JOIN components c ON ac.component_id = c.id
+		WHERE ac.id = $1
+	`
+	row := r.db.QueryRowContext(ctx, query, id.String())
+	return r.scanDependency(row)
+}
+
+// UpdateDependency updates a dependency (e.g. type or path).
+func (r *ComponentRepository) UpdateDependency(ctx context.Context, dep *component.AssetDependency) error {
+	query := `
+		UPDATE asset_components SET
+			dependency_type = $2,
+			path = $3,
+			manifest_file = $4,
+			updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := r.db.ExecContext(ctx, query,
+		dep.ID().String(),
+		dep.DependencyType().String(),
+		dep.Path(),
+		nullString(dep.ManifestFile()),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update dependency: %w", err)
+	}
+	return nil
+}
+
+// DeleteDependency removes a specific dependency link.
+func (r *ComponentRepository) DeleteDependency(ctx context.Context, id shared.ID) error {
+	query := `DELETE FROM asset_components WHERE id = $1`
+	_, err := r.db.ExecContext(ctx, query, id.String())
+	if err != nil {
+		return fmt.Errorf("failed to delete dependency: %w", err)
+	}
+	return nil
+}
+
+// DeleteByAssetID removes all dependencies for an asset.
+func (r *ComponentRepository) DeleteByAssetID(ctx context.Context, assetID shared.ID) error {
+	query := `DELETE FROM asset_components WHERE asset_id = $1`
+	_, err := r.db.ExecContext(ctx, query, assetID.String())
+	if err != nil {
+		return fmt.Errorf("failed to delete asset dependencies: %w", err)
+	}
+	return nil
+}
+
+// GetExistingDependencyByPURL retrieves an existing asset_component by asset and component PURL.
+// Used for parent lookup during rescan when parent component exists from previous scan.
+// Returns nil, nil if not found.
+func (r *ComponentRepository) GetExistingDependencyByPURL(ctx context.Context, assetID shared.ID, purl string) (*component.AssetDependency, error) {
+	query := `
+		SELECT
+			ac.id, ac.tenant_id, ac.asset_id, ac.component_id, ac.path, ac.dependency_type, ac.manifest_file, ac.parent_component_id, ac.depth, ac.created_at, ac.updated_at,
+			c.id, c.name, c.version, c.ecosystem, c.purl, c.description, c.homepage, c.vulnerability_count, c.metadata, c.created_at, c.updated_at
+		FROM asset_components ac
+		JOIN components c ON ac.component_id = c.id
+		WHERE ac.asset_id = $1 AND c.purl = $2
+		LIMIT 1
+	`
+	row := r.db.QueryRowContext(ctx, query, assetID.String(), purl)
+	dep, err := r.scanDependency(row)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get dependency by PURL: %w", err)
+	}
+	return dep, nil
+}
+
+// GetExistingDependencyByComponentID retrieves an existing asset_component by asset, component ID, and path.
+func (r *ComponentRepository) GetExistingDependencyByComponentID(ctx context.Context, assetID shared.ID, componentID shared.ID, path string) (*component.AssetDependency, error) {
+	query := `
+		SELECT
+			ac.id, ac.tenant_id, ac.asset_id, ac.component_id, ac.path, ac.dependency_type, ac.manifest_file, ac.parent_component_id, ac.depth, ac.created_at, ac.updated_at,
+			c.id, c.name, c.version, c.ecosystem, c.purl, c.description, c.homepage, c.vulnerability_count, c.metadata, c.created_at, c.updated_at
+		FROM asset_components ac
+		JOIN components c ON ac.component_id = c.id
+		WHERE ac.asset_id = $1 AND ac.component_id = $2 AND ac.path = $3
+		LIMIT 1
+	`
+	row := r.db.QueryRowContext(ctx, query, assetID.String(), componentID.String(), path)
+	dep, err := r.scanDependency(row)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get dependency by component ID: %w", err)
+	}
+	return dep, nil
+}
+
+// UpdateAssetDependencyParent updates the parent_component_id and depth of an asset_component.
+func (r *ComponentRepository) UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error {
+	query := `
+		UPDATE asset_components
+		SET parent_component_id = $1, depth = $2, updated_at = NOW()
+		WHERE id = $3
+	`
+	result, err := r.db.ExecContext(ctx, query, parentID.String(), depth, id.String())
+	if err != nil {
+		return fmt.Errorf("failed to update dependency parent: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return component.ErrDependencyNotFound
+	}
+	return nil
+}
+
+// ListComponents retrieves global components.
+func (r *ComponentRepository) ListComponents(ctx context.Context, filter component.Filter, page pagination.Pagination) (pagination.Result[*component.Component], error) {
+	baseQuery := `
+		SELECT id, name, version, ecosystem, purl, description, homepage,
+			vulnerability_count, metadata, created_at, updated_at
+		FROM components
+	`
+	countQuery := `SELECT COUNT(*) FROM components`
+
+	whereClause, args := r.buildWhereClause(filter)
+	if whereClause != "" {
+		baseQuery += " WHERE " + whereClause
+		countQuery += " WHERE " + whereClause
+	}
+
+	baseQuery += orderByCreatedAtDesc
+	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
+
+	var total int64
+	err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
+	if err != nil {
+		return pagination.Result[*component.Component]{}, fmt.Errorf("failed to count components: %w", err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, baseQuery, args...)
+	if err != nil {
+		return pagination.Result[*component.Component]{}, fmt.Errorf("failed to list components: %w", err)
+	}
+	defer rows.Close()
+
+	var comps []*component.Component
+	for rows.Next() {
+		comp, err := r.scanComponentFromRows(rows)
+		if err != nil {
+			return pagination.Result[*component.Component]{}, err
+		}
+		comps = append(comps, comp)
+	}
+
+	return pagination.NewResult(comps, total, page), nil
+}
+
+// ListDependencies retrieves dependencies for an asset.
+func (r *ComponentRepository) ListDependencies(ctx context.Context, assetID shared.ID, page pagination.Pagination) (pagination.Result[*component.AssetDependency], error) {
+	baseQuery := `
+		SELECT
+			ac.id, ac.tenant_id, ac.asset_id, ac.component_id, ac.path, ac.dependency_type, ac.manifest_file, ac.parent_component_id, ac.depth, ac.created_at, ac.updated_at,
+			c.id, c.name, c.version, c.ecosystem, c.purl, c.description, c.homepage, c.vulnerability_count, c.metadata, c.created_at, c.updated_at
+		FROM asset_components ac
+		JOIN components c ON ac.component_id = c.id
+		WHERE ac.asset_id = $1
+	`
+	countQuery := `SELECT COUNT(*) FROM asset_components WHERE asset_id = $1`
+
+	baseQuery += " ORDER BY ac.depth ASC, ac.created_at DESC" // Order by depth first (direct deps first)
+	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
+
+	var total int64
+	err := r.db.QueryRowContext(ctx, countQuery, assetID.String()).Scan(&total)
+	if err != nil {
+		return pagination.Result[*component.AssetDependency]{}, fmt.Errorf("failed to count dependencies: %w", err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, baseQuery, assetID.String())
+	if err != nil {
+		return pagination.Result[*component.AssetDependency]{}, fmt.Errorf("failed to list dependencies: %w", err)
+	}
+	defer rows.Close()
+
+	var deps []*component.AssetDependency
+	for rows.Next() {
+		var (
+			adID, adTenant, adAsset, adCompID      string
+			adPath, adType, adManifest, adParentID sql.NullString // path & dependency_type are nullable
+			adDepth                                int
+			adCreated, adUpdated                   time.Time
+
+			cID, cName, cVer, cEco, cPurl string
+			cDesc, cHome                  sql.NullString
+			cVuln                         int
+			cMeta                         []byte
+			cCreated, cUpdated            time.Time
+		)
+
+		err := rows.Scan(
+			&adID, &adTenant, &adAsset, &adCompID, &adPath, &adType, &adManifest, &adParentID, &adDepth, &adCreated, &adUpdated,
+			&cID, &cName, &cVer, &cEco, &cPurl, &cDesc, &cHome, &cVuln, &cMeta, &cCreated, &cUpdated,
+		)
+		if err != nil {
+			return pagination.Result[*component.AssetDependency]{}, err
+		}
+
+		cIDObj, _ := shared.IDFromString(cID)
+		eco, _ := component.ParseEcosystem(cEco)
+		var meta map[string]any
+		if len(cMeta) > 0 {
+			if err := json.Unmarshal(cMeta, &meta); err != nil {
+				return pagination.Result[*component.AssetDependency]{}, fmt.Errorf("failed to unmarshal component metadata: %w", err)
+			}
+		}
+
+		// License is now stored in component_licenses table, pass empty string
+		comp := component.Reconstitute(
+			cIDObj, cName, cVer, eco, cPurl,
+			"", cDesc.String, cHome.String,
+			cVuln, meta, cCreated, cUpdated,
+		)
+
+		adIDObj, _ := shared.IDFromString(adID)
+		tIDObj, _ := shared.IDFromString(adTenant)
+		aIDObj, _ := shared.IDFromString(adAsset)
+		compIDObj, _ := shared.IDFromString(adCompID)
+		depType, _ := component.ParseDependencyType(adType.String)
+
+		var parentID *shared.ID
+		if adParentID.Valid {
+			pid, _ := shared.IDFromString(adParentID.String)
+			parentID = &pid
+		}
+
+		dep := component.ReconstituteAssetDependency(
+			adIDObj, tIDObj, aIDObj, compIDObj,
+			adPath.String, depType, nullStringValue(adManifest),
+			parentID, adDepth, adCreated, adUpdated,
+		)
+		dep.SetComponent(comp)
+		deps = append(deps, dep)
+	}
+
+	if err := rows.Err(); err != nil {
+		return pagination.Result[*component.AssetDependency]{}, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pagination.NewResult(deps, total, page), nil
+}
+
+func (r *ComponentRepository) scanComponent(row *sql.Row) (*component.Component, error) {
+	var (
+		id, name, ver, eco, purl string
+		desc, home               sql.NullString
+		vuln                     int
+		meta                     []byte
+		cr, up                   time.Time
+	)
+	if err := row.Scan(&id, &name, &ver, &eco, &purl, &desc, &home, &vuln, &meta, &cr, &up); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	parsedID, _ := shared.IDFromString(id)
+	parsedEco, _ := component.ParseEcosystem(eco)
+	var parsedMeta map[string]any
+	if len(meta) > 0 {
+		if err := json.Unmarshal(meta, &parsedMeta); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+	}
+
+	// License is now stored in component_licenses table, pass empty string
+	return component.Reconstitute(parsedID, name, ver, parsedEco, purl, "", desc.String, home.String, vuln, parsedMeta, cr, up), nil
+}
+
+func (r *ComponentRepository) scanComponentFromRows(rows *sql.Rows) (*component.Component, error) {
+	var (
+		id, name, ver, eco, purl string
+		desc, home               sql.NullString
+		vuln                     int
+		meta                     []byte
+		cr, up                   time.Time
+	)
+	if err := rows.Scan(&id, &name, &ver, &eco, &purl, &desc, &home, &vuln, &meta, &cr, &up); err != nil {
+		return nil, err
+	}
+
+	parsedID, _ := shared.IDFromString(id)
+	parsedEco, _ := component.ParseEcosystem(eco)
+	var parsedMeta map[string]any
+	if len(meta) > 0 {
+		if err := json.Unmarshal(meta, &parsedMeta); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+	}
+
+	// License is now stored in component_licenses table, pass empty string
+	return component.Reconstitute(parsedID, name, ver, parsedEco, purl, "", desc.String, home.String, vuln, parsedMeta, cr, up), nil
+}
+
+// Helper to scan dependency with joined component
+func (r *ComponentRepository) scanDependency(row *sql.Row) (*component.AssetDependency, error) {
+	var (
+		adID, adTenant, adAsset, adCompID      string
+		adPath, adType, adManifest, adParentID sql.NullString // path & dependency_type are nullable
+		adDepth                                int
+		adCreated, adUpdated                   time.Time
+
+		cID, cName, cVer, cEco, cPurl string
+		cDesc, cHome                  sql.NullString
+		cVuln                         int
+		cMeta                         []byte
+		cCreated, cUpdated            time.Time
+	)
+
+	err := row.Scan(
+		&adID, &adTenant, &adAsset, &adCompID, &adPath, &adType, &adManifest, &adParentID, &adDepth, &adCreated, &adUpdated,
+		&cID, &cName, &cVer, &cEco, &cPurl, &cDesc, &cHome, &cVuln, &cMeta, &cCreated, &cUpdated,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, shared.ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Reconstitute Component
+	cIDObj, _ := shared.IDFromString(cID)
+	eco, _ := component.ParseEcosystem(cEco)
+	var meta map[string]any
+	if len(cMeta) > 0 {
+		if err := json.Unmarshal(cMeta, &meta); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal component metadata: %w", err)
+		}
+	}
+
+	// License is now stored in component_licenses table, pass empty string
+	comp := component.Reconstitute(
+		cIDObj, cName, cVer, eco, cPurl,
+		"", cDesc.String, cHome.String,
+		cVuln, meta, cCreated, cUpdated,
+	)
+
+	// Reconstitute AssetDependency
+	adIDObj, _ := shared.IDFromString(adID)
+	tIDObj, _ := shared.IDFromString(adTenant)
+	aIDObj, _ := shared.IDFromString(adAsset)
+	compIDObj, _ := shared.IDFromString(adCompID)
+	depType, _ := component.ParseDependencyType(adType.String)
+
+	var parentID *shared.ID
+	if adParentID.Valid {
+		pid, _ := shared.IDFromString(adParentID.String)
+		parentID = &pid
+	}
+
+	dep := component.ReconstituteAssetDependency(
+		adIDObj, tIDObj, aIDObj, compIDObj,
+		adPath.String, depType, nullStringValue(adManifest),
+		parentID, adDepth, adCreated, adUpdated,
+	)
+
+	dep.SetComponent(comp)
+	return dep, nil
+}
+
+func (r *ComponentRepository) buildWhereClause(filter component.Filter) (string, []any) {
+	var conditions []string
+	var args []any
+	argIndex := 1
+
+	if filter.Name != nil && *filter.Name != "" {
+		conditions = append(conditions, fmt.Sprintf("name ILIKE $%d", argIndex))
+		args = append(args, wrapLikePattern(*filter.Name))
+		argIndex++
+	}
+
+	if filter.PURL != nil && *filter.PURL != "" {
+		conditions = append(conditions, fmt.Sprintf("purl = $%d", argIndex))
+		args = append(args, *filter.PURL)
+		argIndex++
+	}
+
+	if len(filter.Ecosystems) > 0 {
+		placeholders := make([]string, len(filter.Ecosystems))
+		for i, eco := range filter.Ecosystems {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, eco.String())
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("ecosystem IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Tenant / asset scoping. The components table is a GLOBAL catalogue (no
+	// tenant_id), so restrict to components actually linked to the caller's
+	// tenant (and optionally a specific asset) via asset_components. Without
+	// this the list/export returned the entire cross-tenant catalogue even
+	// though the service set TenantID on the filter.
+	// This is the last block that consumes argIndex, so it is not incremented
+	// after the final placeholder (matches the convention in the other
+	// buildWhereClause functions and avoids a dead-store).
+	if filter.TenantID != nil {
+		sub := fmt.Sprintf("SELECT component_id FROM asset_components WHERE tenant_id = $%d", argIndex)
+		args = append(args, filter.TenantID.String())
+		if filter.AssetID != nil {
+			argIndex++
+			sub += fmt.Sprintf(" AND asset_id = $%d", argIndex)
+			args = append(args, filter.AssetID.String())
+		}
+		conditions = append(conditions, fmt.Sprintf("id IN (%s)", sub))
+	} else if filter.AssetID != nil {
+		conditions = append(conditions, fmt.Sprintf("id IN (SELECT component_id FROM asset_components WHERE asset_id = $%d)", argIndex))
+		args = append(args, filter.AssetID.String())
+	}
+
+	return strings.Join(conditions, " AND "), args
+}
+
+// GetStats returns aggregated component statistics for a tenant.
+func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) (*component.ComponentStats, error) {
+	// Main stats query - uses subqueries for tenant-isolated vulnerability counts
+	// Note: vulnerable_components and total_vulnerabilities must be counted from findings table
+	// because components.vulnerability_count is a global cache (not tenant-scoped)
+	query := `
+		SELECT
+			COUNT(DISTINCT ac.component_id) as total_components,
+			COUNT(DISTINCT ac.component_id) FILTER (WHERE ac.dependency_type = 'direct') as direct_dependencies,
+			COUNT(DISTINCT ac.component_id) FILTER (WHERE ac.dependency_type = 'transitive') as transitive_dependencies,
+			(
+				SELECT COUNT(DISTINCT f.component_id)
+				FROM findings f
+				WHERE f.tenant_id = $1
+				  AND f.component_id IS NOT NULL
+				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+			) as vulnerable_components,
+			(
+				SELECT COUNT(*)
+				FROM findings f
+				WHERE f.tenant_id = $1
+				  AND f.component_id IS NOT NULL
+				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+			) as total_vulnerabilities,
+			COUNT(DISTINCT ac.component_id) FILTER (WHERE ac.dependency_type IN ('deprecated', 'end_of_life')) as outdated_components
+		FROM asset_components ac
+		JOIN components c ON ac.component_id = c.id
+		WHERE ac.tenant_id = $1
+	`
+
+	stats := &component.ComponentStats{
+		VulnBySeverity: make(map[string]int),
+		LicenseRisks:   make(map[string]int),
+	}
+
+	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+		&stats.TotalComponents,
+		&stats.DirectDependencies,
+		&stats.TransitiveDependencies,
+		&stats.VulnerableComponents,
+		&stats.TotalVulnerabilities,
+		&stats.OutdatedComponents,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get component stats: %w", err)
+	}
+
+	// Get vulnerability severity breakdown from findings
+	// Note: findings.component_id now references components.id directly (not asset_components.id)
+	severityQuery := `
+		SELECT
+			COALESCE(f.severity, 'unknown') as severity,
+			COUNT(*) as count
+		FROM findings f
+		WHERE f.tenant_id = $1
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		  AND f.component_id IS NOT NULL
+		GROUP BY f.severity
+	`
+	severityRows, err := r.db.QueryContext(ctx, severityQuery, tenantID.String())
+	if err != nil {
+		// Non-critical, continue with zero values
+		return stats, nil
+	}
+	defer severityRows.Close()
+
+	for severityRows.Next() {
+		var severity string
+		var count int
+		if err := severityRows.Scan(&severity, &count); err != nil {
+			continue
+		}
+		stats.VulnBySeverity[severity] = count
+	}
+
+	if err := severityRows.Err(); err != nil {
+		// Non-critical, continue with partial results
+		_ = err
+	}
+
+	// Get CISA KEV component count
+	// Note: cisa_kev_date_added IS NOT NULL indicates the vulnerability is in CISA KEV catalog
+	// Note: findings.component_id now references components.id directly
+	kevQuery := `
+		SELECT COUNT(DISTINCT f.component_id)
+		FROM findings f
+		JOIN vulnerabilities v ON f.vulnerability_id = v.id
+		WHERE f.tenant_id = $1
+		  AND f.component_id IS NOT NULL
+		  AND (COALESCE(f.is_in_kev, false) OR v.cisa_kev_date_added IS NOT NULL)
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+	`
+	if err := r.db.QueryRowContext(ctx, kevQuery, tenantID.String()).Scan(&stats.CisaKevComponents); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		// Non-critical metric — continue with zero value if query fails
+		stats.CisaKevComponents = 0
+	}
+
+	// License risk breakdown from the tenant's own license observations
+	// (asset_components.license) joined to the license dictionary.
+	licenseRiskQuery := `
+		SELECT
+			COALESCE(l.risk, 'unknown') as risk,
+			COUNT(DISTINCT ac.component_id) as count
+		FROM asset_components ac
+		LEFT JOIN LATERAL unnest(string_to_array(NULLIF(ac.license, ''), ',')) AS lic(name) ON true
+		LEFT JOIN licenses l ON l.id = btrim(lic.name)
+		WHERE ac.tenant_id = $1
+		GROUP BY l.risk
+	`
+	riskRows, err := r.db.QueryContext(ctx, licenseRiskQuery, tenantID.String())
+	if err != nil {
+		// Non-critical, return with zero values
+		return stats, nil
+	}
+	defer riskRows.Close()
+
+	for riskRows.Next() {
+		var risk string
+		var count int
+		if err := riskRows.Scan(&risk, &count); err != nil {
+			continue
+		}
+		stats.LicenseRisks[risk] = count
+	}
+
+	if err := riskRows.Err(); err != nil {
+		return stats, fmt.Errorf("iterate license risks: %w", err)
+	}
+
+	return stats, nil
+}
+
+// GetEcosystemStats returns per-ecosystem statistics for a tenant.
+func (r *ComponentRepository) GetEcosystemStats(ctx context.Context, tenantID shared.ID) ([]component.EcosystemStats, error) {
+	// Note: "outdated" is calculated based on dependency_type being deprecated/end_of_life
+	// In a real scenario, this would check against latest available versions
+	query := `
+		SELECT
+			c.ecosystem,
+			COUNT(DISTINCT c.id) as total,
+			COUNT(DISTINCT c.id) FILTER (WHERE c.vulnerability_count > 0) as vulnerable,
+			COUNT(DISTINCT c.id) FILTER (WHERE ac.dependency_type IN ('deprecated', 'end_of_life')) as outdated
+		FROM asset_components ac
+		JOIN components c ON ac.component_id = c.id
+		WHERE ac.tenant_id = $1
+		GROUP BY c.ecosystem
+		ORDER BY total DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ecosystem stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []component.EcosystemStats
+	for rows.Next() {
+		var s component.EcosystemStats
+		if err := rows.Scan(&s.Ecosystem, &s.Total, &s.Vulnerable, &s.Outdated); err != nil {
+			return nil, fmt.Errorf("failed to scan ecosystem stats: %w", err)
+		}
+		// Add manifest file based on ecosystem
+		eco, _ := component.ParseEcosystem(s.Ecosystem)
+		s.ManifestFile = eco.ManifestFile()
+		stats = append(stats, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return stats, nil
+}
+
+// GetVulnerableComponents returns paginated vulnerable components with severity breakdown.
+func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[component.VulnerableComponent], error) {
+	baseCTE := `
+		WITH component_findings AS (
+			SELECT
+				f.component_id,
+				f.severity,
+				(COALESCE(f.is_in_kev, false) OR v.cisa_kev_date_added IS NOT NULL) as in_kev
+			FROM findings f
+			LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
+			WHERE f.tenant_id = $1
+			  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+			  AND f.component_id IS NOT NULL
+		)
+	`
+
+	// Count total
+	countQuery := baseCTE + `
+		SELECT COUNT(DISTINCT cf.component_id) FROM component_findings cf
+	`
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String()).Scan(&total); err != nil {
+		return pagination.Result[component.VulnerableComponent]{}, fmt.Errorf("count vulnerable: %w", err)
+	}
+
+	if total == 0 {
+		return pagination.NewResult([]component.VulnerableComponent{}, 0, page), nil
+	}
+
+	query := baseCTE + `
+		SELECT
+			c.id,
+			c.name,
+			c.version,
+			c.ecosystem,
+			c.purl,
+			'' as license,
+			COUNT(*) FILTER (WHERE cf.severity = 'critical') as critical_count,
+			COUNT(*) FILTER (WHERE cf.severity = 'high') as high_count,
+			COUNT(*) FILTER (WHERE cf.severity = 'medium') as medium_count,
+			COUNT(*) FILTER (WHERE cf.severity = 'low') as low_count,
+			COUNT(*) as total_count,
+			BOOL_OR(COALESCE(cf.in_kev, false)) as in_cisa_kev
+		FROM components c
+		JOIN component_findings cf ON c.id = cf.component_id
+		GROUP BY c.id, c.name, c.version, c.ecosystem, c.purl
+		ORDER BY
+			COUNT(*) FILTER (WHERE cf.severity = 'critical') DESC,
+			COUNT(*) FILTER (WHERE cf.severity = 'high') DESC,
+			COUNT(*) DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	empty := pagination.NewResult([]component.VulnerableComponent{}, 0, page)
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), page.Limit(), page.Offset())
+	if err != nil {
+		return empty, fmt.Errorf("failed to get vulnerable components: %w", err)
+	}
+	defer rows.Close()
+
+	components := make([]component.VulnerableComponent, 0, 100)
+	for rows.Next() {
+		var vc component.VulnerableComponent
+		if err := rows.Scan(
+			&vc.ID,
+			&vc.Name,
+			&vc.Version,
+			&vc.Ecosystem,
+			&vc.PURL,
+			&vc.License,
+			&vc.CriticalCount,
+			&vc.HighCount,
+			&vc.MediumCount,
+			&vc.LowCount,
+			&vc.TotalCount,
+			&vc.InCisaKev,
+		); err != nil {
+			return empty, fmt.Errorf("failed to scan vulnerable component: %w", err)
+		}
+		components = append(components, vc)
+	}
+
+	if err := rows.Err(); err != nil {
+		return empty, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pagination.NewResult(components, total, page), nil
+}
+
+// ListAssetUsage returns the assets in the tenant that use a given global component.
+// Powers the "Used By Assets" blast-radius panel on the component detail sheet.
+//
+// IMPORTANT: tenant_id filter is on asset_components (the per-tenant link table) —
+// the components table is global and intentionally not tenant-scoped.
+//
+// When atRiskOnly is true, EXISTS-filters to only asset_components that have at
+// least one open finding for the same (tenant, component, asset) triple.
+func (r *ComponentRepository) ListAssetUsage(
+	ctx context.Context,
+	tenantID shared.ID,
+	componentID shared.ID,
+	atRiskOnly bool,
+	page pagination.Pagination,
+) (pagination.Result[component.ComponentAssetUsage], error) {
+	empty := pagination.NewResult([]component.ComponentAssetUsage{}, 0, page)
+
+	atRiskFilter := ""
+	if atRiskOnly {
+		atRiskFilter = ` AND EXISTS (
+			SELECT 1 FROM findings f
+			WHERE f.tenant_id = ac.tenant_id
+			  AND f.component_id = ac.component_id
+			  AND f.asset_id = ac.asset_id
+			  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		)`
+	}
+
+	// Count DISTINCT assets — an asset can appear with the same component
+	// in multiple manifests (pkg.json + pkg-lock.json + workspace files).
+	// The list query intentionally returns one row per (asset, manifest) for
+	// SBOM detail, but the count metric is per asset.
+	countQuery := `
+		SELECT COUNT(DISTINCT ac.asset_id)
+		FROM asset_components ac
+		JOIN assets a ON a.id = ac.asset_id
+		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter
+
+	listQuery := `
+		SELECT
+			a.id, a.name, a.asset_type, a.criticality, a.status, a.exposure,
+			a.risk_score, COALESCE(a.is_internet_accessible, false),
+			ac.id, ac.dependency_type, ac.is_direct, COALESCE(ac.depth, 0),
+			COALESCE(ac.manifest_file, ''), COALESCE(ac.path, ''),
+			COALESCE(ac.license, ''), COALESCE(ac.vulnerability_count, 0),
+			COALESCE(ac.highest_severity, ''),
+			ac.created_at
+		FROM asset_components ac
+		JOIN assets a ON a.id = ac.asset_id
+		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter + `
+		ORDER BY
+			CASE a.criticality
+				WHEN 'critical' THEN 1
+				WHEN 'high'     THEN 2
+				WHEN 'medium'   THEN 3
+				WHEN 'low'      THEN 4
+				ELSE 5
+			END,
+			a.risk_score DESC,
+			a.name ASC
+		LIMIT $3 OFFSET $4
+	`
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String(), componentID.String()).Scan(&total); err != nil {
+		return empty, fmt.Errorf("failed to count component asset usage: %w", err)
+	}
+	if total == 0 {
+		return empty, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, listQuery,
+		tenantID.String(), componentID.String(), page.Limit(), page.Offset())
+	if err != nil {
+		return empty, fmt.Errorf("failed to list component asset usage: %w", err)
+	}
+	defer rows.Close()
+
+	usages := make([]component.ComponentAssetUsage, 0, page.Limit())
+	for rows.Next() {
+		var u component.ComponentAssetUsage
+		if err := rows.Scan(
+			&u.AssetID, &u.AssetName, &u.AssetType, &u.Criticality, &u.AssetStatus, &u.Exposure,
+			&u.RiskScore, &u.IsInternetExposed,
+			&u.DependencyID, &u.DependencyType, &u.IsDirect, &u.Depth,
+			&u.ManifestFile, &u.ManifestPath,
+			&u.License, &u.VulnerabilityCount, &u.HighestSeverity,
+			&u.LinkedAt,
+		); err != nil {
+			return empty, fmt.Errorf("failed to scan component asset usage row: %w", err)
+		}
+		usages = append(usages, u)
+	}
+	if err := rows.Err(); err != nil {
+		return empty, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pagination.NewResult(usages, total, page), nil
+}
+
+// ListVulnerabilities returns the CVEs that affect a global component within
+// the given tenant. Aggregates findings GROUP BY vulnerability_id so a CVE
+// appearing on multiple assets returns one row with affected_assets_count.
+func (r *ComponentRepository) ListVulnerabilities(
+	ctx context.Context,
+	tenantID, componentID shared.ID,
+	includeResolved bool,
+	page pagination.Pagination,
+) (pagination.Result[component.ComponentVulnerability], error) {
+	empty := pagination.NewResult([]component.ComponentVulnerability{}, 0, page)
+
+	statusFilter := ""
+	if !includeResolved {
+		statusFilter = ` AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')`
+	}
+
+	countQuery := `
+		SELECT COUNT(DISTINCT f.vulnerability_id)
+		FROM findings f
+		WHERE f.tenant_id = $1 AND f.component_id = $2 AND f.vulnerability_id IS NOT NULL` + statusFilter
+
+	listQuery := `
+		WITH agg AS (
+			SELECT
+				f.vulnerability_id,
+				COUNT(DISTINCT f.asset_id) AS affected_assets_count,
+				COUNT(*) AS total_finding_count,
+				COUNT(*) FILTER (WHERE f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')) AS open_finding_count,
+				MIN(CASE f.status
+					WHEN 'new'         THEN 1
+					WHEN 'confirmed'   THEN 2
+					WHEN 'in_progress' THEN 3
+					WHEN 'accepted'    THEN 4
+					WHEN 'false_positive' THEN 5
+					WHEN 'resolved'    THEN 6
+					ELSE 7 END) AS worst_status_rank,
+				MIN(f.first_detected_at) AS first_detected_at,
+				MAX(f.last_seen_at)      AS last_seen_at,` + tenantCVEAggColumns + `
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.component_id = $2 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
+			GROUP BY f.vulnerability_id
+		)
+		SELECT
+			v.id, v.cve_id, v.title, ` + tenantCVESeverity + `, ` + tenantCVECVSS + `, ` + tenantCVEEPSS + `,
+			` + tenantCVEKEV + ` AS in_cisa_kev,
+			COALESCE(v.exploit_maturity, 'none') AS exploit_maturity,
+			` + tenantCVEExploit + ` AS exploit_available,
+			COALESCE(v.fixed_versions, '{}'::text[]) AS fixed_versions,
+			agg.affected_assets_count,
+			agg.open_finding_count,
+			agg.total_finding_count,
+			(ARRAY['new','confirmed','in_progress','accepted','false_positive','resolved','unknown']::text[])[LEAST(agg.worst_status_rank, 7)] AS worst_finding_status,
+			agg.first_detected_at, agg.last_seen_at
+		FROM agg
+		JOIN vulnerabilities v ON v.id = agg.vulnerability_id
+		ORDER BY
+			agg.sev_rank,
+			` + tenantCVEKEV + ` DESC,
+			COALESCE(` + tenantCVECVSS + `, 0) DESC,
+			agg.affected_assets_count DESC
+		LIMIT $3 OFFSET $4
+	`
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String(), componentID.String()).Scan(&total); err != nil {
+		return empty, fmt.Errorf("failed to count component vulnerabilities: %w", err)
+	}
+	if total == 0 {
+		return empty, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, listQuery,
+		tenantID.String(), componentID.String(), page.Limit(), page.Offset())
+	if err != nil {
+		return empty, fmt.Errorf("failed to list component vulnerabilities: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]component.ComponentVulnerability, 0, page.Limit())
+	for rows.Next() {
+		var v component.ComponentVulnerability
+		var cvss, epss sql.NullFloat64
+		var fixed pq.StringArray
+		if err := rows.Scan(
+			&v.VulnerabilityID, &v.CVEID, &v.Title, &v.Severity, &cvss, &epss,
+			&v.InCISAKEV, &v.ExploitMaturity, &v.ExploitAvailable, &fixed,
+			&v.AffectedAssetsCount, &v.OpenFindingCount, &v.TotalFindingCount,
+			&v.WorstFindingStatus, &v.FirstDetectedAt, &v.LastSeenAt,
+		); err != nil {
+			return empty, fmt.Errorf("failed to scan component vulnerability row: %w", err)
+		}
+		if cvss.Valid {
+			s := cvss.Float64
+			v.CVSSScore = &s
+		}
+		if epss.Valid {
+			e := epss.Float64
+			v.EPSSScore = &e
+		}
+		v.FixedVersions = []string(fixed)
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return empty, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pagination.NewResult(out, total, page), nil
+}
+
+// GetLicenseStats returns license statistics for a tenant.
+func (r *ComponentRepository) GetLicenseStats(ctx context.Context, tenantID shared.ID) ([]component.LicenseStats, error) {
+	// License distribution for the tenant's components, from the tenant's own
+	// license observations (asset_components.license). The shared
+	// component_licenses table is not read: tenants could write it, so one
+	// tenant's report could change another tenant's license report.
+	query := `
+		SELECT
+			l.spdx_id as license_id,
+			l.name,
+			COALESCE(l.category, 'unknown') as category,
+			COALESCE(l.risk, 'unknown') as risk,
+			l.url,
+			COUNT(DISTINCT ac.component_id) as count
+		FROM asset_components ac
+		CROSS JOIN LATERAL unnest(string_to_array(NULLIF(ac.license, ''), ',')) AS lic(name)
+		JOIN licenses l ON l.id = btrim(lic.name)
+		WHERE ac.tenant_id = $1
+		GROUP BY l.spdx_id, l.name, l.category, l.risk, l.url
+		ORDER BY count DESC, l.spdx_id
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get license stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []component.LicenseStats
+	for rows.Next() {
+		var s component.LicenseStats
+		if err := rows.Scan(&s.LicenseID, &s.Name, &s.Category, &s.Risk, &s.URL, &s.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan license stats: %w", err)
+		}
+		stats = append(stats, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return stats, nil
+}
+
+// maxLicenseListLength is the width of asset_components.license.
+const maxLicenseListLength = 255
+
+// truncateLicenseList keeps whole license ids that fit the column.
+func truncateLicenseList(list string) string {
+	if len(list) <= maxLicenseListLength {
+		return list
+	}
+	out := ""
+	for _, lic := range strings.Split(list, ", ") {
+		next := lic
+		if out != "" {
+			next = out + ", " + lic
+		}
+		if len(next) > maxLicenseListLength {
+			break
+		}
+		out = next
+	}
+	return out
+}

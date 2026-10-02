@@ -1,0 +1,435 @@
+// Package command implements the application service for the command bounded context — orchestrates pkg/domain/command entities and cross-cutting concerns (audit, notifications, RBAC).
+package command
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+	"unicode/utf8"
+
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+)
+
+// Service handles command-related business operations.
+type Service struct {
+	repo    commanddom.Repository
+	sensors SensorLookup
+	logger  *logger.Logger
+}
+
+// SensorLookup resolves a sensor inside one tenant. Satisfied by the sensor
+// repository.
+type SensorLookup interface {
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sensordom.Sensor, error)
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithSensorLookup makes Create check that a command's sensor belongs to the
+// command's tenant.
+func WithSensorLookup(l SensorLookup) Option {
+	return func(s *Service) { s.sensors = l }
+}
+
+// NewService creates a new Service.
+func NewService(repo commanddom.Repository, log *logger.Logger, opts ...Option) *Service {
+	s := &Service{
+		repo:   repo,
+		logger: log.With("service", "command"),
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// CreateInput represents the input for creating a command.
+type CreateInput struct {
+	TenantID  string          `json:"tenant_id" validate:"required,uuid"`
+	SensorID  string          `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
+	Type      string          `json:"type" validate:"required,oneof=scan collect health_check config_update cancel"`
+	Priority  string          `json:"priority" validate:"omitempty,oneof=low normal high critical"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+	ExpiresIn int             `json:"expires_in,omitempty"` // Seconds until expiration
+}
+
+// Create creates a new command.
+func (s *Service) Create(ctx context.Context, input CreateInput) (*commanddom.Command, error) {
+	s.logger.Info("creating command", "type", input.Type, "priority", input.Priority)
+
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	cmdType := commanddom.CommandType(input.Type)
+	priority := commanddom.CommandPriority(input.Priority)
+	if priority == "" {
+		priority = commanddom.CommandPriorityNormal
+	}
+
+	cmd, err := commanddom.NewCommand(tenantID, cmdType, priority, input.Payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.SensorID != "" {
+		sensorID, err := shared.IDFromString(input.SensorID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+		}
+		// The sensor must belong to this tenant. Without the check a command
+		// could be pinned to another tenant's sensor (stored, never claimable),
+		// and an unknown id failed on the foreign key with a 500 — together an
+		// oracle for which sensor ids exist in other tenants.
+		if s.sensors != nil {
+			if _, err := s.sensors.GetByTenantAndID(ctx, tenantID, sensorID); err != nil {
+				if errors.Is(err, shared.ErrNotFound) {
+					return nil, shared.NewDomainError("SENSOR_NOT_FOUND", "sensor_id: no such sensor in this tenant", shared.ErrValidation)
+				}
+				return nil, fmt.Errorf("look up sensor: %w", err)
+			}
+		}
+		cmd.SetSensorID(sensorID)
+	}
+
+	if input.ExpiresIn > 0 {
+		expiresAt := time.Now().Add(time.Duration(input.ExpiresIn) * time.Second)
+		cmd.SetExpiration(expiresAt)
+	}
+
+	if err := s.repo.Create(ctx, cmd); err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
+}
+
+// Get retrieves a command by ID.
+func (s *Service) Get(ctx context.Context, tenantID, commandID string) (*commanddom.Command, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	cid, err := shared.IDFromString(commandID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid command id", shared.ErrValidation)
+	}
+
+	return s.repo.GetByTenantAndID(ctx, tid, cid)
+}
+
+// ListInput represents the input for listing commands.
+type ListInput struct {
+	TenantID string `json:"tenant_id" validate:"required,uuid"`
+	SensorID string `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
+	Type     string `json:"type" validate:"omitempty,oneof=scan collect health_check config_update cancel"`
+	Status   string `json:"status" validate:"omitempty,oneof=pending acknowledged running completed failed canceled expired"`
+	Priority string `json:"priority" validate:"omitempty,oneof=low normal high critical"`
+	Page     int    `json:"page"`
+	PerPage  int    `json:"per_page"`
+}
+
+// List lists commands with filters.
+func (s *Service) List(ctx context.Context, input ListInput) (pagination.Result[*commanddom.Command], error) {
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return pagination.Result[*commanddom.Command]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	filter := commanddom.Filter{
+		TenantID: &tenantID,
+	}
+
+	if input.SensorID != "" {
+		sensorID, err := shared.IDFromString(input.SensorID)
+		if err != nil {
+			return pagination.Result[*commanddom.Command]{}, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+		}
+		filter.SensorID = &sensorID
+	}
+
+	if input.Type != "" {
+		t := commanddom.CommandType(input.Type)
+		filter.Type = &t
+	}
+
+	if input.Status != "" {
+		st := commanddom.CommandStatus(input.Status)
+		filter.Status = &st
+	}
+
+	if input.Priority != "" {
+		p := commanddom.CommandPriority(input.Priority)
+		filter.Priority = &p
+	}
+
+	page := pagination.New(input.Page, input.PerPage)
+	return s.repo.List(ctx, filter, page)
+}
+
+// PollInput represents the input for polling commands.
+type PollInput struct {
+	TenantID string `json:"tenant_id" validate:"required,uuid"`
+	SensorID string `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
+	// Capabilities is the polling sensor's advertised capability set. It gates
+	// which capability-scoped commands the sensor may claim (see
+	// command.Repository.GetPendingForSensor). Empty = only unscoped commands.
+	Capabilities []string `json:"capabilities,omitempty"`
+	Limit        int      `json:"limit" validate:"min=1,max=100"`
+	// MaxScanCommands caps how many scan commands the poll returns: the
+	// sensor's free slots (sensor.FreeSlots), so a sensor is never offered
+	// more scans than it can run — an SDK that claims everything it polls
+	// cannot pile up acknowledged commands for the reaper to re-dispatch
+	// (RFC-030 B6, D5). Other commands (validate, collect, config) are not
+	// capped. nil: no cap.
+	MaxScanCommands *int `json:"-"`
+}
+
+// Poll retrieves pending commands for a sensor.
+func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Command, error) {
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	var sensorID *shared.ID
+	if input.SensorID != "" {
+		aid, err := shared.IDFromString(input.SensorID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+		}
+		sensorID = &aid
+	}
+
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, limit)
+	if err != nil || input.MaxScanCommands == nil {
+		return cmds, err
+	}
+	return capScanCommands(cmds, *input.MaxScanCommands), nil
+}
+
+// capScanCommands keeps every non-scan command and at most n scan commands,
+// in poll order.
+func capScanCommands(cmds []*commanddom.Command, n int) []*commanddom.Command {
+	out := cmds[:0:0]
+	for _, c := range cmds {
+		if c.Type == commanddom.CommandTypeScan {
+			if n <= 0 {
+				continue
+			}
+			n--
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// Acknowledge marks a command as acknowledged.
+func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID string) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, sensorID); err != nil {
+		return nil, err
+	}
+
+	if !cmd.CanBeAcknowledged() {
+		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
+	}
+
+	// Atomic claim: only one concurrent poller can transition a pending
+	// command to acknowledged. A read-modify-write via Update would let two
+	// sensors that both polled the same unassigned command each "win",
+	// double-dispatching it. cmd was just fetched tenant-scoped, so reuse its
+	// already-parsed IDs.
+	claimed, err := s.repo.ClaimForSensor(ctx, cmd.TenantID, cmd.ID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	if !claimed {
+		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another sensor", shared.ErrConflict)
+	}
+
+	// Return the freshly-claimed state.
+	return s.Get(ctx, tenantID, commandID)
+}
+
+// Start marks a command as running.
+func (s *Service) Start(ctx context.Context, tenantID, sensorID, commandID string) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, sensorID); err != nil {
+		return nil, err
+	}
+
+	if cmd.Status != commanddom.CommandStatusAcknowledged {
+		return nil, shared.NewDomainError("INVALID_STATE", "command must be acknowledged before starting", shared.ErrValidation)
+	}
+
+	cmd.Start()
+	if err := s.repo.Update(ctx, cmd); err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
+}
+
+// ensureSensorOwnsCommand rejects lifecycle operations on a command assigned to
+// a DIFFERENT sensor (anti-tampering: otherwise any sensor in the tenant could
+// acknowledge/complete/fail another sensor's command and inject forged
+// results). Unassigned/broadcast commands (SensorID == nil) remain operable by
+// any sensor in the tenant. Returns a not-found-style error to avoid leaking
+// the command's existence to a non-owning sensor.
+func ensureSensorOwnsCommand(cmd *commanddom.Command, sensorID string) error {
+	if cmd.SensorID != nil && cmd.SensorID.String() != sensorID {
+		return shared.NewDomainError("NOT_FOUND", "command not found", shared.ErrNotFound)
+	}
+	return nil
+}
+
+// CompleteInput represents the input for completing a command.
+type CompleteInput struct {
+	TenantID  string          `json:"tenant_id" validate:"required,uuid"`
+	SensorID  string          `json:"sensor_id" validate:"required,uuid"`
+	CommandID string          `json:"command_id" validate:"required,uuid"`
+	Result    json.RawMessage `json:"result,omitempty"`
+}
+
+// Complete marks a command as completed.
+func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, input.TenantID, input.CommandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, input.SensorID); err != nil {
+		return nil, err
+	}
+
+	if cmd.Status != commanddom.CommandStatusRunning {
+		return nil, shared.NewDomainError("INVALID_STATE", "command must be running to complete", shared.ErrValidation)
+	}
+
+	cmd.Complete(input.Result)
+	if err := s.repo.Update(ctx, cmd); err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
+}
+
+// FailInput represents the input for failing a command.
+type FailInput struct {
+	TenantID     string `json:"tenant_id" validate:"required,uuid"`
+	SensorID     string `json:"sensor_id" validate:"required,uuid"`
+	CommandID    string `json:"command_id" validate:"required,uuid"`
+	ErrorMessage string `json:"error_message"`
+}
+
+// MaxFailErrorMessageBytes caps the sensor-supplied error message stored on a
+// failed command (it is persisted and rendered in the UI / pipeline runs).
+const MaxFailErrorMessageBytes = 4 << 10 // 4 KiB
+
+// Fail marks a command as failed.
+//
+// Only a command the sensor is actually working on can be failed: acknowledged
+// or running, or still pending when it is explicitly assigned to the calling
+// sensor (a sensor rejecting a job it was handed before claiming it). Before,
+// Fail had no state check, so any tenant sensor could flip an unassigned
+// pending command — or a completed one — to failed.
+func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, input.TenantID, input.CommandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, input.SensorID); err != nil {
+		return nil, err
+	}
+
+	switch cmd.Status {
+	case commanddom.CommandStatusAcknowledged, commanddom.CommandStatusRunning:
+	case commanddom.CommandStatusPending:
+		if cmd.SensorID == nil || cmd.SensorID.String() != input.SensorID {
+			return nil, shared.NewDomainError("INVALID_STATE", "command must be claimed before it can be failed", shared.ErrValidation)
+		}
+	default:
+		return nil, shared.NewDomainError("INVALID_STATE", "command is already finished", shared.ErrConflict)
+	}
+
+	cmd.Fail(truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes))
+	if err := s.repo.Update(ctx, cmd); err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
+}
+
+// truncateUTF8 cuts s to at most maxBytes without splitting a UTF-8 rune.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+// CancelCommand marks a command as canceled.
+func (s *Service) CancelCommand(ctx context.Context, tenantID, commandID string) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+
+	if cmd.Status == commanddom.CommandStatusCompleted {
+		return nil, shared.NewDomainError("INVALID_STATE", "cannot cancel completed command", shared.ErrValidation)
+	}
+
+	cmd.Cancel()
+	if err := s.repo.Update(ctx, cmd); err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
+}
+
+// DeleteCommand deletes a command.
+func (s *Service) DeleteCommand(ctx context.Context, tenantID, commandID string) error {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	cid, err := shared.IDFromString(commandID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid command id", shared.ErrValidation)
+	}
+
+	// Verify command belongs to tenant
+	if _, err := s.repo.GetByTenantAndID(ctx, tid, cid); err != nil {
+		return err
+	}
+
+	return s.repo.Delete(ctx, cid)
+}

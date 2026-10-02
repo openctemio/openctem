@@ -89,4 +89,4 @@ We aim to comply with:
 ## Contact
 
 - Security Team: security@openctem.io
-- General Issues: https://github.com/openctemio/api/issues
+- General Issues: https://github.com/openctemio/openctem/issues

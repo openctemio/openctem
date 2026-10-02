@@ -1,0 +1,1124 @@
+package asset
+
+import (
+	"fmt"
+	"time"
+	"unicode/utf8"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+)
+
+// FindingSeverityCounts holds per-severity finding counts for an asset.
+type FindingSeverityCounts struct {
+	Critical int
+	High     int
+	Medium   int
+	Low      int
+	Info     int
+}
+
+// Asset represents an asset entity in the domain.
+type Asset struct {
+	id                    shared.ID
+	tenantID              shared.ID
+	parentID              *shared.ID // For hierarchical assets (e.g., subdomain -> domain)
+	ownerID               *shared.ID // User who owns this asset (resolved)
+	ownerRef              string     // Raw owner text from external source (email, username, team)
+	name                  string
+	assetType             AssetType
+	subType               string
+	criticality           Criticality
+	status                Status
+	scope                 Scope
+	exposure              Exposure
+	riskScore             int
+	findingCount          int
+	findingSeverityCounts *FindingSeverityCounts
+	description           string
+	tags                  []string
+	properties            map[string]any // All asset properties (merged metadata + properties)
+
+	// External provider info
+	provider       Provider
+	externalID     string // ID in external system
+	classification string
+
+	// Sync status
+	syncStatus   SyncStatus
+	lastSyncedAt *time.Time
+	syncError    string
+
+	// Discovery tracking (for recon-discovered assets)
+	discoverySource string     // How discovered: sensor, integration, manual, import
+	discoveryTool   string     // Tool that discovered: subfinder, dnsx, naabu, httpx, katana
+	discoveredAt    *time.Time // When first discovered by recon tools
+
+	// CTEM: Compliance Context
+	complianceScope    []string           // Compliance frameworks: PCI-DSS, HIPAA, SOC2, GDPR, ISO27001
+	dataClassification DataClassification // public, internal, confidential, restricted, secret
+	piiDataExposed     bool               // Contains Personally Identifiable Information
+	phiDataExposed     bool               // Contains Protected Health Information
+	regulatoryOwnerID  *shared.ID         // Compliance officer responsible
+
+	// CTEM: CIA impact rating (Scoping critical-asset register).
+	// Business impact if the asset is compromised, per CIA leg.
+	// Each is low | moderate | high; empty means "not yet rated".
+	impactConfidentiality ImpactRating
+	impactIntegrity       ImpactRating
+	impactAvailability    ImpactRating
+
+	// CTEM: Enhanced Exposure Tracking
+	isInternetAccessible bool       // Directly reachable from internet
+	exposureChangedAt    *time.Time // When exposure level last changed
+	lastExposureLevel    Exposure   // Previous exposure for tracking changes
+
+	firstSeen time.Time
+	lastSeen  time.Time
+	createdAt time.Time
+	updatedAt time.Time
+
+	// lifecyclePausedUntil freezes the background lifecycle worker
+	// from transitioning this asset's status until the given time.
+	// Set by operator action (Snooze) or auto-set after a manual
+	// reactivation to avoid the flap where the worker instantly
+	// re-flags a reactivated asset.
+	//
+	// manualStatusOverride = true means an operator has taken
+	// explicit control of the status; the lifecycle worker never
+	// writes to status on this asset. Used when ops wants to keep an
+	// asset marked active for a reason the automation cannot know
+	// (e.g. "known to be offline for rack migration this month").
+	lifecyclePausedUntil *time.Time
+	manualStatusOverride bool
+}
+
+// MaxNameLength is the longest asset name, in characters, that can be stored:
+// assets.name is varchar(255), the same limit the API and UI enforce. It
+// applies to the normalized name, which is what is stored.
+const MaxNameLength = 255
+
+// validateName checks a normalized name against what assets.name can hold.
+// A longer name is refused rather than truncated: the name is the asset's
+// identity (unique per tenant), so a truncated name could merge two different
+// assets and attach findings to the wrong one.
+func validateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: name is required", shared.ErrValidation)
+	}
+	if n := utf8.RuneCountInString(name); n > MaxNameLength {
+		return fmt.Errorf("%w: name is %d characters, the maximum is %d", shared.ErrValidation, n, MaxNameLength)
+	}
+	return nil
+}
+
+// NewAsset creates a new Asset entity.
+func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset, error) {
+	// Normalize name to canonical form (RFC-001: Asset Identity Resolution)
+	name = NormalizeName(name, assetType, "")
+	if err := validateName(name); err != nil {
+		return nil, err
+	}
+	if !assetType.IsValid() {
+		return nil, fmt.Errorf("%w: invalid asset type", shared.ErrValidation)
+	}
+	if !criticality.IsValid() {
+		return nil, fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
+	}
+
+	now := time.Now().UTC()
+	return &Asset{
+		id:           shared.NewID(),
+		name:         name,
+		assetType:    assetType,
+		criticality:  criticality,
+		status:       StatusActive,
+		scope:        ScopeInternal,
+		exposure:     ExposureUnknown,
+		riskScore:    0,
+		findingCount: 0,
+		tags:         make([]string, 0),
+		properties:   make(map[string]any),
+		syncStatus:   SyncStatusSynced,
+		firstSeen:    now,
+		lastSeen:     now,
+		createdAt:    now,
+		updatedAt:    now,
+	}, nil
+}
+
+// NewAssetWithTenant creates a new Asset entity with tenant.
+func NewAssetWithTenant(tenantID shared.ID, name string, assetType AssetType, criticality Criticality) (*Asset, error) {
+	a, err := NewAsset(name, assetType, criticality)
+	if err != nil {
+		return nil, err
+	}
+	a.tenantID = tenantID
+	return a, nil
+}
+
+// Reconstitute recreates an Asset from persistence (used by repository).
+func Reconstitute(
+	assetID shared.ID,
+	tenantID shared.ID,
+	parentID *shared.ID,
+	ownerID *shared.ID,
+	name string,
+	assetType AssetType,
+	criticality Criticality,
+	status Status,
+	scope Scope,
+	exposure Exposure,
+	riskScore int,
+	findingCount int,
+	description string,
+	tags []string,
+	properties map[string]any,
+	provider Provider,
+	externalID string,
+	classification string,
+	syncStatus SyncStatus,
+	lastSyncedAt *time.Time,
+	syncError string,
+	discoverySource string,
+	discoveryTool string,
+	discoveredAt *time.Time,
+	// CTEM fields
+	complianceScope []string,
+	dataClassification DataClassification,
+	piiDataExposed bool,
+	phiDataExposed bool,
+	regulatoryOwnerID *shared.ID,
+	isInternetAccessible bool,
+	exposureChangedAt *time.Time,
+	lastExposureLevel Exposure,
+	// CIA impact rating (Scoping critical-asset register)
+	impactConfidentiality ImpactRating,
+	impactIntegrity ImpactRating,
+	impactAvailability ImpactRating,
+	// Timestamps
+	firstSeen, lastSeen time.Time,
+	createdAt, updatedAt time.Time,
+) *Asset {
+	if tags == nil {
+		tags = make([]string, 0)
+	}
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	if complianceScope == nil {
+		complianceScope = make([]string, 0)
+	}
+	return &Asset{
+		id:              assetID,
+		tenantID:        tenantID,
+		parentID:        parentID,
+		ownerID:         ownerID,
+		name:            name,
+		assetType:       assetType,
+		criticality:     criticality,
+		status:          status,
+		scope:           scope,
+		exposure:        exposure,
+		riskScore:       riskScore,
+		findingCount:    findingCount,
+		description:     description,
+		tags:            tags,
+		properties:      properties,
+		provider:        provider,
+		externalID:      externalID,
+		classification:  classification,
+		syncStatus:      syncStatus,
+		lastSyncedAt:    lastSyncedAt,
+		syncError:       syncError,
+		discoverySource: discoverySource,
+		discoveryTool:   discoveryTool,
+		discoveredAt:    discoveredAt,
+		// CTEM fields
+		complianceScope:      complianceScope,
+		dataClassification:   dataClassification,
+		piiDataExposed:       piiDataExposed,
+		phiDataExposed:       phiDataExposed,
+		regulatoryOwnerID:    regulatoryOwnerID,
+		isInternetAccessible: isInternetAccessible,
+		exposureChangedAt:    exposureChangedAt,
+		lastExposureLevel:    lastExposureLevel,
+		// CIA impact rating (Scoping critical-asset register)
+		impactConfidentiality: impactConfidentiality,
+		impactIntegrity:       impactIntegrity,
+		impactAvailability:    impactAvailability,
+		// Timestamps
+		firstSeen: firstSeen,
+		lastSeen:  lastSeen,
+		createdAt: createdAt,
+		updatedAt: updatedAt,
+	}
+}
+
+// ID returns the asset ID.
+func (a *Asset) ID() shared.ID {
+	return a.id
+}
+
+// TenantID returns the tenant ID.
+func (a *Asset) TenantID() shared.ID {
+	return a.tenantID
+}
+
+// Name returns the asset name.
+func (a *Asset) Name() string {
+	return a.name
+}
+
+// Type returns the asset type.
+func (a *Asset) Type() AssetType {
+	return a.assetType
+}
+
+// SubType returns the asset sub-type (e.g., "firewall" for type=network).
+func (a *Asset) SubType() string {
+	return a.subType
+}
+
+// SetSubType sets the asset sub-type.
+func (a *Asset) SetSubType(subType string) {
+	a.subType = subType
+}
+
+// Category returns the asset category (derived from type, not stored).
+func (a *Asset) Category() Category {
+	return CategoryForType(a.assetType)
+}
+
+// Criticality returns the asset criticality.
+func (a *Asset) Criticality() Criticality {
+	return a.criticality
+}
+
+// Status returns the asset status.
+func (a *Asset) Status() Status {
+	return a.status
+}
+
+// Scope returns the asset scope.
+func (a *Asset) Scope() Scope {
+	return a.scope
+}
+
+// Exposure returns the asset exposure level.
+func (a *Asset) Exposure() Exposure {
+	return a.exposure
+}
+
+// SetExposure sets the asset's internet-exposure level and stamps the change
+// time. No-op when unchanged. Exposure is the authoritative reachability signal
+// the prioritization engine consumes (public ⇒ internet-reachable), so keeping
+// it accurate is what makes the "KEV + reachable → P0" gates fire.
+func (a *Asset) SetExposure(exposure Exposure) {
+	if a.exposure == exposure {
+		return
+	}
+	a.exposure = exposure
+	now := time.Now().UTC()
+	a.exposureChangedAt = &now
+	a.updatedAt = now
+}
+
+// RiskScore returns the asset risk score.
+func (a *Asset) RiskScore() int {
+	return a.riskScore
+}
+
+// FindingCount returns the number of findings for this asset.
+func (a *Asset) FindingCount() int {
+	return a.findingCount
+}
+
+// FindingSeverityCounts returns the per-severity finding counts.
+func (a *Asset) FindingSeverityCounts() *FindingSeverityCounts {
+	return a.findingSeverityCounts
+}
+
+// SetFindingSeverityCounts sets the per-severity finding counts.
+func (a *Asset) SetFindingSeverityCounts(counts *FindingSeverityCounts) {
+	a.findingSeverityCounts = counts
+}
+
+// Description returns the asset description.
+func (a *Asset) Description() string {
+	return a.description
+}
+
+// FirstSeen returns when the asset was first discovered.
+func (a *Asset) FirstSeen() time.Time {
+	return a.firstSeen
+}
+
+// LastSeen returns when the asset was last seen.
+func (a *Asset) LastSeen() time.Time {
+	return a.lastSeen
+}
+
+// Tags returns the asset tags.
+func (a *Asset) Tags() []string {
+	result := make([]string, len(a.tags))
+	copy(result, a.tags)
+	return result
+}
+
+// Metadata returns the asset metadata.
+
+// CreatedAt returns the creation timestamp.
+func (a *Asset) CreatedAt() time.Time {
+	return a.createdAt
+}
+
+// UpdatedAt returns the last update timestamp.
+func (a *Asset) UpdatedAt() time.Time {
+	return a.updatedAt
+}
+
+// UpdateName updates the asset name with normalization.
+// Stores the old name as an alias for search compatibility.
+func (a *Asset) UpdateName(name string) error {
+	name = NormalizeName(name, a.assetType, a.SubType())
+	if err := validateName(name); err != nil {
+		return err
+	}
+	if name == a.name {
+		return nil // No change
+	}
+	// Store old name as alias
+	a.addAlias(a.name)
+	a.name = name
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// addAlias stores an old name for search compatibility.
+func (a *Asset) addAlias(oldName string) {
+	if oldName == "" {
+		return
+	}
+	if a.properties == nil {
+		a.properties = make(map[string]any)
+	}
+	var aliases []string
+	if existing, ok := a.properties["aliases"]; ok {
+		switch v := existing.(type) {
+		case []string:
+			aliases = v
+		case []any:
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					aliases = append(aliases, s)
+				}
+			}
+		}
+	}
+	// Check duplicate
+	for _, alias := range aliases {
+		if alias == oldName {
+			return
+		}
+	}
+	aliases = append(aliases, oldName)
+	// Max 10 aliases
+	if len(aliases) > 10 {
+		aliases = aliases[len(aliases)-10:]
+	}
+	a.properties["aliases"] = aliases
+}
+
+// UpdateCriticality updates the asset criticality.
+func (a *Asset) UpdateCriticality(criticality Criticality) error {
+	if !criticality.IsValid() {
+		return fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
+	}
+	a.criticality = criticality
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// UpdateDescription updates the asset description.
+func (a *Asset) UpdateDescription(description string) {
+	a.description = description
+	a.updatedAt = time.Now().UTC()
+}
+
+// UpdateScope updates the asset scope.
+func (a *Asset) UpdateScope(scope Scope) error {
+	if !scope.IsValid() {
+		return fmt.Errorf("%w: invalid scope", shared.ErrValidation)
+	}
+	a.scope = scope
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// UpdateExposure updates the asset exposure level. Like SetExposure it stamps
+// exposure_changed_at when the level actually changes: the create / update /
+// bulk-import paths go through here, and without the stamp an asset an
+// operator classified as public carried no record of WHEN it became known
+// internet-facing (the program-metrics MTTD clock stop).
+func (a *Asset) UpdateExposure(exposure Exposure) error {
+	if !exposure.IsValid() {
+		return fmt.Errorf("%w: invalid exposure", shared.ErrValidation)
+	}
+	now := time.Now().UTC()
+	if a.exposure != exposure {
+		a.exposureChangedAt = &now
+	}
+	a.exposure = exposure
+	a.updatedAt = now
+	return nil
+}
+
+// UpdateRiskScore updates the asset risk score.
+func (a *Asset) UpdateRiskScore(score int) error {
+	if score < 0 || score > 100 {
+		return fmt.Errorf("%w: risk score must be between 0 and 100", shared.ErrValidation)
+	}
+	a.riskScore = score
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// UpdateFindingCount updates the finding count.
+func (a *Asset) UpdateFindingCount(count int) {
+	if count < 0 {
+		count = 0
+	}
+	a.findingCount = count
+	a.updatedAt = time.Now().UTC()
+}
+
+// IncrementFindingCount increments the finding count by 1.
+func (a *Asset) IncrementFindingCount() {
+	a.findingCount++
+	a.updatedAt = time.Now().UTC()
+}
+
+// DecrementFindingCount decrements the finding count by 1.
+func (a *Asset) DecrementFindingCount() {
+	if a.findingCount > 0 {
+		a.findingCount--
+		a.updatedAt = time.Now().UTC()
+	}
+}
+
+// MarkSeen updates the last-seen timestamp. When the asset had been
+// demoted to stale or inactive by the lifecycle worker, MarkSeen also
+// transitions it back to active — unless the operator has taken
+// manual control of the status (manualStatusOverride=true) or the
+// asset has been archived (archived is a manual terminal state).
+//
+// The grace pause (lifecyclePausedUntil) is cleared on reactivation:
+// a fresh sighting is the strongest signal the asset is really here,
+// so whatever snooze the operator set becomes moot.
+//
+// Always uses server-side time — callers cannot spoof last-seen by
+// sending a future timestamp. This defends against clock-skewed
+// sensors that would otherwise make an asset "never stale".
+func (a *Asset) MarkSeen() {
+	now := time.Now().UTC()
+	a.lastSeen = now
+	a.updatedAt = now
+
+	if a.manualStatusOverride || a.status == StatusArchived {
+		return
+	}
+	if a.status == StatusStale || a.status == StatusInactive {
+		a.status = StatusActive
+		a.lifecyclePausedUntil = nil
+	}
+}
+
+// MarkStale is called by the lifecycle worker to flag an asset that
+// has not been re-observed within the tenant's threshold. Safe to
+// call repeatedly — returns false if the status did not change.
+func (a *Asset) MarkStale() bool {
+	if a.manualStatusOverride {
+		return false
+	}
+	if a.status != StatusActive {
+		return false
+	}
+	a.status = StatusStale
+	a.updatedAt = time.Now().UTC()
+	return true
+}
+
+// SnoozeLifecycle pauses lifecycle transitions for the given
+// duration. Use case: operator manually reactivated a false-stale
+// asset and wants a breathing room so the next worker run does not
+// immediately re-demote it. Duration <= 0 clears any existing snooze.
+func (a *Asset) SnoozeLifecycle(d time.Duration) {
+	if d <= 0 {
+		a.lifecyclePausedUntil = nil
+	} else {
+		pausedUntil := time.Now().UTC().Add(d)
+		a.lifecyclePausedUntil = &pausedUntil
+	}
+	a.updatedAt = time.Now().UTC()
+}
+
+// IsLifecyclePaused reports whether the asset is currently protected
+// from worker transitions by an operator snooze.
+func (a *Asset) IsLifecyclePaused(now time.Time) bool {
+	return a.lifecyclePausedUntil != nil && a.lifecyclePausedUntil.After(now)
+}
+
+// LifecyclePausedUntil exposes the snooze expiry for persistence and
+// UI display. Returns nil if no snooze is active.
+func (a *Asset) LifecyclePausedUntil() *time.Time {
+	return a.lifecyclePausedUntil
+}
+
+// SetManualStatusOverride toggles whether the lifecycle worker is
+// allowed to change this asset's status. true means "operator
+// controls status, worker hands off".
+func (a *Asset) SetManualStatusOverride(v bool) {
+	a.manualStatusOverride = v
+	a.updatedAt = time.Now().UTC()
+}
+
+// ManualStatusOverride reports whether the worker should skip this
+// asset when evaluating lifecycle transitions.
+func (a *Asset) ManualStatusOverride() bool {
+	return a.manualStatusOverride
+}
+
+// RestoreLifecycleState is used by the repository when reconstituting
+// an Asset from storage. Added as a setter instead of new parameters
+// on the already-long Reconstitute signature so infra can populate
+// the pause + override fields without churning every caller.
+func (a *Asset) RestoreLifecycleState(pausedUntil *time.Time, manualOverride bool) {
+	a.lifecyclePausedUntil = pausedUntil
+	a.manualStatusOverride = manualOverride
+}
+
+// SetTenantID sets the tenant ID.
+func (a *Asset) SetTenantID(tenantID shared.ID) {
+	a.tenantID = tenantID
+}
+
+// CalculateRiskScore calculates and updates the risk score based on exposure, criticality, and findings.
+func (a *Asset) CalculateRiskScore() {
+	baseScore := a.exposure.BaseRiskScore()
+	criticalityScore := a.criticality.Score() / 4 // Max 25 points from criticality
+
+	// Add finding impact (simplified - could be enhanced with finding severity)
+	findingImpact := 0
+	if a.findingCount > 0 {
+		findingImpact = min(a.findingCount*5, 35) // Max 35 points from findings
+	}
+
+	rawScore := baseScore + criticalityScore + findingImpact
+	multiplier := a.exposure.ExposureMultiplier()
+
+	finalScore := int(float64(rawScore) * multiplier)
+	if finalScore > 100 {
+		finalScore = 100
+	}
+	if finalScore < 0 {
+		finalScore = 0
+	}
+
+	a.riskScore = finalScore
+	a.updatedAt = time.Now().UTC()
+}
+
+// AddTag adds a tag to the asset.
+func (a *Asset) AddTag(tag string) {
+	if tag == "" {
+		return
+	}
+	for _, t := range a.tags {
+		if t == tag {
+			return
+		}
+	}
+	a.tags = append(a.tags, tag)
+	a.updatedAt = time.Now().UTC()
+}
+
+// RemoveTag removes a tag from the asset.
+func (a *Asset) RemoveTag(tag string) {
+	for i, t := range a.tags {
+		if t == tag {
+			a.tags = append(a.tags[:i], a.tags[i+1:]...)
+			a.updatedAt = time.Now().UTC()
+			return
+		}
+	}
+}
+
+// SetMetadata sets a metadata key-value pair.
+
+// Activate activates the asset.
+func (a *Asset) Activate() {
+	a.status = StatusActive
+	a.updatedAt = time.Now().UTC()
+}
+
+// Deactivate deactivates the asset.
+func (a *Asset) Deactivate() {
+	a.status = StatusInactive
+	a.updatedAt = time.Now().UTC()
+}
+
+// Archive archives the asset.
+func (a *Asset) Archive() {
+	a.status = StatusArchived
+	a.updatedAt = time.Now().UTC()
+}
+
+// IsActive returns true if the asset is active.
+func (a *Asset) IsActive() bool {
+	return a.status == StatusActive
+}
+
+// IsCritical returns true if the asset is critical.
+func (a *Asset) IsCritical() bool {
+	return a.criticality == CriticalityCritical
+}
+
+// IsRepository returns true if the asset is a repository type.
+func (a *Asset) IsRepository() bool {
+	return a.assetType.IsRepository()
+}
+
+// ParentID returns the parent asset ID.
+func (a *Asset) ParentID() *shared.ID {
+	return a.parentID
+}
+
+// OwnerID returns the owner user ID.
+func (a *Asset) OwnerID() *shared.ID {
+	return a.ownerID
+}
+
+// OwnerRef returns the raw owner text from external sources.
+func (a *Asset) OwnerRef() string {
+	return a.ownerRef
+}
+
+// SetOwnerRef sets the raw owner text from external sources.
+func (a *Asset) SetOwnerRef(ref string) {
+	a.ownerRef = ref
+	a.updatedAt = time.Now().UTC()
+}
+
+// Provider returns the external provider.
+func (a *Asset) Provider() Provider {
+	return a.provider
+}
+
+// ExternalID returns the external system ID.
+func (a *Asset) ExternalID() string {
+	return a.externalID
+}
+
+// Classification returns the asset classification.
+func (a *Asset) Classification() string {
+	return a.classification
+}
+
+// SyncStatus returns the sync status.
+func (a *Asset) SyncStatus() SyncStatus {
+	return a.syncStatus
+}
+
+// LastSyncedAt returns the last sync timestamp.
+func (a *Asset) LastSyncedAt() *time.Time {
+	return a.lastSyncedAt
+}
+
+// SyncError returns the last sync error.
+func (a *Asset) SyncError() string {
+	return a.syncError
+}
+
+// Properties returns a copy of the type-specific properties.
+func (a *Asset) Properties() map[string]any {
+	result := make(map[string]any, len(a.properties))
+	for k, v := range a.properties {
+		result[k] = v
+	}
+	return result
+}
+
+// SetParentID sets the parent asset ID.
+// Returns error if the parent ID would create a self-reference.
+func (a *Asset) SetParentID(parentID *shared.ID) error {
+	if parentID != nil && *parentID == a.id {
+		return fmt.Errorf("%w: asset cannot be its own parent", shared.ErrValidation)
+	}
+	a.parentID = parentID
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// SetOwnerID sets the owner user ID.
+func (a *Asset) SetOwnerID(ownerID *shared.ID) {
+	a.ownerID = ownerID
+	a.updatedAt = time.Now().UTC()
+}
+
+// SetProvider sets the external provider.
+func (a *Asset) SetProvider(provider Provider) {
+	a.provider = provider
+	a.updatedAt = time.Now().UTC()
+}
+
+// SetExternalID sets the external system ID.
+func (a *Asset) SetExternalID(externalID string) {
+	a.externalID = externalID
+	a.updatedAt = time.Now().UTC()
+}
+
+// SetClassification sets the asset classification.
+func (a *Asset) SetClassification(classification string) {
+	a.classification = classification
+	a.updatedAt = time.Now().UTC()
+}
+
+// SetProperty sets a type-specific property.
+func (a *Asset) SetProperty(key string, value any) {
+	if key == "" {
+		return
+	}
+	a.properties[key] = value
+	a.updatedAt = time.Now().UTC()
+}
+
+// GetProperty gets a type-specific property.
+func (a *Asset) GetProperty(key string) (any, bool) {
+	v, ok := a.properties[key]
+	return v, ok
+}
+
+// SetProperties replaces all properties.
+func (a *Asset) SetProperties(properties map[string]any) {
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	a.properties = properties
+	a.updatedAt = time.Now().UTC()
+}
+
+// MarkSyncing marks the asset as syncing.
+func (a *Asset) MarkSyncing() {
+	a.syncStatus = SyncStatusSyncing
+	a.updatedAt = time.Now().UTC()
+}
+
+// MarkSynced marks the asset as synced.
+func (a *Asset) MarkSynced() {
+	a.syncStatus = SyncStatusSynced
+	now := time.Now().UTC()
+	a.lastSyncedAt = &now
+	a.syncError = ""
+	a.updatedAt = now
+}
+
+// MarkSyncError marks the asset with a sync error.
+func (a *Asset) MarkSyncError(err string) {
+	a.syncStatus = SyncStatusError
+	a.syncError = err
+	a.updatedAt = time.Now().UTC()
+}
+
+// DisableSync disables syncing for this asset.
+func (a *Asset) DisableSync() {
+	a.syncStatus = SyncStatusDisabled
+	a.updatedAt = time.Now().UTC()
+}
+
+// EnableSync enables syncing for this asset.
+func (a *Asset) EnableSync() {
+	a.syncStatus = SyncStatusPending
+	a.updatedAt = time.Now().UTC()
+}
+
+// DiscoverySource returns the discovery source.
+func (a *Asset) DiscoverySource() string {
+	return a.discoverySource
+}
+
+// DiscoveryTool returns the discovery tool.
+func (a *Asset) DiscoveryTool() string {
+	return a.discoveryTool
+}
+
+// DiscoveredAt returns when the asset was discovered.
+func (a *Asset) DiscoveredAt() *time.Time {
+	return a.discoveredAt
+}
+
+// SetDiscoverySource sets the discovery source.
+func (a *Asset) SetDiscoverySource(source string) {
+	a.discoverySource = source
+	a.updatedAt = time.Now().UTC()
+}
+
+// SetDiscoveryTool sets the discovery tool.
+func (a *Asset) SetDiscoveryTool(tool string) {
+	a.discoveryTool = tool
+	a.updatedAt = time.Now().UTC()
+}
+
+// SetDiscoveredAt sets when the asset was discovered.
+func (a *Asset) SetDiscoveredAt(t *time.Time) {
+	a.discoveredAt = t
+	a.updatedAt = time.Now().UTC()
+}
+
+// SetDiscoveryInfo sets all discovery-related fields at once.
+func (a *Asset) SetDiscoveryInfo(source, tool string, discoveredAt *time.Time) {
+	a.discoverySource = source
+	a.discoveryTool = tool
+	a.discoveredAt = discoveredAt
+	a.updatedAt = time.Now().UTC()
+}
+
+// =============================================================================
+// CTEM: Compliance Context Methods
+// =============================================================================
+
+// ComplianceScope returns the compliance frameworks this asset is in scope for.
+func (a *Asset) ComplianceScope() []string {
+	result := make([]string, len(a.complianceScope))
+	copy(result, a.complianceScope)
+	return result
+}
+
+// SetComplianceScope sets the compliance frameworks.
+func (a *Asset) SetComplianceScope(frameworks []string) {
+	if frameworks == nil {
+		frameworks = make([]string, 0)
+	}
+	a.complianceScope = frameworks
+	a.updatedAt = time.Now().UTC()
+}
+
+// AddComplianceFramework adds a compliance framework to scope.
+func (a *Asset) AddComplianceFramework(framework string) {
+	if framework == "" {
+		return
+	}
+	for _, f := range a.complianceScope {
+		if f == framework {
+			return
+		}
+	}
+	a.complianceScope = append(a.complianceScope, framework)
+	a.updatedAt = time.Now().UTC()
+}
+
+// RemoveComplianceFramework removes a compliance framework from scope.
+func (a *Asset) RemoveComplianceFramework(framework string) {
+	for i, f := range a.complianceScope {
+		if f == framework {
+			a.complianceScope = append(a.complianceScope[:i], a.complianceScope[i+1:]...)
+			a.updatedAt = time.Now().UTC()
+			return
+		}
+	}
+}
+
+// IsInComplianceScope checks if asset is in scope for a framework.
+func (a *Asset) IsInComplianceScope(framework string) bool {
+	for _, f := range a.complianceScope {
+		if f == framework {
+			return true
+		}
+	}
+	return false
+}
+
+// DataClassification returns the data classification level.
+func (a *Asset) DataClassification() DataClassification {
+	return a.dataClassification
+}
+
+// SetDataClassification sets the data classification level.
+func (a *Asset) SetDataClassification(classification DataClassification) error {
+	if classification != "" && !classification.IsValid() {
+		return fmt.Errorf("%w: invalid data classification", shared.ErrValidation)
+	}
+	a.dataClassification = classification
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// PIIDataExposed returns whether PII data is exposed.
+func (a *Asset) PIIDataExposed() bool {
+	return a.piiDataExposed
+}
+
+// SetPIIDataExposed sets whether PII data is exposed.
+func (a *Asset) SetPIIDataExposed(exposed bool) {
+	a.piiDataExposed = exposed
+	a.updatedAt = time.Now().UTC()
+}
+
+// PHIDataExposed returns whether PHI data is exposed.
+func (a *Asset) PHIDataExposed() bool {
+	return a.phiDataExposed
+}
+
+// SetPHIDataExposed sets whether PHI data is exposed.
+func (a *Asset) SetPHIDataExposed(exposed bool) {
+	a.phiDataExposed = exposed
+	a.updatedAt = time.Now().UTC()
+}
+
+// RegulatoryOwnerID returns the regulatory owner user ID.
+func (a *Asset) RegulatoryOwnerID() *shared.ID {
+	return a.regulatoryOwnerID
+}
+
+// SetRegulatoryOwnerID sets the regulatory owner user ID.
+func (a *Asset) SetRegulatoryOwnerID(ownerID *shared.ID) {
+	a.regulatoryOwnerID = ownerID
+	a.updatedAt = time.Now().UTC()
+}
+
+// =============================================================================
+// CTEM: CIA Impact Rating Methods (Scoping critical-asset register)
+// =============================================================================
+
+// ImpactConfidentiality returns the confidentiality impact rating.
+func (a *Asset) ImpactConfidentiality() ImpactRating {
+	return a.impactConfidentiality
+}
+
+// SetImpactConfidentiality sets the confidentiality impact rating.
+// An empty rating clears the value; any non-empty value must be valid.
+func (a *Asset) SetImpactConfidentiality(rating ImpactRating) error {
+	if rating != "" && !rating.IsValid() {
+		return fmt.Errorf("%w: invalid confidentiality impact rating", shared.ErrValidation)
+	}
+	a.impactConfidentiality = rating
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// ImpactIntegrity returns the integrity impact rating.
+func (a *Asset) ImpactIntegrity() ImpactRating {
+	return a.impactIntegrity
+}
+
+// SetImpactIntegrity sets the integrity impact rating.
+// An empty rating clears the value; any non-empty value must be valid.
+func (a *Asset) SetImpactIntegrity(rating ImpactRating) error {
+	if rating != "" && !rating.IsValid() {
+		return fmt.Errorf("%w: invalid integrity impact rating", shared.ErrValidation)
+	}
+	a.impactIntegrity = rating
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// ImpactAvailability returns the availability impact rating.
+func (a *Asset) ImpactAvailability() ImpactRating {
+	return a.impactAvailability
+}
+
+// SetImpactAvailability sets the availability impact rating.
+// An empty rating clears the value; any non-empty value must be valid.
+func (a *Asset) SetImpactAvailability(rating ImpactRating) error {
+	if rating != "" && !rating.IsValid() {
+		return fmt.Errorf("%w: invalid availability impact rating", shared.ErrValidation)
+	}
+	a.impactAvailability = rating
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// =============================================================================
+// CTEM: Enhanced Exposure Tracking Methods
+// =============================================================================
+
+// IsInternetAccessible returns whether the asset is directly internet accessible.
+func (a *Asset) IsInternetAccessible() bool {
+	return a.isInternetAccessible
+}
+
+// SetInternetAccessible sets whether the asset is internet accessible.
+func (a *Asset) SetInternetAccessible(accessible bool) {
+	a.isInternetAccessible = accessible
+	a.updatedAt = time.Now().UTC()
+}
+
+// ExposureChangedAt returns when the exposure level last changed.
+func (a *Asset) ExposureChangedAt() *time.Time {
+	return a.exposureChangedAt
+}
+
+// LastExposureLevel returns the previous exposure level.
+func (a *Asset) LastExposureLevel() Exposure {
+	return a.lastExposureLevel
+}
+
+// UpdateExposureWithTracking updates exposure and tracks the change.
+func (a *Asset) UpdateExposureWithTracking(newExposure Exposure) error {
+	if !newExposure.IsValid() {
+		return fmt.Errorf("%w: invalid exposure", shared.ErrValidation)
+	}
+	if a.exposure != newExposure {
+		a.lastExposureLevel = a.exposure
+		now := time.Now().UTC()
+		a.exposureChangedAt = &now
+		a.exposure = newExposure
+		a.updatedAt = now
+	}
+	return nil
+}
+
+// HasSensitiveData returns true if asset contains PII or PHI data.
+func (a *Asset) HasSensitiveData() bool {
+	return a.piiDataExposed || a.phiDataExposed
+}
+
+// IsHighRiskCompliance returns true if asset is in high-risk compliance scope.
+func (a *Asset) IsHighRiskCompliance() bool {
+	highRiskFrameworks := []string{"PCI-DSS", "HIPAA", "SOC2"}
+	for _, framework := range highRiskFrameworks {
+		if a.IsInComplianceScope(framework) {
+			return true
+		}
+	}
+	return false
+}
+
+// CTEMRiskFactor returns a risk multiplier based on CTEM factors.
+func (a *Asset) CTEMRiskFactor() float64 {
+	factor := 1.0
+
+	// Internet accessible increases risk
+	if a.isInternetAccessible {
+		factor *= 1.5
+	}
+
+	// Sensitive data increases risk
+	if a.piiDataExposed {
+		factor *= 1.3
+	}
+	if a.phiDataExposed {
+		factor *= 1.4
+	}
+
+	// High-risk compliance increases risk
+	if a.IsHighRiskCompliance() {
+		factor *= 1.2
+	}
+
+	// Restricted/Secret classification increases risk
+	if a.dataClassification == DataClassificationRestricted || a.dataClassification == DataClassificationSecret {
+		factor *= 1.3
+	}
+
+	return factor
+}

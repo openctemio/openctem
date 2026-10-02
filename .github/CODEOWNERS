@@ -1,0 +1,24 @@
+# CODEOWNERS is read from the base branch of each pull request (develop or main).
+# Later rules win. No teams exist in the openctemio organization yet, so owners
+# are users; replace with @openctemio/<team> once teams are created.
+
+*                                   @0xmanhnv
+
+# Go API
+/api/                               @0xmanhnv
+/api/migrations/                    @0xmanhnv
+
+# Next.js web app
+/web/                               @0xmanhnv
+
+# The API contract: a spec change must regenerate the web wire types in the same PR.
+/api/api/openapi/                   @0xmanhnv
+/web/src/lib/api/generated/         @0xmanhnv
+
+# CI, release and supply chain
+/.github/                           @0xmanhnv
+/.githooks/                         @0xmanhnv
+
+# Deployment: the one-port gateway (shared by Compose and the all-in-one image)
+/api/deploy/                        @0xmanhnv
+/deploy/                            @0xmanhnv

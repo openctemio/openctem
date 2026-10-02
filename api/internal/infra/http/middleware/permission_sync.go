@@ -1,0 +1,309 @@
+package middleware
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+)
+
+// permSyncTimeout is the maximum time allowed for permission sync operations.
+// This prevents DoS if Redis/DB is slow or unresponsive.
+const permSyncTimeout = 2 * time.Second
+
+// PermissionSyncMiddleware handles permission synchronization and stale detection.
+// It enriches the request context with permissions from Redis cache
+// and sets the X-Permission-Stale header when JWT version doesn't match Redis version.
+type PermissionSyncMiddleware struct {
+	permCache   permissionFetcher
+	permVersion permissionVersionReader
+	// teamRoles re-derives the team role (owner/admin/...) of a stale token
+	// from the database. See WithTeamRoleReader.
+	teamRoles TeamRoleReader
+	logger    *logger.Logger
+}
+
+// permissionFetcher and permissionVersionReader are the parts of the
+// permission cache and version services the middleware uses.
+type permissionFetcher interface {
+	GetPermissionsWithFallback(ctx context.Context, tenantID, userID string) ([]string, error)
+}
+
+type permissionVersionReader interface {
+	GetChecked(ctx context.Context, tenantID, userID string) (int, bool)
+}
+
+// TeamRoleReader reads a user's current membership (and so team role) in a
+// tenant. tenant.Repository satisfies it.
+type TeamRoleReader = MembershipReader
+
+// PermSyncContextKey is a context key for permission sync data.
+const (
+	// FetchedPermissionsKey stores permissions fetched from Redis/DB (not from JWT).
+	FetchedPermissionsKey logger.ContextKey = "fetched_permissions"
+	// PermVersionKey stores the current permission version from Redis.
+	PermVersionKey logger.ContextKey = "perm_version"
+	// PermStaleKey indicates if the JWT permission version is stale.
+	PermStaleKey logger.ContextKey = "perm_stale"
+)
+
+// Response headers for permission sync.
+const (
+	// HeaderPermissionStale is set to "true" when JWT permission version doesn't match Redis.
+	HeaderPermissionStale = "X-Permission-Stale"
+	// HeaderPermissionVersion contains the current permission version from Redis.
+	HeaderPermissionVersion = "X-Permission-Version"
+)
+
+// NewPermissionSyncMiddleware creates a new permission sync middleware.
+func NewPermissionSyncMiddleware(
+	permCache *app.PermissionCacheService,
+	permVersion *app.PermissionVersionService,
+	log *logger.Logger,
+) *PermissionSyncMiddleware {
+	return newPermissionSyncMiddleware(permVersion, permCache, nil, log)
+}
+
+func newPermissionSyncMiddleware(
+	permVersion permissionVersionReader,
+	permCache permissionFetcher,
+	teamRoles TeamRoleReader,
+	log *logger.Logger,
+) *PermissionSyncMiddleware {
+	return &PermissionSyncMiddleware{
+		permCache:   permCache,
+		permVersion: permVersion,
+		teamRoles:   teamRoles,
+		logger:      log.With("middleware", "permission_sync"),
+	}
+}
+
+// WithTeamRoleReader sets where a stale token's team role is re-read from.
+// Pass the database-backed repository, not a cache: this runs only for tokens
+// whose permission version is stale, i.e. right after a role change. Without a
+// reader, a stale token is refused (409) on every method.
+func (m *PermissionSyncMiddleware) WithTeamRoleReader(r TeamRoleReader) *PermissionSyncMiddleware {
+	m.teamRoles = r
+	return m
+}
+
+// writeStale answers 409 permissions_stale: the client refreshes its token and
+// retries.
+func writeStale(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	_, _ = w.Write([]byte(`{"code":"permissions_stale","message":"Your session is using outdated permissions. Refresh your token and retry."}`))
+}
+
+// currentTeamRole re-reads the user's team role from the database.
+func (m *PermissionSyncMiddleware) currentTeamRole(ctx context.Context, tenantID, userID string) (string, error) {
+	if m.teamRoles == nil {
+		return "", errNoTeamRoleReader
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return "", err
+	}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return "", err
+	}
+	membership, err := m.teamRoles.GetMembership(ctx, uid, tid)
+	if err != nil {
+		return "", err
+	}
+	if membership.IsSuspended() {
+		return "", errMembershipSuspended
+	}
+	return membership.Role().String(), nil
+}
+
+// EnrichPermissions fetches permissions from Redis cache and adds them to context.
+// Also checks for stale permissions and sets the X-Permission-Stale header.
+//
+// This middleware should be placed AFTER UnifiedAuth in the middleware chain.
+// It uses the user ID and tenant ID from the context set by UnifiedAuth.
+//
+// Flow:
+// 1. Get tenant ID and user ID from context
+// 2. Get current permission version from Redis
+// 3. Compare with JWT's perm_version (if present)
+// 4. If mismatch: set X-Permission-Stale header
+// 5. Fetch permissions from Redis cache (or DB fallback)
+// 6. Store permissions in context for handlers
+func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		// An API-key request already carries its effective permissions: the
+		// key's scopes narrowed to what its user holds right now, resolved at
+		// authentication. Loading the user's permissions here would replace
+		// that narrow set with everything the user can do.
+		if IsAPIKeyAuthenticated(ctx) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Get tenant and user from context (set by UnifiedAuth)
+		tenantID := MustGetTenantID(ctx)
+		userID := GetUserID(ctx)
+
+		// Skip if no tenant or user context
+		if tenantID == "" || userID == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Get current permission version from Redis. versionConfirmed is
+		// false on a missing key (no permission change ever) or a Redis
+		// error — in both cases we must NOT treat the request as stale, so a
+		// cache outage can't 409 every write (fail open).
+		currentVersion, versionConfirmed := m.permVersion.GetChecked(ctx, tenantID, userID)
+
+		// Check JWT's permission version
+		var jwtPermVersion int
+		if claims := GetLocalClaims(ctx); claims != nil {
+			jwtPermVersion = claims.PermVersion
+		}
+
+		// Detect stale permissions — only on a CONFIRMED version mismatch.
+		isStale := versionConfirmed && jwtPermVersion > 0 && jwtPermVersion != currentVersion
+		if isStale {
+			// Set header to notify frontend that permissions are stale
+			w.Header().Set(HeaderPermissionStale, "true")
+			w.Header().Set(HeaderPermissionVersion, strconv.Itoa(currentVersion))
+
+			m.logger.Debug("stale permission detected",
+				"user_id", userID,
+				"tenant_id", tenantID,
+				"jwt_version", jwtPermVersion,
+				"current_version", currentVersion,
+			)
+
+			// Fail-closed for STATE-MUTATING requests when permissions are
+			// stale. The header alone (read by the frontend) is not enough
+			// — a non-browser client (curl, attacker) can ignore it. For
+			// safe methods (GET/HEAD/OPTIONS) we let the request through
+			// because read traffic dominates and the cache fetch below
+			// will use the FRESH permissions anyway. For unsafe methods
+			// (POST/PUT/PATCH/DELETE) we reject with 409, telling the
+			// client to refresh their token and retry — this closes the
+			// "I revoked your admin role 3 minutes ago but your old JWT
+			// still lets you delete things" window.
+			//
+			// Audit finding: previously fail-OPEN on stale, even for
+			// destructive operations.
+			if !isSafeMethod(r.Method) {
+				m.logger.Info("rejecting unsafe request with stale permissions",
+					"user_id", userID, "tenant_id", tenantID,
+					"method", r.Method, "path", r.URL.Path,
+					"jwt_version", jwtPermVersion, "current_version", currentVersion)
+				writeStale(w)
+				return
+			}
+
+			// A safe method with a stale token: the token's admin flag and
+			// role may describe a role the user no longer holds (a demoted
+			// admin, audit H2). Re-derive both from the database; if that is
+			// not possible, refuse like a stale write.
+			lookupCtx, cancelLookup := context.WithTimeout(ctx, permSyncTimeout)
+			role, err := m.currentTeamRole(lookupCtx, tenantID, userID)
+			cancelLookup()
+			if err != nil {
+				m.logger.Warn("stale token: team role unavailable, refusing",
+					"user_id", userID, "tenant_id", tenantID, "error", err)
+				writeStale(w)
+				return
+			}
+			ctx = context.WithValue(ctx, RoleKey, role)
+			ctx = context.WithValue(ctx, IsAdminKey, role == "owner" || role == "admin")
+		}
+
+		// Fetch permissions from cache/DB with timeout to prevent DoS
+		fetchCtx, cancel := context.WithTimeout(ctx, permSyncTimeout)
+		permissions, err := m.permCache.GetPermissionsWithFallback(fetchCtx, tenantID, userID)
+		cancel() // Always cancel to release resources
+		if err != nil {
+			if isStale {
+				// The token's own permissions are known to be outdated.
+				m.logger.Warn("stale token and permissions unavailable, refusing",
+					"user_id", userID, "tenant_id", tenantID, "error", err)
+				writeStale(w)
+				return
+			}
+			// The token is current, so its permissions are too: keep them
+			// (a cache/DB outage is not a revocation).
+			m.logger.Warn("failed to get permissions, keeping the token's",
+				"user_id", userID,
+				"tenant_id", tenantID,
+				"error", err,
+			)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		// Store in context. Once FetchedPermissionsKey is set, HasPermission
+		// uses only this fresh set and never the token's embedded array, so a
+		// revoked permission stops working for reads too (audit F9).
+		ctx = context.WithValue(ctx, FetchedPermissionsKey, permissions)
+		ctx = context.WithValue(ctx, PermVersionKey, currentVersion)
+		ctx = context.WithValue(ctx, PermStaleKey, isStale)
+		ctx = context.WithValue(ctx, PermissionsKey, permissions)
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+var (
+	errNoTeamRoleReader    = errors.New("no team role reader configured")
+	errMembershipSuspended = errors.New("membership is suspended")
+)
+
+// (isSafeMethod is defined in csrf.go in this package — same semantics:
+// read methods are allowed through stale-permission window, write
+// methods are rejected.)
+
+// GetFetchedPermissions returns permissions fetched from Redis/DB.
+func GetFetchedPermissions(ctx context.Context) []string {
+	if perms, ok := ctx.Value(FetchedPermissionsKey).([]string); ok {
+		return perms
+	}
+	return nil
+}
+
+// GetCurrentPermVersion returns the current permission version from Redis.
+func GetCurrentPermVersion(ctx context.Context) int {
+	if v, ok := ctx.Value(PermVersionKey).(int); ok {
+		return v
+	}
+	return 0
+}
+
+// IsPermissionStale returns true if the JWT permission version doesn't match Redis.
+func IsPermissionStale(ctx context.Context) bool {
+	if stale, ok := ctx.Value(PermStaleKey).(bool); ok {
+		return stale
+	}
+	return false
+}
+
+// HasPermissionFromCache checks if user has a permission using fetched permissions.
+// Unlike HasPermission which uses JWT permissions + IsAdmin bypass,
+// this always uses the latest permissions from cache.
+//
+// NOTE: For backward compatibility, use HasPermission which still works.
+// This function is for explicit cache-based permission checks.
+func HasPermissionFromCache(ctx context.Context, permission string) bool {
+	perms := GetFetchedPermissions(ctx)
+	for _, p := range perms {
+		if p == permission {
+			return true
+		}
+	}
+	return false
+}

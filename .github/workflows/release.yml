@@ -1,5 +1,11 @@
 name: Release
 
+# One `v*` tag = one GitHub Release for the whole product (API + web). The
+# images themselves are published by docker-publish.yml on the same tag.
+# Releases v0.1.0..v0.8.0 on this repository's Releases page are the old api
+# releases (same repository after the rename); the old ui releases stay on the
+# archived openctemio/ui and their tags were imported here as ui/v*.
+
 on:
   push:
     tags:
@@ -9,78 +15,45 @@ permissions:
   contents: write
 
 env:
-  GO_VERSION: "1.26.8"
+  GO_VERSION: "1.26.6"
+  GOWORK: "off"
 
 jobs:
-  # ============================================
-  # Build - Cross-compile bootstrap-admin (creates the first platform administrator)
-  # ============================================
   build:
-    name: Build (${{ matrix.os }}/${{ matrix.arch }})
+    name: Build bootstrap-admin (${{ matrix.os }}/${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: linux
-            arch: amd64
-            runner: ubuntu-latest
-          - os: linux
-            arch: arm64
-            runner: ubuntu-latest
-          - os: darwin
-            arch: amd64
-            runner: ubuntu-latest
-          - os: darwin
-            arch: arm64
-            runner: ubuntu-latest
-          - os: windows
-            arch: amd64
-            runner: ubuntu-latest
-    runs-on: ${{ matrix.runner }}
+          - { os: linux, arch: amd64 }
+          - { os: linux, arch: arm64 }
+          - { os: darwin, arch: amd64 }
+          - { os: darwin, arch: arm64 }
+          - { os: windows, arch: amd64 }
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-
-      - name: Get version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build bootstrap-admin
+          cache-dependency-path: api/go.sum
+      - name: Build and package
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ github.ref_name }}
         run: |
-          BINARY_NAME="bootstrap-admin"
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            BINARY_NAME="bootstrap-admin.exe"
-          fi
-
-          go build \
-            -ldflags="-s -w -X main.Version=${{ steps.version.outputs.VERSION }}" \
-            -o "bin/${BINARY_NAME}" \
-            ./cmd/bootstrap-admin
-
-      - name: Package binary
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          ARCHIVE_NAME="bootstrap-admin-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}"
-
+          BIN=bootstrap-admin; [ "$GOOS" = windows ] && BIN=bootstrap-admin.exe
+          go build -ldflags="-s -w -X main.Version=${VERSION}" -o "bin/${BIN}" ./cmd/bootstrap-admin
+          NAME="bootstrap-admin-${VERSION}-${GOOS}-${GOARCH}"
           cd bin
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            zip "../${ARCHIVE_NAME}.zip" bootstrap-admin.exe
-          else
-            tar czf "../${ARCHIVE_NAME}.tar.gz" bootstrap-admin
-          fi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
+          if [ "$GOOS" = windows ]; then zip "../../${NAME}.zip" "$BIN"; else tar czf "../../${NAME}.tar.gz" "$BIN"; fi
+      - uses: actions/upload-artifact@v7
         with:
           name: bootstrap-admin-${{ matrix.os }}-${{ matrix.arch }}
           path: |
@@ -89,72 +62,53 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # ============================================
-  # Release - Create GitHub Release
-  # ============================================
   release:
     name: Create Release
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: Get version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           path: /tmp/artifacts
           pattern: bootstrap-admin-*
           merge-multiple: true
-
       - name: Generate checksums
         working-directory: /tmp/artifacts
-        run: |
-          sha256sum *.tar.gz *.zip > checksums-sha256.txt
-          cat checksums-sha256.txt
-
+        run: sha256sum ./*.tar.gz ./*.zip > checksums-sha256.txt
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           append_body: true
           body: |
-            ## Docker Images
-
-            Images are published to **GitHub Container Registry** (multi-arch: amd64 + arm64):
+            ## Container images (multi-arch: amd64 + arm64)
 
             ```bash
-            # API
-            docker pull ghcr.io/openctemio/api:${{ steps.version.outputs.VERSION }}
-
-            # Database Migrations
-            docker pull ghcr.io/openctemio/migrations:${{ steps.version.outputs.VERSION }}
-
-            # Database Seed
-            docker pull ghcr.io/openctemio/seed:${{ steps.version.outputs.VERSION }}
-
-            # bootstrap-admin (creates the first platform administrator)
-            docker pull ghcr.io/openctemio/admin-cli:${{ steps.version.outputs.VERSION }}
+            docker pull ghcr.io/openctemio/openctem:${{ github.ref_name }}      # all-in-one (API + web + gateway)
+            docker pull ghcr.io/openctemio/openctem-api:${{ github.ref_name }}
+            docker pull ghcr.io/openctemio/openctem-web:${{ github.ref_name }}
+            docker pull ghcr.io/openctemio/migrations:${{ github.ref_name }}
+            docker pull ghcr.io/openctemio/seed:${{ github.ref_name }}
+            docker pull ghcr.io/openctemio/admin-cli:${{ github.ref_name }}
             ```
 
-            > Images are also mirrored to Docker Hub (`openctemio/*`) if configured.
+            Images are signed with cosign (keyless) and have SPDX SBOMs attached
+            to this release.
+
+            The previous names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui`
+            receive the same images during the transition window.
 
             ## Deployment
 
             ```bash
-            # Update version in your .env.versions file
-            API_VERSION=${{ steps.version.outputs.VERSION }}
-            MIGRATIONS_VERSION=${{ steps.version.outputs.VERSION }}
-
-            # Pull and restart
-            docker compose pull
-            docker compose up -d
+            # .env.versions — API and web always share one version now
+            API_VERSION=${{ github.ref_name }}
+            UI_VERSION=${{ github.ref_name }}
+            MIGRATIONS_VERSION=${{ github.ref_name }}
+            docker compose pull && docker compose up -d
             ```
           files: |
             /tmp/artifacts/*.tar.gz
@@ -162,13 +116,8 @@ jobs:
             /tmp/artifacts/checksums-sha256.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Sanitize release notes
-        # Generated notes copy PR titles and commit authors verbatim, so
-        # "@latest" or "@types/node" becomes a GitHub mention that pulls an
-        # unrelated account into the release's Contributors, and author emails
-        # get published. Escape every mention that is not a "by @login" credit
-        # and drop raw email addresses.
+        # Escape @mentions that are not "by @login" credits; drop raw emails.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}

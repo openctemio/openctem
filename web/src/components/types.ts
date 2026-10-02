@@ -1,0 +1,151 @@
+import { type LinkProps } from 'next/link'
+
+type User = {
+  name: string
+  email: string
+  avatar: string
+}
+
+type Team = {
+  name: string
+  logo: React.ElementType
+  plan: string
+}
+
+/**
+ * Release status for sidebar items (synced with backend module status)
+ * - released: Normal, clickable
+ * - coming_soon: Show "Soon" badge, disabled
+ * - beta: Show "Beta" badge, clickable
+ * - deprecated: May show warning or be hidden
+ * - disabled: Hidden from sidebar completely
+ */
+type ReleaseStatus = 'released' | 'coming_soon' | 'beta' | 'deprecated' | 'disabled'
+
+type BaseNavItem = {
+  title: string
+  badge?: string
+  icon?: React.ElementType
+  /**
+   * Permission required to view this item.
+   * If not specified, item is visible to all authenticated users.
+   * Can be a single permission string or array (user needs ANY of them).
+   */
+  permission?: string | string[]
+  /**
+   * Role required to view this item.
+   * Use this for role-based checks instead of permission-based.
+   * Can be a single role string or array (user needs ANY of them).
+   * Example: 'owner' or ['owner', 'admin']
+   */
+  role?: string | string[]
+  /**
+   * Minimum role level required.
+   * Uses role hierarchy: viewer < member < admin < owner
+   * Example: 'admin' means admin and owner can see it
+   */
+  minRole?: string
+  /**
+   * Module required to view this item (licensing-based).
+   * If tenant's plan doesn't include this module, item is hidden.
+   * Example: 'findings', 'scans', 'compliance'
+   */
+  module?: string
+  /**
+   * Sub-module key for visibility control.
+   * Maps to sub-module slug in the modules API response.
+   * When the parent collapsible has a `module` property, this key is matched
+   * against sub-modules of that parent to determine visibility.
+   * Items without this key are always shown (e.g., "Overview" items).
+   * Example: 'domains', 'scm', 'notifications'
+   */
+  subModuleKey?: string
+  /**
+   * Release status of this item (set dynamically based on module status from backend)
+   * - released: Normal, clickable
+   * - coming_soon: Show "Soon" badge, disabled
+   * - beta: Show "Beta" badge, clickable
+   * - deprecated: May show warning or be hidden
+   */
+  releaseStatus?: ReleaseStatus
+}
+
+/**
+ * A sub-page shown as an in-page route tab (`SectionTabs`) of a nav link rather
+ * than as a sidebar row. Same shape as `SectionTab`, minus what search needs.
+ */
+type NavSectionLink = {
+  label: string
+  href: string
+  /**
+   * Module the tab's route needs (the route guard's module). A tab whose module
+   * is off is hidden from the page's tab strip, the command palette and the
+   * row's own link; the row hides when no tab is left.
+   */
+  module?: string
+  /** Permission the tab's route needs (ANY of them when an array). */
+  permission?: string | string[]
+}
+
+// ✅ Nav item là 1 link trực tiếp (không có submenu)
+type NavLink = BaseNavItem & {
+  url: LinkProps['href'] | string
+  /**
+   * The page's in-page section tabs. The sidebar shows one row for the whole
+   * section (active on every route under `url`); the command palette lists each
+   * section so they stay searchable. The page renders the same list as tabs.
+   */
+  sections?: readonly NavSectionLink[]
+}
+
+// ✅ Nav item dạng collapsible có danh sách con
+type NavCollapsible = BaseNavItem & {
+  items: (BaseNavItem & { url: LinkProps['href'] | string })[]
+}
+
+// ✅ NavItem là union type (một trong hai loại trên)
+type NavItem = NavCollapsible | NavLink
+
+type NavGroup = {
+  title: string
+  /**
+   * Icon for the section header row. Every CTEM section renders its header as a
+   * collapsible `icon + label + chevron` button (shadcn sidebar-07 pattern), so
+   * each titled group should carry an apt lucide icon. Ungrouped rows (empty
+   * title, e.g. Dashboard) render as plain top-level links and don't need one.
+   */
+  icon?: React.ElementType
+  /**
+   * Visual cluster the group belongs to. `cycle` marks the five CTEM stages
+   * (Scoping → Mobilization), which the sidebar renders together, in order,
+   * under a "CTEM cycle" label. Settings is not a group: it is pinned in the
+   * sidebar footer (sidebar-footer-links.tsx).
+   */
+  cluster?: 'cycle'
+  /**
+   * The section's overview page. When set, the header's label is a link to it
+   * (the chevron beside it still folds the section), so "Scoping" opens the
+   * Scoping overview. It must also be one of the section's rows; the filter
+   * drops it when that row is hidden from the user.
+   */
+  url?: string
+  items: NavItem[]
+}
+
+type SidebarData = {
+  user: User
+  teams: Team[]
+  navGroups: NavGroup[]
+}
+
+export type {
+  SidebarData,
+  NavGroup,
+  NavItem,
+  NavCollapsible,
+  NavLink,
+  NavSectionLink,
+  Team,
+  User,
+  ReleaseStatus,
+}

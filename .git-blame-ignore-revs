@@ -1,0 +1,5 @@
+# Bulk mechanical commits. GitHub's blame view honours this file;
+# locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (The move commit is not listed: blame already follows whole-file renames.)
+# refactor(api): module path github.com/openctemio/openctem/api
+12a2056a6d99bd931c5cef6ba95101d3af4b8679

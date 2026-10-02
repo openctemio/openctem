@@ -1,0 +1,285 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/openctemio/openctem/api/internal/app/jira"
+	"github.com/openctemio/openctem/api/internal/app/ticketing"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
+)
+
+// JiraWebhookHandler handles Jira bidirectional ticket sync endpoints.
+//
+// Endpoints:
+//   - POST /api/v1/findings/{id}/link-ticket      — link a Jira ticket to a finding
+//   - DELETE /api/v1/findings/{id}/link-ticket     — unlink a Jira ticket from a finding
+//   - POST /api/v1/webhooks/incoming/jira          — receive Jira status-change webhooks
+type JiraWebhookHandler struct {
+	service   *jira.SyncService
+	validator *validator.Validator
+	logger    *logger.Logger
+
+	// github is the optional GitHub Issues ticket provider. Nil unless wired
+	// via SetGitHubTicketService — when nil, requests with provider=github are
+	// rejected with 400.
+	github *ticketing.GitHubTicketService
+}
+
+// NewJiraWebhookHandler creates a new JiraWebhookHandler.
+func NewJiraWebhookHandler(svc *jira.SyncService, v *validator.Validator, log *logger.Logger) *JiraWebhookHandler {
+	return &JiraWebhookHandler{service: svc, validator: v, logger: log}
+}
+
+// decodeAndValidate reads the JSON body into dst and runs struct validation so
+// the `validate:` tags on the request structs are actually enforced (they were
+// previously declared but never run). On failure it writes a 400 and returns
+// false, so callers do `if !h.decodeAndValidate(w, r, &req) { return }`.
+func (h *JiraWebhookHandler) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return false
+	}
+	if h.validator != nil {
+		if err := h.validator.Validate(dst); err != nil {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return false
+		}
+	}
+	return true
+}
+
+// SetGitHubTicketService wires the optional GitHub Issues ticket provider.
+// Safe to call after construction; a nil value leaves GitHub ticketing
+// disabled.
+func (h *JiraWebhookHandler) SetGitHubTicketService(svc *ticketing.GitHubTicketService) {
+	h.github = svc
+}
+
+// LinkTicketRequest is the request body for POST /api/v1/findings/{id}/link-ticket.
+type LinkTicketRequest struct {
+	TicketKey string `json:"ticket_key" validate:"required,min=1,max=255"`
+	TicketURL string `json:"ticket_url" validate:"required,url,max=1000"`
+}
+
+// UnlinkTicketRequest is the request body for DELETE /api/v1/findings/{id}/link-ticket.
+type UnlinkTicketRequest struct {
+	TicketURL string `json:"ticket_url" validate:"required,url,max=1000"`
+}
+
+// LinkTicket handles POST /api/v1/findings/{id}/link-ticket.
+// Links a Jira ticket to a finding by storing its URL in work_item_uris.
+func (h *JiraWebhookHandler) LinkTicket(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	findingID := chi.URLParam(r, "id")
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	var req LinkTicketRequest
+	if !h.decodeAndValidate(w, r, &req) {
+		return
+	}
+
+	input := jira.LinkTicketInput{
+		TenantID:  tenantID,
+		FindingID: findingID,
+		TicketKey: req.TicketKey,
+		TicketURL: req.TicketURL,
+	}
+
+	if err := h.service.LinkTicket(r.Context(), input); err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"finding_id": findingID,
+		"ticket_key": req.TicketKey,
+		"ticket_url": req.TicketURL,
+		"message":    "ticket linked successfully",
+	})
+}
+
+// UnlinkTicket handles DELETE /api/v1/findings/{id}/link-ticket.
+// Removes a Jira ticket reference from a finding's work_item_uris.
+func (h *JiraWebhookHandler) UnlinkTicket(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	findingID := chi.URLParam(r, "id")
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	var req UnlinkTicketRequest
+	if !h.decodeAndValidate(w, r, &req) {
+		return
+	}
+
+	if err := h.service.UnlinkTicket(r.Context(), tenantID, findingID, req.TicketURL); err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// CreateTicketRequest is the request body for POST /api/v1/findings/{id}/create-ticket.
+type CreateTicketRequest struct {
+	// Provider selects the ticket backend: "jira" (default) or "github".
+	Provider string `json:"provider,omitempty" validate:"omitempty,oneof=jira github"`
+
+	// Jira fields.
+	ProjectKey string `json:"project_key,omitempty" validate:"omitempty,max=255"`
+	IssueType  string `json:"issue_type,omitempty" validate:"omitempty,max=255"`
+
+	// GitHub fields (required when provider=github).
+	Owner string `json:"owner,omitempty" validate:"omitempty,max=255"`
+	Repo  string `json:"repo,omitempty" validate:"omitempty,max=255"`
+}
+
+// CreateTicket handles POST /api/v1/findings/{id}/create-ticket.
+// Auto-creates a ticket (Jira by default, or a GitHub issue) from a finding
+// and links it.
+func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	findingID := chi.URLParam(r, "id")
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	var req CreateTicketRequest
+	if !h.decodeAndValidate(w, r, &req) {
+		return
+	}
+
+	if strings.EqualFold(req.Provider, "github") {
+		h.createGitHubTicket(w, r, tenantID, findingID, req)
+		return
+	}
+
+	result, err := h.service.CreateTicketFromFinding(r.Context(), jira.CreateTicketInput{
+		TenantID:   tenantID,
+		FindingID:  findingID,
+		ProjectKey: req.ProjectKey,
+		IssueType:  req.IssueType,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// createGitHubTicket handles the provider=github branch of CreateTicket.
+func (h *JiraWebhookHandler) createGitHubTicket(w http.ResponseWriter, r *http.Request, tenantID, findingID string, req CreateTicketRequest) {
+	if h.github == nil {
+		apierror.BadRequest("github ticketing not configured").WriteJSON(w)
+		return
+	}
+
+	result, err := h.github.CreateTicketFromFinding(r.Context(), ticketing.GitHubTicketInput{
+		TenantID:  tenantID,
+		FindingID: findingID,
+		Owner:     req.Owner,
+		Repo:      req.Repo,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// ListJiraProjects handles GET /api/v1/integrations/jira/projects.
+// Returns the Jira projects visible to the tenant's connected ticketing
+// integration, for the admin destination-project picker (so an operator
+// selects the default project from a list rather than typing a raw key).
+func (h *JiraWebhookHandler) ListJiraProjects(w http.ResponseWriter, r *http.Request) {
+	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+
+	projects, err := h.service.ListProjects(r.Context(), tid)
+	if err != nil {
+		if errors.Is(err, jira.ErrNoTicketingIntegration) {
+			apierror.NotFound("no connected Jira integration").WriteJSON(w)
+			return
+		}
+		h.logger.Error("list jira projects failed", "error", err)
+		apierror.InternalServerError("failed to list Jira projects").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"projects": projects})
+}
+
+// IncomingJiraWebhook handles POST /api/v1/webhooks/incoming/jira.
+// This is a PUBLIC endpoint (no JWT) intended to receive Jira webhook deliveries.
+// Tenant routing is via the ?tenant= query param — each Jira project configures one endpoint per tenant.
+func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := r.URL.Query().Get("tenant")
+	if tenantIDStr == "" {
+		apierror.BadRequest("tenant query parameter is required").WriteJSON(w)
+		return
+	}
+
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	var payload jira.WebhookPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		apierror.BadRequest("invalid jira webhook payload").WriteJSON(w)
+		return
+	}
+
+	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, payload); err != nil {
+		h.logger.Error("jira webhook processing failed",
+			"tenant_id", tenantIDStr,
+			"error", err,
+		)
+		apierror.InternalServerError("webhook processing failed").WriteJSON(w)
+		return
+	}
+
+	// Always return 200 — Jira expects a 2xx or it will retry.
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleError maps domain errors to HTTP responses.
+func (h *JiraWebhookHandler) handleError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("finding not found").WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	default:
+		h.logger.Error("jira handler error", "error", err)
+		apierror.InternalServerError("internal server error").WriteJSON(w)
+	}
+}
