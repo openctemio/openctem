@@ -162,14 +162,23 @@ type Sensor struct {
 	// Tenants can use platform sensors for their scans without provisioning their own.
 	IsPlatformSensor bool
 
-	// API key for authentication
-	APIKeyHash   string
-	APIKeyPrefix string
-	// KeyExpiresAt is when the current API key stops authenticating.
+	// Inline API key: the credential stored on the sensor row itself (the
+	// bootstrap key from creation or admin regeneration). Self-renewal under
+	// rotation overlap issues keys into sensor_api_keys instead and retires
+	// the inline key with a short grace (InlineKeyExpiresAt). These fields
+	// therefore describe the INLINE key only: authentication of that key and
+	// its retirement read them. Anything that describes "the sensor's key" to
+	// a person or a policy (responses, health, dispatch) must use KeyState.
+	APIKeyHash      string
+	InlineKeyPrefix string
+	// InlineKeyExpiresAt is when the inline key stops authenticating.
 	// nil = never expires (the default for created/admin-regenerated keys and
-	// every row predating RFC-014 Phase 1b). Self-renewal sets a fresh expiry
-	// when the server is configured with a key TTL.
-	KeyExpiresAt *time.Time
+	// every row predating RFC-014 Phase 1b).
+	InlineKeyExpiresAt *time.Time
+	// ActiveKey is the sensor's current rotating key (sensor_api_keys): the
+	// active, non-revoked row with the latest expiry. nil when the sensor has
+	// none and authenticates with its inline key.
+	ActiveKey *ActiveKey
 	// KeyLastUsedAt and KeyLastUsedIP record the last authenticated request
 	// with any of the sensor's keys and the client address it came from
 	// (trusted-proxy rule; never a header the sensor sets). nil = not recorded
@@ -345,15 +354,43 @@ func (a *Sensor) SetAPIKey(hash, prefix string) {
 // short-lived credential (RFC-014); the sensor renews again before it lapses.
 func (a *Sensor) SetAPIKeyWithExpiry(hash, prefix string, expiresAt *time.Time) {
 	a.APIKeyHash = hash
-	a.APIKeyPrefix = prefix
-	a.KeyExpiresAt = expiresAt
+	a.InlineKeyPrefix = prefix
+	a.InlineKeyExpiresAt = expiresAt
 	a.UpdatedAt = time.Now()
 }
 
-// IsKeyExpired reports whether the current API key has passed its expiry.
+// ActiveKey is the summary of a sensor's current rotating key.
+type ActiveKey struct {
+	Prefix     string
+	ExpiresAt  *time.Time // nil = never expires
+	LastUsedAt *time.Time
+}
+
+// KeyState is the sensor's effective credential: what a person, a health
+// check or the dispatcher should treat as "the sensor's API key".
+type KeyState struct {
+	Prefix    string
+	ExpiresAt *time.Time // nil = never expires
+	// Rotating is true when the key is a sensor_api_keys row (self-renewed),
+	// false for the inline key.
+	Rotating bool
+}
+
+// KeyState returns the sensor's effective credential. It is the single source
+// of truth for key prefix and expiry outside authentication: the active
+// rotating key when the sensor has one, otherwise the inline key.
+func (a *Sensor) KeyState() KeyState {
+	if k := a.ActiveKey; k != nil {
+		return KeyState{Prefix: k.Prefix, ExpiresAt: k.ExpiresAt, Rotating: true}
+	}
+	return KeyState{Prefix: a.InlineKeyPrefix, ExpiresAt: a.InlineKeyExpiresAt}
+}
+
+// IsKeyExpired reports whether the INLINE API key has passed its expiry. It
+// gates authentication with that key; use KeyState for the sensor's key.
 // A nil KeyExpiresAt (never-expiring key, the default) is never expired.
 func (a *Sensor) IsKeyExpired() bool {
-	return a.KeyExpiresAt != nil && time.Now().After(*a.KeyExpiresAt)
+	return a.InlineKeyExpiresAt != nil && time.Now().After(*a.InlineKeyExpiresAt)
 }
 
 // UpdateLastSeen updates the last seen timestamp and sets health to online.

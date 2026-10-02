@@ -320,7 +320,7 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		  AND s.status = 'active'
 		  AND s.health IN `+sensorDispatchableHealthSQL+`
 		  AND s.last_seen_at IS NOT NULL
-		  AND (s.key_expires_at IS NULL OR s.key_expires_at > NOW())
+		  AND `+sensorKeyUsableSQL("s")+`
 		  AND (s.execution_mode = 'daemon' OR s.type IN ('worker', 'collector'))
 		  AND ($3::text = '' OR $3::text = ANY(s.effective_tools))
 		ORDER BY zs.zone_id, active_commands ASC,
@@ -398,7 +398,7 @@ func (r *ScanZoneRepository) Coverage(ctx context.Context, tenantID shared.ID) (
 		        JOIN sensors s ON s.id = zs.sensor_id AND s.tenant_id = zs.tenant_id
 		        WHERE zs.tenant_id = z.tenant_id AND zs.zone_id = z.id
 		          AND s.status = 'active' AND s.health IN `+sensorDispatchableHealthSQL+`
-		          AND (s.key_expires_at IS NULL OR s.key_expires_at > NOW())),
+		          AND `+sensorKeyUsableSQL("s")+`),
 		       (SELECT count(*) FROM addrs ad
 		        WHERE EXISTS (SELECT 1 FROM unnest(z.ranges) AS r(c) WHERE ad.ip <<= r.c))
 		FROM scan_zones z

@@ -533,8 +533,8 @@ func sensorHasFeature(r *http.Request, feature string) bool {
 }
 
 // sensorIdentityFromContext returns the identity AuthenticateSource
-// resolved, falling back to the bare sensor (no paused flag, the sensor
-// row's key expiry) when only that is in the context.
+// resolved, falling back to the bare sensor (no paused flag, the sensor's
+// effective key expiry) when only that is in the context.
 func sensorIdentityFromContext(ctx context.Context) app.SensorIdentity {
 	if id, ok := ctx.Value(sensorIdentityContextKey).(app.SensorIdentity); ok && id.Sensor != nil {
 		return id
@@ -543,7 +543,7 @@ func sensorIdentityFromContext(ctx context.Context) app.SensorIdentity {
 	if agt == nil {
 		return app.SensorIdentity{}
 	}
-	return app.SensorIdentity{Sensor: agt, KeyExpiresAt: agt.KeyExpiresAt}
+	return app.SensorIdentity{Sensor: agt, KeyExpiresAt: agt.KeyState().ExpiresAt}
 }
 
 // SensorFromContext retrieves the authenticated sensor from context.

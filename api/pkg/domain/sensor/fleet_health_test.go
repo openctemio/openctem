@@ -182,7 +182,7 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 	t.Run("key expiring within 7 days", func(t *testing.T) {
 		s := daemon(ago(5 * time.Second))
 		exp := testNow.Add(6 * 24 * time.Hour)
-		s.KeyExpiresAt = &exp
+		s.InlineKeyExpiresAt = &exp
 		a := s.AssessHealth(testNow, p)
 		if !hasCode(a.Reasons, ReasonKeyExpiring) || a.State != StateDegraded {
 			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
@@ -192,7 +192,7 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 	t.Run("key expiring in 30 days is fine", func(t *testing.T) {
 		s := daemon(ago(5 * time.Second))
 		exp := testNow.Add(30 * 24 * time.Hour)
-		s.KeyExpiresAt = &exp
+		s.InlineKeyExpiresAt = &exp
 		if a := s.AssessHealth(testNow, p); len(a.Reasons) != 0 {
 			t.Errorf("reasons=%v", codes(a.Reasons))
 		}
@@ -201,7 +201,7 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 	t.Run("expired key is reported even when offline", func(t *testing.T) {
 		s := daemon(ago(time.Hour))
 		exp := testNow.Add(-time.Minute)
-		s.KeyExpiresAt = &exp
+		s.InlineKeyExpiresAt = &exp
 		a := s.AssessHealth(testNow, p)
 		if a.State != StateOffline || !hasCode(a.Reasons, ReasonKeyExpired) {
 			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
@@ -300,7 +300,7 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 		s := daemon(ago(5 * time.Second))
 		s.Tools, s.Version, s.Health = nil, "0.1.0", SensorHealthError
 		exp := testNow.Add(time.Hour)
-		s.KeyExpiresAt = &exp
+		s.InlineKeyExpiresAt = &exp
 		s.Outbox = &OutboxStats{PendingCount: 1, OldestAgeSeconds: 9999, DeadLetterCount: 1, EvictedCount: 1}
 		for _, r := range s.AssessHealth(testNow, p).Reasons {
 			if r.Message == "" || (r.Severity != SeverityWarning && r.Severity != SeverityCritical) {

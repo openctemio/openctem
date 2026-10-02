@@ -1102,7 +1102,7 @@ func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordo
 	// UpdateKeyExpiry writes only key_expires_at under a status='active' guard,
 	// so it cannot clobber a concurrent admin revoke back to active (and a
 	// revoked sensor's stale inline key is moot — auth rejects the sensor anyway).
-	if fresh.KeyExpiresAt == nil {
+	if fresh.InlineKeyExpiresAt == nil {
 		grace := time.Now().Add(overlapGrace)
 		if grace.After(expiresAt) {
 			grace = expiresAt
@@ -1239,7 +1239,7 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 		s.recordKeyUseAsync(a, clientIP, nil)
 	}
 
-	return SensorIdentity{Sensor: a, KeyExpiresAt: a.KeyExpiresAt, Paused: paused}, nil
+	return SensorIdentity{Sensor: a, KeyExpiresAt: a.InlineKeyExpiresAt, Paused: paused}, nil
 }
 
 // recordKeyUseAsync marks the sensor seen and records where the key was

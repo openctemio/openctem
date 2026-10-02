@@ -62,13 +62,13 @@ func TestAuthenticateIdentity_RefusesRevokedExpiredAndUnknown(t *testing.T) {
 
 	past := time.Now().Add(-time.Minute)
 	out.Sensor.Disable("maintenance")
-	out.Sensor.KeyExpiresAt = &past
+	out.Sensor.InlineKeyExpiresAt = &past
 	repo.sensors[out.Sensor.ID.String()] = out.Sensor
 	if _, err := svc.AuthenticateIdentity(context.Background(), out.APIKey); !errors.Is(err, shared.ErrUnauthorized) {
 		t.Errorf("disabled sensor with an expired key: %v, want ErrUnauthorized (an expired key learns nothing)", err)
 	}
 
-	out.Sensor.KeyExpiresAt = nil
+	out.Sensor.InlineKeyExpiresAt = nil
 	out.Sensor.Revoke("compromised")
 	repo.sensors[out.Sensor.ID.String()] = out.Sensor
 	if _, err := svc.AuthenticateIdentity(context.Background(), out.APIKey); !errors.Is(err, shared.ErrForbidden) {

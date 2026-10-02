@@ -929,6 +929,9 @@ func (h *SensorHandler) toSensorResponse(ctx context.Context, a *sensor.Sensor) 
 // sensorResponseAt converts a sensor entity to response at a given time.
 func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Time) *SensorResponse {
 	health := a.AssessHealth(now, policy)
+	// The effective credential (rotating key when there is one), never the
+	// inline columns: those keep the retired bootstrap key after a renewal.
+	keyState := a.KeyState()
 	resp := &SensorResponse{
 		ID:            a.ID.String(),
 		TenantID:      a.TenantID.String(),
@@ -941,7 +944,7 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		Status:        string(a.Status), // Admin-controlled
 		Health:        string(a.Health), // Automatic heartbeat
 		StatusMessage: a.StatusMessage,
-		APIKeyPrefix:  a.APIKeyPrefix,
+		APIKeyPrefix:  keyState.Prefix,
 		Labels:        a.Labels,
 		Version:       health.Version, // one form: "v0.4.2"
 		Hostname:      a.Hostname,
@@ -964,7 +967,7 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		State:            string(health.State),
 		HealthReasons:    make([]SensorHealthReasonResponse, 0, len(health.Reasons)),
 		VersionStatus:    string(health.VersionStatus),
-		KeyExpiresAt:     rfc3339Ptr(a.KeyExpiresAt),
+		KeyExpiresAt:     rfc3339Ptr(keyState.ExpiresAt),
 		KeyLastUsedAt:    rfc3339Ptr(a.KeyLastUsedAt),
 		KeyLastUsedIP:    ipStringPtr(a.KeyLastUsedIP),
 		InstanceID:       a.InstanceID,

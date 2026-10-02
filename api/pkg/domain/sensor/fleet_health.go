@@ -284,8 +284,8 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, 
 		}
 	}
 
-	if a.KeyExpiresAt != nil {
-		left := a.KeyExpiresAt.Sub(now)
+	if exp := a.KeyState().ExpiresAt; exp != nil {
+		left := exp.Sub(now)
 		switch {
 		case left <= 0:
 			add(ReasonKeyExpired, SeverityCritical,
