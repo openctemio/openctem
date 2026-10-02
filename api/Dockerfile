@@ -120,8 +120,13 @@ COPY --from=builder /app/migrations ./migrations
 # mount a configmap/host volume on /app/configs to override)
 COPY --from=builder /app/configs ./configs
 
+# Attachment storage (STORAGE_LOCAL_PATH default ./data/attachments). Created
+# here, owned by openctem, so a volume mounted at /app/data starts with the
+# right owner (Docker copies it into a new named volume); without it the
+# volume root is root-owned and uploads fail. Mount a volume there: the
+# container filesystem is read-only in the Compose files and ephemeral anyway.
 # Change ownership
-RUN chown -R openctem:openctem /app
+RUN mkdir -p /app/data/attachments && chown -R openctem:openctem /app
 
 # Switch to non-root user
 USER openctem
