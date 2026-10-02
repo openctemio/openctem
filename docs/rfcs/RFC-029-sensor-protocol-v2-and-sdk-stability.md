@@ -102,7 +102,7 @@ already refuses tenant-less sensors on v2.
 | Authentication | Sensor key in `Authorization: Bearer <key>` or `X-API-Key: <key>`, as v1. RFC 9421 signing is RFC-023 Phase 3 and does not change these paths. |
 | Identity | From the key only. `X-Agent-ID` is not sent and is ignored if present. |
 | Tenant | From the key. A sensor without a tenant (platform sensor) gets `403 scope-denied` on every v2 route (RFC-026 §10.1). |
-| Disabled sensor | `POST /heartbeat` answers `200` with `actions: ["pause"]` and writes nothing (every v2 sensor is doorbell-aware by contract). Every other route answers `401 unauthenticated`. Revoked sensor or expired key: `401` everywhere. |
+| Disabled sensor | `POST /heartbeat` answers `200` with `actions: ["pause"]` and writes nothing (every v2 sensor is doorbell-aware by contract); `GET /hello` stays readable so the sensor keeps negotiating v2. Every other route answers `401 unauthenticated`. Revoked sensor or expired key: `401` everywhere. |
 | Request bodies (control plane) | `Content-Type: application/json` or absent; anything else is `415 unsupported-media-type` with `Accept: application/json`. Lenient decode: unknown members ignored; malformed JSON `400 invalid-request`. Max 1 MiB (`413 content-too-large`), except `complete` (4 MiB) and the fingerprint queries (8 MiB, for 50,000 fingerprints). |
 | Responses | `Content-Type: application/json` on success, `application/problem+json` on error; always `OpenCTEM-Protocol: 2`. Clients must ignore unknown members. Timestamps RFC 3339 UTC. Ids lower-case UUID strings. |
 | `User-Agent` | `openctem-sdk-go/<sdk version> (<binary>/<version>)` from sdk-go `pkg/useragent`; recorded (§5.3), never trusted. |
@@ -401,8 +401,8 @@ removal). Self-hosted operators decide with their own telemetry.
 
 | Value | Behaviour |
 |---|---|
-| `auto` (default) | `GET /api/v2/sensor/hello` before the first call that needs a protocol (normally the first heartbeat). `200` with `protocol: 2` → feature set F. Each call uses v2 if its feature is in F, else v1. `404`/`405` → v1 for everything. `401`/`403` → reported as an authentication failure (the auth gate backs off), no fallback (v1 would refuse the same key). Network error or `5xx` → this call uses v1, and `hello` is tried again on the next call after a backoff. F is refreshed every hour and when a v2 call answers `404` without a problem body (server downgraded): that feature is dropped and the call is retried once on v1. |
-| `v2` | As `auto`, but a feature missing from F is an error (no v1). |
+| `auto` (default) | `GET /api/v2/sensor/hello` before the first call that needs a protocol (normally the first heartbeat). `200` with `protocol: 2` → feature set F, cached for an hour (a "no v2" answer for 10 minutes). Each call uses v2 if its feature is in F, else v1. `404`/`405` → v1 for everything. When `hello` cannot be answered right now (network, `401`, `5xx`) a control-plane call goes to v1 for this once (v1 is served by every platform and classifies a refused key the same way) and `hello` is asked again on the next call. A v2 call answered `404` without a problem body (server downgraded) goes to v1 and the cache is dropped. |
+| `v2` | Results must use v2 (an error otherwise, as since sdk-go 0.8). Control-plane features use v2 when F lists them and v1 otherwise, so a sensor set to `v2` keeps working against api v0.8 (results only on v2). |
 | `v1` | Never calls `hello`; every request byte-identical to v0.7.x, `X-Agent-ID` included. |
 
 The v1 heartbeat advert (`X-OpenCTEM-Protocol: 2` after `results-v2`)
@@ -417,7 +417,10 @@ No exported identifier is removed, renamed or changes signature
 `SendHeartbeatWithHints`, `CheckFingerprints`, `BaselineDiff`,
 `GetSuppressions` and `platform.PlatformClient.RenewKey` route internally.
 Additions: `Client.ProtocolFeatures()` (the negotiated F, for logs and
-tests) and the problem types as `protov2` constants. A sensor gets protocol
+tests), `client.IsCommandGone(err)`, `platform.RenewError`, and the
+control-plane vocabulary and problem types in `protov2`. Control-plane errors
+unwrap to both `*V2Error` and `*HTTPError`, so `IsAuthenticationError`,
+`IsRateLimitError` and `core.AuthFailureStatus` classify them as on v1. A sensor gets protocol
 v2 by bumping the module version; no code change.
 
 ### 6.3 Behaviour changes a sensor can observe
@@ -601,9 +604,9 @@ Each step is its own PR, green before the next depends on it.
 |---|---|---|---|---|---|
 | 1 | api | this RFC | docs | — | done |
 | 2 | api | `feat(sensor): protocol v2 for the whole sensor surface` (api#678) | `pkg/sensorproto/v2`: new paths, problem types (sensor base), hello `features`/limits/deprecations, `Command` and heartbeat DTOs. `handler/sensor_v2_handler.go`: heartbeat, commands poll + 4 transitions, suppressions (ETag), fingerprints check + baseline-diff, keys; calls the existing services. Transition replay logic in `internal/app/command` (one place, used only by v2, v1 behaviour unchanged). Routes in `routes/sensor_v2.go`. Deprecation middleware on the §5.1 v1 routes. Migration: `sensors.protocol_*` columns; heartbeat writes them; Sensors API returns `protocol`. Metric. OpenAPI `api/openapi/sensor-protocol-v2.yaml`. `architecture/sensors.md`. | DB-backed handler tests per route and status (wrong tenant, revoked key, other sensor's command → 404, replays, conflicts, ETag/304, limits); v1 golden unchanged; deprecation headers asserted on every listed v1 route and absent elsewhere; route-authz coverage; `sensorvocab` lint; `check-openapi.sh` | 2–3 days |
-| 3 | sdk-go | `feat: protocol v2 for every call` | negotiation (§6.1), v2 codecs, poller handling of the new 409s, suppressions ETag cache, fingerprint splitting, no `X-Agent-ID` on v2; conformance fakes v1 + v2 + mixed; CI: apidiff gate, sensor-compat build | `go test -race ./...`, golangci-lint (whole tree), gofmt, ctis-parity | 2 days |
+| 3 | sdk-go | `feat: protocol v2 for every call` (sdk-go#89) | negotiation (§6.1), v2 codecs, poller handling of the new 409s, suppressions ETag cache, fingerprint splitting, no `X-Agent-ID` on v2; conformance fakes v1 + v2 + mixed; CI: apidiff gate, sensor-compat build | `go test -race ./...`, golangci-lint (whole tree), gofmt, ctis-parity | 2 days |
 | 4 | api | `ci: compat-v2 job` | `tests/compat/v2` pinned to sdk-go v0.9.0 once tagged | job green | 0.5 day |
-| 5 | sensor | `deps: sdk-go v0.9.0, protocol v2 everywhere` | bump, wording, aliases, CHANGELOG + migration notice | build default and `-tags platform`, tests, image smoke | 0.5 day |
+| 5 | sensor | `deps: sdk-go v0.9.0, protocol v2 everywhere` (sensor#80; also names the binary in the User-Agent) | bump, wording, aliases, CHANGELOG + migration notice | build default and `-tags platform`, tests, image smoke | 0.5 day |
 | 6 | all | end-to-end proof | scratch API + DB; new sensor: only `/api/v2/sensor/*` in the access log, no `X-Agent-ID`; old sensor v0.4.2: v1 works, gets `Deprecation`, shows `protocol.version = 1` | — | 0.5 day |
 | later | sdk-go | v0.10.0 `sensorkit` facade; sensor adopts it; `internal/` moves; v1.0.0 | §8.3–8.5 | sensor-compat gate | 1–2 weeks |
 
