@@ -114,6 +114,26 @@ jobs:
           export BASE_REF
           bash scripts/check-migrations.sh
 
+      # Parallel PRs pick the same "next" number (#767 and #773 both took
+      # 000261). Fails on a duplicate version, and on a PR or queued group
+      # that adds a version not above the base's highest: golang-migrate
+      # silently skips it on databases that are already past it. In the merge
+      # queue the base is merge_group.base_sha, i.e. including the groups
+      # ahead, so two queued PRs with the same number cannot both land.
+      - name: Migration Versions
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          bash .github/scripts/check-migration-versions.test.sh >/dev/null
+          case "$EVENT" in
+            pull_request) bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
+            merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
+            *)            bash .github/scripts/check-migration-versions.sh ;;
+          esac
+
       - name: SQL Schema Drift
         run: bash scripts/check-sql-schema.sh
 
