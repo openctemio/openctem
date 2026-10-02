@@ -2,8 +2,10 @@ package attack
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -90,6 +92,7 @@ type SurfaceService struct {
 	assetRepo   asset.Repository
 	relRepo     asset.RelationshipRepository
 	findingRisk FindingRiskCounter
+	dataScope   *datascope.Enforcer // Layer 2 narrowing of member-facing reads (nil = unrestricted)
 	logger      *logger.Logger
 }
 
@@ -115,13 +118,22 @@ func (s *SurfaceService) GetAttackPathScores(ctx context.Context, tenantID share
 }
 
 // GetStats returns attack surface statistics for a tenant.
+//
+// Layer 2: for a restricted member the asset counts and the two row lists
+// (exposed services, recent changes) cover only their in-scope assets. The
+// average risk score and the per-type breakdown stay tenant-wide aggregates.
 func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*SurfaceStats, error) {
 	tenantIDStr := tenantID.String()
+
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
 
 	// Get total assets count
 	totalAssets, err := s.assetRepo.Count(ctx, asset.Filter{
 		TenantID: &tenantIDStr,
-	})
+	}.WithDataScope(scope))
 	if err != nil {
 		s.logger.Error("failed to count total assets", "error", err)
 		totalAssets = 0
@@ -131,7 +143,7 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	exposedServices, err := s.assetRepo.Count(ctx, asset.Filter{
 		TenantID:  &tenantIDStr,
 		Exposures: []asset.Exposure{asset.ExposurePublic},
-	})
+	}.WithDataScope(scope))
 	if err != nil {
 		s.logger.Error("failed to count exposed services", "error", err)
 		exposedServices = 0
@@ -142,7 +154,7 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 		TenantID:      &tenantIDStr,
 		Exposures:     []asset.Exposure{asset.ExposurePublic},
 		Criticalities: []asset.Criticality{asset.CriticalityCritical, asset.CriticalityHigh},
-	})
+	}.WithDataScope(scope))
 	if err != nil {
 		s.logger.Error("failed to count critical exposures", "error", err)
 		criticalExposures = 0
@@ -155,10 +167,10 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	assetBreakdown := s.getAssetBreakdown(ctx, tenantID)
 
 	// Get exposed services list (limit to 5 for overview)
-	exposedServicesList := s.getExposedServicesList(ctx, tenantIDStr, 5)
+	exposedServicesList := s.getExposedServicesList(ctx, tenantIDStr, scope, 5)
 
 	// Get recent changes (limit to 5 for overview)
-	recentChanges := s.getRecentChanges(ctx, tenantIDStr, 5)
+	recentChanges := s.getRecentChanges(ctx, tenantIDStr, scope, 5)
 
 	return &SurfaceStats{
 		TotalAssets:       int(totalAssets),
@@ -217,12 +229,12 @@ func (s *SurfaceService) getAssetBreakdown(ctx context.Context, tenantID shared.
 }
 
 // getExposedServicesList returns a list of exposed services/assets.
-func (s *SurfaceService) getExposedServicesList(ctx context.Context, tenantID string, limit int) []ExposedService {
+func (s *SurfaceService) getExposedServicesList(ctx context.Context, tenantID string, scope *shared.DataScope, limit int) []ExposedService {
 	// Get exposed assets (public or restricted access)
 	result, err := s.assetRepo.List(ctx, asset.Filter{
 		TenantID:  &tenantID,
 		Exposures: []asset.Exposure{asset.ExposurePublic, asset.ExposureRestricted},
-	}, asset.ListOptions{}, pagination.Pagination{Page: 1, PerPage: limit})
+	}.WithDataScope(scope), asset.ListOptions{}, pagination.Pagination{Page: 1, PerPage: limit})
 	if err != nil {
 		s.logger.Error("failed to get exposed services", "error", err)
 		return []ExposedService{}
@@ -245,11 +257,11 @@ func (s *SurfaceService) getExposedServicesList(ctx context.Context, tenantID st
 }
 
 // getRecentChanges returns recent asset changes based on created/updated timestamps.
-func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID string, limit int) []AssetChange {
+func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID string, scope *shared.DataScope, limit int) []AssetChange {
 	// Get recently created or updated assets
 	result, err := s.assetRepo.List(ctx, asset.Filter{
 		TenantID: &tenantID,
-	}, asset.ListOptions{}, pagination.Pagination{Page: 1, PerPage: limit})
+	}.WithDataScope(scope), asset.ListOptions{}, pagination.Pagination{Page: 1, PerPage: limit})
 	if err != nil {
 		s.logger.Error("failed to get recent changes", "error", err)
 		return []AssetChange{}

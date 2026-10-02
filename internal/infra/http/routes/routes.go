@@ -69,12 +69,16 @@ type Handlers struct {
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
-	IOC             *handler.IOCHandler             // nil if not initialized - IOC catalog (feeds B6 correlator)
-	Validation      *handler.ValidationHandler      // nil if not initialized - CTEM Stage-4 validation evidence
-	SCIM            *handler.SCIMHandler            // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
-	SCIMToken       *handler.SCIMTokenHandler       // nil if not initialized - SCIM token admin
-	SCIMAuth        Middleware                      // SCIM bearer-token auth middleware (nil if SCIM disabled)
-	ModuleGate      *middleware.ModuleGate          // per-tenant module route gating (nil-safe: fail-open)
+	IOC             *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
+	Validation      *handler.ValidationHandler // nil if not initialized - CTEM Stage-4 validation evidence
+	SCIM            *handler.SCIMHandler       // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
+	SCIMToken       *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
+	SCIMAuth        Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
+	ModuleGate      *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
+	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
+	// and finding route of the token-tenant chain (DataScopeGuard). nil
+	// disables the guard (tests with a minimal handler set).
+	DataScope       middleware.DataScopeAsserter
 	Sensor          *handler.SensorHandler          // nil if not initialized (no database)
 	ScanZone        *handler.ScanZoneHandler        // nil if not initialized (no database)
 	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
@@ -340,6 +344,11 @@ func Register(
 	if permCache != nil && permVersion != nil {
 		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).
 			WithTeamRoleReader(tenantRepo).EnrichPermissions
+	}
+
+	// Layer 2 data scope on by-id asset/finding routes (404 when out of scope).
+	if h.DataScope != nil {
+		dataScopeGuardMiddleware = middleware.DataScopeGuard(h.DataScope)
 	}
 
 	// Per-request SSO enforcement (defense-in-depth). Re-applies the mint-time
@@ -894,6 +903,12 @@ var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // se
 // Set once during Register; nil leaves the legacy embedded-JWT behavior.
 var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// dataScopeGuardMiddleware enforces the Layer 2 data scope on every by-id
+// asset and finding route (see middleware.DataScopeGuard). It runs last on
+// the token-tenant chain, after auth, tenant, membership and permission sync
+// have settled who the caller is. Set once during Register; nil disables it.
+var dataScopeGuardMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // ssoEnforcementMiddleware re-applies the per-tenant SSO-enforcement decision on
 // every authenticated request (defense-in-depth on top of the token-mint gate):
 // a password non-owner session whose token's tenant enforces SSO is rejected,
@@ -982,6 +997,9 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	}
 	if readRateLimitMiddleware != nil {
 		middlewares = append(middlewares, readRateLimitMiddleware)
+	}
+	if dataScopeGuardMiddleware != nil {
+		middlewares = append(middlewares, dataScopeGuardMiddleware)
 	}
 	return middlewares
 }

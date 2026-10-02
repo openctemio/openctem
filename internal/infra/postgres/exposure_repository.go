@@ -736,7 +736,14 @@ func (r *ExposureRepository) buildWhereClause(filter exposure.Filter) (string, [
 	if filter.LastSeenBefore != nil {
 		conditions = append(conditions, fmt.Sprintf("last_seen_at <= to_timestamp($%d)", argIndex))
 		args = append(args, *filter.LastSeenBefore)
-		argIndex++
+	}
+
+	// Layer 2: a restricted member sees only exposures on in-scope assets
+	// (an exposure with no asset is in nobody's asset scope).
+	if filter.DataScope != nil {
+		var cond string
+		cond, args = dataScopeCond("asset_id", filter.DataScope, args)
+		conditions = append(conditions, cond)
 	}
 
 	return strings.Join(conditions, " AND "), args

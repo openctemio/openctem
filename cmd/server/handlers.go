@@ -212,6 +212,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	handlers := routes.Handlers{
 		ModuleGate: moduleGate,
+		DataScope:  svc.DataScope,
 		MCP:        mcpHandler,
 		MCPAuth:    mcpAuth,
 		APIKeyAuth: apiKeyAuth,

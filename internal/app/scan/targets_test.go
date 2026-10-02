@@ -23,7 +23,7 @@ type stubGroupAssetsRepo struct {
 	assets []*assetgroup.GroupAsset
 }
 
-func (s *stubGroupAssetsRepo) GetGroupAssets(_ context.Context, _ shared.ID, page pagination.Pagination) (pagination.Result[*assetgroup.GroupAsset], error) {
+func (s *stubGroupAssetsRepo) GetGroupAssets(_ context.Context, _ shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
 	return pagination.NewResult(s.assets, int64(len(s.assets)), page), nil
 }
 
@@ -237,7 +237,7 @@ type stubGroupsRepo struct {
 	calls   map[shared.ID]int
 }
 
-func (s *stubGroupsRepo) GetGroupAssets(_ context.Context, id shared.ID, page pagination.Pagination) (pagination.Result[*assetgroup.GroupAsset], error) {
+func (s *stubGroupsRepo) GetGroupAssets(_ context.Context, id shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
 	if s.calls == nil {
 		s.calls = map[shared.ID]int{}
 	}

@@ -532,6 +532,99 @@ owner-managed) are enforced, not just stored. See
   `AUTH_ALLOW_REGISTRATION=true`; a pending invitation for the same email opens
   it for that person only.
 
+## Data scope (Layer 2: access groups)
+
+Permissions decide what *kind* of thing a member may do; the data scope decides
+*which* assets — and so which findings, exposures and other asset-bound rows —
+they may see and change. Scope rows live in `user_accessible_assets` (group
+membership × group-owned assets, plus assets a user owns directly).
+
+**Who is restricted** (unchanged, see the fail-open note under *Known,
+deliberate gaps*):
+
+| Caller | Sees |
+|---|---|
+| Owner / admin (`IsAdmin`) | everything in the tenant |
+| Internal calls with no user (jobs, sensors, ingest) | everything in the tenant |
+| Member with ≥ 1 scope row | only their in-scope assets |
+| Member with no scope row, default tenant | everything (fail-open) |
+| Member with no scope row, tenant with `Security.RestrictedDataScope` | nothing (fail-closed) |
+
+**One enforcement point.** `internal/app/datascope.Enforcer` resolves the
+caller's scope (caller and admin flag come from the HTTP auth context, wired in
+`cmd/server/services.go`) and is shared by every service. Nil-safe: an unwired
+service is unrestricted. Out-of-scope by-id access returns **404**, never 403 —
+the same answer as a missing row, so it is not an existence oracle; in bulk
+results an out-of-scope id is reported exactly like an unknown id.
+
+- **By-id routes:** `middleware.DataScopeGuard` runs last on every token-tenant
+  chain (`buildTokenTenantMiddlewares`). Any request under
+  `/api/v1/assets/{uuid}/**`, `/api/v1/findings/{uuid}/**`,
+  `/api/v1/compliance/findings/{uuid}/**` or
+  `/api/v1/verification-checklists/{uuid}` — read or write, the object or any
+  sub-resource, including routes added later — is checked before the handler.
+- **Bulk-by-id and id-in-body paths:** services filter with the same enforcer.
+- **Indirect lists:** the resolved scope is pushed into SQL as
+  `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
+  (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
+
+### Coverage
+
+| Surface | Before (audit 2026-10, F4) | Now |
+|---|---|---|
+| `GET /assets`, `/findings` (list, search), `/findings/stats`, `/findings/groups` | scoped | scoped (unchanged) |
+| `GET /assets/{id}`, `/findings/{id}`, `/findings/{id}/activities`, `POST /findings/{id}/comments` | scoped | scoped (guard + service) |
+| `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
+| `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
+| `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
+| `PUT/DELETE /findings/{id}/comments/{commentId}` | bypass | 404 (guard) + comment's finding checked |
+| `PUT/DELETE /assets/{id}`, activate/deactivate/archive, crown-jewel, snooze, sync, scan | **bypass (write)** | 404 (guard) |
+| `POST /findings/bulk/status`, `/bulk/assign` | **bypass (write)** | out-of-scope ids skipped, reported as not found |
+| `POST /findings/actions/verify`, `/reject-fix` (by ids), `/fix-applied` (filter) | partly | scoped |
+| `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
+| `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list filtered per page |
+| `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
+| `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
+| `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
+| `GET /attack-surface/attack-paths` | **bypass** | `top_assets` filtered |
+| `GET /attack-surface/exposure-chains`, MCP `get_exposure_chains` | **bypass** | a chain is returned only when every hop is in scope |
+| `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
+| `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
+| `GET /dashboard/executive-summary` (+ export) `top_risks` | bypass | filtered |
+| `GET /dashboard/stats/global` recent activity | bypass | per organization: filtered where the caller is restricted there |
+| `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
+| In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
+| WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
+
+### Deliberately tenant-wide (counts only, no row data)
+
+These return aggregates over the whole tenant to every holder of the read
+permission. Filtering them would need a scoped variant of each aggregate
+query; none exposes a row, name, title or id of an out-of-scope object.
+
+| Endpoint | Why tenant-wide |
+|---|---|
+| `GET /dashboard/stats` counts (assets/findings by type, status, severity, avg risk/CVSS, repositories, finding trend) | one batched aggregate query; counts only |
+| `GET /dashboard/{mttr,velocity,data-quality,risk-trend,mttr-analytics,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
+| `GET /attack-surface/stats` average risk score and per-type breakdown | aggregate; the counts and row lists on that endpoint are scoped |
+| `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
+| `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
+| `GET /exposures/stats` | counts by state/severity, MTTR |
+| `GET /findings/analytics/sources`, `/vulnerabilities/active`, `/active/stats` | counts per tool / per CVE |
+| `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
+
+**Not covered by data scope** (separate access models): pentest findings and
+attachments (campaign membership), threat models and remediation campaigns,
+scans, audit logs, report schedules, and access-control administration
+(`/groups/{id}/assets/{assetId}`, which defines scope and needs `groups:write`).
+The reachability oracle used by priority classification and threat models reads
+the full graph on purpose (`GetExposureChains` stays unscoped).
+
+Outside a request (WebSocket subscriptions, cross-organization dashboard) admin
+status is the team role from `v_user_effective_role` (owner/admin) — the same
+source as the access token's `admin` claim; the live-push recipient query reads
+the same view in SQL. Keep them in step if that derivation changes.
+
 ## Module-Gate Layer (per-tenant feature gating)
 
 Above the permission and role checks there is a third, orthogonal layer: the
@@ -820,10 +913,11 @@ Tenable.sc's RBAC.
   (which would also fix `IsOwner` under OIDC) is a phased refactor —
   **deferred** because a missing membership middleware on any chain would 403 a
   whole route group.
-- **Data-scope is fail-open.** `user_accessible_assets` narrows assets/findings for
-  non-admins, but an *empty* assignment means "see all", and `GetByID` is unscoped.
-  Flipping to fail-closed (Tenable's default "No Access") is behavior-changing —
-  **deferred**, needs signoff.
+- **Data-scope is fail-open.** `user_accessible_assets` narrows assets, findings
+  and every asset-bound row for non-admins (see *Data scope* above), but an
+  *empty* assignment means "see all" unless the tenant turned on
+  `Security.RestrictedDataScope`. Flipping the default to fail-closed (Tenable's
+  "No Access") is behavior-changing — **deferred**, needs signoff.
 - **RLS is shadow-mode.** ~99 policies exist, 0 tables have RLS enabled. This is
   intentional (staged rollout), not a dead control. Tenant isolation is enforced by
   convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
@@ -876,8 +970,12 @@ answer "may they touch *this* row". For that:
 - Always scope repository reads/writes by `tenant_id` (every mutating query must
   carry `AND tenant_id = $n` — see `ScanRepository.Update`, AUTHZ-10). Do not trust
   an id from the URL to already be tenant-scoped.
-- For non-admin data-scope narrowing on assets/findings, go through
-  `user_accessible_assets` (note its fail-open caveat above).
+- For non-admin data-scope narrowing, use `datascope.Enforcer` (inject it with
+  `SetDataScope`): `AssertAsset`/`AssertFinding` for by-id paths (deny =
+  `ErrNotFound`), `Filter`/`FilterFindings` for bulk ids, and `Resolve` + an
+  SQL predicate from `postgres.dataScopeCond` for lists. New routes under
+  `/assets/{id}` or `/findings/{id}` are guarded automatically. Add any new
+  asset-bound list to the coverage table in *Data scope*.
 - Never authorize a mutation off the request body's tenant/owner fields — derive the
   principal's tenant from the authenticated context (or, for agents, from the agent
   key), never from client-supplied data.

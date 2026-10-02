@@ -306,11 +306,11 @@ func (m *mockAssetGroupRepo) AddAssets(_ context.Context, _ shared.ID, _ []share
 func (m *mockAssetGroupRepo) RemoveAssets(_ context.Context, _ shared.ID, _ []shared.ID) error {
 	return nil
 }
-func (m *mockAssetGroupRepo) GetGroupAssets(_ context.Context, id shared.ID, page pagination.Pagination) (pagination.Result[*assetgroup.GroupAsset], error) {
+func (m *mockAssetGroupRepo) GetGroupAssets(_ context.Context, id shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
 	a := m.members[id]
 	return pagination.NewResult(a, int64(len(a)), page), nil
 }
-func (m *mockAssetGroupRepo) GetGroupFindings(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*assetgroup.GroupFinding], error) {
+func (m *mockAssetGroupRepo) GetGroupFindings(_ context.Context, _ shared.ID, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupFinding], error) {
 	return pagination.Result[*assetgroup.GroupFinding]{}, nil
 }
 func (m *mockAssetGroupRepo) GetGroupIDsByAssetID(_ context.Context, _ shared.ID) ([]shared.ID, error) {

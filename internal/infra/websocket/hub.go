@@ -88,6 +88,10 @@ type AuthorizeFunc func(client *Client, channel string) bool
 type ChannelAccessChecker interface {
 	HasPermission(ctx context.Context, tenantID, userID, permission string) (bool, error)
 	IsGroupMember(ctx context.Context, tenantID, groupID, userID string) (bool, error)
+	// CanSeeFinding reports whether the finding exists in the tenant and is
+	// inside the user's Layer 2 data scope (admins and unrestricted members
+	// see every finding of their tenant).
+	CanSeeFinding(ctx context.Context, tenantID, userID, findingID string) (bool, error)
 }
 
 // channelAccessTimeout bounds the permission lookup made on a subscribe.
@@ -141,8 +145,9 @@ func (h *Hub) defaultAuthorize(client *Client, channel string) bool {
 
 	case ChannelTypeFinding, ChannelTypeTriage:
 		// Finding activity (actor, changes) and AI triage progress: the same
-		// permission the finding endpoints require.
-		return h.hasPermission(client, permission.FindingsRead)
+		// permission the finding endpoints require, and the finding must be
+		// in the user's data scope (GET /findings/{id} would 404 otherwise).
+		return h.hasPermission(client, permission.FindingsRead) && h.canSeeFinding(client, id)
 
 	case ChannelTypeScan:
 		return h.hasPermission(client, permission.ScansRead)
@@ -168,6 +173,20 @@ func (h *Hub) hasPermission(client *Client, perm permission.Permission) bool {
 	ok, err := h.access.HasPermission(ctx, client.TenantID, client.UserID, perm.String())
 	if err != nil {
 		h.logger.Warn("ws channel permission check failed", "user_id", client.UserID, "permission", perm.String(), "error", err)
+		return false
+	}
+	return ok
+}
+
+func (h *Hub) canSeeFinding(client *Client, findingID string) bool {
+	if h.access == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), channelAccessTimeout)
+	defer cancel()
+	ok, err := h.access.CanSeeFinding(ctx, client.TenantID, client.UserID, findingID)
+	if err != nil {
+		h.logger.Debug("ws finding scope check failed", "user_id", client.UserID, "finding_id", findingID, "error", err)
 		return false
 	}
 	return ok

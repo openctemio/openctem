@@ -13,7 +13,15 @@ import (
 type fakeAccess struct {
 	perms   map[string]bool // permission -> granted
 	groups  map[string]bool // group id -> member
+	hidden  map[string]bool // finding id -> outside the user's data scope
 	failAll bool
+}
+
+func (f fakeAccess) CanSeeFinding(_ context.Context, _, _, findingID string) (bool, error) {
+	if f.failAll {
+		return false, errors.New("lookup failed")
+	}
+	return !f.hidden[findingID], nil
 }
 
 func (f fakeAccess) HasPermission(_ context.Context, _, _, perm string) (bool, error) {
@@ -41,6 +49,7 @@ func TestDefaultAuthorize_Channels(t *testing.T) {
 	member := fakeAccess{
 		perms:  map[string]bool{permission.FindingsRead.String(): true},
 		groups: map[string]bool{"g-mine": true},
+		hidden: map[string]bool{"f-other-group": true},
 	}
 	noPerms := fakeAccess{}
 
@@ -67,6 +76,9 @@ func TestDefaultAuthorize_Channels(t *testing.T) {
 		{"finding without findings:read", noPerms, "finding:f1", false},
 		{"triage with findings:read", member, "triage:f1", true},
 		{"triage without findings:read", noPerms, "triage:f1", false},
+		// Layer 2 data scope: a finding outside the user's groups is refused.
+		{"finding outside data scope", member, "finding:f-other-group", false},
+		{"triage outside data scope", member, "triage:f-other-group", false},
 		{"scan without scans:read", member, "scan:s1", false},
 		{"group member", member, "group:g-mine", true},
 		{"group non-member without groups:read", member, "group:g-other", false},

@@ -46,11 +46,13 @@ type Repository interface {
 	// RemoveAssets removes assets from a group.
 	RemoveAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) error
 
-	// GetGroupAssets returns assets belonging to a group.
-	GetGroupAssets(ctx context.Context, groupID shared.ID, page pagination.Pagination) (pagination.Result[*GroupAsset], error)
+	// GetGroupAssets returns assets belonging to a group. A non-nil scope
+	// keeps only the assets in that data scope (nil = all members).
+	GetGroupAssets(ctx context.Context, groupID shared.ID, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*GroupAsset], error)
 
-	// GetGroupFindings returns findings for assets belonging to a group.
-	GetGroupFindings(ctx context.Context, groupID shared.ID, page pagination.Pagination) (pagination.Result[*GroupFinding], error)
+	// GetGroupFindings returns findings for assets belonging to a group. A
+	// non-nil scope keeps only findings whose asset is in that data scope.
+	GetGroupFindings(ctx context.Context, groupID shared.ID, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*GroupFinding], error)
 
 	// GetGroupIDsByAssetID returns IDs of groups containing a specific asset.
 	GetGroupIDsByAssetID(ctx context.Context, assetID shared.ID) ([]shared.ID, error)

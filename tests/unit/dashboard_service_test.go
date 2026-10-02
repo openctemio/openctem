@@ -71,7 +71,6 @@ func newMockDashboardRepo() *mockDashboardRepo {
 	return &mockDashboardRepo{}
 }
 
-
 func (m *mockDashboardRepo) GetFindingStats(_ context.Context, tenantID shared.ID) (app.FindingStatsData, error) {
 	m.lastTenantID = tenantID
 	if m.getFindingStatsErr != nil {
@@ -88,7 +87,7 @@ func (m *mockDashboardRepo) GetRepositoryStats(_ context.Context, tenantID share
 	return m.repoStats, nil
 }
 
-func (m *mockDashboardRepo) GetRecentActivity(_ context.Context, tenantID shared.ID, limit int) ([]app.ActivityItem, error) {
+func (m *mockDashboardRepo) GetRecentActivity(_ context.Context, tenantID shared.ID, _ *shared.DataScope, limit int) ([]app.ActivityItem, error) {
 	m.lastTenantID = tenantID
 	m.lastLimit = limit
 	if m.getRecentActivityErr != nil {
@@ -176,7 +175,7 @@ func (m *mockDashboardRepo) GetFilteredRepositoryStats(_ context.Context, tenant
 	return m.filteredRepoStats, nil
 }
 
-func (m *mockDashboardRepo) GetFilteredRecentActivity(_ context.Context, tenantIDs []string, limit int) ([]app.ActivityItem, error) {
+func (m *mockDashboardRepo) GetFilteredRecentActivity(_ context.Context, tenantIDs, _ []string, _ string, limit int) ([]app.ActivityItem, error) {
 	m.getFilteredRecentActivityCalls++
 	m.lastTenantIDs = tenantIDs
 	m.lastLimit = limit

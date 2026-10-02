@@ -101,7 +101,7 @@ func (m *wfActionMockFindingRepo) ListByComponentID(_ context.Context, _, _ shar
 	return pagination.Result[*vulnerability.Finding]{}, nil
 }
 
-func (m *wfActionMockFindingRepo) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+func (m *wfActionMockFindingRepo) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
 	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
 }
 func (m *wfActionMockFindingRepo) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {

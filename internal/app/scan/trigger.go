@@ -979,7 +979,7 @@ func (s *Service) listGroupExclusionCandidates(ctx context.Context, groupID shar
 	candidates := make([]scope.ExclusionCandidate, 0)
 
 	for {
-		res, err := s.assetGroupRepo.GetGroupAssets(ctx, groupID, page)
+		res, err := s.assetGroupRepo.GetGroupAssets(ctx, groupID, page, nil)
 		if err != nil {
 			return nil, err
 		}

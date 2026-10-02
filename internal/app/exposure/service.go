@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/internal/app/outbox"
 
 	"github.com/google/uuid"
@@ -30,7 +31,24 @@ type ExposureService struct {
 	// stored. nil until SetSecretProtector; sealDetails then uses a no-key
 	// protector, which still keeps the plaintext out of read responses.
 	secrets *credential.SecretProtector
-	logger  *logger.Logger
+	// dataScope narrows reads and by-id writes to the caller's Layer 2 data
+	// scope (nil = unrestricted).
+	dataScope *datascope.Enforcer
+	logger    *logger.Logger
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer.
+func (s *ExposureService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
+
+// assertExposureScope returns ErrNotFound unless the request's caller may
+// see the exposure's asset. An exposure with no asset is in nobody's asset
+// scope, so it is hidden from restricted members.
+func (s *ExposureService) assertExposureScope(ctx context.Context, tenantID shared.ID, event *exposuredom.ExposureEvent) error {
+	var assetID shared.ID
+	if event.AssetID() != nil {
+		assetID = *event.AssetID()
+	}
+	return s.dataScope.AssertAsset(ctx, tenantID, assetID)
 }
 
 // SetSecretProtector installs the protector built from the platform
@@ -370,7 +388,14 @@ func (s *ExposureService) GetExposureSecure(ctx context.Context, tenantID, event
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
-	return s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
+	event, err := s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.assertExposureScope(ctx, parsedTenantID, event); err != nil {
+		return nil, err
+	}
+	return event, nil
 }
 
 // TagCTEMID associates a CTEM-ID catalog identifier with an exposure (empty
@@ -419,6 +444,15 @@ func (s *ExposureService) ListExposures(ctx context.Context, input ListExposures
 		return pagination.Result[*exposuredom.ExposureEvent]{}, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
 	filter = filter.WithTenantID(input.TenantID)
+
+	// Layer 2: a restricted member lists only exposures on in-scope assets.
+	if tid, err := shared.IDFromString(input.TenantID); err == nil {
+		scope, err := s.dataScope.Resolve(ctx, tid)
+		if err != nil {
+			return pagination.Result[*exposuredom.ExposureEvent]{}, fmt.Errorf("resolve data scope: %w", err)
+		}
+		filter.DataScope = scope
+	}
 
 	if input.AssetID != "" {
 		filter = filter.WithAssetID(input.AssetID)
@@ -537,6 +571,9 @@ func (s *ExposureService) ReactivateExposure(ctx context.Context, tenantID, expo
 	if err != nil {
 		return nil, err
 	}
+	if err := s.assertExposureScope(ctx, parsedTenantID, event); err != nil {
+		return nil, err
+	}
 
 	previousState := event.State()
 
@@ -585,6 +622,9 @@ func (s *ExposureService) changeState(ctx context.Context, tenantID, exposureID,
 
 	event, err := s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedEventID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.assertExposureScope(ctx, parsedTenantID, event); err != nil {
 		return nil, err
 	}
 
@@ -714,6 +754,9 @@ func (s *ExposureService) DeleteExposure(ctx context.Context, exposureID, tenant
 	}
 	if event.TenantID() != parsedTenantID {
 		return shared.ErrNotFound
+	}
+	if err := s.assertExposureScope(ctx, parsedTenantID, event); err != nil {
+		return err
 	}
 
 	return s.repo.Delete(ctx, parsedID)

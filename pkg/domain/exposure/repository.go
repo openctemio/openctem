@@ -89,6 +89,10 @@ type Filter struct {
 	FirstSeenBefore *int64      // Filter by first seen before (unix timestamp)
 	LastSeenAfter   *int64      // Filter by last seen after (unix timestamp)
 	LastSeenBefore  *int64      // Filter by last seen before (unix timestamp)
+
+	// DataScope keeps only exposures on assets in this Layer 2 data scope
+	// (nil = unrestricted).
+	DataScope *shared.DataScope
 }
 
 // NewFilter creates an empty filter.
@@ -171,6 +175,7 @@ func (f Filter) IsEmpty() bool {
 		len(f.States) == 0 &&
 		len(f.Sources) == 0 &&
 		f.Search == nil &&
+		f.DataScope == nil &&
 		f.FirstSeenAfter == nil &&
 		f.FirstSeenBefore == nil &&
 		f.LastSeenAfter == nil &&

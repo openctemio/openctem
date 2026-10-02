@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/api/internal/app/datascope"
+	"github.com/openctemio/api/internal/infra/http/middleware"
+
 	"github.com/openctemio/api/internal/app/apikey"
 	"github.com/openctemio/api/internal/app/assignment"
 	"github.com/openctemio/api/internal/app/command"
@@ -231,6 +234,25 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 	return res.Updated, nil
 }
 
+// httpDataScopeCaller reads the acting user and the admin decision from the
+// HTTP auth context for the Layer 2 data-scope enforcer.
+func httpDataScopeCaller(ctx context.Context) datascope.Caller {
+	return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
+}
+
+// membershipAdminLookup decides admin status outside a request (WebSocket
+// subscriptions, cross-tenant dashboards) the way the access token does:
+// the team role (GetMembership reads v_user_effective_role) is owner or admin.
+func membershipAdminLookup(tenants tenant.Repository) datascope.AdminLookup {
+	return func(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+		m, err := tenants.GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			return false, err
+		}
+		return m.IsOwner() || m.IsAdmin(), nil
+	}
+}
+
 // dataScopePolicyAdapter reports a tenant's fail-open/closed data-scope policy
 // (tenant Settings → Security.RestrictedDataScope) to the asset & finding
 // services. It's read on the non-admin data-scope path, so it caches per tenant
@@ -407,6 +429,28 @@ func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context
 type wsChannelAccess struct {
 	roles  *app.RoleService
 	groups *postgres.GroupRepository
+	scope  *datascope.Enforcer
+}
+
+// CanSeeFinding applies the Layer 2 data scope to finding and triage
+// channels: the finding must exist in the tenant and be in the user's scope.
+func (a wsChannelAccess) CanSeeFinding(ctx context.Context, tenantID, userID, findingID string) (bool, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, err
+	}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return false, err
+	}
+	fid, err := shared.IDFromString(findingID)
+	if err != nil {
+		return false, err // not a finding id: refuse the subscription
+	}
+	if a.scope == nil {
+		return true, nil
+	}
+	return a.scope.AssertFindingForUser(ctx, tid, uid, fid) == nil, nil
 }
 
 func (a wsChannelAccess) HasPermission(ctx context.Context, tenantID, userID, perm string) (bool, error) {
@@ -498,6 +542,11 @@ type Services struct {
 	Tenant *app.TenantService
 	// UserProvisioning creates accounts on behalf of administrators.
 	UserProvisioning *app.UserProvisioningService
+
+	// DataScope enforces the Layer 2 (group) data scope on by-id reads and
+	// writes and on indirect lists (asset groups, attack surface, exposures,
+	// dashboards, notifications, WebSocket finding channels).
+	DataScope *datascope.Enforcer
 
 	// Assets
 	Asset                  *app.AssetService
@@ -776,6 +825,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// instance so asset + finding services read one cache.
 	dataScopePolicy := newDataScopePolicyAdapter(repos.Tenant)
 	s.Asset.SetDataScopePolicy(dataScopePolicy)
+	// One Layer 2 enforcer for every service: the caller comes from the HTTP
+	// auth context, so the admin decision is the auth layer's.
+	s.DataScope = datascope.New(repos.DataScope, dataScopePolicy, httpDataScopeCaller, log)
+	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
+	s.Asset.SetDataScope(s.DataScope)
 	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)
 	// The Postgres asset repository also implements the narrow
@@ -792,11 +846,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
+	s.AssetGroup.SetDataScope(s.DataScope)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
+	s.AttackSurface.SetDataScope(s.DataScope)
 	// Continuous threat modeling: composes exposure chains + attacker profiles +
 	// ATT&CK catalog + live findings into a per-scope threat model.
 	s.ThreatModel = threatmodel.NewService(
@@ -829,6 +885,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetDataScopePolicy(dataScopePolicy)
+	s.Vulnerability.SetDataScope(s.DataScope)
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
@@ -844,12 +901,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.Finding, repos.AccessControl, repos.Group, repos.Asset,
 		s.FindingActivity, deps.DB, log,
 	)
+	s.FindingActions.SetDataScope(s.DataScope)
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
 	s.SourceAnalytics = app.NewSourceAnalyticsService(repos.Finding, log)
 
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
+	s.Exposure.SetDataScope(s.DataScope)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
@@ -862,6 +921,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize dashboard service
 	s.Dashboard = app.NewDashboardService(repos.Dashboard, log)
+	s.Dashboard.SetDataScope(s.DataScope)
 
 	// Initialize SLA service
 	s.SLA = sla.NewService(repos.SLA, log)
@@ -1107,6 +1167,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			log,
 		)
 		s.AITriage.SetAuditService(s.Audit)
+		s.AITriage.SetDataScope(s.DataScope)
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// On triage completion, enqueue an asset-scoped reclassify so a
@@ -1632,7 +1693,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
-	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group})
+	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope})
 	log.Info("websocket hub initialized")
 
 	// Wire WebSocket broadcasters - must be done AFTER WebSocketHub is initialized
@@ -1662,6 +1723,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.WebSocketHub,
 		log,
 	)
+	s.Notification.SetDataScope(s.DataScope)
 	log.Info("user notification service initialized")
 
 	// Wire notification service to GroupService for member notifications

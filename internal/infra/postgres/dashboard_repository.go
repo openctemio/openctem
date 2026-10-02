@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -114,10 +116,14 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 	return stats, nil
 }
 
-// GetRecentActivity returns recent activity for a tenant.
-func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID shared.ID, limit int) ([]app.ActivityItem, error) {
+// GetRecentActivity returns recent activity for a tenant. A non-nil scope
+// keeps only findings whose asset is in that Layer 2 data scope.
+func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]app.ActivityItem, error) {
 	// For now, get recent findings as activity
 	// In future, this could be from an audit log table
+	scopeCond, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
+	args = append(args, limit)
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT 'finding' as type,
 		        f.id::text as ref_id,
@@ -125,10 +131,10 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 		        f.message as description,
 		        f.created_at
 		 FROM findings f
-		 WHERE f.tenant_id = $1
+		 WHERE f.tenant_id = $1 AND `+scopeCond+`
 		 ORDER BY f.created_at DESC
-		 LIMIT $2`,
-		tenantID.String(), limit,
+		 LIMIT $`+itoa(len(args)),
+		args...,
 	)
 	if err != nil {
 		return nil, err
@@ -833,28 +839,30 @@ func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, te
 	return stats, nil
 }
 
-// GetFilteredRecentActivity returns recent activity filtered by tenant IDs.
-func (r *DashboardRepository) GetFilteredRecentActivity(ctx context.Context, tenantIDs []string, limit int) ([]app.ActivityItem, error) {
-	if len(tenantIDs) == 0 {
+// GetFilteredRecentActivity returns recent activity across tenants. Findings
+// of tenantIDs are all visible; findings of restrictedTenantIDs only when the
+// asset is in userID's Layer 2 data scope for that tenant.
+func (r *DashboardRepository) GetFilteredRecentActivity(ctx context.Context, tenantIDs, restrictedTenantIDs []string, userID string, limit int) ([]app.ActivityItem, error) {
+	if len(tenantIDs) == 0 && len(restrictedTenantIDs) == 0 {
 		return []app.ActivityItem{}, nil
 	}
+	if userID == "" {
+		userID = shared.ID{}.String() // matches no scope row
+	}
 
-	// Build placeholder string for IN clause
-	placeholders, args := buildInClause(tenantIDs, 0)
-	args = append(args, limit)
-	limitPlaceholder := len(tenantIDs) + 1
-
-	//nolint:gosec // G202: placeholders and limitPlaceholder are built from len(tenantIDs), not user input
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT 'finding' as type,
 		        COALESCE(f.rule_id, f.tool_name) as title,
 		        f.message as description,
 		        f.created_at
 		 FROM findings f
-		 WHERE f.tenant_id IN (`+placeholders+`)
+		 WHERE f.tenant_id = ANY($1::uuid[])
+		    OR (f.tenant_id = ANY($2::uuid[])
+		        AND f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa
+		                           WHERE uaa.user_id = $3 AND uaa.tenant_id = f.tenant_id))
 		 ORDER BY f.created_at DESC
-		 LIMIT $`+itoa(limitPlaceholder),
-		args...,
+		 LIMIT $4`,
+		pq.Array(tenantIDs), pq.Array(restrictedTenantIDs), userID, limit,
 	)
 	if err != nil {
 		return nil, err

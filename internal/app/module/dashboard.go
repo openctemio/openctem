@@ -2,8 +2,10 @@ package module
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/openctemio/api/internal/app/datascope"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -77,7 +79,8 @@ type DashboardStatsRepository interface {
 	// GetRepositoryStats returns repository statistics for a tenant
 	GetRepositoryStats(ctx context.Context, tenantID shared.ID) (RepositoryStatsData, error)
 	// GetRecentActivity returns recent activity for a tenant
-	GetRecentActivity(ctx context.Context, tenantID shared.ID, limit int) ([]ActivityItem, error)
+	// (a non-nil scope keeps only findings on in-scope assets).
+	GetRecentActivity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]ActivityItem, error)
 	// GetFindingTrend returns monthly finding counts by severity for a tenant
 	GetFindingTrend(ctx context.Context, tenantID shared.ID, months int) ([]FindingTrendPoint, error)
 	// GetAllStats returns all dashboard stats in 2 optimized queries (replaces 10+ individual calls)
@@ -97,7 +100,9 @@ type DashboardStatsRepository interface {
 	GetFilteredAssetStats(ctx context.Context, tenantIDs []string) (AssetStatsData, error)
 	GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (FindingStatsData, error)
 	GetFilteredRepositoryStats(ctx context.Context, tenantIDs []string) (RepositoryStatsData, error)
-	GetFilteredRecentActivity(ctx context.Context, tenantIDs []string, limit int) ([]ActivityItem, error)
+	// Findings of tenantIDs are all visible; findings of restrictedTenantIDs
+	// only when their asset is in userID's data scope for that tenant.
+	GetFilteredRecentActivity(ctx context.Context, tenantIDs, restrictedTenantIDs []string, userID string, limit int) ([]ActivityItem, error)
 
 	// Data Quality Scorecard (RFC-005)
 	GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error)
@@ -159,8 +164,16 @@ type RepositoryStatsData struct {
 
 // DashboardService provides dashboard-related operations.
 type DashboardService struct {
-	repo   DashboardStatsRepository
-	logger *logger.Logger
+	repo      DashboardStatsRepository
+	dataScope *datascope.Enforcer // Layer 2 narrowing of row data (nil = unrestricted)
+	logger    *logger.Logger
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer. Dashboards keep their
+// counts tenant-wide; only row data (recent activity, executive top risks)
+// is narrowed for a restricted member.
+func (s *DashboardService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
 }
 
 // NewDashboardService creates a new DashboardService.
@@ -184,6 +197,22 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 			Findings: FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)},
 			Activity: []ActivityItem{},
 		}
+	}
+
+	// Layer 2: recent activity is row data (finding titles and messages), so a
+	// restricted member gets it from their in-scope findings only. The counts
+	// above stay tenant-wide aggregates.
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope != nil {
+		activity, aerr := s.repo.GetRecentActivity(ctx, tenantID, scope, dashboardRecentActivityLimit)
+		if aerr != nil {
+			s.logger.Error("failed to get scoped recent activity", "error", aerr, "tenant_id", tenantID)
+			activity = []ActivityItem{}
+		}
+		all.Activity = activity
 	}
 
 	// Finding trend (separate query — different shape, efficient CTE)
@@ -460,13 +489,69 @@ func (s *DashboardService) GetProcessMetrics(ctx context.Context, tenantID share
 }
 
 // GetExecutiveSummary returns executive-level metrics for a time period.
+// Layer 2: TopRisks (finding titles and asset names) keeps only in-scope
+// assets for a restricted member; the metrics stay tenant-wide.
 func (s *DashboardService) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error) {
-	return s.repo.GetExecutiveSummary(ctx, tenantID, days)
+	sum, err := s.repo.GetExecutiveSummary(ctx, tenantID, days)
+	if err != nil || sum == nil {
+		return sum, err
+	}
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope == nil || len(sum.TopRisks) == 0 {
+		return sum, nil
+	}
+	ids := make([]shared.ID, 0, len(sum.TopRisks))
+	for _, r := range sum.TopRisks {
+		if id, perr := shared.IDFromString(r.AssetID); perr == nil {
+			ids = append(ids, id)
+		}
+	}
+	keep, err := s.dataScope.Filter(ctx, scope, ids)
+	if err != nil {
+		return nil, err
+	}
+	top := make([]TopRisk, 0, len(sum.TopRisks))
+	for _, r := range sum.TopRisks {
+		if id, perr := shared.IDFromString(r.AssetID); perr == nil && keep(id) {
+			top = append(top, r)
+		}
+	}
+	sum.TopRisks = top
+	return sum, nil
 }
 
 // GetMTTRAnalytics returns MTTR breakdown by severity and priority class.
 func (s *DashboardService) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error) {
 	return s.repo.GetMTTRAnalytics(ctx, tenantID, days)
+}
+
+// dashboardRecentActivityLimit is how many recent findings the dashboards show.
+const dashboardRecentActivityLimit = 10
+
+// splitTenantsByScope splits tenantIDs into those where the request's user is
+// unrestricted and those where their data scope applies.
+func (s *DashboardService) splitTenantsByScope(ctx context.Context, tenantIDs []string) (open, restricted []string) {
+	caller := s.dataScope.CallerOf(ctx)
+	uid, uerr := shared.IDFromString(caller.UserID)
+	if s.dataScope == nil || uerr != nil {
+		return tenantIDs, nil
+	}
+	for _, t := range tenantIDs {
+		tid, err := shared.IDFromString(t)
+		if err != nil {
+			continue
+		}
+		scope, err := s.dataScope.ForUser(ctx, tid, uid)
+		if err == nil && scope == nil {
+			open = append(open, t)
+		} else {
+			restricted = append(restricted, t)
+		}
+	}
+	return open, restricted
 }
 
 // GetStatsForTenants returns dashboard statistics filtered by accessible tenant IDs.
@@ -506,8 +591,13 @@ func (s *DashboardService) GetStatsForTenants(ctx context.Context, tenantIDs []s
 		repoStats = RepositoryStatsData{}
 	}
 
-	// Get recent activity filtered by accessible tenants
-	activity, err := s.repo.GetFilteredRecentActivity(ctx, tenantIDs, 10)
+	// Get recent activity filtered by accessible tenants. Layer 2: the
+	// caller's admin status is per tenant, so the scope is resolved for each
+	// tenant from their membership there; tenants where they are restricted
+	// contribute only in-scope findings. Fails closed: a tenant whose scope
+	// cannot be resolved is treated as restricted.
+	open, restricted := s.splitTenantsByScope(ctx, tenantIDs)
+	activity, err := s.repo.GetFilteredRecentActivity(ctx, open, restricted, s.dataScope.CallerOf(ctx).UserID, dashboardRecentActivityLimit)
 	if err != nil {
 		s.logger.Error("failed to get filtered recent activity", "error", err, "tenant_count", len(tenantIDs))
 		activity = []ActivityItem{}

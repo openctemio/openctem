@@ -140,6 +140,7 @@ type Repositories struct {
 	Group          *postgres.GroupRepository
 	PermissionSet  *postgres.PermissionSetRepository
 	AccessControl  *postgres.AccessControlRepository
+	DataScope      *postgres.DataScopeRepository
 	Role           *postgres.RoleRepository
 	RolePermission *postgres.PermissionRepository
 
@@ -359,6 +360,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Group:          postgres.NewGroupRepository(db),
 		PermissionSet:  postgres.NewPermissionSetRepository(db),
 		AccessControl:  postgres.NewAccessControlRepository(db),
+		DataScope:      postgres.NewDataScopeRepository(db),
 		Role:           postgres.NewRoleRepository(db),
 		RolePermission: postgres.NewPermissionRepository(db),
 

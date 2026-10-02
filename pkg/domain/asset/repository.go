@@ -412,6 +412,18 @@ func (f Filter) WithDataScopeUserID(id shared.ID) Filter {
 	return f
 }
 
+// WithDataScope narrows to a resolved data scope (nil = unchanged). A
+// resolved scope is always enforced strictly: the fail-open decision was
+// already taken when it was resolved.
+func (f Filter) WithDataScope(scope *shared.DataScope) Filter {
+	if scope != nil {
+		id := scope.UserID
+		f.DataScopeUserID = &id
+		f.DataScopeStrict = true
+	}
+	return f
+}
+
 // WithPropertiesFilter adds JSONB properties key=values filter pairs.
 func (f Filter) WithPropertiesFilter(kv map[string][]string) Filter {
 	f.PropertiesFilter = kv
