@@ -71,6 +71,15 @@ func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Han
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
+		// An API-key request already carries its effective permissions: the
+		// key's scopes narrowed to what its user holds right now, resolved at
+		// authentication. Loading the user's permissions here would replace
+		// that narrow set with everything the user can do.
+		if IsAPIKeyAuthenticated(ctx) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Get tenant and user from context (set by UnifiedAuth)
 		tenantID := MustGetTenantID(ctx)
 		userID := GetUserID(ctx)

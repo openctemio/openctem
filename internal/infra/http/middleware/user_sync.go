@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/logger"
@@ -35,6 +36,27 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 
 			// Check auth provider and get user ID accordingly
 			authProvider := GetAuthProvider(ctx)
+
+			// An API key acts as its user: load that user so the membership
+			// gate and handlers see the same principal a session would. The
+			// user must still exist and be active; a key never creates one.
+			if authProvider == AuthProviderAPIKey {
+				userID := GetUserID(ctx)
+				if userID == "" {
+					next.ServeHTTP(w, r)
+					return
+				}
+				keyUser, err := userService.GetProfile(ctx, userID)
+				if err != nil || keyUser == nil || !keyUser.IsActive() {
+					log.Debug("api key rejected: key user missing or inactive",
+						"user_id", userID, "api_key_id", GetAPIKeyID(ctx))
+					apierror.Unauthorized("Invalid credentials").WriteJSON(w)
+					return
+				}
+				ctx = context.WithValue(ctx, LocalUserKey, keyUser)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 
 			// For local auth, get or create user from JWT claims
 			if authProvider == AuthProviderLocal {

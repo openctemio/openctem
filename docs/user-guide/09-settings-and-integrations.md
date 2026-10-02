@@ -51,7 +51,7 @@ and add what you need:
 | **SAML SSO** | SAML-based single sign-on. |
 | **SCIM Provisioning** | Automated user provisioning/de-provisioning tokens. |
 | **Verified Domains** | Prove ownership of email domains (gates SSO auto-join). |
-| **AI Access (MCP)** | Read-only Model Context Protocol access for AI assistants, using `oct_` API keys. |
+| **AI Access (MCP)** | Read-only Model Context Protocol access for AI assistants, using `oct_` API keys. The same keys can also read the REST API (GET only, within the key's scopes) for scripts and automation. |
 
 > **Ticketing note:** pushing work items to an external tracker is **Jira** today
 > (Create Jira Epic on campaigns, Create Jira Ticket on a finding). GitHub is

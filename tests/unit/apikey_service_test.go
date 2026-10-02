@@ -1873,3 +1873,126 @@ func TestAuthenticate_TouchFailureIsNonFatal(t *testing.T) {
 		t.Fatalf("touch failure must not fail auth, got %v", err)
 	}
 }
+
+// =============================================================================
+// Tests: AuthenticateWithPermissions (scopes bounded by the holder, now)
+// =============================================================================
+
+type fakeHolder struct {
+	all   bool
+	perms []string
+	err   error
+	calls int
+}
+
+func (f *fakeHolder) HeldPermissions(_ context.Context, _, _ shared.ID) (bool, []string, error) {
+	f.calls++
+	return f.all, f.perms, f.err
+}
+
+func mintForHolder(t *testing.T, svc *apikey.Service, userID string, scopes ...string) string {
+	t.Helper()
+	created, err := svc.Create(context.Background(), apikey.CreateInput{
+		TenantID: shared.NewID().String(), UserID: userID, Name: "holder-" + shared.NewID().String()[:8], Scopes: scopes,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	return created.Plaintext
+}
+
+// A scope the user no longer holds is dropped on the next request.
+func TestAuthenticateWithPermissions_NarrowsToWhatTheUserHoldsNow(t *testing.T) {
+	svc := newTestAPIKeyService(newMockAPIKeyRepo())
+	svc.SetHolderPermissions(&fakeHolder{perms: []string{"assets:read", "scans:read"}})
+	raw := mintForHolder(t, svc, shared.NewID().String(), "assets:read", "findings:read")
+
+	_, perms, err := svc.AuthenticateWithPermissions(context.Background(), raw, "")
+	if err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	if len(perms) != 1 || perms[0] != "assets:read" {
+		t.Errorf("perms = %v, want [assets:read] (scopes ∩ held)", perms)
+	}
+}
+
+// Owners/admins hold everything, so the key keeps exactly its scopes — never more.
+func TestAuthenticateWithPermissions_AdminHolderKeepsScopesOnly(t *testing.T) {
+	svc := newTestAPIKeyService(newMockAPIKeyRepo())
+	svc.SetHolderPermissions(&fakeHolder{all: true})
+	raw := mintForHolder(t, svc, shared.NewID().String(), "findings:read")
+
+	_, perms, err := svc.AuthenticateWithPermissions(context.Background(), raw, "")
+	if err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	if len(perms) != 1 || perms[0] != "findings:read" {
+		t.Errorf("perms = %v, want [findings:read]", perms)
+	}
+}
+
+// Failing to resolve the holder rejects the key with the generic error.
+func TestAuthenticateWithPermissions_HolderErrorRejects(t *testing.T) {
+	svc := newTestAPIKeyService(newMockAPIKeyRepo())
+	svc.SetHolderPermissions(&fakeHolder{err: errors.New("db down")})
+	raw := mintForHolder(t, svc, shared.NewID().String(), "assets:read")
+
+	if _, _, err := svc.AuthenticateWithPermissions(context.Background(), raw, ""); !errors.Is(err, apikeydom.ErrAPIKeyNotFound) {
+		t.Fatalf("expected ErrAPIKeyNotFound, got %v", err)
+	}
+}
+
+// A key with no user is bounded by its scopes alone; the holder is not asked.
+func TestAuthenticateWithPermissions_UserlessKeyUsesScopes(t *testing.T) {
+	svc := newTestAPIKeyService(newMockAPIKeyRepo())
+	holder := &fakeHolder{}
+	svc.SetHolderPermissions(holder)
+	raw := mintForHolder(t, svc, "", "assets:read")
+
+	_, perms, err := svc.AuthenticateWithPermissions(context.Background(), raw, "")
+	if err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	if len(perms) != 1 || perms[0] != "assets:read" || holder.calls != 0 {
+		t.Errorf("perms = %v holder calls = %d", perms, holder.calls)
+	}
+}
+
+// The effective set is a copy: narrowing never rewrites the stored key.
+func TestAuthenticateWithPermissions_DoesNotMutateKey(t *testing.T) {
+	svc := newTestAPIKeyService(newMockAPIKeyRepo())
+	svc.SetHolderPermissions(&fakeHolder{perms: []string{}})
+	raw := mintForHolder(t, svc, shared.NewID().String(), "assets:read")
+
+	key, perms, err := svc.AuthenticateWithPermissions(context.Background(), raw, "")
+	if err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	if len(perms) != 0 || len(key.Scopes()) != 1 {
+		t.Errorf("perms = %v scopes = %v, want no perms and the stored scope intact", perms, key.Scopes())
+	}
+}
+
+// Revoked keys stay rejected through the permission-aware path too.
+func TestAuthenticateWithPermissions_RevokedKeyRejected(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	svc := newTestAPIKeyService(repo)
+	holder := &fakeHolder{all: true}
+	svc.SetHolderPermissions(holder)
+	tenantID := shared.NewID()
+	created, err := svc.Create(context.Background(), apikey.CreateInput{TenantID: tenantID.String(), Name: "revoked", Scopes: []string{"assets:read"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.Revoke(context.Background(), apikey.RevokeInput{
+		ID: created.Key.ID().String(), TenantID: tenantID.String(), RevokedBy: shared.NewID().String(),
+	}); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if _, _, err := svc.AuthenticateWithPermissions(context.Background(), created.Plaintext, ""); !errors.Is(err, apikeydom.ErrAPIKeyNotFound) {
+		t.Fatalf("revoked key must not authenticate, got %v", err)
+	}
+	if holder.calls != 0 {
+		t.Errorf("holder consulted for a revoked key")
+	}
+}

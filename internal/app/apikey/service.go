@@ -39,6 +39,7 @@ type Service struct {
 	repo       apikeydom.Repository
 	pepper     string
 	membership MembershipChecker // nil → no member-lifecycle gate (tests only)
+	holder     HolderPermissions // nil → scopes are not narrowed to the holder (tests only)
 	audit      *auditapp.AuditService
 	logger     *logger.Logger
 }
@@ -72,6 +73,20 @@ func NewService(repo apikeydom.Repository, pepper string, log *logger.Logger) *S
 // user-scoped keys. When unset, key validity is decoupled from member lifecycle
 // (acceptable only in tests) — always wire it in production.
 func (s *Service) SetMembershipChecker(m MembershipChecker) { s.membership = m }
+
+// HolderPermissions reports what a user CURRENTLY holds in a tenant. all=true
+// means the user is an owner/admin, who bypass permission checks; otherwise
+// perms is the user's explicit permission list (roles resolved now, not at
+// key-mint time).
+type HolderPermissions interface {
+	HeldPermissions(ctx context.Context, tenantID, userID shared.ID) (all bool, perms []string, err error)
+}
+
+// SetHolderPermissions wires the resolver AuthenticateWithPermissions uses to
+// bound a user-scoped key by its user's current permissions. Always wire it in
+// production; without it a key keeps the scopes it was minted with even after
+// its user is demoted.
+func (s *Service) SetHolderPermissions(h HolderPermissions) { s.holder = h }
 
 // CreateInput represents input for creating an API key.
 type CreateInput struct {
@@ -119,10 +134,8 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 
 	// Hash for storage — peppered so that a DB leak without the
 	// server-side pepper cannot brute-force the raw key offline.
-	// Existing pre-fix rows have plain-SHA256 hashes and must be
-	// verified with crypto.VerifyTokenHashAny when the validation
-	// path is wired in (no active validator in this package yet —
-	// F-9 follow-up).
+	// Pre-pepper rows have plain-SHA256 hashes; Authenticate falls back
+	// to that hash on a miss.
 	keyHash := crypto.HashTokenPeppered(plaintext, s.pepper)
 
 	// Prefix for identification (first 8 chars of the oct_ key)
@@ -247,6 +260,49 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 	}
 
 	return key, nil
+}
+
+// AuthenticateWithPermissions is Authenticate plus the permissions the key may
+// exercise on this request: its scopes, narrowed to what its user holds NOW.
+// Scopes are checked against the creator only at mint time, so without this a
+// key would keep a scope its user has since lost (a demotion or a role edit).
+// An owner/admin holds every permission, so their keys keep all their scopes.
+// A key with no user is bounded by its scopes alone. Failing to resolve the
+// holder's permissions rejects the key, with the same error as every other
+// failure.
+func (s *Service) AuthenticateWithPermissions(ctx context.Context, rawKey, ip string) (*apikeydom.APIKey, []string, error) {
+	key, err := s.Authenticate(ctx, rawKey, ip)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	scopes := key.Scopes()
+	uid := key.UserID()
+	if uid == nil || s.holder == nil {
+		return key, append([]string(nil), scopes...), nil
+	}
+
+	all, held, err := s.holder.HeldPermissions(ctx, key.TenantID(), *uid)
+	if err != nil {
+		s.logger.Warn("api key rejected: holder permissions unavailable",
+			"key_id", key.ID().String(), "error", err.Error())
+		return nil, nil, apikeydom.ErrAPIKeyNotFound
+	}
+	if all {
+		return key, append([]string(nil), scopes...), nil
+	}
+
+	heldSet := make(map[string]struct{}, len(held))
+	for _, p := range held {
+		heldSet[p] = struct{}{}
+	}
+	effective := make([]string, 0, len(scopes))
+	for _, sc := range scopes {
+		if _, ok := heldSet[sc]; ok {
+			effective = append(effective, sc)
+		}
+	}
+	return key, effective, nil
 }
 
 // ListInput represents input for listing API keys.

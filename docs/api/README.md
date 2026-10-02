@@ -22,6 +22,20 @@ Authorization: Bearer <access_token>
 
 Access tokens are short-lived (default 15m). Use the refresh endpoint to rotate tokens.
 
+### Tenant API key (`oct_`, automation)
+
+Keys minted under Settings, API keys (or `POST /api/v1/api-keys`) read the
+tenant REST API and the MCP server:
+
+```
+Authorization: Bearer oct_<key>
+```
+
+or `X-API-Key: oct_<key>`. On the REST API a key is **read-only** (GET/HEAD),
+limited to its scopes and to what its user can still do, and refused on
+credential and account routes. See
+[architecture/api-keys.md](../architecture/api-keys.md).
+
 ### API Key (Agents)
 
 Platform agents authenticate via the `X-API-Key` header. Keys are scoped to a specific tenant and agent.

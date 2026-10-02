@@ -192,7 +192,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// JWT). Built only when the read services and the API-key service exist.
 	var mcpHandler *handler.MCPHandler
 	var mcpAuth routes.Middleware
-	if svc.APIKey != nil && svc.Vulnerability != nil && svc.PriorityClassification != nil &&
+	// One `oct_` authenticator for MCP and the REST API, so a key has a single
+	// rate-limit budget across both.
+	var apiKeyAuth *middleware.APIKeyAuthMiddleware
+	if svc.APIKey != nil {
+		apiKeyAuth = middleware.NewAPIKeyAuth(svc.APIKey, log)
+	}
+	if apiKeyAuth != nil && svc.Vulnerability != nil && svc.PriorityClassification != nil &&
 		svc.AttackSurface != nil && svc.RemediationGroup != nil && svc.Compliance != nil &&
 		svc.Asset != nil && svc.Pentest != nil {
 		mcpHandler = handler.NewMCPHandler(
@@ -201,13 +207,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
 		mcpHandler.SetAuditService(svc.Audit)
-		mcpAuth = middleware.APIKeyAuth(svc.APIKey, log)
+		mcpAuth = apiKeyAuth.Handler
 	}
 
 	handlers := routes.Handlers{
 		ModuleGate: moduleGate,
 		MCP:        mcpHandler,
 		MCPAuth:    mcpAuth,
+		APIKeyAuth: apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),

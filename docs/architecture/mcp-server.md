@@ -24,10 +24,14 @@ Supported methods: `initialize`, `notifications/*` (acknowledged, no body),
 Authenticated **only** by a tenant-scoped `oct_` API key — never the browser JWT
 chain, because an MCP client presents a static bearer token.
 
-- `middleware.APIKeyAuth` resolves the key via `apikey.Service.Authenticate`
-  (peppered-hash lookup, legacy plain-hash fallback, `IsActive()` gate), then
-  seeds tenant + optional user + scopes-as-permissions + `IsAdmin=false` into the
-  request context.
+- `middleware.APIKeyAuth` resolves the key via
+  `apikey.Service.AuthenticateWithPermissions` (peppered-hash lookup, legacy
+  plain-hash fallback, `IsActive()` gate, active membership and account), then
+  seeds tenant + optional user + permissions + `IsAdmin=false` into the request
+  context. The permissions are the key's scopes narrowed to what its user holds
+  now, so a demoted user's key loses the dropped scopes on the next call.
+- The same authenticator instance also serves the REST API (read-only), so a
+  key has one rate-limit budget across both. See [api-keys.md](./api-keys.md).
 - Any failure → generic `401` (no key enumeration). Keys are never accepted in the
   query string. A JWT bearer is never treated as an API key.
 
