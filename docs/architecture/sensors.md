@@ -405,10 +405,15 @@ compose file):
 - **Outbox** a named volume / PVC at `/var/lib/openctem/outbox`, so results
   survive a restart or an outage.
 - **State** (daemon sensors) a named volume / PVC at `/var/lib/openctem/state`:
-  the sensor (SDK v0.11+) keeps the API key it renews on its own there, so a
+  the sensor (sdk-go v0.12+) keeps the API key it renews on its own there, so a
   recreated container comes back with the renewed key instead of the
-  installed one, which the renewal retired. The Helm snippet sets
-  `sensor.state.persistence.enabled=true`.
+  installed one, which the renewal retired. Back it up like a credential.
+- **Content** (daemon sensors) a named volume / PVC (5Gi) at
+  `/var/lib/openctem/content`: the scanner content cache (trivy DB, nuclei
+  templates, semgrep rules), so a new container does not download it again.
+  Disposable, kept apart from the state. The Helm snippet sets
+  `sensor.state.persistence.enabled=true` and
+  `sensor.content.persistence.enabled=true`.
 - **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
   `[a-z0-9_-]` are dropped. The name becomes a slug.
 
@@ -426,7 +431,7 @@ replaces bearer keys.
   key. A request from another address than the previous one writes a
   `key_ip_changed` event on the timeline (folded and capped like every
   event). The response carries `key_last_used_at` and `key_last_used_ip`.
-- **Cloned identity.** The SDK (v0.11+) sends a random per-process
+- **Cloned identity.** The SDK (sdk-go v0.12+) sends a random per-process
   `instance_id` on every heartbeat; older SDKs are observed by hostname
   (`host:<hash>`). A restart replaces the instance once; a key running in two
   places makes the instances alternate. When replaced instances come back

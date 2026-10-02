@@ -23,7 +23,9 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 # yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
 # The {{$slug}}-state volume keeps the sensor's state, including the API key
 # it renews on its own: keep it with the container (a new container without it
-# starts with the key above, which a renewal has retired).
+# starts with the key above, which a renewal has retired). {{$slug}}-content
+# caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
+# container does not download it again; it can be deleted at any time.
 docker run -d --name {{$slug}} --restart unless-stopped \
   -e API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
@@ -40,6 +42,7 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- end}}
   -v {{$slug}}-outbox:/var/lib/openctem/outbox \
   -v {{$slug}}-state:/var/lib/openctem/state \
+  -v {{$slug}}-content:/var/lib/openctem/content \
   {{.Image}}
 
 # Check it: docker logs -f {{$slug}}   (the Sensors page shows it online

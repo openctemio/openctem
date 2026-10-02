@@ -38,6 +38,7 @@ services:
       - outbox:/var/lib/openctem/outbox
 {{- if isDaemon .Sensor}}
       - state:/var/lib/openctem/state
+      - content:/var/lib/openctem/content
 {{- end}}
 {{- if not (isDaemon .Sensor)}}
       - ./src:/scan:ro
@@ -57,6 +58,9 @@ volumes:
   # without it the sensor starts with the key in .env, which a renewal has
   # retired.
   state:
+  # Scanner content cache (trivy DB, nuclei templates, semgrep rules); it can
+  # be deleted, the sensor downloads it again.
+  content:
 {{- end}}
 {{- if .CACert}}
 

@@ -415,8 +415,8 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 type SensorHeartbeatData struct {
 	Version  string
 	Hostname string
-	// InstanceID is the random id the sensor process picked at start (SDK
-	// v0.11+; "" from older SDKs, which are observed by hostname instead).
+	// InstanceID is the random id the sensor process picked at start (sdk-go
+	// v0.12+; "" from older SDKs, which are observed by hostname instead).
 	// Untrusted; sanitized before use. Drives clone detection (identity.go).
 	InstanceID string
 	// IPAddress is the address the heartbeat came from, resolved by the HTTP

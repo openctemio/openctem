@@ -8027,7 +8027,7 @@ definitions:
         type: string
       instance_id:
         description: |-
-          InstanceID is the random id of the sensor process (SDK v0.11+), for
+          InstanceID is the random id of the sensor process (sdk-go v0.12+), for
           clone detection. Optional; older SDKs do not send it.
         type: string
       max_concurrent_jobs:

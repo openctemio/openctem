@@ -221,7 +221,7 @@ type HeartbeatRequest struct {
 	Status   string `json:"status"`
 	Version  string `json:"version,omitempty"`
 	Hostname string `json:"hostname,omitempty"`
-	// InstanceID is the random id of the sensor process (SDK v0.11+), for
+	// InstanceID is the random id of the sensor process (sdk-go v0.12+), for
 	// clone detection. Optional; older SDKs do not send it.
 	InstanceID    string   `json:"instance_id,omitempty"`
 	Message       string   `json:"message,omitempty"`

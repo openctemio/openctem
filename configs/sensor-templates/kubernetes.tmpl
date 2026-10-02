@@ -54,6 +54,21 @@ spec:
     requests:
       storage: 64Mi
 ---
+# Scanner content cache (trivy DB, nuclei templates, semgrep rules), so a new
+# pod does not download it again. Disposable: it can be deleted.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{$slug}}-content
+  labels:
+    app.kubernetes.io/name: openctem-sensor
+    app.kubernetes.io/instance: {{$slug}}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -103,6 +118,8 @@ spec:
               mountPath: /var/lib/openctem/outbox
             - name: state
               mountPath: /var/lib/openctem/state
+            - name: content
+              mountPath: /var/lib/openctem/content
 {{- if .CACert}}
             - name: ca
               mountPath: /etc/openctem/certs
@@ -115,6 +132,9 @@ spec:
         - name: state
           persistentVolumeClaim:
             claimName: {{$slug}}-state
+        - name: content
+          persistentVolumeClaim:
+            claimName: {{$slug}}-content
 {{- if .CACert}}
         - name: ca
           secret:

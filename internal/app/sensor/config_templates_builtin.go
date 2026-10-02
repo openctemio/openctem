@@ -95,7 +95,9 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 # yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
 # The {{$slug}}-state volume keeps the sensor's state, including the API key
 # it renews on its own: keep it with the container (a new container without it
-# starts with the key above, which a renewal has retired).
+# starts with the key above, which a renewal has retired). {{$slug}}-content
+# caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
+# container does not download it again; it can be deleted at any time.
 docker run -d --name {{$slug}} --restart unless-stopped \
   -e API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
@@ -112,6 +114,7 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- end}}
   -v {{$slug}}-outbox:/var/lib/openctem/outbox \
   -v {{$slug}}-state:/var/lib/openctem/state \
+  -v {{$slug}}-content:/var/lib/openctem/content \
   {{.Image}}
 
 # Check it: docker logs -f {{$slug}}   (the Sensors page shows it online
@@ -198,6 +201,7 @@ services:
       - outbox:/var/lib/openctem/outbox
 {{- if isDaemon .Sensor}}
       - state:/var/lib/openctem/state
+      - content:/var/lib/openctem/content
 {{- end}}
 {{- if not (isDaemon .Sensor)}}
       - ./src:/scan:ro
@@ -217,6 +221,9 @@ volumes:
   # without it the sensor starts with the key in .env, which a renewal has
   # retired.
   state:
+  # Scanner content cache (trivy DB, nuclei templates, semgrep rules); it can
+  # be deleted, the sensor downloads it again.
+  content:
 {{- end}}
 {{- if .CACert}}
 
@@ -282,6 +289,21 @@ spec:
     requests:
       storage: 64Mi
 ---
+# Scanner content cache (trivy DB, nuclei templates, semgrep rules), so a new
+# pod does not download it again. Disposable: it can be deleted.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{$slug}}-content
+  labels:
+    app.kubernetes.io/name: openctem-sensor
+    app.kubernetes.io/instance: {{$slug}}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -331,6 +353,8 @@ spec:
               mountPath: /var/lib/openctem/outbox
             - name: state
               mountPath: /var/lib/openctem/state
+            - name: content
+              mountPath: /var/lib/openctem/content
 {{- if .CACert}}
             - name: ca
               mountPath: /etc/openctem/certs
@@ -343,6 +367,9 @@ spec:
         - name: state
           persistentVolumeClaim:
             claimName: {{$slug}}-state
+        - name: content
+          persistentVolumeClaim:
+            claimName: {{$slug}}-content
 {{- if .CACert}}
         - name: ca
           secret:
@@ -444,7 +471,8 @@ helm upgrade openctem openctem/openctem --reuse-values \
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
   --set sensor.outbox.persistence.enabled=true \
-  --set sensor.state.persistence.enabled=true
+  --set sensor.state.persistence.enabled=true \
+  --set sensor.content.persistence.enabled=true
 {{- end}}
 `,
 }
