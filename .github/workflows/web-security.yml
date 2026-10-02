@@ -38,7 +38,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Node version: web/.nvmrc, the same major web/Dockerfile ships (node:26-alpine).
 defaults:
@@ -46,8 +46,10 @@ defaults:
     working-directory: web
 
 jobs:
-  npm-audit:
-    name: NPM Audit
+  # npm audit, Trivy (fs) and the ESLint security rules in ONE job (one runner,
+  # one npm ci). Each scan runs even if an earlier one failed (`!cancelled()`).
+  scan:
+    name: npm audit, Trivy, ESLint security (web)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -58,24 +60,21 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Run npm audit
-        run: npm audit --audit-level=high
+      - name: NPM Audit
         continue-on-error: true
-      - name: Run npm audit (JSON output)
+        run: npm audit --audit-level=high
+      - name: NPM Audit (JSON output)
+        if: ${{ !cancelled() }}
         run: npm audit --json > npm-audit-results.json || true
       - name: Upload audit results
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: npm-audit-results
           path: web/npm-audit-results.json
           retention-days: 30
-
-  trivy:
-    name: Trivy Vulnerability Scanner (web)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Run Trivy vulnerability scanner
+      - name: Trivy Vulnerability Scanner (web)
+        if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
@@ -85,31 +84,20 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
           scanners: 'vuln,secret,misconfig'
       - name: Upload Trivy scan results
+        if: ${{ !cancelled() && hashFiles('trivy-web.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-web.sarif'
           category: trivy-web
-
-  eslint-security:
-    name: ESLint Security
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: web/.nvmrc
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Install SARIF formatter
-        run: npm install --no-save @microsoft/eslint-formatter-sarif@3.1.0
-      - name: Run ESLint
-        run: npx eslint . --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif
+      - name: ESLint Security
+        if: ${{ !cancelled() }}
         continue-on-error: true
+        run: |
+          npm install --no-save @microsoft/eslint-formatter-sarif@3.1.0
+          npx eslint . --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif
       - name: Upload ESLint results
+        if: ${{ !cancelled() && hashFiles('web/eslint-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: web/eslint-results.sarif
           category: eslint-web

@@ -39,7 +39,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
 # version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
@@ -52,8 +52,11 @@ defaults:
     working-directory: api
 
 jobs:
-  govulncheck:
-    name: Go Vulnerability Check
+  # govulncheck, Trivy (fs) and the license check in ONE job (one runner, one
+  # checkout, one setup-go). Each scan runs even if an earlier one failed
+  # (`!cancelled()`), so one failure does not hide the others' results.
+  scan:
+    name: Go vulnerabilities, Trivy, licenses (api)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -62,17 +65,12 @@ jobs:
           go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
-      - name: Run govulncheck
-        run: govulncheck ./...
-
-  trivy:
-    name: Trivy Vulnerability Scanner (api)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Run Trivy vulnerability scanner
+      - name: Go Vulnerability Check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          govulncheck ./...
+      - name: Trivy Vulnerability Scanner (api)
+        if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
@@ -84,10 +82,16 @@ jobs:
           scanners: 'vuln,secret,misconfig'
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: ${{ !cancelled() && hashFiles('trivy-api.sarif') != '' }}
         with:
           sarif_file: 'trivy-api.sarif'
           category: trivy-api
+      - name: License Compliance (api)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          go install github.com/google/go-licenses@v1.6.0
+          go-licenses check ./... --disallowed_types=forbidden,restricted || true
 
   semgrep:
     name: Semgrep (api)
@@ -132,22 +136,6 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high --file=api/go.mod
-
-  license-check:
-    name: License Compliance (api)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: api/go.mod
-          cache: true
-          cache-dependency-path: api/go.sum
-      - name: Install go-licenses
-        run: go install github.com/google/go-licenses@v1.6.0
-      - name: Check licenses
-        run: go-licenses check ./... --disallowed_types=forbidden,restricted || true
-        continue-on-error: true
 
   # Weekly sweep + main pushes + PRs into main (release candidates). Not on every
   # PR: building the image costs minutes and the fs scan covers dependencies.

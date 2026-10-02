@@ -21,7 +21,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -49,8 +49,11 @@ jobs:
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/changed.sh
 
+  # Quality checks and the Vitest suite in ONE job (one runner, one npm ci).
+  # Same on a PR, in the merge queue and on push; `next build` stays push-only
+  # (All-in-one CI builds the web image in the merge queue).
   quality:
-    name: Quality Checks
+    name: Web checks
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
@@ -92,22 +95,9 @@ jobs:
           base="$(bash ../.github/scripts/effective-base.sh web "origin/${{ github.base_ref }}")"
           bash scripts/check-palette-drift.sh "$base"
 
-  test:
-    name: Test
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: web/.nvmrc
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
-      - name: Install dependencies
-        run: npm ci
       - name: Run tests
         run: npm test -- --run --coverage --passWithNoTests
+
       - name: Upload coverage
         uses: codecov/codecov-action@v7
         with:
@@ -118,7 +108,7 @@ jobs:
 
   build:
     name: Build
-    needs: [changes, quality, test]
+    needs: [changes, quality]
     if: needs.changes.outputs.web == 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
@@ -146,13 +136,18 @@ jobs:
   web-ok:
     name: Web CI OK
     if: always()
-    needs: [changes, quality, test, build]
+    needs: [changes, quality, build]
     runs-on: ubuntu-latest
     steps:
-      - name: All web jobs passed or were skipped
+      - name: All web jobs passed or were skipped; the checks ran when web changed
         working-directory: .
         env:
           NEEDS: ${{ toJSON(needs) }}
+          WEB: ${{ needs.changes.outputs.web }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null
+          for j in changes $([ "$WEB" = true ] && echo quality); do
+            r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
+            if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi
+          done

@@ -13,6 +13,11 @@ name: All-in-one CI
 # the root Makefile; see .github/scripts/changed.sh) changes: both images are
 # built from the whole component directory, so any change there is an image
 # change. A docs-only change at the root runs nothing.
+#
+# FULL tier only: the merge queue and pushes to develop/main build the images;
+# a pull_request does not (the image build is the single most expensive job, and
+# the queue tests the PR on its final base anyway). On a PR, `All-in-one OK`
+# passes with the build skipped; in the queue it requires the build.
 
 on:
   push:
@@ -24,7 +29,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -49,7 +54,7 @@ jobs:
   images:
     name: Build and smoke-test images (amd64)
     needs: changes
-    if: needs.changes.outputs.images == 'true'
+    if: needs.changes.outputs.images == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -101,9 +106,17 @@ jobs:
     needs: [changes, images]
     runs-on: ubuntu-latest
     steps:
-      - name: All jobs passed or were skipped
+      - name: All jobs passed or were skipped; the build ran where it must
         env:
           NEEDS: ${{ toJSON(needs) }}
+          IMAGES: ${{ needs.changes.outputs.images }}
+          EVENT: ${{ github.event_name }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null
+          r="$(echo "$NEEDS" | jq -r '.changes.result')"
+          if [ "$r" != success ]; then echo "::error::changes must pass, got: $r"; exit 1; fi
+          if [ "$IMAGES" = true ] && [ "$EVENT" != pull_request ]; then
+            r="$(echo "$NEEDS" | jq -r '.images.result')"
+            if [ "$r" != success ]; then echo "::error::the image build must run and pass for $EVENT, got: $r"; exit 1; fi
+          fi

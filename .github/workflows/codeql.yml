@@ -7,12 +7,17 @@ name: CodeQL
 # monorepo pattern). '/language:go' is the category openctemio/api already
 # used, so existing Go alerts keep matching after the move.
 #
-# Which languages: on a pull request (and merge_group) only the side that
-# changed (api/ -> go, web/ -> javascript-typescript, shared files -> both;
-# rules in .github/scripts/changed.sh). On a push to develop/main and on the
-# weekly schedule, ALWAYS both: code scanning compares each PR against the
-# latest analysis of every category on the base branch, so the base needs a
-# fresh baseline for both languages.
+# Which languages:
+#   pull_request   only the side that changed (api/ -> go, web/ ->
+#                  javascript-typescript, shared files -> both; rules in
+#                  .github/scripts/changed.sh). Alerts show up on the PR.
+#   merge_group    none: the PR head was already analysed, and CodeQL never
+#                  fails a run on findings, so a second analysis of the same
+#                  code in the queue would cost a runner for no gate.
+#                  `CodeQL OK` passes with the matrix skipped.
+#   push, weekly   ALWAYS both: code scanning compares each PR against the
+#                  latest analysis of every category on the base branch, so
+#                  develop/main need a fresh baseline for both languages.
 
 on:
   push:
@@ -31,11 +36,14 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
     name: Detect changes
+    # merge_group analyses nothing (see the header), so do not even spend a
+    # runner on detection; `CodeQL OK` passes with everything skipped.
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     outputs:
       languages: ${{ steps.lang.outputs.languages }}
