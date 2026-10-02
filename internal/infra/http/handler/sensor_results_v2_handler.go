@@ -65,7 +65,7 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
 			return
 		}
-		id, err := h.sensors.AuthenticateIdentity(r.Context(), key)
+		id, err := h.sensors.AuthenticateIdentityFrom(r.Context(), key, getClientIP(r))
 		if err == nil && id.Paused && !isV2HeartbeatRequest(r) && !isV2HelloRequest(r) {
 			err = errSensorPaused
 		}

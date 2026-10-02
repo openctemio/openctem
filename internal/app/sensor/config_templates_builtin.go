@@ -35,6 +35,11 @@ server:
 outbox:
   dir: /var/lib/openctem/outbox
 
+# The sensor keeps its state, including the API key it renews on its own, in
+# SENSOR_STATE_DIR (default /var/lib/openctem/state, else ~/.openctem). Keep
+# that directory: without it the sensor starts with api_key above, which a
+# renewal has retired.
+
 scanners:
 {{- with tools .Sensor.Tools}}
 {{- range .}}
@@ -88,6 +93,11 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 # {{if .CACert}}2. {{end}}Start the sensor. It connects out to the platform (no inbound port)
 # and runs the scans the platform dispatches. Results that cannot be delivered
 # yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
+# The {{$slug}}-state volume keeps the sensor's state, including the API key
+# it renews on its own: keep it with the container (a new container without it
+# starts with the key above, which a renewal has retired). {{$slug}}-content
+# caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
+# container does not download it again; it can be deleted at any time.
 docker run -d --name {{$slug}} --restart unless-stopped \
   -e API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
@@ -103,6 +113,8 @@ docker run -d --name {{$slug}} --restart unless-stopped \
   -v /etc/openctem/certs:/etc/openctem/certs:ro \
 {{- end}}
   -v {{$slug}}-outbox:/var/lib/openctem/outbox \
+  -v {{$slug}}-state:/var/lib/openctem/state \
+  -v {{$slug}}-content:/var/lib/openctem/content \
   {{.Image}}
 
 # Check it: docker logs -f {{$slug}}   (the Sensors page shows it online
@@ -141,7 +153,9 @@ export API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}"
 export SSL_CERT_DIR=/etc/openctem/certs
 {{- end}}
 
-# Long-running: run the scans the platform dispatches
+# Long-running: run the scans the platform dispatches. The sensor keeps its
+# state, including the API key it renews on its own, in SENSOR_STATE_DIR
+# (default /var/lib/openctem/state when writable, else ~/.openctem).
 ./openctemio-sensor -daemon -enable-commands{{with toolList .Sensor.Tools}} -tools {{.}}{{end}}
 
 # One-shot: scan a directory once and send the results
@@ -185,6 +199,10 @@ services:
 {{- end}}
     volumes:
       - outbox:/var/lib/openctem/outbox
+{{- if isDaemon .Sensor}}
+      - state:/var/lib/openctem/state
+      - content:/var/lib/openctem/content
+{{- end}}
 {{- if not (isDaemon .Sensor)}}
       - ./src:/scan:ro
 {{- end}}
@@ -198,6 +216,15 @@ services:
 volumes:
   # Results that cannot be delivered yet; a restart or an outage loses nothing.
   outbox:
+{{- if isDaemon .Sensor}}
+  # The sensor's state, including the API key it renews on its own. Keep it:
+  # without it the sensor starts with the key in .env, which a renewal has
+  # retired.
+  state:
+  # Scanner content cache (trivy DB, nuclei templates, semgrep rules); it can
+  # be deleted, the sensor downloads it again.
+  content:
+{{- end}}
 {{- if .CACert}}
 
 configs:
@@ -247,6 +274,36 @@ spec:
     requests:
       storage: 2Gi
 ---
+# The sensor's state, including the API key it renews on its own (the Secret
+# above keeps the key it was installed with, which a renewal retires).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{$slug}}-state
+  labels:
+    app.kubernetes.io/name: openctem-sensor
+    app.kubernetes.io/instance: {{$slug}}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 64Mi
+---
+# Scanner content cache (trivy DB, nuclei templates, semgrep rules), so a new
+# pod does not download it again. Disposable: it can be deleted.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{$slug}}-content
+  labels:
+    app.kubernetes.io/name: openctem-sensor
+    app.kubernetes.io/instance: {{$slug}}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -270,7 +327,7 @@ spec:
         app.kubernetes.io/instance: {{$slug}}
     spec:
       securityContext:
-        # The image runs as uid/gid 999; this lets it write the outbox volume.
+        # The image runs as uid/gid 999; this lets it write its volumes.
         fsGroup: 999
       containers:
         - name: sensor
@@ -294,6 +351,10 @@ spec:
           volumeMounts:
             - name: outbox
               mountPath: /var/lib/openctem/outbox
+            - name: state
+              mountPath: /var/lib/openctem/state
+            - name: content
+              mountPath: /var/lib/openctem/content
 {{- if .CACert}}
             - name: ca
               mountPath: /etc/openctem/certs
@@ -303,6 +364,12 @@ spec:
         - name: outbox
           persistentVolumeClaim:
             claimName: {{$slug}}-outbox
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{$slug}}-state
+        - name: content
+          persistentVolumeClaim:
+            claimName: {{$slug}}-content
 {{- if .CACert}}
         - name: ca
           secret:
@@ -403,7 +470,9 @@ helm upgrade openctem openctem/openctem --reuse-values \
 {{- with toolList .Sensor.Tools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
-  --set sensor.outbox.persistence.enabled=true
+  --set sensor.outbox.persistence.enabled=true \
+  --set sensor.state.persistence.enabled=true \
+  --set sensor.content.persistence.enabled=true
 {{- end}}
 `,
 }

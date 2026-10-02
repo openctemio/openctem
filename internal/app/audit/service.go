@@ -1007,6 +1007,18 @@ func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContex
 	return s.LogEvent(ctx, actx, event)
 }
 
+// LogSensorIdentityCloned records that two live processes used the same
+// sensor key (clone detection). Severity high: the key has been copied or is
+// shared between replicas, and the administrator should regenerate it.
+func (s *AuditService) LogSensorIdentityCloned(ctx context.Context, actx AuditContext, sensorID, sensorName string, instances int) error {
+	event := NewSuccessEvent(auditdom.ActionSensorIdentityCloned, auditdom.ResourceTypeSensor, sensorID).
+		WithResourceName(sensorName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Sensor '%s': two processes are using the same API key", sensorName)).
+		WithMetadata("live_instances", instances)
+	return s.LogEvent(ctx, actx, event)
+}
+
 // LogAPIKeyCreated logs the creation of a tenant `oct_` API key. Only the key
 // id, name and granted scopes are recorded — nothing derived from the secret
 // (the hash-chained audit row must not carry key material, not even a prefix).

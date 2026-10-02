@@ -42,6 +42,10 @@ type SensorService struct {
 	// access to application config cannot brute-force the raw API key
 	// from a leaked key_hash column.
 	pepper string
+	// legacyPeppers are earlier peppers whose hashes still verify (RFC-032
+	// Phase 0: the pepper used to be APP_ENCRYPTION_KEY itself). New and
+	// renewed keys are always hashed with pepper.
+	legacyPeppers []string
 	// keyTTL is how long a self-renewed API key stays valid before it must be
 	// renewed again (RFC-014 Phase 1b). Zero (the default) disables expiry:
 	// renewed keys never expire, preserving today's behavior. Set via
@@ -136,6 +140,35 @@ func (s *SensorService) SetLoadBalancingWeights(w sensordom.LoadBalancingWeights
 // handles any traffic.
 func (s *SensorService) SetPepper(pepper string) {
 	s.pepper = pepper
+}
+
+// SetLegacyPeppers configures earlier peppers whose hashes keep verifying:
+// a key stored under one of them still authenticates, while every new or
+// renewed key is stored under the current pepper. Empty values and the
+// current pepper are ignored. Call once at boot after SetPepper.
+func (s *SensorService) SetLegacyPeppers(peppers ...string) {
+	s.legacyPeppers = s.legacyPeppers[:0]
+	for _, p := range peppers {
+		if p != "" && p != s.pepper && !slices.Contains(s.legacyPeppers, p) {
+			s.legacyPeppers = append(s.legacyPeppers, p)
+		}
+	}
+}
+
+// candidateHashes are the stored hashes a presented key may match, current
+// pepper first: the current pepper, each legacy pepper, then the plain
+// SHA-256 of rows written before any pepper (only when a pepper is set;
+// without one the first entry already is the plain hash).
+func (s *SensorService) candidateHashes(apiKey string) []string {
+	out := make([]string, 0, 2+len(s.legacyPeppers))
+	out = append(out, s.hashSensorAPIKey(apiKey))
+	for _, p := range s.legacyPeppers {
+		out = append(out, crypto.HashTokenPeppered(apiKey, p))
+	}
+	if s.pepper != "" || len(s.legacyPeppers) > 0 {
+		out = append(out, crypto.HashToken(apiKey))
+	}
+	return slices.Compact(out)
 }
 
 // SetKeyTTL configures how long a self-renewed API key stays valid. Zero (the
@@ -382,6 +415,10 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 type SensorHeartbeatData struct {
 	Version  string
 	Hostname string
+	// InstanceID is the random id the sensor process picked at start (sdk-go
+	// v0.12+; "" from older SDKs, which are observed by hostname instead).
+	// Untrusted; sanitized before use. Drives clone detection (identity.go).
+	InstanceID string
 	// IPAddress is the address the heartbeat came from, resolved by the HTTP
 	// layer with the trusted-proxy rule. Never taken from the request body:
 	// the sensor is untrusted. An empty or unparseable value keeps the
@@ -571,6 +608,8 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		return nil
 	}
 
+	s.observeInstance(ctx, a, data.InstanceID, data.Hostname, now)
+
 	// Record a connect event only on an offline/unknown/error -> online
 	// transition. Tenant sensors only: platform sensors (TenantID == nil) are
 	// shared infrastructure with no owning tenant to scope the audit log to.
@@ -609,6 +648,46 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	}
 
 	return nil
+}
+
+// observeInstance feeds the heartbeat's process instance to clone
+// detection (pkg/domain/sensor/identity.go). An unchanged instance (every
+// steady-state heartbeat) costs nothing; a change is applied under a row
+// lock. When two live instances alternate the identity is flagged once:
+// an event on the sensor's timeline and a high-severity audit entry.
+// Best-effort: a failure is logged and never fails the heartbeat.
+func (s *SensorService) observeInstance(ctx context.Context, a *sensordom.Sensor, instanceID, hostname string, now time.Time) {
+	obs, ok := s.repo.(sensordom.InstanceObserver)
+	if !ok || a.TenantID == nil {
+		return
+	}
+	inst := sensordom.HeartbeatInstance(instanceID, hostname)
+	if inst == "" || inst == a.InstanceID {
+		return
+	}
+	var lastSeen time.Time
+	if a.LastSeenAt != nil {
+		lastSeen = *a.LastSeenAt
+	}
+	verdict, flagged, err := obs.ObserveInstance(ctx, a.ID, inst, now, lastSeen)
+	if err != nil {
+		s.logger.Warn("failed to observe sensor instance", "sensor_id", a.ID.String(), "error", err)
+		return
+	}
+	if !flagged {
+		return
+	}
+	s.logger.Warn("sensor identity cloned: two live instances use the same key",
+		"sensor_id", a.ID.String(), "instances", len(verdict.Live))
+	s.recordEvents(ctx, []sensordom.Event{sensordom.NewEvent(*a.TenantID, a.ID, sensordom.EventIdentityCloned, now,
+		"Two sensor processes are using the same API key",
+		map[string]any{"instances": verdict.Live})})
+	if s.auditService != nil {
+		s.warnAudit(s.auditService.LogSensorIdentityCloned(ctx, auditapp.AuditContext{
+			TenantID:   a.TenantID.String(),
+			ActorEmail: sensorAuditSystemActor,
+		}, a.ID.String(), a.Name, len(verdict.Live)), "LogSensorIdentityCloned", a.ID.String())
+	}
 }
 
 // RecordOffline records the offline transition of a sensor the health
@@ -766,6 +845,14 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 
 	if err := s.revokeAllKeyRows(ctx, a.ID, "regenerated"); err != nil {
 		return "", fmt.Errorf("revoke renewed keys: %w", err)
+	}
+
+	// Copies of the old key can no longer connect: a cloned-identity flag
+	// raised against it is resolved.
+	if obs, ok := s.repo.(sensordom.InstanceObserver); ok && a.IdentityClonedAt != nil {
+		if err := obs.ClearIdentityCloned(ctx, a.ID); err != nil {
+			s.logger.Warn("failed to clear the cloned-identity flag", "sensor_id", a.ID.String(), "error", err)
+		}
 	}
 
 	// Audit logging
@@ -972,7 +1059,7 @@ func scopesForSensor(t sensordom.SensorType) []string {
 // - Revoked: access permanently revoked
 // The Health field (unknown/online/offline/error) is for monitoring only.
 func (s *SensorService) AuthenticateByAPIKey(ctx context.Context, apiKey string) (*sensordom.Sensor, error) {
-	id, err := s.authenticate(ctx, apiKey, false)
+	id, err := s.authenticate(ctx, apiKey, "", false)
 	if err != nil {
 		return nil, err
 	}
@@ -1000,29 +1087,37 @@ type SensorIdentity struct {
 // told to pause (RFC-023 §9.2a). A paused sensor's last-seen time is not
 // touched.
 func (s *SensorService) AuthenticateIdentity(ctx context.Context, apiKey string) (SensorIdentity, error) {
-	return s.authenticate(ctx, apiKey, true)
+	return s.authenticate(ctx, apiKey, "", true)
 }
 
-func (s *SensorService) authenticate(ctx context.Context, apiKey string, allowPaused bool) (SensorIdentity, error) {
-	// Backward-compat lookup: try the peppered hash first; on miss
-	// fall back to the legacy plain SHA-256. Rows written before the
-	// pepper was deployed match the legacy variant; the next key
-	// rotation will move them to peppered. When no pepper is
-	// configured both branches collapse to plain SHA-256 (same hash)
-	// so the lookup remains a single DB hit.
-	hash := s.hashSensorAPIKey(apiKey)
-	a, err := s.repo.GetByAPIKeyHash(ctx, hash)
-	if err != nil && s.pepper != "" {
-		// Legacy fallback: a row written without pepper would have a
-		// plain SHA-256 hash, not the peppered one we just computed.
-		legacyHash := crypto.HashToken(apiKey)
-		a, err = s.repo.GetByAPIKeyHash(ctx, legacyHash)
+// AuthenticateIdentityFrom is AuthenticateIdentity for a request from
+// clientIP (the HTTP layer's trusted-proxy-aware client address, never a
+// value the sensor chose): the address is recorded on the key use, and a
+// change of address is written to the sensor's activity timeline.
+func (s *SensorService) AuthenticateIdentityFrom(ctx context.Context, apiKey, clientIP string) (SensorIdentity, error) {
+	return s.authenticate(ctx, apiKey, clientIP, true)
+}
+
+func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP string, allowPaused bool) (SensorIdentity, error) {
+	// Lookup by each stored-hash variant the key may have: current pepper,
+	// earlier peppers (RFC-032 Phase 0), plain SHA-256 (rows from before any
+	// pepper). Each is an equality match on the unique index; the common
+	// case (a key stored under the current pepper) is one query.
+	hashes := s.candidateHashes(apiKey)
+	var (
+		a   *sensordom.Sensor
+		err = shared.ErrNotFound
+	)
+	for _, h := range hashes {
+		if a, err = s.repo.GetByAPIKeyHash(ctx, h); err == nil {
+			break
+		}
 	}
 	if err != nil {
 		// Inline-hash miss: try the multi-key store (RFC-014 Phase 3). Only
 		// reached for keys issued by self-renewal under rotation overlap; the
 		// common inline-key path above is unchanged.
-		if id, rowErr := s.authByAPIKeyRow(ctx, apiKey, hash, allowPaused); rowErr == nil {
+		if id, rowErr := s.authByAPIKeyRow(ctx, hashes, clientIP, allowPaused); rowErr == nil {
 			return id, nil
 		}
 		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
@@ -1043,17 +1138,41 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey string, allowPa
 	}
 
 	if !paused {
-		// Update last seen and health (async). Bounded with a timeout so a slow DB
-		// can't accumulate unbounded goroutines under heavy sensor traffic.
-		sensorID := a.ID
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = s.repo.UpdateLastSeen(ctx, sensorID)
-		}()
+		s.recordKeyUseAsync(a, clientIP, nil)
 	}
 
 	return SensorIdentity{Sensor: a, KeyExpiresAt: a.KeyExpiresAt, Paused: paused}, nil
+}
+
+// recordKeyUseAsync marks the sensor seen and records where the key was
+// used from, off the request path (bounded by a timeout so a slow database
+// cannot pile up goroutines under sensor traffic). keyUsage, when set,
+// records the use on the sensor_api_keys row too.
+func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, keyUsage func(context.Context, string)) {
+	sensorID, tenantID, name := a.ID, a.TenantID, a.Name
+	ip := net.ParseIP(clientIP)
+	go func() {
+		bg, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if keyUsage != nil {
+			keyUsage(bg, clientIP)
+		}
+		rec, ok := s.repo.(sensordom.KeyUseRecorder)
+		if !ok {
+			_ = s.repo.UpdateLastSeen(bg, sensorID)
+			return
+		}
+		prev, err := rec.RecordKeyUse(bg, sensorID, ip)
+		if err != nil {
+			s.logger.Debug("failed to record sensor key use", "sensor_id", sensorID.String(), "error", err)
+			return
+		}
+		if ip != nil && prev != nil && !prev.Equal(ip) && tenantID != nil {
+			s.recordEvents(bg, []sensordom.Event{sensordom.NewEvent(*tenantID, sensorID, sensordom.EventKeyIPChanged, s.now(),
+				fmt.Sprintf("The API key was used from %s (before: %s)", ip, prev),
+				map[string]any{"ip": ip.String(), "previous_ip": prev.String(), "sensor_name": name})})
+		}
+	}()
 }
 
 // checkSensorStatus applies the admin-controlled status: active passes,
@@ -1078,14 +1197,19 @@ func checkSensorStatus(a *sensordom.Sensor, allowPaused bool) (paused bool, err 
 // admin-controlled status still governs — a revoked/disabled sensor cannot
 // authenticate with any of its keys (a disabled one only reaches the
 // heartbeat, as paused, when allowPaused).
-func (s *SensorService) authByAPIKeyRow(ctx context.Context, apiKey, pepperedHash string, allowPaused bool) (SensorIdentity, error) {
+func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, clientIP string, allowPaused bool) (SensorIdentity, error) {
 	if s.apiKeyRepo == nil {
 		return SensorIdentity{}, shared.ErrUnauthorized
 	}
 
-	key, err := s.apiKeyRepo.GetByHash(ctx, pepperedHash)
-	if err != nil && s.pepper != "" {
-		key, err = s.apiKeyRepo.GetByHash(ctx, crypto.HashToken(apiKey))
+	var (
+		key *sensordom.APIKey
+		err = shared.ErrNotFound
+	)
+	for _, h := range hashes {
+		if key, err = s.apiKeyRepo.GetByHash(ctx, h); err == nil {
+			break
+		}
 	}
 	if err != nil || key == nil || !key.IsValid() {
 		return SensorIdentity{}, shared.ErrUnauthorized
@@ -1103,14 +1227,11 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, apiKey, pepperedHas
 		return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, Paused: true}, nil
 	}
 
-	// Async per-key audit + sensor liveness.
-	keyID, sensorID := key.ID, a.ID
-	go func() {
-		bg, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.apiKeyRepo.RecordUsage(bg, keyID, "")
-		_ = s.repo.UpdateLastSeen(bg, sensorID)
-	}()
+	// Async per-key usage (count, time, client address) + sensor liveness.
+	keyID := key.ID
+	s.recordKeyUseAsync(a, clientIP, func(bg context.Context, ip string) {
+		_ = s.apiKeyRepo.RecordUsage(bg, keyID, ip)
+	})
 
 	return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt}, nil
 }

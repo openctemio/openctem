@@ -202,8 +202,9 @@ func freeSlotsNow(s *sensor.Sensor) *int {
 // User-Agent for the fleet's protocol telemetry (RFC-029 §5.3).
 func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.SensorHeartbeatData {
 	return app.SensorHeartbeatData{
-		Version:  req.Version,
-		Hostname: req.Hostname,
+		Version:    req.Version,
+		Hostname:   req.Hostname,
+		InstanceID: req.InstanceID,
 		// The connection's address under the trusted-proxy rule, so a sensor
 		// cannot claim someone else's address.
 		IPAddress:     getClientIP(r),

@@ -524,6 +524,15 @@ components:
         status: { type: string }
         version: { type: string }
         hostname: { type: string }
+        instance_id:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._-]+$'
+          description: >-
+            Random id the sensor process picks at start (sdk-go v0.12+). Two live
+            instances alternating on one key flag the sensor as a cloned
+            identity (RFC-032 Phase 0). Optional; without it the platform
+            observes the hostname.
         message: { type: string }
         scanners: { type: array, items: { type: string } }
         collectors: { type: array, items: { type: string } }

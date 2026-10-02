@@ -312,6 +312,107 @@ func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) err
 	return err
 }
 
+// RecordKeyUse marks the sensor seen and records the client address of the
+// key use (sensor.KeyUseRecorder). The previous address is read in the same
+// statement, so two concurrent requests each see the address before their
+// own write.
+func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP) (net.IP, error) {
+	query := `
+		WITH prev AS (
+			SELECT id, host(api_key_last_used_ip) AS ip FROM sensors WHERE id = $1
+		)
+		UPDATE sensors s
+		SET last_seen_at = NOW(),
+		    health = 'online',
+		    updated_at = NOW(),
+		    api_key_last_used_at = NOW(),
+		    api_key_last_used_ip = COALESCE($2::inet, s.api_key_last_used_ip)
+		FROM prev
+		WHERE s.id = prev.id
+		RETURNING prev.ip
+	`
+	var prev sql.NullString
+	err := r.db.QueryRowContext(ctx, query, id.String(), heartbeatIP(ip)).Scan(&prev)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("record sensor key use: %w", err)
+	}
+	if !prev.Valid {
+		return nil, nil
+	}
+	return parseIP(prev.String), nil
+}
+
+// ObserveInstance applies the clone-detection observation to an active
+// sensor under a row lock (sensor.InstanceObserver).
+func (r *SensorRepository) ObserveInstance(ctx context.Context, id shared.ID, instance string, now, currentLastSeen time.Time) (sensor.InstanceVerdict, bool, error) {
+	var verdict sensor.InstanceVerdict
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return verdict, false, fmt.Errorf("observe sensor instance: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		raw    []byte
+		cloned sql.NullTime
+	)
+	err = tx.QueryRowContext(ctx, `
+		SELECT instance_state, identity_cloned_at FROM sensors
+		WHERE id = $1 AND status = 'active'
+		FOR UPDATE`, id.String()).Scan(&raw, &cloned)
+	if errors.Is(err, sql.ErrNoRows) {
+		return verdict, false, nil
+	}
+	if err != nil {
+		return verdict, false, fmt.Errorf("observe sensor instance: %w", err)
+	}
+	var st sensor.InstanceState
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &st); err != nil {
+			st = sensor.InstanceState{} // a corrupt state starts over
+		}
+	}
+	next, verdict := st.Observe(instance, now, currentLastSeen)
+	flag := verdict.Cloned && !cloned.Valid
+	data, err := json.Marshal(next)
+	if err != nil {
+		return verdict, false, fmt.Errorf("observe sensor instance: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sensors
+		SET instance_state = $2,
+		    instance_id = $3,
+		    identity_cloned_at = CASE WHEN $4 THEN $5 ELSE identity_cloned_at END
+		WHERE id = $1`, id.String(), data, instance, flag, now); err != nil {
+		return verdict, false, fmt.Errorf("observe sensor instance: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return verdict, false, fmt.Errorf("observe sensor instance: %w", err)
+	}
+	return verdict, flag, nil
+}
+
+// ClearIdentityCloned removes the cloned-identity flag and the instance
+// memory (sensor.InstanceObserver).
+func (r *SensorRepository) ClearIdentityCloned(ctx context.Context, id shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE sensors
+		SET identity_cloned_at = NULL, instance_state = '{}'::jsonb, instance_id = NULL, updated_at = NOW()
+		WHERE id = $1`, id.String())
+	if err != nil {
+		return fmt.Errorf("clear sensor identity flag: %w", err)
+	}
+	return nil
+}
+
+var (
+	_ sensor.KeyUseRecorder   = (*SensorRepository)(nil)
+	_ sensor.InstanceObserver = (*SensorRepository)(nil)
+)
+
 // UpdateKeyExpiry sets only the inline API-key expiry. The status = 'active'
 // guard means it is a no-op for a concurrently disabled/revoked sensor, so it can
 // never revive one — unlike a full-row Update that would rewrite status.
@@ -687,7 +788,9 @@ func (r *SensorRepository) selectQuery() string {
 		       reported_tools, reported_capabilities, reported_max_jobs,
 		       reported_os, reported_arch, reported_at,
 		       reported_resources, reported_capacity, reported_queue, load_reported_at,
-		       sdk_name, sdk_version, sensor_product, sensor_commit, sensor_build_time
+		       sdk_name, sdk_version, sensor_product, sensor_commit, sensor_build_time,
+		       api_key_last_used_at, host(api_key_last_used_ip),
+		       instance_id, instance_state, identity_cloned_at
 		FROM sensors
 	`
 }
@@ -838,6 +941,11 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		sensorProduct    sql.NullString
 		sensorCommit     sql.NullString
 		sensorBuildTime  sql.NullTime
+		keyLastUsedAt    sql.NullTime
+		keyLastUsedIP    sql.NullString
+		instanceID       sql.NullString
+		instanceState    []byte
+		identityCloned   sql.NullTime
 	)
 
 	err := row.Scan(
@@ -903,6 +1011,11 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&sensorProduct,
 		&sensorCommit,
 		&sensorBuildTime,
+		&keyLastUsedAt,
+		&keyLastUsedIP,
+		&instanceID,
+		&instanceState,
+		&identityCloned,
 	)
 
 	if err != nil {
@@ -1002,6 +1115,22 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		Product: sensorProduct.String, Commit: sensorCommit.String}
 	if sensorBuildTime.Valid {
 		a.Build.BuildTime = &sensorBuildTime.Time
+	}
+
+	if keyLastUsedAt.Valid {
+		a.KeyLastUsedAt = &keyLastUsedAt.Time
+	}
+	if keyLastUsedIP.Valid {
+		a.KeyLastUsedIP = parseIP(keyLastUsedIP.String)
+	}
+	a.InstanceID = instanceID.String
+	if len(instanceState) > 0 {
+		if err := json.Unmarshal(instanceState, &a.InstanceState); err != nil {
+			log.Printf("[DEBUG] failed to unmarshal sensor instance state (id=%s): %v", a.ID, err)
+		}
+	}
+	if identityCloned.Valid {
+		a.IdentityClonedAt = &identityCloned.Time
 	}
 
 	a.Reported = scanReported(a.ID, reportedTools, reportedCaps, reportedMaxJobs, reportedOS, reportedArch, reportedAt)

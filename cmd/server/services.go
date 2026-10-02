@@ -1304,12 +1304,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize sensor & command services
 	s.Sensor = app.NewSensorService(repos.Sensor, s.Audit, log)
-	// Pepper the sensor API-key hash with the platform encryption key
-	// (or its absence in dev). HMAC-SHA256(pepper, key) stops a DB-only
-	// leak from being brute-forced offline. New keys hash with pepper;
-	// AuthenticateByAPIKey falls back to the legacy plain-SHA256 lookup
-	// for rows written before the pepper was deployed.
-	s.Sensor.SetPepper(cfg.Encryption.Key)
+	// Pepper the sensor API-key hash: HMAC-SHA256(pepper, key) stops a
+	// DB-only leak from being brute-forced offline. The pepper is
+	// SENSOR_KEY_PEPPER, else derived from APP_ENCRYPTION_KEY with HKDF (no
+	// key serves two purposes; RFC-032 Phase 0). Keys stored under the
+	// previous pepper (APP_ENCRYPTION_KEY itself) and plain-SHA256 rows from
+	// before any pepper keep authenticating; new and renewed keys are stored
+	// under the current pepper.
+	sensorPepper, sensorLegacyPeppers := sensorapp.SensorKeyPeppers(cfg.SensorConfig.KeyPepper, cfg.Encryption.Key, cfg.SensorConfig.KeyPepperPrevious...)
+	s.Sensor.SetPepper(sensorPepper)
+	s.Sensor.SetLegacyPeppers(sensorLegacyPeppers...)
 	// Optional short-lived sensor credentials (RFC-014 Phase 1b). Zero =
 	// disabled (renewed keys never expire), preserving today's behavior.
 	s.Sensor.SetKeyTTL(cfg.SensorConfig.KeyTTL)

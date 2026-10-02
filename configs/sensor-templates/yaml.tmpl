@@ -23,6 +23,11 @@ server:
 outbox:
   dir: /var/lib/openctem/outbox
 
+# The sensor keeps its state, including the API key it renews on its own, in
+# SENSOR_STATE_DIR (default /var/lib/openctem/state, else ~/.openctem). Keep
+# that directory: without it the sensor starts with api_key above, which a
+# renewal has retired.
+
 scanners:
 {{- with tools .Sensor.Tools}}
 {{- range .}}

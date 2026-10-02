@@ -3177,6 +3177,28 @@ definitions:
       title:
         type: string
     type: object
+  github_com_openctemio_api_pkg_domain_scan.ConfigSecretReason:
+    enum:
+    - key_name
+    - known_format
+    - high_entropy
+    type: string
+    x-enum-varnames:
+    - SecretReasonKeyName
+    - SecretReasonKnownFormat
+    - SecretReasonHighEntropy
+  github_com_openctemio_api_pkg_domain_scan.ConfigSecretWarning:
+    properties:
+      path:
+        description: |-
+          Path locates the value: dotted keys, [n] for list items
+          ("headers.Authorization", "args[2]").
+        type: string
+      reason:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scan.ConfigSecretReason'
+        description: Reason is why it was flagged.
+    type: object
   github_com_openctemio_api_pkg_domain_scanprofile.FindingCounts:
     properties:
       critical:
@@ -8003,6 +8025,11 @@ definitions:
         type: integer
       hostname:
         type: string
+      instance_id:
+        description: |-
+          InstanceID is the random id of the sensor process (sdk-go v0.12+), for
+          clone detection. Optional; older SDKs do not send it.
+        type: string
       max_concurrent_jobs:
         type: integer
       memory_percent:
@@ -9956,6 +9983,16 @@ definitions:
       scanner_config:
         additionalProperties: {}
         type: object
+      scanner_config_warnings:
+        description: |-
+          ScannerConfigWarnings lists scanner_config values that look like
+          secrets (a token, a password, an Authorization header). The config is
+          sent to the sensor in clear inside every command, so a secret there
+          travels and rests unprotected. A warning, never a refusal; the value
+          itself is never echoed (RFC-032 Phase 0).
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_scan.ConfigSecretWarning'
+        type: array
       scanner_name:
         type: string
       schedule_cron:
@@ -10590,6 +10627,7 @@ definitions:
         - outbox_evicted
         - key_expired
         - key_expiring
+        - identity_cloned
         - version_unsupported
         - sdk_unsupported
         - no_tools
@@ -10727,6 +10765,16 @@ definitions:
         type: string
       id:
         type: string
+      identity_cloned_at:
+        description: |-
+          IdentityClonedAt is when two live processes were seen using this
+          sensor's key (health reason identity_cloned); null = not flagged.
+        type: string
+      instance_id:
+        description: |-
+          InstanceID is the sensor process of the last heartbeat that changed
+          it: the SDK's per-process id, or "host:<hash>" for SDKs that send none.
+        type: string
       ip_address:
         type: string
       is_platform_sensor:
@@ -10735,6 +10783,14 @@ definitions:
       key_expires_at:
         description: KeyExpiresAt is when the current API key stops working; null
           = never.
+        type: string
+      key_last_used_at:
+        description: |-
+          KeyLastUsedAt and KeyLastUsedIP are the last authenticated request with
+          any of the sensor's keys and the client address it came from (behind a
+          trusted proxy, the forwarded address); null until recorded.
+        type: string
+      key_last_used_ip:
         type: string
       labels:
         additionalProperties: {}

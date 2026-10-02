@@ -53,6 +53,7 @@ const (
 	ReasonOutboxEvicted      HealthReasonCode = "outbox_evicted"
 	ReasonKeyExpired         HealthReasonCode = "key_expired"
 	ReasonKeyExpiring        HealthReasonCode = "key_expiring"
+	ReasonIdentityCloned     HealthReasonCode = "identity_cloned"
 	ReasonVersionUnsupported HealthReasonCode = "version_unsupported"
 	ReasonSDKUnsupported     HealthReasonCode = "sdk_unsupported"
 	ReasonNoTools            HealthReasonCode = "no_tools"
@@ -254,6 +255,11 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, 
 				"The API key expires in %s. The sensor renews it on its own; rotate it now if it cannot.",
 				humanDuration(left)))
 		}
+	}
+
+	if a.IdentityClonedAt != nil {
+		add(ReasonIdentityCloned, SeverityCritical,
+			"Two sensor processes are using this sensor's API key at the same time, so the key has been copied or is shared between replicas. Regenerate the key and give each sensor its own.")
 	}
 
 	if vs == VersionUnsupported {

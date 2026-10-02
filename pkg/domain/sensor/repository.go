@@ -272,38 +272,27 @@ type APIKeyRepository interface {
 	CountActiveBySensorID(ctx context.Context, sensorID shared.ID) (int, error)
 }
 
-// RegistrationTokenFilter represents filter options for listing tokens.
-type RegistrationTokenFilter struct {
-	TenantID *shared.ID
-	IsActive *bool
+// KeyUseRecorder is implemented by a sensor repository that records where
+// each key use came from. The service uses it instead of UpdateLastSeen
+// when the repository provides it.
+type KeyUseRecorder interface {
+	// RecordKeyUse marks the sensor seen (last_seen_at, health online) and
+	// stores the client address of the key use with its time. It returns the
+	// address stored before (nil when none was). A nil ip records only the
+	// time.
+	RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP) (previous net.IP, err error)
 }
 
-// RegistrationTokenRepository defines the interface for registration token persistence.
-type RegistrationTokenRepository interface {
-	// Create creates a new registration token.
-	Create(ctx context.Context, token *RegistrationToken) error
-
-	// GetByID retrieves a token by ID.
-	GetByID(ctx context.Context, id shared.ID) (*RegistrationToken, error)
-
-	// GetByTenantAndID retrieves a token by tenant and ID.
-	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*RegistrationToken, error)
-
-	// GetByHash retrieves a token by hash.
-	GetByHash(ctx context.Context, hash string) (*RegistrationToken, error)
-
-	// List lists tokens with filters and pagination.
-	List(ctx context.Context, filter RegistrationTokenFilter, page pagination.Pagination) (pagination.Result[*RegistrationToken], error)
-
-	// Update updates a token.
-	Update(ctx context.Context, token *RegistrationToken) error
-
-	// Delete deletes a token.
-	Delete(ctx context.Context, id shared.ID) error
-
-	// IncrementUsage increments the usage counter.
-	IncrementUsage(ctx context.Context, id shared.ID) error
-
-	// Deactivate deactivates a token.
-	Deactivate(ctx context.Context, id shared.ID) error
+// InstanceObserver is implemented by a sensor repository that keeps the
+// clone-detection state (identity.go).
+type InstanceObserver interface {
+	// ObserveInstance applies InstanceState.Observe to the stored state of an
+	// active sensor atomically (concurrent heartbeats of two copies are
+	// serialized) and flags the identity when the verdict is Cloned and it was
+	// not flagged yet; newlyFlagged reports that transition. currentLastSeen
+	// is the current instance's last heartbeat.
+	ObserveInstance(ctx context.Context, id shared.ID, instance string, now, currentLastSeen time.Time) (v InstanceVerdict, newlyFlagged bool, err error)
+	// ClearIdentityCloned removes the flag and forgets the instances (after the
+	// key was regenerated, copies of the old key can no longer connect).
+	ClearIdentityCloned(ctx context.Context, id shared.ID) error
 }

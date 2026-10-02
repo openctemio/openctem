@@ -126,6 +126,8 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
 			"-v /etc/openctem/certs:/etc/openctem/certs:ro",
 			":/var/lib/openctem/outbox",
+			"-v dmz-scanner-01-state:/var/lib/openctem/state",
+			"-v dmz-scanner-01-content:/var/lib/openctem/content",
 			"--restart unless-stopped",
 			"--name dmz-scanner-01",
 			"-----BEGIN CERTIFICATE-----",
@@ -224,8 +226,14 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		if !strings.Contains(c, "OPENCTEM_API_KEY=rda_4b1e0123456789abcdef") {
 			t.Errorf("[%s] compose does not say how to write .env with the key:\n%s", dir, c)
 		}
-		if len(s.Volumes) == 0 || !strings.HasSuffix(s.Volumes[0], ":/var/lib/openctem/outbox") {
-			t.Errorf("[%s] volumes = %v", dir, s.Volumes)
+		if len(s.Volumes) != 3 || !strings.HasSuffix(s.Volumes[0], ":/var/lib/openctem/outbox") ||
+			s.Volumes[1] != "state:/var/lib/openctem/state" || s.Volumes[2] != "content:/var/lib/openctem/content" {
+			t.Errorf("[%s] volumes = %v, want outbox, state and content", dir, s.Volumes)
+		}
+		for _, v := range []string{"outbox", "state", "content"} {
+			if _, ok := doc.Volumes[v]; !ok {
+				t.Errorf("[%s] compose does not declare the %s volume:\n%s", dir, v, c)
+			}
 		}
 		if len(s.Configs) != 1 || s.Configs[0].Target != "/etc/openctem/certs/openctem-root-ca.crt" ||
 			!strings.Contains(doc.Configs[s.Configs[0].Source].Content, "BEGIN CERTIFICATE") {
@@ -261,6 +269,8 @@ func TestTemplates_KubernetesManifestsAreValid(t *testing.T) {
 		for _, want := range []string{
 			"image: ghcr.io/openctemio/sensor:v0.4.2", "api-key: rda_4b1e0123456789abcdef",
 			"SSL_CERT_DIR", "mountPath: /var/lib/openctem/outbox", "type: Recreate", "BEGIN CERTIFICATE",
+			"mountPath: /var/lib/openctem/state", "claimName: dmz-scanner-01-state",
+			"mountPath: /var/lib/openctem/content", "claimName: dmz-scanner-01-content", "storage: 5Gi",
 		} {
 			if !strings.Contains(k, want) {
 				t.Errorf("[%s] manifest lacks %q", dir, want)
@@ -279,6 +289,7 @@ func TestTemplates_HelmUsesTheChartsSensorValues(t *testing.T) {
 			// Helm splits --set values on commas; the escaped comma survives
 			// the shell inside single quotes.
 			`--set-string 'sensor.tools=nuclei\,trivy'`, "--set sensor.outbox.persistence.enabled=true",
+			"--set sensor.state.persistence.enabled=true", "--set sensor.content.persistence.enabled=true",
 			"--from-literal=api-key='rda_4b1e0123456789abcdef'",
 		} {
 			if !strings.Contains(h, want) {

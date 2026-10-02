@@ -72,30 +72,6 @@ var (
 )
 
 // =============================================================================
-// Bootstrap Token Errors (v3.2)
-// =============================================================================
-
-var (
-	// ErrBootstrapTokenNotFound is returned when a bootstrap token is not found.
-	ErrBootstrapTokenNotFound = fmt.Errorf("%w: bootstrap token not found", shared.ErrNotFound)
-
-	// ErrBootstrapTokenExpired is returned when a bootstrap token has expired.
-	ErrBootstrapTokenExpired = fmt.Errorf("%w: bootstrap token has expired", shared.ErrForbidden)
-
-	// ErrBootstrapTokenRevoked is returned when a bootstrap token has been revoked.
-	ErrBootstrapTokenRevoked = fmt.Errorf("%w: bootstrap token has been revoked", shared.ErrForbidden)
-
-	// ErrBootstrapTokenExhausted is returned when a bootstrap token has reached its usage limit.
-	ErrBootstrapTokenExhausted = fmt.Errorf("%w: bootstrap token usage limit reached", shared.ErrForbidden)
-
-	// ErrBootstrapTokenInvalid is returned when a bootstrap token is invalid.
-	ErrBootstrapTokenInvalid = fmt.Errorf("%w: invalid bootstrap token", shared.ErrUnauthorized)
-
-	// ErrSensorConstraintViolation is returned when sensor doesn't meet token constraints.
-	ErrSensorConstraintViolation = fmt.Errorf("%w: sensor does not meet token constraints", shared.ErrValidation)
-)
-
-// =============================================================================
 // Error Helpers
 // =============================================================================
 
@@ -123,15 +99,6 @@ func IsAllPlatformSensorsOverloaded(err error) bool {
 func IsPlatformLimitReached(err error) bool {
 	return errors.Is(err, ErrPlatformConcurrentLimitReached) ||
 		errors.Is(err, ErrPlatformQueueLimitReached)
-}
-
-// IsBootstrapTokenError checks if the error is a bootstrap token error.
-func IsBootstrapTokenError(err error) bool {
-	return errors.Is(err, ErrBootstrapTokenNotFound) ||
-		errors.Is(err, ErrBootstrapTokenExpired) ||
-		errors.Is(err, ErrBootstrapTokenRevoked) ||
-		errors.Is(err, ErrBootstrapTokenExhausted) ||
-		errors.Is(err, ErrBootstrapTokenInvalid)
 }
 
 // IsAuthTokenError checks if the error is an auth token error.
