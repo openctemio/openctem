@@ -25,7 +25,10 @@
 'use client'
 
 import * as React from 'react'
+import { ChevronRight, Copy } from 'lucide-react'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { Meter } from './meter'
 
@@ -320,5 +323,126 @@ export function DetailCallout({
         </div>
       </div>
     </section>
+  )
+}
+
+// ============================================================================
+// DetailDisclosure — "More details", "Show the error": trivia folded away
+// ============================================================================
+
+export interface DetailDisclosureProps {
+  /** The toggle's text ("More details"). */
+  summary: React.ReactNode
+  children?: React.ReactNode
+  className?: string
+}
+
+/**
+ * A native `<details>`: keyboard operable, no state. For identity and trivia
+ * at the end of a drawer, or a raw error under its plain-words explanation.
+ */
+export function DetailDisclosure({ summary, children, className }: DetailDisclosureProps) {
+  return (
+    <details className={cn('group text-sm', className)} data-slot="detail-disclosure">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs text-muted-foreground select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" aria-hidden />
+        {summary}
+      </summary>
+      {children}
+    </details>
+  )
+}
+
+// ============================================================================
+// DetailCopyId — the record's ID, copied on click
+// ============================================================================
+
+export interface DetailCopyIdProps {
+  id: string
+  /** What the ID is, for the button's name and the toast ("Sensor ID"). */
+  label?: string
+  className?: string
+}
+
+export function DetailCopyId({ id, label = 'ID', className }: DetailCopyIdProps) {
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+      className={cn(
+        'inline-flex max-w-full items-center gap-1.5 rounded-sm font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        className
+      )}
+      onClick={() => {
+        copyToClipboard(id)
+        toast.success(`${label} copied`)
+      }}
+    >
+      <span className="truncate">{id}</span>
+      <Copy className="h-3 w-3 shrink-0" aria-hidden />
+    </button>
+  )
+}
+
+// ============================================================================
+// DetailChipList — tools, packages, capabilities: icon + name + version
+// ============================================================================
+
+export interface DetailChip {
+  key: string
+  /** Status icon in front of the name. */
+  icon?: IconType
+  /** Its colour, a theme token class ("text-success"). */
+  iconClassName?: string
+  /** The icon's accessible name ("ready", "not installed"). */
+  iconLabel?: string
+  label: React.ReactNode
+  /** Muted name (not usable, not installed). */
+  muted?: boolean
+  /** Small muted parts after the name: a version, capabilities. */
+  meta?: React.ReactNode
+  /** A tag at the end ("not installed"). */
+  tag?: React.ReactNode
+  /** data-* attributes for tests and styling hooks. */
+  data?: Record<string, string>
+}
+
+export interface DetailChipListProps {
+  chips: DetailChip[]
+  /** Accessible name of the list ("Tools"). */
+  label: string
+  /** What to show when there are none. */
+  empty?: React.ReactNode
+  className?: string
+}
+
+export function DetailChipList({ chips, label, empty = 'none', className }: DetailChipListProps) {
+  if (chips.length === 0) return <span className="text-sm text-muted-foreground">{empty}</span>
+  return (
+    <ul className={cn('flex flex-wrap gap-1.5', className)} aria-label={label}>
+      {chips.map((c) => {
+        const Icon = c.icon
+        const data = Object.fromEntries(
+          Object.entries(c.data ?? {}).map(([k, v]) => [`data-${k}`, v])
+        )
+        return (
+          <li
+            key={c.key}
+            {...data}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 text-sm"
+          >
+            {Icon && (
+              <Icon
+                className={cn('h-3.5 w-3.5 shrink-0', c.iconClassName)}
+                aria-label={c.iconLabel}
+              />
+            )}
+            <span className={cn(c.muted && 'text-muted-foreground')}>{c.label}</span>
+            {c.meta}
+            {c.tag}
+          </li>
+        )
+      })}
+    </ul>
   )
 }

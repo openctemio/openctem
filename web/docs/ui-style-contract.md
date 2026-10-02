@@ -206,6 +206,19 @@ className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
   primary and one outline button; security and lifecycle actions (rotate key,
   disable, revoke, delete) go in the `⋯` menu. The sensor drawer is the
   reference.
+  - The frame is shared too, in `detail-sheet-layout.tsx`: `<DetailSheet>`
+    (right drawer from `md`, bottom sheet on phones, header pinned while the
+    body scrolls, `width` token), `<DetailHeader>` (the title **wraps**, never
+    truncates: it is often the only identifier; `badges` after it, `meta`
+    parts joined with `·`, an `actions` row, a `menu` of items for `⋯`) and
+    `<DetailTabs>` (underline tabs; `useDetailTab(param, values)` keeps the
+    tab in the URL when the page wants it, with a parameter the page does not
+    already use).
+  - Real checks only: `<DetailChecklist>` ("Health checks: N of M passing",
+    folded, failing first) and the `<DetailCallout>` above it appear only
+    when the record has such state. Never placeholder checks.
+  - Chips of tools or packages: `<DetailChipList>`. Trivia at the end:
+    `<DetailDisclosure summary="More details">`; the ID: `<DetailCopyId>`.
 - Destructive confirmation: `<ConfirmDialog destructive>`.
 
 ## 9. Responsiveness
