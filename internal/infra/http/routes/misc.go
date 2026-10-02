@@ -75,7 +75,8 @@ func registerDashboardRoutes(
 // Audit logs are tenant-scoped (tenant from JWT token).
 // Permission model:
 //   - Read (GET): audit:read, held by owners and administrators only
-//     (the seed no longer grants it to member or viewer).
+//     (the seed no longer grants it to member or viewer). Exception: anyone
+//     may read their own activity (/user/{own id}).
 //   - Verify: owner/admin. Rebaseline: owner.
 func registerAuditRoutes(
 	router Router,
@@ -100,8 +101,9 @@ func registerAuditRoutes(
 		// Get resource history
 		r.GET("/resource/{type}/{id}", h.GetResourceHistory, middleware.Require(permission.AuditRead))
 
-		// Get user activity
-		r.GET("/user/{id}", h.GetUserActivity, middleware.Require(permission.AuditRead))
+		// Get user activity. audit:read (owner/admin), or the caller's own
+		// activity: /account/activity shows everyone their own actions.
+		r.GET("/user/{id}", h.GetUserActivity, middleware.RequirePermissionOrSelf(permission.AuditRead, "id"))
 
 		// Verify the tamper-evident hash-chain for the tenant's audit
 		// log. Returns 200 { ok: true, ... } when intact, 409 with a

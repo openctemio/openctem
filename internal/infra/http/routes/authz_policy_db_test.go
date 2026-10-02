@@ -256,6 +256,12 @@ func TestAuthzPolicy_AuditLogIsAdminOnly_DB(t *testing.T) {
 	h.expect(admin, http.MethodGet, "/api/v1/audit-logs", "", http.StatusOK)
 	h.expect(owner, http.MethodGet, "/api/v1/audit-logs", "", http.StatusOK)
 
+	// Everyone still reads their own activity (/account/activity).
+	for _, u := range []policyUser{member, viewer} {
+		h.expect(u, http.MethodGet, "/api/v1/audit-logs/user/"+u.id, "", http.StatusOK)
+	}
+	h.expect(admin, http.MethodGet, "/api/v1/audit-logs/user/"+member.id, "", http.StatusOK)
+
 	// Rebaseline overwrites the tamper-evident chain: owner only.
 	h.expect(admin, http.MethodPost, "/api/v1/audit-logs/rebaseline", `{"reason":"benign hashing change"}`, http.StatusForbidden)
 	if code, body := h.do(owner, http.MethodPost, "/api/v1/audit-logs/rebaseline", `{"reason":"benign hashing change"}`); code == http.StatusForbidden {

@@ -205,7 +205,8 @@ Details: [api-keys.md](./api-keys.md).
 
 | Endpoint | Gate |
 |----------|------|
-| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` · `/user/{id}` | `audit:read` (owner/admin only) |
+| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) |
+| `GET /api/v1/audit-logs/user/{id}` | `audit:read`, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
 | `GET /api/v1/audit-logs/verify` | owner/admin (`RequireAdmin`) |
 | `POST /api/v1/audit-logs/rebaseline` | **owner only** (`RequireOwner`) |
 
