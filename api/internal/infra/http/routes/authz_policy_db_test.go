@@ -15,11 +15,14 @@ package routes
 //   - billing read is no longer granted to member or viewer;
 //   - administrators cannot demote, suspend, reactivate or remove a peer
 //     administrator; the owner can; administrators still manage members;
-//   - SCIM token create / revoke is owner only.
+//   - SCIM token create / revoke is owner only;
+//   - custom scanner templates, template sources and inline command templates
+//     are written by owners and admins only; members keep read.
 
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -34,7 +37,9 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/scim"
+	templateapp "github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -103,6 +108,11 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		APIKey:    handler.NewAPIKeyHandler(keys, v, log),
 		Tenant:    handler.NewTenantHandler(tenantSvc, v, log),
 		SCIMToken: handler.NewSCIMTokenHandler(scim.NewTokenService(postgres.NewScimTokenRepository(db), "authz-policy-pepper", log), log),
+		ScannerTemplate: handler.NewScannerTemplateHandler(
+			app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "authz-policy-template-signing-key-0123456789", log), v, log),
+		TemplateSource: handler.NewTemplateSourceHandler(templateapp.NewSourceService(postgres.NewTemplateSourceRepository(db), log), v, log),
+		Command: handler.NewCommandHandler(commandapp.NewService(postgres.NewCommandRepository(db), log,
+			commandapp.WithSensorLookup(postgres.NewSensorRepository(db))), v, log),
 	}, cfg, log, authCfg, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
@@ -129,6 +139,9 @@ func (h *authzPolicyHarness) tenant() string {
 			`DELETE FROM audit_logs WHERE tenant_id = $1`,
 			`DELETE FROM api_keys WHERE tenant_id = $1`,
 			`DELETE FROM scim_tokens WHERE tenant_id = $1`,
+			`DELETE FROM commands WHERE tenant_id = $1`,
+			`DELETE FROM scanner_templates WHERE tenant_id = $1`,
+			`DELETE FROM template_sources WHERE tenant_id = $1`,
 			`DELETE FROM sensors WHERE tenant_id = $1`,
 			`DELETE FROM user_roles WHERE tenant_id = $1`,
 			`DELETE FROM tenant_members WHERE tenant_id = $1`,
@@ -394,5 +407,90 @@ func TestAuthzPolicy_SCIMTokensAreOwnerOnly_DB(t *testing.T) {
 	h.expect(admin, http.MethodDelete, "/api/v1/scim-tokens/"+created.ID, "", http.StatusForbidden)
 	if code, b := h.do(owner, http.MethodDelete, "/api/v1/scim-tokens/"+created.ID, ""); code >= 300 {
 		t.Fatalf("owner revoke: %d %s", code, b)
+	}
+}
+
+// Custom templates are trusted code (owner decision 2026-10-02, migration
+// 000261): a template decides which hosts a sensor contacts and what it
+// sends. Members and viewers read templates and sources; only owners and
+// administrators write them, and only they may embed one in a command.
+func TestAuthzPolicy_CustomTemplatesAreAdminOnly_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	tid := h.tenant()
+	owner, admin, member, viewer := h.member(tid, "owner"), h.member(tid, "admin"), h.member(tid, "member"), h.member(tid, "viewer")
+
+	content := base64.StdEncoding.EncodeToString([]byte(`id: authz-policy-template
+info:
+  name: authz policy template
+  author: test
+  severity: info
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers:
+      - type: status
+        status:
+          - 200
+`))
+	tmpl := func(name string) string {
+		return `{"name":"` + name + `","template_type":"nuclei","content":"` + content + `"}`
+	}
+	source := func(name string) string {
+		return `{"name":"` + name + `","source_type":"git","template_type":"nuclei",` +
+			`"git_config":{"url":"https://github.com/projectdiscovery/nuclei-templates.git","branch":"main"}}`
+	}
+	inline := `{"type":"scan","payload":{"scanner":"nuclei","target":"https://example.test",` +
+		`"custom_templates":[{"name":"inline.yaml","template_type":"nuclei","content":"` + content + `"}]}}`
+
+	// Owners and administrators write.
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(h.expect(admin, http.MethodPost, "/api/v1/scanner-templates", tmpl("admin-template"), http.StatusCreated)), &created); err != nil || created.ID == "" {
+		t.Fatalf("admin template create: id %q, err %v", created.ID, err)
+	}
+	templateID := created.ID
+	h.expect(owner, http.MethodPost, "/api/v1/scanner-templates", tmpl("owner-template"), http.StatusCreated)
+	created.ID = ""
+	if err := json.Unmarshal([]byte(h.expect(admin, http.MethodPost, "/api/v1/template-sources", source("admin-source"), http.StatusCreated)), &created); err != nil || created.ID == "" {
+		t.Fatalf("admin source create: id %q, err %v", created.ID, err)
+	}
+	sourceID := created.ID
+	if code, body := h.do(admin, http.MethodPost, "/api/v1/commands", inline); code == http.StatusForbidden {
+		t.Fatalf("admin inline-template command refused: %s", body)
+	}
+
+	for _, u := range []policyUser{member, viewer} {
+		// Reads stay.
+		h.expect(u, http.MethodGet, "/api/v1/scanner-templates", "", http.StatusOK)
+		h.expect(u, http.MethodGet, "/api/v1/scanner-templates/"+templateID, "", http.StatusOK)
+		h.expect(u, http.MethodGet, "/api/v1/template-sources", "", http.StatusOK)
+		h.expect(u, http.MethodGet, "/api/v1/template-sources/"+sourceID, "", http.StatusOK)
+
+		// Writes are refused.
+		h.expect(u, http.MethodPost, "/api/v1/scanner-templates", tmpl("member-template"), http.StatusForbidden)
+		h.expect(u, http.MethodPut, "/api/v1/scanner-templates/"+templateID, `{"name":"renamed"}`, http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/scanner-templates/"+templateID+"/deprecate", "", http.StatusForbidden)
+		h.expect(u, http.MethodDelete, "/api/v1/scanner-templates/"+templateID, "", http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/template-sources", source("member-source"), http.StatusForbidden)
+		h.expect(u, http.MethodPut, "/api/v1/template-sources/"+sourceID, `{"name":"renamed"}`, http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/template-sources/"+sourceID+"/sync", "", http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/template-sources/"+sourceID+"/disable", "", http.StatusForbidden)
+		h.expect(u, http.MethodDelete, "/api/v1/template-sources/"+sourceID, "", http.StatusForbidden)
+	}
+
+	// A member still holds commands:write, but cannot carry a template in one.
+	h.expect(member, http.MethodPost, "/api/v1/commands", inline, http.StatusForbidden)
+
+	// The seed: the system member and viewer roles hold neither write grant.
+	var n int
+	if err := h.db.QueryRow(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
+		WHERE r.is_system AND r.slug IN ('member','viewer')
+		  AND rp.permission_id IN ('scans:templates:write','scans:sources:write','scans:templates:delete','scans:sources:delete')`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("member/viewer still hold %d template write grants, want 0", n)
 	}
 }

@@ -241,7 +241,7 @@ export function TemplateSourcesSection() {
         cell: ({ row }) => {
           const source = row.original
           return (
-            <Can permission={Permission.CredentialsWrite}>
+            <Can permission={Permission.TemplateSourcesWrite}>
               <DataTableRowActions
                 actions={[
                   {
@@ -249,20 +249,20 @@ export function TemplateSourcesSection() {
                     icon: RefreshCw,
                     onClick: () => handleSync(source),
                     disabled: isSyncing || !source.is_enabled,
-                    permission: Permission.CredentialsWrite,
+                    permission: Permission.TemplateSourcesWrite,
                   },
                   {
                     label: source.is_enabled ? 'Disable' : 'Enable',
                     icon: source.is_enabled ? Pause : Play,
                     onClick: () => handleToggleEnabled(source),
                     disabled: isEnabling || isDisabling,
-                    permission: Permission.CredentialsWrite,
+                    permission: Permission.TemplateSourcesWrite,
                   },
                   {
                     label: 'Edit',
                     icon: Pencil,
                     onClick: () => handleEditSource(source),
-                    permission: Permission.CredentialsWrite,
+                    permission: Permission.TemplateSourcesWrite,
                   },
                   {
                     label: 'Delete',
@@ -270,7 +270,7 @@ export function TemplateSourcesSection() {
                     onClick: () => handleDeleteClick(source),
                     destructive: true,
                     separatorBefore: true,
-                    permission: Permission.CredentialsWrite,
+                    permission: Permission.TemplateSourcesDelete,
                   },
                 ]}
               />
@@ -302,7 +302,7 @@ export function TemplateSourcesSection() {
         title="No template sources"
         description="Add a source to sync custom templates from Git, S3, or HTTP."
         action={
-          <Can permission={Permission.CredentialsWrite}>
+          <Can permission={Permission.TemplateSourcesWrite}>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add source
@@ -330,7 +330,7 @@ export function TemplateSourcesSection() {
         title="Template sources"
         description="External Git, S3 and HTTP sources that custom scanner templates are synced from."
       >
-        <Can permission={Permission.CredentialsWrite}>
+        <Can permission={Permission.TemplateSourcesWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4" />
             Add source
