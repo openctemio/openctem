@@ -1638,3 +1638,58 @@ func TestBuildFinding_PersistsBaseWithSARIFPartialFingerprints(t *testing.T) {
 	assert.Equal(t, "deadbeef", pf["primaryLocationLineHash"],
 		"SARIF partial fingerprint should also survive")
 }
+
+// A CTIS finding's SARIF-style enum fields went into CHECK-constrained columns
+// verbatim. SARIF spells kind "notApplicable" (camelCase); the column only
+// allows "not_applicable", so the INSERT failed with chk_kind and the whole
+// finding was dropped ("findings_skipped": 1). Same for any out-of-set
+// baseline_state / compliance result / impact / likelihood. A bad label must
+// never cost the finding: normalize what is recognizable, drop the rest.
+func TestBuildFinding_EnumFieldsNeverViolateCheckConstraints(t *testing.T) {
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, stubAssetRepoGetByID{}, logger.NewNop())
+	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "semgrep"}}
+
+	build := func(cf *ctis.Finding) *vulnerability.Finding {
+		t.Helper()
+		assetID := shared.NewID()
+		fp, base := generateFindingFingerprint(assetID, cf, report.Tool)
+		f, err := p.buildFinding(context.Background(), shared.NewID(), assetID, nil, shared.NewID(), report, cf, fp, base, nil)
+		require.NoError(t, err)
+		return f
+	}
+	base := func() *ctis.Finding {
+		return &ctis.Finding{ID: "f1", Type: ctis.FindingTypeVulnerability, Title: "t", Severity: ctis.SeverityHigh, RuleID: "r1"}
+	}
+
+	// SARIF spellings are normalized to the stored vocabulary.
+	cf := base()
+	cf.Kind = "notApplicable"
+	cf.BaselineState = "Unchanged"
+	cf.Impact = "High"
+	cf.Likelihood = "LOW"
+	f := build(cf)
+	require.Equal(t, "not_applicable", f.Kind())
+	require.Equal(t, "unchanged", f.BaselineState())
+	require.Equal(t, "high", f.Impact())
+	require.Equal(t, "low", f.Likelihood())
+
+	// Values outside the vocabulary are dropped, not stored.
+	cf = base()
+	cf.Kind = "warning"
+	cf.BaselineState = "modified"
+	cf.Impact = "info"
+	cf.Likelihood = "critical"
+	f = build(cf)
+	require.Empty(t, f.Kind())
+	require.Empty(t, f.BaselineState())
+	require.Empty(t, f.Impact())
+	require.Empty(t, f.Likelihood())
+
+	// Compliance result: same rule.
+	cf = base()
+	cf.Type = ctis.FindingTypeCompliance
+	cf.Compliance = &ctis.ComplianceDetails{Framework: "cis", ControlID: "1.1", Result: "notApplicable"}
+	require.Equal(t, "not_applicable", build(cf).ComplianceResult())
+	cf.Compliance.Result = "skipped"
+	require.Empty(t, build(cf).ComplianceResult())
+}
