@@ -1,7 +1,7 @@
 # =============================================================================
 # Docker Compose - Production Configuration
 # =============================================================================
-# Option 1: Pull from Docker Hub (recommended for deployment):
+# Option 1: Pull the published image from ghcr.io (recommended):
 #   docker compose -f docker-compose.prod.yml up -d
 #
 # Option 2: Build locally:
@@ -82,8 +82,10 @@ services:
   # Next.js Production Application
   # ---------------------------------------------------------------------------
   nextjs:
-    # Pull from Docker Hub by default, build locally if --build flag is used
-    image: openctemio/ui:${UI_VERSION:-latest}
+    # Pull from ghcr.io by default, build locally if --build flag is used.
+    # Always the full registry path: a bare "openctemio/..." name resolves to
+    # Docker Hub, where nobody owns the openctemio namespace.
+    image: ghcr.io/openctemio/ui:${UI_VERSION:-latest}
     build:
       context: .
       dockerfile: Dockerfile

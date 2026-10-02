@@ -10,7 +10,7 @@ migration-ordering outage. Read this before any production upgrade.
 - Therefore: **apply migrations first, then roll the app.** Never start the new
   binary before its migrations are applied.
 - Migrations ship as a **separate, same-versioned image**
-  (`openctemio/migrations:<VERSION>` / `ghcr.io/openctemio/migrations:<VERSION>`).
+  (`ghcr.io/openctemio/migrations:<VERSION>`).
 - Keep `SKIP_SCHEMA_CHECK` **unset** (false) in production — it is the last-line
   safety net.
 - Write migrations to be **expand-contract** (backward compatible) so a rolling
@@ -71,7 +71,7 @@ guarantee ordering (below), and keep the schema check on as the backstop.
      ./scripts/preflight-migrate.sh          # pre-flight, then `migrate up`
 
    # …or the migrations image directly:
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" up
    ```
 
@@ -87,7 +87,7 @@ guarantee ordering (below), and keep the schema check on as the backstop.
 4. **Verify the DB version** matches the shipped binary before serving:
 
    ```bash
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" version
    ```
 
@@ -200,7 +200,7 @@ Recover:
 1. **Find the failed version and inspect** what partially happened:
 
    ```bash
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" version   # prints "<N> (dirty)"
    ```
 
@@ -213,10 +213,10 @@ Recover:
 
    ```bash
    # If version N failed and applied nothing, force to N-1 and re-migrate:
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" force <N-1>
 
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" up
    ```
 
