@@ -111,18 +111,18 @@ path: '/'
 
 **Complete cookie inventory:**
 
-| Cookie                | httpOnly | Sensitive | Purpose                              |
-| --------------------- | -------- | --------- | ------------------------------------ |
-| `auth_token`          | Yes      | Yes       | JWT access token                     |
-| `refresh_token`       | Yes      | Yes       | Refresh token                        |
-| `oauth_state`         | Yes      | Yes       | OAuth CSRF state parameter           |
-| `oauth_redirect`      | Yes      | No        | Post-OAuth redirect URL              |
+| Cookie                | httpOnly | Sensitive | Purpose                                          |
+| --------------------- | -------- | --------- | ------------------------------------------------ |
+| `auth_token`          | Yes      | Yes       | JWT access token                                 |
+| `refresh_token`       | Yes      | Yes       | Refresh token                                    |
+| `oauth_state`         | Yes      | Yes       | OAuth CSRF state parameter                       |
+| `oauth_redirect`      | Yes      | No        | Post-OAuth redirect URL                          |
 | `csrf_token`          | No       | No        | CSRF double-submit token (JS-readable by design) |
-| `app_tenant`          | No       | No        | Current tenant info (display only)   |
-| `app_user_info`       | No       | No        | User info for onboarding (5-min TTL) |
-| `app_pending_tenants` | No       | No        | Multi-tenant selection (5-min TTL)   |
-| `locale`              | No       | No        | Language preference                  |
-| `theme`               | No       | No        | Theme preference                     |
+| `app_tenant`          | No       | No        | Current tenant info (display only)               |
+| `app_user_info`       | No       | No        | User info for onboarding (5-min TTL)             |
+| `app_pending_tenants` | No       | No        | Multi-tenant selection (5-min TTL)               |
+| `locale`              | No       | No        | Language preference                              |
+| `theme`               | No       | No        | Theme preference                                 |
 
 ### 1.5 Login Flow
 
@@ -273,9 +273,11 @@ For cross-origin connections (`src/context/websocket-provider.tsx`):
 
 **Trade-off**: JWT appears in URL for cross-origin WebSocket (common pattern due to WebSocket API limitations). The `/api/ws-token` endpoint only returns the token to the same browser session that owns the httpOnly cookie.
 
-### 5.3 SSE Token
+### 5.3 No token endpoint
 
-Same pattern as WebSocket. Endpoint at `/api/auth/sse-token` returns access token for Server-Sent Events connections. Auto-refreshes if access token expired.
+There is no route that hands the httpOnly access token to page script. An
+unused `/api/auth/sse-token` route did, which made the cookie readable by any
+script on the origin; it was removed. Server-Sent Events are not used.
 
 ---
 
@@ -371,15 +373,15 @@ Never exposed to the browser:
 
 Runs on: push/PR to main/develop + weekly (Monday 00:00 UTC)
 
-| Scanner               | Type       | Severity                           | Output                                          |
-| --------------------- | ---------- | ---------------------------------- | ----------------------------------------------- |
-| **CodeQL**            | SAST       | `security-and-quality` query suite | GitHub Security tab (SARIF)                     |
-| **npm audit**         | SCA        | HIGH+                              | Artifact upload (30-day retention)              |
-| **Trivy**             | Filesystem | CRITICAL, HIGH, MEDIUM             | GitHub Security tab (SARIF)                     |
-| **ESLint**            | SAST       | All rules                          | GitHub Security tab (SARIF)                     |
+| Scanner               | Type       | Severity                           | Output                                                                       |
+| --------------------- | ---------- | ---------------------------------- | ---------------------------------------------------------------------------- |
+| **CodeQL**            | SAST       | `security-and-quality` query suite | GitHub Security tab (SARIF)                                                  |
+| **npm audit**         | SCA        | HIGH+                              | Artifact upload (30-day retention)                                           |
+| **Trivy**             | Filesystem | CRITICAL, HIGH, MEDIUM             | GitHub Security tab (SARIF)                                                  |
+| **ESLint**            | SAST       | All rules                          | GitHub Security tab (SARIF)                                                  |
 | **Betterleaks**       | Secrets    | All                                | Every push and pull request (SARIF; replaced the licence-gated gitleaks job) |
-| **Snyk**              | SCA        | All                                | Optional (requires `ENABLE_SNYK` + token)       |
-| **Docker Image Scan** | Container  | CRITICAL, HIGH                     | Trivy on built image (main branch only)         |
+| **Snyk**              | SCA        | All                                | Optional (requires `ENABLE_SNYK` + token)                                    |
+| **Docker Image Scan** | Container  | CRITICAL, HIGH                     | Trivy on built image (main branch only)                                      |
 
 ### 10.2 Quality Gates (`ci.yml`)
 
