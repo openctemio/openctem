@@ -27,16 +27,11 @@ import { BasicInfoStep } from './basic-info-step'
 import { TargetsStep } from './targets-step'
 import { OptionsStep } from './options-step'
 import { ScheduleStep } from './schedule-step'
-import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../../types'
+import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
+import { basicInfoError, formDataToCreateRequest } from '../../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import type {
-  CreateScanConfigRequest,
-  ScheduleType,
-  SensorPreference,
-  ScanType,
-} from '@/lib/api/scan-types'
 
 interface NewScanDialogProps {
   open: boolean
@@ -45,139 +40,6 @@ interface NewScanDialogProps {
 }
 
 const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
-
-/**
- * Map form schedule frequency to API schedule type
- */
-function mapScheduleFrequency(frequency: ScheduleFrequency | undefined): ScheduleType {
-  switch (frequency) {
-    case 'once':
-      return 'manual'
-    case 'daily':
-      return 'daily'
-    case 'weekly':
-      return 'weekly'
-    case 'monthly':
-      return 'monthly'
-    default:
-      return 'manual'
-  }
-}
-
-/**
- * Map form sensor preference to API sensor preference
- */
-function mapSensorPreference(preference: string): SensorPreference {
-  switch (preference) {
-    case 'auto':
-      return 'auto'
-    case 'tenant':
-      return 'tenant'
-    case 'platform':
-      return 'platform'
-    default:
-      return 'auto'
-  }
-}
-
-/**
- * Map form data to API request format
- * Combines all target sources (asset groups, individual assets, custom targets)
- */
-function mapFormDataToRequest(formData: NewScanFormData): CreateScanConfigRequest {
-  const { targets, schedule, options, intensity } = formData
-
-  // Build scanner config from options
-  const scannerConfig: Record<string, unknown> = {}
-  if (options.portScanning) scannerConfig.port_scanning = true
-  if (options.webAppScanning) scannerConfig.web_app_scanning = true
-  if (options.sslAnalysis) scannerConfig.ssl_analysis = true
-  if (options.bruteForce) scannerConfig.brute_force = true
-  if (options.techDetection) scannerConfig.tech_detection = true
-  if (options.apiSecurity) scannerConfig.api_security = true
-  scannerConfig.intensity = intensity
-
-  // Determine scan type and related fields
-  const scanType: ScanType = formData.mode === 'workflow' ? 'workflow' : 'single'
-  const scheduleType = schedule.runImmediately ? 'manual' : mapScheduleFrequency(schedule.frequency)
-
-  const request: CreateScanConfigRequest = {
-    name: formData.name.trim(),
-    description: `Security scan created via UI - ${formData.type}`,
-    scan_type: scanType,
-    schedule_type: scheduleType,
-    sensor_preference: mapSensorPreference(formData.sensorPreference),
-    targets_per_job: formData.maxConcurrent || 10,
-    scanner_config: scannerConfig,
-    timeout_seconds: formData.timeoutSeconds,
-    max_retries: formData.maxRetries,
-    retry_backoff_seconds: formData.retryBackoffSeconds,
-  }
-  if (formData.profileId) {
-    request.profile_id = formData.profileId
-  }
-  if (formData.scanZoneId) {
-    request.scan_zone_id = formData.scanZoneId
-  }
-
-  // COMBINE all target sources
-  // 1. Asset groups - pass all selected ones
-  if (targets.assetGroupIds.length > 0) {
-    // Pass all asset group IDs to the API
-    request.asset_group_ids = targets.assetGroupIds
-    // Also set asset_group_id for backward compatibility with older API versions
-    request.asset_group_id = targets.assetGroupIds[0]
-  }
-
-  // 2. Combine individual assets and custom targets into targets array
-  const allTargets: string[] = []
-
-  // Individual assets - convert asset names to targets
-  if (targets.assetIds.length > 0 && targets.assetNames) {
-    for (const assetId of targets.assetIds) {
-      const assetName = targets.assetNames[assetId]
-      if (assetName) {
-        allTargets.push(assetName)
-      }
-    }
-  }
-
-  // Custom targets - add directly
-  if (targets.customTargets.length > 0) {
-    allTargets.push(...targets.customTargets)
-  }
-
-  // If we have explicit targets, add to request
-  if (allTargets.length > 0) {
-    request.targets = allTargets
-  }
-
-  // Add pipeline_id if workflow mode
-  if (formData.mode === 'workflow' && formData.workflowId) {
-    request.pipeline_id = formData.workflowId
-  }
-
-  // Add scanner name for single scan mode
-  if (formData.mode === 'single') {
-    // Default scanner based on scan type
-    request.scanner_name = formData.type === 'full' ? 'nuclei' : 'nuclei'
-  }
-
-  // Add schedule details if not manual
-  if (!schedule.runImmediately && schedule.frequency !== 'once') {
-    if (schedule.time) {
-      request.schedule_time = schedule.time
-    }
-    if (schedule.frequency === 'weekly' && schedule.dayOfWeek !== undefined) {
-      request.schedule_day = schedule.dayOfWeek
-    }
-    if (schedule.frequency === 'monthly') {
-      request.schedule_day = 1 // First of month
-    }
-  }
-
-  return request
-}
 
 export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogProps) {
   const [currentStep, setCurrentStep] = useState<ScanWizardStep>('basic')
@@ -196,7 +58,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const { data: zonesData } = useScanZones(canReadZones && open)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
   const previewRequest = useMemo(
-    () => toZonePreviewRequest(mapFormDataToRequest(formData), formData.scanZoneId),
+    () => toZonePreviewRequest(formDataToCreateRequest(formData), formData.scanZoneId),
     [formData]
   )
 
@@ -210,16 +72,14 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
   const validateCurrentStep = (): boolean => {
     switch (currentStep) {
-      case 'basic':
-        if (!formData.name.trim()) {
-          toast.error('Please enter a scan name')
-          return false
-        }
-        if (formData.mode === 'workflow' && !formData.workflowId) {
-          toast.error('Please select a workflow')
+      case 'basic': {
+        const problem = basicInfoError(formData)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
+      }
       case 'targets':
         // NEW: Check if at least ONE target source has data (can have all)
         const { targets } = formData
@@ -281,7 +141,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     setIsSubmitting(true)
     try {
       // Map form data to API request format
-      const request = mapFormDataToRequest(formData)
+      const request = formDataToCreateRequest(formData)
 
       // Validate the mapped request has targets
       // This can happen if asset IDs couldn't be resolved to names
