@@ -1874,6 +1874,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// domain is DNS-verified for the tenant (see SSOService.jitProvisioningAllowed).
 	s.DomainVerify = domainverify.NewService(repos.VerifiedDomain, domainverify.NewNetResolver(), log)
 	s.SSO.SetDomainVerifier(s.DomainVerify)
+	// SCIM attaches an EXISTING account only on a domain the organization has
+	// DNS-verified; anyone else must be invited (their consent).
+	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
 
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises

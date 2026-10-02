@@ -40,7 +40,12 @@ The organization owner mints a SCIM token (shown once); the IdP presents it as
   find-or-create a passwordless local user (the same "invited, not yet logged
   in" state, so SSO/SAML can later claim it) → add an active membership
   (`role=member`). Idempotent: an existing active member returns `200`, a new
-  membership `201`.
+  membership `201`. An email that **already has an account** but is not yet a
+  member is attached only when the organization has DNS-verified its domain;
+  otherwise the response is `409 uniqueness` and the person must be invited.
+  Attaching an existing account needs its owner's consent, the same rule as
+  administrator-created accounts; without it any organization could enroll any
+  person by email (and learn their user id).
 - **Deactivate** (`PATCH active:false`, `DELETE`): suspends the membership via
   `TenantService.SuspendMember`, which **revokes the user's sessions immediately
   and clears the permission cache** — true 0-second offboarding. The global user

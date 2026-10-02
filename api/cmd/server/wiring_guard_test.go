@@ -157,6 +157,7 @@ var guardedInertSeams = []struct {
 	{".Pentest", "SetTenantMemberChecker", "pentest cross-tenant member check"},
 	{".Tenant", "SetMemberStatusEmailNotifier", "member suspend/reactivate emails"},
 	{".Module", "SetWSBroadcaster", "module.updated WebSocket push on module toggle"},
+	{".SCIMProvisioning", "SetDomainVerifier", "SCIM attaches existing accounts only on a verified domain"},
 }
 
 // TestInertWiringSeams_StayWired asserts each previously-dead Set* seam is
