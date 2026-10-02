@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/authenticated-page'
+import { firstDataRow } from '../helpers/table'
 
 /**
  * Findings picker inside the remediation task drawer.
@@ -16,18 +17,15 @@ import { test, expect } from '../fixtures/authenticated-page'
 test.describe('Remediation — findings picker', () => {
   test('inline picker renders, scrolls, searches and toggles', async ({ page }) => {
     await page.goto('/remediation')
-    await page.waitForLoadState('networkidle')
 
     // The task table. If the tenant has no remediation tasks, there is nothing
-    // to open — skip rather than fail (data-dependent).
-    const firstRow = page.getByRole('row').nth(1) // row 0 = header
-    if (!(await firstRow.isVisible().catch(() => false))) {
-      test.skip(true, 'no remediation tasks in this tenant to open a drawer for')
-      return
-    }
+    // to open — skip rather than fail (data-dependent). The empty table's
+    // "No tasks found" row is not a task.
+    const firstRow = await firstDataRow(page)
+    test.skip(!firstRow, 'no remediation tasks in this tenant to open a drawer for')
 
     // Open the task detail drawer.
-    await firstRow.click()
+    await firstRow!.click()
     const drawer = page.getByRole('dialog')
     await expect(drawer).toBeVisible()
     // "Linked Findings (N)" is a styled <p>, not a semantic heading.
@@ -55,31 +53,41 @@ test.describe('Remediation — findings picker', () => {
     // otherwise the skeleton hasn't overflowed yet and the check is racy.
     const findingRows = drawer.locator('button:has(> span[aria-hidden="true"])')
     await expect(findingRows.first()).toBeVisible({ timeout: 15_000 })
-    await expect.poll(async () => findingRows.count(), { timeout: 15_000 }).toBeGreaterThan(10)
+    await page.waitForLoadState('networkidle')
+    const findingCount = await findingRows.count()
 
-    // Scrollability: the Sheet's SheetContent (= the dialog element, which has
-    // overflow-y-auto) is the scroll host. It must overflow when the tenant has
-    // many findings, and scrolling it must move scrollTop — this is the exact
-    // "can't scroll on iPad" bug the whole rework had to fix.
-    const metrics = await search.evaluate((inputEl) => {
-      // Climb to the nearest actually-scrollable ancestor (the Sheet's scroll host).
-      let node: HTMLElement | null = inputEl as HTMLElement
-      while (node) {
-        const style = getComputedStyle(node)
-        const scrollable = /(auto|scroll)/.test(style.overflowY)
-        if (scrollable && node.scrollHeight > node.clientHeight + 1) break
-        node = node.parentElement
-      }
-      if (!node) return { found: false, tag: '', scrollTop: 0 }
-      node.scrollTop = 400
-      return {
-        found: true,
-        tag: node.tagName + '.' + (node.className || '').split(' ')[0],
-        scrollTop: node.scrollTop,
-      }
-    })
-    expect(metrics.found, 'picker must have a scrollable host').toBeTruthy()
-    expect(metrics.scrollTop, 'scrolling the host must move scrollTop').toBeGreaterThan(0)
+    // Scrolling only applies when the list overflows: it needs more findings
+    // than fit (about ten). With fewer, the scroll check is skipped, not failed.
+    if (findingCount > 10) {
+      // Scrollability: the Sheet's SheetContent (= the dialog element, which has
+      // overflow-y-auto) is the scroll host. It must overflow when the tenant has
+      // many findings, and scrolling it must move scrollTop — this is the exact
+      // "can't scroll on iPad" bug the whole rework had to fix.
+      const metrics = await search.evaluate((inputEl) => {
+        // Climb to the nearest actually-scrollable ancestor (the Sheet's scroll host).
+        let node: HTMLElement | null = inputEl as HTMLElement
+        while (node) {
+          const style = getComputedStyle(node)
+          const scrollable = /(auto|scroll)/.test(style.overflowY)
+          if (scrollable && node.scrollHeight > node.clientHeight + 1) break
+          node = node.parentElement
+        }
+        if (!node) return { found: false, tag: '', scrollTop: 0 }
+        node.scrollTop = 400
+        return {
+          found: true,
+          tag: node.tagName + '.' + (node.className || '').split(' ')[0],
+          scrollTop: node.scrollTop,
+        }
+      })
+      expect(metrics.found, 'picker must have a scrollable host').toBeTruthy()
+      expect(metrics.scrollTop, 'scrolling the host must move scrollTop').toBeGreaterThan(0)
+    } else {
+      test.info().annotations.push({
+        type: 'skipped-check',
+        description: `scroll check needs more than 10 open findings, tenant has ${findingCount}`,
+      })
+    }
 
     // Toggle a finding row and confirm its checkbox flips (Check icon appears).
     const firstFinding = findingRows.first()

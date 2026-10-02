@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { test as base, expect } from '@playwright/test'
 import type { E2EConfig } from '../helpers/env'
 import { getE2EConfig } from '../helpers/env'
@@ -7,6 +9,13 @@ import { loginAs } from '../helpers/auth'
  * Custom Playwright fixture that yields a `page` already logged in
  * as the seed user. Specs that need an authenticated session simply
  * import `test` from this file instead of `@playwright/test`.
+ *
+ * Each worker signs in ONCE and every test in that worker reuses the saved
+ * session (storageState). Signing in per test hit the API's login rate limit
+ * (429) with two workers. One session per worker, rather than one for the
+ * whole run, keeps refresh-token rotation within a single process: two
+ * workers refreshing the same rotated token would trip reuse detection and
+ * revoke the session.
  *
  * The fixture also exposes `e2eConfig` so specs can access the
  * configured tenant slug and credentials without re-reading env vars.
@@ -20,7 +29,48 @@ type Fixtures = {
   e2eConfig: E2EConfig
 }
 
-export const test = base.extend<Fixtures>({
+type WorkerFixtures = {
+  /** Path of this worker's saved session, or '' when E2E env is missing. */
+  workerStorageState: string
+}
+
+export const test = base.extend<Fixtures, WorkerFixtures>({
+  workerStorageState: [
+    async ({ browser }, use, workerInfo) => {
+      const result = getE2EConfig()
+      if (!result.ok) {
+        await use('')
+        return
+      }
+      const file = path.resolve(
+        workerInfo.project.outputDir,
+        `.auth/worker-${workerInfo.parallelIndex}.json`
+      )
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      // The API allows 5 sign-ins a minute per address. Several workers plus
+      // the login spec can exceed that, so a refused sign-in waits for the
+      // window to pass and tries again instead of failing every test.
+      for (let attempt = 1; ; attempt++) {
+        const context = await browser.newContext({ baseURL: workerInfo.project.use.baseURL })
+        try {
+          await loginAs(await context.newPage(), result.config)
+          await context.storageState({ path: file })
+          break
+        } catch (err) {
+          if (attempt >= 4) throw err
+          await new Promise((resolve) => setTimeout(resolve, 20_000))
+        } finally {
+          await context.close()
+        }
+      }
+      await use(file)
+    },
+    { scope: 'worker', timeout: 180_000 },
+  ],
+
+  // Every test context starts from the worker's signed-in session.
+  storageState: ({ workerStorageState }, use) => use(workerStorageState || undefined),
+
   // Skip the test if env is missing; otherwise return the resolved config.
   e2eConfig: async ({}, use, testInfo) => {
     const result = getE2EConfig()
@@ -36,9 +86,9 @@ export const test = base.extend<Fixtures>({
     await use(result.config)
   },
 
-  // Replace the default `page` with one that has already logged in.
+  // Resolve e2eConfig first so a missing env skips before the page is used.
   page: async ({ page, e2eConfig }, use) => {
-    await loginAs(page, e2eConfig)
+    void e2eConfig
     await use(page)
   },
 })
