@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK=1 ;;
     --root) ROOT="$(cd "$2" && pwd)"; shift ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); if ($0 !~ /^shellcheck/) print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
