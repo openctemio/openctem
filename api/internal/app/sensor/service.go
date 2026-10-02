@@ -77,6 +77,46 @@ type SensorService struct {
 	// leases renews the leases of the commands a heartbeating sensor holds
 	// (RFC-035 D6); nil renews nothing.
 	leases commanddom.LeaseRenewer
+	// history keeps the per-sensor heartbeat history (the Control channel
+	// sparkline) and gaps observes each heartbeat's gap (metrics); nil
+	// records nothing.
+	history sensordom.HeartbeatHistoryRepository
+	gaps    HeartbeatGapObserver
+}
+
+// HeartbeatGapObserver receives the gap of every heartbeat that had a
+// previous one, with the interval the sensor followed: a metrics sink.
+type HeartbeatGapObserver interface {
+	ObserveHeartbeatGap(gap, interval time.Duration)
+}
+
+// SetHeartbeatHistory wires the heartbeat history (one bucketed write per
+// heartbeat of a tenant sensor). Optional.
+func (s *SensorService) SetHeartbeatHistory(r sensordom.HeartbeatHistoryRepository) {
+	s.history = r
+}
+
+// SetHeartbeatGapObserver wires the heartbeat gap metric. Optional.
+func (s *SensorService) SetHeartbeatGapObserver(o HeartbeatGapObserver) {
+	s.gaps = o
+}
+
+// HeartbeatHistory returns the last window (at most a day) of a tenant
+// sensor's heartbeat history, oldest first; empty when none is kept. The
+// sensor is looked up in the tenant first: another tenant's sensor is not
+// found.
+func (s *SensorService) HeartbeatHistory(ctx context.Context, tenantID, sensorID string, window time.Duration) ([]sensordom.HeartbeatBucket, error) {
+	a, err := s.GetSensor(ctx, tenantID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	if s.history == nil || a.TenantID == nil {
+		return []sensordom.HeartbeatBucket{}, nil
+	}
+	if window <= 0 || window > sensordom.MaxHeartbeatHistoryWindow {
+		window = sensordom.MaxHeartbeatHistoryWindow
+	}
+	return s.history.HeartbeatHistory(ctx, *a.TenantID, a.ID, s.now().Add(-window))
 }
 
 // SetLeaseRenewer wires command lease renewal into the heartbeat: every
@@ -671,6 +711,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 
 	s.observeInstance(ctx, a, data.InstanceID, data.Hostname, now)
 	s.renewLeases(ctx, a, data)
+	s.observeHeartbeat(ctx, a, data, now)
 
 	// Record a connect event only on an offline/unknown/error -> online
 	// transition. A late or stale sensor never stopped being connected: its
@@ -705,6 +746,10 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 			if e, ok := sensordom.OnlineEvent(a, now); ok {
 				events = append(events, e)
 			}
+		} else if e, ok := sensordom.RecoveredEvent(a, now); ok {
+			// The heartbeat came after its deadline had made the sensor
+			// late, stale or offline: one entry per recovery.
+			events = append(events, e)
 		}
 		for _, e := range sensordom.DiffHeartbeat(a, sensordom.HeartbeatObservation{
 			At: now, Version: version, Protocol: data.Protocol, StartedAt: startedAt, Report: report, Build: build,
@@ -727,6 +772,30 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	}
 
 	return nil
+}
+
+// observeHeartbeat feeds the heartbeat's gap (since the previous heartbeat,
+// from the stored deadline: polls do not shorten it) to the metric and the
+// tenant sensor's heartbeat history. Best effort: failures are logged.
+func (s *SensorService) observeHeartbeat(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData, now time.Time) {
+	var gap time.Duration
+	if prev := a.PreviousHeartbeatAt(); prev != nil && now.After(*prev) {
+		gap = now.Sub(*prev)
+	}
+	interval := a.HeartbeatInterval
+	if gap > 0 && s.gaps != nil {
+		s.gaps.ObserveHeartbeatGap(gap, interval)
+	}
+	if s.history == nil || a.TenantID == nil {
+		return
+	}
+	sample := sensordom.HeartbeatSample{TenantID: *a.TenantID, SensorID: a.ID, At: now, Gap: gap, Interval: interval}
+	if c := data.Control; c != nil {
+		sample.LagMillis, sample.Failures = c.LagMillis, c.Failures
+	}
+	if err := s.history.RecordHeartbeat(ctx, sample); err != nil {
+		s.logger.Warn("heartbeat history not recorded", "sensor_id", a.ID.String(), "error", err)
+	}
 }
 
 // maxRenewedCommands bounds the running list a heartbeat renews.

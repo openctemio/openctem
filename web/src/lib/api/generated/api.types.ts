@@ -23682,6 +23682,78 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensors/{id}/heartbeat-history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Sensor heartbeat history
+     * @description How the sensor's heartbeats arrived over the last hours (at most 24), in 15-minute buckets: heartbeats received, average and largest gap, the interval it followed, the largest timer lag and the heartbeats it reported lost. Kept 48 hours. Feeds the Control channel sparkline.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Window in hours (1-24) */
+          hours?: number
+        }
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorHeartbeatHistoryResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors/{id}/manifest': {
     parameters: {
       query?: never
@@ -30791,6 +30863,7 @@ export interface components {
       | 'RATE_LIMIT_EXCEEDED'
       | 'UPSTREAM_ERROR'
       | 'MFA_ENROLLMENT_REQUIRED'
+      | 'APPROVAL_REQUIRED'
     'github_com_openctemio_openctem_api_pkg_apierror.Error': {
       /** @description Machine-readable error code */
       code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
@@ -34805,7 +34878,7 @@ export interface components {
       source?: 'sensor' | 'audit' | 'job'
       summary?: string
       /**
-       * @description Type: online, offline, restarted (status); version_changed,
+       * @description Type: online, offline, restarted, heartbeat_recovered (status); version_changed,
        *     sdk_version_changed, protocol_changed, tools_changed,
        *     capacity_changed, content_updated, content_refresh_failed,
        *     manifest_changed (updates; details.diff, RFC-033 §6.12);
@@ -34925,6 +34998,26 @@ export interface components {
       message?: string
       /** @enum {string} */
       severity?: 'warning' | 'critical'
+    }
+    'internal_infra_http_handler.SensorHeartbeatBucketResponse': {
+      /** @description At is the bucket's start (RFC 3339, UTC). */
+      at?: string
+      avg_gap_s?: number
+      /**
+       * @description Beats is the heartbeats received; avg/max gap are the times between
+       *     consecutive heartbeats in it, interval_s the interval the sensor
+       *     followed; max_lag_ms and failures come from its control report.
+       */
+      beats?: number
+      failures?: number
+      interval_s?: number
+      max_gap_s?: number
+      max_lag_ms?: number
+    }
+    'internal_infra_http_handler.SensorHeartbeatHistoryResponse': {
+      bucket_seconds?: number
+      buckets?: components['schemas']['internal_infra_http_handler.SensorHeartbeatBucketResponse'][]
+      hours?: number
     }
     'internal_infra_http_handler.SensorLoadResponse': {
       capacity?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity']

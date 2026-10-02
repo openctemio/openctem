@@ -2873,6 +2873,7 @@ definitions:
     - RATE_LIMIT_EXCEEDED
     - UPSTREAM_ERROR
     - MFA_ENROLLMENT_REQUIRED
+    - APPROVAL_REQUIRED
     type: string
     x-enum-varnames:
     - CodeBadRequest
@@ -2888,6 +2889,7 @@ definitions:
     - CodeRateLimitExceeded
     - CodeUpstreamError
     - CodeMFAEnrollmentRequired
+    - CodeApprovalRequired
   github_com_openctemio_openctem_api_pkg_apierror.Error:
     properties:
       code:
@@ -10762,7 +10764,7 @@ definitions:
         type: string
       type:
         description: |-
-          Type: online, offline, restarted (status); version_changed,
+          Type: online, offline, restarted, heartbeat_recovered (status); version_changed,
           sdk_version_changed, protocol_changed, tools_changed,
           capacity_changed, content_updated, content_refresh_failed,
           manifest_changed (updates; details.diff, RFC-033 §6.12);
@@ -10940,6 +10942,39 @@ definitions:
         - warning
         - critical
         type: string
+    type: object
+  internal_infra_http_handler.SensorHeartbeatBucketResponse:
+    properties:
+      at:
+        description: At is the bucket's start (RFC 3339, UTC).
+        type: string
+      avg_gap_s:
+        type: number
+      beats:
+        description: |-
+          Beats is the heartbeats received; avg/max gap are the times between
+          consecutive heartbeats in it, interval_s the interval the sensor
+          followed; max_lag_ms and failures come from its control report.
+        type: integer
+      failures:
+        type: integer
+      interval_s:
+        type: number
+      max_gap_s:
+        type: number
+      max_lag_ms:
+        type: integer
+    type: object
+  internal_infra_http_handler.SensorHeartbeatHistoryResponse:
+    properties:
+      bucket_seconds:
+        type: integer
+      buckets:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorHeartbeatBucketResponse'
+        type: array
+      hours:
+        type: integer
     type: object
   internal_infra_http_handler.SensorLoadResponse:
     properties:
@@ -26709,6 +26744,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Disable sensor
+      tags:
+      - Sensors
+  /sensors/{id}/heartbeat-history:
+    get:
+      description: 'How the sensor''s heartbeats arrived over the last hours (at most
+        24), in 15-minute buckets: heartbeats received, average and largest gap, the
+        interval it followed, the largest timer lag and the heartbeats it reported
+        lost. Kept 48 hours. Feeds the Control channel sparkline.'
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 24
+        description: Window in hours (1-24)
+        in: query
+        name: hours
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorHeartbeatHistoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Sensor heartbeat history
       tags:
       - Sensors
   /sensors/{id}/manifest:

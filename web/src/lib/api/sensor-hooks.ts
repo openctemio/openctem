@@ -28,6 +28,7 @@ import type {
   SensorActivityItem,
   SensorActivityResponse,
   SensorManifestListResponse,
+  SensorHeartbeatHistoryResponse,
 } from './sensor-types'
 
 // ============================================
@@ -235,6 +236,27 @@ export function useSensorManifests(sensorId: string | null, enabled = true) {
       ...defaultConfig,
       onError: undefined,
       refreshInterval: SENSOR_REFRESH_MS * 2,
+    }
+  )
+}
+
+/**
+ * A sensor's heartbeat history (GET /sensors/{id}/heartbeat-history): the
+ * last 24 h in 15-minute buckets, for the Control channel sparkline. Errors
+ * are shown in place (no toast).
+ */
+export function useSensorHeartbeatHistory(sensorId: string | null, enabled = true) {
+  const { currentTenant } = useTenant()
+  const key =
+    currentTenant && sensorId && enabled ? sensorEndpoints.heartbeatHistory(sensorId) : null
+  return useSWR<SensorHeartbeatHistoryResponse>(
+    key,
+    (url: string) => get<SensorHeartbeatHistoryResponse>(url),
+    {
+      ...defaultConfig,
+      onError: undefined,
+      // A bucket is 15 minutes: a minute is fresh enough.
+      refreshInterval: 60_000,
     }
   )
 }

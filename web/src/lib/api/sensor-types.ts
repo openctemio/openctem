@@ -605,6 +605,7 @@ export type SensorActivityType =
   | 'online'
   | 'offline'
   | 'restarted'
+  | 'heartbeat_recovered'
   // updates
   | 'version_changed'
   | 'sdk_version_changed'
@@ -651,6 +652,10 @@ export interface SensorActivityDetails {
   // online / offline
   offline_seconds?: number
   last_seen_at?: string
+  // heartbeat_recovered (RFC-035): the step the sensor had reached
+  was?: 'late' | 'stale' | 'offline' | (string & {})
+  gap_seconds?: number
+  interval_seconds?: number
   // job_*
   command_id?: string
   command_type?: string
@@ -694,6 +699,29 @@ export interface SensorActivityResponse {
   next_cursor: string
   /** false without audit:read: administrator actions are then left out. */
   audit_included: boolean
+}
+
+/** One 15-minute bucket of a sensor's heartbeat history (RFC-035). */
+export interface SensorHeartbeatBucket {
+  /** Bucket start, RFC3339 UTC. */
+  at: string
+  /** Heartbeats received in the bucket. */
+  beats: number
+  /** Average and largest time between consecutive heartbeats (0: none). */
+  avg_gap_s: number
+  max_gap_s: number
+  /** The interval the sensor followed (what the gaps compare with). */
+  interval_s: number
+  /** Largest timer lag and heartbeats lost, from the sensor's control report. */
+  max_lag_ms: number
+  failures: number
+}
+
+/** GET /sensors/{id}/heartbeat-history: buckets that had a heartbeat, oldest first. */
+export interface SensorHeartbeatHistoryResponse {
+  bucket_seconds: number
+  hours: number
+  buckets: SensorHeartbeatBucket[]
 }
 
 export interface SensorActivityQuery {

@@ -1118,8 +1118,41 @@ platform-side work.
   leniently, clamped (`pkg/domain/sensor/control.go`) and stored
   (`sensors.reported_control`, `control_reported_at`); `GET /sensors/{id}`
   returns it and the console's sensor drawer shows a "Control channel" card.
-- `running` commands of a sensor that died are not recovered before the run
-  timeout (B5); RFC-030 leases address it.
+- **Leases (D6).** Running commands of a sensor that died go back to the
+  queue when their lease runs out ("Command leases" above).
+- **Heartbeat gap metric.** Every heartbeat that had a previous one feeds
+  two Prometheus histograms with no labels (fixed cardinality whatever the
+  fleet size):
+  - `sensor_heartbeat_gap_seconds`: the time between two heartbeats;
+  - `sensor_heartbeat_gap_ratio`: that time divided by the interval the
+    sensor followed (1 = on time).
+  The gap comes from the stored deadline (`heartbeat_due_at` minus the
+  interval), so polls and other requests do not shorten it.
+- **Recovery entry.** A heartbeat that arrives after its own deadline had
+  made the sensor late, stale or offline adds one `heartbeat_recovered`
+  activity entry ("Heartbeats back after a 1m20s gap (was late)"; details
+  `was`, `gap_seconds`, `interval_seconds`).
+  - It is judged on the heartbeat deadline, not on whether the controller
+    already ticked.
+  - Status entries coalesce on type, so a sensor that keeps slipping folds
+    into one row with a repeat count.
+  - A sensor back from `offline` gets the usual `online` entry instead.
+- **Heartbeat history and sparkline.**
+  - **Storage.** Each tenant sensor's heartbeats are aggregated on write
+    into 15-minute buckets (`sensor_heartbeat_history`, migration 000263;
+    one upsert per heartbeat). A bucket holds: heartbeats, average and
+    largest gap, the interval followed, the largest timer lag, and the
+    heartbeats the sensor reported lost.
+  - **Retention.** A controller deletes buckets older than 48 h every hour,
+    so there are at most 192 rows per sensor.
+  - **Read.** `GET /api/v1/sensors/{id}/heartbeat-history?hours=24`
+    (sensors:read, at most 24 h) returns the buckets that had a heartbeat,
+    oldest first.
+  - **Display.** The Control channel card draws them as a 24 h bar
+    sparkline: the bar height is the largest gap, a warning bar is a slot
+    where the sensor was late, an empty slot had no heartbeat, and a dashed
+    line shows the interval. Sensors that send no `control` block still get
+    the card for the sparkline.
 
 **What the SDK does** (sdk-go, RFC-035 Phase 1):
 
@@ -1132,9 +1165,9 @@ platform-side work.
 | Scanner processes | Linux: process group at nice +10, best-effort I/O level 7, `oom_score_adj` 500, set right after start. `SENSOR_SCANNER_PRIORITY=normal` turns it off. |
 | Slots | Leave memory free for the sensor: a tenth of its memory, 256 MiB to 1 GiB (`resource.DefaultReservedMem`). |
 
-**Still to come**: command leases with re-queue (D6, RFC-030), a
-`sensor_heartbeat_gap_seconds` histogram, an activity entry when a sensor
-recovers from `late`, and a gap sparkline on the Control channel card.
+The SDK echoes the lease epoch of each command it holds on `complete` and
+`fail` (`X-OpenCTEM-Lease-Epoch`, sdk-go v0.16.0); the API accepts both
+forms, so older sensors keep working (fenced by sensor and state only).
 
 ## History written in the old vocabulary
 

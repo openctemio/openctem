@@ -24,6 +24,7 @@ vi.mock('@/lib/api/sensor-hooks', () => ({
   useUpdateSensor: () => ({ trigger: update.trigger, isMutating: false }),
   invalidateSensorsCache: vi.fn(async () => undefined),
   useSensorCommands: () => ({ data: { data: [] }, isLoading: false }),
+  useSensorHeartbeatHistory: () => ({ data: undefined }),
 }))
 const content = vi.hoisted(() => ({ refreshSensorContent: vi.fn(), refreshFleetContent: vi.fn() }))
 vi.mock('@/lib/api/sensor-content-hooks', () => content)
