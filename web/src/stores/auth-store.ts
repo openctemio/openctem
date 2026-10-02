@@ -16,6 +16,8 @@ import { clearAllStoredPermissions } from '@/lib/permission-storage'
 import { clearAllLogoCaches } from '@/lib/logo-storage'
 import { devLog } from '@/lib/logger'
 import { csrfHeaders } from '@/lib/csrf-client'
+import { validateRedirectUrl } from '@/lib/redirect'
+import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
 
 // ============================================
 // TYPES
@@ -127,20 +129,29 @@ function extractUser(token: string): AuthUser {
   }
 }
 
-function redirectToLogin(returnUrl?: string): void {
-  const url = new URL('/auth/login', window.location.origin)
-  if (returnUrl) {
-    url.searchParams.set('returnUrl', returnUrl)
+/**
+ * The sign-in page for a session that ended. There is no /auth/login route
+ * (it 404s); the page is /login and it reads `redirect`, which it validates.
+ * Without an explicit target, the user comes back to the page they were on.
+ */
+export function loginPageUrl(returnUrl?: string): string {
+  const target = returnUrl ?? `${window.location.pathname}${window.location.search}`
+  const url = new URL('/login', window.location.origin)
+  if (target && target !== '/' && !target.startsWith('/login')) {
+    url.searchParams.set('redirect', target)
   }
-  window.location.href = url.toString()
+  return `${url.pathname}${url.search}`
+}
+
+function redirectToLogin(returnUrl?: string): void {
+  window.location.href = loginPageUrl(returnUrl)
 }
 
 function redirectToLogout(options?: { post_logout_redirect_uri?: string }): void {
-  const url = new URL('/auth/logout', window.location.origin)
-  if (options?.post_logout_redirect_uri) {
-    url.searchParams.set('redirect', options.post_logout_redirect_uri)
-  }
-  window.location.href = url.toString()
+  // There is no /auth/logout route either. Sign out the way the sign-out
+  // dialog does: the server action ends the API session, clears the httpOnly
+  // cookies and redirects.
+  void localLogoutAction(validateRedirectUrl(options?.post_logout_redirect_uri, '/login'))
 }
 
 // ============================================
