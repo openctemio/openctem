@@ -526,7 +526,7 @@ only narrow it:
 - effective concurrency = min(reported, `max_concurrent_jobs`)
 - not reported (old SDK): the administrator's values, unchanged
 
-Storage (migration 000250): `reported_tools` (jsonb), `reported_tool_names`,
+Storage (migration 000253): `reported_tools` (jsonb), `reported_tool_names`,
 `reported_capabilities`, `reported_max_jobs`, `reported_os`, `reported_arch`,
 `reported_at`, and the generated columns `effective_tools`,
 `effective_capabilities`, `effective_max_jobs`, built with
@@ -579,13 +579,13 @@ Content names: `trivy-db`, `trivy-java-db`, `nuclei-templates`,
 `semgrep-rules`. `managed: false` is content the tool fetches by itself (semgrep
 `--config auto`): shown, never flagged stale.
 
-**Storage.** Inside `sensors.reported_tools` (migration 000250): each tool's
+**Storage.** Inside `sensors.reported_tools` (migration 000253): each tool's
 `content` member, sanitized by `CapabilityReportInput.Sanitize` →
 `sanitizeToolContent` (names `[a-z0-9-]`, at most 8 per tool, version 128 /
 source 256 / error 256 bytes, a digest only when `sha256:<hex>`, timestamps no
 later than a day ahead). No column of its own.
 
-**Policy** (`sensor_content_policies`, migration 000252, one row per tenant):
+**Policy** (`sensor_content_policies`, migration 000253, one row per tenant):
 `refresh_interval_hours`, and per content `max_age_hours`, a pinned `version`
 (an OCI digest `sha256:…` for a database, a release tag for templates) and, for
 `semgrep-rules`, `rulesets` (`p/default`). 0 or absent = the platform default

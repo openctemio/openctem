@@ -1,3 +1,8 @@
+-- Renumbered from 000250: develop and live had already applied 000251 and
+-- 000252, and
+-- golang-migrate never applies a lower version after a higher one. Every
+-- statement is idempotent (IF NOT EXISTS / CREATE OR REPLACE / COMMENT), so a
+-- database that already ran it as 000250 runs it again harmlessly.
 -- Sensor-reported capabilities (docs/rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md
 -- §4.3.1). A sensor reports on its heartbeat which tools it really has, the
 -- capabilities it serves and how many jobs it runs at once. Dispatch uses the

@@ -16,7 +16,7 @@ type StoredContentPolicy struct {
 }
 
 // ContentPolicyRepository persists tenant content policies
-// (sensor_content_policies, migration 000252).
+// (sensor_content_policies, migration 000253).
 type ContentPolicyRepository interface {
 	// GetContentPolicy returns the tenant's policy, or nil (and no error)
 	// when the tenant has not set one.
