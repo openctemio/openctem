@@ -32,7 +32,7 @@ import (
 
 // V2Options are the ingest rules every v2 segment runs with.
 func V2Options() Options {
-	return Options{RequireAssetForFindings: true, NoCatalogWrites: true, DeferAutoResolve: true}
+	return Options{RequireAssetForFindings: true, NoCatalogWrites: true, DeferAutoResolve: true, DeferSensorStats: true}
 }
 
 // Provenance is what the server stamps on a v2 segment (RFC-026 §5.1). None

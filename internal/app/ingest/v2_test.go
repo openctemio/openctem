@@ -11,7 +11,7 @@ import (
 
 func TestV2Options(t *testing.T) {
 	o := V2Options()
-	if !o.RequireAssetForFindings || !o.NoCatalogWrites || !o.DeferAutoResolve {
+	if !o.RequireAssetForFindings || !o.NoCatalogWrites || !o.DeferAutoResolve || !o.DeferSensorStats {
 		t.Fatalf("v2 options %+v", o)
 	}
 	if (Options{}) != (Options{RequireAssetForFindings: false}) {

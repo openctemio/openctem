@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/component"
+	"github.com/openctemio/api/pkg/domain/ingestreport"
 	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
@@ -471,8 +472,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		}
 	}
 
-	// Step 5: Update sensor statistics (with proper error handling)
-	s.updateSensorStatsAsync(agt.ID, output)
+	// Step 5: Update sensor statistics (with proper error handling). A v2
+	// report counts once, when it completes (recordV2ReportStats).
+	if !opts.DeferSensorStats {
+		s.updateSensorStatsAsync(agt.ID, output)
+	}
 
 	s.logger.Info("ingestion complete",
 		"report_id", output.ReportID,
@@ -827,6 +831,25 @@ func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
 			s.logger.Warn("failed to update sensor stats", "sensor_id", sensorID.String(), "error", err)
 		}
 	}()
+}
+
+// recordV2ReportStats adds a completed protocol v2 report to its sensor's
+// totals, as a v1 ingest does: one scan, the findings it accepted and its item
+// errors. Finalization runs once per report, so a report counts once however
+// many segments or retries it took. A failed update is logged, not returned:
+// the report is already complete.
+func (s *Service) recordV2ReportStats(ctx context.Context, rep *ingestreport.Report) {
+	if s.sensorRepo == nil || rep == nil || rep.SensorID.IsZero() {
+		return
+	}
+	var findings, errs int64
+	for _, o := range rep.Outcomes {
+		findings += int64(o.AcceptedFindings)
+		errs += int64(len(o.Errors))
+	}
+	if err := s.sensorRepo.IncrementStats(ctx, rep.SensorID, findings, 1, errs); err != nil {
+		s.logger.Warn("failed to update sensor stats", "sensor_id", rep.SensorID.String(), "error", err)
+	}
 }
 
 // createIngestAuditLog creates an audit log entry for the ingestion result.
