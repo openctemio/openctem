@@ -110,11 +110,15 @@ type Heartbeat struct {
 	// sensors only.
 	ConfigVersion string `json:"config_version,omitempty"`
 	// Actions are typed control directives from a closed set: pause,
-	// resume, drain, rotate_key, update. Never free-form text.
+	// resume, drain, rotate_key, update, cancel. Never free-form text.
 	Actions []string `json:"actions,omitempty"`
 	// NextHeartbeatSeconds is the server-advised interval to the next
 	// heartbeat, already bounded by the server.
 	NextHeartbeatSeconds int `json:"next_heartbeat_seconds,omitempty"`
+	// CancelCommandIDs are commands the sensor listed as running that it
+	// must stop (canceled, timed out, re-queued, held elsewhere); sent with
+	// the cancel action. Only for a sensor that reports its running list.
+	CancelCommandIDs []string `json:"cancel_command_ids,omitempty"`
 }
 
 // HeaderSensorFeatures is the request header a sensor lists its optional
