@@ -54,6 +54,12 @@ cover, and the run fails and nothing is committed.
 Plaintext values left over from before encryption was configured count as
 failures. Run `cmd/encrypt-credentials` first if there are any.
 
+Not re-keyed: `findings.type_details.secret.fingerprint`, the keyed fingerprint
+of a secret finding. Its key is derived from `APP_ENCRYPTION_KEY`, and the
+secret itself is never stored, so it cannot be recomputed. After a rotation a
+secret seen again gets a fingerprint under the new key; findings fingerprinted
+before the rotation keep the old value, and the two do not compare equal.
+
 ## Runbook
 
 The keys are passed through the environment only. Never put them in
