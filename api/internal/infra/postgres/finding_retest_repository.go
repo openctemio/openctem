@@ -21,6 +21,12 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
+// A finding's retest history is listed 20 at a time by default, 100 at most.
+const (
+	listFindingRetestsDefault = 20
+	listFindingRetestsMax     = 100
+)
+
 // FindingRetestRepository stores retests.
 type FindingRetestRepository struct {
 	db *DB
@@ -92,8 +98,8 @@ func (r *FindingRetestRepository) FindPendingByCommand(ctx context.Context, tena
 
 // ListByFinding returns a finding's retests, newest first.
 func (r *FindingRetestRepository) ListByFinding(ctx context.Context, tenantID, findingID shared.ID, limit int) ([]*retest.Retest, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if limit <= 0 || limit > listFindingRetestsMax {
+		limit = listFindingRetestsDefault
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT `+findingRetestColumns+` FROM finding_retests
 		WHERE tenant_id = $1 AND finding_id = $2 ORDER BY created_at DESC LIMIT $3`,
@@ -102,7 +108,9 @@ func (r *FindingRetestRepository) ListByFinding(ctx context.Context, tenantID, f
 		return nil, fmt.Errorf("list finding retests: %w", err)
 	}
 	defer rows.Close()
-	out := make([]*retest.Retest, 0, limit)
+	// Not pre-sized from limit: the caller's value comes from a query
+	// parameter (clamped above, but the allocation must not depend on it).
+	out := make([]*retest.Retest, 0, listFindingRetestsDefault)
 	for rows.Next() {
 		rt, err := scanRetest(rows)
 		if err != nil {
