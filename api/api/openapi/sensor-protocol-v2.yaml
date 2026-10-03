@@ -422,7 +422,7 @@ components:
     sensorKey:
       type: http
       scheme: bearer
-      description: The sensor API key (rda_…), as in protocol v1. X-API-Key is accepted too.
+      description: The sensor API key (octs_…, or a legacy rda_… key), as in protocol v1. X-API-Key is accepted too.
   parameters:
     ReportID:
       name: report_id

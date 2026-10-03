@@ -18,6 +18,8 @@ import { clearAllLogoCaches } from '@/lib/logo-storage'
 import { devLog } from '@/lib/logger'
 import { csrfHeaders } from '@/lib/csrf-client'
 import { validateRedirectUrl } from '@/lib/redirect'
+import { removeCookie } from '@/lib/cookies'
+import { env } from '@/lib/env'
 import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
 
 // ============================================
@@ -144,8 +146,35 @@ export function loginPageUrl(returnUrl?: string): string {
   return `${url.pathname}${url.search}`
 }
 
+let sessionEnding = false
+
+/**
+ * The session is gone (the API answered 401 and the refresh failed): clear the
+ * session cookies, then go to the sign-in page, once per page.
+ *
+ * The cookies must go first. The proxy (src/proxy.ts) and /login treat a
+ * session cookie as "signed in" without validating it, so a stale cookie left
+ * behind would send the browser from /login straight back to the page that
+ * just failed. The JS store cannot clear the httpOnly cookies itself; the
+ * sign-out server action does (and ends the session on the API), then
+ * redirects to `/login?redirect=<this page>`.
+ */
+export function endSessionAndSignIn(returnUrl?: string): void {
+  if (sessionEnding || typeof window === 'undefined') return
+  sessionEnding = true
+  const target = loginPageUrl(returnUrl)
+  // The team cookies are JS-readable: drop them now, so even if the action
+  // below cannot run, /login shows the form instead of sending the browser
+  // back (it only skips the form when a team is selected).
+  removeCookie(env.cookies.tenant)
+  removeCookie(env.cookies.pendingTenants)
+  localLogoutAction(target).catch(() => {
+    window.location.href = target
+  })
+}
+
 function redirectToLogin(returnUrl?: string): void {
-  window.location.href = loginPageUrl(returnUrl)
+  endSessionAndSignIn(returnUrl)
 }
 
 function redirectToLogout(options?: { post_logout_redirect_uri?: string }): void {

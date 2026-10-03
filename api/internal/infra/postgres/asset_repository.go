@@ -1323,27 +1323,42 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	}
 
 	// Layer 2: Data Scope - filter by user's group membership
-	// Default (fail-OPEN): no rows in user_accessible_assets ⇒ NOT EXISTS bypasses
-	// and the user sees all (backward compatible). When the tenant enables
-	// RestrictedDataScope (filter.DataScopeStrict), the bypass is dropped: no
-	// assignment ⇒ no assets (fail-CLOSED, Tenable "No Access" default).
-	if filter.DataScopeUserID != nil && filter.TenantID != nil {
-		userIDIdx := argIndex
-		tenantIDIdx := argIndex + 1
-		args = append(args, filter.DataScopeUserID.String(), *filter.TenantID)
-		if filter.DataScopeStrict {
-			conditions = append(conditions, fmt.Sprintf(
-				`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-				userIDIdx, tenantIDIdx))
-		} else {
-			conditions = append(conditions, fmt.Sprintf(`(
-				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-				OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+	if filter.TenantID != nil {
+		if cond, scopeArgs := dataScopeCondition(filter.AccessScope(), *filter.TenantID, argIndex); cond != "" {
+			conditions = append(conditions, cond)
+			args = append(args, scopeArgs...)
 		}
 	}
 
 	return strings.Join(conditions, " AND "), args
+}
+
+// dataScopeCondition is the Layer-2 data-scope predicate on assets aliased
+// `a`, shared by the list, the aggregate stats and the property facets so the
+// counts a user sees never include an asset the list would hide from them.
+// argIndex is the first free $N placeholder; the returned args fill it and the
+// next one. It returns "" when the scope restricts nothing.
+//
+// Default (fail-OPEN): no rows in user_accessible_assets ⇒ NOT EXISTS bypasses
+// and the user sees all (backward compatible). When the tenant enables
+// RestrictedDataScope (DataScopeStrict), the bypass is dropped: no
+// assignment ⇒ no assets (fail-CLOSED, Tenable "No Access" default).
+func dataScopeCondition(access asset.AccessScope, tenantID string, argIndex int) (string, []any) {
+	if access.DataScopeUserID == nil || tenantID == "" {
+		return "", nil
+	}
+	userIDIdx := argIndex
+	tenantIDIdx := argIndex + 1
+	args := []any{access.DataScopeUserID.String(), tenantID}
+	if access.DataScopeStrict {
+		return fmt.Sprintf(
+			`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
+			userIDIdx, tenantIDIdx), args
+	}
+	return fmt.Sprintf(`(
+				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+				OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx), args
 }
 
 // =============================================================================
@@ -1960,6 +1975,36 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 	return avg, nil
 }
 
+// aggregateStatsWhere builds the WHERE clause of GetAggregateStats: tenant,
+// types, tags, sub-type and the caller's data scope (the same predicate as
+// List, so a scoped user's totals and breakdowns count only the assets they
+// can list).
+func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, tags []string, subType string) (string, []any) {
+	filterClause := " WHERE a.tenant_id = $1"
+	args := []any{tenantID.String()}
+	idx := 2
+	if len(types) > 0 {
+		filterClause += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
+		args = append(args, pq.Array(types))
+		idx++
+	}
+	if len(tags) > 0 {
+		filterClause += fmt.Sprintf(" AND a.tags && $%d", idx)
+		args = append(args, pq.Array(tags))
+		idx++
+	}
+	if subType != "" {
+		filterClause += fmt.Sprintf(" AND a.sub_type = $%d", idx)
+		args = append(args, subType)
+		idx++
+	}
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), idx); cond != "" {
+		filterClause += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	return filterClause, args
+}
+
 // GetAggregateStats computes all asset statistics in a SINGLE round-trip.
 // Filters: types (asset_type ANY), tags (tags && — overlap, matches List semantics).
 //
@@ -1967,7 +2012,7 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 // This version collapses everything into one query using a CTE + UNION ALL,
 // trading slightly more complex SQL for an 83% reduction in DB round-trips.
 // PostgreSQL plans a single scan of the filtered CTE for all aggregates.
-func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types []string, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
 		ByType:               make(map[string]int),
 		BySubType:            make(map[string]int),
@@ -1986,24 +2031,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	}
 
 	// Build the WHERE clause once.
-	filterClause := " WHERE a.tenant_id = $1"
-	args := []any{tenantID.String()}
-	idx := 2
-	if len(types) > 0 {
-		filterClause += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
-		args = append(args, pq.Array(types))
-		idx++
-	}
-	if len(tags) > 0 {
-		filterClause += fmt.Sprintf(" AND a.tags && $%d", idx)
-		args = append(args, pq.Array(tags))
-		idx++
-	}
-	if subType != "" {
-		filterClause += fmt.Sprintf(" AND a.sub_type = $%d", idx)
-		args = append(args, subType)
-		// idx++ if more conditions are added
-	}
+	filterClause, args := aggregateStatsWhere(tenantID, access, types, tags, subType)
 
 	// One query, three columns:
 	//   category — which aggregate this row belongs to
@@ -2181,11 +2209,32 @@ SELECT category, key, value FROM (
 	return stats, nil
 }
 
+// Bounds on the property-facet query. Facets expand every JSONB key (and
+// every array element) of every asset they read, so the work grows with the
+// inventory times the property width. These caps keep one request bounded:
+//
+//   - facetSampleAssets: only the most recently updated assets in the caller's
+//     scope are expanded. On a larger inventory the counts are counts within
+//     that sample (a lower bound), which is what a facet hint needs.
+//   - facetMaxArrayElems: at most this many elements of one array property
+//     are expanded per asset.
+//   - facetMaxValuesPerKey: values per key returned from the database (the
+//     response already kept only the top 20; the cut now happens in SQL, so
+//     the long tail never crosses the wire). The per-key count still sums
+//     every value in the sample.
+const (
+	facetSampleAssets    = 5000
+	facetMaxArrayElems   = 50
+	facetMaxValuesPerKey = 20
+)
+
 // GetPropertyFacets returns distinct JSONB property keys and their top values.
 // Uses a single query that expands JSONB keys and values together, then groups
-// in Go — replacing the previous 1+N query pattern.
-func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]asset.PropertyFacet, error) {
-	// Build optional extra filter clauses (applied inside the sub-select).
+// in Go — replacing the previous 1+N query pattern. It reads only the assets
+// the caller may list (access = the list's data scope) and is bounded by the
+// facet* constants above.
+func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types []string, subType string) ([]asset.PropertyFacet, error) {
+	// Build optional extra filter clauses (applied inside the sample CTE).
 	extraWhere := ""
 	args := []any{tenantID.String()}
 	idx := 2
@@ -2198,42 +2247,67 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	if subType != "" {
 		extraWhere += fmt.Sprintf(" AND a.sub_type = $%d", idx)
 		args = append(args, subType)
-		// idx++ — not needed after the last param
+		idx++
+	}
+	// Data scope: the same predicate as List, so a scoped user never sees a
+	// value (or a count) that only an asset outside their scope carries.
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), idx); cond != "" {
+		extraWhere += " AND " + cond
+		args = append(args, scopeArgs...)
 	}
 
-	// Single query: expand every JSONB key/value pair per asset, then aggregate.
-	// For scalar values: extract via ->> (returns text).
+	// Single query: expand every JSONB key/value pair per sampled asset, then
+	// aggregate. For scalar values: extract via ->> (returns text).
 	// For array values: unwrap via jsonb_array_elements_text (returns individual elements).
 	// This prevents arrays like ["ns1.cloudflare.com","ns2.cloudflare.com"] appearing
 	// as a single facet value.
 	query := fmt.Sprintf(`
-		SELECT key, val, COUNT(*) AS cnt
-		FROM (
+		WITH sample AS (
+			SELECT a.properties
+			FROM assets a
+			WHERE a.tenant_id = $1
+			  AND a.properties IS NOT NULL
+			  AND a.properties != '{}'::jsonb
+			  %[1]s
+			ORDER BY a.updated_at DESC
+			LIMIT %[2]d
+		),
+		pairs AS (
 			-- Scalar values (strings, numbers, booleans)
-			SELECT k AS key, a.properties ->> k AS val
-			FROM assets a, jsonb_object_keys(a.properties) AS k
-			WHERE a.tenant_id = $1
-			  AND a.properties IS NOT NULL
-			  AND a.properties != '{}'::jsonb
-			  AND jsonb_typeof(a.properties -> k) != 'array'
-			  AND jsonb_typeof(a.properties -> k) != 'object'
-			  %[1]s
+			SELECT k AS key, s.properties ->> k AS val
+			FROM sample s, jsonb_object_keys(s.properties) AS k
+			WHERE jsonb_typeof(s.properties -> k) NOT IN ('array', 'object')
 			UNION ALL
-			-- Array values: unwrap each element
-			SELECT k AS key, jsonb_array_elements_text(a.properties -> k) AS val
-			FROM assets a, jsonb_object_keys(a.properties) AS k
-			WHERE a.tenant_id = $1
-			  AND a.properties IS NOT NULL
-			  AND a.properties != '{}'::jsonb
-			  AND jsonb_typeof(a.properties -> k) = 'array'
-			  %[1]s
-		) sub
-		WHERE key NOT IN ('dns_records', 'ports', 'interfaces', 'tags')
-		  AND val IS NOT NULL
-		  AND val != ''
-		GROUP BY key, val
-		ORDER BY key, cnt DESC
-	`, extraWhere)
+			-- Array values: unwrap each element (bounded per asset)
+			SELECT k AS key, e.val
+			FROM sample s, jsonb_object_keys(s.properties) AS k,
+			     LATERAL (
+			         SELECT x AS val
+			         FROM jsonb_array_elements_text(
+			             CASE WHEN jsonb_typeof(s.properties -> k) = 'array'
+			                  THEN s.properties -> k ELSE '[]'::jsonb END) AS x
+			         LIMIT %[3]d
+			     ) e
+		),
+		counted AS (
+			SELECT key, val, COUNT(*) AS cnt
+			FROM pairs
+			WHERE key NOT IN ('dns_records', 'ports', 'interfaces', 'tags')
+			  AND val IS NOT NULL
+			  AND val != ''
+			GROUP BY key, val
+		),
+		ranked AS (
+			SELECT key, val, cnt,
+			       SUM(cnt) OVER (PARTITION BY key) AS key_total,
+			       ROW_NUMBER() OVER (PARTITION BY key ORDER BY cnt DESC, val) AS rn
+			FROM counted
+		)
+		SELECT key, val, cnt, key_total
+		FROM ranked
+		WHERE rn <= %[4]d
+		ORDER BY key, cnt DESC, val
+	`, extraWhere, facetSampleAssets, facetMaxArrayElems, facetMaxValuesPerKey)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -2251,19 +2325,20 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 
 	for rows.Next() {
 		var key, val string
-		var cnt int
-		if err := rows.Scan(&key, &val, &cnt); err != nil {
+		var cnt, keyTotal int
+		if err := rows.Scan(&key, &val, &cnt, &keyTotal); err != nil {
 			return nil, fmt.Errorf("failed to scan facet row: %w", err)
 		}
 
 		if _, seen := accum[key]; !seen {
-			accum[key] = &facetAccum{}
+			// key_total sums every value of the key, including those past
+			// the per-key cut, so the count matches the uncut behavior.
+			accum[key] = &facetAccum{totalCount: keyTotal}
 			order = append(order, key)
 		}
 		fa := accum[key]
-		fa.totalCount += cnt
-		// Keep only the top 20 values per key (rows are ordered by cnt DESC within each key).
-		if len(fa.values) < 20 {
+		// The SQL already keeps only the top values per key (ordered by cnt DESC).
+		if len(fa.values) < facetMaxValuesPerKey {
 			fa.values = append(fa.values, val)
 		}
 	}

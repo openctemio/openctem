@@ -13,7 +13,7 @@ import (
 )
 
 // ListFindingGroups returns findings grouped by a dimension.
-// Supported dimensions: cve_id, asset_id, owner_id, component_id, severity, source, finding_type.
+// Supported dimensions: cve_id, rule_id, asset_id, owner_id, component_id, severity, source, finding_type.
 func (r *FindingRepository) ListFindingGroups(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -24,6 +24,8 @@ func (r *FindingRepository) ListFindingGroups(
 	switch groupBy {
 	case "cve_id":
 		return r.groupByCVE(ctx, tenantID, filter, page)
+	case "rule_id":
+		return r.groupByRule(ctx, tenantID, filter, page)
 	case "asset_id":
 		return r.groupByAsset(ctx, tenantID, filter, page)
 	case "owner_id":
@@ -46,6 +48,13 @@ func (r *FindingRepository) ListFindingGroups(
 // the shared catalog) worst-first; groups take the worst of their findings.
 // 5 also covers info and anything unrecognized.
 const cveSeverityRank = `CASE COALESCE(f.severity, v.severity)
+				WHEN 'critical' THEN 1 WHEN 'high' THEN 2
+				WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
+			END`
+
+// findingSeverityRank orders a finding's own severity worst-first, for
+// groupings with no catalog join.
+const findingSeverityRank = `CASE f.severity
 				WHEN 'critical' THEN 1 WHEN 'high' THEN 2
 				WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
 			END`
@@ -312,6 +321,111 @@ func (r *FindingRepository) groupByCVE(
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("rows group by cve: %w", err)
 	}
 
+	return pagination.NewResult(groups, total, page), nil
+}
+
+// groupByRule groups findings by the scanner's rule: the nuclei template, the
+// semgrep or CodeQL rule, the Trivy or Checkov check, the secret rule, the
+// Tenable plugin. Unlike the CVE grouping it covers issues that have no CVE,
+// so "the same template on 40 hosts" or "the same check on 30 buckets" is one
+// row (RFC-044 P0; the definition catalog of RFC-044 replaces it later).
+// Findings without a rule_id are not grouped. The label is the rule name when
+// one was stored, else the first title.
+func (r *FindingRepository) groupByRule(
+	ctx context.Context, tenantID shared.ID,
+	filter vulnerability.FindingFilter, page pagination.Pagination,
+) (pagination.Result[*vulnerability.FindingGroup], error) {
+	filterWhere, filterArgs := buildFilterWhere(filter, 2)
+	extraWhere := ""
+	if filterWhere != "" {
+		extraWhere = "AND " + filterWhere
+	}
+	const scope = `f.tenant_id = $1 AND f.rule_id IS NOT NULL AND f.rule_id <> '' AND f.source != 'pentest'`
+
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(DISTINCT f.rule_id)
+		FROM findings f
+		WHERE %s %s
+	`, scope, extraWhere)
+	countArgs := append([]any{tenantID.String()}, filterArgs...)
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("count group by rule: %w", err)
+	}
+
+	nextArg := len(filterArgs) + 2
+	query := fmt.Sprintf(`
+		SELECT
+			f.rule_id as group_key,
+			COALESCE(MAX(NULLIF(f.rule_name, '')), MIN(f.title), f.rule_id) as label,
+			(ARRAY['critical','high','medium','low','info'])[MIN(%s)] as severity,
+			ARRAY_AGG(DISTINCT LOWER(f.tool_name)) FILTER (WHERE f.tool_name IS NOT NULL AND f.tool_name <> '') as tools,
+			ARRAY_AGG(DISTINCT f.finding_type) FILTER (WHERE f.finding_type IS NOT NULL) as finding_types,
+			COUNT(DISTINCT f.cve_id) as cves,
+			%s
+		FROM findings f
+		WHERE %s %s
+		GROUP BY f.rule_id
+		ORDER BY
+			MIN(%s),
+			COUNT(DISTINCT f.asset_id) DESC,
+			f.rule_id
+		LIMIT $%d OFFSET $%d
+	`, findingSeverityRank, statusCountCols(), scope, extraWhere, findingSeverityRank, nextArg, nextArg+1)
+
+	args := make([]any, 0, len(countArgs)+2)
+	args = append(args, countArgs...)
+	args = append(args, page.Limit(), page.Offset())
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("group by rule: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	groups := make([]*vulnerability.FindingGroup, 0)
+	for rows.Next() {
+		var (
+			groupKey, label, severity      string
+			tools, findingTypes            []string
+			cves                           int
+			total, open, ip, fa, resolved  int
+			affectedAssets, resolvedAssets int
+		)
+		if err := rows.Scan(
+			&groupKey, &label, &severity, pq.Array(&tools), pq.Array(&findingTypes), &cves,
+			&total, &open, &ip, &fa, &resolved,
+			&affectedAssets, &resolvedAssets,
+		); err != nil {
+			return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("scan group by rule: %w", err)
+		}
+
+		meta := map[string]any{"cve_count": cves}
+		if len(tools) > 0 {
+			meta["tools"] = tools
+		}
+		if len(findingTypes) > 0 {
+			meta["finding_types"] = findingTypes
+		}
+		pct := float64(0)
+		if total > 0 {
+			pct = float64(resolved) / float64(total) * 100
+		}
+		groups = append(groups, &vulnerability.FindingGroup{
+			GroupKey:  groupKey,
+			GroupType: "rule",
+			Label:     label,
+			Severity:  severity,
+			Metadata:  meta,
+			Stats: vulnerability.FindingGroupStats{
+				Total: total, Open: open, InProgress: ip, FixApplied: fa,
+				Resolved: resolved, AffectedAssets: affectedAssets,
+				ResolvedAssets: resolvedAssets, ProgressPct: pct,
+			},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("rows group by rule: %w", err)
+	}
 	return pagination.NewResult(groups, total, page), nil
 }
 

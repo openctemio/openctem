@@ -1133,25 +1133,56 @@ func (s *Service) checkAssetCoverage(
 
 // getAssetValues returns all values to check for an asset (name, URLs, etc).
 func (s *Service) getAssetValues(a *asset.Asset) []string {
-	values := []string{a.Name()}
+	return AssetMatchValues(a.Type().String(), a.Name(), a.Properties())
+}
 
-	// Add additional values based on asset type
-	if a.Type() != asset.AssetTypeRepository {
+// repositoryMatchKeys are the repository properties that name the repository
+// besides its asset name.
+var repositoryMatchKeys = []string{"full_name", "web_url", "clone_url"}
+
+// AssetMatchValues returns the values a scope target or exclusion is tested
+// against for an asset: its name and, for a repository, its URLs.
+func AssetMatchValues(assetType, name string, props map[string]any) []string {
+	values := []string{name}
+	if assetType != asset.AssetTypeRepository.String() || props == nil {
 		return values
 	}
-
-	props := a.Properties()
-	if props == nil {
-		return values
-	}
-
-	// Add repository-specific properties
-	for _, key := range []string{"full_name", "web_url", "clone_url"} {
+	for _, key := range repositoryMatchKeys {
 		if val, ok := props[key].(string); ok && val != "" {
 			values = append(values, val)
 		}
 	}
+	return values
+}
 
+// AssetExclusionValues is AssetMatchValues plus the addresses the asset is
+// known to resolve to (properties.ip_addresses, and the legacy
+// properties.ip). A scanner handed the asset's name reaches those addresses,
+// so an exclusion of any of them must exclude the asset. Matching more
+// values can only exclude more (fail closed); it is used for exclusions only,
+// never to put an asset in scope.
+func AssetExclusionValues(assetType, name string, props map[string]any) []string {
+	values := AssetMatchValues(assetType, name, props)
+	if props == nil {
+		return values
+	}
+	if ip, ok := props["ip"].(string); ok && ip != "" {
+		values = append(values, ip)
+	}
+	switch ips := props["ip_addresses"].(type) {
+	case []string:
+		for _, ip := range ips {
+			if ip != "" {
+				values = append(values, ip)
+			}
+		}
+	case []any:
+		for _, v := range ips {
+			if ip, ok := v.(string); ok && ip != "" {
+				values = append(values, ip)
+			}
+		}
+	}
 	return values
 }
 

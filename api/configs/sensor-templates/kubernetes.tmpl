@@ -6,7 +6,7 @@
 # Apply in the namespace the sensor should run in:
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
 {{- if not .APIKey}}
-# Replace rda_... below with the sensor's API key first (it is shown once,
+# Replace octs_... below with the sensor's API key first (it is shown once,
 # when the sensor is created or its key is rotated).
 {{- end}}
 apiVersion: v1
@@ -18,7 +18,7 @@ metadata:
     app.kubernetes.io/instance: {{$slug}}
 type: Opaque
 stringData:
-  api-key: {{if .APIKey}}{{.APIKey}}{{else}}rda_...{{end}}
+  api-key: {{if .APIKey}}{{.APIKey}}{{else}}octs_...{{end}}
 {{- if .CACert}}
   ca.crt: |
 {{indent 4 .CACert}}
