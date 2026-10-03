@@ -8,10 +8,19 @@ name: Web E2E
 # `Web CI OK` aggregate. The `changes` job (.github/scripts/changed.sh) gates
 # the run, so an API-only change does not start the stack. The suite needs the
 # API as well, but the API has its own tests; this job is about the web app.
+#
+# When it runs. It is the slowest job (three image builds and a full stack), and
+# the merge queue tests every pull request again on top of the latest develop,
+# so running it on the pull request too spent a runner twice for one answer.
+#   merge queue   always (when the web changed)
+#   pull request  only with the `run-e2e` label, or when the suite itself
+#                 (web/e2e/, this workflow) changed
 
 on:
   pull_request:
     branches: [main, develop]
+    # labeled: adding `run-e2e` to a pull request starts the suite.
+    types: [opened, synchronize, reopened, labeled]
   merge_group:
     types: [checks_requested]
 
@@ -28,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.f.outputs.web }}
+      suite: ${{ steps.suite.outputs.changed }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,11 +48,28 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/changed.sh
+      # Did a pull request change the suite itself? Then it runs on the PR.
+      - id: suite
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --quiet origin "$BASE_REF"
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qE '^(web/e2e/|\.github/workflows/web-e2e\.yml$)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
   e2e:
     name: Playwright e2e
     needs: changes
-    if: needs.changes.outputs.web == 'true'
+    if: >-
+      needs.changes.outputs.web == 'true' && (
+        github.event_name != 'pull_request' ||
+        needs.changes.outputs.suite == 'true' ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
