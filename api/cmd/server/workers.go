@@ -245,7 +245,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	sensorHealth.SetPlatformHealth(svc.SensorPlatformHealth)
 	w.ControllerManager.Register(sensorHealth)
 
-	w.ControllerManager.Register(controller.NewJobRecoveryController(
+	jobRecovery := controller.NewJobRecoveryController(
 		repos.Command,
 		&controller.JobRecoveryControllerConfig{
 			Interval:              60 * time.Second,
@@ -253,7 +253,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			MaxRetries:            3,
 			Logger:                log.With("controller", "job-recovery"),
 		},
-	))
+	)
+	// A poison command (dispatch attempts exhausted) fails its pipeline step.
+	if svc.Pipeline != nil {
+		jobRecovery.SetStepFailureNotifier(svc.Pipeline)
+	}
+	w.ControllerManager.Register(jobRecovery)
 
 	// Scan timeout controller: enforces per-scan timeout_seconds on running pipeline_runs
 	w.ControllerManager.Register(controller.NewScanTimeoutController(

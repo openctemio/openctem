@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Dialog,
   DialogContent,
@@ -16,24 +15,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
+import { TabsCount } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import {
-  Shield,
+  Check,
+  Hash,
+  KeyRound,
+  Loader2,
+  Lock,
   Pencil,
   Plus,
-  Trash2,
-  Loader2,
-  Calendar,
-  Lock,
-  KeyRound,
-  X,
   Save,
-  Users,
-  Check,
+  Shield,
+  Trash2,
 } from 'lucide-react'
 import {
   usePermissionSet,
@@ -44,7 +39,23 @@ import {
   getPermissionInfo,
 } from '@/features/access-control'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { SheetDetailToolbar, EmptyState } from '@/features/shared'
+import {
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+  DetailTabs,
+  EmptyState,
+  type DetailMenuItem,
+  type DetailTab,
+} from '@/features/shared'
+
+type PermissionSetTab = 'overview' | 'permissions'
 
 interface PermissionSetDetailSheetProps {
   permissionSetId: string | null
@@ -77,7 +88,7 @@ export function PermissionSetDetailSheet({
   const { addPermission, isAdding } = useAddPermissionToSet(permissionSetId)
 
   // UI State
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState<PermissionSetTab>('overview')
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({ name: '', description: '' })
   const [addPermissionDialogOpen, setAddPermissionDialogOpen] = useState(false)
@@ -91,6 +102,12 @@ export function PermissionSetDetailSheet({
     permissionSetId,
     permissionToRemove?.id || null
   )
+
+  // A different set starts on its overview, not in edit mode.
+  useEffect(() => {
+    setActiveTab('overview')
+    setIsEditing(false)
+  }, [permissionSetId])
 
   // Start editing
   const handleStartEdit = useCallback(() => {
@@ -201,8 +218,7 @@ export function PermissionSetDetailSheet({
   }
 
   // Get current permission keys
-  const currentPermissionKeys =
-    permissionSet?.items?.map((p: { permission: string }) => p.permission) || []
+  const currentPermissionKeys = permissionSet?.permissions ?? []
 
   // Get available permissions (not already in set)
   const availablePermissions = PermissionCategories.map((category) => ({
@@ -212,255 +228,210 @@ export function PermissionSetDetailSheet({
 
   const isSystem = permissionSet?.is_system
 
+  const permissionCount = permissionSet?.permissions?.length || 0
+
+  const tabs: DetailTab<PermissionSetTab>[] = [
+    { value: 'overview', label: 'Overview' },
+    {
+      value: 'permissions',
+      label: (
+        <>
+          Permissions
+          <TabsCount value={permissionCount} />
+        </>
+      ),
+    },
+  ]
+
+  const menu: DetailMenuItem[] = permissionSet
+    ? [
+        {
+          label: 'Copy ID',
+          icon: Hash,
+          onSelect: () => {
+            copyToClipboard(permissionSet.id)
+            toast.success('Permission set ID copied to clipboard')
+          },
+        },
+      ]
+    : []
+
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          className="sm:max-w-lg p-0 overflow-y-auto [&>button]:hidden"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <VisuallyHidden>
-            <SheetTitle>Permission Set Details</SheetTitle>
-          </VisuallyHidden>
-
-          <TooltipProvider>
-            <SheetDetailToolbar
-              title="Permission Set Details"
-              onClose={() => onOpenChange(false)}
-              onCopyId={
-                permissionSet
-                  ? () => {
-                      copyToClipboard(permissionSet.id)
-                    }
-                  : undefined
-              }
-              onEdit={permissionSet && !permissionSet.is_system ? handleStartEdit : undefined}
-            />
-          </TooltipProvider>
-
-          {isLoading ? (
-            <div className="p-6 space-y-4">
-              <Skeleton className="h-16 w-16 rounded-xl mx-auto" />
-              <Skeleton className="h-6 w-48 mx-auto" />
-              <Skeleton className="h-4 w-32 mx-auto" />
-              <div className="space-y-2 mt-8">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-              </div>
-            </div>
-          ) : permissionSet ? (
-            <div className="flex flex-col h-full">
-              {/* Header */}
-              <div className="relative px-6 pt-8 pb-6 bg-gradient-to-b from-muted/50 to-background">
-                {/* Edit Button */}
-                {!isSystem && (
-                  <div className="absolute top-4 right-4">
-                    {isEditing ? (
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)}>
-                          <X className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" onClick={handleSaveChanges} disabled={isUpdating}>
-                          {isUpdating ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button size="sm" variant="ghost" onClick={handleStartEdit}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {/* Icon & Info */}
-                <div className="flex flex-col items-center text-center">
-                  <div
-                    className={`p-4 rounded-xl ${isSystem ? 'bg-purple-500/20' : 'bg-blue-500/20'}`}
-                  >
-                    {isSystem ? (
-                      <Lock className={`h-8 w-8 text-purple-500`} />
-                    ) : (
-                      <KeyRound className={`h-8 w-8 text-blue-500`} />
-                    )}
-                  </div>
-
-                  {isEditing ? (
-                    <Input
-                      value={editForm.name}
-                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                      className="mt-4 text-center font-semibold"
-                    />
-                  ) : (
-                    <h2 className="mt-4 text-xl font-semibold">{permissionSet.name}</h2>
-                  )}
-
-                  {isEditing ? (
-                    <Textarea
-                      value={editForm.description}
-                      onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                      placeholder="Add a description..."
-                      className="mt-2 text-center"
-                      rows={2}
-                    />
-                  ) : permissionSet.description ? (
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {permissionSet.description}
-                    </p>
-                  ) : null}
-
-                  <div className="flex items-center gap-2 mt-3">
-                    <Badge
-                      className={`${isSystem ? 'bg-purple-500/20 text-purple-500' : 'bg-blue-500/20 text-blue-500'} border-0`}
-                    >
-                      {isSystem ? 'System' : 'Custom'}
+      <DetailSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        panel={permissionSet ? activeTab : undefined}
+        header={
+          <DetailHeader
+            title={
+              permissionSet && isEditing ? (
+                <Input
+                  autoFocus
+                  aria-label="Permission set name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="h-8 text-base font-semibold"
+                />
+              ) : (
+                (permissionSet?.name ?? 'Permission set')
+              )
+            }
+            badges={
+              permissionSet ? (
+                <>
+                  <Badge variant="outline" className="gap-1 text-xs font-normal">
+                    {isSystem ? <Lock className="h-3 w-3" /> : <KeyRound className="h-3 w-3" />}
+                    {isSystem ? 'System' : 'Custom'}
+                  </Badge>
+                  {isSystem && (
+                    <Badge variant="outline" className="text-xs font-normal">
+                      Read-only
                     </Badge>
-                    {isSystem && (
-                      <Badge variant="outline" className="text-xs">
-                        Read-only
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </div>
+                  )}
+                </>
+              ) : undefined
+            }
+            meta={permissionSet ? [`Created ${formatDate(permissionSet.created_at)}`] : undefined}
+            actions={
+              permissionSet && !isSystem ? (
+                isEditing ? (
+                  <>
+                    <Button size="sm" onClick={handleSaveChanges} disabled={isUpdating}>
+                      {isUpdating ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      Save
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setIsEditing(false)}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="sm" onClick={handleStartEdit}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )
+              ) : undefined
+            }
+            menu={menu}
+            onClose={() => onOpenChange(false)}
+          />
+        }
+        tabs={
+          permissionSet ? (
+            <DetailTabs tabs={tabs} value={activeTab} onValueChange={setActiveTab} />
+          ) : undefined
+        }
+      >
+        {isLoading ? (
+          <div className="space-y-3" aria-hidden>
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : !permissionSet ? (
+          <EmptyState icon={Shield} title="Permission set not found" card={false} />
+        ) : (
+          <>
+            {activeTab === 'overview' && (
+              <div className="space-y-5">
+                <DetailStatGrid aria-label="Key numbers">
+                  <DetailStat label="Permissions" value={permissionCount} />
+                  <DetailStat label="Teams using it" value={permissionSet.group_count || 0} />
+                  <DetailStat label="Created" value={formatDate(permissionSet.created_at)} />
+                </DetailStatGrid>
 
-              {/* Stats */}
-              <div className="px-6 py-4 grid grid-cols-3 gap-4 border-b">
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Shield className="h-4 w-4" />
-                    <span className="text-xs">Permissions</span>
-                  </div>
-                  <p className="text-lg font-semibold">{permissionSet.permissions?.length || 0}</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Users className="h-4 w-4" />
-                    <span className="text-xs">Groups</span>
-                  </div>
-                  <p className="text-lg font-semibold">{permissionSet.group_count || 0}</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Calendar className="h-4 w-4" />
-                    <span className="text-xs">Created</span>
-                  </div>
-                  <p className="text-sm font-semibold">{formatDate(permissionSet.created_at)}</p>
-                </div>
-              </div>
-
-              {/* Tabs */}
-              <div className="flex-1 px-6 py-4">
-                <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList>
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="permissions">Permissions</TabsTrigger>
-                  </TabsList>
-
-                  {/* Overview Tab */}
-                  <TabsContent value="overview" className="mt-4 space-y-4">
-                    <div className="rounded-lg border p-4">
-                      <h4 className="text-sm font-medium mb-3">Details</h4>
-                      <dl className="space-y-3 text-sm">
-                        <div className="flex justify-between">
-                          <dt className="text-muted-foreground">Type</dt>
-                          <dd>{isSystem ? 'System' : 'Custom'}</dd>
-                        </div>
-                        <div className="flex justify-between">
-                          <dt className="text-muted-foreground">Created</dt>
-                          <dd>{formatDate(permissionSet.created_at)}</dd>
-                        </div>
-                        <div className="flex justify-between">
-                          <dt className="text-muted-foreground">Last Updated</dt>
-                          <dd>{formatDate(permissionSet.updated_at)}</dd>
-                        </div>
-                        <div className="flex justify-between">
-                          <dt className="text-muted-foreground">ID</dt>
-                          <dd className="font-mono text-xs">
-                            {permissionSet.id.substring(0, 8)}...
-                          </dd>
-                        </div>
-                      </dl>
-                    </div>
-
-                    <div className="rounded-lg border p-4">
-                      <h4 className="text-sm font-medium mb-2">Description</h4>
+                <DetailSections>
+                  <DetailSection title="Description">
+                    {isEditing ? (
+                      <Textarea
+                        aria-label="Description"
+                        value={editForm.description}
+                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        placeholder="Add a description..."
+                        rows={3}
+                      />
+                    ) : (
                       <p className="text-sm text-muted-foreground">
                         {permissionSet.description || 'No description provided.'}
                       </p>
-                    </div>
-                  </TabsContent>
-
-                  {/* Permissions Tab */}
-                  <TabsContent value="permissions" className="mt-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-sm font-medium">
-                        Permissions ({permissionSet.permissions?.length || 0})
-                      </h4>
-                      {!isSystem && (
-                        <Button size="sm" onClick={() => setAddPermissionDialogOpen(true)}>
-                          <Plus className="me-2 h-4 w-4" />
-                          Add Permission
-                        </Button>
-                      )}
-                    </div>
-
-                    {!permissionSet.permissions || permissionSet.permissions.length === 0 ? (
-                      <EmptyState icon={Shield} title="No permissions in this set" card={false} />
-                    ) : (
-                      <div className="space-y-2">
-                        {permissionSet.permissions.map((permission: string, index: number) => {
-                          const info = getPermissionInfo(permission)
-                          return (
-                            <div
-                              key={`${permission}-${index}`}
-                              className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 rounded-lg bg-green-500/20">
-                                  <Check className="h-4 w-4 text-green-500" />
-                                </div>
-                                <div>
-                                  <p className="font-medium text-sm">{info?.label || permission}</p>
-                                  {info?.description && (
-                                    <p className="text-xs text-muted-foreground line-clamp-1">
-                                      {info.description}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              {!isSystem && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0 text-red-400 hover:text-red-500"
-                                  onClick={() =>
-                                    setPermissionToRemove({ id: permission, key: permission })
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
                     )}
-                  </TabsContent>
-                </Tabs>
+                  </DetailSection>
+
+                  <DetailSection title="Details">
+                    <DetailFieldGrid>
+                      <DetailField label="Type">{isSystem ? 'System' : 'Custom'}</DetailField>
+                      <DetailField label="Last updated">
+                        {formatDate(permissionSet.updated_at)}
+                      </DetailField>
+                      <DetailField label="Permission set ID" full>
+                        <DetailCopyId id={permissionSet.id} label="Permission set ID" />
+                      </DetailField>
+                    </DetailFieldGrid>
+                  </DetailSection>
+                </DetailSections>
               </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              Permission set not found
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+            )}
+
+            {activeTab === 'permissions' && (
+              <DetailSection
+                title="Permissions"
+                count={permissionCount}
+                actions={
+                  !isSystem ? (
+                    <Button size="sm" onClick={() => setAddPermissionDialogOpen(true)}>
+                      <Plus className="h-4 w-4" />
+                      Add permission
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {permissionCount === 0 ? (
+                  <EmptyState icon={Shield} title="No permissions in this set" card={false} />
+                ) : (
+                  <ul className="divide-y rounded-lg border">
+                    {permissionSet.permissions!.map((permission: string, index: number) => {
+                      const info = getPermissionInfo(permission)
+                      const label = info?.label || permission
+                      return (
+                        <li
+                          key={`${permission}-${index}`}
+                          className="flex items-center gap-3 px-3 py-2.5"
+                        >
+                          <Check className="h-4 w-4 shrink-0 text-success" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium break-words">{label}</p>
+                            {info?.description && (
+                              <p className="text-xs text-muted-foreground">{info.description}</p>
+                            )}
+                          </div>
+                          {!isSystem && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                              aria-label={`Remove ${label}`}
+                              onClick={() =>
+                                setPermissionToRemove({ id: permission, key: permission })
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </DetailSection>
+            )}
+          </>
+        )}
+      </DetailSheet>
 
       {/* Add Permission Dialog */}
       <Dialog open={addPermissionDialogOpen} onOpenChange={setAddPermissionDialogOpen}>
@@ -550,7 +521,7 @@ export function PermissionSetDetailSheet({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-red-500">Remove Permission</DialogTitle>
+            <DialogTitle>Remove Permission</DialogTitle>
             <DialogDescription>
               Are you sure you want to remove the &quot;
               {getPermissionInfo(permissionToRemove?.key || '')?.label || permissionToRemove?.key}

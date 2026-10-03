@@ -5,7 +5,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  *
  * Regressions this guards:
  *   1. The header labelled every non-target asset "Repository:", so a finding
- *      on a domain or IP read as a code finding.
+ *      on a domain or IP read as a code finding. The asset now sits in the
+ *      properties rail with its real type.
  *   2. "Activity (0)" in the header while the feed showed an entry (the
  *      synthetic "Recorded by ..." item was not counted).
  *   3. Every title button in the findings list was announced as "View finding
@@ -41,11 +42,13 @@ test.describe('Finding detail header', () => {
 
     await page.goto(`/findings/${f!.id}`)
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText('Repository:', { exact: true })).toHaveCount(0)
+    // The properties rail names the asset's type under its name
+    // ("Domain · Critical asset · Public"), never "Repository" for a domain.
+    const rail = page.getByRole('complementary', { name: 'Finding properties' })
+    await expect(rail.getByText('Asset', { exact: true })).toBeAttached()
+    await expect(rail.getByText(/^Repository\b/)).toHaveCount(0)
     if (f!.asset!.type === 'domain') {
-      await expect(
-        page.getByText('Domain:', { exact: true }).filter({ visible: true })
-      ).toBeVisible()
+      await expect(rail.getByText(/^Domain\b/)).toBeAttached()
     }
   })
 
@@ -54,6 +57,8 @@ test.describe('Finding detail header', () => {
     test.skip(findings.length === 0, 'Needs a finding')
 
     await page.goto(`/findings/${findings[0].id}`)
+    // Activity is a tab now, not a permanent side column.
+    await page.getByRole('tab', { name: /^Activity/ }).click({ timeout: 30_000 })
     const feed = page.getByRole('list', { name: 'Activity' })
     await expect(feed).toBeVisible({ timeout: 30_000 })
     const shown = await feed.getByRole('listitem').count()

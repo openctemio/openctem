@@ -1,414 +1,128 @@
 'use client'
 
+/**
+ * Finding detail page.
+ *
+ * Answers, in the first screen: what it is (header), how bad it is for us and
+ * why (Why it matters), how to fix it (Fix), and who owns it by when (the
+ * properties rail). Everything else is one tab away. Design and research:
+ * web/docs/finding-detail.md.
+ *
+ *   ┌──────────────────────────────────────┬────────────────┐
+ *   │ header: type · CVE · title · actions  │ properties     │
+ *   │ SLA callout (when overdue)            │ (sticky rail)  │
+ *   │ Why it matters                        │                │
+ *   │ Fix                                   │                │
+ *   │ Overview | Evidence | … | Activity    │                │
+ *   └──────────────────────────────────────┴────────────────┘
+ *
+ * Below `lg` the rail sits between the header and "Why it matters", so status
+ * and owner stay near the top on a phone.
+ */
+
 import { useParams, useRouter } from 'next/navigation'
-import { csrfFetch } from '@/lib/api/client'
-import { Main } from '@/components/layout'
-import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable'
 import { useSWRConfig } from 'swr'
+import { toast } from 'sonner'
+import { AlertTriangle, Wifi, WifiOff } from 'lucide-react'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DetailCallout } from '@/features/shared/components/detail-sheet'
+import { useDetailTab } from '@/features/shared/components/detail-sheet-layout'
+import { csrfFetch } from '@/lib/api/client'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { getTriageCacheKey } from '@/features/ai-triage/api'
 import { useFindingApi, useAddFindingCommentApi } from '@/features/findings/api/use-findings-api'
 import { useFindingActivitiesInfinite } from '@/features/findings/api/use-finding-activities-api'
 import { useActivityStream } from '@/features/findings/hooks/use-activity-stream'
-import { getTriageCacheKey } from '@/features/ai-triage/api'
-import type { ApiFinding } from '@/features/findings/api/finding-api.types'
-import { toast } from 'sonner'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import { Wifi, WifiOff } from 'lucide-react'
-import type {
-  FindingDetail,
-  FindingStatus,
-  Activity,
-  FindingType,
-  SecretType,
-  ComplianceFramework,
-  ComplianceResult,
-  ActivityType,
-  AssetType,
-} from '@/features/findings/types'
-import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
+import { useFindingTriage } from '@/features/findings/hooks/use-finding-triage'
+import type { ActivityType, FindingDetail } from '@/features/findings/types'
 import { mergeFindingActivities } from '@/features/findings/lib/finding-activities'
-import type { Severity } from '@/features/shared/types'
+import { toFindingDetail, findingShortName } from '@/features/findings/lib/finding-detail'
+import { isBreach, daysUntil } from '@/features/sla/lib/sla'
 import {
-  FindingHeader,
-  OverviewTab,
-  EvidenceTab,
-  RemediationTab,
-  RelatedTab,
   ActivityPanel,
   DataFlowTab,
+  EvidenceTab,
+  FindingFixCard,
+  FindingHeader,
+  FindingProperties,
+  FindingWhyItMatters,
+  OverviewTab,
+  RelatedTab,
+  RemediationTab,
 } from '@/features/findings/components/detail'
 import { PentestDetailsTab } from '@/features/findings/components/detail/pentest-details-tab'
 import { getSourceLayout, getOrderedTabs } from '@/features/findings/config/source-layout'
 import '@/features/findings/config/register-layouts'
 
-/**
- * Transform API response to FindingDetail format for UI components
- * Asset info now comes from api.asset (enriched by backend)
- */
-function transformApiToFindingDetail(api: ApiFinding): FindingDetail {
-  // Use asset info from API (enriched by backend), skip nil UUIDs
-  const nilUUID = '00000000-0000-0000-0000-000000000000'
-  const hasValidAsset = api.asset_id && api.asset_id !== nilUUID
-  const assetName = api.asset?.name || (hasValidAsset ? api.asset_id : '')
-  const assetWebUrl = api.asset?.web_url
-  const statusMap: Record<string, FindingStatus> = {
-    new: 'new',
-    open: 'new',
-    confirmed: 'confirmed',
-    in_progress: 'in_progress',
-    fix_applied: 'fix_applied',
-    resolved: 'resolved',
-    false_positive: 'false_positive',
-    accepted: 'accepted',
-    duplicate: 'duplicate',
-    draft: 'draft',
-    in_review: 'in_review',
-    remediation: 'remediation',
-    retest: 'retest',
-    verified: 'verified',
-    accepted_risk: 'accepted_risk',
-  }
+const TRIAGE_ACTIVITY: ActivityType[] = ['ai_triage', 'ai_triage_failed']
+const CLOSED = new Set([
+  'resolved',
+  'verified',
+  'false_positive',
+  'accepted',
+  'accepted_risk',
+  'duplicate',
+])
 
-  // Create initial activity from creation
-  const activities: Activity[] = [
-    {
-      id: `act-created-${api.id}`,
-      type: 'created',
-      actor: 'system',
-      // Uses created_at (ingest time), so label it "Recorded" — the header chip
-      // separately shows first_detected_at as "Discovered". Two distinct
-      // timestamps must not both read "Discovered".
-      content: `Recorded by ${api.tool_name}`,
-      metadata: {
-        source: api.source,
-        scanId: api.scan_id,
-      },
-      createdAt: api.created_at,
-    },
-  ]
-
-  // Add status change activity if resolved
-  if (api.resolved_at) {
-    activities.unshift({
-      id: `act-resolved-${api.id}`,
-      type: 'status_changed',
-      actor: api.resolved_by
-        ? { id: 'resolver', name: api.resolved_by, email: '', role: 'analyst' }
-        : 'system',
-      previousValue: 'in_progress',
-      newValue: 'resolved',
-      content: api.resolution || 'Finding resolved',
-      createdAt: api.resolved_at,
-    })
-  }
-
-  // Use asset name if provided, otherwise use a display-friendly version
-  const displayAssetName = assetName || (hasValidAsset ? api.asset_id : '')
-
-  return {
-    id: api.id,
-    title: api.title || api.rule_name || api.message,
-    description: api.description || api.message,
-    severity: api.severity as Severity,
-    status: statusMap[api.status] || 'new',
-
-    // Technical details - use direct API fields first, then metadata fallback
-    cvss: api.cvss_score ?? (api.metadata?.cvss as number) ?? undefined,
-    cvssVector: api.cvss_vector || (api.metadata?.cvss_vector as string) || undefined,
-    cve: api.cve_id || (api.metadata?.cve as string) || undefined,
-    cwe: api.cwe_ids?.[0] || (api.metadata?.cwe as string) || undefined,
-    owasp: api.owasp_ids?.[0] || (api.metadata?.owasp as string) || undefined,
-    tags: api.tags || (api.metadata?.tags as string[]) || [],
-
-    // Location Info
-    filePath: api.file_path,
-    startLine: api.start_line,
-    endLine: api.end_line,
-    startColumn: api.start_column,
-    endColumn: api.end_column,
-
-    // Repository Info (for linking to source code)
-    repositoryUrl: assetWebUrl,
-    branch: api.last_seen_branch || api.first_detected_branch,
-    commitSha: api.last_seen_commit || api.first_detected_commit,
-
-    // Scanner/Tool Info
-    ruleId: api.rule_id,
-    ruleName: api.rule_name,
-    toolName: api.tool_name,
-    toolVersion: api.tool_version,
-
-    // Code snippet
-    snippet: api.snippet,
-    contextSnippet: api.context_snippet,
-    contextStartLine: api.context_start_line,
-
-    // Asset - for pentest: show affected targets; for scanner: show repository
-    assets: (() => {
-      const isPentestSrc = ['pentest', 'bug_bounty', 'red_team', 'manual'].includes(api.source)
-      const assetType = findingAssetType(api)
-      const result: { id: string; type: AssetType; name: string; url?: string }[] = []
-      // Skip nil/zero UUID asset IDs (pentest findings without linked CTEM asset)
-      const isValidAssetId = api.asset_id && api.asset_id !== '00000000-0000-0000-0000-000000000000'
-      if (isValidAssetId) {
-        result.push({ id: api.asset_id, type: assetType, name: displayAssetName, url: assetWebUrl })
-      }
-      if (isPentestSrc && api.metadata?.affected_assets) {
-        for (const t of api.metadata.affected_assets as string[]) {
-          if (!result.some((a) => a.name === t)) {
-            result.push({ id: t, type: 'target', name: t })
-          }
-        }
-      }
-      return result
-    })(),
-
-    // Evidence - snippets are shown in dedicated "Code Evidence" section
-    // This array is for other evidence items (screenshots, logs, etc.)
-    evidence: [],
-
-    // Remediation - pentest: use remediation_guidance from metadata; scanner: use recommendation
-    remediation: {
-      description:
-        (api.metadata?.remediation_guidance as string) ||
-        api.recommendation ||
-        api.resolution ||
-        '',
-      steps: [],
-      references: (api.metadata?.references as string[]) || [],
-      progress: api.status === 'resolved' ? 100 : 0,
-    },
-
-    // Source info - pass through actual source type from API
-    source: api.source as FindingDetail['source'],
-    scanner: api.tool_name,
-    scanId: api.scan_id,
-
-    // Relations - empty for now
-    relatedFindings: [],
-
-    // Assignment - use assigned_to_user if available (from backend enrichment)
-    assignee: api.assigned_to
-      ? {
-          id: api.assigned_to,
-          name: api.assigned_to_user?.name || api.assigned_to, // Use enriched name or fall back to ID
-          email: api.assigned_to_user?.email || '',
-          role: 'analyst' as const,
-        }
-      : undefined,
-
-    // Timestamps
-    discoveredAt: api.first_detected_at || api.created_at,
-    resolvedAt: api.resolved_at,
-    createdAt: api.created_at,
-    updatedAt: api.updated_at,
-
-    // Activities
-    activities,
-
-    // Extended: Risk Assessment
-    isTriaged: api.is_triaged,
-    confidence: api.confidence,
-    impact: api.impact,
-    likelihood: api.likelihood,
-    rank: api.rank,
-    slaStatus: api.sla_status,
-
-    // Extended: Security Context
-    exposureVector: api.exposure_vector,
-    isNetworkAccessible: api.is_network_accessible,
-    attackPrerequisites: api.attack_prerequisites,
-    dataExposureRisk: api.data_exposure_risk,
-    reputationalImpact: api.reputational_impact,
-    complianceImpact: api.compliance_impact,
-
-    // Extended: Classification
-    vulnerabilityClass: api.vulnerability_class,
-    baselineState: api.baseline_state,
-    kind: api.kind,
-
-    // Extended: Remediation Info
-    remediationType: api.remediation_type,
-    estimatedFixTime: api.estimated_fix_time,
-    fixComplexity: api.fix_complexity,
-    remedyAvailable: api.remedy_available,
-
-    // Auto-fix fields (from scanner)
-    fixCode: api.fix_code,
-    fixRegex: api.fix_regex,
-
-    // Full remediation JSONB from API
-    apiRemediation: api.remediation,
-
-    // Extended: Tracking
-    workItemUris: api.work_item_uris,
-    occurrenceCount: api.occurrence_count,
-    duplicateCount: api.duplicate_count,
-    lastSeenAt: api.last_seen_at,
-    correlationId: api.correlation_id,
-
-    // Extended: Technical context
-    stacks: api.stacks,
-    relatedLocations: api.related_locations,
-
-    // Data Flow (Attack Path / Taint Tracking)
-    dataFlow: api.data_flow
-      ? {
-          sources: api.data_flow.sources?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-            index: loc.index,
-            type: loc.location_type,
-          })),
-          intermediates: api.data_flow.intermediates?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-            index: loc.index,
-            type: loc.location_type,
-          })),
-          sinks: api.data_flow.sinks?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-            index: loc.index,
-            type: loc.location_type,
-          })),
-        }
-      : undefined,
-
-    // Finding Type discriminator
-    findingType: api.finding_type as FindingType | undefined,
-
-    // Type-specific details
-    secretDetails: api.secret_type
-      ? {
-          secretType: api.secret_type as SecretType,
-          service: api.secret_service,
-          valid: api.secret_valid,
-          revoked: api.secret_revoked,
-          maskedValue: api.secret_masked_value,
-          entropy: api.secret_entropy,
-          scopes: api.secret_scopes,
-          expiresAt: api.secret_expires_at,
-          rotationDueAt: api.secret_rotation_due_at,
-          ageInDays: api.secret_age_in_days,
-          commitCount: api.secret_commit_count,
-          inHistoryOnly: api.secret_in_history_only,
-          verifiedAt: api.secret_verified_at,
-        }
-      : undefined,
-    complianceDetails: api.compliance_framework
-      ? {
-          framework: api.compliance_framework as ComplianceFramework,
-          frameworkVersion: api.compliance_framework_version,
-          controlId: api.compliance_control_id,
-          controlName: api.compliance_control_name,
-          controlDescription: api.compliance_control_description,
-          result: api.compliance_result as ComplianceResult | undefined,
-          section: api.compliance_section,
-        }
-      : undefined,
-    web3Details: api.web3_chain
-      ? {
-          chain: api.web3_chain,
-          chainId: api.web3_chain_id,
-          contractAddress: api.web3_contract_address,
-          swcId: api.web3_swc_id,
-          functionSignature: api.web3_function_signature,
-          txHash: api.web3_tx_hash,
-          functionSelector: api.web3_function_selector,
-          bytecodeOffset: api.web3_bytecode_offset,
-        }
-      : undefined,
-    misconfigDetails: api.misconfig_policy_id
-      ? {
-          policyId: api.misconfig_policy_id,
-          policyName: api.misconfig_policy_name,
-          resourceType: api.misconfig_resource_type,
-          resourceName: api.misconfig_resource_name,
-          resourcePath: api.misconfig_resource_path,
-          expected: api.misconfig_expected,
-          actual: api.misconfig_actual,
-          cause: api.misconfig_cause,
-        }
-      : undefined,
-
-    // Raw scanner metadata
-    metadata: api.metadata,
-  }
+const TAB_LABEL: Record<string, string> = {
+  overview: 'Overview',
+  evidence: 'Evidence',
+  remediation: 'Remediation',
+  'attack-path': 'Attack path',
+  pentest: 'Pentest details',
+  related: 'Related',
+  activity: 'Activity',
 }
 
+function evidenceCount(f: FindingDetail) {
+  return (
+    (f.contextSnippet || f.snippet ? 1 : 0) +
+    (f.stacks?.length || 0) +
+    (f.relatedLocations?.length || 0) +
+    (f.attachments?.length || 0)
+  )
+}
+
+function dataFlowCount(f: FindingDetail) {
+  return (
+    (f.dataFlow?.sources?.length || 0) +
+    (f.dataFlow?.intermediates?.length || 0) +
+    (f.dataFlow?.sinks?.length || 0)
+  )
+}
+
+/** Same grid as the page, so nothing jumps when the data arrives. */
 function LoadingSkeleton() {
   return (
-    <div className="flex h-[calc(100vh-7rem)] gap-4">
-      {/* Left Panel - Header + Tabs */}
-      <Card className="flex flex-1 flex-col overflow-hidden">
-        {/* Header skeleton */}
-        <CardHeader className="flex-shrink-0 border-b pb-4">
-          <Skeleton className="mb-2 h-4 w-32" />
-          <Skeleton className="mb-2 h-7 w-3/4" />
+    <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem]" aria-busy>
+      <div className="space-y-5">
+        <div className="space-y-3">
+          <div className="flex gap-1.5">
+            <Skeleton className="h-5 w-12" />
+            <Skeleton className="h-5 w-28" />
+          </div>
+          <Skeleton className="h-8 w-3/4" />
           <div className="flex gap-2">
-            <Skeleton className="h-7 w-20" />
-            <Skeleton className="h-7 w-24" />
-            <Skeleton className="h-7 w-28" />
-          </div>
-        </CardHeader>
-
-        {/* Tabs skeleton - underline style */}
-        <div className="flex-shrink-0 border-b px-6">
-          <div className="flex gap-4 py-3">
-            <Skeleton className="h-5 w-20" />
-            <Skeleton className="h-5 w-20" />
-            <Skeleton className="h-5 w-24" />
-            <Skeleton className="h-5 w-16" />
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-8 w-24" />
           </div>
         </div>
-
-        {/* Content skeleton */}
-        <CardContent className="min-h-0 flex-1 overflow-y-auto p-6">
-          <div className="space-y-4">
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-36 w-full rounded-lg" />
+        <Skeleton className="h-28 w-full rounded-lg" />
+        <Skeleton className="h-9 w-80" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+      <div className="space-y-3 rounded-lg border p-4">
+        {Array.from({ length: 9 }).map((_, i) => (
+          <div key={i} className="grid grid-cols-[6.5rem_1fr] items-center gap-3">
+            <Skeleton className="h-3.5 w-16" />
+            <Skeleton className="h-6 w-full" />
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Right Panel - Activity */}
-      <Card className="hidden w-[320px] flex-shrink-0 flex-col overflow-hidden lg:flex xl:w-[380px]">
-        <CardHeader className="flex-shrink-0 border-b pb-2">
-          <Skeleton className="h-6 w-20" />
-        </CardHeader>
-        <div className="min-h-0 flex-1 overflow-hidden p-4">
-          <div className="space-y-4">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-          </div>
-        </div>
-        {/* Comment form skeleton */}
-        <div className="flex-shrink-0 border-t p-2">
-          <Skeleton className="mb-1.5 h-[50px] w-full" />
-          <div className="flex justify-between">
-            <div className="flex gap-1">
-              <Skeleton className="h-5 w-5" />
-              <Skeleton className="h-5 w-5" />
-            </div>
-            <Skeleton className="h-6 w-16" />
-          </div>
-        </div>
-      </Card>
+        ))}
+      </div>
     </div>
   )
 }
@@ -430,51 +144,40 @@ export default function FindingDetailPage() {
     mutate: mutateActivities,
   } = useFindingActivitiesInfinite(id)
 
-  // AI triage activity types that indicate triage completion
-  const triageActivityTypes: ActivityType[] = ['ai_triage', 'ai_triage_failed']
-
-  // Callback when AI triage completes - invalidate triage cache and refresh finding
   const handleTriageCompleted = () => {
-    // Invalidate triage result cache to get fresh data
-    if (id) {
-      mutate(getTriageCacheKey(id))
-    }
-    // Also refresh the finding to get updated isTriaged flag
+    if (id) mutate(getTriageCacheKey(id))
     mutateFinding()
-    // Refresh activities to show the triage activity
     mutateActivities()
   }
 
-  // Real-time activity stream via SSE
   const {
     realtimeActivities,
     status: streamStatus,
     clearActivities,
   } = useActivityStream(id, {
-    // When we receive a new activity, check if it's a triage event
     onActivity: (activity) => {
-      // Refresh activities to update total count
       mutateActivities()
-
-      // If this is an AI triage activity, trigger triage completion handlers
-      if (triageActivityTypes.includes(activity.type)) {
-        handleTriageCompleted()
-      }
+      if (TRIAGE_ACTIVITY.includes(activity.type)) handleTriageCompleted()
     },
   })
 
-  // Transform API data to FindingDetail format
-  // Asset info now comes from api.asset (enriched by backend), no need for separate fetch
-  const finding = apiFinding ? transformApiToFindingDetail(apiFinding) : null
+  const finding = apiFinding ? toFindingDetail(apiFinding) : null
+  useBreadcrumbTitle(finding ? findingShortName(finding) : null)
 
-  // Source-aware layout: source panel + tab ordering
+  const triage = useFindingTriage(
+    finding ?? { id, status: 'new', severity: 'medium', assignee: undefined },
+    { onStatusChange: () => void mutateFinding(), onAssigneeChange: () => void mutateFinding() }
+  )
+
+  // Tabs: the source layout decides order and which apply; Activity is always
+  // last but one, before Related.
   const layout = finding ? getSourceLayout(finding) : {}
-  const orderedTabs = getOrderedTabs(layout)
-  const SourcePanel = layout.sourcePanel
+  const baseTabs = getOrderedTabs(layout).filter(
+    (t) => t !== 'attack-path' || (finding ? dataFlowCount(finding) > 0 : false)
+  )
+  const tabs = [...baseTabs.filter((t) => t !== 'related'), 'activity', 'related']
+  const [tab, setTab] = useDetailTab('tab', tabs)
 
-  // Merge real-time + API + synthetic activities (deduplicate by ID). The
-  // count covers exactly what the feed shows. Recomputed each render (cheap);
-  // `finding` is rebuilt every render, so a useMemo keyed on it never hits.
   const { activities: allActivities, count: activityCount } = mergeFindingActivities({
     fetched: apiActivities,
     fetchedTotal: activitiesTotal,
@@ -482,51 +185,27 @@ export default function FindingDetailPage() {
     fromFinding: finding?.activities,
   })
 
-  // Handler for adding new comments
-  const handleAddComment = async (content: string, _isInternal: boolean) => {
-    if (!content.trim()) return
+  const commentRequest = async (url: string, init: RequestInit, done: string, failed: string) => {
+    try {
+      const res = await csrfFetch(url, { credentials: 'include', ...init })
+      if (!res.ok) throw new Error(failed)
+      await mutateActivities()
+      clearActivities()
+      toast.success(done)
+    } catch (e) {
+      toast.error(getErrorMessage(e, failed))
+    }
+  }
 
+  const handleAddComment = async (content: string) => {
+    if (!content.trim()) return
     try {
       await addComment({ content })
-      // Revalidate activities - comment is created as an activity record
       await mutateActivities()
       clearActivities()
       toast.success('Comment added')
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to add comment'))
-      console.error('Add comment error:', error)
-    }
-  }
-
-  const handleEditComment = async (commentId: string, content: string) => {
-    try {
-      const response = await csrfFetch(`/api/v1/findings/${id}/comments/${commentId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ content }),
-      })
-      if (!response.ok) throw new Error('Failed to update comment')
-      await mutateActivities()
-      clearActivities()
-      toast.success('Comment updated')
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update comment'))
-    }
-  }
-
-  const handleDeleteComment = async (commentId: string) => {
-    try {
-      const response = await csrfFetch(`/api/v1/findings/${id}/comments/${commentId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
-      if (!response.ok) throw new Error('Failed to delete comment')
-      await mutateActivities()
-      clearActivities()
-      toast.success('Comment deleted')
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete comment'))
+    } catch (e) {
+      toast.error(getErrorMessage(e, 'Failed to add comment'))
     }
   }
 
@@ -543,12 +222,12 @@ export default function FindingDetailPage() {
       <Main>
         <div className="flex h-[50vh] items-center justify-center">
           <div className="text-center">
-            <h2 className="text-2xl font-semibold">Finding Not Found</h2>
-            <p className="text-muted-foreground mt-2">
-              The finding with ID &quot;{id}&quot; does not exist.
+            <h1 className="text-2xl font-semibold">Finding not found</h1>
+            <p className="mt-2 text-muted-foreground">
+              It does not exist, or you do not have access to it.
             </p>
             <Button className="mt-4" onClick={() => router.push('/findings')}>
-              Return to Findings
+              Back to findings
             </Button>
           </div>
         </div>
@@ -556,160 +235,141 @@ export default function FindingDetailPage() {
     )
   }
 
+  const slaDays = daysUntil(finding.slaDeadline)
+  const slaLate =
+    !CLOSED.has(triage.status) && (isBreach(finding.slaStatus) || (slaDays !== null && slaDays < 0))
+
   return (
-    <Main fixed className="!py-0 !px-0 sm:!px-0 lg:!px-0">
-      {/* Full-bleed layout — no padding, content fills viewport */}
+    <Main>
+      <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[auto_auto_auto_1fr]">
+        <div className="min-w-0 lg:col-start-1">
+          <FindingHeader
+            finding={finding}
+            status={triage.status}
+            onTriageCompleted={handleTriageCompleted}
+          />
+        </div>
 
-      {/* Two-panel resizable layout */}
-      <ResizablePanelGroup
-        direction="horizontal"
-        className="!h-[calc(100vh-3.5rem)] rounded-lg"
-        autoSaveId="finding-detail-layout"
-      >
-        {/* Left Panel - Header + Tabs */}
-        <ResizablePanel defaultSize={70} minSize={40}>
-          <Card className="flex h-full flex-col overflow-hidden gap-0 border-0 shadow-none rounded-none">
-            {/* Finding Header */}
-            <CardHeader className="flex-shrink-0 pb-1">
-              <FindingHeader finding={finding} onTriageCompleted={handleTriageCompleted} />
-            </CardHeader>
+        <aside
+          aria-label="Finding properties"
+          className="min-w-0 lg:sticky lg:top-4 lg:col-start-2 lg:row-span-4 lg:row-start-1 lg:self-start"
+        >
+          <div className="rounded-lg border bg-card p-3 lg:p-4">
+            <FindingProperties finding={finding} triage={triage} />
+          </div>
+        </aside>
 
-            {/* Source-specific context panel */}
-            {SourcePanel && <SourcePanel finding={finding} />}
+        <div className="min-w-0 space-y-4 lg:col-start-1">
+          {slaLate && (
+            <DetailCallout
+              tone="destructive"
+              icon={AlertTriangle}
+              title={
+                slaDays !== null && slaDays < 0
+                  ? `SLA overdue by ${Math.abs(slaDays)} day${Math.abs(slaDays) === 1 ? '' : 's'}`
+                  : 'SLA breached'
+              }
+            >
+              {finding.priorityClass
+                ? `${finding.priorityClass} findings must be fixed within the SLA; this one is past its deadline.`
+                : 'This finding is past its remediation deadline.'}
+            </DetailCallout>
+          )}
+          <FindingWhyItMatters finding={finding} />
+          <FindingFixCard finding={finding} onOpenPlan={() => setTab('remediation')} />
+        </div>
 
-            {/* Tabs — order and visibility driven by source layout */}
-            <Tabs defaultValue={orderedTabs[0]} className="flex min-h-0 flex-1 flex-col">
-              <div className="flex-shrink-0 border-b px-3 sm:px-6">
-                <TabsList className="h-11 border-b-0">
-                  {orderedTabs.map((tab) => (
-                    <TabsTrigger key={tab} value={tab}>
-                      {tab === 'overview' && 'Overview'}
-                      {tab === 'evidence' && (
-                        <>
-                          Evidence
-                          {(() => {
-                            const count =
-                              (finding.contextSnippet || finding.snippet ? 1 : 0) +
-                              (finding.stacks?.length || 0) +
-                              (finding.relatedLocations?.length || 0) +
-                              (finding.attachments?.length || 0)
-                            return count > 0 ? ` (${count})` : ''
-                          })()}
-                        </>
-                      )}
-                      {tab === 'remediation' && 'Remediation'}
-                      {tab === 'attack-path' && (
-                        <>
-                          <span className="hidden sm:inline">Attack Path</span>
-                          <span className="sm:hidden">Path</span>
-                          {finding.dataFlow && (
-                            <TabsCount
-                              value={
-                                (finding.dataFlow.sources?.length || 0) +
-                                (finding.dataFlow.intermediates?.length || 0) +
-                                (finding.dataFlow.sinks?.length || 0)
-                              }
-                            />
-                          )}
-                        </>
-                      )}
-                      {tab === 'pentest' && 'Pentest details'}
-                      {tab === 'related' && 'Related'}
-                    </TabsTrigger>
-                  ))}
-                  {/* Activity tab — mobile only (desktop has side panel) */}
-                  <TabsTrigger value="activity" className="lg:hidden">
-                    Activity <TabsCount value={activityCount} />
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-
-              <CardContent className="min-h-0 flex-1 overflow-y-auto p-6">
-                <TabsContent value="overview" className="m-0 mt-0">
-                  <OverviewTab finding={finding} activities={allActivities} />
-                </TabsContent>
-                <TabsContent value="evidence" className="m-0 mt-0">
-                  <EvidenceTab evidence={finding.evidence} finding={finding} />
-                </TabsContent>
-                <TabsContent value="remediation" className="m-0 mt-0">
-                  <RemediationTab remediation={finding.remediation} finding={finding} />
-                </TabsContent>
-                <TabsContent value="attack-path" className="m-0 mt-0">
-                  <DataFlowTab finding={finding} />
-                </TabsContent>
-                <TabsContent value="pentest" className="m-0 mt-0">
-                  <PentestDetailsTab finding={finding} />
-                </TabsContent>
-                <TabsContent value="related" className="m-0 mt-0">
-                  <RelatedTab finding={finding} />
-                </TabsContent>
-                {/* Activity tab content — mobile only */}
-                <TabsContent value="activity" className="m-0 mt-0 lg:hidden">
-                  <ActivityPanel
-                    activities={allActivities}
-                    onAddComment={handleAddComment}
-                    onEditComment={handleEditComment}
-                    onDeleteComment={handleDeleteComment}
-                    total={activitiesTotal}
-                    hasMore={!isReachingEnd}
-                    isLoadingMore={isLoadingMore}
-                    onLoadMore={loadMore}
-                  />
-                </TabsContent>
-              </CardContent>
-            </Tabs>
-          </Card>
-        </ResizablePanel>
-
-        {/* Resize Handle */}
-        <ResizableHandle withHandle className="mx-2 hidden lg:flex" />
-
-        {/* Right Panel - Activity */}
-        <ResizablePanel defaultSize={30} minSize={20} maxSize={50} className="hidden lg:block">
-          <Card className="h-full overflow-hidden py-1 border-0 border-l rounded-none shadow-none">
-            <div className="flex h-full flex-col">
-              <CardHeader className="flex-shrink-0 border-b [.border-b]:pb-3 py-1">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Activity ({activityCount})</CardTitle>
-                  {/* Real-time connection indicator */}
-                  <div
-                    className="flex items-center gap-1"
-                    title={
-                      streamStatus === 'connected'
-                        ? 'Real-time updates active'
-                        : streamStatus === 'connecting'
-                          ? 'Connecting...'
-                          : 'Real-time updates offline'
-                    }
-                  >
-                    {streamStatus === 'connected' ? (
-                      <Wifi className="h-3.5 w-3.5 text-green-500" />
-                    ) : streamStatus === 'connecting' ? (
-                      <Wifi className="h-3.5 w-3.5 text-yellow-500 animate-pulse" />
-                    ) : (
-                      <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
+        <div className="min-w-0 lg:col-start-1">
+          <Tabs value={tab} onValueChange={(v) => setTab(v)}>
+            <div className="-mx-1 overflow-x-auto px-1">
+              <TabsList>
+                {tabs.map((t) => (
+                  <TabsTrigger key={t} value={t}>
+                    {TAB_LABEL[t] ?? t}
+                    {t === 'evidence' && evidenceCount(finding) > 0 && (
+                      <TabsCount value={evidenceCount(finding)} />
                     )}
-                  </div>
-                </div>
-              </CardHeader>
-              <div className="relative flex-1">
-                <div className="absolute inset-0 overflow-hidden">
-                  <ActivityPanel
-                    activities={allActivities}
-                    onAddComment={handleAddComment}
-                    onEditComment={handleEditComment}
-                    onDeleteComment={handleDeleteComment}
-                    total={activitiesTotal}
-                    hasMore={!isReachingEnd}
-                    isLoadingMore={isLoadingMore}
-                    onLoadMore={loadMore}
-                  />
-                </div>
-              </div>
+                    {t === 'attack-path' && <TabsCount value={dataFlowCount(finding)} />}
+                    {t === 'activity' && <TabsCount value={activityCount} />}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
             </div>
-          </Card>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+
+            <TabsContent value="overview" className="mt-5">
+              <OverviewTab finding={finding} activities={allActivities} />
+            </TabsContent>
+            <TabsContent value="evidence" className="mt-5">
+              <EvidenceTab evidence={finding.evidence} finding={finding} />
+            </TabsContent>
+            <TabsContent value="remediation" className="mt-5">
+              <RemediationTab remediation={finding.remediation} finding={finding} />
+            </TabsContent>
+            <TabsContent value="attack-path" className="mt-5">
+              <DataFlowTab finding={finding} />
+            </TabsContent>
+            <TabsContent value="pentest" className="mt-5">
+              <PentestDetailsTab finding={finding} />
+            </TabsContent>
+            <TabsContent value="activity" className="mt-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Activity ({activityCount})</h2>
+                <span
+                  className="flex items-center gap-1 text-xs text-muted-foreground"
+                  title={
+                    streamStatus === 'connected'
+                      ? 'Live updates on'
+                      : streamStatus === 'connecting'
+                        ? 'Connecting'
+                        : 'Live updates off'
+                  }
+                >
+                  {streamStatus === 'connected' ? (
+                    <Wifi className="h-3.5 w-3.5 text-success" aria-hidden />
+                  ) : (
+                    <WifiOff className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  {streamStatus === 'connected' ? 'Live' : 'Offline'}
+                </span>
+              </div>
+              <div className="rounded-lg border">
+                <ActivityPanel
+                  activities={allActivities}
+                  onAddComment={(c) => void handleAddComment(c)}
+                  onEditComment={(cid, content) =>
+                    void commentRequest(
+                      `/api/v1/findings/${id}/comments/${cid}`,
+                      {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content }),
+                      },
+                      'Comment updated',
+                      'Failed to update comment'
+                    )
+                  }
+                  onDeleteComment={(cid) =>
+                    void commentRequest(
+                      `/api/v1/findings/${id}/comments/${cid}`,
+                      { method: 'DELETE' },
+                      'Comment deleted',
+                      'Failed to delete comment'
+                    )
+                  }
+                  total={activitiesTotal}
+                  hasMore={!isReachingEnd}
+                  isLoadingMore={isLoadingMore}
+                  onLoadMore={loadMore}
+                />
+              </div>
+            </TabsContent>
+            <TabsContent value="related" className="mt-5">
+              <RelatedTab finding={finding} />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+      {triage.dialogs}
     </Main>
   )
 }
