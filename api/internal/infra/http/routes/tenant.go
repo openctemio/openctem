@@ -65,6 +65,17 @@ func registerTenantRoutes(
 	if ipAllowlistMiddleware != nil {
 		tenantMiddlewares = append(tenantMiddlewares, ipAllowlistMiddleware)
 	}
+	// Per-request SSO enforcement for the organization in the URL, with the
+	// caller's role there (RequireMembership above puts it in the context).
+	// The token-tenant chains run the same gate through buildBaseMiddlewares;
+	// this chain does not use that builder, so it adds the gate here.
+	if ssoEnforcementMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, ssoEnforcementMiddleware)
+	}
+	// The per-user read budget of the token-tenant chains.
+	if readRateLimitMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, readRateLimitMiddleware)
+	}
 
 	router.Group("/api/v1/tenants/{tenant}", func(r Router) {
 		// Read operations - any member (viewer+). The group chain scopes
