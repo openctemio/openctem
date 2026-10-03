@@ -37,16 +37,14 @@
 #    group the dropdown into sections. If you add a new type, set its
 #    category to one of the entries in `categories` below.
 #
-# 4. KNOWN LIMITATION on constraint enforcement: some asset types in
-#    the constraints below (`k8s_cluster`, `k8s_workload`, `container_image`,
-#    `api_collection`, `api_endpoint`, `identity_provider`, `compute`)
-#    are virtual frontend types — they don't exist as real `AssetType`
-#    enum values in the backend. The constraint table is therefore
-#    UI-side advisory only; the backend cannot enforce it. The only
-#    server-side rule we currently enforce is the runs_on/deployed_to
-#    placement mutex. To make constraints fully enforceable, either
-#    add those types as real `AssetType` enum values OR add an alias
-#    map here that resolves virtual types to base types at codegen time.
+# 4. Constraint type names. Every name in `sources`/`targets` must be a real
+#    asset type or a `virtual_types` entry of configs/asset-types.yaml (the
+#    RFC-042 type registry), which resolves the frontend names (`k8s_cluster`,
+#    `k8s_workload`, `container_image`, `api_collection`, `api_endpoint`,
+#    `identity_provider`, `credential`, `mobile`) to real (type, sub_type)
+#    pairs. `make generate-asset-types` fails on any other name and emits the
+#    resolved per-type relationships into the registry, so the server can
+#    enforce them. The web picker still reads the names as written here.
 # =============================================================================
 
 # Categories used to group types in the UI dropdown.

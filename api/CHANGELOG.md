@@ -25,6 +25,11 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Fixed
 
+- **A finding's occurrence count grows with every sighting** (RFC-043 P0).
+  Re-ingesting an existing finding wrote back the count it had loaded before
+  the merge, so `occurrence_count` stayed at 1 however often a scan saw the
+  finding, and concurrent ingests overwrote each other. The update now adds
+  one to the stored value in SQL.
 - **A finding another ingest just created is no longer reported as new, and
   keeps its ticket links** (RFC-043 P0). Ingest checked which fingerprints
   existed and then inserted the rest; when two ingests raced on one new
