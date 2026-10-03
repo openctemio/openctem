@@ -4,7 +4,20 @@ import { Badge } from '@/components/ui/badge'
 import { Network, Shield, AlertTriangle, CheckCircle } from 'lucide-react'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
-import { toStringArray } from '@/features/assets/lib/property-utils'
+import { asnInfo, formatPort, openPorts } from '@/features/assets/lib/service-facts'
+import {
+  ChipMono,
+  ChipRow,
+  FactChip,
+  OpenPortChips,
+  UnknownChip,
+} from '@/features/assets/components/service-cells'
+
+const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
+
+// ASN and open ports come from `ip_address.{asn,asn_org,ports[]}` (ingest)
+// or the manual form's flat `asn` / `asn_organization` / `open_ports`, read
+// through service-facts. "Ports not collected" is not "no open ports".
 
 // Helper to determine if IP is public or private
 function isPublicIp(address: string): boolean {
@@ -44,13 +57,16 @@ export const ipAddressesConfig: AssetPageConfig = {
       id: 'asnOrg',
       header: 'ASN / Organization',
       cell: ({ row }) => {
-        const ip = row.original
-        const asn = (ip.metadata?.asn as string) || '-'
-        const org = (ip.metadata?.asn_organization as string) || '-'
+        const { asn, org } = asnInfo(row.original)
+        if (!asn && !org) return <UnknownChip>Not collected</UnknownChip>
         return (
-          <div>
-            <p className="font-medium">{asn}</p>
-            <p className="text-sm text-muted-foreground">{org}</p>
+          <div className="min-w-0 max-w-[200px]">
+            <p className="font-mono text-sm">{asn ?? unknownText()}</p>
+            {org && (
+              <p className="truncate text-xs text-muted-foreground" title={org}>
+                {org}
+              </p>
+            )}
           </div>
         )
       },
@@ -70,27 +86,11 @@ export const ipAddressesConfig: AssetPageConfig = {
     {
       id: 'open_ports',
       header: 'Open Ports',
-      cell: ({ row }) => {
-        const raw = row.original.metadata?.open_ports
-        const ports = toStringArray(raw)
-        if (ports.length === 0) {
-          return <span className="text-muted-foreground">-</span>
-        }
-        return (
-          <div className="flex flex-wrap gap-1">
-            {ports.slice(0, 3).map((port) => (
-              <Badge key={port} variant="outline" className="text-xs font-mono">
-                {port}
-              </Badge>
-            ))}
-            {ports.length > 3 && (
-              <Badge variant="outline" className="text-xs">
-                +{ports.length - 3}
-              </Badge>
-            )}
-          </div>
-        )
-      },
+      cell: ({ row }) => (
+        <ChipRow className="max-w-[240px]">
+          <OpenPortChips asset={row.original} max={3} />
+        </ChipRow>
+      ),
     },
   ],
 
@@ -183,29 +183,28 @@ export const ipAddressesConfig: AssetPageConfig = {
         },
         {
           label: 'ASN',
-          getValue: (asset: Asset) => (asset.metadata?.asn as string) || '-',
+          getValue: (asset: Asset) => asnInfo(asset).asn ?? unknownText(),
         },
         {
           label: 'Organization',
-          getValue: (asset: Asset) => (asset.metadata?.asn_organization as string) || '-',
+          getValue: (asset: Asset) => asnInfo(asset).org ?? unknownText(),
         },
         {
           label: 'Open Ports',
           fullWidth: true,
           getValue: (asset: Asset) => {
-            const raw = asset.metadata?.open_ports
-            const ports = toStringArray(raw)
-            if (ports.length === 0) {
-              return <span className="text-muted-foreground">None</span>
-            }
+            const ports = openPorts(asset)
+            if (ports === null) return <UnknownChip>Not collected</UnknownChip>
+            if (ports.length === 0) return <span className="text-muted-foreground">None open</span>
             return (
-              <div className="flex flex-wrap gap-1">
-                {ports.map((port) => (
-                  <Badge key={port} variant="outline" className="text-xs font-mono">
-                    {port}
-                  </Badge>
+              <ChipRow>
+                {ports.map((p) => (
+                  <FactChip key={formatPort(p)} tone="muted" title={p.service}>
+                    <ChipMono>{formatPort(p)}</ChipMono>
+                    {p.service && <span>{p.service}</span>}
+                  </FactChip>
                 ))}
-              </div>
+              </ChipRow>
             )
           },
         },
@@ -217,10 +216,11 @@ export const ipAddressesConfig: AssetPageConfig = {
     { header: 'IP Address', accessor: (a: Asset) => a.name },
     { header: 'Version', accessor: (a: Asset) => getIpVersion(a.name) },
     { header: 'Type', accessor: (a: Asset) => (isPublicIp(a.name) ? 'Public' : 'Private') },
-    { header: 'ASN', accessor: (a: Asset) => (a.metadata?.asn as string) || '' },
+    { header: 'ASN', accessor: (a: Asset) => asnInfo(a).asn ?? '' },
+    { header: 'Organization', accessor: (a: Asset) => asnInfo(a).org ?? '' },
     {
-      header: 'Organization',
-      accessor: (a: Asset) => (a.metadata?.asn_organization as string) || '',
+      header: 'Open Ports',
+      accessor: (a: Asset) => (openPorts(a) ?? []).map(formatPort).join(';'),
     },
     { header: 'Status', accessor: (a: Asset) => a.status },
     { header: 'Risk Score', accessor: (a: Asset) => a.riskScore },
