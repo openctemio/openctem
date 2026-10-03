@@ -35605,6 +35605,12 @@ export interface components {
       /** @description Statistics */
       last_seen_at?: string
       /**
+       * @description LegacyKey is true while the sensor's current key is a legacy rda_ key.
+       *     It moves to an octs_ key on its next renewal; rda_ keys are retired 90
+       *     days after enrollment and key-bound identity (RFC-032) ship.
+       */
+      legacy_key?: boolean
+      /**
        * @description Load is the load the sensor last reported on its heartbeat
        *     (resources, capacity, local queue); null when it never reported one.
        *     fresh is false once it is older than 3 minutes (dispatch then ignores

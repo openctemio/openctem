@@ -787,6 +787,21 @@ func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.
 	return int64(len(ids)), nil
 }
 
+// CountLegacyKeySensors counts the non-revoked sensors whose effective key
+// (the current rotating key when there is one, else the inline key; the same
+// choice as sensor.Sensor.KeyState) is a legacy rda_ key.
+func (r *SensorRepository) CountLegacyKeySensors(ctx context.Context) (int64, error) {
+	// sensorActiveKeySQL is the one definition of "the current rotating key".
+	query := `SELECT COUNT(*) FROM sensors s
+		WHERE s.status <> 'revoked'
+		  AND COALESCE(` + sensorActiveKeySQL("s") + `->>'prefix', s.api_key_prefix) LIKE 'rda\_%'`
+	var n int64
+	if err := r.db.QueryRowContext(ctx, query).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count legacy-key sensors: %w", err)
+	}
+	return n, nil
+}
+
 // heartbeatProtocol bounds the protocol telemetry value to a smallint; an
 // out-of-range value records nothing.
 func heartbeatProtocol(p int) int16 {

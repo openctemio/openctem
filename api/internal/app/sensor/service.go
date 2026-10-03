@@ -3,8 +3,6 @@ package sensor
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"slices"
@@ -21,6 +19,7 @@ import (
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/sensorkey"
 )
 
 // sensorAuditSystemActor is the actor recorded on sensor lifecycle audit events
@@ -1203,7 +1202,7 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 		s.logger.Info("sensor renewed its API key (overlap)",
 			"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
 			"presented", id.presentedKeyLabel(), "expires_at", expiresAt, "previous_keys_expire_at", retireAt)
-		s.auditKeyRenewed(ctx, fresh, expiresAt, true)
+		s.auditKeyRenewed(ctx, fresh, expiresAt, true, id.presentedLegacy)
 		return apiKey, expiresAt, nil
 	}
 
@@ -1230,20 +1229,26 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 	s.logger.Info("sensor renewed its API key",
 		"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
 		"presented", id.presentedKeyLabel(), "expires_at", expiresAt)
-	s.auditKeyRenewed(ctx, fresh, expiresAt, false)
+	s.auditKeyRenewed(ctx, fresh, expiresAt, false, id.presentedLegacy)
 	return apiKey, expiresAt, nil
 }
 
 // auditKeyRenewed records a sensor self-renewal in the tenant audit log.
-// Platform sensors (no tenant) have no tenant log to write to.
-func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor, expiresAt *time.Time, overlap bool) {
+// fromLegacy marks the renewal that moved the sensor off a legacy rda_ key
+// (the new key is always octs_). Platform sensors (no tenant) have no tenant
+// log to write to, so their move is only logged.
+func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor, expiresAt *time.Time, overlap, fromLegacy bool) {
+	if fromLegacy {
+		s.logger.Info("sensor moved from a legacy rda_ key to an octs_ key on renewal",
+			"sensor_id", a.ID.String(), "is_platform", a.IsPlatformSensor)
+	}
 	if s.auditService == nil || a.TenantID == nil {
 		return
 	}
 	s.warnAudit(s.auditService.LogSensorKeyRenewed(ctx, auditapp.AuditContext{
 		TenantID:   a.TenantID.String(),
 		ActorEmail: sensorAuditSystemActor,
-	}, a.ID.String(), a.Name, expiresAt, overlap), "LogSensorKeyRenewed", a.ID.String())
+	}, a.ID.String(), a.Name, expiresAt, overlap, fromLegacy), "LogSensorKeyRenewed", a.ID.String())
 }
 
 // issueOverlappingKey issues the renewed key as a new sensor_api_keys row and
@@ -1360,7 +1365,15 @@ type SensorIdentity struct {
 	// a key an administrator regenerated meanwhile never matches. Set only
 	// by authentication, only for the inline key.
 	keyHashes []string
+	// presentedLegacy is true when the presented key is a legacy rda_ key.
+	// A renewal from one is the sensor's move to the octs_ format, which the
+	// renewal audit event records. Set only by authentication.
+	presentedLegacy bool
 }
+
+// PresentedLegacyKey reports whether the sensor authenticated with a legacy
+// rda_ key.
+func (id SensorIdentity) PresentedLegacyKey() bool { return id.presentedLegacy }
 
 // presentedKeyLabel names the presented credential for logs.
 func (id SensorIdentity) presentedKeyLabel() string {
@@ -1393,6 +1406,16 @@ func (s *SensorService) AuthenticateIdentityFrom(ctx context.Context, apiKey, cl
 }
 
 func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP string, allowPaused bool) (SensorIdentity, error) {
+	// Offline format check before any hashing or lookup: an octs_ key whose
+	// checksum fails (mistyped, truncated) and an octe_ enrollment token are
+	// refused here with the same generic error as an unknown key. This is not
+	// a security control (the checksum is public); it only saves the database
+	// round trips. Legacy rda_ keys carry no checksum and go on to the lookup.
+	if !sensorkey.AcceptableSensorKey(apiKey) {
+		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
+	}
+	legacy := sensorkey.IsLegacy(apiKey)
+
 	// Lookup by each stored-hash variant the key may have: current pepper,
 	// earlier peppers (RFC-032 Phase 0), plain SHA-256 (rows from before any
 	// pepper). Each is an equality match on the unique index; the common
@@ -1414,6 +1437,7 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 		// reached for keys issued by self-renewal under rotation overlap; the
 		// common inline-key path above is unchanged.
 		if id, rowErr := s.authByAPIKeyRow(ctx, hashes, clientIP, allowPaused); rowErr == nil {
+			id.presentedLegacy = legacy
 			return id, nil
 		}
 		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
@@ -1440,7 +1464,7 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 		s.recordKeyUseAsync(a, clientIP, nil)
 	}
 
-	return SensorIdentity{Sensor: a, KeyExpiresAt: a.InlineKeyExpiresAt, Paused: paused, keyHashes: hashes}, nil
+	return SensorIdentity{Sensor: a, KeyExpiresAt: a.InlineKeyExpiresAt, Paused: paused, keyHashes: hashes, presentedLegacy: legacy}, nil
 }
 
 // recordKeyUseAsync marks the sensor seen and records where the key was
@@ -1671,15 +1695,20 @@ func (s *SensorService) IncrementStats(ctx context.Context, sensorID shared.ID, 
 // generateSensorAPIKey generates a new API key for a sensor and the
 // peppered hash used to look it up. Caller's responsibility to feed
 // the raw key to the sensor and persist only the hash.
+//
+// Every issuing path (create, admin regeneration, self-renewal including the
+// overlapping RotateKey path) comes through here, so every new key is an
+// octs_ key: "octs_" + 32 random bytes in base62 + a base62 CRC32 checksum
+// (pkg/sensorkey). The stored display prefix is the first
+// sensorkey.DisplayPrefixLen characters. Legacy rda_ keys are never issued
+// again; a sensor still on one moves to octs_ on its next renewal.
 func (s *SensorService) generateSensorAPIKey() (key, hash, prefix string, err error) {
-	keyBytes := make([]byte, 32)
-	if _, err := rand.Read(keyBytes); err != nil {
+	key, err = sensorkey.New(sensorkey.PrefixSensorKey)
+	if err != nil {
 		return "", "", "", err
 	}
-
-	key = "rda_" + hex.EncodeToString(keyBytes) // rda = openctem sensor
 	hash = s.hashSensorAPIKey(key)
-	prefix = key[:12] // "rda_" + first 8 hex chars
+	prefix = sensorkey.DisplayPrefix(key)
 
 	return key, hash, prefix, nil
 }

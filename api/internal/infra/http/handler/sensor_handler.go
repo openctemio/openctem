@@ -211,6 +211,10 @@ type SensorResponse struct {
 	VersionStatus string `json:"version_status" enums:"latest,update_available,unsupported,unknown"`
 	// KeyExpiresAt is when the current API key stops working; null = never.
 	KeyExpiresAt *string `json:"key_expires_at"`
+	// LegacyKey is true while the sensor's current key is a legacy rda_ key.
+	// It moves to an octs_ key on its next renewal; rda_ keys are retired 90
+	// days after enrollment and key-bound identity (RFC-032) ship.
+	LegacyKey bool `json:"legacy_key"`
 	// KeyLastUsedAt and KeyLastUsedIP are the last authenticated request with
 	// any of the sensor's keys and the client address it came from (behind a
 	// trusted proxy, the forwarded address); null until recorded.
@@ -968,6 +972,7 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		HealthReasons:    make([]SensorHealthReasonResponse, 0, len(health.Reasons)),
 		VersionStatus:    string(health.VersionStatus),
 		KeyExpiresAt:     rfc3339Ptr(keyState.ExpiresAt),
+		LegacyKey:        keyState.IsLegacy(),
 		KeyLastUsedAt:    rfc3339Ptr(a.KeyLastUsedAt),
 		KeyLastUsedIP:    ipStringPtr(a.KeyLastUsedIP),
 		InstanceID:       a.InstanceID,

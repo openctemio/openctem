@@ -11402,6 +11402,12 @@ definitions:
       last_seen_at:
         description: Statistics
         type: string
+      legacy_key:
+        description: |-
+          LegacyKey is true while the sensor's current key is a legacy rda_ key.
+          It moves to an octs_ key on its next renewal; rda_ keys are retired 90
+          days after enrollment and key-bound identity (RFC-032) ship.
+        type: boolean
       load:
         allOf:
         - $ref: '#/definitions/internal_infra_http_handler.SensorLoadResponse'
