@@ -88,6 +88,21 @@ type mergeFinding struct {
 // asset and folds each collision into one survivor. It runs before the
 // findings are moved, in the merge transaction.
 func rekeyMergedFindings(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	moved, err := listMergedFindings(ctx, tx, tenantID, mergeIDs)
+	if err != nil {
+		return err
+	}
+	for _, f := range moved {
+		if err := rekeyMergedFinding(ctx, tx, tenantID, keepID, f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// listMergedFindings reads (and locks) the live findings of the merged assets,
+// oldest first.
+func listMergedFindings(ctx context.Context, tx *sql.Tx, tenantID string, mergeIDs []string) ([]mergeFinding, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, asset_id, fingerprint, COALESCE(partial_fingerprints->>$3, ''),
 		       COALESCE(rule_id, ''), COALESCE(file_path, ''), COALESCE(message, ''),
@@ -97,31 +112,22 @@ func rekeyMergedFindings(ctx context.Context, tx *sql.Tx, tenantID, keepID strin
 		ORDER BY created_at, id
 		FOR UPDATE`, tenantID, pq.Array(mergeIDs), vulnerability.FingerprintBaseKey)
 	if err != nil {
-		return fmt.Errorf("list merged findings: %w", err)
+		return nil, fmt.Errorf("list merged findings: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
 	var moved []mergeFinding
 	for rows.Next() {
 		var f mergeFinding
 		if err := rows.Scan(&f.id, &f.assetID, &f.fingerprint, &f.base, &f.ruleID, &f.filePath,
 			&f.message, &f.startLine, &f.createdAt); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("scan merged finding: %w", err)
+			return nil, fmt.Errorf("scan merged finding: %w", err)
 		}
 		moved = append(moved, f)
 	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("list merged findings: %w", err)
-	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("list merged findings: %w", err)
+		return nil, fmt.Errorf("list merged findings: %w", err)
 	}
-
-	for _, f := range moved {
-		if err := rekeyMergedFinding(ctx, tx, tenantID, keepID, f); err != nil {
-			return err
-		}
-	}
-	return nil
+	return moved, nil
 }
 
 func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string, f mergeFinding) error {
