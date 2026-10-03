@@ -3,7 +3,7 @@ package websocket
 import (
 	"context"
 	"crypto/rand"
-	"encoding/binary"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -210,11 +210,11 @@ func randomDuration(maxD time.Duration) time.Duration {
 	if maxD <= 0 {
 		return 0
 	}
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(maxD)))
+	if err != nil {
 		return 0
 	}
-	return time.Duration(binary.BigEndian.Uint64(b[:]) % uint64(maxD))
+	return time.Duration(n.Int64())
 }
 
 // sanitizeLogValue makes a client-supplied header safe to log: CR/LF become
