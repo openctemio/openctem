@@ -48,6 +48,7 @@ type v2Harness struct {
 	reports  *postgres.IngestReportRepository
 	jobs     *postgres.IngestJobRepository
 	proc     *ingest.V2JobProcessor
+	ingest   *ingest.Service
 	sensors  *app.SensorService
 	jwtToken string
 }
@@ -84,7 +85,7 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
-	h := &v2Harness{t: t, db: sqldb, reports: postgres.NewIngestReportRepository(db), jobs: postgres.NewIngestJobRepository(db), sensors: sensorSvc}
+	h := &v2Harness{t: t, db: sqldb, reports: postgres.NewIngestReportRepository(db), jobs: postgres.NewIngestJobRepository(db), sensors: sensorSvc, ingest: ingestSvc}
 	parked := parkedJobs{h.jobs}
 	limits := opts.limits
 	if limits.MaxContentBytes == 0 {
