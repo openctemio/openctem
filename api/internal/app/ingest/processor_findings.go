@@ -915,7 +915,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Stamp VulnerabilityID from cveMap if the finding references a known CVE
 	if ctisFinding.Vulnerability != nil {
-		if id, ok := cveMap[ctisFinding.Vulnerability.CVEID]; ok && !id.IsZero() {
+		if id, ok := cveMap[vulnerability.NormalizeCVEID(ctisFinding.Vulnerability.CVEID)]; ok && !id.IsZero() {
 			f.SetVulnerabilityID(id)
 		}
 	}
