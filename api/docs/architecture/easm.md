@@ -143,6 +143,13 @@ the inventory changed meaning.
 | Scan gate: asset-group members that are not confirmed are skipped; a group of only unconfirmed assets is refused; a failed lookup stops the dispatch | `internal/app/scan/targets.go` (`WithAttributionGate`) |
 | `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
 
+**Asset merges** (dedup review, RFC-028) keep attribution: the kept asset
+takes the most recent human decision of any merged asset (older decisions stay
+in the audit log); without one it keeps its own record, and merged assets'
+automatic records are dropped, never demoting a legacy asset. Evidence moves to
+the kept asset, one row per (rule, source) with the earliest first sighting
+(`mergeAttribution` in `internal/infra/postgres/asset_merge_plan.go`).
+
 Deviation from the plan below, on the owner's instruction for P0 (feed CT
 names into the asset pipeline, marked unconfirmed): names found under a domain
 the tenant did not verify enter the inventory as `needs_review` assets rather
