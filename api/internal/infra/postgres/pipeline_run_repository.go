@@ -50,9 +50,9 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at
+			created_at, scheduled_for
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -77,8 +77,12 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 		nullBytes(qualityGateResult),
 		run.RetryAttempt,
 		run.CreatedAt,
+		nullTime(run.ScheduledFor),
 	)
 
+	if isOccurrenceConflict(err) {
+		return pipeline.ErrOccurrenceAlreadyRun
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create pipeline run: %w", err)
 	}
@@ -401,6 +405,21 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 		return fmt.Errorf("failed to lock run owner: %w", err)
 	}
 
+	// One run per schedule occurrence. Checked under the scan row lock so a
+	// second trigger of the same slot gets this answer rather than a
+	// concurrency-limit error; the unique index is the guarantee either way.
+	if run.ScanID != nil && run.ScheduledFor != nil {
+		var exists bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM pipeline_runs WHERE scan_id = $1 AND scheduled_for = $2)`,
+			run.ScanID.String(), *run.ScheduledFor).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check the schedule occurrence: %w", err)
+		}
+		if exists {
+			return pipeline.ErrOccurrenceAlreadyRun
+		}
+	}
+
 	// Count active runs (no FOR UPDATE needed - we already hold the lock above)
 	var ownerActiveCount int
 	if err := tx.QueryRowContext(ctx, countQuery, lockID).Scan(&ownerActiveCount); err != nil {
@@ -453,9 +472,9 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at
+			created_at, scheduled_for
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -480,7 +499,11 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 		nullBytes(qualityGateResult),
 		run.RetryAttempt,
 		run.CreatedAt,
+		nullTime(run.ScheduledFor),
 	)
+	if isOccurrenceConflict(err) {
+		return pipeline.ErrOccurrenceAlreadyRun
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create pipeline run: %w", err)
 	}
@@ -490,6 +513,16 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	}
 
 	return nil
+}
+
+// occurrenceIndex is the unique index that keeps one run per schedule
+// occurrence of a scan (migration 000351).
+const occurrenceIndex = "uq_pipeline_runs_scan_occurrence"
+
+// isOccurrenceConflict reports whether err is a violation of occurrenceIndex.
+func isOccurrenceConflict(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == occurrenceIndex
 }
 
 // AbsoluteRunTimeoutSeconds is the longest any pipeline run may stay
@@ -820,7 +853,7 @@ func (r *PipelineRunRepository) selectQuery() string {
 		       total_steps, completed_steps, failed_steps, skipped_steps, total_findings,
 		       started_at, completed_at, error_message,
 		       scan_profile_id, quality_gate_result, retry_attempt,
-		       created_at
+		       created_at, scheduled_for
 		FROM pipeline_runs
 	`
 }
@@ -877,6 +910,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		scanProfileID     sql.NullString
 		qualityGateResult []byte
 		retryAttempt      sql.NullInt64
+		scheduledFor      sql.NullTime
 	)
 
 	var triggeredBy, errorMessage sql.NullString
@@ -902,6 +936,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		&qualityGateResult,
 		&retryAttempt,
 		&run.CreatedAt,
+		&scheduledFor,
 	)
 	_ = retryAttempt // populated below
 
@@ -956,6 +991,10 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 	if retryAttempt.Valid {
 		run.RetryAttempt = int(retryAttempt.Int64)
 	}
+	if scheduledFor.Valid {
+		t := scheduledFor.Time
+		run.ScheduledFor = &t
+	}
 
 	return run, nil
 }
@@ -976,6 +1015,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		scanProfileID     sql.NullString
 		qualityGateResult []byte
 		retryAttempt      sql.NullInt64
+		scheduledFor      sql.NullTime
 	)
 
 	var triggeredBy, errorMessage sql.NullString
@@ -1001,6 +1041,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		&qualityGateResult,
 		&retryAttempt,
 		&run.CreatedAt,
+		&scheduledFor,
 	)
 
 	if err != nil {
@@ -1050,6 +1091,10 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 
 	if retryAttempt.Valid {
 		run.RetryAttempt = int(retryAttempt.Int64)
+	}
+	if scheduledFor.Valid {
+		t := scheduledFor.Time
+		run.ScheduledFor = &t
 	}
 
 	return run, nil

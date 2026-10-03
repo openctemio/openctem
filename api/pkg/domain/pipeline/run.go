@@ -44,6 +44,12 @@ func (s RunStatus) IsTerminal() bool {
 var ErrRunAlreadyFinished = shared.NewDomainError("RUN_ALREADY_FINISHED",
 	"pipeline run has already finished", shared.ErrConflict)
 
+// ErrOccurrenceAlreadyRun is returned when a run is created for a schedule
+// occurrence of a scan that already has a run: a second scheduler instance,
+// or a retried trigger, firing the same slot.
+var ErrOccurrenceAlreadyRun = shared.NewDomainError("OCCURRENCE_ALREADY_RUN",
+	"this schedule occurrence of the scan already has a run", shared.ErrConflict)
+
 // Run represents an execution of a pipeline.
 type Run struct {
 	ID         shared.ID
@@ -82,6 +88,11 @@ type Run struct {
 
 	// Retry tracking
 	RetryAttempt int // 0 = first attempt, N = Nth retry
+
+	// ScheduledFor is the schedule occurrence this run serves (nil for a run
+	// that was not started by the scheduler). A scan has at most one run per
+	// occurrence: UNIQUE(scan_id, scheduled_for).
+	ScheduledFor *time.Time
 
 	// Step runs (loaded separately)
 	StepRuns []*StepRun
