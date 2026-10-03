@@ -2345,15 +2345,31 @@ func TestSensorService_NilAuditService_DoesNotPanic(t *testing.T) {
 // Tests: multi-key store (RFC-014 Phase 3 rotation overlap)
 // ============================================================================
 
-// mockSensorAPIKeyRepo is an in-memory sensor.APIKeyRepository for the overlap tests.
+// mockSensorAPIKeyRepo is an in-memory sensor.APIKeyRepository for the overlap
+// tests. Its rotations write the inline key through sensors, the sensor
+// repository the service uses, as the SQL writes both tables in one
+// transaction.
 type mockSensorAPIKeyRepo struct {
 	mu        sync.Mutex
 	byID      map[string]*sensor.APIKey
 	createErr error
+	sensors   sensor.Repository
+
+	// sensorLocks models the per-sensor lock RotateKey and ReplaceInlineKey
+	// take (a row lock on the sensor): rotations of one sensor never
+	// interleave.
+	sensorLocks sync.Map // sensor id -> *sync.Mutex
 }
 
-func newMockSensorAPIKeyRepo() *mockSensorAPIKeyRepo {
-	return &mockSensorAPIKeyRepo{byID: make(map[string]*sensor.APIKey)}
+func newMockSensorAPIKeyRepo(sensors sensor.Repository) *mockSensorAPIKeyRepo {
+	return &mockSensorAPIKeyRepo{byID: make(map[string]*sensor.APIKey), sensors: sensors}
+}
+
+func (m *mockSensorAPIKeyRepo) lockSensor(id shared.ID) func() {
+	l, _ := m.sensorLocks.LoadOrStore(id.String(), &sync.Mutex{})
+	mu := l.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func (m *mockSensorAPIKeyRepo) Create(_ context.Context, k *sensor.APIKey) error {
@@ -2442,42 +2458,75 @@ func (m *mockSensorAPIKeyRepo) CountActiveBySensorID(_ context.Context, sensorID
 	return n, nil
 }
 
-// RetireKeys mirrors the SQL: active, non-revoked keys of the sensor, older
-// than newest by (created_at, id) when newest is set, expiry only brought
-// forward.
-func (m *mockSensorAPIKeyRepo) RetireKeys(_ context.Context, sensorID shared.ID, newest *shared.ID, at time.Time) (int64, error) {
+// retireKeys mirrors retireSensorKeys: active, non-revoked keys of the
+// sensor other than except, expiry only brought forward. It returns the
+// previous expiries so a failed rotation can be rolled back.
+func (m *mockSensorAPIKeyRepo) retireKeys(sensorID shared.ID, except *shared.ID, at time.Time) map[string]*time.Time {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var n *sensor.APIKey
-	if newest != nil {
-		var ok bool
-		if n, ok = m.byID[newest.String()]; !ok || n.SensorID != sensorID {
-			return 0, nil
-		}
-	}
-	var changed int64
-	for _, k := range m.byID {
-		if k.SensorID != sensorID || !k.IsActive || k.RevokedAt != nil {
-			continue
-		}
-		if n != nil && !(k.CreatedAt.Before(n.CreatedAt) || (k.CreatedAt.Equal(n.CreatedAt) && k.ID.String() < n.ID.String())) {
+	prev := map[string]*time.Time{}
+	for id, k := range m.byID {
+		if k.SensorID != sensorID || !k.IsActive || k.RevokedAt != nil || (except != nil && k.ID == *except) {
 			continue
 		}
 		if k.ExpiresAt != nil && !k.ExpiresAt.After(at) {
 			continue
 		}
+		prev[id] = k.ExpiresAt
 		t := at
 		k.ExpiresAt = &t
-		changed++
 	}
-	return changed, nil
+	return prev
+}
+
+func (m *mockSensorAPIKeyRepo) restore(prev map[string]*time.Time, drop *shared.ID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, exp := range prev {
+		if k, ok := m.byID[id]; ok {
+			k.ExpiresAt = exp
+		}
+	}
+	if drop != nil {
+		delete(m.byID, drop.String())
+	}
+}
+
+// RotateKey mirrors the SQL transaction: under the sensor's lock, issue the
+// key, retire every other active key, retire the inline key by hash; a
+// failure undoes it all.
+func (m *mockSensorAPIKeyRepo) RotateKey(ctx context.Context, key *sensor.APIKey, inlineKeyHashes []string, retireAt time.Time) error {
+	defer m.lockSensor(key.SensorID)()
+	if err := m.Create(ctx, key); err != nil {
+		return err
+	}
+	prev := m.retireKeys(key.SensorID, &key.ID, retireAt)
+	if len(inlineKeyHashes) > 0 && m.sensors != nil {
+		if _, err := m.sensors.RetireInlineKey(ctx, key.SensorID, inlineKeyHashes, retireAt); err != nil {
+			m.restore(prev, &key.ID)
+			return err
+		}
+	}
+	return nil
+}
+
+// ReplaceInlineKey mirrors the SQL transaction: under the sensor's lock,
+// replace the inline key (active sensors only), then retire every key row.
+func (m *mockSensorAPIKeyRepo) ReplaceInlineKey(ctx context.Context, sensorID shared.ID, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error) {
+	defer m.lockSensor(sensorID)()
+	updated, err := m.sensors.UpdateAPIKey(ctx, sensorID, hash, prefix, expiresAt, true)
+	if err != nil || !updated {
+		return false, err
+	}
+	m.retireKeys(sensorID, nil, retireAt)
+	return true, nil
 }
 
 // Renew under a TTL with the multi-key store issues a NEW key row that
 // authenticates, while the old inline key keeps working during the overlap.
 func TestSensorService_RenewAPIKey_Overlap(t *testing.T) {
 	repo := newSensorSvcMockRepo()
-	keyRepo := newMockSensorAPIKeyRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
 	svc := newSensorSvcTestService(repo)
 	svc.SetKeyTTL(1 * time.Hour)
 	svc.SetAPIKeyRepository(keyRepo)
@@ -2519,7 +2568,7 @@ func TestSensorService_RenewAPIKey_Overlap(t *testing.T) {
 // now only ever brings an expiry earlier.
 func TestSensorService_RenewAPIKey_Overlap_RetiresInlineKeyOnce(t *testing.T) {
 	repo := newSensorSvcMockRepo()
-	keyRepo := newMockSensorAPIKeyRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
 	svc := newSensorSvcTestService(repo)
 	svc.SetKeyTTL(1 * time.Hour)
 	svc.SetAPIKeyRepository(keyRepo)
@@ -2576,7 +2625,7 @@ type renewFixture struct {
 func newRenewFixture(t *testing.T) *renewFixture {
 	t.Helper()
 	repo := newSensorSvcMockRepo()
-	keyRepo := newMockSensorAPIKeyRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
 	svc := newSensorSvcTestService(repo)
 	svc.SetKeyTTL(24 * time.Hour)
 	svc.SetAPIKeyRepository(keyRepo)
@@ -2803,7 +2852,7 @@ func TestSensorService_RenewAPIKey_RetireFailureFailsRenewal(t *testing.T) {
 // An expired key row does not authenticate.
 func TestSensorService_AuthenticateByAPIKey_ExpiredKeyRow(t *testing.T) {
 	repo := newSensorSvcMockRepo()
-	keyRepo := newMockSensorAPIKeyRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
 	svc := newSensorSvcTestService(repo)
 	svc.SetAPIKeyRepository(keyRepo)
 	tenantID := shared.NewID()

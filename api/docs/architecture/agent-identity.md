@@ -52,21 +52,28 @@ A renewal has exactly one successor. Authentication records which credential
 the sensor presented (`SensorIdentity.KeyID`: a `sensor_api_keys` row, or nil
 for the inline key on the sensor row), and both renew routes
 (`POST /api/v1/agent/renew`, `POST /api/v2/sensor/keys`) pass that identity to
-`RenewAPIKey`. After issuing the new key it:
+`RenewAPIKey`. It issues the new key and, in the same transaction:
 
-- caps `expires_at` of every active key row created **before** the new one
-  (`SensorAPIKeyRepository.RetireKeys`, compared on `(created_at, id)`) at
+- caps `expires_at` of every other active key row of the sensor at
   now + `SENSOR_KEY_RENEW_GRACE`;
-- caps the inline key's `key_expires_at` the same way
-  (`SensorRepository.RetireInlineKey`), guarded by the hash that was
-  presented (or read), so an admin regeneration landing in between is not cut
-  short.
+- caps the inline key's `key_expires_at` the same way, guarded by the hash
+  that was presented (or read), so an admin regeneration landing in between is
+  not cut short.
 
-Both writes only bring an expiry earlier, never extend one, and touch nothing
-but the expiry column, so a concurrent admin revoke or regeneration is not
-undone. A failed retirement fails the renewal (the sensor keeps its old key and
-retries). Without a TTL the renewal replaces the inline key at once and caps
-any key rows the same way.
+That transaction (`SensorAPIKeyRepository.RotateKey`) first locks the sensor
+row (`SELECT … FOR NO KEY UPDATE`), so renewals of one sensor run one after
+another and the last one holds the only long-lived key. Done as separate
+writes, concurrent renewals interleaved: each retired only the keys that
+existed when it ran, and a superseded key could stay valid until its own
+expiry. The lock is a row lock released with the transaction, never a
+session advisory lock on a pooled connection.
+
+The retirements only bring an expiry earlier, never extend one, and touch
+nothing but the expiry columns, so a concurrent admin revoke or regeneration is
+not undone. A failure rolls the whole renewal back (the sensor keeps its old
+key and retries). Without a TTL the renewal replaces the inline key at once and
+caps any key rows the same way, under the same lock
+(`SensorAPIKeyRepository.ReplaceInlineKey`).
 
 What this buys: a copied `rda_` key can no longer renew itself a parallel line
 of long-lived keys. Whoever renews last holds the only long-lived key, and the

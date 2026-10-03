@@ -81,7 +81,7 @@ func TestAuthenticateIdentity_RefusesRevokedExpiredAndUnknown(t *testing.T) {
 func TestAuthenticateIdentity_RowKeyCarriesItsOwnExpiry(t *testing.T) {
 	repo, svc, out := newIdentitySensor(t)
 	svc.SetKeyTTL(2 * time.Hour)
-	svc.SetAPIKeyRepository(newMockSensorAPIKeyRepo())
+	svc.SetAPIKeyRepository(newMockSensorAPIKeyRepo(repo))
 
 	renewed, expiresAt, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: out.Sensor})
 	if err != nil || expiresAt == nil {

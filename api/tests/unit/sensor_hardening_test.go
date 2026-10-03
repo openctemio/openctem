@@ -186,7 +186,7 @@ func (r *revokeOnKeyWriteRepo) UpdateAPIKey(ctx context.Context, id shared.ID, h
 // leaked credential stops working.
 func TestRegenerateAPIKey_RevokesRenewedKeyRows(t *testing.T) {
 	repo := newSensorSvcMockRepo()
-	keyRepo := newMockSensorAPIKeyRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
 	svc := newSensorSvcTestService(repo)
 	svc.SetKeyTTL(time.Hour)
 	svc.SetAPIKeyRepository(keyRepo)
