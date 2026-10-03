@@ -10,6 +10,14 @@ import {
   DataTableRowActions,
   DisabledMenuItem,
   MetricStrip,
+  DetailCallout,
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,7 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Dialog,
   DialogContent,
@@ -52,8 +59,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { toast } from 'sonner'
+import { copyToClipboard } from '@/lib/clipboard'
 import {
   UserPlus,
   Shield,
@@ -65,8 +72,8 @@ import {
   Search as SearchIcon,
   Eye,
   Pencil,
-  Activity,
-  Calendar,
+  Copy,
+  Lock,
   Loader2,
   AlertCircle,
   RefreshCw,
@@ -440,7 +447,9 @@ export default function UsersPage() {
   const tenantSlug = currentTenant?.slug
   // Peer administrators are the owner's to manage (the API answers 403 to
   // anyone else); their rows show the actions disabled, with the reason.
-  const { isOwner } = usePermissions()
+  const { isOwner, can, isAtLeast } = usePermissions()
+  // Same gate as the old <Can permission={MembersManage} minRole="admin">.
+  const canManageMembers = can(Permission.MembersManage) && isAtLeast('admin')
   const currentUser = useUser()
   const caller = { isOwner: isOwner(), userId: currentUser?.id }
 
@@ -1071,110 +1080,88 @@ export default function UsersPage() {
       </Main>
 
       {/* User Details Sheet */}
-      <Sheet open={!!selectedMember} onOpenChange={() => setSelectedMember(null)}>
-        <SheetContent className="sm:max-w-md p-0 overflow-y-auto">
-          <VisuallyHidden>
-            <SheetTitle>Member details</SheetTitle>
-          </VisuallyHidden>
-          {selectedMember && (
-            <div className="flex flex-col h-full">
-              {/* Header */}
-              <div className="px-6 pt-14 pb-6">
-                {/* Avatar & Basic Info */}
-                <div className="flex flex-col items-center text-center">
-                  <Avatar className="h-20 w-20 ring-4 ring-background shadow-lg">
-                    <AvatarFallback className="text-2xl bg-primary/10 text-primary">
-                      {getInitials(selectedMember.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <h2 className="mt-4 text-xl font-semibold">{selectedMember.name}</h2>
-                  <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
-                  <div className="mt-2">
-                    <MemberStatusBadge
-                      status={selectedMember.status}
-                      pendingSetup={selectedMember.pending_setup}
-                    />
-                  </div>
-                </div>
-              </div>
+      {selectedMember &&
+        (() => {
+          const member = selectedMember
+          const isOwnerRow = member.role === 'owner'
+          const locked = !isOwnerRow && isPeerAdminLocked(member, caller)
+          const canRemove = canManageMembers && !isOwnerRow && !locked
+          return (
+            <DetailSheet
+              open
+              onOpenChange={(open) => !open && setSelectedMember(null)}
+              width="md"
+              header={
+                <DetailHeader
+                  title={member.name}
+                  badges={
+                    <MemberStatusBadge status={member.status} pendingSetup={member.pending_setup} />
+                  }
+                  meta={[member.email]}
+                  menu={[
+                    {
+                      label: 'Copy member ID',
+                      icon: Copy,
+                      onSelect: () => {
+                        copyToClipboard(member.id)
+                        toast.success('Member ID copied to clipboard')
+                      },
+                    },
+                    ...(canRemove
+                      ? [
+                          {
+                            label: 'Remove from team',
+                            icon: Trash2,
+                            destructive: true,
+                            separatorBefore: true,
+                            // Close the drawer first: the confirmation is an
+                            // AlertDialog with its own overlay.
+                            onSelect: () => {
+                              setRemoveConfirmMember(member)
+                              setSelectedMember(null)
+                            },
+                          },
+                        ]
+                      : []),
+                  ]}
+                  onClose={() => setSelectedMember(null)}
+                />
+              }
+            >
+              <div className="space-y-5">
+                {canManageMembers && locked && (
+                  <DetailCallout tone="info" icon={Lock} title="Managed by the owner">
+                    {PEER_ADMIN_LOCK_REASON}
+                  </DetailCallout>
+                )}
 
-              {/* Content */}
-              <div className="flex-1 px-6 py-6 space-y-6">
-                {/* Quick Stats */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl bg-muted/50 text-center">
-                    <Calendar className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
-                    <p className="text-xs text-muted-foreground">Joined</p>
-                    <p className="text-sm font-semibold mt-0.5">
-                      {formatDate(selectedMember.joined_at)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-muted/50 text-center">
-                    <Activity className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
-                    <p className="text-xs text-muted-foreground">Last active</p>
-                    <p className="text-sm font-semibold mt-0.5">
-                      {formatLastActive(selectedMember.last_login_at)}
-                    </p>
-                  </div>
-                </div>
+                <DetailStatGrid aria-label="Key dates">
+                  <DetailStat label="Joined" value={formatDate(member.joined_at)} />
+                  <DetailStat label="Last active" value={formatLastActive(member.last_login_at)} />
+                </DetailStatGrid>
 
-                {/* Assigned Roles */}
                 <UserRolesDetailCard
-                  userId={selectedMember.user_id}
+                  userId={member.user_id}
                   onManageRoles={
-                    selectedMember.role !== 'owner' && !isPeerAdminLocked(selectedMember, caller)
+                    !isOwnerRow && !locked
                       ? () => {
-                          // Set pending edit and close sheet - effect will open dialog
-                          setPendingRolesEdit(selectedMember)
+                          // Set pending edit and close the drawer; an effect opens the dialog.
+                          setPendingRolesEdit(member)
                           setSelectedMember(null)
                         }
                       : undefined
                   }
                 />
 
-                {/* Member ID */}
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-xs text-muted-foreground">Member ID</span>
-                  <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                    {selectedMember.id.substring(0, 8)}...
-                  </code>
-                </div>
+                <DetailFieldGrid>
+                  <DetailField label="Member ID" full>
+                    <DetailCopyId id={member.id} label="Member ID" />
+                  </DetailField>
+                </DetailFieldGrid>
               </div>
-
-              {/* Footer Actions */}
-              <Can permission={Permission.MembersManage} minRole="admin">
-                {selectedMember.role !== 'owner' && isPeerAdminLocked(selectedMember, caller) && (
-                  <div className="px-6 py-4 border-t bg-muted/30">
-                    <p className="text-center text-xs text-muted-foreground">
-                      {PEER_ADMIN_LOCK_REASON}
-                    </p>
-                  </div>
-                )}
-                {selectedMember.role !== 'owner' && !isPeerAdminLocked(selectedMember, caller) && (
-                  <div className="px-6 py-4 border-t bg-muted/30">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => {
-                        // Two-step: close the sheet, then open the
-                        // confirmation dialog. The AlertDialog has its own
-                        // overlay and would visually fight the sheet if
-                        // both were open at once.
-                        setRemoveConfirmMember(selectedMember)
-                        setSelectedMember(null)
-                      }}
-                    >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      Remove from team
-                    </Button>
-                  </div>
-                )}
-              </Can>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+            </DetailSheet>
+          )
+        })()}
 
       <InviteUserDialog
         tenantSlug={tenantSlug}

@@ -8,9 +8,10 @@ This guide covers deploying Redis integration for production environments.
 2. [Configuration](#configuration)
 3. [Security](#security)
 4. [High Availability](#high-availability)
-5. [Monitoring](#monitoring)
-6. [Performance Tuning](#performance-tuning)
-7. [Troubleshooting](#troubleshooting)
+5. [Authentication rate limits](#authentication-rate-limits)
+6. [Monitoring](#monitoring)
+7. [Performance Tuning](#performance-tuning)
+8. [Troubleshooting](#troubleshooting)
 
 ## Prerequisites
 
@@ -161,6 +162,40 @@ redis-cli --cluster create \
 ```
 
 > **Note**: Current implementation supports standalone Redis only. For Sentinel/Cluster, additional code changes are required.
+
+## Authentication rate limits
+
+The public sign-in surface is rate limited per client IP (and, for the second
+login step, per challenge). The budgets are counted in Redis, so every API
+replica spends the same budget: with in-memory limits a client spread across N
+replicas would get N times the budget.
+
+| Bucket (store scope) | Routes | Budget |
+|---|---|---|
+| `auth:login` | `/auth/login`, OAuth callback, `/auth/sso/*`, `/auth/saml/*`, back-channel logout | 5/min per IP |
+| `auth:register` | `/auth/register`, `/auth/create-first-team` | 3/min per IP |
+| `auth:password` | `/auth/forgot-password`, `/auth/reset-password` (also redeems set-password links), `/auth/verify-email` | 3/min per IP |
+| `auth:token` | `/auth/token`, `/auth/refresh` | 20/min per IP |
+| `auth:mfa`, `auth:mfa-ip` | `/auth/mfa/verify`, `/auth/mfa/enroll/*` | 10/min per challenge, 30/min per IP |
+| `account-2fa:login`, `account-2fa:password` | `/users/me/2fa/setup`, `/enable` / `/disable`, `/recovery-codes` | 5/min, 3/min per IP |
+| `console:login`, `console:password`, `console:token` | admin console `/admin/auth/session`, `/admin/auth/mfa` / `/password` / `/idp/start`, `/idp/callback` | 5/min, 3/min, 20/min per IP |
+| `invitation:token` | `/invitations/{token}/preview`, `/decline`, `/accept`, `/accept-with-refresh`, `GET /invitations/{token}` | 20/min per IP |
+
+`/auth/providers` is not in these buckets: it is a config read the UI makes on
+many screens and uses the general API limiter (`RATE_LIMIT_*`), so reading it
+never spends the login budget.
+
+Keys are `authrl:<scope>:<bucket>:<key>` (sorted sets, sliding one-minute
+window, expiring after a minute of inactivity). Each scope is a separate
+budget: the console sign-in does not spend the tenant login budget.
+
+**Redis unavailable.** Sign-in stays available: when a Redis call fails the
+request is checked against the replica's own in-memory bucket instead (the
+same budgets, per replica), and the API logs
+`auth rate limit: shared store failed, using in-memory limit` at WARN. An
+outage therefore weakens the limit to per-replica for its duration; it never
+fails sign-in closed or open. Without Redis wired at all (single-instance dev,
+tests) the limits are in-memory only.
 
 ## Monitoring
 

@@ -199,6 +199,15 @@ describe('OrganizationUsersSection', () => {
     expect(screen.getByText(/owner and administrators invite/i)).toBeInTheDocument()
   })
 
+  it('does not offer "Create first owner" when the only owner is suspended', () => {
+    vi.mocked(useOrganizationUsers).mockReturnValue(
+      usersResult([{ ...ownerRow, status: 'suspended' }])
+    )
+    render(<OrganizationUsersSection tenantId="t1" canManage />)
+    expect(screen.queryByRole('button', { name: /create first owner/i })).toBeNull()
+    expect(screen.getByText(/every owner of this organization is suspended/i)).toBeInTheDocument()
+  })
+
   it('lists users with a pending-setup badge, and hides "Add user" without permission', () => {
     vi.mocked(useOrganizationUsers).mockReturnValue({
       data: {

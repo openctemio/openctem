@@ -1,5 +1,3 @@
-export * from './group-header'
-export * from './overview-tab'
 export * from './members-tab'
 export * from './permissions-tab'
 export * from './assets-tab'

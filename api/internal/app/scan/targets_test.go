@@ -406,6 +406,40 @@ func (errSelector) SelectSensor(context.Context, SelectSensorRequest) (*SelectSe
 	return nil, errors.New("selector down")
 }
 
+// pagedGroupAssetsRepo pages like the real repository, including
+// pagination's 100-row clamp.
+type pagedGroupAssetsRepo struct {
+	assetgroup.Repository
+	assets []*assetgroup.GroupAsset
+}
+
+func (s *pagedGroupAssetsRepo) GetGroupAssets(_ context.Context, _ shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
+	start := min(page.Offset(), len(s.assets))
+	end := min(start+page.Limit(), len(s.assets))
+	return pagination.NewResult(s.assets[start:end], int64(len(s.assets)), page), nil
+}
+
+// A scan of a 250-asset group scans all 250. The member listing asked for
+// pages of 500, pagination clamps to 100, and the page arithmetic then
+// stopped after the first page: only 100 members were ever scanned.
+func TestResolveScanTargets_GroupLargerThanOnePage(t *testing.T) {
+	members := make([]*assetgroup.GroupAsset, 250)
+	for i := range members {
+		members[i] = &assetgroup.GroupAsset{ID: shared.NewID(), Name: fmt.Sprintf("h%03d.example.com", i)}
+	}
+	svc := &Service{assetGroupRepo: &pagedGroupAssetsRepo{assets: members}, logger: logger.NewNop()}
+	sc := testScan("nuclei")
+	sc.AssetGroupID = shared.NewID()
+
+	got, err := svc.resolveScanTargets(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Targets) != 250 {
+		t.Fatalf("resolved %d of 250 group members", len(got.Targets))
+	}
+}
+
 // stubGate blocks the given asset ids.
 type stubGate struct {
 	blocked map[string]attribution.State

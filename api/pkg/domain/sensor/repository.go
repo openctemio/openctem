@@ -156,10 +156,13 @@ type Repository interface {
 	// Update updates a sensor.
 	Update(ctx context.Context, sensor *Sensor) error
 
-	// UpdateKeyExpiry sets only the inline API-key expiry, guarded by
-	// status = 'active' so it cannot revive a concurrently-revoked sensor.
-	// A nil expiresAt clears the expiry (never expires).
-	UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error
+	// RetireInlineKey brings the inline API key's expiry forward to at, and
+	// only while the inline key's stored hash is one of keyHashes: a key an
+	// administrator regenerated in the meantime is left alone. It never
+	// extends an expiry (an inline key that already expires before at is
+	// unchanged) and writes nothing but key_expires_at, so it cannot revive a
+	// revoked sensor. Returns whether a row changed.
+	RetireInlineKey(ctx context.Context, id shared.ID, keyHashes []string, at time.Time) (bool, error)
 
 	// UpdateHeartbeat persists ONLY the liveness/metric columns a sensor
 	// heartbeat owns (version, hostname, metrics, load score, last_seen_at,
@@ -298,6 +301,24 @@ type APIKeyRepository interface {
 
 	// CountActiveBySensorID counts active keys for a sensor.
 	CountActiveBySensorID(ctx context.Context, sensorID shared.ID) (int, error)
+
+	// RotateKey is a renewal under rotation overlap, as one unit serialized
+	// per sensor: it issues key, brings the expiry of every other active key
+	// row of key.SensorID forward to retireAt, and does the same to the
+	// sensor's inline key while its stored hash is one of inlineKeyHashes
+	// (none when empty; an admin regeneration in between installs another
+	// hash and is left alone). Rotations for one sensor never interleave, so
+	// concurrent renewals end with exactly one long-lived key: the one
+	// committed last. Retirement never extends an expiry and writes nothing
+	// but the expiry columns. Any failure leaves nothing written.
+	RotateKey(ctx context.Context, key *APIKey, inlineKeyHashes []string, retireAt time.Time) error
+
+	// ReplaceInlineKey is a renewal without rotation overlap, serialized per
+	// sensor with RotateKey: it replaces the sensor's inline key (only while
+	// the sensor is active) and brings the expiry of every active key row
+	// forward to retireAt. Returns false, with nothing written, when no
+	// active sensor matched.
+	ReplaceInlineKey(ctx context.Context, sensorID shared.ID, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error)
 }
 
 // KeyUseRecorder is implemented by a sensor repository that records where

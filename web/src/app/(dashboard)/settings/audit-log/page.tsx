@@ -10,6 +10,13 @@ import {
   EmptyState,
   MetricStrip,
   SeverityBadge,
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +24,6 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Select,
   SelectContent,
@@ -25,15 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import {
-  Search as SearchIcon,
-  RefreshCw,
-  AlertCircle,
-  CheckCircle,
-  ShieldX,
-  Copy,
-} from 'lucide-react'
+import { Search as SearchIcon, RefreshCw, AlertCircle, ShieldX, Copy } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import {
@@ -48,6 +46,7 @@ import {
   formatAction,
 } from '@/features/organization'
 import { copyToClipboard } from '@/lib/clipboard'
+import { toast } from 'sonner'
 import { canonicalAuditMetadataKey, canonicalAuditResourceType } from '@/lib/api/audit-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -446,193 +445,147 @@ export default function AuditLogPage() {
       </Main>
 
       {/* Audit Log Detail Sheet */}
-      <Sheet open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
-        <SheetContent className="sm:max-w-2xl overflow-y-auto p-0 gap-0">
-          <VisuallyHidden>
-            <SheetTitle>Audit log details</SheetTitle>
-          </VisuallyHidden>
-          {selectedLog && (
-            <div className="flex flex-col h-full">
-              <div className="ps-6 pe-16 py-6 border-b">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <h2 className="text-lg font-semibold leading-tight">
-                      {formatAction(selectedLog.action)}
-                    </h2>
-                    <p className="text-sm text-muted-foreground">{selectedLog.message}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <ResultBadge result={selectedLog.result} />
-                    <SeverityBadge severity={selectedLog.severity} />
-                  </div>
-                </div>
-              </div>
+      {selectedLog && (
+        <DetailSheet
+          open
+          onOpenChange={(open) => !open && setSelectedLog(null)}
+          width="2xl"
+          header={
+            <DetailHeader
+              title={formatAction(selectedLog.action)}
+              badges={
+                <>
+                  <ResultBadge result={selectedLog.result} />
+                  <SeverityBadge severity={selectedLog.severity} />
+                </>
+              }
+              meta={[
+                selectedLog.actor_email || 'System',
+                new Date(selectedLog.timestamp).toLocaleString(),
+              ]}
+              menu={[
+                {
+                  label: 'Copy resource ID',
+                  icon: Copy,
+                  onSelect: () => {
+                    copyToClipboard(selectedLog.resource_id)
+                    toast.success('Resource ID copied to clipboard')
+                  },
+                },
+                ...(selectedLog.request_id
+                  ? [
+                      {
+                        label: 'Copy request ID',
+                        icon: Copy,
+                        onSelect: () => {
+                          copyToClipboard(selectedLog.request_id!)
+                          toast.success('Request ID copied to clipboard')
+                        },
+                      },
+                    ]
+                  : []),
+              ]}
+              onClose={() => setSelectedLog(null)}
+            />
+          }
+        >
+          <DetailSections>
+            {selectedLog.message && (
+              <DetailSection title="Message">
+                <p className="text-sm break-words text-muted-foreground">{selectedLog.message}</p>
+              </DetailSection>
+            )}
 
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                  {/* Actor */}
-                  <div>
-                    <h4 className="text-sm font-medium text-muted-foreground mb-2">Actor</h4>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-10 w-10 border">
-                        <AvatarFallback className="bg-muted">
-                          {selectedLog.actor_email?.substring(0, 2).toUpperCase() || '?'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="overflow-hidden">
-                        <p
-                          className="font-medium text-sm truncate"
-                          title={selectedLog.actor_email || 'System'}
-                        >
-                          {selectedLog.actor_email || 'System'}
-                        </p>
-                        {selectedLog.actor_ip && (
-                          <span className="mt-0.5 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-                            {selectedLog.actor_ip}
+            <DetailSection title="Who and when">
+              <DetailFieldGrid>
+                <DetailField label="Actor">
+                  <span className="break-all">{selectedLog.actor_email || 'System'}</span>
+                </DetailField>
+                {selectedLog.actor_ip && (
+                  <DetailField label="IP address">
+                    <span className="font-mono text-xs">{selectedLog.actor_ip}</span>
+                  </DetailField>
+                )}
+                <DetailField label="Date">
+                  {new Date(selectedLog.timestamp).toLocaleString(undefined, {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </DetailField>
+                <DetailField label="Time">
+                  <span className="tabular-nums">
+                    {new Date(selectedLog.timestamp).toLocaleTimeString()}
+                  </span>
+                </DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
+
+            <DetailSection title="Resource">
+              <DetailFieldGrid>
+                <DetailField label="Type">
+                  {canonicalAuditResourceType(selectedLog.resource_type)}
+                </DetailField>
+                <DetailField label="Name">
+                  <span className="break-words">{selectedLog.resource_name || '-'}</span>
+                </DetailField>
+                <DetailField label="ID" full>
+                  <DetailCopyId id={selectedLog.resource_id} label="Resource ID" />
+                </DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
+
+            {selectedLog.changes?.field_changes &&
+              Object.keys(selectedLog.changes.field_changes).length > 0 && (
+                <DetailSection
+                  title="Changes"
+                  count={Object.keys(selectedLog.changes.field_changes).length}
+                >
+                  <ul className="divide-y rounded-lg border">
+                    {Object.entries(selectedLog.changes.field_changes).map(([field, change]) => (
+                      <li
+                        key={field}
+                        className="grid gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_2fr] sm:items-center sm:gap-4"
+                      >
+                        <span className="font-medium break-all text-muted-foreground">{field}</span>
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs break-all text-muted-foreground line-through">
+                            {String(change.old)}
                           </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                          <span className="text-muted-foreground">→</span>
+                          <span className="inline-flex items-center rounded-md bg-accent px-2 py-1 text-xs font-medium break-all text-accent-foreground">
+                            {String(change.new)}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </DetailSection>
+              )}
 
-                  {/* Timestamp */}
-                  <div>
-                    <h4 className="text-sm font-medium text-muted-foreground mb-2">Timestamp</h4>
-                    <div className="space-y-0.5">
-                      <p className="font-medium text-sm">
-                        {new Date(selectedLog.timestamp).toLocaleString(undefined, {
-                          weekday: 'short',
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </p>
-                      <p className="text-xs text-muted-foreground tabular-nums">
-                        {new Date(selectedLog.timestamp).toLocaleTimeString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Resource Info */}
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Resource</h4>
-                  <div className="rounded-lg border divide-y">
-                    <div className="flex items-center justify-between p-3 text-sm">
-                      <span className="text-muted-foreground">Type</span>
-                      <span className="font-medium">
-                        {canonicalAuditResourceType(selectedLog.resource_type)}
+            {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
+              <DetailSection title="Metadata" count={Object.keys(selectedLog.metadata).length}>
+                <DetailFieldGrid>
+                  {Object.entries(selectedLog.metadata).map(([key, value]) => (
+                    <DetailField key={key} label={canonicalAuditMetadataKey(key)}>
+                      <span className="font-mono text-xs break-all">
+                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
                       </span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 text-sm">
-                      <span className="text-muted-foreground">Name</span>
-                      <span className="font-medium">{selectedLog.resource_name || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 text-sm">
-                      <span className="text-muted-foreground">ID</span>
-                      <div className="flex items-center gap-2">
-                        <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded">
-                          {selectedLog.resource_id}
-                        </code>
-                        <CopyButton value={selectedLog.resource_id} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                    </DetailField>
+                  ))}
+                </DetailFieldGrid>
+              </DetailSection>
+            )}
 
-                {/* Changes (Diff View) */}
-                {selectedLog.changes?.field_changes &&
-                  Object.keys(selectedLog.changes.field_changes).length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Changes</h4>
-                      <div className="rounded-lg border divide-y">
-                        {Object.entries(selectedLog.changes.field_changes).map(
-                          ([field, change]) => (
-                            <div
-                              key={field}
-                              className="p-3 text-sm grid grid-cols-[1fr,2fr] gap-4 items-center"
-                            >
-                              <span className="font-medium text-muted-foreground break-all">
-                                {field}
-                              </span>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground line-through">
-                                  {String(change.old)}
-                                </span>
-                                <span className="text-muted-foreground">→</span>
-                                <span className="inline-flex items-center rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-foreground">
-                                  {String(change.new)}
-                                </span>
-                              </div>
-                            </div>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                {/* Metadata */}
-                {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-muted-foreground mb-2">Metadata</h4>
-                    <div className="rounded-lg border p-4">
-                      <dl className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
-                        {Object.entries(selectedLog.metadata).map(([key, value]) => (
-                          <div key={key}>
-                            <dt className="text-xs font-medium text-muted-foreground mb-1">
-                              {canonicalAuditMetadataKey(key)}
-                            </dt>
-                            <dd className="text-sm font-mono break-all">
-                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </div>
-                  </div>
-                )}
-
-                {/* Request ID Footer */}
-                {selectedLog.request_id && (
-                  <div className="pt-4 border-t flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Request ID</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono">{selectedLog.request_id}</span>
-                      <CopyButton value={selectedLog.request_id} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
-    </>
-  )
-}
-
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const onCopy = () => {
-    copyToClipboard(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-6 w-6"
-      onClick={onCopy}
-      aria-label={copied ? 'Copied' : 'Copy value'}
-    >
-      {copied ? (
-        <CheckCircle className="h-3 w-3 text-muted-foreground" />
-      ) : (
-        <Copy className="h-3 w-3 text-muted-foreground" />
+            {selectedLog.request_id && (
+              <DetailSection title="Request">
+                <DetailCopyId id={selectedLog.request_id} label="Request ID" />
+              </DetailSection>
+            )}
+          </DetailSections>
+        </DetailSheet>
       )}
-    </Button>
+    </>
   )
 }

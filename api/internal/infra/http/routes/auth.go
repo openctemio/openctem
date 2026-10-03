@@ -11,7 +11,7 @@ import (
 func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg AuthConfig, authMiddleware, userSyncMiddleware Middleware, log *logger.Logger) {
 	// Create auth-specific rate limiter for brute-force protection
 	// SECURITY: These endpoints are critical attack vectors and need stricter limits
-	authRateLimiter := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+	authRateLimiter := newAuthRateLimiter("auth")
 	loginRL := authRateLimiter.LoginMiddleware()
 	registerRL := authRateLimiter.RegisterMiddleware()
 	passwordRL := authRateLimiter.PasswordMiddleware()
@@ -193,7 +193,7 @@ func registerUserRoutes(
 			// Two-factor authentication for the signed-in user. Code-checking
 			// calls are rate limited like the login and password endpoints;
 			// mutating calls also carry the CSRF check.
-			mfaRL := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+			mfaRL := newAuthRateLimiter("account-2fa")
 			codeRL := mfaRL.LoginMiddleware()
 			sensitiveRL := mfaRL.PasswordMiddleware()
 			withCSRF := func(rl Middleware) []Middleware {

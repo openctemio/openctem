@@ -40,6 +40,9 @@ type mockScanRepo struct {
 	statsErr         error
 	listByPipelineID []*scan.Scan
 	listByPipelineE  error
+
+	updateCalls int         // full-row Update calls
+	startedRuns []shared.ID // RecordRunStarted calls
 }
 
 func newMockScanRepo() *mockScanRepo {
@@ -104,6 +107,7 @@ func (m *mockScanRepo) List(_ context.Context, _ scan.Filter, page pagination.Pa
 }
 
 func (m *mockScanRepo) Update(_ context.Context, s *scan.Scan) error {
+	m.updateCalls++
 	if m.updateErr != nil {
 		return m.updateErr
 	}
@@ -141,6 +145,11 @@ func (m *mockScanRepo) ListDueForExecution(_ context.Context, _ time.Time) ([]*s
 }
 
 func (m *mockScanRepo) UpdateNextRunAt(_ context.Context, _ shared.ID, _ *time.Time) error {
+	return nil
+}
+
+func (m *mockScanRepo) RecordRunStarted(_ context.Context, _ shared.ID, runID shared.ID) error {
+	m.startedRuns = append(m.startedRuns, runID)
 	return nil
 }
 
@@ -415,7 +424,7 @@ func (m *mockRunRepo) MarkTimedOutRuns(_ context.Context) (int64, error) {
 func (m *mockRunRepo) ListPendingRetries(_ context.Context, _ int) ([]pipeline.RetryCandidate, error) {
 	return nil, nil
 }
-func (m *mockRunRepo) ResetRetryClaim(_ context.Context, _ shared.ID) error {
+func (m *mockRunRepo) ReleaseFailedRetryDispatch(_ context.Context, _ shared.ID) error {
 	return nil
 }
 
@@ -1647,6 +1656,31 @@ func TestScanService_TriggerScan_SingleScanner_Success(t *testing.T) {
 	}
 }
 
+// Triggering used to write the whole scan row back from the copy it read
+// before dispatching: a pause or config edit saved while the trigger ran was
+// silently undone. The trigger now records the run with one narrow call and
+// never rewrites the scan.
+func TestScanService_TriggerScan_DoesNotRewriteTheScanRow(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "No clobber", scan.ScanTypeSingle)
+	before := deps.scanRepo.updateCalls
+
+	run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	})
+	if err != nil {
+		t.Fatalf("TriggerScan: %v", err)
+	}
+	if got := deps.scanRepo.updateCalls - before; got != 0 {
+		t.Errorf("TriggerScan rewrote the scan row %d time(s); it must not (stale copy clobbers concurrent edits)", got)
+	}
+	if len(deps.scanRepo.startedRuns) != 1 || deps.scanRepo.startedRuns[0] != run.ID {
+		t.Errorf("RecordRunStarted calls = %v, want exactly [%s]", deps.scanRepo.startedRuns, run.ID)
+	}
+}
+
 func TestScanService_TriggerScan_ScanNotFound(t *testing.T) {
 	svc, _ := newTestScanService()
 	tenantID := shared.NewID()
@@ -2302,5 +2336,35 @@ func TestScanService_TriggerScan_CollectorToolRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "asset collector") {
 		t.Errorf("err = %v, want it to name the asset collector", err)
+	}
+}
+
+// A workflow run started only steps with step_order == 1: independent steps
+// numbered otherwise never started (the run hung until the run timeout), and
+// a "never" condition on a first step was ignored.
+func TestScanService_TriggerScan_Workflow_StartsByDependencyGraph(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	s := createTestScanInRepo(deps, tenantID, "Graph start", scan.ScanTypeWorkflow)
+	pipelineID := *s.PipelineID
+	deps.toolRepo.addTool("nuclei", true)
+	deps.toolRepo.addTool("httpx", true)
+	deps.stepRepo.steps[pipelineID.String()] = []*pipeline.Step{
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "probe", StepOrder: 2, Tool: "httpx"},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "vulns", StepOrder: 3, Tool: "nuclei"},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "off", StepOrder: 4, Tool: "nuclei",
+			Condition: pipeline.NeverCondition()},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "after", StepOrder: 5, Tool: "nuclei",
+			DependsOn: []string{"probe"}},
+	}
+	before := len(deps.commandRepo.commands)
+
+	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(deps.commandRepo.commands) - before; got != 2 {
+		t.Fatalf("queued %d step command(s), want 2 (the two independent steps; not the 'never' one, not the dependent)", got)
 	}
 }
