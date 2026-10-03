@@ -11,7 +11,7 @@
  * coverage card.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Download, Eye, Pencil, Plus, RefreshCw, Search as SearchIcon, Trash2 } from 'lucide-react'
@@ -145,14 +145,16 @@ export default function ExternalSurfacePage() {
 
   const [searchInput, setSearchInput] = useState(qParam)
   const search = useDebounce(searchInput, 300)
-  // Push the debounced search into the URL and back to page 1.
+  // Push the debounced search into the URL and back to page 1. The ref holds
+  // the last value written, so the URL echoing it back (or a new setter
+  // identity) never re-triggers the reset to page 1.
+  const pushedSearch = useRef(qParam)
   useEffect(() => {
-    if (search === qParam) return
+    if (search === pushedSearch.current) return
+    pushedSearch.current = search
     setQParam(search)
     setPageParam('1')
-    // qParam is the URL echo of `search`; reacting to it would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
+  }, [search, setQParam, setPageParam])
 
   const pagination = useMemo(() => {
     const size = parseInt(perPageParam, 10)
