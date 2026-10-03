@@ -11,7 +11,7 @@ A key works in two places:
 | `POST /api/v1/mcp` | The read-only MCP server ([mcp-server.md](./mcp-server.md)). |
 | Tenant REST routes (`/api/v1/assets`, `/api/v1/findings`, …) | **Read-only**: `GET`/`HEAD`, within the key's scopes. |
 
-Sensor keys (`rda_…`, `X-Sensor-Api-Key`), SCIM tokens and the admin console
+Sensor keys (`octs_…`, legacy `rda_…`; see [agent-identity.md](agent-identity.md#credential-formats)), SCIM tokens and the admin console
 are separate credentials and are not covered here.
 
 ## What a key carries

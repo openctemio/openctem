@@ -55,3 +55,22 @@ func TestKeyState_ExpiringActiveKeyWarns(t *testing.T) {
 		t.Fatalf("reasons=%v, want key_expiring", codes(a.Reasons))
 	}
 }
+
+// IsLegacyKey follows the effective key: a sensor whose bootstrap key was
+// rda_ but which renewed onto an octs_ rotating key is no longer legacy.
+func TestIsLegacyKey_FollowsEffectiveKey(t *testing.T) {
+	s := daemon(ago(5 * time.Second))
+	s.InlineKeyPrefix = "rda_inline01"
+	if !s.IsLegacyKey() {
+		t.Fatal("inline rda_ key: want legacy")
+	}
+	s.ActiveKey = &ActiveKey{Prefix: "octs_Ab3dE", ExpiresAt: tp(testNow.Add(90 * 24 * time.Hour))}
+	if s.IsLegacyKey() {
+		t.Fatal("renewed onto an octs_ rotating key: want not legacy")
+	}
+	s.ActiveKey = nil
+	s.InlineKeyPrefix = "octs_Zz9Yy"
+	if s.IsLegacyKey() {
+		t.Fatal("inline octs_ key: want not legacy")
+	}
+}

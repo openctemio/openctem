@@ -1,89 +1,73 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
-import { toStringArray } from '@/features/assets/lib/property-utils'
-import { httpStatus, websiteTLS } from '@/features/assets/lib/certificate-facts'
-import { Badge } from '@/components/ui/badge'
 import {
-  MonitorSmartphone,
-  ShieldCheck,
-  ShieldX,
-  AlertTriangle,
-  Shield,
-  Zap,
-  HelpCircle,
-} from 'lucide-react'
+  cdnName,
+  contentType,
+  formatTechnology,
+  httpStatusCode,
+  ipAddresses,
+  pageTitle,
+  redirectChain,
+  redirectTarget,
+  responseTimeMs,
+  technologies,
+  tlsFacts,
+  webServer,
+} from '@/features/assets/lib/service-facts'
+import {
+  ChipRow,
+  HttpStatusChip,
+  OverflowChips,
+  TechChips,
+  TlsSummary,
+} from '@/features/assets/components/service-cells'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { MonitorSmartphone, ShieldCheck, ShieldX, AlertTriangle, Shield, Zap } from 'lucide-react'
 
+/** "Served over TLS" / "No TLS" / "" (unknown) for the CSV. */
+function tlsLabel(asset: Asset): string {
+  const k = tlsFacts(asset).kind
+  return k === 'cert' || k === 'tls' ? 'Yes' : k === 'none' ? 'No' : ''
+}
+
+const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
+
+// Each cell reads the keys ingest stores (status_code, technologies,
+// web_server, service.*) as well as the manual form's keys, through
+// service-facts. A value nothing recorded says so; it is never defaulted.
 const columns: ColumnDef<Asset>[] = [
   {
+    id: 'http_status',
+    header: 'Status',
+    cell: ({ row }) => (
+      <div className="min-w-0 max-w-[220px] space-y-1">
+        <HttpStatusChip status={httpStatusCode(row.original)} chain={redirectChain(row.original)} />
+        {pageTitle(row.original) && (
+          <p className="truncate text-xs text-muted-foreground" title={pageTitle(row.original)}>
+            {pageTitle(row.original)}
+          </p>
+        )}
+      </div>
+    ),
+  },
+  {
     id: 'technology',
-    header: 'Technology',
-    cell: ({ row }) => {
-      const raw = row.original.metadata.technology
-      const tech: string[] = Array.isArray(raw) ? raw : raw ? [String(raw)] : []
-      return (
-        <div className="flex flex-wrap gap-1 max-w-[150px]">
-          {tech.slice(0, 2).map((t) => (
-            <Badge key={t} variant="outline" className="text-xs">
-              {t}
-            </Badge>
-          ))}
-          {tech.length > 2 && (
-            <Badge variant="outline" className="text-xs">
-              +{tech.length - 2}
-            </Badge>
-          )}
-        </div>
-      )
-    },
+    header: 'Technologies',
+    cell: ({ row }) => (
+      <ChipRow className="max-w-[240px]">
+        <TechChips technologies={technologies(row.original)} max={2} />
+      </ChipRow>
+    ),
   },
   {
     id: 'ssl',
-    header: 'SSL',
-    // Unknown when nothing recorded TLS: a missing flag is not "insecure".
-    cell: ({ row }) => {
-      const tls = websiteTLS(row.original)
-      if (tls === null)
-        return (
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <HelpCircle className="h-4 w-4" />
-            <span className="text-xs">Unknown</span>
-          </div>
-        )
-      return tls ? (
-        <div className="flex items-center gap-1 text-green-500">
-          <ShieldCheck className="h-4 w-4" />
-          <span className="text-xs">Secure</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 text-red-500">
-          <ShieldX className="h-4 w-4" />
-          <span className="text-xs">Insecure</span>
-        </div>
-      )
-    },
-  },
-  {
-    id: 'http_status',
-    header: 'Status Code',
-    cell: ({ row }) => {
-      // No probe recorded a status: show "-", never a default 200.
-      const status = httpStatus(row.original)
-      if (status === null) return <span className="text-muted-foreground">-</span>
-      const statusClass =
-        status >= 200 && status < 300
-          ? 'text-green-500 bg-green-500/10'
-          : status >= 300 && status < 400
-            ? 'text-blue-500 bg-blue-500/10'
-            : status >= 400 && status < 500
-              ? 'text-orange-500 bg-orange-500/10'
-              : 'text-red-500 bg-red-500/10'
-      return (
-        <Badge variant="outline" className={statusClass}>
-          {status}
-        </Badge>
-      )
-    },
+    header: 'TLS',
+    cell: ({ row }) => (
+      <div className="max-w-[200px]">
+        <TlsSummary facts={tlsFacts(row.original)} />
+      </div>
+    ),
   },
 ]
 
@@ -204,7 +188,7 @@ export const websitesConfig: AssetPageConfig = {
       iconBg: 'bg-blue-500/10',
       iconColor: 'text-blue-500',
       label: 'Response (ms)',
-      getValue: (asset) => (asset.metadata.response_time as number) || '-',
+      getValue: (asset) => responseTimeMs(asset) ?? '—',
     },
   ],
 
@@ -214,26 +198,59 @@ export const websitesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'HTTP Status',
+          getValue: (asset) => (
+            <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} />
+          ),
+        },
+        {
+          label: 'TLS',
+          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} explainMissing />,
+        },
+        {
+          label: 'Title',
+          getValue: (asset) => pageTitle(asset) ?? unknownText('Not collected'),
+          fullWidth: true,
+        },
+        {
+          label: 'Web server',
+          getValue: (asset) => webServer(asset) ?? unknownText(),
+        },
+        {
+          label: 'Content type',
+          getValue: (asset) => contentType(asset) ?? unknownText(),
+        },
+        {
+          label: 'CDN',
+          getValue: (asset) => cdnName(asset) ?? unknownText(),
+        },
+        {
+          label: 'IP addresses',
           getValue: (asset) => {
-            const status = httpStatus(asset)
-            if (status === null) return <span className="text-muted-foreground">Unknown</span>
-            return (
-              <Badge variant="outline" className={status < 400 ? 'text-green-500' : 'text-red-500'}>
-                {status}
-              </Badge>
+            const ips = ipAddresses(asset)
+            return ips.length ? (
+              <ChipRow>
+                <OverflowChips label="IP" values={ips} />
+              </ChipRow>
+            ) : (
+              unknownText()
             )
           },
         },
         {
-          label: 'SSL Certificate',
+          label: 'Redirects to',
           getValue: (asset) => {
-            const tls = websiteTLS(asset)
-            return tls === null ? 'Unknown' : tls ? 'Served over TLS' : 'Not served over TLS'
+            const target = redirectTarget(asset)
+            return target ? (
+              <SafeExternalLink
+                href={target}
+                className="break-all font-mono text-xs hover:underline"
+              >
+                {target}
+              </SafeExternalLink>
+            ) : (
+              unknownText('No redirect recorded')
+            )
           },
-        },
-        {
-          label: 'Server',
-          getValue: (asset) => (asset.metadata.server as string) || '-',
           fullWidth: true,
         },
       ],
@@ -243,22 +260,11 @@ export const websitesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Technologies',
-          getValue: (asset) => {
-            const tech = (() => {
-              const r = asset.metadata.technology
-              return Array.isArray(r) ? r : r ? [String(r)] : []
-            })()
-            if (!tech.length) return '-'
-            return (
-              <div className="flex flex-wrap gap-2">
-                {tech.map((t) => (
-                  <Badge key={t} variant="secondary">
-                    {t}
-                  </Badge>
-                ))}
-              </div>
-            )
-          },
+          getValue: (asset) => (
+            <ChipRow>
+              <TechChips technologies={technologies(asset)} max={Infinity} />
+            </ChipRow>
+          ),
           fullWidth: true,
         },
       ],
@@ -268,21 +274,13 @@ export const websitesConfig: AssetPageConfig = {
   exportFields: [
     { header: 'URL', accessor: (a) => a.name },
     {
-      header: 'Technology',
-      accessor: (a) => {
-        const raw = a.metadata.technology
-        const tech = toStringArray(raw)
-        return tech.join(';')
-      },
+      header: 'Technologies',
+      accessor: (a) => (technologies(a) ?? []).map(formatTechnology).join(';'),
     },
-    {
-      header: 'SSL',
-      accessor: (a) => {
-        const tls = websiteTLS(a)
-        return tls === null ? '' : tls ? 'Yes' : 'No'
-      },
-    },
-    { header: 'HTTP Status', accessor: (a) => httpStatus(a) ?? '' },
+    { header: 'TLS', accessor: (a) => tlsLabel(a) },
+    { header: 'HTTP Status', accessor: (a) => httpStatusCode(a) ?? '' },
+    { header: 'Title', accessor: (a) => pageTitle(a) ?? '' },
+    { header: 'Web server', accessor: (a) => webServer(a) ?? '' },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Risk Score', accessor: (a) => a.riskScore },
     { header: 'Findings', accessor: (a) => a.findingCount },
@@ -294,16 +292,16 @@ export const websitesConfig: AssetPageConfig = {
   },
 
   customFilter: {
-    label: 'SSL Status',
+    label: 'TLS',
     options: [
-      { label: 'Secure', value: 'secure' },
-      { label: 'Insecure', value: 'insecure' },
-      { label: 'Unknown', value: 'unknown' },
+      { label: 'Served over TLS', value: 'secure' },
+      { label: 'No TLS', value: 'insecure' },
+      { label: 'Not collected', value: 'unknown' },
     ],
     filterFn: (asset, value) => {
-      const tls = websiteTLS(asset)
-      if (value === 'unknown') return tls === null
-      return value === 'secure' ? tls === true : tls === false
+      const kind = tlsFacts(asset).kind
+      if (value === 'unknown') return kind === 'not_collected'
+      return value === 'secure' ? kind === 'cert' || kind === 'tls' : kind === 'none'
     },
   },
 }

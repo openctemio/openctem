@@ -7,6 +7,9 @@
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
 > Proxies and network egress (proposed): [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
+> Trust between sensors and the platform (what each side verifies about the
+> other, current gaps): [sensor-platform-trust.md](sensor-platform-trust.md),
+> [RFC-040](../rfcs/RFC-040-platform-sensor-mutual-distrust.md) (proposed).
 
 ## Glossary
 
@@ -665,6 +668,15 @@ Each segment runs through the v1 pipeline with the v2 options:
   under its number, so a retried segment is never counted twice. Payloads
   are dropped once the report completes.
 
+**Finding tags** (every ingest path, v1 and v2). A new finding stores the
+tags its report sent, empty and repeated ones dropped, at most
+`vulnerability.MaxFindingTags` (50, the limit of `PUT /findings/{id}/tags`).
+A re-sighting of an existing fingerprint **merges**: the stored tags stay
+first and in order (a user may have set them), new ones are appended, and
+the list stops at 50. The enrich path (`Finding.EnrichFrom`) and the
+upsert's `ON CONFLICT` apply the same rule, so a scanner can add tags but
+never remove one. Only the tags API replaces the list.
+
 The status resource (`GET /results/{id}`) reports `receiving`, `queued`,
 `processing`, `completed`, `failed` or `expired`, accepted/rejected counts,
 up to 100 item errors (fixed details, never sensor bytes) and the
@@ -941,7 +953,7 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
 - **Type and key.** An administrator creates the sensor with type
   `collector` (a rotated key gets `sensor.CollectorScopes()`). Until
   enrollment ships ([RFC-032](../rfcs/RFC-032-sensor-enrollment-and-identity.md)),
-  the collector uses an `rda_` key and renews it like any other sensor.
+  the collector uses an `octs_` key and renews it like any other sensor.
 - **Protocol.** It uses protocol v2 through sdk-go `pkg/sensorkit` (hello,
   heartbeat with control block, manifest, results ingest, durable outbox,
   key renewal), with commands off. Reports go to
@@ -1086,6 +1098,26 @@ A sensor holds every command it claims under a **lease** (migration 000260:
   `fail_exhausted_commands` still ends a command after the maximum number of
   attempts. A dead sensor's running scans are back in the queue within about
   lease + 60 s, not at the 1 h run timeout (RFC-035 B5).
+- **Revocation** (RFC-040 §5.2). Revoking or disabling a sensor
+  (`POST /sensors/{id}/revoke`, `/deactivate`, or `PUT /sensors/{id}` with that
+  status) takes back every tenant command it holds (`acknowledged` or
+  `running`) in the same request, not at lease expiry
+  (`CommandRepository.ReleaseHeldBySensor`):
+  - **Routed scan work** (type `scan` with a `pipeline_run_id`, the same rule
+    as the release of pending work pinned to an unavailable sensor) goes
+    back to `pending`, unpinned, zone kept, without a dispatch attempt, with
+    `re-queued: the sensor holding it was revoked` (or `disabled`).
+  - **Anything else** was addressed to that sensor only (`config_update`, a
+    scan sent to it by id) and is `failed`, with `failed: the sensor it was
+    addressed to was revoked while holding it` (or `disabled`).
+  - The lease is cleared, so the fence below refuses the old holder's late
+    `start`, `complete` and `fail`; the next claim starts a new epoch.
+  - One `sensor.commands_released` audit entry (severity high) lists the
+    re-queued and failed command ids, under the administrator who acted, or
+    `system`.
+  - The release runs after the status change is stored. If it fails it is
+    logged, and the lease reaper takes the commands back when their lease
+    runs out.
 - **Fencing.**
   - **Guarded writes.** `start`, `complete` and `fail` from a sensor are
     guarded UPDATEs. They apply only if the command is still held by that
