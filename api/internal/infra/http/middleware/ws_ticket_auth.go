@@ -7,6 +7,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -29,7 +30,14 @@ type WSTicketRedeemer interface {
 }
 
 // WSTicketAuth returns middleware enforcing single-use ticket auth.
-func WSTicketAuth(svc WSTicketRedeemer, log *logger.Logger) func(http.Handler) http.Handler {
+//
+// The ticket is bound to the user and tenant it was issued for (the issuing
+// route, /auth/ws-token, runs the full tenant chain: SSO enforcement, the
+// organization IP allowlist and the active-membership check). When members
+// is non-nil the membership is checked AGAIN here, at upgrade time, so a
+// member suspended or removed between issue and upgrade gets no connection.
+// nil skips the re-check (unit tests with no membership store).
+func WSTicketAuth(svc WSTicketRedeemer, members MembershipReader, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ticket := r.URL.Query().Get("ticket")
@@ -48,6 +56,21 @@ func WSTicketAuth(svc WSTicketRedeemer, log *logger.Logger) func(http.Handler) h
 				}
 				apierror.Unauthorized("invalid or expired ticket").WriteJSON(w)
 				return
+			}
+
+			if members != nil {
+				userID, uerr := shared.IDFromString(claims.UserID)
+				tenantID, terr := shared.IDFromString(claims.TenantID)
+				if uerr != nil || terr != nil {
+					apierror.Unauthorized("invalid or expired ticket").WriteJSON(w)
+					return
+				}
+				if denial := activeMembershipDenial(r.Context(), members, userID, tenantID); denial != nil {
+					log.Info("ws upgrade rejected: membership not active",
+						"user_id", claims.UserID, "tenant_id", claims.TenantID)
+					denial.WriteJSON(w)
+					return
+				}
 			}
 
 			ctx := r.Context()

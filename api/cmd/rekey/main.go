@@ -18,6 +18,12 @@
 //
 //	rekey            dry run: re-encrypt inside a transaction, report, roll back
 //	rekey -apply     the same, then commit
+//	rekey -status    count the active API keys, SCIM tokens and sensor keys
+//	                 not yet re-hashed under the current key (reads the
+//	                 server's APP_ENCRYPTION_KEY and SENSOR_KEY_PEPPER). They
+//	                 are re-hashed on their next use; remove
+//	                 APP_ENCRYPTION_KEY_PREVIOUS when the total is 0. Exit 3
+//	                 while it is not.
 //
 // Exit status: 0 success, 1 a value neither key opens (or OLD-key ciphertext
 // outside the known locations; nothing committed), 2 usage or connection error.
@@ -38,6 +44,9 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/rekey"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 )
 
 func main() {
@@ -45,7 +54,12 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "report only and roll back (the default; cannot be combined with -apply)")
 	sweep := flag.Bool("sweep", true, "also scan every text/bytea/jsonb column for OLD-key ciphertext outside the known locations")
 	timeout := flag.Duration("timeout", 10*time.Minute, "overall time limit")
+	status := flag.Bool("status", false, "count tokens still hashed with a previous key and exit")
 	flag.Parse()
+
+	if *status {
+		os.Exit(runStatus(*timeout))
+	}
 
 	if *apply && *dryRun {
 		fail(2, "-apply and -dry-run are mutually exclusive")
@@ -87,7 +101,7 @@ func main() {
 		fail(2, err.Error())
 	}
 	if rep.Committed {
-		fmt.Println("\ncommitted. Set APP_ENCRYPTION_KEY to the new key; keep the old one in APP_ENCRYPTION_KEY_PREVIOUS until the API keys, SCIM tokens and sensor keys issued under it are rotated.")
+		fmt.Println("\ncommitted. Set APP_ENCRYPTION_KEY to the new key; keep the old one in APP_ENCRYPTION_KEY_PREVIOUS until `rekey -status` reports 0 (tokens are re-hashed on their next use).")
 	} else {
 		fmt.Println("\nnothing written (dry run). Re-run with -apply to commit.")
 	}
@@ -115,6 +129,45 @@ func printReport(rep *rekey.Report) {
 	for _, f := range rep.Unlisted {
 		fmt.Printf("UNLISTED %s (%s): %s\n", f.Location, f.Key, f.Reason)
 	}
+}
+
+// runStatus prints how many active tokens still verify only through an
+// earlier pepper and returns the exit code (0 when none, 3 otherwise).
+func runStatus(timeout time.Duration) int {
+	key := os.Getenv("APP_ENCRYPTION_KEY")
+	dbURL := databaseURL()
+	if dbURL == "" || key == "" {
+		fail(2, "-status needs DATABASE_URL (or DB_*) and the server's APP_ENCRYPTION_KEY in the environment")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		fail(2, "open database: "+err.Error())
+	}
+	defer db.Close()
+	sensorPepper, _ := sensorapp.SensorKeyPeppers(os.Getenv("SENSOR_KEY_PEPPER"), key)
+	counts, err := postgres.TokensNotUnderPepper(ctx, &postgres.DB{DB: db}, postgres.TokenPepperIDs{
+		APIKey: crypto.PepperID(key), SCIM: crypto.PepperID(key), Sensor: crypto.PepperID(sensorPepper),
+	})
+	if err != nil {
+		fail(2, err.Error())
+	}
+	total := 0
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "TABLE\tACTIVE TOKENS NOT UNDER THE CURRENT KEY")
+	for _, t := range []string{"api_keys", "scim_tokens", "sensors", "sensor_api_keys"} {
+		_, _ = fmt.Fprintf(w, "%s\t%d\n", t, counts[t])
+		total += counts[t]
+	}
+	_, _ = fmt.Fprintf(w, "TOTAL\t%d\n", total)
+	_ = w.Flush()
+	if total > 0 {
+		fmt.Println("\nThese still need APP_ENCRYPTION_KEY_PREVIOUS. Each is re-hashed the next time it is used; tokens that are never used again must be re-issued (or revoked) before the previous key is removed.")
+		return 3
+	}
+	fmt.Println("\nNo active token depends on a previous key: APP_ENCRYPTION_KEY_PREVIOUS can be removed.")
+	return 0
 }
 
 // databaseURL returns DATABASE_URL, else a URL built from the server's DB_*

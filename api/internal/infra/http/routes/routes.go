@@ -187,6 +187,7 @@ type Handlers struct {
 	AdminAuth           *handler.AdminAuthHandler
 	AdminOrganization   *handler.AdminOrganizationHandler
 	AdminConsole        *handler.AdminConsoleHandler
+	AdminAuditChain     *handler.AdminAuditChainHandler
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
 
 	// Admin Audit middleware (audit logging for admin operations)
@@ -295,9 +296,6 @@ func Register(
 		registerDocsRoutes(router, h.Docs)
 	}
 
-	// Auth routes - based on provider (some protected, some public)
-	registerAuthRoutes(router, h, cfg, authCfg, authMiddleware, log)
-
 	// Initialize per-user read endpoint rate limiter to prevent enumeration and scraping.
 	// Applied to all GET requests on authenticated tenant-scoped routes via
 	// buildTokenTenantMiddlewares (package-level variable).
@@ -384,6 +382,11 @@ func Register(
 	if userService != nil {
 		userSync = middleware.UserSync(userService, log)
 	}
+
+	// Auth routes - based on provider (some protected, some public).
+	// Registered AFTER the tenant-chain middlewares above are initialized:
+	// /auth/ws-token mounts wsTokenMiddlewares, which reads them.
+	registerAuthRoutes(router, h, cfg, authCfg, authMiddleware, userSync, log)
 
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
@@ -850,7 +853,9 @@ func Register(
 	if h.WebSocket != nil {
 		var wsTicketMW Middleware
 		if h.WSTicketRedeemer != nil {
-			wsTicketMW = middleware.WSTicketAuth(h.WSTicketRedeemer, log)
+			// Re-checks active membership at upgrade (same reader as the
+			// tenant chain) for the user+tenant the ticket is bound to.
+			wsTicketMW = middleware.WSTicketAuth(h.WSTicketRedeemer, membershipReader, log)
 		}
 		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync, wsTicketMW)
 	}
@@ -1039,6 +1044,16 @@ func tenantOverlayMiddlewares() []Middleware {
 		mws = append(mws, readRateLimitMiddleware)
 	}
 	return mws
+}
+
+// wsTokenMiddlewares is the chain for GET /api/v1/auth/ws-token. A WebSocket
+// ticket opens the tenant's real-time stream, so issuing one must pass the
+// same tenant gates as any tenant route: SSO enforcement and the organization
+// IP allowlist (buildBaseMiddlewares), then RequireTenant + active membership
+// (tenantOverlayMiddlewares). It stays session-only: unlike
+// buildTokenTenantMiddlewares it does not accept `oct_` API keys.
+func wsTokenMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
+	return append(buildBaseMiddlewares(authMiddleware, userSyncMiddleware), tenantOverlayMiddlewares()...)
 }
 
 // ChainFunc wraps a handler function with middleware(s).

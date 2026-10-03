@@ -162,24 +162,33 @@ func RequireActiveMembershipFromJWT(reader MembershipReader) func(http.Handler) 
 				return
 			}
 
-			membership, err := reader.GetMembership(r.Context(), userID, tenantID)
-			if err != nil {
-				if errors.Is(err, shared.ErrNotFound) {
-					apierror.Forbidden("You are not a member of this tenant").WriteJSON(w)
-					return
-				}
-				apierror.InternalError(fmt.Errorf("failed to check membership")).WriteJSON(w)
-				return
-			}
-
-			if membership.IsSuspended() {
-				apierror.Forbidden("Your access to this tenant has been suspended").WriteJSON(w)
+			if denial := activeMembershipDenial(r.Context(), reader, userID, tenantID); denial != nil {
+				denial.WriteJSON(w)
 				return
 			}
 
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// activeMembershipDenial returns the error to send when userID is not an
+// ACTIVE member of tenantID (not a member, removed, or suspended), or nil
+// when the membership is active. Shared by RequireActiveMembershipFromJWT and
+// the WebSocket ticket upgrade (WSTicketAuth) so both refuse the same cases
+// with the same responses.
+func activeMembershipDenial(ctx context.Context, reader MembershipReader, userID, tenantID shared.ID) *apierror.Error {
+	membership, err := reader.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return apierror.Forbidden("You are not a member of this tenant")
+		}
+		return apierror.InternalError(fmt.Errorf("failed to check membership"))
+	}
+	if membership.IsSuspended() {
+		return apierror.Forbidden("Your access to this tenant has been suspended")
+	}
+	return nil
 }
 
 // RequireTeamRole checks if the user has one of the required roles in the team.

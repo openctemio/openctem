@@ -18,7 +18,11 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | One job for npm audit + Trivy (fs) + ESLint security rules; Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
 | API Fuzz (`api-fuzz.yml`) | Nightly (03:17 UTC), manual | 10 minutes of `FuzzStrictCTIS` (the protocol-v2 results decoder); uploads a crasher artifact on failure | — |
 | Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)) | — |
-| Release (`release.yml`) | Tag `v*` | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
+| Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
+| Release Train (`release-train.yml`) | Manual (the owner presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z`, opens and queues the release PR (see [Releases](#releases)) | — |
+| Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z`, starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
+| Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
+| Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`) | — |
 
 Scheduled runs (weekly security, nightly fuzz) run from the default branch, `main`.
 
@@ -174,8 +178,13 @@ All Go jobs run with `GOWORK=off` and `working-directory: api`.
 ## Releases
 
 **One tag, `vX.Y.Z` on `main`, releases the whole product.** API and web always
-share the version. There is no separate web release any more.
+share the version. There is no separate web release any more. The rule, the
+cadence and the tooling are [RFC-037](../rfcs/RFC-037-versioning-and-release-train.md);
+how to run a release is [Versioning and releases](../architecture/versioning-and-releases.md).
 
+- **Release train every other Monday**, plus immediate patch releases for
+  security and critical fixes. Run **Release Train** (Actions); do not tag by
+  hand.
 - `docker-publish.yml` and `release.yml` both trigger on `v*`.
 - `ui/vX.Y.Z` tags are the old `openctemio/ui` tags, imported with its history.
   They release nothing: the `v*` glob does not match across `/`. Never create one.
@@ -185,8 +194,8 @@ share the version. There is no separate web release any more.
   from before the merge; the old web releases stay on the archived `openctemio/ui`.
 
 ```bash
-# production release (from main)
-git tag v0.9.0 && git push origin v0.9.0
+# a release: Actions > Release Train > Run (dry_run first), or
+gh workflow run release-train.yml --ref develop -f dry_run=false
 
 # manual publish of an existing version (e.g. a staging build)
 gh workflow run docker-publish.yml -f version=v0.9.0 -f environment=staging
@@ -269,7 +278,9 @@ develop  integration branch; every PR targets develop
 2. All six required checks green, then **Merge when ready** (merge queue).
 3. Merge with a merge commit or squash, never "rebase and merge" for branches
    that contain merges.
-4. Release: `develop` → PR to `main` → tag `vX.Y.Z` on `main`.
+4. Release: **Release Train** builds `release/vX.Y.Z` from a green `develop`
+   commit and opens the PR to `main`; **Release Publish** tags `vX.Y.Z` on the
+   merge commit (RFC-037).
 
 Dependabot ([`.github/dependabot.yml`](../../../.github/dependabot.yml)) opens PRs
 against `develop`: gomod for `/api` (and monthly for the compat harness), npm for
@@ -282,6 +293,8 @@ against `develop`: gomod for `/api` (and monthly for the compat harness), npm fo
 | `GITHUB_TOKEN` | built-in | GHCR push, release, SARIF upload |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | secret (optional) | authenticated base-image pulls; Docker Hub mirror when set |
 | `SNYK_TOKEN` + `vars.ENABLE_SNYK` | secret + variable (optional) | Snyk jobs in API / Web Security |
+| `RELEASE_TOKEN` | secret (recommended) | Release Train / Publish: pushes and PRs that start CI, the tag push that starts Docker Publish, the helm-charts PR. Fine-grained PAT or App token for `openctem`, `helm-charts`, `sdk-go`, `sensor`: Contents, Pull requests and Workflows read/write. Without it the release still works, with one extra click per PR and no helm-charts PR |
+| `vars.RELEASE_TRAIN_ANCHOR` | variable (optional) | The first train Monday (`YYYY-MM-DD`, default `2026-10-05`) |
 
 The legacy `ui` GHCR package was created by `openctemio/ui`; this repository needs
 **Write** in that package's "Manage Actions access" for the legacy copy to succeed.

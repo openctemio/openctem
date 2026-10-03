@@ -9,8 +9,10 @@
      be recomputed from data the database holds, so `cmd/rekey` recomputes
      them too.
    - The hashes of `oct_` API keys, SCIM tokens and sensor keys are one-way
-     and cannot be recomputed. The server keeps verifying them with the old
-     key for as long as it is listed in `APP_ENCRYPTION_KEY_PREVIOUS`.
+     and cannot be recomputed without the token. The server keeps verifying
+     them with the old key while it is listed in
+     `APP_ENCRYPTION_KEY_PREVIOUS`, and re-hashes each one with the new key
+     the next time it is used.
 
 ## What is covered
 
@@ -85,12 +87,49 @@ when `DATABASE_URL` is unset, so it runs unchanged inside the API container.
    - Verify each item: integrations test-connect, admin console TOTP sign-in,
      user 2FA, SSO sign-in, stored credentials (template-source sync),
      leaked-credential reveal, a sensor heartbeat and an `oct_` API key.
-7. **Rotate the tokens, then drop the old key.**
-   - Regenerate the sensor keys and re-issue `oct_` API keys and SCIM tokens.
-     New ones are hashed with the new key.
-   - Then remove `APP_ENCRYPTION_KEY_PREVIOUS` and recreate the API.
-   - Until you do, anyone who has both the old key and a database copy can
-     brute-force those hashes offline as easily as plain SHA-256.
+7. **Let the tokens move over, then drop the old key.**
+   - An API key, SCIM token or sensor key that authenticates through the
+     previous key is **re-hashed with the current key on that request**.
+     The write is a compare-and-swap on the old hash, so a concurrent
+     regenerate or revoke wins. Each hash also records which key made it
+     (`key_pepper_id`, migration 000264).
+   - Sensors heartbeat constantly, so they move within seconds. API keys and
+     SCIM tokens move on their next use.
+   - Watch the count. The server logs it at start-up while a previous key is
+     set, and `rekey -status` prints it any time (exit 3 while above zero):
+
+     ```sh
+     docker exec <api-container> /tmp/rekey -status
+     ```
+
+   - When the total is 0, remove `APP_ENCRYPTION_KEY_PREVIOUS` and recreate
+     the API.
+   - Tokens that are never used again cannot be moved: a hash is one-way, and
+     re-hashing needs the token itself. Revoke them, or re-issue them to their
+     owners (`rekey -status` counts only tokens that can still authenticate).
+   - Until the previous key is removed, anyone holding both the old key and a
+     database copy can brute-force the not-yet-moved hashes offline.
+
+### Without a grace period
+
+`APP_ENCRYPTION_KEY_PREVIOUS` is optional. Nothing requires it: without it,
+the server simply knows only the new key. To switch with no grace period
+(the path taken on the live deployment, 2026-10-02):
+
+1. Run steps 1-6 as above, with the old key in `APP_ENCRYPTION_KEY_PREVIOUS`
+   only for the next step.
+2. Re-issue every sensor key you want to keep:
+   - a sensor's own renewal (`POST /api/v2/sensor/keys`, which it can still
+     reach because the previous key verifies it), or
+   - an administrator's regenerate-key, followed by installing the new key on
+     the sensor.
+
+   Either way, the new key is hashed with the new pepper.
+3. Remove `APP_ENCRYPTION_KEY_PREVIOUS` and recreate the API.
+4. Every `oct_` API key and SCIM token issued under the old key, and every
+   sensor key not re-issued in step 2, stops authenticating. Re-issue the ones
+   still needed. Run `rekey -status` before step 3 to see what will be left
+   behind.
 
 The server may also run step 6 before step 5. Because it reads both keys,
 nothing breaks while the rows are still under the old key. Run `rekey` before

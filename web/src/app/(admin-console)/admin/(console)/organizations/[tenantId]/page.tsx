@@ -17,6 +17,7 @@ import {
 } from '@/features/shared'
 import { useOrganization } from '@/features/admin-console/api/use-admin-organizations'
 import { useAdmin } from '@/features/admin-console/components/admin-console-shell'
+import { OrganizationAuditChainPanel } from '@/features/admin-console/components/organization-audit-chain-panel'
 import { OrganizationUsersSection } from '@/features/admin-console/components/organization-users-section'
 import { SSOEnforcementCard } from '@/features/admin-console/components/sso-enforcement-card'
 import { SSOPostureBadges } from '@/features/admin-console/components/sso-posture-badges'
@@ -73,6 +74,8 @@ export default function AdminOrganizationPage({
   const canManageSSO = adminCan(admin.role, 'super_admin')
   // Adding people to an organization: operations admins and up.
   const canManageUsers = adminCan(admin.role, 'ops_admin')
+  // Re-signing the organization's audit chain is irreversible: super admins only.
+  const canRebaselineAuditChain = adminCan(admin.role, 'super_admin')
   const { data: org, error, isLoading, mutate } = useOrganization(tenantId)
   const refresh = () => void mutate()
 
@@ -103,6 +106,7 @@ export default function AdminOrganizationPage({
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="users">Users</TabsTrigger>
               <TabsTrigger value="sso">Single sign-on</TabsTrigger>
+              <TabsTrigger value="audit-chain">Audit chain</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-4">
@@ -163,6 +167,14 @@ export default function AdminOrganizationPage({
                 onChanged={refresh}
               />
               <VerifiedDomainsSection tenantId={org.id} canManage={canManageSSO} />
+            </TabsContent>
+
+            <TabsContent value="audit-chain" className="mt-4">
+              <OrganizationAuditChainPanel
+                tenantId={org.id}
+                orgName={org.name}
+                canRebaseline={canRebaselineAuditChain}
+              />
             </TabsContent>
           </Tabs>
         </>

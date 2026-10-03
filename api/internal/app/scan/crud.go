@@ -389,6 +389,10 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 				return fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is disabled",
 					shared.ErrValidation, step.StepKey, step.Tool)
 			}
+			if stepTool.IsCollector() {
+				return fmt.Errorf("%w: pipeline step '%s' uses '%s', an asset collector: collectors run on their collector sensor's own schedule and cannot be scanned with",
+					shared.ErrValidation, step.StepKey, step.Tool)
+			}
 		}
 	}
 
@@ -407,6 +411,9 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 	}
 	if !scannerTool.IsActive {
 		return fmt.Errorf("%w: scanner '%s' is disabled", shared.ErrValidation, scannerName)
+	}
+	if scannerTool.IsCollector() {
+		return fmt.Errorf("%w: '%s' is an asset collector, not a scanner: collectors run on their collector sensor's own schedule and cannot be scanned with", shared.ErrValidation, scannerName)
 	}
 
 	tpj := max(targetsPerJob, 1)
@@ -668,7 +675,10 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		if input.TargetsPerJob != nil {
 			targetsPerJob = *input.TargetsPerJob
 		}
-		if err := sc.SetSingleScanner(input.ScannerName, input.ScannerConfig, targetsPerJob); err != nil {
+		// A config saved back as it was shown masked keeps the stored
+		// secrets instead of storing the mask (scan.RedactConfigSecrets).
+		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
+		if err := sc.SetSingleScanner(input.ScannerName, cfg, targetsPerJob); err != nil {
 			return nil, err
 		}
 	}

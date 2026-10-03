@@ -127,6 +127,12 @@ type IngestConfig struct {
 	// SENSOR_V2_BLINDING_MIN_FINDINGS (100).
 	V2BlindingRatio       float64
 	V2BlindingMinFindings int
+
+	// CoverageAutoResolve is the mode of coverage-scoped auto-resolve for
+	// non-repository findings: "off", "dry_run" (default: log, metric and a
+	// "would resolve" audit entry, no state change) or "enforce".
+	// INGEST_COVERAGE_AUTO_RESOLVE.
+	CoverageAutoResolve string
 }
 
 // AsyncEnabled reports whether async ingest mode is on.
@@ -707,6 +713,16 @@ type SensorConfig struct {
 	// Defaults to 24h (daily), matching the threat-intel / CTEM-ID refreshes.
 	CertMonitorInterval time.Duration
 
+	// CertMonitorMaxDomainsPerRun caps how many domains of one tenant a sweep
+	// queries; the rest rotate in on later runs, oldest-queried first.
+	// CERT_MONITOR_MAX_DOMAINS_PER_RUN, default 50.
+	CertMonitorMaxDomainsPerRun int
+
+	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
+	// (free tier), when crt.sh still fails after its retries. Set
+	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
+	CertMonitorCertSpotterURL string
+
 	// LoadBalancing holds configuration for sensor load balancing weights.
 	LoadBalancing LoadBalancingConfig
 }
@@ -1083,14 +1099,16 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: WorkerConfig{
-			Enabled:                getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
-			HeartbeatTimeout:       getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:    getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
-			SCMSyncInterval:        getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:          getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			CertMonitorEnabled:     getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorFeedBaseURL: getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
-			CertMonitorInterval:    getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
+			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
+			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
+			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
+			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
+			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
@@ -1118,6 +1136,7 @@ func Load() (*Config, error) {
 			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
+			CoverageAutoResolve:   getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
 		},
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.

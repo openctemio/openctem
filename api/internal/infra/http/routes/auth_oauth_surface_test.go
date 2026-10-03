@@ -48,7 +48,7 @@ func advertisedProviders(t *testing.T, h Handlers) (handler.SocialProviders, htt
 	t.Helper()
 
 	router := infrahttp.NewChiRouter()
-	registerAuthRoutes(router, h, oauthTestConfig(), AuthConfig{}, nil, logger.NewNop())
+	registerAuthRoutes(router, h, oauthTestConfig(), AuthConfig{}, nil, nil, logger.NewNop())
 
 	srv, ok := router.(interface{ Handler() http.Handler })
 	if !ok {
@@ -183,7 +183,7 @@ func TestAuthProviders_NotOnTheLoginLimiter(t *testing.T) {
 	cfg := oauthTestConfig()
 	cfg.RateLimit = config.RateLimitConfig{Enabled: true, RequestsPerSec: 100, Burst: 200, CleanupInterval: time.Minute}
 	router := infrahttp.NewChiRouter()
-	registerAuthRoutes(router, Handlers{}, cfg, AuthConfig{}, nil, logger.NewNop())
+	registerAuthRoutes(router, Handlers{}, cfg, AuthConfig{}, nil, nil, logger.NewNop())
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 
 	for i := 1; i <= 10; i++ {

@@ -20,6 +20,7 @@ import (
 // keys) — a different table and concept.
 type SensorAPIKeyRepository struct {
 	db *DB
+	tokenPepper
 }
 
 // NewSensorAPIKeyRepository creates a SensorAPIKeyRepository.
@@ -40,8 +41,8 @@ func (r *SensorAPIKeyRepository) Create(ctx context.Context, key *sensordom.APIK
 		INSERT INTO sensor_api_keys (
 			id, sensor_id, name, key_hash, key_prefix, scopes,
 			expires_at, last_used_at, last_used_ip, use_count,
-			is_active, revoked_at, revoked_reason, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
+			is_active, revoked_at, revoked_reason, created_at, key_pepper_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		key.ID.String(),
@@ -58,6 +59,7 @@ func (r *SensorAPIKeyRepository) Create(ctx context.Context, key *sensordom.APIK
 		nullTime(key.RevokedAt),
 		nullString(key.RevokedReason),
 		key.CreatedAt,
+		r.value(),
 	)
 	if err != nil {
 		return fmt.Errorf("create sensor api key: %w", err)
@@ -258,4 +260,17 @@ func oneRowAffected(res sql.Result, notFound error) error {
 		return notFound
 	}
 	return nil
+}
+
+// RehashKey replaces the stored hash of a renewed sensor key row made with an earlier pepper
+// by its hash under the current pepper, only while the stored hash is still
+// oldHash. Reports whether the row changed.
+func (r *SensorAPIKeyRepository) RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	return r.rehash(ctx, r.db, sensorRowTokens, id, oldHash, newHash)
+}
+
+// CountKeysNotUnderPepper counts active tokens not hashed with the current
+// pepper (they still need APP_ENCRYPTION_KEY_PREVIOUS).
+func (r *SensorAPIKeyRepository) CountKeysNotUnderPepper(ctx context.Context) (int, error) {
+	return r.countNotCurrent(ctx, r.db, sensorRowTokens)
 }

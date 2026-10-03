@@ -53,6 +53,12 @@ func (s *TokenService) SetLegacyPeppers(peppers ...string) {
 	}
 }
 
+// TokenRehasher is implemented by a repository that can replace a token hash
+// made with an earlier pepper (compare-and-swap on the old hash).
+type TokenRehasher interface {
+	RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error)
+}
+
 // MintResult carries the plaintext, which is shown to the admin exactly once.
 type MintResult struct {
 	Token     *scimtoken.ScimToken
@@ -111,14 +117,25 @@ func (s *TokenService) Authenticate(ctx context.Context, plaintext string) (*sci
 	}
 	hash := crypto.HashTokenPeppered(plaintext, s.pepper)
 	tok, err := s.repo.GetByHash(ctx, hash)
+	matched := hash
 	for _, p := range s.legacy {
 		if err == nil {
 			break
 		}
-		tok, err = s.repo.GetByHash(ctx, crypto.HashTokenPeppered(plaintext, p))
+		matched = crypto.HashTokenPeppered(plaintext, p)
+		tok, err = s.repo.GetByHash(ctx, matched)
 	}
 	if err != nil || !tok.IsActive() {
 		return nil, scimtoken.ErrNotFound
+	}
+	// A token that matched under an earlier pepper is re-hashed with the
+	// current one, so it stops depending on APP_ENCRYPTION_KEY_PREVIOUS.
+	if matched != hash {
+		if r, ok := s.repo.(TokenRehasher); ok {
+			if _, rerr := r.RehashKey(ctx, tok.ID(), matched, hash); rerr != nil {
+				s.logger.Warn("scim token re-hash under the current pepper failed", "token_id", tok.ID().String(), "error", rerr)
+			}
+		}
 	}
 	// Best-effort last-used stamp (non-fatal). Uses a status-preserving,
 	// active-only update so a concurrent revoke is never clobbered.

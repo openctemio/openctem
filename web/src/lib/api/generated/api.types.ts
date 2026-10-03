@@ -947,6 +947,149 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/admin/tenants/{tenantId}/audit-chain': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Classify an organization's audit chain (platform admin)
+     * @description Classifies every row of the organization's audit hash-chain: verifies, explained by a known hashing defect (legacy truncate, pre-#79 nanosecond), or blocking (unexplained, missing source, broken link). The fingerprint names the exact chain classified and must be sent with a rebaseline.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Organization ID */
+          tenantId: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AdminAuditChainStatusResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/admin/tenants/{tenantId}/audit-chain/rebaseline': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Rebaseline an organization's audit chain (platform admin)
+     * @description Re-signs the organization's audit hash-chain from current data. Irreversible: the old hashes are archived, and the action is written to the organization's audit log and the platform admin audit log. Refused (409, nothing changed) when any break is unexplained or the chain changed since the classification whose fingerprint is sent. Requires a fresh code from the console authenticator.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Organization ID */
+          tenantId: string
+        }
+        cookie?: never
+      }
+      /** @description Reviewed fingerprint and authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AdminAuditChainRebaselineRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AdminAuditChainRebaselineResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized or wrong code */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unexplained breaks, or the chain changed */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/admin/tenants/{tenantId}/sso/enforcement': {
     parameters: {
       query?: never
@@ -1742,7 +1885,7 @@ export interface paths {
     }
     /**
      * API version
-     * @description The running API build: release tag (or "<tag>-dev" on a development build), short commit, build time and channel.
+     * @description The running API build: release tag (or "<tag>-dev+<commit>" on a development build), short commit, build time and channel (release, rc or dev).
      */
     get: {
       parameters: {
@@ -20937,7 +21080,7 @@ export interface paths {
     put?: never
     /**
      * Create scope exclusion
-     * @description Create a new scope exclusion
+     * @description Create a scope exclusion. It is created pending and does not affect scanning until another user approves it (attack_surface:scope:exclusions:approve).
      */
     post: {
       parameters: {
@@ -21186,7 +21329,7 @@ export interface paths {
     put?: never
     /**
      * Activate scope exclusion
-     * @description Activate a scope exclusion
+     * @description Put an approved scope exclusion back into effect. A pending or rejected exclusion cannot be activated (409).
      */
     post: {
       parameters: {
@@ -21227,6 +21370,15 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description Not approved, or rejected */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Internal Server Error */
         500: {
           headers: {
@@ -21255,7 +21407,7 @@ export interface paths {
     put?: never
     /**
      * Approve scope exclusion
-     * @description Approve a scope exclusion, marking it as reviewed and authorized
+     * @description Approve a pending scope exclusion; it takes effect immediately. Requires attack_surface:scope:exclusions:approve. The requester cannot approve their own exclusion.
      */
     post: {
       parameters: {
@@ -21298,6 +21450,15 @@ export interface paths {
         }
         /** @description Not Found */
         404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Already approved, or rejected */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -21367,6 +21528,84 @@ export interface paths {
         }
         /** @description Not Found */
         404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scope/exclusions/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Reject scope exclusion
+     * @description Reject a pending scope exclusion; it never takes effect. Requires attack_surface:scope:exclusions:approve.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Exclusion ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScopeExclusionResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not awaiting approval */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -23676,6 +23915,78 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/{id}/heartbeat-history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Sensor heartbeat history
+     * @description How the sensor's heartbeats arrived over the last hours (at most 24), in 15-minute buckets: heartbeats received, average and largest gap, the interval it followed, the largest timer lag and the heartbeats it reported lost. Kept 48 hours. Feeds the Control channel sparkline.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Window in hours (1-24) */
+          hours?: number
+        }
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorHeartbeatHistoryResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -28634,7 +28945,7 @@ export interface paths {
     }
     /**
      * API version
-     * @description The running API build: release tag (or "<tag>-dev" on a development build), short commit, build time and channel.
+     * @description The running API build: release tag (or "<tag>-dev+<commit>" on a development build), short commit, build time and channel (release, rc or dev).
      */
     get: {
       parameters: {
@@ -30620,6 +30931,30 @@ export interface components {
       last_activity_at?: string
       user_agent?: string
     }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class':
+      | 'verifies'
+      | 'legacy_truncate'
+      | 'pre_79_nanosecond'
+      | 'unexplained'
+      | 'source_missing'
+      | 'link_broken'
+    'github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Counts': {
+      legacy_truncate?: number
+      link_broken?: number
+      pre_79_nanosecond?: number
+      source_missing?: number
+      unexplained?: number
+      verifies?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample': {
+      action?: string
+      audit_log_id?: string
+      class?: components['schemas']['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class']
+      logged_at?: string
+      offset_ns?: number
+      position?: number
+    }
     'github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput': {
       /**
        * @description BaseBranchKnown is false when the base branch has no scan history yet
@@ -31383,7 +31718,7 @@ export interface components {
        * @example release
        * @enum {string}
        */
-      channel?: 'release' | 'development'
+      channel?: 'release' | 'rc' | 'dev'
       /** @example 4d2f4b02 */
       commit?: string
       /** @example v0.9.0 */
@@ -31415,6 +31750,41 @@ export interface components {
       /** @enum {string} */
       modification_type?: 'add' | 'remove'
       permission_id: string
+    }
+    'internal_infra_http_handler.AdminAuditChainRebaselineRequest': {
+      /** @description Fingerprint of the classification the administrator reviewed. */
+      fingerprint?: string
+      /** @description TOTPCode is a fresh code from the console authenticator. */
+      totp_code?: string
+    }
+    'internal_infra_http_handler.AdminAuditChainRebaselineResponse': {
+      entries_rewritten?: number
+      entries_total?: number
+      ok?: boolean
+      rebaseline_id?: string
+      verify?: components['schemas']['internal_infra_http_handler.AdminAuditChainVerifyResult']
+    }
+    'internal_infra_http_handler.AdminAuditChainStatusResponse': {
+      blocking?: number
+      breaks?: number
+      classified_at?: string
+      counts?: components['schemas']['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Counts']
+      fingerprint?: string
+      last_position?: number
+      /**
+       * @description RebaselineAllowed is true when every break is explained by a known
+       *     hashing defect. A chain with no breaks needs no rebaseline.
+       */
+      rebaseline_allowed?: boolean
+      samples?: components['schemas']['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample'][]
+      tenant_id?: string
+      total?: number
+    }
+    'internal_infra_http_handler.AdminAuditChainVerifyResult': {
+      breaks?: number
+      ok?: boolean
+      total?: number
+      verified?: number
     }
     'internal_infra_http_handler.AdminAuditLogListResponse': {
       data?: components['schemas']['internal_infra_http_handler.AdminAuditLogResponse'][]
@@ -33030,7 +33400,16 @@ export interface components {
       was_filtered?: boolean
     }
     'internal_infra_http_handler.FindingAssetInfo': {
+      /**
+       * @description Set on the single-finding response only (GET /findings/{id}): what the
+       *     detail page needs to say how much the asset matters and how exposed it is.
+       */
+      criticality?: string
+      /** @description public | restricted | private | isolated | unknown */
+      exposure?: string
       id?: string
+      /** @description reachable from the internet */
+      is_internet_accessible?: boolean
       name?: string
       type?: string
       /** @description Repository web URL (e.g., github.com/org/repo) */
@@ -33042,7 +33421,12 @@ export interface components {
       name?: string
     }
     'internal_infra_http_handler.FindingComponentInfo': {
-      /** @description Dependency depth (1=direct, 2+=transitive) */
+      /**
+       * @description How the finding's asset uses the component. Set only when the asset's
+       *     dependency list has the component; absent means unknown, not transitive.
+       */
+      dependency_type?: string
+      /** @description 0 = direct */
       depth?: number
       /** @description Package ecosystem (e.g., "npm", "pypi") */
       ecosystem?: string
@@ -33050,10 +33434,10 @@ export interface components {
       fixed_in?: string
       /** @description Global component ID */
       id?: string
-      /** @description true if direct dependency */
-      is_direct?: boolean
       /** @description License identifier */
       license?: string
+      /** @description package.json, go.mod, … */
+      manifest_file?: string
       /** @description Package name (e.g., "lodash") */
       name?: string
       /** @description Package URL */
@@ -33118,7 +33502,7 @@ export interface components {
       compliance_impact?: string[]
       compliance_result?: string
       compliance_section?: string
-      /** @description Embedded component info for SCA findings */
+      /** @description Embedded component info for SCA findings (single-finding response) */
       component?: components['schemas']['internal_infra_http_handler.FindingComponentInfo']
       component_id?: string
       /** @description SARIF 2.1.0 Fields */
@@ -33246,6 +33630,8 @@ export interface components {
       updated_at?: string
       verified_at?: string
       verified_by?: string
+      /** @description Embedded CVE record (single-finding response) */
+      vulnerability?: components['schemas']['internal_infra_http_handler.FindingVulnerabilityInfo']
       vulnerability_class?: string[]
       vulnerability_id?: string
       web3_bytecode_offset?: number
@@ -33334,6 +33720,25 @@ export interface components {
       info?: number
       low?: number
       medium?: number
+    }
+    'internal_infra_http_handler.FindingVulnerabilityInfo': {
+      cisa_kev?: components['schemas']['internal_infra_http_handler.CISAKEVResponse']
+      cve_id?: string
+      cvss_score?: number
+      cvss_vector?: string
+      description?: string
+      epss_percentile?: number
+      epss_score?: number
+      exploit_available?: boolean
+      exploit_maturity?: string
+      fixed_versions?: string[]
+      id?: string
+      modified_at?: string
+      published_at?: string
+      references?: components['schemas']['internal_infra_http_handler.ReferenceResponse'][]
+      remediation?: string
+      severity?: string
+      title?: string
     }
     'internal_infra_http_handler.FixRegexResponse': {
       /** @description Number of replacements (0 = all) */
@@ -34759,8 +35164,15 @@ export interface components {
       exclusion_type?: string
       expires_at?: string
       id?: string
+      /**
+       * @description InEffect is true only for an approved, active, unexpired exclusion —
+       *     the ones scans actually skip.
+       */
+      in_effect?: boolean
       pattern?: string
       reason?: string
+      rejected_at?: string
+      rejected_by?: string
       status?: string
       tenant_id?: string
       updated_at?: string
@@ -34810,7 +35222,7 @@ export interface components {
       source?: 'sensor' | 'audit' | 'job'
       summary?: string
       /**
-       * @description Type: online, offline, restarted (status); version_changed,
+       * @description Type: online, offline, restarted, heartbeat_recovered (status); version_changed,
        *     sdk_version_changed, protocol_changed, tools_changed,
        *     capacity_changed, content_updated, content_refresh_failed,
        *     manifest_changed (updates; details.diff, RFC-033 §6.12);
@@ -34930,6 +35342,26 @@ export interface components {
       message?: string
       /** @enum {string} */
       severity?: 'warning' | 'critical'
+    }
+    'internal_infra_http_handler.SensorHeartbeatBucketResponse': {
+      /** @description At is the bucket's start (RFC 3339, UTC). */
+      at?: string
+      avg_gap_s?: number
+      /**
+       * @description Beats is the heartbeats received; avg/max gap are the times between
+       *     consecutive heartbeats in it, interval_s the interval the sensor
+       *     followed; max_lag_ms and failures come from its control report.
+       */
+      beats?: number
+      failures?: number
+      interval_s?: number
+      max_gap_s?: number
+      max_lag_ms?: number
+    }
+    'internal_infra_http_handler.SensorHeartbeatHistoryResponse': {
+      bucket_seconds?: number
+      buckets?: components['schemas']['internal_infra_http_handler.SensorHeartbeatBucketResponse'][]
+      hours?: number
     }
     'internal_infra_http_handler.SensorLoadResponse': {
       capacity?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity']

@@ -45,6 +45,9 @@ type mockAPIKeyRepo struct {
 
 	// Last filter passed to List
 	lastFilter apikeydom.Filter
+
+	// rehashed holds hashes replaced by RehashKey, by key id.
+	rehashed map[shared.ID]string
 }
 
 func newMockAPIKeyRepo() *mockAPIKeyRepo {
@@ -89,13 +92,41 @@ func (m *mockAPIKeyRepo) GetByHash(_ context.Context, hash string) (*apikeydom.A
 	if m.getByHash != nil {
 		return nil, m.getByHash
 	}
-	for _, key := range m.keys {
-		if key.KeyHash() == hash {
+	for id, key := range m.keys {
+		stored := key.KeyHash()
+		if h, ok := m.rehashed[id]; ok {
+			stored = h
+		}
+		if stored == hash {
 			return key, nil
 		}
 	}
 	return nil, apikeydom.ErrAPIKeyNotFound
 }
+
+// RehashKey makes the mock an apikey.KeyRehasher (compare-and-swap).
+func (m *mockAPIKeyRepo) RehashKey(_ context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key, ok := m.keys[id]
+	if !ok {
+		return false, nil
+	}
+	stored := key.KeyHash()
+	if h, ok := m.rehashed[id]; ok {
+		stored = h
+	}
+	if stored != oldHash {
+		return false, nil
+	}
+	if m.rehashed == nil {
+		m.rehashed = map[shared.ID]string{}
+	}
+	m.rehashed[id] = newHash
+	return true, nil
+}
+
+func (m *mockAPIKeyRepo) CountKeysNotUnderPepper(context.Context) (int, error) { return 0, nil }
 
 func (m *mockAPIKeyRepo) TouchLastUsed(_ context.Context, id shared.ID, _ string) error {
 	m.mu.Lock()
@@ -2017,5 +2048,34 @@ func TestAuthenticate_PreviousPepperDuringKeyRotation(t *testing.T) {
 	rotated.SetLegacyPeppers("old-pepper")
 	if _, err := rotated.Authenticate(context.Background(), created.Plaintext, ""); err != nil {
 		t.Fatalf("with the previous pepper listed the old key must authenticate: %v", err)
+	}
+}
+
+// A key that authenticates through the previous pepper is re-hashed with the
+// current one, so it keeps working after APP_ENCRYPTION_KEY_PREVIOUS is
+// removed.
+func TestAuthenticate_PreviousPepperKeyIsRehashed(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	old := apikey.NewService(repo, "old-pepper", logger.NewNop())
+	created, err := old.Create(context.Background(), apikey.CreateInput{
+		TenantID: shared.NewID().String(), Name: "pre-rotation", Scopes: []string{"findings:read"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	rotated := apikey.NewService(repo, "new-pepper", logger.NewNop())
+	rotated.SetLegacyPeppers("old-pepper")
+	if _, err := rotated.Authenticate(context.Background(), created.Plaintext, ""); err != nil {
+		t.Fatalf("authenticate through the previous pepper: %v", err)
+	}
+	if len(repo.rehashed) != 1 {
+		t.Fatalf("expected the key re-hashed once, got %d", len(repo.rehashed))
+	}
+
+	// The previous key is gone; the key still works.
+	afterRemoval := apikey.NewService(repo, "new-pepper", logger.NewNop())
+	if _, err := afterRemoval.Authenticate(context.Background(), created.Plaintext, ""); err != nil {
+		t.Fatalf("a re-hashed key must authenticate without the previous pepper: %v", err)
 	}
 }

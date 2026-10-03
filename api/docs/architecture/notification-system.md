@@ -472,6 +472,13 @@ connections. Notifications are never sent on `tenant:{id}` (every member can
 watch it) or `group:{id}`. The UI's notification bell subscribes to its user
 channel.
 
+The connection itself is opened with a single-use ticket from
+`GET /api/v1/auth/ws-token`, which runs the tenant gates (SSO enforcement,
+organization IP allowlist, active membership); the upgrade re-checks active
+membership for the ticket's user and tenant. A suspended or removed member
+therefore gets no stream. See
+[authorization-matrix.md](./authorization-matrix.md#real-time-websocket-apiv1authws-token-apiv1ws).
+
 ## Deprecation Notice
 
 ### notification_history (REMOVED)
