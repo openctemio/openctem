@@ -246,7 +246,7 @@ func (m *mockAttackSurfaceRelRepo) CreateBatchIgnoreConflicts(_ context.Context,
 	return 0, nil
 }
 
-func (m *mockAttackSurfaceRelRepo) CountByType(_ context.Context, _ shared.ID) (map[asset.RelationshipType]int64, error) {
+func (m *mockAttackSurfaceRelRepo) CountByType(_ context.Context, _ shared.ID, _ *shared.DataScope) (map[asset.RelationshipType]int64, error) {
 	return nil, nil
 }
 

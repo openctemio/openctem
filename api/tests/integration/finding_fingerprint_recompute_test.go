@@ -80,7 +80,7 @@ func (f *mergeFixture) merge() {
 		f.t.Fatalf("seed review: %v", err)
 	}
 	repo := postgres.NewAssetDedupRepository(&postgres.DB{DB: f.db})
-	if err := repo.ApproveAndMerge(context.Background(), f.tenant.String(), reviewID, shared.NewID().String()); err != nil {
+	if err := repo.ApproveAndMerge(context.Background(), f.tenant.String(), reviewID, shared.NewID().String(), nil); err != nil {
 		f.t.Fatalf("merge: %v", err)
 	}
 }

@@ -263,8 +263,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
 
 		// CTEM Discovery - Network Services, State History & Relationships
-		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
-		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
+		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
@@ -424,7 +424,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
 		// Asset Dedup Review (RFC-001)
-		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
+		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log).SetDataScope(svc.DataScope),
 
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
