@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -256,6 +257,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		EASM:          handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -264,6 +266,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
+		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
@@ -711,4 +714,14 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
 	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+}
+
+// newAssetAttributionHandler builds the attribution handler with its audit
+// trail (RFC-036: every human attribution decision is audited).
+func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AssetAttributionHandler {
+	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
+	if svc.Audit != nil {
+		h.SetAuditService(svc.Audit)
+	}
+	return h
 }

@@ -162,6 +162,11 @@ type Service struct {
 	// certSpotterBaseURL is the fallback source; empty disables it.
 	certSpotterBaseURL string
 
+	// Promotion of CT names into assets (promote.go); nil = off.
+	ingester    AssetIngester
+	assetNames  AssetNameLookup
+	attribution AttributionStore
+
 	maxDomains      int
 	maxSubs         int
 	expiryWindow    time.Duration
@@ -169,6 +174,7 @@ type Service struct {
 	requestDelay    time.Duration
 	recheckAfter    time.Duration
 	sweepBudget     time.Duration
+	maxPromotions   int
 	noSleep         bool
 	now             func() time.Time
 
@@ -199,6 +205,7 @@ func NewService(
 		requestDelay:    defaultRequestDelay,
 		recheckAfter:    DefaultRecheckAfter,
 		sweepBudget:     DefaultSweepBudget,
+		maxPromotions:   DefaultMaxPromotionsPerRun,
 		now:             func() time.Time { return time.Now().UTC() },
 		logger:          log.With("service", "cert_monitor"),
 	}
@@ -308,6 +315,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 
 	client := &sweepClient{s: s}
 	var events []*exposuredom.ExposureEvent
+	var promotions []promotion
 	failed, queried := 0, 0
 	started := s.now()
 	for i, root := range due {
@@ -351,6 +359,9 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 
 		d := collectDiscoveries(root.name, res.entries, attempted, s.expiryWindow, s.expiredLookback, s.maxSubs)
 		events = append(events, s.buildEvents(tenantID, root, assetsByName, d)...)
+		for _, h := range d.promotable {
+			promotions = append(promotions, promotion{host: h, root: root, source: res.source})
+		}
 
 		st.LastSuccessAt = &attempted
 		st.LastSource = res.source
@@ -367,12 +378,19 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		}
 	}
 
+	promoted, err := s.promote(ctx, tenantID, promotions)
+	if err != nil {
+		// Exposures are written; promotion retries on the next run.
+		s.logger.Warn("ct promotion failed", "tenant_id", tenantID.String(), "error", err)
+	}
+
 	s.logger.Info("ct sweep complete",
 		"tenant_id", tenantID.String(),
 		"domains_known", len(roots),
 		"domains_queried", queried,
 		"domains_failed", failed,
-		"exposures", len(events))
+		"exposures", len(events),
+		"assets_promoted", promoted)
 	return len(events), nil
 }
 
@@ -633,7 +651,24 @@ type discoveries struct {
 	subdomains []string
 	expiring   []expiringCert
 	expired    []expiringCert
+	// promotable are the subdomains fit to become inventory assets: named
+	// exactly (not only through a wildcard) on a certificate that is valid
+	// or lapsed within promoteLookback.
+	promotable []ctHost
 }
+
+// ctHost is what CT says about one promotable name.
+type ctHost struct {
+	Name      string
+	FirstSeen time.Time // earliest not_before: the earliest external evidence
+	NotAfter  time.Time // newest not_after
+	Issuer    string
+}
+
+// promoteLookback: a name whose newest certificate lapsed longer ago than
+// this is history (a retired host), kept as a subdomain_discovered exposure
+// for dangling-DNS work but not added to the inventory.
+const promoteLookback = 90 * 24 * time.Hour
 
 // collectDiscoveries is the pure core: from the CT entries for a domain it
 // derives (a) the set of distinct subdomains observed, (b) the hosts whose
@@ -660,12 +695,16 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 		serial   string
 	}
 	newest := make(map[string]latest)
+	exact := make(map[string]bool)          // seen as a literal name, not only "*.name"
+	firstSeen := make(map[string]time.Time) // earliest not_before per host
 
 	for _, e := range entries {
 		na := parseCRTTime(e.NotAfter)
+		nb := parseCRTTime(e.NotBefore)
 
-		for _, host := range hostsFromEntry(e) {
-			host = normalizeDomain(host)
+		for _, raw := range hostsFromEntry(e) {
+			wildcard := strings.HasPrefix(strings.TrimSpace(raw), "*.")
+			host := normalizeDomain(raw)
 			// CT names are third-party data: anything that is not a plain
 			// DNS hostname (control characters, markup, over-long labels)
 			// is dropped before it reaches an exposure title or the UI.
@@ -682,6 +721,14 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 			// already-known domain).
 			if host != domain {
 				subSet[host] = struct{}{}
+				if !wildcard {
+					exact[host] = true
+				}
+				if !nb.IsZero() {
+					if cur, ok := firstSeen[host]; !ok || nb.Before(cur) {
+						firstSeen[host] = nb
+					}
+				}
 			}
 			if na.IsZero() {
 				continue
@@ -701,23 +748,38 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 		d.subdomains = d.subdomains[:maxSubs]
 	}
 
-	cutoff := now.Add(window)
+	for _, h := range d.subdomains {
+		l, ok := newest[h]
+		if !exact[h] || !ok || now.Sub(l.notAfter) > promoteLookback {
+			continue
+		}
+		fs := firstSeen[h]
+		if fs.IsZero() {
+			fs = now
+		}
+		d.promotable = append(d.promotable, ctHost{Name: h, FirstSeen: fs, NotAfter: l.notAfter, Issuer: l.issuer})
+	}
+
 	for host, l := range newest {
 		days := int(l.notAfter.Sub(now).Hours() / 24)
-		ec := expiringCert{Host: host, NotAfter: l.notAfter, DaysLeft: days, Issuer: l.issuer, Serial: l.serial}
-		switch {
-		case !l.notAfter.After(now):
-			// Newest cert already lapsed: expired, if recently enough to matter.
-			if expiredLookback > 0 && now.Sub(l.notAfter) <= expiredLookback {
-				d.expired = append(d.expired, ec)
-			}
-		case !l.notAfter.After(cutoff):
-			d.expiring = append(d.expiring, ec)
-		}
+		d.classifyExpiry(expiringCert{Host: host, NotAfter: l.notAfter, DaysLeft: days, Issuer: l.issuer, Serial: l.serial}, now, window, expiredLookback)
 	}
 	sort.Slice(d.expiring, func(i, j int) bool { return d.expiring[i].Host < d.expiring[j].Host })
 	sort.Slice(d.expired, func(i, j int) bool { return d.expired[i].Host < d.expired[j].Host })
 	return d
+}
+
+// classifyExpiry files a host's newest certificate as expired (lapsed within
+// the look-back), expiring (within the window) or healthy (dropped).
+func (d *discoveries) classifyExpiry(ec expiringCert, now time.Time, window, expiredLookback time.Duration) {
+	switch {
+	case !ec.NotAfter.After(now):
+		if expiredLookback > 0 && now.Sub(ec.NotAfter) <= expiredLookback {
+			d.expired = append(d.expired, ec)
+		}
+	case !ec.NotAfter.After(now.Add(window)):
+		d.expiring = append(d.expiring, ec)
+	}
 }
 
 // hostsFromEntry pulls the certificate's subject hosts: the common_name plus

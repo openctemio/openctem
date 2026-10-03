@@ -5212,6 +5212,133 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/assets/{id}/attribution': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Asset attribution
+     * @description Whether the asset is believed to be the organization's, how confident the platform is, and the evidence (rule, technique, source, observed datum). Assets discovered passively under a domain the organization did not verify wait for review and are skipped by scans until confirmed.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Decide asset attribution
+     * @description Record whether the asset is the organization's. confirmed lets scans reach it; rejected, dependency (the organization's name on someone else's infrastructure) and monitor_only keep it passive. Automation never changes a decided state. Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Decision */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionDecisionRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/assets/{id}/components': {
     parameters: {
       query?: never
@@ -11024,6 +11151,63 @@ export interface paths {
             'application/json': {
               [key: string]: string
             }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * EASM overview
+     * @description The external attack surface in one call: surface assets by type and internet-facing services, attribution (confirmed, awaiting review and the age of the oldest review item, dependency, monitor only, rejected), assets first seen in the last 7/30 days and since the latest CTEM cycle started, open external exposures by severity and type, the top open risks, and how fresh the Certificate-Transparency monitoring is. Narrowed to the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Summary']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -32094,6 +32278,64 @@ export interface components {
       offset_ns?: number
       position?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock': {
+      candidate?: number
+      confirmed?: number
+      dependency?: number
+      legacy?: number
+      monitor_only?: number
+      needs_review?: number
+      rejected?: number
+      review_oldest_since?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock': {
+      by_severity?: {
+        [key: string]: number
+      }
+      by_type?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.TypeCount'][]
+      open?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock': {
+      ct_domains_watched?: number
+      ct_failing?: number
+      ct_never_succeeded?: number
+      ct_oldest_success?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.NewBlock': {
+      cycle_start?: string
+      last_7_days?: number
+      last_30_days?: number
+      since_cycle?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.Risk': {
+      asset_id?: string
+      asset_name?: string
+      id?: string
+      last_seen?: string
+      severity?: string
+      title?: string
+      type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.Summary': {
+      attribution?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock']
+      exposures?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock']
+      generated_at?: string
+      monitoring?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock']
+      new?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.NewBlock']
+      surface?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock']
+      top_risks?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Risk'][]
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock': {
+      by_type?: {
+        [key: string]: number
+      }
+      exposed_services?: number
+      total?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.TypeCount': {
+      count?: number
+      type?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput': {
       /**
        * @description BaseBranchKnown is false when the base branch has no scan history yet
@@ -33298,6 +33540,38 @@ export interface components {
       fixed?: string
       introduced?: string
       package?: string
+    }
+    'internal_infra_http_handler.AssetAttributionDecisionRequest': {
+      /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
+      state?: string
+    }
+    'internal_infra_http_handler.AssetAttributionEvidence': {
+      first_observed_at?: string
+      last_observed_at?: string
+      observed?: {
+        [key: string]: unknown
+      }
+      rule?: string
+      source?: string
+      technique?: string
+      weight?: number
+    }
+    'internal_infra_http_handler.AssetAttributionResponse': {
+      /** @description ActiveChecksAllowed: whether a scan may touch the asset. */
+      active_checks_allowed?: boolean
+      confidence?: number
+      decided_at?: string
+      evidence?: components['schemas']['internal_infra_http_handler.AssetAttributionEvidence'][]
+      /** @description HumanDecided: a person set the state; automation will not change it. */
+      human_decided?: boolean
+      reason?: string
+      recorded?: boolean
+      /**
+       * @description State: confirmed, needs_review, candidate, dependency, monitor_only,
+       *     rejected. An asset with no record is a legacy asset and reports
+       *     confirmed with recorded=false.
+       */
+      state?: string
     }
     'internal_infra_http_handler.AssetBriefResponse': {
       id?: string

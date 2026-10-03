@@ -356,6 +356,21 @@ func registerAttackSurfaceRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerEASMRoutes registers the EASM endpoints (RFC-036), behind the
+// attack_surface module like the rest of the external surface (O10).
+func registerEASMRoutes(
+	router Router,
+	h *handler.EASMHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm", func(r Router) {
+		r.GET("/summary", h.Summary, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
 // registerBranchRoutes registers branch management endpoints.
 // Branches are repository-scoped, tenant from JWT token.
 func registerBranchRoutes(
@@ -536,6 +551,21 @@ func registerAssetIdentifierRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/assets/{id}/identifiers", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerAssetAttributionRoutes registers the asset attribution endpoint
+// (RFC-036 §6.4).
+func registerAssetAttributionRoutes(
+	router Router,
+	h *handler.AssetAttributionHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/assets/{id}/attribution", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.AssetsRead))
+		r.PUT("/", h.Decide, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 }
 

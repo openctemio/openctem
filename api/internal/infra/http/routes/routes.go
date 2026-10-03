@@ -62,6 +62,7 @@ type Handlers struct {
 	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
 	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
 	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
+	EASM             *handler.EASMHandler             // RFC-036 overview; nil if not initialized
 	Docs             *handler.DocsHandler             // API documentation handler
 	Command          *handler.CommandHandler          // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
@@ -106,6 +107,7 @@ type Handlers struct {
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
+	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
 	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
 	RelationshipSuggestion *handler.RelationshipSuggestionHandler // nil if not initialized (no database)
 
@@ -435,6 +437,9 @@ func Register(
 	}
 
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
+	if h.AssetAttribution != nil {
+		registerAssetAttributionRoutes(router, h.AssetAttribution, authMiddleware, userSync)
+	}
 	if h.AssetIdentifier != nil {
 		registerAssetIdentifierRoutes(router, h.AssetIdentifier, authMiddleware, userSync)
 	}
@@ -645,6 +650,9 @@ func Register(
 	// Attack Surface routes (tenant from JWT token)
 	if h.AttackSurface != nil {
 		registerAttackSurfaceRoutes(router, h.AttackSurface, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASM != nil {
+		registerEASMRoutes(router, h.EASM, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Command routes (tenant from JWT token)

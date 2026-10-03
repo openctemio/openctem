@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
@@ -196,6 +197,7 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
+	attributionGate     AttributionGate      // optional; nil = every asset counts as confirmed
 	zones               ZoneDirectory        // optional; nil = zone routing off (RFC-023)
 	zoneResolver        scanzone.Resolver    // resolves hostname targets for zone routing
 	logger              *logger.Logger
@@ -208,6 +210,15 @@ type Service struct {
 // delayed scan (fail closed).
 type ScopeExclusionFilter interface {
 	ExcludedTargets(ctx context.Context, tenantID string, candidates []scope.ExclusionCandidate) (map[shared.ID]bool, error)
+}
+
+// AttributionGate reports which assets may not be checked actively because
+// their attribution is not confirmed (RFC-036 §6.3 active_allowed, O4): an
+// asset discovered passively under a domain the tenant did not verify waits
+// for review before any sensor touches it. Implemented by
+// *postgres.AttributionRepository. A lookup error stops the dispatch.
+type AttributionGate interface {
+	ActiveCheckBlocked(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error)
 }
 
 // ServiceOption is a functional option for Service.
@@ -240,6 +251,15 @@ func WithProfileRepo(repo scanprofile.Repository) ServiceOption {
 func WithScopeExclusionFilter(f ScopeExclusionFilter) ServiceOption {
 	return func(s *Service) {
 		s.scopeExclusions = f
+	}
+}
+
+// WithAttributionGate makes scan target selection skip asset-group members
+// whose attribution is not confirmed. Direct targets the tenant typed into
+// the scan are its own assertion (O8) and are not gated.
+func WithAttributionGate(g AttributionGate) ServiceOption {
+	return func(s *Service) {
+		s.attributionGate = g
 	}
 }
 

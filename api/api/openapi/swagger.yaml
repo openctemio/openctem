@@ -2640,6 +2640,114 @@ definitions:
       position:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock:
+    properties:
+      candidate:
+        type: integer
+      confirmed:
+        type: integer
+      dependency:
+        type: integer
+      legacy:
+        type: integer
+      monitor_only:
+        type: integer
+      needs_review:
+        type: integer
+      rejected:
+        type: integer
+      review_oldest_since:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock:
+    properties:
+      by_severity:
+        additionalProperties:
+          type: integer
+        type: object
+      by_type:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.TypeCount'
+        type: array
+      open:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock:
+    properties:
+      ct_domains_watched:
+        type: integer
+      ct_failing:
+        type: integer
+      ct_never_succeeded:
+        type: integer
+      ct_oldest_success:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.NewBlock:
+    properties:
+      cycle_start:
+        type: string
+      last_7_days:
+        type: integer
+      last_30_days:
+        type: integer
+      since_cycle:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.Risk:
+    properties:
+      asset_id:
+        type: string
+      asset_name:
+        type: string
+      id:
+        type: string
+      last_seen:
+        type: string
+      severity:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.Summary:
+    properties:
+      attribution:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock'
+      exposures:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock'
+      generated_at:
+        type: string
+      monitoring:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock'
+      new:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.NewBlock'
+      surface:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock'
+      top_risks:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.Risk'
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock:
+    properties:
+      by_type:
+        additionalProperties:
+          type: integer
+        type: object
+      exposed_services:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.TypeCount:
+    properties:
+      count:
+        type: integer
+      type:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput:
     properties:
       base_branch_scanned:
@@ -4939,6 +5047,58 @@ definitions:
       introduced:
         type: string
       package:
+        type: string
+    type: object
+  internal_infra_http_handler.AssetAttributionDecisionRequest:
+    properties:
+      state:
+        description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
+        type: string
+    type: object
+  internal_infra_http_handler.AssetAttributionEvidence:
+    properties:
+      first_observed_at:
+        type: string
+      last_observed_at:
+        type: string
+      observed:
+        additionalProperties: {}
+        type: object
+      rule:
+        type: string
+      source:
+        type: string
+      technique:
+        type: string
+      weight:
+        type: number
+    type: object
+  internal_infra_http_handler.AssetAttributionResponse:
+    properties:
+      active_checks_allowed:
+        description: 'ActiveChecksAllowed: whether a scan may touch the asset.'
+        type: boolean
+      confidence:
+        type: integer
+      decided_at:
+        type: string
+      evidence:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AssetAttributionEvidence'
+        type: array
+      human_decided:
+        description: 'HumanDecided: a person set the state; automation will not change
+          it.'
+        type: boolean
+      reason:
+        type: string
+      recorded:
+        type: boolean
+      state:
+        description: |-
+          State: confirmed, needs_review, candidate, dependency, monitor_only,
+          rejected. An asset with no record is a legacy asset and reports
+          confirmed with recorded=false.
         type: string
     type: object
   internal_infra_http_handler.AssetBriefResponse:
@@ -17373,6 +17533,85 @@ paths:
       summary: Archive asset
       tags:
       - Assets
+  /assets/{id}/attribution:
+    get:
+      description: Whether the asset is believed to be the organization's, how confident
+        the platform is, and the evidence (rule, technique, source, observed datum).
+        Assets discovered passively under a domain the organization did not verify
+        wait for review and are skipped by scans until confirmed.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAttributionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Asset attribution
+      tags:
+      - Assets
+    put:
+      consumes:
+      - application/json
+      description: Record whether the asset is the organization's. confirmed lets
+        scans reach it; rejected, dependency (the organization's name on someone else's
+        infrastructure) and monitor_only keep it passive. Automation never changes
+        a decided state. Audited.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Decision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AssetAttributionDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAttributionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Decide asset attribution
+      tags:
+      - Assets
   /assets/{id}/components:
     get:
       description: Retrieves all components for an asset
@@ -20621,6 +20860,35 @@ paths:
       summary: Get global dashboard stats
       tags:
       - Dashboard
+  /easm/summary:
+    get:
+      description: 'The external attack surface in one call: surface assets by type
+        and internet-facing services, attribution (confirmed, awaiting review and
+        the age of the oldest review item, dependency, monitor only, rejected), assets
+        first seen in the last 7/30 days and since the latest CTEM cycle started,
+        open external exposures by severity and type, the top open risks, and how
+        fresh the Certificate-Transparency monitoring is. Narrowed to the caller''s
+        data scope.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.Summary'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: EASM overview
+      tags:
+      - Attack Surface
   /exposures:
     get:
       consumes:
