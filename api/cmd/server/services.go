@@ -942,6 +942,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
+	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
+	s.CertMonitor.SetStateStore(repos.CTMonitorState)
+	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
+	// Re-check a little under the sweep interval: the next scheduled run
+	// re-queries, an API restart in between does not.
+	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, cfg.Worker.CertMonitorInterval*5/6)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
@@ -1384,6 +1390,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// back what runs out, fenced against a late completion.
 	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
 	s.Sensor.SetLeaseRenewer(repos.Command)
+	s.Sensor.SetCancelFinder(repos.Command)
 	s.Command = command.NewService(repos.Command, log, command.WithSensorLookup(repos.Sensor))
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	s.SensorPlatformHealth = sensorapp.NewPlatformHealth(sensorapp.PlatformHealthConfig{
@@ -1402,6 +1409,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
 	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
+	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).
+	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
+		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
+	})
 	// Ingest audit events are tenant-scoped, so they must go through the SAME
 	// audit service instance as every other tenant-scoped event: LogEvent also
 	// extends the per-tenant tamper-evident hash chain, and its chainMu is what

@@ -118,12 +118,47 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(finding)
+	args, err := findingCreateArgs(finding, metadata)
 	if err != nil {
 		return err
 	}
+	_, err = r.db.ExecContext(ctx, findingCreateSQL, args...)
 
-	query := `
+	if err != nil {
+		if isUniqueViolation(err) {
+			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
+		}
+		return fmt.Errorf("failed to create finding: %w", err)
+	}
+
+	return nil
+}
+
+// CreateInTx persists a new finding within an existing transaction.
+func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding *vulnerability.Finding) error {
+	metadata, err := json.Marshal(finding.Metadata())
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	args, err := findingCreateArgs(finding, metadata)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, findingCreateSQL, args...)
+
+	if err != nil {
+		if isUniqueViolation(err) {
+			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
+		}
+		return fmt.Errorf("failed to create finding in tx: %w", err)
+	}
+
+	return nil
+}
+
+// findingCreateSQL is the single-row INSERT of Create and CreateInTx.
+var findingCreateSQL = `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
 			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
@@ -145,19 +180,27 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			remediation, pentest_campaign_id, created_by,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status
+			sla_deadline, sla_status,
+			` + findingTypeColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90)
+			$89, $90` + findingTypePlaceholders(91) + `)
 	`
 
+// findingCreateArgs is the argument list for findingCreateSQL. metadata is
+// passed in because Create merges the source metadata into it.
+func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, error) {
+	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(finding)
+	if err != nil {
+		return nil, err
+	}
 	remediationJSON := marshalRemediation(finding.Remediation())
 
-	_, err = r.db.ExecContext(ctx, query,
+	args := []any{
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
@@ -261,176 +304,9 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		// so a manually-created finding with a deadline keeps it.
 		nullTime(finding.SLADeadline()), // $89
 		finding.SLAStatus().String(),    // $90
-	)
-
-	if err != nil {
-		if isUniqueViolation(err) {
-			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
-		}
-		return fmt.Errorf("failed to create finding: %w", err)
 	}
-
-	return nil
-}
-
-// CreateInTx persists a new finding within an existing transaction.
-func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding *vulnerability.Finding) error {
-	metadata, err := json.Marshal(finding.Metadata())
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(finding)
-	if err != nil {
-		return err
-	}
-
-	query := `
-		INSERT INTO findings (
-			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
-			start_column, end_column, snippet, context_snippet, context_start_line,
-			title, description, message, severity, status,
-			resolution, resolved_at, resolved_by, scan_id, fingerprint,
-			sensor_id, metadata, created_at, updated_at,
-			first_detected_branch, first_detected_commit, last_seen_branch, last_seen_commit,
-			confidence, impact, likelihood, vulnerability_class, subcategory,
-			baseline_state, kind, rank, occurrence_count, correlation_id,
-			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
-			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
-			epss_score, epss_percentile, is_in_kev, kev_due_date,
-			priority_class, priority_class_reason, priority_class_override, priority_class_overridden_by, priority_class_overridden_at,
-			is_reachable, reachable_from_count,
-			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
-			data_exposure_risk, reputational_impact, compliance_impact,
-			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id, created_by,
-			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
-			ingest_channel,
-			sla_deadline, sla_status
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
-			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
-			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
-			$83, $84, $85, $86, $87, $88,
-			$89, $90)
-	`
-
-	remediationJSON := marshalRemediation(finding.Remediation())
-
-	_, err = tx.ExecContext(ctx, query,
-		finding.ID().String(),
-		finding.TenantID().String(),
-		nullID(finding.VulnerabilityID()),
-		nullIDValue(finding.AssetID()), // pentest findings may have no asset
-		nullID(finding.BranchID()),
-		nullID(finding.ComponentID()),
-		finding.Source().String(),
-		finding.ToolName(),
-		nullID(finding.ToolID()),
-		nullString(finding.ToolVersion()),
-		nullString(finding.RuleID()),
-		nullString(finding.FilePath()),
-		finding.StartLine(),
-		finding.EndLine(),
-		finding.StartColumn(),
-		finding.EndColumn(),
-		nullString(finding.Snippet()),
-		nullString(finding.ContextSnippet()),
-		nullInt(finding.ContextStartLine()),
-		nullString(finding.Title()),
-		nullString(finding.Description()),
-		finding.Message(),
-		finding.Severity().String(),
-		finding.Status().String(),
-		nullString(finding.Resolution()),
-		nullTime(finding.ResolvedAt()),
-		nullID(finding.ResolvedBy()),
-		nullString(finding.ScanID()),
-		finding.Fingerprint(),
-		nullID(finding.SensorID()),
-		metadata,
-		finding.CreatedAt(),
-		finding.UpdatedAt(),
-		nullString(finding.FirstDetectedBranch()),
-		nullString(finding.FirstDetectedCommit()),
-		nullString(finding.LastSeenBranch()),
-		nullString(finding.LastSeenCommit()),
-		// SARIF fields
-		nullIntPtr(finding.Confidence()),
-		nullString(finding.Impact()),
-		nullString(finding.Likelihood()),
-		pq.Array(finding.VulnerabilityClass()),
-		pq.Array(finding.Subcategory()),
-		nullString(finding.BaselineState()),
-		nullString(finding.Kind()),
-		nullFloat64(finding.Rank()),
-		finding.OccurrenceCount(),
-		nullString(finding.CorrelationID()),
-		partialFingerprints,
-		relatedLocations,
-		stacks,
-		attachments,
-		pq.Array(finding.WorkItemURIs()),
-		nullString(finding.HostedViewerURI()),
-		// CTEM fields
-		nullString(finding.ExposureVector().String()),
-		finding.IsNetworkAccessible(),
-		finding.IsInternetAccessible(),
-		nullString(finding.AttackPrerequisites()),
-		// Priority classification fields (RFC-004)
-		nullFloat64(finding.EPSSScore()),
-		nullFloat64(finding.EPSSPercentile()),
-		finding.IsInKEV(),
-		nullTime(finding.KEVDueDate()),
-		nullPriorityClass(finding.PriorityClass()),
-		nullString(finding.PriorityClassReason()),
-		finding.PriorityClassOverride(),
-		nullID(finding.PriorityClassOverriddenBy()),
-		nullTime(finding.PriorityClassOverriddenAt()),
-		finding.IsReachable(),
-		finding.ReachableFromCount(),
-		nullString(finding.RemediationType().String()),
-		nullIntPtr(finding.EstimatedFixTime()),
-		nullString(finding.FixComplexity().String()),
-		finding.RemedyAvailable(),
-		nullString(finding.DataExposureRisk().String()),
-		finding.ReputationalImpact(),
-		pq.Array(finding.ComplianceImpact()),
-		// ASVS fields
-		nullString(finding.ASVSSection()),
-		nullString(finding.ASVSControlID()),
-		nullString(finding.ASVSControlURL()),
-		nullIntPtr(finding.ASVSLevel()),
-		// Remediation JSONB
-		remediationJSON,
-		// Pentest campaign FK
-		nullID(finding.PentestCampaignID()),
-		// Creator user ID
-		nullID(finding.CreatedBy()),
-		// Classification columns — mirror Create(); persist CVSS + CVE/CWE/OWASP on
-		// insert so a manually-created finding keeps its scoring without an edit.
-		nullFloat64(finding.CVSSScore()),           // $83
-		nullString(finding.CVSSVector()),           // $84
-		nullString(finding.CVEID()),                // $85
-		pq.Array(finding.CWEIDs()),                 // $86
-		pq.Array(finding.OWASPIDs()),               // $87
-		nullIngestChannel(finding.IngestChannel()), // $88
-		// SLA — persisted on single-row insert too, mirroring the batch path,
-		// so a manually-created finding with a deadline keeps it.
-		nullTime(finding.SLADeadline()), // $89
-		finding.SLAStatus().String(),    // $90
-	)
-
-	if err != nil {
-		if isUniqueViolation(err) {
-			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
-		}
-		return fmt.Errorf("failed to create finding in tx: %w", err)
-	}
-
-	return nil
+	args = append(args, findingTypeArgs(finding)...) // $91…
+	return args, nil
 }
 
 // CreateBatch persists multiple findings.
@@ -630,7 +506,8 @@ func findingInsertColumnsSQL() string {
 			remediation, pentest_campaign_id,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status
+			sla_deadline, sla_status,
+			` + findingTypeColumnsSQL + `
 		)`
 }
 
@@ -728,8 +605,8 @@ func findingUpsertConflictSQL() string {
 			-- was absent (applier failure → NULL). Move sla_status in lockstep
 			-- with the deadline so the two never disagree.
 			sla_deadline = COALESCE(EXCLUDED.sla_deadline, findings.sla_deadline),
-			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END
-	`
+			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END` +
+		findingTypeConflictSQL() + "\n\t"
 }
 
 // execFindingInsert executes the insert for a single finding using prepared statement.
@@ -746,7 +623,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 89
+const findingInsertColumnCount = 89 + findingTypeColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -764,7 +641,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 
 	remediationJSON := marshalRemediation(finding.Remediation())
 
-	return []any{
+	return append([]any{
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
@@ -870,7 +747,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// work; previously they were computed in memory and never written.
 		nullTime(finding.SLADeadline()),
 		finding.SLAStatus().String(),
-	}, nil
+	}, findingTypeArgs(finding)...), nil
 }
 
 // IsPentestCampaignMember reports whether the user belongs to the given
@@ -966,11 +843,12 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 			priority_class = $34, priority_class_reason = $35,
 			priority_class_override = $36, priority_class_overridden_by = $37, priority_class_overridden_at = $38,
 			is_reachable = $39, reachable_from_count = $40,
-			sla_deadline = $41, sla_status = $42
+			sla_deadline = $41, sla_status = $42,
+			` + findingTypeUpdateSQL(43) + `
 		WHERE id = $1 AND tenant_id = $20
 	`
 
-	result, err := r.db.ExecContext(ctx, query,
+	args := []any{
 		finding.ID().String(),                  // $1
 		nullID(finding.VulnerabilityID()),      // $2
 		nullID(finding.ComponentID()),          // $3
@@ -1016,7 +894,9 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		// persisted here so the tightened deadline actually takes effect.
 		nullTime(finding.SLADeadline()), // $41
 		finding.SLAStatus().String(),    // $42
-	)
+	}
+	args = append(args, findingTypeArgs(finding)...) // $43…
+	result, err := r.db.ExecContext(ctx, query, args...)
 
 	if err != nil {
 		return fmt.Errorf("failed to update finding: %w", err)
@@ -2053,6 +1933,7 @@ func (r *FindingRepository) selectQuery() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			remediation, created_by, ingest_channel,
+			` + findingTypeColumnsSQL + `,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2187,7 +2068,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		hasDataFlow bool
 	)
 
-	err := scan(
+	var typeCols findingTypeScan
+	dests := []any{
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
 		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
 		&startColumn, &endColumn, &snippet, &contextSnippet, &contextStartLine,
@@ -2212,13 +2094,14 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&remediationType, &estimatedFixTime, &fixComplexity, &remedyAvailable,
 		&dataExposureRisk, &reputationalImpact, pq.Array(&complianceImpact),
 		&remediation, &createdBy, &ingestChannel,
-		&hasDataFlow,
-	)
-	if err != nil {
+	}
+	dests = append(dests, typeCols.dests()...)
+	dests = append(dests, &hasDataFlow)
+	if err := scan(dests...); err != nil {
 		return nil, err
 	}
 
-	return r.reconstruct(findingRow{
+	f, err := r.reconstruct(findingRow{
 		idStr, tenantIDStr, vulnerabilityID, assetIDStr, branchID, componentID, source,
 		toolName, toolID, toolVersion, ruleID, ruleName, filePath,
 		int(startLine.Int64), int(endLine.Int64), int(startColumn.Int64), int(endColumn.Int64),
@@ -2254,6 +2137,11 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		// Data flow flag
 		hasDataFlow,
 	})
+	if err != nil {
+		return nil, err
+	}
+	f.RestoreTypeDetails(typeCols.details())
+	return f, nil
 }
 
 // findingRow contains scanned row data for a finding.
@@ -3789,6 +3677,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			remediation, created_by, ingest_channel,
+			` + findingTypeColumnsSQL + `,
 			FALSE AS has_data_flow
 		FROM findings
 	`

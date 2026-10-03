@@ -21125,7 +21125,7 @@ export interface paths {
     put?: never
     /**
      * Create scope exclusion
-     * @description Create a new scope exclusion
+     * @description Create a scope exclusion. It is created pending and does not affect scanning until another user approves it (attack_surface:scope:exclusions:approve).
      */
     post: {
       parameters: {
@@ -21374,7 +21374,7 @@ export interface paths {
     put?: never
     /**
      * Activate scope exclusion
-     * @description Activate a scope exclusion
+     * @description Put an approved scope exclusion back into effect. A pending or rejected exclusion cannot be activated (409).
      */
     post: {
       parameters: {
@@ -21415,6 +21415,15 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description Not approved, or rejected */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Internal Server Error */
         500: {
           headers: {
@@ -21443,7 +21452,7 @@ export interface paths {
     put?: never
     /**
      * Approve scope exclusion
-     * @description Approve a scope exclusion, marking it as reviewed and authorized
+     * @description Approve a pending scope exclusion; it takes effect immediately. Requires attack_surface:scope:exclusions:approve. The requester cannot approve their own exclusion.
      */
     post: {
       parameters: {
@@ -21486,6 +21495,15 @@ export interface paths {
         }
         /** @description Not Found */
         404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Already approved, or rejected */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -21555,6 +21573,84 @@ export interface paths {
         }
         /** @description Not Found */
         404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scope/exclusions/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Reject scope exclusion
+     * @description Reject a pending scope exclusion; it never takes effect. Requires attack_surface:scope:exclusions:approve.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Exclusion ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScopeExclusionResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not awaiting approval */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -35357,8 +35453,15 @@ export interface components {
       exclusion_type?: string
       expires_at?: string
       id?: string
+      /**
+       * @description InEffect is true only for an approved, active, unexpired exclusion —
+       *     the ones scans actually skip.
+       */
+      in_effect?: boolean
       pattern?: string
       reason?: string
+      rejected_at?: string
+      rejected_by?: string
       status?: string
       tenant_id?: string
       updated_at?: string

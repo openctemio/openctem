@@ -233,16 +233,38 @@ lock-out guarantee.
 ### How a session's login method is recorded
 
 Each session row carries `sessions.auth_method` (migration `000192`), one of
-`password | sso | saml`:
+`password | sso | saml`, and `sessions.idp_tenant_id` (migration `000269`), the
+organization whose own identity provider issued it:
 
-- the **password** login path keeps the `AuthMethodPassword` default;
-- the **OIDC/OAuth** callback stamps `sso`, the **SAML** ACS stamps `saml`
-  (`SSOService.createSession`, `OAuthService.createSession`) *before* the row is
-  persisted.
+| Login path | `auth_method` | `idp_tenant_id` |
+|------------|---------------|-----------------|
+| local password (with or without 2FA) | `password` | NULL |
+| organization OIDC callback (`SSOService.HandleCallback`), incl. the opted-in env fallback | `sso` | that organization |
+| organization SAML ACS (`SSOService.CompleteFederatedLogin`) | `saml` | that organization |
+| social OAuth — GitHub / Google / personal Microsoft (`OAuthService.createSession`) | `sso` | NULL |
+| any session created before migration `000269` | as recorded | NULL |
 
-`AuthMethod.IsFederated()` (true for `sso`/`saml`) is the discriminator. Empty /
-unknown values default to `password` — fail-closed, so a pre-migration row cannot
-silently bypass enforcement.
+Both are stamped *before* the row is persisted. Empty / unknown `auth_method`
+values default to `password` — fail-closed.
+
+**Why the issuing organization matters.** Users and sessions are global: one
+sign-in can be exchanged (`POST /api/v1/auth/token {"tenant_id": …}`) for an
+access token in every organization the account belongs to. If "federated" alone
+were the exemption, a sign-in through organization B's SAML/OIDC provider — or a
+GitHub login — would get into organization A while skipping A's SSO enforcement
+and 2FA requirement, even though A never trusted that IdP.
+
+So the exemption is per organization: **`Session.FederatedFor(tenantID)`** is
+true only when the session is federated **and** `idp_tenant_id` is that tenant.
+For every other organization the session is handled exactly like a password
+session (`Session.AuthMethodFor(tenantID)` returns `password`). Social OAuth and
+pre-`000269` sessions have no issuing organization, so they are exempt
+**nowhere**. `AuthMethod.IsFederated()` alone must not drive a policy exemption.
+
+The env fallback (`SSO_ENTRA_*`) counts as the organization's IdP: it is used
+only for an organization the operator opted in (`SSO_ENTRA_ALLOWED_TENANTS`)
+and only when that organization has no provider of its own, and the login runs
+the organization's own membership and domain checks.
 
 ### Enforcement point (tenant-selection / token-mint gate)
 
@@ -253,12 +275,24 @@ This is the single choke point a password session must pass to gain access to a
 tenant (the JWT carries no tenant; `Login` only returns a global refresh token +
 the list of memberships). The decision is the pure `ssoEnforcementDenied`:
 
-| Session method | Role | Tenant enforces SSO | Result |
-|----------------|------|---------------------|--------|
+The decision is made on the session's method **as seen by this tenant**
+(`AuthMethodFor`):
+
+| Session | Role | Tenant enforces SSO | Result |
+|---------|------|---------------------|--------|
 | password | member/admin/viewer | yes | **denied** — `ErrSSORequired` (403) |
-| password | **owner** | yes | allowed — **break-glass** |
-| sso / saml | any | yes | allowed (SSO login is never blocked) |
+| issued by **this** tenant's IdP (sso / saml) | any | yes | allowed (the tenant's own SSO login is never blocked) |
+| issued by **another** organization's IdP | member/admin/viewer | yes | **denied** — sign in through this tenant's IdP |
+| social OAuth, or recorded before `000269` | member/admin/viewer | yes | **denied** |
+| any | **owner** | yes | allowed — **break-glass** |
 | any | any | no | allowed (unaffected) |
+
+The access token's `auth_method` claim is minted the same way
+(`AuthMethodFor(tenant)` in `ExchangeToken`, `RefreshToken`, `CreateFirstTeam`
+and invitation accept), so the per-request `SSOEnforcementGate` middleware makes
+the same decision: a token minted for organization A from organization B's SSO
+session carries `auth_method: "password"` and is refused if A enforces SSO, even
+if A turned enforcement on after the token was minted.
 
 Re-checked on every `RefreshToken`, so toggling enforcement on takes effect the
 next time a password session refreshes (an already-minted access token stays
@@ -269,19 +303,33 @@ valid until it expires — a bounded window; see follow-ups).
 The tenant **OWNER is always exempt** and can password-login into an
 SSO-enforced tenant. Enabling SSO enforcement therefore can *never* lock every
 administrator out — the owner can always get in and turn it back off. The SSO
-login path itself is never gated (a federated session always passes), so an
-enforced tenant always admits the very login method it requires.
+login path itself is never gated (a session from the tenant's own IdP always
+passes), so an enforced tenant always admits the very login method it requires.
+
+### Behavior change (migration `000269`)
+
+Sessions created before the issuing organization was recorded have none, and are
+treated as not exempt anywhere (fail closed). After the upgrade, a non-owner
+member of an SSO-enforced organization whose current session came from SSO is
+refused at the next token refresh (`403`, "requires SSO sign-in") and simply
+signs in again through the organization's IdP. Likewise, a federated session
+used for an organization that requires 2FA (`mfa_required`) gets
+`MFA_ENROLLMENT_REQUIRED` unless that organization's IdP issued it; see
+[user-two-factor-authentication.md](user-two-factor-authentication.md).
 
 ## Known follow-ups (not yet shipped)
 
 - **SAML / SCIM** — not supported (only OIDC/OAuth). See `docs/IDEAS.md` §3.5.
 - The env fallback currently covers `entra_id` only; Okta/Google could follow
   the same `envProvider` seam.
-- **SSO-enforcement residual window:** enforcement is applied at token *mint*
-  (ExchangeToken/RefreshToken), not per-request. A password session that already
-  holds a valid tenant-scoped access token keeps access until it expires. A
-  follow-up could add the auth method to the JWT claim and re-check in the
-  `RequireMembership` middleware to close that window.
+- **SSO-enforcement residual window** — closed: the access token carries the
+  `auth_method` claim (per tenant, see above) and `SSOEnforcementGate`
+  re-checks it on every request (cached for 60 s).
+- **Invitation accept does not run the mint-time policy gates.**
+  `AcceptInvitationWithRefreshToken` mints a token for the joined organization
+  without `enforceSSOPolicy` / `enforceMFAPolicy`. The per-request SSO gate still
+  refuses a non-SSO token for an SSO-enforced organization; the 2FA requirement
+  applies from the next refresh (within one access-token lifetime).
 - **`HasUsableSSOPath` covers OIDC/env only**, not SAML-only tenants; a
   SAML-only tenant can't yet pass the *can't-enable* guard (the owner break-glass
   still prevents any lock-out).

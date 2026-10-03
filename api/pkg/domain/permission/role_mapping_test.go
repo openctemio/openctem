@@ -143,3 +143,15 @@ func TestHasAllPermissions(t *testing.T) {
 	assert.False(t, HasAllPermissions(tenant.RoleMember, FindingsApprove, FindingsWrite),
 		"Member should NOT have both (missing FindingsApprove)")
 }
+
+// Approving a scope exclusion (which suppresses scanning) is separate from
+// scope:write: owners and admins hold it by default, members and viewers do not.
+func TestScopeExclusionsApprovePermission(t *testing.T) {
+	assert.Equal(t, Permission("attack_surface:scope:exclusions:approve"), ScopeExclusionsApprove)
+	assert.True(t, HasPermission(tenant.RoleOwner, ScopeExclusionsApprove))
+	assert.True(t, HasPermission(tenant.RoleAdmin, ScopeExclusionsApprove))
+	assert.False(t, HasPermission(tenant.RoleMember, ScopeExclusionsApprove))
+	assert.True(t, HasPermission(tenant.RoleMember, ScopeWrite), "members still request exclusions")
+	assert.False(t, HasPermission(tenant.RoleViewer, ScopeExclusionsApprove))
+	assert.Contains(t, AllPermissions(), ScopeExclusionsApprove)
+}

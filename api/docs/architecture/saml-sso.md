@@ -52,6 +52,11 @@ is the shared tail for any externally-authenticated identity:
   invite / SCIM-provisioned user, so it can later set a password or be claimed);
 - **account-takeover guard** — a password-backed local account is **rejected**
   (a federated assertion must not log into someone's password account);
+- the session is stamped `auth_method = saml` and `idp_tenant_id = <this
+  organization>`: it counts as an SSO sign-in (exempt from SSO enforcement and
+  the 2FA requirement) for this organization only. Exchanged for any other
+  organization the account belongs to, it is handled like a password session —
+  see [sso-authentication.md](sso-authentication.md#how-a-sessions-login-method-is-recorded);
 - an **existing** account is admitted only when it is already a member of the
   organization **and** its email domain is DNS-verified for that organization.
   Membership alone is not enough: users are global, an organization can make

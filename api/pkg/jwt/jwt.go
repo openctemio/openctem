@@ -65,9 +65,12 @@ type Claims struct {
 	// Frontend should refresh permissions via GET /api/v1/me/permissions
 	PermVersion int `json:"pv,omitempty"`
 
-	// AuthMethod records how the underlying session was authenticated —
-	// "password" (local login) vs "sso"/"saml" (federated). It is copied from
-	// sessions.auth_method at token-mint time so the per-request SSO-enforcement
+	// AuthMethod records how the underlying session was authenticated AS SEEN
+	// BY THIS TOKEN'S TENANT — "password" vs "sso"/"saml". It is the session's
+	// method for that tenant at mint time (Session.AuthMethodFor): federated
+	// only when the tenant's own identity provider issued the session, so a
+	// sign-in through another organization's IdP or social OAuth is minted as
+	// "password". That lets the per-request SSO-enforcement
 	// gate can re-apply the same decision the mint-time gate made, closing the
 	// window where an already-minted password token keeps access to a tenant
 	// that has since begun enforcing SSO. Empty is treated as "password"

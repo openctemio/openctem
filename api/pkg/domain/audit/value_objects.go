@@ -297,6 +297,11 @@ const (
 	ActionIngestCompleted      Action = "ingest.completed"
 	ActionIngestFailed         Action = "ingest.failed"
 	ActionIngestPartialSuccess Action = "ingest.partial_success"
+	// Coverage-scoped auto-resolve of non-repository findings: what a dry
+	// run (or a run held by the blinding guard) would have closed, and what
+	// an enforcing run closed.
+	ActionIngestCoverageAutoResolveDryRun Action = "ingest.coverage_auto_resolve_dry_run"
+	ActionIngestCoverageAutoResolved      Action = "ingest.coverage_auto_resolved"
 
 	// AI Triage actions
 	ActionAITriageRequested       Action = "ai_triage.requested"
@@ -393,6 +398,7 @@ func (a Action) IsValid() bool {
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
+		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
 		ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted,
@@ -462,7 +468,8 @@ func (a Action) Category() string {
 	case ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted:
 		return "rule"
-	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess:
+	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
+		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved:
 		return "ingest"
 	case ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
