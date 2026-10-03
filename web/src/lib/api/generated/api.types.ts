@@ -19402,6 +19402,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scanner-templates/signing-key': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get the tenant's template-signing public key
+     * @description The Ed25519 public key custom templates of this tenant are signed with when they are sent to a sensor. Pin it on the tenant's sensors (SENSOR_TEMPLATE_SIGNING_KEYS); sensors refuse custom templates without a valid signature.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.TemplateSigningKey']
+          }
+        }
+        /** @description Service Unavailable */
+        503: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/scanner-templates/usage': {
     parameters: {
       query?: never
@@ -31301,6 +31349,14 @@ export interface components {
       is_current?: boolean
       last_activity_at?: string
       user_agent?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app.TemplateSigningKey': {
+      algorithm?: string
+      key_id?: string
+      /** @description base64 (standard) */
+      public_key?: string
+      /** @description the sensor setting it goes in */
+      sensor_env?: string
     }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class':

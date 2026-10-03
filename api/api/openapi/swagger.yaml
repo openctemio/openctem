@@ -2581,6 +2581,19 @@ definitions:
       user_agent:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app.TemplateSigningKey:
+    properties:
+      algorithm:
+        type: string
+      key_id:
+        type: string
+      public_key:
+        description: base64 (standard)
+        type: string
+      sensor_env:
+        description: the sensor setting it goes in
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class:
     enum:
     - verifies
@@ -24605,6 +24618,27 @@ paths:
       security:
       - BearerAuth: []
       summary: Download template content
+      tags:
+      - Scanner Templates
+  /scanner-templates/signing-key:
+    get:
+      description: The Ed25519 public key custom templates of this tenant are signed
+        with when they are sent to a sensor. Pin it on the tenant's sensors (SENSOR_TEMPLATE_SIGNING_KEYS);
+        sensors refuse custom templates without a valid signature.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.TemplateSigningKey'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get the tenant's template-signing public key
       tags:
       - Scanner Templates
   /scanner-templates/usage:
