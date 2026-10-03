@@ -37,6 +37,18 @@ published at https://docs.openctem.io (operations/release-notes-*).
   updated assets in scope, expands at most 50 elements of an array property
   per asset and returns the top 20 values per key from the database. On a
   larger inventory the facet counts are counts within that sample.
+
+- **Findings keep the port they were found on.** CTIS `Finding.Network`
+  (port, transport, service) was used only inside the network-VA dedup
+  fingerprint and then dropped, so no stored finding knew its port. Ingest
+  now stores it in `findings.network_port`, `network_transport` and
+  `network_service` (migration 000293), and the finding API returns
+  `network_port`, `network_transport` and `network_service`. A re-sighting
+  fills a missing value and never replaces a stored port, so the port does
+  not flip between scans for a finding whose fingerprint does not include
+  it. Fingerprints are unchanged. Existing findings get the value on their
+  next scan.
+
 - **A pipeline step's settings reach the sensor.** Step commands carried
   the step's config as `step_config`, which no sensor reads, so every step
   ran with its tool's defaults (a naabu step with `ports: "80"` scanned the
