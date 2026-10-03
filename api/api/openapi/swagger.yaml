@@ -8746,7 +8746,8 @@ definitions:
       secret_expires_at:
         type: string
       secret_fingerprint:
-        description: keyed hash of the reported value (HMAC under a per-tenant key derived from the platform secret), for dedup
+        description: keyed hash of the reported value (HMAC under a per-tenant key
+          derived from the platform secret), for dedup
         type: string
       secret_in_history_only:
         type: boolean
@@ -9491,6 +9492,11 @@ definitions:
         description: |-
           AssetsLimited counts existing assets the report matched but was not
           allowed to change, because no command covering them stood behind it.
+        type: integer
+      assets_skipped_excluded:
+        description: |-
+          AssetsSkippedExcluded counts new assets not added because they match
+          an active scope exclusion; their findings are in findings_skipped.
         type: integer
       assets_updated:
         type: integer

@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
+	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -59,6 +60,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/storage"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
@@ -590,6 +592,7 @@ type Services struct {
 	ThreatIntel      *threat.IntelService
 	CTEMID           *ctemidapp.Service
 	CertMonitor      *certmonitorapp.Service
+	EASMDNS          *easmdnsapp.Service
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
@@ -955,11 +958,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
+	// Excluded names are neither queried nor discovered (RFC-042 F16).
+	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)
 	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
 	// Re-check a little under the sweep interval: the next scheduled run
 	// re-queries, an API restart in between does not.
 	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, cfg.Worker.CertMonitorInterval*5/6)
+	// DNS-only EASM checks (RFC-036 P1): dangling CNAME/NS, email posture.
+	if cfg.Worker.EASMDNSChecksEnabled {
+		dnsClient, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: cfg.Worker.EASMDNSQPS})
+		if err != nil {
+			log.Warn("EASM DNS checks disabled: no resolver", "error", err)
+		} else {
+			s.EASMDNS = easmdnsapp.NewService(dnsClient, repos.EASMDNS, repos.Exposure, log)
+			s.EASMDNS.SetLimits(cfg.Worker.EASMDNSMaxNamesPerRun, cfg.Worker.EASMDNSInterval*5/6)
+		}
+	}
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
@@ -1460,6 +1475,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
+	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)))
@@ -1642,6 +1658,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithQualityGate(repos.ScanProfile, repos.Finding),
 		pipeline.WithScanDeactivator(s.Scan),     // Cascade pause scans when pipeline is deactivated
 		pipeline.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
+		// Targets of a directly started run pass a scan trigger's checks:
+		// private-range policy, scope exclusions, scan zones (RFC-042 F16).
+		pipeline.WithTargetGate(s.Scan),
 	)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation

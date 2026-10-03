@@ -35960,6 +35960,11 @@ export interface components {
        *     allowed to change, because no command covering them stood behind it.
        */
       assets_limited?: number
+      /**
+       * @description AssetsSkippedExcluded counts new assets not added because they match
+       *     an active scope exclusion; their findings are in findings_skipped.
+       */
+      assets_skipped_excluded?: number
       assets_updated?: number
       /**
        * @description Binding is "command" when the report named a command assigned to this

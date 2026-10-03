@@ -159,3 +159,7 @@ export type AuditChainSample =
   Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample']
 export type AuditChainClass =
   Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class']
+
+/** GET /api/v1/easm/summary — the EASM overview (RFC-036). */
+export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Summary']
+export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
