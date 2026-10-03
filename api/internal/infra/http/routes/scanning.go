@@ -726,6 +726,8 @@ func registerScannerTemplateRoutes(
 		// Static endpoints (must be before /{id} to avoid route conflicts)
 		r.POST("/validate", h.Validate, middleware.Require(permission.ScannerTemplatesRead))
 		r.GET("/usage", h.GetUsage, middleware.Require(permission.ScannerTemplatesRead))
+		// The tenant's public key for its sensors (public, not a secret).
+		r.GET("/signing-key", h.GetSigningKey, middleware.Require(permission.ScannerTemplatesRead))
 
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.ScannerTemplatesRead))

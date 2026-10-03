@@ -78,7 +78,7 @@ RetestScheduler (controller, every minute, every replica)
 |---|---|
 | `POST /api/v1/findings/{id}/retests` — Retest now (202) | `findings:verify` + data scope |
 | `GET /api/v1/findings/{id}/retests` — history, newest first | `findings:read` + data scope |
-| `GET/PUT /api/v1/tenants/{tenant}/settings/retest` — `auto_enabled`, `interval_hours`, `daily_cap` (audited `tenant.retest_updated`) | team admin |
+| `GET/PUT /api/v1/organization/settings/retest` — `auto_enabled`, `interval_hours`, `daily_cap` (audited `tenant.retest_updated`) | team admin |
 
 Auto-retest is **off** for every tenant until an admin turns it on (owner
 ordering: until the scans redesign P1 lands).

@@ -22,3 +22,17 @@ func registerFindingRetestRoutes(router Router, h *handler.FindingRetestHandler,
 		r.POST("/", h.Request, middleware.Require(permission.FindingsVerify))
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
+
+// registerRetestSettingsRoutes wires the organization's auto-retest settings
+// (RFC-039) under the token singleton /api/v1/organization: the tenant comes
+// from the credential, never from the path (docs/architecture/api-conventions.md
+// §2). Owner/admin only; changes are audited.
+func registerRetestSettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/retest", func(r Router) {
+		r.GET("/", h.GetRetestSettings, middleware.RequireAdmin())
+		r.PUT("/", h.UpdateRetestSettings, middleware.RequireAdmin())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}

@@ -17,7 +17,14 @@ import (
 type SSOHandler struct {
 	ssoService *app.SSOService
 	audit      *app.AuditService
+	changes    *app.SSOChangeService
 	logger     *logger.Logger
+}
+
+// SetChangeApproval routes identity-provider creates and updates made from
+// the platform admin console through an owner's approval (RFC-022).
+func (h *SSOHandler) SetChangeApproval(svc *app.SSOChangeService) {
+	h.changes = svc
 }
 
 // SetAuditService records identity-provider changes in the organization's
@@ -252,7 +259,7 @@ type CreateProviderRequest struct {
 // CreateProvider creates a new identity provider configuration.
 // POST /api/v1/settings/identity-providers
 // @Summary Create an identity provider for an organization
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the provider is stored as a pending change (202, SSOChangeResponse) and is created only after an owner approves it; an organization without an owner yet gets it created directly (201).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -274,7 +281,7 @@ func (h *SSOHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip, err := h.ssoService.CreateProvider(r.Context(), app.CreateProviderInput{
+	in := app.CreateProviderInput{
 		TenantID:         tenantID,
 		Provider:         req.Provider,
 		DisplayName:      req.DisplayName,
@@ -287,11 +294,42 @@ func (h *SSOHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 		AutoProvision:    req.AutoProvision,
 		DefaultRole:      req.DefaultRole,
 		CreatedBy:        userID,
-	})
+	}
+
+	// From the platform admin console the provider waits for an owner of
+	// the organization, unless it has no owner yet (then it applies now).
+	if by := ssoChangeRequester(r); by != nil {
+		if h.changes == nil {
+			writeSSOChangeApprovalUnavailable(w)
+			return
+		}
+		res, err := h.changes.SubmitCreateProvider(r.Context(), in, *by)
+		if err != nil {
+			h.handleAdminError(w, err)
+			return
+		}
+		if !res.Applied {
+			writeSSOChangePending(w, r, h.audit, h.logger, res.Change)
+			return
+		}
+		ip, err := h.ssoService.GetProviderByType(r.Context(), tenantID, in.Provider)
+		if err != nil {
+			h.handleAdminError(w, err)
+			return
+		}
+		h.writeProviderCreated(w, r, ip)
+		return
+	}
+
+	ip, err := h.ssoService.CreateProvider(r.Context(), in)
 	if err != nil {
 		h.handleAdminError(w, err)
 		return
 	}
+	h.writeProviderCreated(w, r, ip)
+}
+
+func (h *SSOHandler) writeProviderCreated(w http.ResponseWriter, r *http.Request, ip *identityprovider.IdentityProvider) {
 	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, providerAuditEvent(audit.ActionSSOIdentityProviderCreated, ip,
 		"Identity provider '"+ip.DisplayName()+"' created"))
 
@@ -375,7 +413,7 @@ type UpdateProviderRequest struct {
 // UpdateProvider updates an identity provider configuration.
 // PUT /api/v1/settings/identity-providers/{id}
 // @Summary Update an organization's identity provider
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the update is stored as a pending change (202, SSOChangeResponse) and is applied only after an owner approves it; an organization without an owner yet gets it applied directly (200).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -398,7 +436,7 @@ func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip, err := h.ssoService.UpdateProvider(r.Context(), app.UpdateProviderInput{
+	in := app.UpdateProviderInput{
 		ID:               id,
 		TenantID:         tenantID,
 		DisplayName:      req.DisplayName,
@@ -411,7 +449,28 @@ func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 		AutoProvision:    req.AutoProvision,
 		DefaultRole:      req.DefaultRole,
 		IsActive:         req.IsActive,
-	})
+	}
+
+	var ip *identityprovider.IdentityProvider
+	var err error
+	if by := ssoChangeRequester(r); by != nil {
+		if h.changes == nil {
+			writeSSOChangeApprovalUnavailable(w)
+			return
+		}
+		res, serr := h.changes.SubmitUpdateProvider(r.Context(), in, *by)
+		if serr != nil {
+			h.handleAdminError(w, serr)
+			return
+		}
+		if !res.Applied {
+			writeSSOChangePending(w, r, h.audit, h.logger, res.Change)
+			return
+		}
+		ip, err = h.ssoService.GetProvider(r.Context(), tenantID, id)
+	} else {
+		ip, err = h.ssoService.UpdateProvider(r.Context(), in)
+	}
 	if err != nil {
 		h.handleAdminError(w, err)
 		return

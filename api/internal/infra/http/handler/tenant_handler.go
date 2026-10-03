@@ -2148,20 +2148,19 @@ func (h *TenantHandler) UpdateAssetSourceSettings(w http.ResponseWriter, r *http
 	_ = json.NewEncoder(w).Encode(settings.AssetSource)
 }
 
-// GetRetestSettings handles GET /api/v1/tenants/{tenant}/settings/retest.
+// GetRetestSettings handles GET /api/v1/organization/settings/retest.
 // @Summary      Get auto-retest settings
 // @Description  The tenant's auto-retest settings (RFC-039). auto_enabled is false until an admin turns it on; zero interval/cap mean the defaults (24 h, 200 per day).
 // @Tags         Tenants
 // @Produce      json
-// @Param        tenant  path      string  true  "Tenant ID or slug"
 // @Success      200     {object}  tenant.RetestSettings
 // @Failure      400     {object}  apierror.Error
 // @Failure      403     {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /tenants/{tenant}/settings/retest [get]
+// @Router       /organization/settings/retest [get]
 func (h *TenantHandler) GetRetestSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
@@ -2174,22 +2173,21 @@ func (h *TenantHandler) GetRetestSettings(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(rs)
 }
 
-// UpdateRetestSettings handles PUT /api/v1/tenants/{tenant}/settings/retest.
+// UpdateRetestSettings handles PUT /api/v1/organization/settings/retest.
 // @Summary      Update auto-retest settings
 // @Description  Turns auto-retest on or off and sets its interval (6–168 h) and daily cap (1–2000). Audited.
 // @Tags         Tenants
 // @Accept       json
 // @Produce      json
-// @Param        tenant  path      string                 true  "Tenant ID or slug"
 // @Param        body    body      tenant.RetestSettings  true  "Auto-retest settings"
 // @Success      200     {object}  tenant.RetestSettings
 // @Failure      400     {object}  apierror.Error
 // @Failure      403     {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /tenants/{tenant}/settings/retest [put]
+// @Router       /organization/settings/retest [put]
 func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}

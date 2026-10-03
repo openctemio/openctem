@@ -1090,6 +1090,51 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/admin/tenants/{tenantId}/sso/changes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List an organization's SSO changes awaiting owner approval
+     * @description Platform admin console (RFC-022). SAML and identity-provider changes submitted here wait for an owner of the organization. Pending, unexpired changes by default; status=all includes decided ones.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description pending (default) or all */
+          status?: string
+        }
+        header?: never
+        path: {
+          /** @description Organization ID */
+          tenantId: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SSOChangeListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/admin/tenants/{tenantId}/sso/enforcement': {
     parameters: {
       query?: never
@@ -1196,7 +1241,7 @@ export interface paths {
     put?: never
     /**
      * Create an identity provider for an organization
-     * @description Platform admin console (RFC-022): runs against the organization in the path.
+     * @description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the provider is stored as a pending change (202, SSOChangeResponse) and is created only after an owner approves it; an organization without an owner yet gets it created directly (201).
      */
     post: {
       parameters: {
@@ -1245,7 +1290,7 @@ export interface paths {
     }
     /**
      * Update an organization's identity provider
-     * @description Platform admin console (RFC-022): runs against the organization in the path.
+     * @description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the update is stored as a pending change (202, SSOChangeResponse) and is applied only after an owner approves it; an organization without an owner yet gets it applied directly (200).
      */
     put: {
       parameters: {
@@ -1313,7 +1358,7 @@ export interface paths {
     }
     /**
      * Set an organization's SAML config
-     * @description Platform admin console (RFC-022): runs against the organization in the path.
+     * @description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the change is stored as pending (202, SSOChangeResponse) and takes effect only after an owner approves it; an organization without an owner yet gets it applied directly (200).
      */
     put: {
       parameters: {
@@ -8017,7 +8062,7 @@ export interface paths {
     put?: never
     /**
      * Create command
-     * @description Create a new command to be executed by a sensor
+     * @description Create a new command to be executed by a sensor. A `scan` command needs an owner or administrator, and its `target`/`targets` get the checks of a scan trigger (scope exclusions, scan zones, private-range policy); a refused target answers 400.
      */
     post: {
       parameters: {
@@ -8044,6 +8089,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -16591,6 +16645,109 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/organization/settings/retest': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get auto-retest settings
+     * @description The tenant's auto-retest settings (RFC-039). auto_enabled is false until an admin turns it on; zero interval/cap mean the defaults (24 h, 200 per day).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update auto-retest settings
+     * @description Turns auto-retest on or off and sets its interval (6–168 h) and daily cap (1–2000). Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Auto-retest settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/permission-sets': {
     parameters: {
       query?: never
@@ -19461,6 +19618,54 @@ export interface paths {
           }
           content: {
             'application/octet-stream': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scanner-templates/signing-key': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get the tenant's template-signing public key
+     * @description The Ed25519 public key custom templates of this tenant are signed with when they are sent to a sensor. Pin it on the tenant's sensors (SENSOR_TEMPLATE_SIGNING_KEYS); sensors refuse custom templates without a valid signature.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.TemplateSigningKey']
+          }
+        }
+        /** @description Service Unavailable */
+        503: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -27565,7 +27770,7 @@ export interface paths {
     }
     trace?: never
   }
-  '/tenants/{tenant}/settings/retest': {
+  '/tenants/{tenant}/settings/sso/changes': {
     parameters: {
       query?: never
       header?: never
@@ -27573,12 +27778,15 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Get auto-retest settings
-     * @description The tenant's auto-retest settings (RFC-039). auto_enabled is false until an admin turns it on; zero interval/cap mean the defaults (24 h, 200 per day).
+     * List SSO changes awaiting your approval
+     * @description Owner only. SAML and identity-provider changes a platform administrator proposed for this organization; none takes effect until an owner approves it. Pending, unexpired changes by default; status=all includes decided ones.
      */
     get: {
       parameters: {
-        query?: never
+        query?: {
+          /** @description pending (default) or all */
+          status?: string
+        }
         header?: never
         path: {
           /** @description Tenant ID or slug */
@@ -27594,16 +27802,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+            'application/json': components['schemas']['internal_infra_http_handler.SSOChangeListResponse']
           }
         }
         /** @description Forbidden */
@@ -27617,26 +27816,40 @@ export interface paths {
         }
       }
     }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/tenants/{tenant}/settings/sso/changes/{changeId}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
     /**
-     * Update auto-retest settings
-     * @description Turns auto-retest on or off and sets its interval (6–168 h) and daily cap (1–2000). Audited.
+     * Approve an SSO change
+     * @description Owner only. Applies the proposed SAML or identity-provider change to this organization's live configuration.
      */
-    put: {
+    post: {
       parameters: {
         query?: never
         header?: never
         path: {
           /** @description Tenant ID or slug */
           tenant: string
+          /** @description SSO change ID */
+          changeId: string
         }
         cookie?: never
       }
-      /** @description Auto-retest settings */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
-        }
-      }
+      requestBody?: never
       responses: {
         /** @description OK */
         200: {
@@ -27644,16 +27857,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+            'application/json': components['schemas']['internal_infra_http_handler.SSOChangeResponse']
           }
         }
         /** @description Forbidden */
@@ -27665,9 +27869,115 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Gone */
+        410: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
       }
     }
-    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/tenants/{tenant}/settings/sso/changes/{changeId}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Reject an SSO change
+     * @description Owner only. Discards the proposed change; the live configuration is unchanged.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Tenant ID or slug */
+          tenant: string
+          /** @description SSO change ID */
+          changeId: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SSOChangeResponse']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Gone */
+        410: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -30175,6 +30485,8 @@ export interface components {
       name?: string
       /** @description File path where this dependency is defined */
       path?: string
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
       /** @description Package URL (PURL) */
       purl?: string
       /** @description Dependency relationship: direct, indirect, root, transit */
@@ -30854,10 +31166,17 @@ export interface components {
       message?: string
     }
     'ctis.Suppression': {
+      /** @description When the suppression stops applying. Empty means it does not expire. */
+      expires_at?: string
       /** @description Justification for suppression */
       justification?: string
       /** @description Suppression kind: in_source, external */
       kind?: string
+      /**
+       * @description Short reason code or phrase, e.g. "false_positive", "test_code",
+       *     "risk_accepted".
+       */
+      reason?: string
       /** @description Suppression status: accepted, under_review, rejected */
       status?: string
       /** @description When the finding was suppressed */
@@ -31258,6 +31577,14 @@ export interface components {
       is_current?: boolean
       last_activity_at?: string
       user_agent?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app.TemplateSigningKey': {
+      algorithm?: string
+      key_id?: string
+      /** @description base64 (standard) */
+      public_key?: string
+      /** @description the sensor setting it goes in */
+      sensor_env?: string
     }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class':
@@ -32003,10 +32330,16 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Heartbeat': {
       /**
        * @description Actions are typed control directives from a closed set: pause,
-       *     resume, drain, rotate_key, update. Never free-form text.
+       *     resume, drain, rotate_key, update, cancel. Never free-form text.
        */
       actions?: string[]
       agent_id?: string
+      /**
+       * @description CancelCommandIDs are commands the sensor listed as running that it
+       *     must stop (canceled, timed out, re-queued, held elsewhere); sent with
+       *     the cancel action. Only for a sensor that reports its running list.
+       */
+      cancel_command_ids?: string[]
       /**
        * @description ConfigVersion is an opaque digest of what the platform governs about
        *     the sensor; it changes when that changes. Sent to doorbell-aware
@@ -32634,7 +32967,7 @@ export interface components {
       critical_exposures_change?: number
       /** @example 47 */
       exposed_services?: number
-      /** @example -3 */
+      /** @example 3 */
       exposed_services_change?: number
       /** @description Top exposed services */
       exposed_services_list?: components['schemas']['internal_infra_http_handler.ExposedServiceResponse'][]
@@ -32648,10 +32981,14 @@ export interface components {
        */
       total_assets?: number
       /**
-       * @description Trends (week-over-week changes)
+       * @description Trends: what is new in the last trend_window_days days. Counts, never
+       *     negative: assets added; public assets added or newly made public; the
+       *     same limited to critical/high criticality.
        * @example 12
        */
       total_assets_change?: number
+      /** @example 7 */
+      trend_window_days?: number
     }
     'internal_infra_http_handler.AttackerProfileResponse': {
       assumptions?: string
@@ -35292,6 +35629,31 @@ export interface components {
     'internal_infra_http_handler.SSHKeyDataRequest': {
       passphrase?: string
       private_key: string
+    }
+    'internal_infra_http_handler.SSOChangeListResponse': {
+      changes?: components['schemas']['internal_infra_http_handler.SSOChangeResponse'][]
+    }
+    'internal_infra_http_handler.SSOChangeResponse': {
+      /**
+       * @description CertificateSHA256 identifies the IdP signing certificate a SAML change
+       *     installs; compare it with the certificate your IdP shows.
+       */
+      certificate_sha256?: string
+      created_at?: string
+      decided_at?: string
+      decided_by?: string
+      expires_at?: string
+      id?: string
+      /** @enum {string} */
+      kind?: 'saml_config' | 'idp_create' | 'idp_update'
+      /** @description Payload is the proposed configuration. */
+      payload?: Record<string, never>
+      requested_by?: string
+      /** @enum {string} */
+      status?: 'pending' | 'approved' | 'rejected' | 'expired' | 'superseded'
+      /** @description Summary is a one-line description of the change. */
+      summary?: string
+      target_id?: string
     }
     'internal_infra_http_handler.SaveScanRequest': {
       name: string

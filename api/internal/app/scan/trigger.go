@@ -498,7 +498,22 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 		}
 	}
 
-	payload, _ := json.Marshal(workflowStepPayload(run, step, stepRunID))
+	payloadMap, err := workflowStepPayload(run, step, stepRunID)
+	if err != nil {
+		// A setting the sensor would refuse fails the step here, with the
+		// reason, instead of a command that fails on the sensor.
+		for _, sr := range stepRuns {
+			if sr.StepID == step.ID {
+				sr.Fail(err.Error(), "INVALID_STEP_CONFIG")
+				if uerr := s.stepRunRepo.Update(ctx, sr); uerr != nil {
+					s.logger.Warn("failed to fail step run", "step_key", step.StepKey, "error", uerr)
+				}
+				break
+			}
+		}
+		return fmt.Errorf("%w: step %s: %w", shared.ErrValidation, step.StepKey, err)
+	}
+	payload, _ := json.Marshal(payloadMap)
 
 	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
 	if err != nil {
@@ -528,14 +543,20 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 }
 
 // workflowStepPayload is the command payload of one workflow step, with
-// consistent field names for pipeline progression.
-func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string) map[string]any {
+// consistent field names for pipeline progression. The step's settings go
+// under PayloadKeyConfig, the key the sensor reads (see
+// pipeline.NormalizeStepConfig).
+func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string) (map[string]any, error) {
+	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
+	if err != nil {
+		return nil, err
+	}
 	payloadMap := map[string]any{
 		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
 		pipeline.PayloadKeyStepRunID:     stepRunID,
 		pipeline.PayloadKeyStepKey:       step.StepKey,
 		"step_id":                        step.ID.String(),
-		"step_config":                    step.Config,
+		pipeline.PayloadKeyConfig:        config,
 		"required_capabilities":          step.Capabilities,
 		"preferred_tool":                 step.Tool,
 		"timeout_seconds":                step.TimeoutSeconds,
@@ -554,7 +575,7 @@ func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID strin
 	if targets, ok := run.Context["targets"]; ok {
 		payloadMap["targets"] = targets
 	}
-	return payloadMap
+	return payloadMap, nil
 }
 
 // EmbeddedTemplate represents a template embedded in scan command payload.

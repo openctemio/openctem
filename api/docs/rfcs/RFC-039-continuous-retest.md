@@ -415,7 +415,7 @@ Manual Retest now is available whenever a `validate:nuclei` sensor is online.
 |---|---|
 | `POST /findings/{id}/retest` | `findings:verify` + data scope |
 | `GET /findings/{id}/retests` | `findings:read` + data scope |
-| `GET/PUT /tenants/{t}/settings/retest` | team admin (owner/admin), audited |
+| `GET/PUT /organization/settings/retest` (tenant from the token) | team admin (owner/admin), audited |
 
 ## 9. Phased plan
 
