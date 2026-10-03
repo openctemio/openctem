@@ -36,6 +36,8 @@ import {
   invalidateNotificationEventsCache,
 } from '@/features/integrations/api/use-integrations-api'
 import type { NotificationEventEntry } from '@/features/integrations/types/integration.types'
+import { safeHref } from '@/lib/safe-href'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 /** The channel's own delivery result wins over the event-wide status. */
 function deliveryStatus(entry: NotificationEventEntry): string {
@@ -108,16 +110,14 @@ const columns: ColumnDef<NotificationEventEntry>[] = [
     id: 'actions',
     enableHiding: false,
     cell: ({ row }) =>
-      row.original.url ? (
+      safeHref(row.original.url) ? (
         <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
-          <a
+          <SafeExternalLink
             href={row.original.url}
-            target="_blank"
-            rel="noopener noreferrer"
             aria-label={`Open the source of ${row.original.title}`}
           >
             <ExternalLink className="h-4 w-4" />
-          </a>
+          </SafeExternalLink>
         </Button>
       ) : null,
   },

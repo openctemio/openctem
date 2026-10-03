@@ -5,8 +5,8 @@ package routes
 // capabilities and concurrency on the heartbeat (v2 and v1), the report is
 // sanitized and stored, and dispatch (the selector and the command poll)
 // uses the effective values: what the sensor reports, narrowed by the
-// administrator, with the administrator's values for a sensor that never
-// reported.
+// administrator. Tools a sensor never reported are unverified and get no
+// work; capabilities keep the administrator's values for such a sensor.
 
 import (
 	"context"
@@ -32,6 +32,25 @@ func (h *ctlHarness) newLimitedSensor(tenantID, name string, tools, caps []strin
 		h.t.Fatalf("create sensor: %v", err)
 	}
 	return ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey}
+}
+
+// verifyTools records the sensor's declared tools as reported installed, as
+// a sensor on a current SDK does on its first heartbeat. Dispatch only sends
+// a sensor the tools it verified.
+func (h *ctlHarness) verifyTools(s ctlSensor) {
+	h.t.Helper()
+	if _, err := h.db.ExecContext(context.Background(),
+		`UPDATE sensors SET reported_tool_names = tools, reported_at = now() WHERE id = $1`, s.id); err != nil {
+		h.t.Fatalf("verify tools: %v", err)
+	}
+}
+
+// newVerifiedSensor is newLimitedSensor for a sensor that verified its tools.
+func (h *ctlHarness) newVerifiedSensor(tenantID, name string, tools, caps []string, maxJobs int) ctlSensor {
+	h.t.Helper()
+	s := h.newLimitedSensor(tenantID, name, tools, caps, maxJobs)
+	h.verifyTools(s)
+	return s
 }
 
 func (h *ctlHarness) heartbeatV2(s ctlSensor, body map[string]any) {
@@ -103,12 +122,12 @@ func TestReportedCaps_DispatchByReportedTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{c.id}; !slices.Equal(ids(semgrep), want) {
-		t.Fatalf("semgrep candidates %v, want the old sensor C only (A reports semgrep not installed)", ids(semgrep))
+	if len(semgrep) != 0 {
+		t.Fatalf("semgrep candidates %v, want none: A reports semgrep not installed and C never verified its declared semgrep", ids(semgrep))
 	}
 
 	tools, err := h.repo.GetAvailableToolsForTenant(ctx, tid)
-	if err != nil || strings.Join(tools, ",") != "nuclei,semgrep" {
+	if err != nil || strings.Join(tools, ",") != "nuclei" {
 		t.Fatalf("available tools %v %v", tools, err)
 	}
 	if ok, _ := h.repo.HasSensorForTool(ctx, tid, "nuclei"); !ok {
@@ -364,8 +383,8 @@ func TestReportedCaps_PollOffersToolScansOnlyToSensorsWithTheTool(t *testing.T) 
 	if got := poll(lacks); slices.Contains(got, cmd.ID.String()) || !slices.Contains(got, other.ID.String()) {
 		t.Fatalf("the sensor without nuclei: %v (must not see the scan, must see the tool-less command)", got)
 	}
-	if got := poll(old); !slices.Contains(got, cmd.ID.String()) {
-		t.Fatalf("a sensor that never reported lost the scan for its declared tool: %v", got)
+	if got := poll(old); slices.Contains(got, cmd.ID.String()) || !slices.Contains(got, other.ID.String()) {
+		t.Fatalf("a sensor that never reported: %v (its declared nuclei is unverified, so no scan; the tool-less command still)", got)
 	}
 	if got := poll(oldNoTools); slices.Contains(got, cmd.ID.String()) {
 		t.Fatalf("a sensor with no tools at all is offered a nuclei scan: %v", got)

@@ -68,6 +68,17 @@ Parallel to Jira, intentionally:
   findings additionally **omit the raw description entirely** and surface only
   the masked value plus a pointer to the platform — the credential is never
   written into a third-party tracker.
+- **Output encoding** (RFC-040 §5.4). Finding text is attacker-influenced, and
+  the issue body is GitHub-flavored markdown. After redaction:
+  - One-line values (location, masked value) go into a code span
+    (`safetext.MarkdownInline`).
+  - The description goes into a fenced code block (`safetext.MarkdownBlock`).
+  - Each fence is longer than any backtick run in the text, so the text cannot
+    close it.
+  - Inside code GitHub renders no links, images, HTML, `@mentions` or
+    `#refs`, so scanner text cannot ping a team or close an issue.
+  - The title is plain text: one line, cleaned of control, bidi and
+    zero-width characters, at most 240 characters.
 - **Idempotent.** If the finding's `work_item_uris` already contains an issue
   URL for the requested `owner/repo`, the existing link is returned and no new
   issue is created.
@@ -84,6 +95,7 @@ Parallel to Jira, intentionally:
 | HTTP handler | `internal/infra/http/handler/jira_webhook_handler.go`           | Parse request, select provider, map errors      |
 | App service  | `internal/app/ticketing/github_ticket.go` (`GitHubTicketService`) | Resolve integration, idempotency, build body    |
 | Shared       | `internal/app/ticketing/redact.go` (`RedactSecrets`)            | Provider-agnostic secret scrubbing              |
+| Shared       | `pkg/safetext` (`MarkdownInline`, `MarkdownBlock`, `Jira*`)      | Output encoding per ticket format (RFC-040)     |
 | SCM client   | `internal/infra/scm/github.go` (`GitHubClient.CreateIssue`)     | `POST /repos/{owner}/{repo}/issues`             |
 | Domain       | `pkg/domain/vulnerability`, `pkg/domain/integration`            | Finding + integration entities/repositories     |
 

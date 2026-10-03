@@ -20,6 +20,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/validation"
@@ -31,6 +32,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 type rtNucleiOnline struct{}
@@ -89,6 +91,8 @@ func newRetestAuthzHarness(t *testing.T) *rtHarness {
 
 	router := infrahttp.NewChiRouter()
 	registerFindingRetestRoutes(router, handler.NewFindingRetestHandler(svc, log), Middleware(h.auth), nil)
+	tenantSvc := app.NewTenantService(postgres.NewTenantRepository(pg), log)
+	registerRetestSettingsRoutes(router, handler.NewTenantHandler(tenantSvc, validator.New(), log), Middleware(h.auth), nil)
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(h.srv.Close)
 	return h
@@ -101,7 +105,7 @@ func (h *rtHarness) auth(next http.Handler) http.Handler {
 		ctx := r.Context()
 		ctx = context.WithValue(ctx, middleware.UserIDKey, r.Header.Get("X-Test-User"))
 		ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenantA.String())
-		ctx = context.WithValue(ctx, middleware.IsAdminKey, false)
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, r.Header.Get("X-Test-Admin") == "1")
 		ctx = context.WithValue(ctx, middleware.PermissionsKey, strings.Split(r.Header.Get("X-Test-Perms"), ","))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -251,5 +255,41 @@ func TestRetestAuthz_OutOfDataScopeIsNotFound(t *testing.T) {
 	status, body = h.do(h.scoped, rtVerifyPerms, http.MethodGet, "/api/v1/findings/"+h.findingA1.String()+"/retests")
 	if status != http.StatusOK || !strings.Contains(body, out.ID) {
 		t.Fatalf("GET retests = %d %s", status, body)
+	}
+}
+
+// The organization's auto-retest settings live under the token singleton: the
+// tenant comes from the credential (there is no tenant in the path to point
+// at another organization), and only an owner/admin may read or change them.
+func TestRetestSettingsAuthz_AdminOnlyAndTokenTenant(t *testing.T) {
+	h := newRetestAuthzHarness(t)
+	put := func(admin bool) (int, string) {
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, h.srv.URL+"/api/v1/organization/settings/retest",
+			strings.NewReader(`{"auto_enabled":true,"daily_cap":5}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Test-User", h.verifier.String())
+		req.Header.Set("X-Test-Perms", "findings:read,findings:verify")
+		if admin {
+			req.Header.Set("X-Test-Admin", "1")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if status, body := put(false); status != http.StatusForbidden {
+		t.Fatalf("member PUT retest settings = %d, want 403 (%s)", status, body)
+	}
+	if status, body := put(true); status != http.StatusOK || !strings.Contains(body, `"auto_enabled":true`) {
+		t.Fatalf("admin PUT retest settings = %d (%s)", status, body)
+	}
+	var enabledA, enabledB sql.NullString
+	_ = h.db.QueryRow(`SELECT settings->'retest'->>'auto_enabled' FROM tenants WHERE id = $1`, h.tenantA.String()).Scan(&enabledA)
+	_ = h.db.QueryRow(`SELECT settings->'retest'->>'auto_enabled' FROM tenants WHERE id = $1`, h.tenantB.String()).Scan(&enabledB)
+	if enabledA.String != "true" || enabledB.String == "true" {
+		t.Fatalf("settings written to the wrong organization: A=%q B=%q", enabledA.String, enabledB.String)
 	}
 }

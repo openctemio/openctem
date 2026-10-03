@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // secretPatterns are masked out of any text pushed to a third-party ticket
@@ -49,34 +50,54 @@ func isSecretFinding(f *vulnerability.Finding) bool {
 // the leaked secret), surfacing only the masked value + location and pointing
 // the reader back to the platform. For all other findings it runs the
 // description through redactSecrets as defense-in-depth.
+//
+// The description is Jira wiki markup (REST API v2), and every value that
+// comes from the finding is attacker-influenced (a scanned page title, a file
+// path, a sensor report). Each one is redacted first, then encoded: one-line
+// values are escaped, the description goes into a {noformat} block, and URLs
+// are defanged, so the text cannot add links, mentions, images or macros to
+// the ticket (RFC-040 §5.4).
 func ticketDescription(f *vulnerability.Finding) string {
+	inline := func(s string) string {
+		return safetext.JiraWikiInline(redactSecrets(s), safetext.MaxInlineRunes)
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "**Finding:** %s\n**Severity:** %s\n**Status:** %s\n",
-		f.Title(), f.Severity(), f.Status())
+	fmt.Fprintf(&b, "*Finding:* %s\n*Severity:* %s\n*Status:* %s\n",
+		inline(f.Title()), inline(string(f.Severity())), inline(string(f.Status())))
 	if f.FilePath() != "" {
-		fmt.Fprintf(&b, "**Location:** %s:%d\n", f.FilePath(), f.StartLine())
+		fmt.Fprintf(&b, "*Location:* %s:%d\n", inline(f.FilePath()), f.StartLine())
 	}
 
 	if isSecretFinding(f) {
-		b.WriteString("\nA secret was detected. The value is redacted here for safety — open the finding in the platform for full details.")
+		b.WriteString("\nA secret was detected. The value is redacted here for safety. Open the finding in the platform for full details.")
 		if mv := f.SecretMaskedValue(); mv != "" {
-			fmt.Fprintf(&b, "\n**Masked value:** %s", mv)
+			fmt.Fprintf(&b, "\n*Masked value:* %s", inline(mv))
 		}
 		return withMobilizationBrief(b.String(), f)
 	}
 
-	b.WriteString("\n")
-	b.WriteString(f.Description())
-	return withMobilizationBrief(redactSecrets(b.String()), f)
+	if desc := strings.TrimSpace(f.Description()); desc != "" {
+		b.WriteString("\n")
+		b.WriteString(safetext.JiraWikiBlock(redactSecrets(desc), safetext.MaxDescriptionRunes))
+	}
+	return withMobilizationBrief(b.String(), f)
+}
+
+// ticketSummary is the Jira summary (plain text, one line, at most 255
+// characters in Jira): secret-redacted, cleaned of control and bidi
+// characters, folded to one line and capped.
+func ticketSummary(f *vulnerability.Finding) string {
+	return safetext.SingleLine(redactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), f.Title())), safetext.MaxTitleRunes)
 }
 
 // withMobilizationBrief appends the CTEM Mobilization brief (definition of done
 // + acceptable fixes) to a ticket body when the finding carries one. The brief
 // contains only operator-entered guidance — never a finding-embedded secret —
 // so it is safe to append after the (redacted) body, including for secret
-// findings.
+// findings. It keeps its formatting (it is written for the ticket) but loses
+// control and bidi characters.
 func withMobilizationBrief(body string, f *vulnerability.Finding) string {
-	brief := f.Remediation().MobilizationBrief()
+	brief := safetext.Clean(f.Remediation().MobilizationBrief())
 	if brief == "" {
 		return body
 	}
@@ -554,7 +575,7 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 
 	result, err := jiraClient.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  projectKey,
-		Summary:     redactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())),
+		Summary:     ticketSummary(finding),
 		Description: ticketDescription(finding),
 		IssueType:   issueType,
 		Priority:    priority,
@@ -601,8 +622,8 @@ func (s *SyncService) CreateEpic(ctx context.Context, tenantID shared.ID, projec
 	}
 	result, err := client.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  projectKey,
-		Summary:     redactSecrets(summary),
-		Description: redactSecrets(description),
+		Summary:     safetext.SingleLine(redactSecrets(summary), safetext.MaxTitleRunes),
+		Description: safetext.Truncate(safetext.Clean(redactSecrets(description)), safetext.MaxDescriptionRunes),
 		IssueType:   "Epic",
 		Labels:      labels,
 	})

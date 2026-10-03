@@ -26,6 +26,7 @@ import {
   History,
 } from 'lucide-react'
 import { useAttackSurfaceStats } from '@/features/attack-surface'
+import { newInWindow } from '@/features/attack-surface/lib/trend'
 import { formatDistanceToNow } from 'date-fns'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -83,12 +84,6 @@ function formatRelativeTime(timestamp: string): string {
   }
 }
 
-/** "+3 this week" for the stat caption; nothing when there was no change. */
-function weeklyChange(change: number): string | undefined {
-  if (!change) return undefined
-  return `${change > 0 ? '+' : ''}${change} this week`
-}
-
 function ListRowsSkeleton({ rows }: { rows: number }) {
   return (
     <div className="divide-y">
@@ -112,6 +107,7 @@ export default function AttackSurfacePage() {
   const exposed = stats?.exposedServicesList ?? []
   const changes = stats?.recentChanges ?? []
   const criticalExposures = stats?.criticalExposures || 0
+  const days = stats?.trendWindowDays ?? 7
 
   return (
     <Main>
@@ -139,24 +135,26 @@ export default function AttackSurfacePage() {
               title="Total assets"
               value={stats?.totalAssets || 0}
               icon={Layers}
-              description={weeklyChange(stats?.totalAssetsChange || 0)}
+              description={newInWindow(stats?.totalAssetsChange, days)}
             />
             <StatsCard
-              title="Exposed services"
+              title="Exposed assets"
               value={stats?.exposedServices || 0}
               icon={Network}
-              description={weeklyChange(stats?.exposedServicesChange || 0)}
+              description={newInWindow(stats?.exposedServicesChange, days, 'newly exposed')}
+              info="Assets whose exposure is public: reachable from the internet."
             />
             <StatsCard
               title="Critical exposures"
               value={criticalExposures}
               icon={AlertTriangle}
               valueClassName={criticalExposures > 0 ? 'text-destructive' : undefined}
-              description={weeklyChange(stats?.criticalExposuresChange || 0)}
+              description={newInWindow(stats?.criticalExposuresChange, days, 'newly exposed')}
+              info="Public assets with critical or high criticality."
             />
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Risk score</CardTitle>
+                <CardTitle className="text-sm font-medium">Average risk score</CardTitle>
                 <Shield className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -217,8 +215,8 @@ export default function AttackSurfacePage() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
             <div className="space-y-1.5">
-              <CardTitle className="text-base">Exposed services</CardTitle>
-              <CardDescription>Publicly reachable services that need attention</CardDescription>
+              <CardTitle className="text-base">Exposed assets</CardTitle>
+              <CardDescription>Internet-facing assets with the highest risk</CardDescription>
             </div>
             <Button size="sm" variant="outline" asChild>
               <Link href="/attack-surface/external">View all</Link>
@@ -230,8 +228,8 @@ export default function AttackSurfacePage() {
             ) : exposed.length === 0 ? (
               <EmptyState
                 icon={Network}
-                title="No exposed services"
-                description="Nothing publicly reachable has been discovered."
+                title="No exposed assets"
+                description="No asset is marked public yet."
                 card={false}
                 className="py-8"
               />
@@ -282,9 +280,14 @@ export default function AttackSurfacePage() {
       </div>
 
       <Card className="mt-5">
-        <CardHeader>
-          <CardTitle className="text-base">Recent changes</CardTitle>
-          <CardDescription>Assets added, removed or modified</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+          <div className="space-y-1.5">
+            <CardTitle className="text-base">Recent changes</CardTitle>
+            <CardDescription>Assets added, removed or changed</CardDescription>
+          </div>
+          <Button size="sm" variant="outline" asChild>
+            <Link href="/assets/changes">View all</Link>
+          </Button>
         </CardHeader>
         <CardContent>
           {isLoading ? (

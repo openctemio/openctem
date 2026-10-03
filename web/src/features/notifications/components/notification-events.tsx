@@ -25,6 +25,7 @@ import type {
   NotificationEventEntry,
   NotificationEventStatus,
 } from '@/features/integrations/types/integration.types'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 interface NotificationEventsProps {
   integrationId: string
@@ -142,15 +143,13 @@ function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
           {entry.url && (
             <>
               <span>|</span>
-              <a
+              <SafeExternalLink
                 href={entry.url}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="flex items-center gap-1 hover:underline text-primary"
               >
                 View Link
                 <ExternalLink className="h-3 w-3" />
-              </a>
+              </SafeExternalLink>
             </>
           )}
           {sendResult?.message_id && (

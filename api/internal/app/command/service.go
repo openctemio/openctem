@@ -2,6 +2,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,9 +19,23 @@ import (
 
 // Service handles command-related business operations.
 type Service struct {
-	repo    commanddom.Repository
-	sensors SensorLookup
-	logger  *logger.Logger
+	repo      commanddom.Repository
+	sensors   SensorLookup
+	templates TemplateSigner
+	logger    *logger.Logger
+}
+
+// TemplateSigner signs the custom templates embedded in a command payload
+// for the command's tenant, the sensor that polled it and the command, as
+// the command leaves for that sensor (template.PayloadSigner).
+type TemplateSigner interface {
+	SignTemplates(tenantID, sensorID, commandID string, payload json.RawMessage) json.RawMessage
+}
+
+// WithTemplateSigner makes Poll sign the custom templates of every command
+// it hands a sensor. Without it they go unsigned and sensors refuse them.
+func WithTemplateSigner(t TemplateSigner) Option {
+	return func(s *Service) { s.templates = t }
 }
 
 // SensorLookup resolves a sensor inside one tenant. Satisfied by the sensor
@@ -58,6 +73,10 @@ type CreateInput struct {
 	Priority  string          `json:"priority" validate:"omitempty,oneof=low normal high critical"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
 	ExpiresIn int             `json:"expires_in,omitempty"` // Seconds until expiration
+	// ScanZoneID restricts the command to one scan zone's sensors. Set by
+	// the caller after it routed the command's targets (scan commands
+	// from POST /api/v1/commands go through scan.Service.GateCommandPayload).
+	ScanZoneID *shared.ID `json:"-"`
 }
 
 // Create creates a new command.
@@ -98,6 +117,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*commanddom.Co
 			}
 		}
 		cmd.SetSensorID(sensorID)
+	}
+	if input.ScanZoneID != nil && !input.ScanZoneID.IsZero() {
+		cmd.SetScanZone(*input.ScanZoneID)
 	}
 
 	if input.ExpiresIn > 0 {
@@ -219,10 +241,32 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	}
 
 	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, limit)
-	if err != nil || input.MaxScanCommands == nil {
+	if err != nil {
 		return cmds, err
 	}
-	return capScanCommands(cmds, *input.MaxScanCommands), nil
+	if input.MaxScanCommands != nil {
+		cmds = capScanCommands(cmds, *input.MaxScanCommands)
+	}
+	return s.signTemplates(input.SensorID, cmds), nil
+}
+
+// signTemplates signs the custom templates of each command for sensorID, on
+// a copy: the stored command is never changed, and every delivery is
+// signed afresh (a new issue and expiry time, the polling sensor's id).
+func (s *Service) signTemplates(sensorID string, cmds []*commanddom.Command) []*commanddom.Command {
+	if s.templates == nil {
+		return cmds
+	}
+	for i, c := range cmds {
+		signed := s.templates.SignTemplates(c.TenantID.String(), sensorID, c.ID.String(), c.Payload)
+		if bytes.Equal(signed, c.Payload) {
+			continue
+		}
+		cp := *c
+		cp.Payload = signed
+		cmds[i] = &cp
+	}
+	return cmds
 }
 
 // capScanCommands keeps every non-scan command and at most n scan commands,

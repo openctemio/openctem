@@ -116,6 +116,11 @@ func TestAdminOrgSSOChangesReachOrganizationAuditLog(t *testing.T) {
 	domainH.SetAuditService(auditSvc)
 	samlH := handler.NewSAMLHandler(saml, handler.CookieConfig{}, "https://app.example.test", log)
 	samlH.SetAuditService(auditSvc)
+	// Admin-console SSO changes go through the owner-approval service (RFC-022
+	// revision 8). The test organization has no owner, so they apply directly.
+	ssoChanges := app.NewSSOChangeService(postgres.NewSSOChangeRepository(pg), saml, sso, tenantRepo, tenantRepo, log)
+	samlH.SetChangeApproval(ssoChanges)
+	ssoH.SetChangeApproval(ssoChanges)
 
 	operator, err := admin.NewAdminUser("ops@platform.example.test", "Ops", admin.AdminRoleSuperAdmin, nil)
 	if err != nil {
