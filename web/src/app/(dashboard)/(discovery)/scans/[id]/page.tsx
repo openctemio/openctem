@@ -530,10 +530,10 @@ export default function ScanDetailPage() {
                     progress === null
                       ? 'text-muted-foreground'
                       : progress >= 80
-                        ? 'text-green-500'
+                        ? 'text-success'
                         : progress >= 50
-                          ? 'text-yellow-500'
-                          : 'text-red-500'
+                          ? 'text-warning'
+                          : 'text-destructive'
                   }`}
                 >
                   {progress === null ? 'n/a' : `${progress}%`}
