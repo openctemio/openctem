@@ -5,6 +5,21 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Fixed
+
+- **A pipeline step's settings reach the sensor.** Step commands carried
+  the step's config as `step_config`, which no sensor reads, so every step
+  ran with its tool's defaults (a naabu step with `ports: "80"` scanned the
+  top 100 ports). The payload now carries it as `config`, the key the
+  sensor SDK reads. Needs sensor with sdk-go per-scan settings (naabu:
+  `ports`, `top_ports`, `exclude_ports`, `rate`, `retries`; nuclei: `tags`,
+  `exclude_tags`, `severity`). Saving a step now checks these keys against
+  the sensor's rules (`INVALID_STEP_SETTING`): a port list that is not one,
+  a flag-like tag, an intrusive tag (`dos`, `fuzz`, `fuzzing`,
+  `intrusive`), ports together with top_ports. `allow_interactsh` is refused
+  on a pipeline step. A stored step with such a value fails when its run
+  queues it, with the reason.
+
 ### Changed (behaviour change)
 
 - **Organizations are created by the platform administrator by default.**
