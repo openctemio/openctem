@@ -28,6 +28,7 @@ import { AssetFindings } from './asset-findings'
 import { TimelineSection, TechnicalDetailsSection, TagsSection } from './sheet-sections'
 import { AssetMergeHistory } from './asset-merge-history'
 import { AssetIdentitySections } from './asset-identity-sections'
+import { AssetAttributionSection } from './asset-attribution-section'
 import { RelationshipPreview } from './relationships'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
@@ -407,6 +408,7 @@ export function AssetDetailSheet<T extends Asset>({
 
         {tab === 'details' && (
           <DetailSections>
+            <AssetAttributionSection assetId={asset.id} />
             <TimelineSection
               firstSeen={asset.firstSeen}
               lastSeen={asset.lastSeen}
