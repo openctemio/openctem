@@ -37,9 +37,10 @@ applies ownership, exclusions, lifecycle and budgets at dispatch time.**
 
 0. **Many types, one registry, several lenses.** OpenCTEM has 37 asset
    types; repositories, hosts and networks are as common as web services.
-   - A small, fixed set of **classes** sits above the types (external
-     surface, applications, cloud & infra, containers & K8s, code,
-     identities, data, network).
+   - A fixed **class** sits above each type (16 classes, JupiterOne-style
+     `_class` vs `_type`). The classes are grouped into 8 **lenses**:
+     external surface, applications, cloud & infra, containers & K8s,
+     code, identities, data, network.
    - One **type registry** (YAML + codegen, served by the API) declares
      each type's class, attribute schema, facets, renderers, detail
      sections, relationships and identity keys.
@@ -342,11 +343,11 @@ owner's screenshots show the UI.
 | Screenshots | Headless Chrome, gallery; retention and isolation unpublished | Sandbox spec, safe storage, perceptual clusters, 30-day retention, all documented (§6.14) |
 | Auto labels | Rules (login portal, staging, Jenkins …), async, beta; no provenance shown | Versioned rule set, rule version + evidence + confidence on every assignment, reproducible (§6.7) |
 | Bulk label | Filter, then "Label" | Same, as one server call with a preview count |
-| Filters | 14+ attributes, faceted menu with counts | One typed language (OQL) shared by UI, API, groups and policies; counts honour data scope (§6.5–6.5) |
+| Filters | 14+ attributes, faceted menu with counts | One typed language (OQL) shared by UI, API, groups and policies; counts honour data scope (§6.5–6.6) |
 | Groups | Dynamic only; **cannot be targeted for rescans**; public share links (Enterprise) | Static + dynamic, both scannable, resolved at dispatch through the ownership gate and exclusions; per-group cadence; RBAC sharing only (§6.12) |
 | Exclusions | Global; **discovery only**; already-discovered assets stay until removed by hand; `+` include patterns via API | Discovery + dispatch + graph cut; matched inventory archived with a reason and restored on removal; approval workflow; scoped global / scope target / group (§6.13) |
 | Policies | AND only; delete / add label / remove label / notify; future or existing+future; execution log; **no dry-run**; review step only | AND/OR/NOT; no hard delete (archive); preview required; caps, depth limit, circuit breaker; scan action behind approval and budgets (§6.15) |
-| Change | New asset / new vuln webhooks | Typed observation diffs per facet, cert expiry, tech version changes, rollups (§6.16–6.16) |
+| Change | New asset / new vuln webhooks | Typed observation diffs per facet, cert expiry, tech version changes, rollups (§6.16–6.17) |
 | Hosting | SaaS; on-prem only on Enterprise | Self-hosted by default |
 
 Research 06 (PD Cloud UX, 2026-10-03, all claims from PD's docs, 3-0)
@@ -379,6 +380,28 @@ in this RFC.
 | I7 | **Rules + Facts with mandatory `identity_fields`.** A generated issue keeps a stable identity across runs (Cartography) | Cartography (3-0) | §6.15.2. Every policy effect, digest and any future exposure-raising action declares identity fields: `(policy_id, subject_id[, port])`, never volatile values |
 | I8 | **A field/operator/value query grammar** with typed operators, exact vs fuzzy matching, a non-empty test, and **grouping so that several conditions must match the same nested service** (CenQL `host.services: (…)`; runZero `=` exact) | Censys, runZero (3-0) | §6.5. OQL adds `=` exact vs `:` fuzzy, `field:*` non-empty, and `services:( … )` same-service grouping compiled to one `EXISTS`. CenQL's regex operator `=~` is deliberately **not** copied (ReDoS, T8) |
 | I9 | **Defender EASM's five states** (approved, dependency, monitor only, candidate, requires investigation). Ownership and discovery confidence are better stored as two fields | Defender EASM (3-0) | RFC-036 states, and #835 stores `state` and `confidence` separately. OQL exposes both (`attribution`, `attribution.confidence`) |
+
+Research 09, "multi-type asset inventory" (2026-10-03), has 8 findings,
+each voted 3-0, from JupiterOne, runZero, Microsoft Defender / Defender
+EASM, OCSF and the PostgreSQL docs. Each row says where the finding
+lands in this RFC.
+
+| # | Industry practice | Evidence | Where it lands here |
+|---|---|---|---|
+| I10 | **Two-level taxonomy.** A vendor-agnostic abstract class (JupiterOne `_class`: Host, Domain, CodeRepo, User …) sits above a source-specific `_type`. Lists and queries work at class level across connectors | JupiterOne data-model README | §6.3.2: 16 classes + `other` in `assets.asset_class`, named after JupiterOne classes, above the 37 types, and grouped into 8 lenses. The source-native type is kept on the source record. `DnsRecord` and `Image` wait for matching types |
+| I11 | **EASM kinds are a subset of the full model.** JupiterOne's 104 class schemas put Domain, IpAddress, Certificate, Port and ApplicationEndpoint next to Cluster, Function, CodeRepo, User and NHI. Defender EASM's Kind facet has only 8 external kinds | JupiterOne `class_schemas`; Defender EASM inventory filters | §6.3: the PD-style list is one lens. External surface is one class of the shared model, not a separate inventory |
+| I12 | **A common core plus per-class schemas**, not a table per type and not table inheritance. OCSF keeps device kind as one `type_id` enum on one object | JupiterOne, OCSF `device`, runZero | D19 (a): one `assets` table with core columns and one versioned JSON Schema per type, validated in Go on write. OCSF does **not** endorse an untyped bag; that claim was refuted 0-3 |
+| I13 | **OCSF `resource_details`** gives shared field names: owner, criticality, labels, tags, type, group, region, created/modified, relationships | OCSF 1.9.0 | §6.3.4. The core field names map to OCSF in the SIEM and CTIS exports |
+| I14 | **jsonb, a GIN `jsonb_path_ops` index for containment, and expression indexes for the hot per-type keys.** Facets that are used everywhere or need sorting should be real columns, because planner statistics on jsonb keys are weak | PostgreSQL docs | §6.3.3: core facets are columns; per-type facets get generated partial expression indexes; a `jsonb_path_ops` GIN on `properties` serves ad-hoc `@>` containment. This replaces the default `jsonb_ops` GIN of `000008:129` once measured |
+| I15 | **No flat "everything" list.** runZero has separate inventories per entity class, with services and certificates first-class and linked to a parent asset. Defender opens on "All devices" and adds per-category tabs, each with its own default columns | runZero docs; Defender device inventory | §6.3.6 lenses: All assets plus class lenses. Services and certificates are sub-views of External surface |
+| I16 | **Two-layer filters.** Common filters apply to every kind; per-kind filters appear for that kind | Defender EASM inventory filters | §6.3.3. Core facets always show; registry facets appear once a lens, class or type is selected |
+| I17 | **Ownership state is independent of type.** Only Approved assets show by default, count in dashboards and get the daily cadence; Candidates are hidden until the State filter is cleared | Defender EASM | RFC-036 states (#835). The default inventory view shows `attribution` confirmed or legacy, with a banner linking to the needs-review count (D21) |
+
+**Not verified by research 09:** Axonius, Wiz, Tenable One, ServiceNow
+and Censys taxonomies; the "attack surface to code" relationship chain;
+connector normalisation. §6.3.5 (the typed path and its edge sources) is
+therefore **our own design inference** from the JupiterOne graph model
+and OCSF `resource_relationship`, not verified vendor practice.
 
 **What research 08 did not verify.** It has no verified evidence on:
 
@@ -501,35 +524,61 @@ own columns, form fields and detail sections against loose
 scattered page code, and the same type is grouped differently on
 different screens.
 
-#### 6.3.2 Classes: a small, fixed taxonomy above the types
+#### 6.3.2 Classes above the types, lenses above the classes
 
-A **class** is the `_class` to a type's `_type`, the split used by
-JupiterOne and similar to OCSF's category vs class. It answers "what kind
-of thing is this?" for cross-type views. Each type has exactly one class.
-Exposure is orthogonal: an internal host is still `cloud_infra`, and a
-public bucket is still `data_stores`.
+The taxonomy has three levels, each with one job:
 
-| Class | Types | Default lens |
-|---|---|---|
-| `external_surface` | domain, subdomain, ip_address, certificate, discovered_url, service (generic network service); **service rows** (§6.4) | External surface: PD-style service cards, plus Domains and Certificates sub-views |
-| `applications` | application, website, web_application, api, mobile_app | Applications & APIs |
-| `cloud_infra` | cloud_account, compute, host, endpoint, serverless | Cloud & infrastructure |
-| `containers_k8s` | container, container_registry, kubernetes, kubernetes_cluster, kubernetes_namespace | Containers & Kubernetes |
-| `code_supply_chain` | repository (components/SBOM stay in `asset_components`, not assets) | Code |
-| `identities` | identity, iam_user, iam_role, service_account | Identities |
-| `data_stores` | database, data_store, storage, s3_bucket (alias) | Data |
-| `network` | network, vpc, subnet, firewall, load_balancer | Network |
-| `other` | unclassified | All assets only |
+| Level | Cardinality | Job | Example |
+|---|---|---|---|
+| **source-native type** | unbounded | provenance only, on the source record (`asset_sources.native_type`) | `aws_instance`, `github_repo` |
+| **type** (`asset_type`) | 37 today | the normalised OpenCTEM type; drives the attribute schema, renderers, identity keys | `host`, `repository` |
+| **class** (`asset_class`) | 16 + `other` | the abstract kind, JupiterOne's `_class` (I10); used by cross-type queries, relationships and policies | `Host`, `CodeRepo` |
+| **lens** | 8 + All | a fixed group of classes for the UI tabs (I15) | External surface, Code |
 
-The legacy `http_service` and `open_port` types become service rows
-(§6.8) and so belong to `external_surface`.
+Each type has exactly one class, and each class belongs to exactly one
+lens. Exposure is orthogonal: an internal host is still a `host`, and a
+public bucket is still a `data_store`.
 
-Classes are **fixed in code**, not tenant-editable (D18). Tenants
-organise with groups and labels instead; this follows the owner's
+The classes follow JupiterOne's names where one exists. OCSF is the
+reference for the shared core fields (I13).
+
+| Class (`asset_class`) | JupiterOne analogue | OpenCTEM types | Lens |
+|---|---|---|---|
+| `domain` | Domain / DomainRecord | domain, subdomain | External surface |
+| `ip_address` | IpAddress | ip_address | External surface |
+| `certificate` | Certificate | certificate | External surface |
+| `service` | Port / NetworkEndpoint | service (generic); **service rows** (§6.4); legacy `open_port`, `http_service` | External surface |
+| `web_endpoint` | ApplicationEndpoint | discovered_url | External surface |
+| `application` | Application | application, website, web_application, api, mobile_app | Applications |
+| `host` | Host / Device | host, compute, endpoint | Cloud & infrastructure |
+| `function` | Function | serverless | Cloud & infrastructure |
+| `cloud_account` | Account | cloud_account | Cloud & infrastructure |
+| `container` | Container / Workload | container | Containers & Kubernetes |
+| `cluster` | Cluster | kubernetes, kubernetes_cluster, kubernetes_namespace | Containers & Kubernetes |
+| `artifact_registry` | Repository (artifact) | container_registry | Containers & Kubernetes |
+| `code_repo` | CodeRepo | repository (components/SBOM stay in `asset_components`) | Code |
+| `identity` | User / AccessRole / NHI | identity, iam_user, iam_role, service_account | Identities |
+| `data_store` | DataStore / Database | database, data_store, storage, s3_bucket (alias) | Data |
+| `network` | Network / Firewall / Gateway | network, vpc, subnet, firewall, load_balancer | Network |
+| `other` | — | unclassified | All assets only |
+
+**Gaps against research 09's suggested list.** It suggests `DnsRecord`
+and `Image` classes. OpenCTEM has no DNS-record or container-image
+*type* today: DNS records are columns and observations of a `domain`
+(§6.4.2), and images are scanned through containers and registries.
+Adding either is a registry change: a new type plus a class row, with no
+migration beyond the seed. That is the point of the registry.
+
+The **External surface** lens holds 5 of the 16 classes. EASM output is a
+subset of the shared model (I11), not a separate inventory.
+
+Classes and lenses are **fixed in code**, not tenant-editable (D18).
+Tenants organise with groups and labels instead. This follows the owner's
 taxonomy decision that type, group and tag are all needed and do
-different jobs. The research 09 multi-type inventory report (JupiterOne,
-Axonius categories, runZero explorer tabs, Wiz object types, OCSF) is
-the evidence base for this list; §4.1 records anything it changes.
+different jobs.
+
+In OQL, `class:` and `lens:` are core fields: `lens:external_surface`,
+`class:code_repo`, `type:repository`.
 
 #### 6.3.3 The type registry (one definition, generated everywhere)
 
@@ -548,7 +597,7 @@ One entry per type:
 
 ```yaml
 - type: repository
-  class: code_supply_chain
+  class: code_repo                    # lens follows from the class (Code)
   label: Repository
   plural: Repositories
   icon: git-branch                     # name from a closed icon set in web
@@ -573,7 +622,7 @@ One entry per type:
 
 Each entry declares:
 
-- **Class:** §6.3.2.
+- **Class:** §6.3.2 (the lens follows from the class).
 - **Attributes:** a typed schema per type. It is validated on every
   write: ingest, `POST/PATCH /assets` and import. Unknown keys are kept,
   but only in a quarantined `properties.x_*` namespace, never promoted.
@@ -635,7 +684,7 @@ not one row per asset.
   dropped.
 - `category.go`'s map and `category-templates.tsx` are replaced by
   generated code.
-- `assets.asset_class` is a denormalised column, set from the type by
+- `assets.asset_class` (and `assets.asset_lens`) are denormalised columns, set from the type by
   the same trigger that validates `asset_type`, and indexed. Cross-type
   facets and lenses filter on it without a join.
 
@@ -646,7 +695,7 @@ and policies run over them:
 
 | Core field | Source |
 |---|---|
-| `name`, `type`, `sub_type`, `class` | `assets` |
+| `name`, `type`, `sub_type`, `class`, `lens` | `assets` |
 | `owner` (unified, api#520), `bu`, `business_service` | existing |
 | `criticality` and **`effective_criticality`** (MAX of asset, BU, business service, served control plane; §3.5) | existing, read time |
 | `attribution` state + `attribution.confidence` (RFC-036, #835) | `asset_attributions` |
@@ -691,7 +740,7 @@ domain ─contains→ subdomain ─resolves_to→ ip_address ─exposes→ [serv
     → repository, matched on the repository's `canonical_url` identity
     key;
   - manual edges.
-- **The path query.** `GET /api/v1/assets/{asset_id}/paths?to_class=code_supply_chain&max_depth=8`
+- **The path query.** `GET /api/v1/assets/{asset_id}/paths?to_class=code_repo&max_depth=8`
   is a recursive CTE.
   - It follows only the relationship types the registry marks
     `traversable`.
@@ -717,15 +766,15 @@ Lenses are served with the registry from `GET /api/v1/asset-types`.
 
 | Lens | Base | Row | Default group-by |
 |---|---|---|---|
-| All assets | none | core columns + compact type cell | class |
-| External surface | `class:external_surface OR is.public:true`, subject = services | PD-style service card (§6.19) | tech / port / domain |
-| Applications & APIs | `class:applications` | app card (URL, auth, tech, findings) | type |
-| Cloud & infrastructure | `class:cloud_infra` | provider, account, region, OS, public IP | cloud_account |
-| Containers & Kubernetes | `class:containers_k8s` | cluster, namespace, image, registry | cluster |
-| Code | `class:code_supply_chain` | provider, visibility, language, findings by scanner, last commit | provider |
-| Identities | `class:identities` | provider, privileged, MFA, last used | type |
-| Data | `class:data_stores` | engine, public, encryption | type |
-| Network | `class:network` | CIDR, VPC, zone | vpc |
+| All assets | none | core columns + compact type cell | lens, then class |
+| External surface | `lens:external_surface OR is.public:true`; subject = services for the card view, with Domains, IPs and Certificates sub-views | PD-style service card (§6.19) | tech / port / domain |
+| Applications & APIs | `lens:applications` | app card (URL, auth, tech, findings) | type |
+| Cloud & infrastructure | `lens:cloud_infra` | provider, account, region, OS, public IP | cloud_account |
+| Containers & Kubernetes | `lens:containers_k8s` | cluster, namespace, image, registry | cluster |
+| Code | `lens:code` | provider, visibility, language, findings by scanner, last commit | provider |
+| Identities | `lens:identities` | provider, privileged, MFA, last used | type |
+| Data | `lens:data` | engine, public, encryption | type |
+| Network | `lens:network` | CIDR, VPC, zone | vpc |
 
 Every lens keeps the same machinery:
 
@@ -748,7 +797,7 @@ keep working through 308 redirects, following the
 | Owner decision: type / group / tag are all needed | Kept. Type = registry; group = static and dynamic groups (§6.12); tag = custom labels (§6.7) |
 | Owner decision: effective criticality = MAX(asset, BU, service), used by risk score and priority | Unchanged, exposed as the core field `effective_criticality`; policies set only the asset's own value |
 | `asset_types` / `asset_type_categories` tables | `asset_types.class` added and seeded from the YAML; categories table retired after one release |
-| `category.go`, `category-templates.tsx` | Replaced by generated code; the category names map 1:1 to classes except `recon`, which folds into `external_surface`, and `infrastructure`, which splits into `cloud_infra` and `containers_k8s` |
+| `category.go`, `category-templates.tsx` | Replaced by generated code; the category names map to lenses, except `recon`, which folds into the External surface lens, and `infrastructure`, which splits into the Cloud & infrastructure and Containers & Kubernetes lenses. Classes are finer than any of the old category lists (16 + other) |
 | 25 per-type `config.tsx` pages | Folded into registry entries one class at a time; custom cells become named renderers; URLs redirect to lenses |
 | `relationship-types.yaml` virtual types | Resolved to real types by codegen; constraints enforced on the server |
 | Type compatibility filter in `trigger.go` | `scannable_by` from the registry |
@@ -2486,8 +2535,9 @@ table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
 | **D15** | Where correlation runs (I3) | (a) all inline at ingest (today); (b) all in a batch job; (c) inline strong-key match + single-flight batch job per tenant and zone for windowed matches, preferred fields and the snapshot | **(c).** Findings need an asset id at ingest time; everything fuzzy or expensive moves to the batch job, which can be re-run and audited |
 | **D16** | Zone boundary for identity (I4) | private addresses keyed by (zone, address) / tenant-wide | **(zone, address) for RFC 1918/ULA/CGNAT; tenant-wide for public addresses and DNS names.** Two zones with overlapping 10.0.0.0/8 stay two assets |
 | **D17** | Manual split | add `split` to RFC-041's verb list (`POST /assets/{asset_id}/split`) / model it as a resource (`POST /asset-splits`) | **Add the verb.** It is the audited inverse of the existing merge; the resource form is the fallback if RFC-041 keeps the list closed |
-| **D18** | Class list (§6.3.2) | fixed in code / tenant-editable | **Fixed in code**, 8 classes + `other`. Tenants organise with groups and labels; editable classes would make cross-tenant docs, reports and lenses meaningless |
+| **D18** | Class and lens lists (§6.3.2) | fixed in code / tenant-editable | **Fixed in code**: 16 classes + `other`, grouped into 8 lenses. Tenants organise with groups and labels; editable classes would make cross-tenant docs, reports and lenses meaningless |
 | **D19** | Per-type attribute storage (§6.3.3) | (a) schema-validated JSONB + generated partial expression indexes, extension tables only for 1:n data; (b) one extension table per type; (c) untyped JSONB (today) | **(a)**: typed facets without 37 tables; extension tables kept where data is not one row per asset (services, components, repositories) |
+| **D21** | Default visibility of unconfirmed assets (I17) | show all / hide `needs_review` and `candidate` by default | **Hide by default**: the default OQL base is `attribution:confirmed,null` with a banner "N assets need review" linking to the RFC-036 review queue; dashboards and scheduled scans already follow the gate |
 | **D20** | Default inventory landing view | All assets / External surface | **All assets** (core columns + type-aware cell), with External surface one tab away; the EASM workspace (`/attack-surface`) opens on External surface |
 
 ## 13. Sources
@@ -2520,6 +2570,13 @@ table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
     cleanup; Fetch/Map/Load/ScopedCleanup connectors; identity fields;
     CenQL/runZero query grammar; Defender EASM states (runZero, Axonius,
     Cartography, Censys, Microsoft docs);
+  - `09-multi-type-inventory`: two-level class/type taxonomy, EASM as
+    a subset of the shared model, one polymorphic table with per-type
+    schemas, OCSF `resource_details` core, `jsonb_path_ops` and
+    expression indexes, class tabs with per-tab columns, two-layer
+    filters, an ownership state independent of type (JupiterOne
+    data-model, runZero, Microsoft Defender / Defender EASM, OCSF,
+    PostgreSQL docs);
   - `06-projectdiscovery-ux`: dynamic groups as saved filters over the
     parent discovery, bulk label and status by filter, rules-based
     asynchronous auto-labels, asynchronous headless-Chrome screenshots;

@@ -28,19 +28,24 @@ are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
 ## Classes, the type registry and lenses
 
 OpenCTEM has 37 asset types. Each type belongs to exactly one fixed
-**class**:
+**class**, JupiterOne's `_class` above `_type`. Each class belongs to
+exactly one **lens**, which is a UI tab. The source-native type
+(`aws_instance`, `github_repo`) stays on the source record for
+provenance.
 
-| Class | Types |
+| Lens | Classes (types) |
 |---|---|
-| `external_surface` | domain, subdomain, IP, certificate, URL, service rows |
-| `applications` | application, website, web app, API, mobile |
-| `cloud_infra` | cloud account, compute, host, endpoint, serverless |
-| `containers_k8s` | container, registry, Kubernetes |
-| `code_supply_chain` | repository |
-| `identities` | identity, IAM user, IAM role, service account |
-| `data_stores` | database, data store, storage |
-| `network` | network, VPC, subnet, firewall, load balancer |
-| `other` | unclassified |
+| External surface | `domain` (domain, subdomain), `ip_address`, `certificate`, `service` (service rows, generic service), `web_endpoint` (discovered_url) |
+| Applications | `application` (application, website, web_application, api, mobile_app) |
+| Cloud & infrastructure | `host` (host, compute, endpoint), `function` (serverless), `cloud_account` |
+| Containers & Kubernetes | `container`, `cluster` (kubernetes*), `artifact_registry` (container_registry) |
+| Code | `code_repo` (repository) |
+| Identities | `identity` (identity, iam_user, iam_role, service_account) |
+| Data | `data_store` (database, data_store, storage, s3_bucket) |
+| Network | `network` (network, vpc, subnet, firewall, load_balancer) |
+| (All assets only) | `other` (unclassified) |
+
+OQL has `lens:`, `class:` and `type:` core fields.
 
 **The registry.** `api/configs/asset-types.yaml` is the single
 definition. `make generate-asset-types` emits Go and TypeScript, and
@@ -58,7 +63,8 @@ declares:
 
 **Storage.** Per-type attributes live in `properties` JSONB, validated
 against the schema. Every facet attribute gets a generated partial
-expression index. Extension tables are used only for one-to-many data
+expression index, and a `jsonb_path_ops` GIN index serves containment
+queries. Core facets are real columns. Extension tables are used only for one-to-many data
 (`asset_services`, `asset_components`, `asset_repositories`).
 
 **Retired.** These are replaced by the registry or generated from it:
@@ -88,7 +94,7 @@ criticality and effective criticality, attribution state and confidence,
 exposure, labels, first and last seen, sources, open findings and groups.
 
 **Attack surface to code.**
-`GET /api/v1/assets/{asset_id}/paths?to_class=code_supply_chain` walks
+`GET /api/v1/assets/{asset_id}/paths?to_class=code_repo` walks
 traversable relationship types, for example
 
 > domain → subdomain → IP → service → application → load balancer →
@@ -130,7 +136,7 @@ completed run covered. A gone service becomes `closed` and a gone asset
 
 | Table | Purpose | Phase |
 |---|---|---|
-| `asset_types.class`, `assets.asset_class` | Class from the registry, denormalised for facets | P0 |
+| `asset_types.class`, `assets.asset_class`, `assets.asset_lens` | Class and lens from the registry, denormalised for facets | P0 |
 | `asset_services` (evolved) | Service rows; typed HTTP/TLS/network columns; `legacy_asset_id`; `open_finding_count`, `max_open_severity` | P0 |
 | `assets` (+ `dns_a`, `dns_aaaa`, `dns_cname`, `dns_resolved_at`, `apex_domain`, `system_labels`) | DNS belongs to the name | P0 |
 | `findings.service_id` | Which service a finding is on ("Issues found") | P0 |
