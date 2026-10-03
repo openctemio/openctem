@@ -285,6 +285,20 @@ func SafeHTTPClient(timeout time.Duration) *http.Client {
 	return newSafeHTTPClient(timeout, defaultDialer)
 }
 
+// SafeHTTPClientWithHeaderTimeout is SafeHTTPClient for upstreams that take
+// longer than the default 15 s to start answering (crt.sh builds a large JSON
+// answer before sending headers). Same SSRF guard; only the wait for response
+// headers differs. A non-positive responseHeaderTimeout keeps the default.
+func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duration) *http.Client {
+	c := newSafeHTTPClient(timeout, defaultDialer)
+	if responseHeaderTimeout > 0 {
+		if tr, ok := c.Transport.(*http.Transport); ok {
+			tr.ResponseHeaderTimeout = responseHeaderTimeout
+		}
+	}
+	return c
+}
+
 func newSafeHTTPClient(timeout time.Duration, d guardedDialer) *http.Client {
 	tr := &http.Transport{
 		DialContext:           d.dialContext,

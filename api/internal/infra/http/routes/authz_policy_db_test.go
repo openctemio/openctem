@@ -17,7 +17,10 @@ package routes
 //     administrator; the owner can; administrators still manage members;
 //   - SCIM token create / revoke is owner only;
 //   - custom scanner templates, template sources and inline command templates
-//     are written by owners and admins only; members keep read.
+//     are written by owners and admins only; members keep read;
+//   - a scope exclusion a member creates is pending and suppresses nothing;
+//     approving or rejecting it needs attack_surface:scope:exclusions:approve
+//     (owner/admin), and nobody approves their own exclusion.
 
 import (
 	"context"
@@ -39,6 +42,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/scim"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	templateapp "github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -46,6 +50,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -113,6 +118,9 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		TemplateSource: handler.NewTemplateSourceHandler(templateapp.NewSourceService(postgres.NewTemplateSourceRepository(db), log), v, log),
 		Command: handler.NewCommandHandler(commandapp.NewService(postgres.NewCommandRepository(db), log,
 			commandapp.WithSensorLookup(postgres.NewSensorRepository(db))), v, log),
+		Scope: handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
+			postgres.NewScopeExclusionRepository(db), postgres.NewScopeScheduleRepository(db),
+			postgres.NewAssetRepository(db), log), v, log),
 	}, cfg, log, authCfg, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
@@ -143,6 +151,7 @@ func (h *authzPolicyHarness) tenant() string {
 			`DELETE FROM scanner_templates WHERE tenant_id = $1`,
 			`DELETE FROM template_sources WHERE tenant_id = $1`,
 			`DELETE FROM sensors WHERE tenant_id = $1`,
+			`DELETE FROM scope_exclusions WHERE tenant_id = $1`,
 			`DELETE FROM user_roles WHERE tenant_id = $1`,
 			`DELETE FROM tenant_members WHERE tenant_id = $1`,
 			`DELETE FROM tenants WHERE id = $1`,
@@ -492,5 +501,83 @@ http:
 	}
 	if n != 0 {
 		t.Fatalf("member/viewer still hold %d template write grants, want 0", n)
+	}
+}
+
+// excluded reports whether prod.example.com is excluded for tenantID through
+// the same service read the scan dispatcher uses.
+func (h *authzPolicyHarness) excluded(tenantID string) bool {
+	h.t.Helper()
+	svc := scopeapp.NewService(nil, postgres.NewScopeExclusionRepository(&postgres.DB{DB: h.db}), nil, nil, logger.NewNop())
+	id := shared.NewID()
+	set, err := svc.ExcludedTargets(context.Background(), tenantID,
+		[]scopeapp.ExclusionCandidate{{ID: id, Values: []string{"prod.example.com"}}})
+	if err != nil {
+		h.t.Fatalf("ExcludedTargets: %v", err)
+	}
+	return set[id]
+}
+
+func TestAuthzPolicy_ScopeExclusionsNeedApproval_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	tid := h.tenant()
+	owner, admin := h.member(tid, "owner"), h.member(tid, "admin")
+	member, other, viewer := h.member(tid, "member"), h.member(tid, "member"), h.member(tid, "viewer")
+	create := func(u policyUser, pattern string) string {
+		t.Helper()
+		var out struct {
+			ID       string `json:"id"`
+			Status   string `json:"status"`
+			InEffect bool   `json:"in_effect"`
+		}
+		body := h.expect(u, http.MethodPost, "/api/v1/scope/exclusions",
+			`{"exclusion_type":"domain","pattern":"`+pattern+`","reason":"noisy host"}`, http.StatusCreated)
+		if err := json.Unmarshal([]byte(body), &out); err != nil {
+			t.Fatalf("decode %s: %v", body, err)
+		}
+		if out.Status != "pending" || out.InEffect {
+			t.Fatalf("new exclusion by %s: status %q in_effect %v, want pending and not in effect", u.role, out.Status, out.InEffect)
+		}
+		return out.ID
+	}
+
+	// A member requests an exclusion: it is pending and suppresses nothing.
+	id := create(member, "prod.example.com")
+	if h.excluded(tid) {
+		t.Fatal("a pending exclusion suppressed scanning")
+	}
+	base := "/api/v1/scope/exclusions/" + id
+
+	// scope:write is not enough to approve, reject or switch it on.
+	for _, u := range []policyUser{member, other, viewer} {
+		h.expect(u, http.MethodPost, base+"/approve", "", http.StatusForbidden)
+		h.expect(u, http.MethodPost, base+"/reject", "", http.StatusForbidden)
+	}
+	h.expect(member, http.MethodPost, base+"/activate", "", http.StatusConflict)
+	if h.excluded(tid) {
+		t.Fatal("exclusion took effect without an approval")
+	}
+
+	// An administrator approves; it takes effect. Approving twice conflicts.
+	h.expect(admin, http.MethodPost, base+"/approve", "", http.StatusOK)
+	if !h.excluded(tid) {
+		t.Fatal("an approved exclusion is not applied")
+	}
+	h.expect(owner, http.MethodPost, base+"/approve", "", http.StatusConflict)
+
+	// The approver may hold the permission and still not approve their own
+	// exclusion (separation of duties).
+	own := create(admin, "own.example.com")
+	h.expect(admin, http.MethodPost, "/api/v1/scope/exclusions/"+own+"/approve", "", http.StatusForbidden)
+	h.expect(owner, http.MethodPost, "/api/v1/scope/exclusions/"+own+"/approve", "", http.StatusOK)
+
+	// A rejected exclusion never takes effect.
+	h.expect(admin, http.MethodDelete, base, "", http.StatusNoContent)
+	rej := create(member, "prod.example.com")
+	h.expect(owner, http.MethodPost, "/api/v1/scope/exclusions/"+rej+"/reject", "", http.StatusOK)
+	h.expect(admin, http.MethodPost, "/api/v1/scope/exclusions/"+rej+"/approve", "", http.StatusConflict)
+	h.expect(member, http.MethodPost, "/api/v1/scope/exclusions/"+rej+"/activate", "", http.StatusConflict)
+	if h.excluded(tid) {
+		t.Fatal("a rejected exclusion suppressed scanning")
 	}
 }

@@ -66,6 +66,12 @@ type Service struct {
 	// not projected (prior behavior).
 	assetExposureProjector AssetExposureProjector
 
+	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
+	// non-repository findings (coverage_autoresolve.go). The zero mode is
+	// dry_run.
+	coverageMode  CoverageAutoResolveMode
+	coverageGuard BlindingGuard
+
 	logger *logger.Logger
 
 	// statsUpdateMu protects concurrent stats updates
@@ -108,6 +114,8 @@ func NewService(
 		branchRepo:  branchRepo,
 		tenantRepo:  tenantRepo,
 		auditRepo:   auditRepo,
+
+		coverageGuard: DefaultBlindingGuard(),
 
 		logger: l,
 	}
@@ -614,9 +622,6 @@ func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData
 	if !identified && len(report.Findings) > 0 {
 		return nil, ErrSARIFNoRepository
 	}
-	// FromSARIF drops result.kind and result.baselineState; the findings
-	// table stores both.
-	applySARIFResultFields(report, sarifData)
 
 	// Use the unified ingestion pipeline
 	return s.Ingest(ctx, agt, Input{Report: report})

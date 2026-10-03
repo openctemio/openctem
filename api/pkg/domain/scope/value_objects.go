@@ -3,6 +3,7 @@ package scope
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"regexp"
 	"strings"
 )
@@ -130,6 +131,11 @@ const (
 	StatusActive   Status = "active"
 	StatusInactive Status = "inactive"
 	StatusExpired  Status = "expired" // Only for exclusions
+	// StatusPending: an exclusion waiting for review. It does not take effect
+	// until a holder of attack_surface:scope:exclusions:approve approves it.
+	StatusPending Status = "pending" // Only for exclusions
+	// StatusRejected: a reviewer declined the exclusion. It never takes effect.
+	StatusRejected Status = "rejected" // Only for exclusions
 )
 
 // String returns the string representation of the status.
@@ -140,7 +146,7 @@ func (s Status) String() string {
 // IsValid returns true if the status is valid.
 func (s Status) IsValid() bool {
 	switch s {
-	case StatusActive, StatusInactive, StatusExpired:
+	case StatusActive, StatusInactive, StatusExpired, StatusPending, StatusRejected:
 		return true
 	}
 	return false
@@ -373,53 +379,100 @@ func matchDomain(pattern, domain string) bool {
 	return false
 }
 
-func matchCIDR(pattern, ip string) bool {
-	parsedIP := net.ParseIP(ip)
-	if parsedIP == nil {
-		return false
-	}
+// ipSet is a contiguous, inclusive address range of one family: a single
+// address, a CIDR (host bits ignored) or an "a-b" range.
+type ipSet struct{ lo, hi netip.Addr }
 
-	// Try CIDR
-	_, network, err := net.ParseCIDR(pattern)
-	if err == nil {
-		return network.Contains(parsedIP)
-	}
-
-	// Try IP range
-	if strings.Contains(pattern, "-") {
-		parts := strings.Split(pattern, "-")
-		if len(parts) == 2 {
-			startIP := net.ParseIP(strings.TrimSpace(parts[0]))
-			endIP := net.ParseIP(strings.TrimSpace(parts[1]))
-			if startIP != nil && endIP != nil {
-				return ipInRange(parsedIP, startIP, endIP)
-			}
+// parseIPSet reads an address, a CIDR or an "a-b" range. IPv4-mapped IPv6
+// addresses are treated as IPv4, so "::ffff:10.0.0.5" and "10.0.0.5" are the
+// same address.
+func parseIPSet(s string) (ipSet, bool) {
+	s = strings.TrimSpace(s)
+	if strings.Contains(s, "/") {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return ipSet{}, false
 		}
+		p = p.Masked()
+		lo := p.Addr()
+		if lo.Is4In6() && p.Bits() >= 96 {
+			p = netip.PrefixFrom(lo.Unmap(), p.Bits()-96)
+			lo = p.Addr()
+		}
+		return ipSet{lo: lo, hi: lastAddr(p)}, true
 	}
-
-	return false
+	if lo, hi, ok := strings.Cut(s, "-"); ok {
+		a, errA := netip.ParseAddr(strings.TrimSpace(lo))
+		b, errB := netip.ParseAddr(strings.TrimSpace(hi))
+		if errA != nil || errB != nil {
+			return ipSet{}, false
+		}
+		a, b = a.Unmap(), b.Unmap()
+		if a.Is4() != b.Is4() || b.Less(a) {
+			return ipSet{}, false
+		}
+		return ipSet{lo: a, hi: b}, true
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return ipSet{}, false
+	}
+	a = a.Unmap().WithZone("")
+	return ipSet{lo: a, hi: a}, true
 }
 
-func ipInRange(ip, start, end net.IP) bool {
-	ip = ip.To16()
-	start = start.To16()
-	end = end.To16()
+// lastAddr returns the highest address in a masked prefix.
+func lastAddr(p netip.Prefix) netip.Addr {
+	b := p.Addr().AsSlice()
+	for i := p.Bits(); i < len(b)*8; i++ {
+		b[i/8] |= byte(0x80) >> (i % 8)
+	}
+	a, _ := netip.AddrFromSlice(b)
+	return a
+}
 
-	if ip == nil || start == nil || end == nil {
+func (r ipSet) sameFamily(o ipSet) bool { return r.lo.Is4() == o.lo.Is4() }
+
+// contains reports whether every address of o lies inside r.
+func (r ipSet) contains(o ipSet) bool {
+	return r.sameFamily(o) && !o.lo.Less(r.lo) && !r.hi.Less(o.hi)
+}
+
+// overlaps reports whether r and o share at least one address.
+func (r ipSet) overlaps(o ipSet) bool {
+	return r.sameFamily(o) && !r.hi.Less(o.lo) && !o.hi.Less(r.lo)
+}
+
+// matchCIDR is the TARGET test: value (an address, CIDR or range) is in scope
+// of pattern (a CIDR or range) only when all of it lies inside the pattern.
+func matchCIDR(pattern, value string) bool {
+	p, ok := parseIPSet(pattern)
+	if !ok {
 		return false
 	}
-
-	for i := 0; i < 16; i++ {
-		if ip[i] < start[i] || ip[i] > end[i] {
-			if ip[i] < start[i] {
-				return false
-			}
-			if ip[i] > end[i] {
-				return false
-			}
-		}
+	v, ok := parseIPSet(value)
+	if !ok {
+		return false
 	}
-	return true
+	return p.contains(v)
+}
+
+// matchIPExclusion is the EXCLUSION test: value is excluded when it shares ANY
+// address with pattern. A scan target is handed to the scanner as written, so a
+// target network that merely overlaps an excluded one would scan the excluded
+// addresses; the only safe outcome is to skip the whole target (split it to
+// scan the rest). A pattern that is not an address set falls back to an exact,
+// case-insensitive string match.
+func matchIPExclusion(pattern, value string) bool {
+	p, ok := parseIPSet(pattern)
+	if !ok {
+		return strings.EqualFold(strings.TrimSpace(pattern), strings.TrimSpace(value))
+	}
+	v, ok := parseIPSet(value)
+	if !ok {
+		return false
+	}
+	return p.overlaps(v)
 }
 
 func matchWildcard(pattern, value string) bool {
@@ -455,10 +508,8 @@ func MatchesExclusionPattern(exclusionType ExclusionType, pattern, value string)
 	switch exclusionType {
 	case ExclusionTypeDomain, ExclusionTypeSubdomain:
 		return matchDomain(pattern, value)
-	case ExclusionTypeIPAddress:
-		return pattern == value
-	case ExclusionTypeIPRange, ExclusionTypeCIDR:
-		return matchCIDR(pattern, value)
+	case ExclusionTypeIPAddress, ExclusionTypeIPRange, ExclusionTypeCIDR:
+		return matchIPExclusion(pattern, value)
 	case ExclusionTypeURL:
 		return matchWildcard(pattern, value)
 	case ExclusionTypeRepository:

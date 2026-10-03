@@ -183,6 +183,8 @@ const PAGE_SIZES = [10, 20, 30, 50, 100]
 export default function ScopeConfigPage() {
   // Permission check for write operations
   const canWriteScope = useHasPermission(Permission.ScopeWrite)
+  // A new exclusion is pending until someone else holding this approves it.
+  const canApproveExclusions = useHasPermission(Permission.ScopeExclusionsApprove)
 
   // Tab, search, type filter and page live in the URL so a view can be linked
   // to. One set of list params serves whichever table tab is open (they are
@@ -361,6 +363,19 @@ export default function ScopeConfigPage() {
     }
   }
 
+  // Approve or reject a pending exclusion. The API refuses (403) when the
+  // reviewer is the requester.
+  const reviewExclusion = async (exclusion: ApiScopeExclusion, action: 'approve' | 'reject') => {
+    try {
+      await post<ApiScopeExclusion>(`/api/v1/scope/exclusions/${exclusion.id}/${action}`)
+      await invalidateScopeExclusionsCache()
+      await invalidateScopeCache()
+      toast.success(action === 'approve' ? 'Exclusion approved' : 'Exclusion rejected')
+    } catch (err) {
+      toast.error(getErrorMessage(err, `Failed to ${action} exclusion`))
+    }
+  }
+
   // Target handlers
   const resetTargetForm = () => {
     setTargetForm({ type: 'domain', pattern: '', description: '', priority: 0, tags: [] })
@@ -482,7 +497,7 @@ export default function ScopeConfigPage() {
         reason: exclusionForm.reason,
       })
       await invalidateScopeCache()
-      toast.success('Exclusion added successfully')
+      toast.success('Exclusion submitted for approval')
       setIsAddExclusionOpen(false)
       resetExclusionForm()
     } catch (err) {
@@ -867,6 +882,36 @@ export default function ScopeConfigPage() {
       header: 'Status',
       cell: ({ row }) => {
         const exclusion = row.original
+        if (exclusion.status === 'pending') {
+          return (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Pending approval</span>
+              {canApproveExclusions && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => reviewExclusion(exclusion, 'approve')}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => reviewExclusion(exclusion, 'reject')}
+                  >
+                    Reject
+                  </Button>
+                </>
+              )}
+            </div>
+          )
+        }
+        if (exclusion.status === 'rejected') {
+          return <span className="text-xs text-muted-foreground">Rejected</span>
+        }
         return (
           <div className="flex items-center gap-2">
             <Switch

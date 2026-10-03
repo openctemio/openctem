@@ -94,6 +94,11 @@ type ManifestIgnored struct {
 // §6.4). Sent only to sensors that sent a manifest_digest.
 const ActionSendManifest = "send_manifest"
 
+// ActionCancel is the heartbeat action that comes with a non-empty
+// cancel_command_ids: stop those commands and release them (sdk-go acts on
+// the ids; the action names it in the closed set).
+const ActionCancel = "cancel"
+
 // Heartbeat status values (RFC-029 §4.3).
 const (
 	HeartbeatStatusOK     = "ok"
@@ -110,6 +115,11 @@ type HeartbeatResponse struct {
 	NextHeartbeatSeconds int      `json:"next_heartbeat_seconds"`
 	Actions              []string `json:"actions"`
 	ConfigVersion        string   `json:"config_version"`
+	// CancelCommandIDs are commands the sensor listed as running that it
+	// must stop: canceled, closed by the platform (a run timeout), re-queued
+	// after the lease ran out, or held by another sensor. Stop and release
+	// them; their results are refused anyway. At most 256.
+	CancelCommandIDs []string `json:"cancel_command_ids"`
 }
 
 // Command is a command as the v2 command resources return it. sensor_id is
