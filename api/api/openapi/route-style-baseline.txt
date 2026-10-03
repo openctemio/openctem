@@ -374,3 +374,17 @@ R9 PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R9 PUT /api/v1/tenants/{tenant}/settings/asset-source
 R9 PUT /api/v1/users/me
 R9 PUT /api/v1/users/me/preferences
+# The owner-approval routes for admin-console SSO changes (#827) landed under
+# /tenants/{tenant} in parallel with this guard (#876). They move with the rest
+# of that prefix to /api/v1/organization in RFC-041 phase P2.
+R3 GET /api/v1/admin/tenants/{tenantId}/sso/changes
+R3 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/approve
+R3 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
+R6 GET /api/v1/tenants/{tenant}/settings/sso/changes
+R6 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/approve
+R6 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
+R8 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/approve
+R8 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
+R9 GET /api/v1/tenants/{tenant}/settings/sso/changes
+R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/approve
+R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
