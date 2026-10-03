@@ -76,6 +76,9 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.ingest != nil && h.ingest.sensorService.SupportsManifests() {
 		out = append(out, protov2.FeatureManifest)
 	}
+	if h.ingest != nil {
+		out = append(out, protov2.FeatureLocalPolicy)
+	}
 	return out
 }
 
@@ -358,6 +361,8 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		ManifestDigest: manifestDigestFor(req, protocol),
 		Content:        slimContentFor(req, protocol),
 		Control:        sensor.ParseControlReport(req.Control),
+		// Untrusted; sanitized by the service before it is stored.
+		LocalPolicy: req.LocalPolicy,
 	}
 }
 

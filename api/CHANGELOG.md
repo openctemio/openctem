@@ -88,6 +88,27 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Changed (behaviour change)
 
+- **`*.example.com` means the subdomains of example.com, not example.com
+  itself.** The scope matcher used to let a wildcard domain pattern match the
+  bare name too, which is not what the pattern says (RFC-042 §6.13, F17).
+  `**.example.com` means the same as `*.example.com`. Matching ignores case
+  and a trailing dot, and compares names in their IDNA form
+  (`*.bücher.example` matches `shop.xn--bcher-kva.example`). The web's scope
+  preview already matched this way. Both directions change:
+  - **Scope targets:** a target `*.example.com` no longer puts
+    `example.com` in scope (coverage counts, `POST /scope/check`, overlap
+    warnings). This only narrows scope. Existing targets are not rewritten:
+    add `example.com` as its own target if the apex should stay in scope.
+  - **Exclusions:** an exclusion `*.example.com` no longer excludes
+    `example.com` from scans. So that nothing excluded today is scanned
+    tomorrow, migration 000292 adds an apex sibling (`example.com`, same
+    type, status, approval and expiry) for every existing domain/subdomain
+    exclusion written `*.x` or `**.x`, except rejected ones and names that
+    already have their own row. The siblings have `created_by =
+    system:migration-000292` and a reason naming the wildcard row; the down
+    migration removes exactly those. New wildcard exclusions cover
+    subdomains only: request the apex separately.
+
 - **Organizations are created by the platform administrator by default.**
   `TENANT_CREATION_MODE` now defaults to `admin_only` (was `self_service`).
   Signed-in users can no longer create organizations themselves

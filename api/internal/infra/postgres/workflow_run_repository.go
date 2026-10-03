@@ -435,48 +435,40 @@ func (r *WorkflowRunRepository) selectQuery() string {
 func (r *WorkflowRunRepository) buildWhereClause(filter workflow.RunFilter) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, filter.TenantID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if filter.WorkflowID != nil {
-		conditions = append(conditions, fmt.Sprintf("workflow_id = $%d", argIndex))
 		args = append(args, filter.WorkflowID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("workflow_id = $%d", len(args)))
 	}
 
 	if filter.Status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, string(*filter.Status))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
 	}
 
 	if filter.TriggerType != nil {
-		conditions = append(conditions, fmt.Sprintf("trigger_type = $%d", argIndex))
 		args = append(args, string(*filter.TriggerType))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("trigger_type = $%d", len(args)))
 	}
 
 	if filter.TriggeredBy != nil {
-		conditions = append(conditions, fmt.Sprintf("triggered_by = $%d", argIndex))
 		args = append(args, filter.TriggeredBy.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("triggered_by = $%d", len(args)))
 	}
 
 	if filter.StartedFrom != nil {
-		conditions = append(conditions, fmt.Sprintf("started_at >= $%d", argIndex))
 		args = append(args, *filter.StartedFrom)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("started_at >= $%d", len(args)))
 	}
 
 	if filter.StartedTo != nil {
-		conditions = append(conditions, fmt.Sprintf("started_at <= $%d", argIndex))
 		args = append(args, *filter.StartedTo)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("started_at <= $%d", len(args)))
 	}
 
 	if len(conditions) == 0 {

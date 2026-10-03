@@ -1,7 +1,7 @@
 'use client'
 
 import { AssetsSectionTabs } from '@/features/assets/components/assets-section-tabs'
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useEffectEvent } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import { EmptyState, PageHeader, DataTable, BulkActionBar } from '@/features/shared'
@@ -100,13 +100,17 @@ export default function RelationshipSuggestionsPage() {
   const [perPage, setPerPage] = useUrlFilterNumber('per_page', 20)
   const [searchValue, setSearchValue] = useState(searchParam)
   const debouncedSearch = useDebounce(searchValue, 300)
-  useEffect(() => {
-    if (debouncedSearch !== searchParam) {
-      setSearchParam(debouncedSearch)
+  // Only the debounced input triggers a URL write. The URL value is read as an
+  // effect event (latest value, not a dependency), so a URL change such as Back
+  // does not write the stale debounced text over it.
+  const commitSearch = useEffectEvent((next: string) => {
+    if (next !== searchParam) {
+      setSearchParam(next)
       setPage(1)
     }
-    // Only react to the debounced input, not to URL writes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
+  useEffect(() => {
+    commitSearch(debouncedSearch)
   }, [debouncedSearch])
 
   const [selected, setSelected] = useState<string[]>([])

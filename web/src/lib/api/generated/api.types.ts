@@ -8311,6 +8311,163 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/comments/{comment_id}/reactions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * React to a finding comment
+     * @description Adds the caller's emoji reaction. Adding a reaction the caller already has changes nothing. A comment holds at most 20 different emoji and 10 reactions per person. Returns the comment's reactions, ordered by each emoji's first use.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      /** @description Reaction */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AddCommentReactionRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CommentReactionsResponse']
+          }
+        }
+        /** @description Not a single emoji, or a reaction limit reached */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/comments/{comment_id}/reactions/{emoji}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove a reaction from a finding comment
+     * @description Removes the caller's reaction (the emoji is path-escaped). An organization admin or owner may pass user_id to remove another member's reaction; only that moderation is audited. Returns the comment's reactions.
+     */
+    delete: {
+      parameters: {
+        query?: {
+          /** @description Remove this member's reaction (admin/owner only) */
+          user_id?: string
+        }
+        header?: never
+        path: {
+          /** @description Comment ID */
+          comment_id: string
+          /** @description Emoji, path-escaped */
+          emoji: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CommentReactionsResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/components': {
     parameters: {
       query?: never
@@ -12397,6 +12554,235 @@ export interface paths {
         }
       }
     }
+    trace?: never
+  }
+  '/findings/{id}/comments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List finding comments
+     * @description Comments on a finding, oldest first, each with its aggregated emoji reactions.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Add a finding comment
+     * @description Posts a comment. is_internal keeps it inside the organization: it is never sent to an integration, ticket or external notifier.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Comment */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AddCommentRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/findings/{id}/comments/{comment_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    /**
+     * Edit a finding comment
+     * @description Only the author can edit. The response carries edited=true and the comment's reactions.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      /** @description New content */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateCommentRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Delete a finding comment
+     * @description Only the author can delete.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/findings/{id}/dataflows': {
@@ -31827,9 +32213,47 @@ export interface components {
        */
       tools_not_installed?: string[]
     }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport': {
+      /** @description Digest is "sha256:<hex>" of the policy; "" when absent. */
+      digest?: string
+      /** @description KillSwitch is true while the sensor owner stopped every job. */
+      kill_switch?: boolean
+      /** @description Source is "file" or "env" (shorthand settings); "" when absent. */
+      source?: string
+      /** @description State is LocalPolicyEnforced or LocalPolicyAbsent. */
+      state?: string
+      /** @description Summary is the shape of an enforced policy (never the ranges). */
+      summary?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary']
+      /** @description Warnings are the sensor's operator warnings. */
+      warnings?: string[]
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary': {
+      /** @description AllowCustomTemplates and AllowInteractsh are the policy's switches. */
+      allow_custom_templates?: boolean
+      allow_interactsh?: boolean
+      /** @description AllowPrivate: private ranges may be scanned. */
+      allow_private?: boolean
+      checks?: string[]
+      max_job_seconds?: number
+      /** @description MaxRPS and MaxJobSeconds are the caps (0 = not set). */
+      max_rps?: number
+      /** @description Ports is the allowed port list ("" = any). */
+      ports?: string
+      /** @description TargetsAllow is the number of allow entries; -1 = no allow list. */
+      targets_allow?: number
+      /** @description TargetsDeny is the number of deny entries. */
+      targets_deny?: number
+      /** @description Tools and Checks are the allowed tools and job types (nil = any). */
+      tools?: string[]
+    }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.Manifest': {
       capabilities?: string[]
       concurrency?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestConcurrency']
+      /**
+       * @description LocalPolicy is the sensor-local policy report (RFC-040 §5.7), sent
+       *     by SDKs that see "local_policy" on hello; sanitized when stored.
+       */
+      local_policy?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport']
       platform?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestPlatform']
       resources?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestResources']
       schema?: number
@@ -32173,6 +32597,18 @@ export interface components {
     }
     'internal_infra_http_handler.AddAssetsRequest': {
       asset_ids: string[]
+    }
+    'internal_infra_http_handler.AddCommentReactionRequest': {
+      /**
+       * @description Emoji is a single emoji sequence (max 32 bytes).
+       * @example 👀
+       */
+      emoji?: string
+    }
+    'internal_infra_http_handler.AddCommentRequest': {
+      content: string
+      /** @description IsInternal keeps the comment inside the organization. */
+      is_internal?: boolean
     }
     'internal_infra_http_handler.AddGroupMemberRequest': {
       /** @enum {string} */
@@ -33097,6 +33533,20 @@ export interface components {
       tenant_id?: string
       type?: string
     }
+    'internal_infra_http_handler.CommentReactionSummary': {
+      count?: number
+      emoji?: string
+      reacted_by_me?: boolean
+      /** @description SampleUsers holds up to five reactors, earliest first. */
+      sample_users?: components['schemas']['internal_infra_http_handler.CommentReactionUser'][]
+    }
+    'internal_infra_http_handler.CommentReactionUser': {
+      id?: string
+      name?: string
+    }
+    'internal_infra_http_handler.CommentReactionsResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CommentReactionSummary'][]
+    }
     'internal_infra_http_handler.ComponentResponse': {
       asset_id?: string
       created_at?: string
@@ -33859,6 +34309,31 @@ export interface components {
       id?: string
       name?: string
     }
+    'internal_infra_http_handler.FindingCommentListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.FindingCommentResponse'][]
+      total?: number
+    }
+    'internal_infra_http_handler.FindingCommentResponse': {
+      author_email?: string
+      author_id?: string
+      author_name?: string
+      content?: string
+      created_at?: string
+      /**
+       * @description Edited is true when the comment was changed after it was posted
+       *     (updated_at more than a second after created_at).
+       */
+      edited?: boolean
+      finding_id?: string
+      id?: string
+      /** @description IsInternal marks an organization-only comment. */
+      is_internal?: boolean
+      is_status_change?: boolean
+      new_status?: string
+      old_status?: string
+      reactions?: components['schemas']['internal_infra_http_handler.CommentReactionSummary'][]
+      updated_at?: string
+    }
     'internal_infra_http_handler.FindingComponentInfo': {
       /**
        * @description How the finding's asset uses the component. Set only when the asset's
@@ -34351,6 +34826,12 @@ export interface components {
        *     clone detection. Optional; older SDKs do not send it.
        */
       instance_id?: string
+      /**
+       * @description LocalPolicy is the sensor-local policy report (RFC-040 §5.7): state,
+       *     digest, summary and kill switch, sent by SDKs that see
+       *     "local_policy" on hello. Display data; sanitized before it is stored.
+       */
+      local_policy?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport']
       /**
        * @description ManifestDigest is the digest of the sensor's registered manifest, as
        *     the platform returned it (RFC-033, protocol v2 feature "manifest").
@@ -35747,6 +36228,12 @@ export interface components {
       /** @description Image is the sensor image the snippets run, with its pinned tag. */
       image?: string
       kubernetes?: string
+      /**
+       * @description Policy is the sensor-local policy template (sensor-policy.yaml, RFC-040
+       *     §5.7), prefilled with the ranges of the sensor's scan zones, for the
+       *     network owner to review and install read-only on the sensor host.
+       */
+      policy?: string
       yaml?: string
     }
     'internal_infra_http_handler.SensorContentResponse': {
@@ -35847,6 +36334,17 @@ export interface components {
       queue?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedQueue']
       reported_at?: string
       resources?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedResources']
+    }
+    'internal_infra_http_handler.SensorLocalPolicyResponse': {
+      digest?: string
+      kill_switch?: boolean
+      reported_at?: string
+      /** @enum {string} */
+      source?: '' | 'file' | 'env'
+      /** @enum {string} */
+      state?: 'enforced' | 'absent' | 'paused' | 'unknown'
+      summary?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary']
+      warnings?: string[]
     }
     'internal_infra_http_handler.SensorManifestListResponse': {
       items?: components['schemas']['internal_infra_http_handler.SensorManifestResponse'][]
@@ -35996,6 +36494,12 @@ export interface components {
       load?: components['schemas']['internal_infra_http_handler.SensorLoadResponse']
       /** @description 0.0 to 1.0 */
       load_factor?: number
+      /**
+       * @description LocalPolicy is the sensor-local policy the sensor reports (RFC-040
+       *     §5.7): enforced on the sensor, shown here. Always present; state
+       *     "unknown" when the sensor never reported one.
+       */
+      local_policy?: components['schemas']['internal_infra_http_handler.SensorLocalPolicyResponse']
       manifest_at?: string
       /**
        * @description The current manifest (RFC-033): its digest, when it became current
@@ -36599,6 +37103,9 @@ export interface components {
     'internal_infra_http_handler.UpdateCommandStatusRequest': {
       error_message?: string
       result?: number[]
+    }
+    'internal_infra_http_handler.UpdateCommentRequest': {
+      content: string
     }
     'internal_infra_http_handler.UpdateComponentRequest': {
       dependency_type?: string
