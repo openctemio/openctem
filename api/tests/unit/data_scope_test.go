@@ -1001,3 +1001,15 @@ func (m *mockAccessControlRepo) SyncOwnerRefOwner(_ context.Context, _, _ shared
 func (m *mockAccessControlRepo) GetAssetOwnerSource(_ context.Context, _ shared.ID) (string, error) {
 	return accesscontrol.AssignmentSourceManual, nil
 }
+
+func (m *mockAccessControlRepo) ListAssetAccessGrants(_ context.Context, _, _ shared.ID) ([]*accesscontrol.AssetAccessGrant, error) {
+	return nil, nil
+}
+
+func (m *mockAccessControlRepo) CreateAssetAccessGrant(_ context.Context, _, _, _ shared.ID, _ *shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return nil, nil
+}
+
+func (m *mockAccessControlRepo) DeleteAssetAccessGrant(_ context.Context, _, _, _ shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return nil, accesscontrol.ErrAccessGrantNotFound
+}
