@@ -30,6 +30,28 @@ type Repository interface {
 	GetPrimaryOwnerBrief(ctx context.Context, tenantID, assetID shared.ID) (*OwnerBrief, error)
 	GetPrimaryOwnersByAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[string]*OwnerBrief, error)
 
+	// One owner model: asset_owners is the only owner store (assets.owner_id
+	// was folded into it by migration 000340).
+	//
+	// GetPrimaryUserOwnersByAssetIDs returns, per asset of the tenant, its
+	// primary user owner: the earliest-assigned 'primary' row naming a user who
+	// is a member of the tenant. Assets without one are absent from the map.
+	GetPrimaryUserOwnersByAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]shared.ID, error)
+	// FilterAssetsOwnedByUser returns the subset of assetIDs (of the tenant)
+	// for which the user is a responsible owner: a 'primary' or 'secondary'
+	// row naming the user directly.
+	FilterAssetsOwnedByUser(ctx context.Context, tenantID, userID shared.ID, assetIDs []shared.ID) (map[shared.ID]bool, error)
+	// SyncOwnerRefOwner makes userID the owner derived from the asset's
+	// owner_ref: an 'owner_ref' row for any other user is removed and, when
+	// userID is not nil and is a member of the tenant, a 'primary' row with
+	// source 'owner_ref' is added unless the user already owns the asset.
+	// Rows set by a person or a scope rule are never touched. A no-op for an
+	// asset of another tenant.
+	SyncOwnerRefOwner(ctx context.Context, tenantID, assetID shared.ID, userID *shared.ID) error
+	// GetAssetOwnerSource returns the assignment_source of an asset_owners row
+	// ('manual', 'scope_rule' or 'owner_ref').
+	GetAssetOwnerSource(ctx context.Context, id shared.ID) (string, error)
+
 	// IsGroupInTenant reports whether the group belongs to the tenant. Used to
 	// reject a cross-tenant principal before it is written as an asset owner
 	// (asset_owners has no tenant_id column, so the principal is otherwise
@@ -188,6 +210,8 @@ type AssetOwnerWithNames struct {
 	UserEmail      string
 	GroupName      string
 	AssignedByName string
+	// AssignmentSource is 'manual', 'scope_rule' or 'owner_ref'.
+	AssignmentSource string
 }
 
 // AssetOwnerWithAsset extends AssetOwner with basic asset details.

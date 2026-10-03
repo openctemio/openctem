@@ -277,7 +277,6 @@ func makeAttackSurfaceAsset(
 		shared.NewID(),         // assetID
 		serviceTenantID,        // tenantID
 		nil,                    // parentID
-		nil,                    // ownerID
 		name,                   // name
 		assetType,              // assetType
 		criticality,            // criticality

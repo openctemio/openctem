@@ -1821,7 +1821,7 @@ Two log tables go with it:
 | `archive` | `state = archived`, `archived_reason = policy:<id>` | per-run cap (T10); reversible from the run page ("restore all from this run") |
 | `mark_out_of_scope` | creates a **pending** scope exclusion for each subject (exact pattern), through the normal approval flow | never self-approves; capped at 50 per run |
 | `set_criticality` | asset's own criticality (effective follows, §3.5) | only raises unless `allow_lower: true` |
-| `set_owner` | `assets.owner_id` and the RACI owner, using api#520's unified path | only when no owner is set, unless `overwrite: true` |
+| `set_owner` | the RACI primary owner in `asset_owners`, the one owner model (`assets.owner_id` was removed in 2026-10, see `architecture/asset-ownership.md`) | only when no owner is set, unless `overwrite: true` |
 | `trigger_scan` | creates a scan over the matched set (`selection = {q: condition AND id in run set}`) through the gate | author holds `scans:execute` at run time; `approved_by` set by a second user with `scans:execute`, otherwise the scan is created `pending_approval`; `max_scans_per_hour`; tenant budget |
 
 There is **no `delete` action** (§2.1).

@@ -89,6 +89,10 @@ type AssetOwnerResponse struct {
 	OwnershipType  string    `json:"ownership_type"`
 	AssignedAt     time.Time `json:"assigned_at"`
 	AssignedByName *string   `json:"assigned_by_name,omitempty"`
+	// AssignmentSource says who created the row: manual (a person),
+	// scope_rule (a group scope rule) or owner_ref (matched from the asset's
+	// owner reference; removing it clears the owner reference).
+	AssignmentSource string `json:"assignment_source" enums:"manual,scope_rule,owner_ref"`
 }
 
 // UpdateAssetOwnerRequest represents the request to update an owner's type.
@@ -128,9 +132,10 @@ func (h *AssetOwnerHandler) ListOwners(w http.ResponseWriter, r *http.Request) {
 	data := make([]AssetOwnerResponse, 0, len(owners))
 	for _, o := range owners {
 		resp := AssetOwnerResponse{
-			ID:            o.ID().String(),
-			OwnershipType: o.OwnershipType().String(),
-			AssignedAt:    o.AssignedAt(),
+			ID:               o.ID().String(),
+			OwnershipType:    o.OwnershipType().String(),
+			AssignedAt:       o.AssignedAt(),
+			AssignmentSource: o.AssignmentSource,
 		}
 
 		if o.UserID() != nil {
@@ -412,6 +417,13 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	source, err := h.repo.GetAssetOwnerSource(r.Context(), parsedOwnerID)
+	if err != nil {
+		h.logger.Error("failed to get asset owner source", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
 	if err := h.repo.DeleteAssetOwnerByID(r.Context(), parsedOwnerID); err != nil {
 		if errors.Is(err, accesscontrol.ErrAssetOwnerNotFound) {
 			apierror.NotFound("Asset owner").WriteJSON(w)
@@ -420,6 +432,12 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 		h.logger.Error("failed to delete asset owner", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
+	}
+
+	// An owner matched from the asset's owner_ref would be matched again by
+	// the owner-resolution controller, so removing it clears owner_ref too.
+	if source == accesscontrol.AssignmentSourceOwnerRef {
+		h.clearOwnerRef(r, ao.AssetID())
 	}
 
 	// Refresh access after removal
@@ -435,4 +453,25 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// clearOwnerRef empties the asset's owner reference after its derived owner
+// was removed. Best-effort: the owner row is already gone.
+func (h *AssetOwnerHandler) clearOwnerRef(r *http.Request, assetID shared.ID) {
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		return
+	}
+	a, err := h.assetRepo.GetByID(r.Context(), tenantID, assetID)
+	if err != nil {
+		h.logger.Warn("failed to load asset to clear owner_ref", "asset_id", assetID.String(), "error", err)
+		return
+	}
+	if a.OwnerRef() == "" {
+		return
+	}
+	a.SetOwnerRef("")
+	if err := h.assetRepo.Update(r.Context(), a); err != nil {
+		h.logger.Warn("failed to clear owner_ref", "asset_id", assetID.String(), "error", err)
+	}
 }

@@ -413,7 +413,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
-	// Owner resolution — resolve owner_ref (email) to owner_id for assets
+	// Owner resolution — make the member whose email is owner_ref a primary owner (asset_owners)
 	w.ControllerManager.Register(controller.NewOwnerResolutionController(
 		deps.DB,
 		log.With("controller", "owner-resolution"),

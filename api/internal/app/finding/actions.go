@@ -415,24 +415,14 @@ func (s *FindingActionsService) BulkFixApplied(
 		findingGroupMap = make(map[shared.ID][]shared.ID)
 	}
 
-	// Preload asset→owner (deduplicated by asset ID)
-	assetOwnerMap := make(map[shared.ID]*shared.ID)
-	seenAssets := make(map[shared.ID]bool)
-	for _, f := range allFindings {
-		if seenAssets[f.AssetID()] {
-			continue
-		}
-		seenAssets[f.AssetID()] = true
-		assetEntity, err := s.assetRepo.GetByID(ctx, tid, f.AssetID())
-		if err == nil {
-			ownerID := assetEntity.OwnerID()
-			assetOwnerMap[f.AssetID()] = ownerID
-		}
-	}
+	// Preload the assets this user owns (1 query). asset_owners is the only
+	// owner store: a primary or secondary user owner of the asset is "the
+	// asset owner" for this check.
+	ownedAssets := s.assetsOwnedBy(ctx, tid, uid, allFindings)
 
 	// Process findings with preloaded data (all auth checks in-memory)
 	for _, f := range allFindings {
-		if !s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, assetOwnerMap, f) {
+		if !s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, ownedAssets, f) {
 			result.Skipped++
 			continue
 		}
@@ -475,7 +465,7 @@ func (s *FindingActionsService) canMarkFixApplied(
 	userID shared.ID,
 	userGroupIDs map[shared.ID]bool,
 	findingGroupMap map[shared.ID][]shared.ID, // finding ID → assigned group IDs
-	assetOwnerMap map[shared.ID]*shared.ID, // asset ID → owner ID
+	ownedAssets map[shared.ID]bool, // assets the user is a primary or secondary owner of
 	finding *vulnerability.Finding,
 ) bool {
 	// 1. Direct assignee
@@ -492,12 +482,35 @@ func (s *FindingActionsService) canMarkFixApplied(
 		}
 	}
 
-	// 3. Asset owner (in-memory via preloaded map)
-	if ownerID, ok := assetOwnerMap[finding.AssetID()]; ok && ownerID != nil && *ownerID == userID {
+	// 3. Asset owner (in-memory via preloaded set)
+	if ownedAssets[finding.AssetID()] {
 		return true
 	}
 
 	return false
+}
+
+// assetsOwnedBy returns the assets of the findings that the user is a primary
+// or secondary owner of (asset_owners, one query). A lookup failure is logged
+// and yields no owned assets, so the owner path never widens on error.
+func (s *FindingActionsService) assetsOwnedBy(ctx context.Context, tenantID, userID shared.ID, findings []*vulnerability.Finding) map[shared.ID]bool {
+	if s.accessCtrlRepo == nil || len(findings) == 0 {
+		return map[shared.ID]bool{}
+	}
+	seen := make(map[shared.ID]bool, len(findings))
+	assetIDs := make([]shared.ID, 0, len(findings))
+	for _, f := range findings {
+		if !seen[f.AssetID()] {
+			seen[f.AssetID()] = true
+			assetIDs = append(assetIDs, f.AssetID())
+		}
+	}
+	owned, err := s.accessCtrlRepo.FilterAssetsOwnedByUser(ctx, tenantID, userID, assetIDs)
+	if err != nil {
+		s.logger.Warn("failed to load the user's owned assets", "error", err)
+		return map[shared.ID]bool{}
+	}
+	return owned
 }
 
 // --- Bulk Verify ---
@@ -792,18 +805,16 @@ func (s *FindingActionsService) AutoAssignToOwners(
 			info, ok := assetCache[f.AssetID()]
 			if !ok {
 				if assetEntity, err := s.assetRepo.GetByID(ctx, f.TenantID(), f.AssetID()); err == nil {
-					ownerID := assetEntity.OwnerID()
-					// Unify the two ownership models: assets.owner_id is only ever
-					// set by email auto-match of owner_ref, whereas the asset_owners
-					// RACI table (what data-scope uses) is set explicitly in the UI.
-					// When owner_id is empty, fall back to the primary RACI owner so a
-					// user designated as primary owner also receives auto-assigned
-					// findings. Only a user (not a group) primary can be an assignee.
-					if ownerID == nil && s.accessCtrlRepo != nil {
-						if brief, oErr := s.accessCtrlRepo.GetPrimaryOwnerBrief(ctx, f.TenantID(), f.AssetID()); oErr == nil && brief != nil && brief.Type == "user" {
-							if uid, pErr := shared.IDFromString(brief.ID); pErr == nil {
-								ownerID = &uid
-							}
+					// The assignee is the asset's primary user owner in
+					// asset_owners (the one owner model). A group primary is
+					// not an assignee.
+					var ownerID *shared.ID
+					if s.accessCtrlRepo != nil {
+						owners, oErr := s.accessCtrlRepo.GetPrimaryUserOwnersByAssetIDs(ctx, f.TenantID(), []shared.ID{f.AssetID()})
+						if oErr != nil {
+							s.logger.Warn("failed to load the asset's primary owner", "asset_id", f.AssetID(), "error", oErr)
+						} else if uid, ok := owners[f.AssetID()]; ok {
+							ownerID = &uid
 						}
 					}
 					info = assetInfo{ownerID: ownerID, name: assetEntity.Name(), found: true}
