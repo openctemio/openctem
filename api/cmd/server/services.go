@@ -917,6 +917,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize vulnerability & exposure services
 	s.Vulnerability = app.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
+	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
+	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
