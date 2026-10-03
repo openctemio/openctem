@@ -19,10 +19,10 @@ import {
   ChipRow,
   HttpStatusChip,
   OverflowChips,
-  SafeExternalLink,
   TechChips,
   TlsSummary,
 } from '@/features/assets/components/service-cells'
+import { SafeExternalLink } from '@/components/safe-external-link'
 import { MonitorSmartphone, ShieldCheck, ShieldX, AlertTriangle, Shield, Zap } from 'lucide-react'
 
 /** "Served over TLS" / "No TLS" / "" (unknown) for the CSV. */
@@ -241,7 +241,12 @@ export const websitesConfig: AssetPageConfig = {
           getValue: (asset) => {
             const target = redirectTarget(asset)
             return target ? (
-              <SafeExternalLink url={target} className="font-mono text-xs" />
+              <SafeExternalLink
+                href={target}
+                className="break-all font-mono text-xs hover:underline"
+              >
+                {target}
+              </SafeExternalLink>
             ) : (
               unknownText('No redirect recorded')
             )

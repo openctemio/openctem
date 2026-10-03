@@ -19,7 +19,6 @@ import {
   cellsForType,
   httpStatusTone,
   labelError,
-  safeExternalHref,
   MAX_TAGS_PER_ASSET,
 } from '..'
 import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'
@@ -177,16 +176,6 @@ describe('scanner text is text', () => {
     )
     expect(container.querySelector('img')).toBeNull()
     expect(screen.getAllByText(evil).length).toBeGreaterThan(0)
-  })
-
-  it('only links absolute http(s) URLs without credentials', () => {
-    expect(safeExternalHref('https://www.example.net/en/')).toBe('https://www.example.net/en/')
-    expect(safeExternalHref('javascript:alert(1)')).toBeNull()
-    expect(safeExternalHref('data:text/html,<b>x</b>')).toBeNull()
-    expect(safeExternalHref('//evil.example')).toBeNull()
-    expect(safeExternalHref('https://user:pass@example.com')).toBeNull()
-    expect(safeExternalHref('https://exa mple.com')).toBeNull()
-    expect(safeExternalHref(42)).toBeNull()
   })
 })
 

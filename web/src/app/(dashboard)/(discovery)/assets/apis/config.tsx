@@ -12,16 +12,12 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { safeHref } from '@/lib/safe-href'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
 import { httpStatusCode, redirectChain, tlsFacts } from '@/features/assets/lib/service-facts'
-import {
-  HttpStatusChip,
-  SafeExternalLink,
-  TlsSummary,
-  UnknownChip,
-  safeExternalHref,
-} from '@/features/assets/components/service-cells'
+import { HttpStatusChip, TlsSummary, UnknownChip } from '@/features/assets/components/service-cells'
 
 // ============================================
 // Constants
@@ -296,7 +292,7 @@ export const apisConfig: AssetPageConfig = {
       label: 'View Docs',
       icon: ExternalLink,
       onClick: (asset) => {
-        const href = safeExternalHref(metaOf(asset).documentation_url)
+        const href = safeHref(metaOf(asset).documentation_url, { allowRelative: false })
         if (href) {
           window.open(href, '_blank', 'noopener,noreferrer')
         } else {
@@ -413,7 +409,11 @@ export const apisConfig: AssetPageConfig = {
             const url = metaOf(asset).documentation_url
             if (typeof url !== 'string' || !url) return null
             return (
-              <SafeExternalLink url={url} className="text-sm text-primary">
+              <SafeExternalLink
+                href={url}
+                className="flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
                 View Docs
               </SafeExternalLink>
             )
