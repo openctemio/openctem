@@ -145,6 +145,13 @@ clear inside a job.
   `internal/app/sensor/doorbell.go:157-159`). Expiry is lazy (no expiry
   job); fleet health shows `key_expired` / `key_expiring`
   (`pkg/domain/sensor/fleet_health.go:54-55`); no notification is sent.
+- *Since this was written:* renewal retires the key that was presented
+  (inline or a key row) and every other key the sensor still held after
+  `SENSOR_KEY_RENEW_GRACE` (default 15 min), so a renewal has one successor
+  and a copied `rda_` key can no longer renew a parallel line of 90-day keys
+  ([agent-identity.md](../architecture/agent-identity.md#renewal-retires-the-presented-key)).
+  Before, the presented key stayed valid until its own expiry and only
+  already-expired rows were pruned.
 - **Auto-renewal is off on every install path.** The sensor renews only with
   `-key-autorenew` / `PLATFORM_KEY_AUTORENEW` (sensor `main.go:214,427`);
   the Helm chart defaults `keyAutoRenew: false` and documents why: the

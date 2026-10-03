@@ -192,6 +192,13 @@ type SensorConfigConfig struct {
 	// administrator creates or regenerates never expires, and a sensor that
 	// does not renew keeps its key.
 	KeyTTL time.Duration
+	// KeyRenewGrace is how long the key a sensor renewed with keeps
+	// authenticating after the renewal, for requests already in flight;
+	// every other key the sensor held is cut to the same moment, so a
+	// renewal leaves one long-lived key and a copied key cannot renew a
+	// parallel line of its own. SENSOR_KEY_RENEW_GRACE, default
+	// DefaultSensorKeyRenewGrace (15 minutes); "0" retires it at once.
+	KeyRenewGrace time.Duration
 	// KeyPepper is the secret the sensor API-key hash (HMAC-SHA256) is keyed
 	// with: SENSOR_KEY_PEPPER. Empty (the default) derives it from
 	// APP_ENCRYPTION_KEY with HKDF, so the MAC key is never the encryption
@@ -284,6 +291,10 @@ type SensorConfigConfig struct {
 // keep the renewed key on a persistent volume, and the sensor renews on its
 // own only when that volume persists (RFC-032 Phase 0).
 const DefaultSensorKeyTTL = 90 * 24 * time.Hour
+
+// DefaultSensorKeyRenewGrace is how long a renewed-away sensor key keeps
+// working when SENSOR_KEY_RENEW_GRACE is not set.
+const DefaultSensorKeyRenewGrace = 15 * time.Minute
 
 // Sensor and SDK release defaults. They are copied from versions.yaml at the
 // repository root by .github/scripts/release/sync-versions.sh, and CI fails
@@ -941,6 +952,7 @@ func Load() (*Config, error) {
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
+			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
 			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
 
@@ -1679,15 +1691,24 @@ func (c *Config) validateProductionRedis() error {
 
 // DSN returns the database connection string.
 func (c *DatabaseConfig) DSN() string {
+	// Values are quoted: unquoted, an empty password swallowed the next
+	// key ("password= dbname=x" sets the password to "dbname=x"), and a
+	// space or backslash in a value broke or changed it.
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode,
+		dsnQuote(c.Host), c.Port, dsnQuote(c.User), dsnQuote(c.Password), dsnQuote(c.Name), dsnQuote(c.SSLMode),
 	)
 	if !c.JITEnabled {
 		// lib/pq forwards unknown keys as session startup parameters.
 		dsn += " jit=off"
 	}
 	return dsn
+}
+
+// dsnQuote quotes a libpq key/value connection-string value: single quotes
+// around it, with backslash and single quote escaped by a backslash.
+func dsnQuote(v string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
 }
 
 // Addr returns the Redis address.

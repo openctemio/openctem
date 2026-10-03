@@ -6,13 +6,16 @@ import Link from 'next/link'
 
 import { Badge } from '@/components/ui/badge'
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from '@/components/ui/sheet'
-import { ScrollArea } from '@/components/ui/scroll-area'
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+} from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DynamicIcon } from '@/components/dynamic-icon'
 
@@ -51,6 +54,40 @@ function getColorClass(color: string) {
   return colorMap[color] || 'bg-primary/10 text-primary'
 }
 
+/** The names of the tools or sensors using a capability. */
+function NameList({
+  names,
+  icon: Icon,
+  empty,
+  loading,
+}: {
+  names?: string[]
+  icon: React.ElementType
+  empty: string
+  loading: boolean
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-2" aria-hidden>
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-9 w-full" />
+        ))}
+      </div>
+    )
+  }
+  if (!names || names.length === 0) return <p className="text-sm text-muted-foreground">{empty}</p>
+  return (
+    <ul className="divide-y rounded-lg border">
+      {names.map((name) => (
+        <li key={name} className="flex items-center gap-2 px-3 py-2 text-sm">
+          <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 break-words">{name}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
   capability,
   initialStats,
@@ -70,217 +107,131 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
   const colorClass = getColorClass(capability.color)
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-md p-0 flex flex-col h-full">
-        {/* Header with padding */}
-        <SheetHeader className="space-y-3 px-6 pt-6 pb-4 pe-14 flex-shrink-0 border-b">
-          <div className="flex items-center gap-3">
-            <div
-              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${colorClass}`}
-            >
-              <DynamicIcon name={capability.icon} className="h-6 w-6" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <SheetTitle className="text-lg leading-tight">{capability.display_name}</SheetTitle>
-              <code className="text-xs text-muted-foreground">{capability.name}</code>
-            </div>
-          </div>
-
-          {/* Badges */}
-          <div className="flex flex-wrap items-center gap-2">
-            {capability.category && (
-              <Badge variant="outline" className="capitalize">
-                {capability.category}
-              </Badge>
-            )}
-            <Badge variant="secondary" className="gap-1">
-              {capability.is_builtin ? (
-                <>
-                  <Globe className="h-3 w-3" />
-                  Platform
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-3 w-3" />
-                  Custom
-                </>
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      width="md"
+      header={
+        <DetailHeader
+          title={capability.display_name}
+          badges={
+            <>
+              {capability.category && (
+                <Badge variant="outline" className="text-xs capitalize">
+                  {capability.category}
+                </Badge>
               )}
-            </Badge>
-          </div>
-
-          {/* Description */}
-          {capability.description && <SheetDescription>{capability.description}</SheetDescription>}
-        </SheetHeader>
-
-        {/* Scrollable content area - flex-1 with min-h-0 enables scroll */}
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="px-6 py-6 space-y-6">
-            {/* Usage Summary */}
-            <section>
-              <h4 className="mb-3 text-sm font-semibold text-foreground">Usage Summary</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border bg-muted/30 p-3">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Wrench className="h-4 w-4" />
-                    <span className="text-xs font-medium">Tools</span>
-                  </div>
-                  <p className="mt-1 text-2xl font-bold">{stats?.tool_count ?? 0}</p>
-                </div>
-                <div className="rounded-lg border bg-muted/30 p-3">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Bot className="h-4 w-4" />
-                    <span className="text-xs font-medium">Sensors</span>
-                  </div>
-                  <p className="mt-1 text-2xl font-bold">{stats?.sensor_count ?? 0}</p>
-                </div>
-              </div>
-            </section>
-
-            {/* Divider */}
-            <div className="border-t" />
-
-            {/* Tools List */}
-            <section>
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Wrench className="h-4 w-4" />
-                  Tools
-                  {stats && stats.tool_count > 0 && (
-                    <Badge variant="secondary" className="ms-1 text-xs">
-                      {stats.tool_count}
-                    </Badge>
-                  )}
-                </h4>
-                {stats && stats.tool_count > 0 && (
-                  <Link
-                    href="/settings/scanning/tools"
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                  >
-                    View All
-                    <ExternalLink className="h-3 w-3" />
-                  </Link>
+              <Badge variant="secondary" className="gap-1 text-xs">
+                {capability.is_builtin ? (
+                  <Globe className="h-3 w-3" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
                 )}
-              </div>
-              {isLoadingNames ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
-                </div>
-              ) : usageStats?.tool_names && usageStats.tool_names.length > 0 ? (
-                <div className="space-y-1.5">
-                  {usageStats.tool_names.map((name) => (
-                    <div
-                      key={name}
-                      className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm"
-                    >
-                      <Wrench className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate">{name}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : stats?.tool_count === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">
-                  No tools are using this capability.
-                </p>
-              ) : null}
-            </section>
+                {capability.is_builtin ? 'Platform' : 'Custom'}
+              </Badge>
+            </>
+          }
+          meta={[
+            <code key="name" className="font-mono">
+              {capability.name}
+            </code>,
+          ]}
+          onClose={() => onOpenChange(false)}
+        />
+      }
+    >
+      <div className="space-y-5">
+        <DetailStatGrid aria-label="Usage">
+          <DetailStat label="Tools" value={stats?.tool_count ?? 0} />
+          <DetailStat label="Sensors" value={stats?.sensor_count ?? 0} />
+        </DetailStatGrid>
 
-            {/* Divider */}
-            <div className="border-t" />
+        <DetailSections>
+          {capability.description && (
+            <DetailSection title="Description">
+              <p className="text-sm text-muted-foreground">{capability.description}</p>
+            </DetailSection>
+          )}
 
-            {/* Sensors List */}
-            <section>
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Bot className="h-4 w-4" />
-                  Sensors
-                  {stats && stats.sensor_count > 0 && (
-                    <Badge variant="secondary" className="ms-1 text-xs">
-                      {stats.sensor_count}
-                    </Badge>
-                  )}
-                </h4>
-                {stats && stats.sensor_count > 0 && (
-                  <Link
-                    href="/sensors"
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                  >
-                    View All
-                    <ExternalLink className="h-3 w-3" />
-                  </Link>
-                )}
-              </div>
-              {isLoadingNames ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
-                </div>
-              ) : usageStats?.sensor_names && usageStats.sensor_names.length > 0 ? (
-                <div className="space-y-1.5">
-                  {usageStats.sensor_names.map((name) => (
-                    <div
-                      key={name}
-                      className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm"
-                    >
-                      <Bot className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate">{name}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : stats?.sensor_count === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">
-                  No sensors have this capability assigned.
-                </p>
-              ) : null}
-            </section>
+          <DetailSection
+            title="Tools"
+            icon={Wrench}
+            count={stats?.tool_count || undefined}
+            actions={
+              stats && stats.tool_count > 0 ? (
+                <Link
+                  href="/settings/scanning/tools"
+                  className="flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  View all
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              ) : undefined
+            }
+          >
+            <NameList
+              names={usageStats?.tool_names}
+              icon={Wrench}
+              empty="No tools are using this capability."
+              loading={isLoadingNames}
+            />
+          </DetailSection>
 
-            {/* Divider */}
-            <div className="border-t" />
+          <DetailSection
+            title="Sensors"
+            icon={Bot}
+            count={stats?.sensor_count || undefined}
+            actions={
+              stats && stats.sensor_count > 0 ? (
+                <Link
+                  href="/sensors"
+                  className="flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  View all
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              ) : undefined
+            }
+          >
+            <NameList
+              names={usageStats?.sensor_names}
+              icon={Bot}
+              empty="No sensors have this capability assigned."
+              loading={isLoadingNames}
+            />
+          </DetailSection>
 
-            {/* Metadata */}
-            <section>
-              <h4 className="mb-3 text-sm font-semibold text-foreground">Details</h4>
-              <dl className="space-y-2.5 text-sm">
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground shrink-0">ID</dt>
-                  <dd className="font-mono text-xs truncate text-end">{capability.id}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground shrink-0">Code Name</dt>
-                  <dd className="font-mono text-xs truncate text-end">{capability.name}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground shrink-0">Category</dt>
-                  <dd className="capitalize text-end">{capability.category || '-'}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground shrink-0">Type</dt>
-                  <dd className="text-end">{capability.is_builtin ? 'Platform' : 'Custom'}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground shrink-0">Color</dt>
-                  <dd className="capitalize text-end flex items-center gap-2 justify-end">
-                    <span className={`h-3 w-3 rounded-full ${colorClass.split(' ')[0]}`} />
-                    {capability.color}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground shrink-0">Icon</dt>
-                  <dd className="text-end flex items-center gap-2 justify-end">
-                    <DynamicIcon name={capability.icon} className="h-4 w-4" />
-                    {capability.icon}
-                  </dd>
-                </div>
-              </dl>
-            </section>
-          </div>
-        </ScrollArea>
-
-        {/* Safe area padding for mobile */}
-        <div className="flex-shrink-0 h-safe-area-inset-bottom" />
-      </SheetContent>
-    </Sheet>
+          <DetailSection title="Details">
+            <DetailFieldGrid>
+              <DetailField label="Code name">
+                <span className="font-mono text-xs break-all">{capability.name}</span>
+              </DetailField>
+              <DetailField label="Category">
+                <span className="capitalize">{capability.category || '-'}</span>
+              </DetailField>
+              <DetailField label="Type">
+                {capability.is_builtin ? 'Platform' : 'Custom'}
+              </DetailField>
+              <DetailField label="Color">
+                <span className="inline-flex items-center gap-2 capitalize">
+                  {/* The capability's own accent colour, chosen by its author. */}
+                  <span className={`h-3 w-3 rounded-full ${colorClass.split(' ')[0]}`} />
+                  {capability.color}
+                </span>
+              </DetailField>
+              <DetailField label="Icon">
+                <span className="inline-flex items-center gap-2">
+                  <DynamicIcon name={capability.icon} className="h-4 w-4" />
+                  {capability.icon}
+                </span>
+              </DetailField>
+              <DetailField label="ID" full>
+                <DetailCopyId id={capability.id} label="Capability ID" />
+              </DetailField>
+            </DetailFieldGrid>
+          </DetailSection>
+        </DetailSections>
+      </div>
+    </DetailSheet>
   )
 })

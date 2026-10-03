@@ -86,6 +86,10 @@ jobs:
 
       - name: Upload Betterleaks results
         uses: github/codeql-action/upload-sarif@v4
+        # The merge queue deletes its temporary gh-readonly-queue branch when a group
+        # is rebuilt; an upload still in flight then fails with ref not found. The scan
+        # result above already ran; only the upload is tolerated in merge_group.
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
         if: always()
         with:
           sarif_file: betterleaks.sarif

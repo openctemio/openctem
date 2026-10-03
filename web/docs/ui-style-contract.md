@@ -219,6 +219,13 @@ className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
     when the record has such state. Never placeholder checks.
   - Chips of tools or packages: `<DetailChipList>`. Trivia at the end:
     `<DetailDisclosure summary="More details">`; the ID: `<DetailCopyId>`.
+- Full detail pages (a record with its own URL): the main column answers
+  what / why it matters / how to fix, and a sticky properties rail (`lg`, about
+  19rem) holds the editable state and facts as label → value rows. Below `lg`
+  the rail moves under the header with the trivia folded. Activity is a tab,
+  not a permanent column. The page names itself in the breadcrumb with
+  `useBreadcrumbTitle`. Its drawer reuses the page's sections. The finding
+  detail page is the reference (`docs/finding-detail.md`).
 - Destructive confirmation: `<ConfirmDialog destructive>`.
 
 ## 9. Responsiveness

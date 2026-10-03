@@ -184,3 +184,12 @@ type StepBatchGate interface {
 	// the one that may record the step's outcome once every batch is done.
 	ClaimStepFinalization(ctx context.Context, stepRunID shared.ID) (bool, error)
 }
+
+// ExhaustedFailer fails the commands that were handed out max-dispatch times
+// and never finished (poison commands), and returns them, so the owning
+// pipeline run can be told which step died and why. FailExhaustedCommands
+// only returns a count. Optional extension of Repository, asserted where
+// needed.
+type ExhaustedFailer interface {
+	FailExhaustedCommandsReturning(ctx context.Context, maxRetries int) ([]*Command, error)
+}

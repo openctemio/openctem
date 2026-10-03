@@ -14,7 +14,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Plus, Eye, Trash2, ShieldAlert, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import { Plus, Eye, Trash2, ShieldAlert, Loader2, AlertCircle, RefreshCw, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -23,10 +23,16 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
-  SheetBody,
-  SheetDetailToolbar,
-  SheetInfoRow,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  type DetailMenuItem,
 } from '@/features/shared'
+import { copyToClipboard } from '@/lib/clipboard'
+import { cn } from '@/lib/utils'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +40,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
 import {
   Dialog,
   DialogContent,
@@ -301,52 +306,92 @@ function IOCDetailSheet({
   onOpenChange: (open: boolean) => void
   onDelete: (ioc: IOC) => void
 }) {
+  const { can } = usePermissions()
+  const canWrite = can(Permission.ThreatIntelWrite)
+  if (!ioc) return null
+
+  const typeLabel = IOC_TYPE_LABELS[ioc.type] ?? ioc.type
+  const menu: DetailMenuItem[] = [
+    {
+      label: 'Copy value',
+      icon: Copy,
+      onSelect: () => {
+        copyToClipboard(ioc.value)
+        toast.success('Indicator copied to clipboard')
+      },
+    },
+  ]
+  if (canWrite) {
+    menu.push({
+      label: 'Delete indicator',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => onDelete(ioc),
+    })
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="[&>button]:hidden w-full gap-0 p-0 sm:max-w-lg">
-        {ioc && (
-          <>
-            <SheetDetailToolbar
-              title={IOC_TYPE_LABELS[ioc.type] ?? ioc.type}
-              onClose={() => onOpenChange(false)}
-              extraActions={[{ label: 'Delete', icon: Trash2, onClick: () => onDelete(ioc) }]}
-            />
-            <SheetBody className="space-y-6 overflow-y-auto">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{IOC_TYPE_LABELS[ioc.type] ?? ioc.type}</Badge>
-                <Badge variant={ioc.active ? 'default' : 'outline'}>
-                  {ioc.active ? 'Active' : 'Inactive'}
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      width="lg"
+      header={
+        <DetailHeader
+          title={<span className="font-mono break-all">{ioc.value}</span>}
+          badges={
+            <>
+              <Badge variant="outline" className="text-xs">
+                {typeLabel}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-xs',
+                  ioc.active && 'border-success/30 bg-success/10 text-success'
+                )}
+              >
+                {ioc.active ? 'Active' : 'Inactive'}
+              </Badge>
+              {ioc.source && (
+                <Badge variant="secondary" className="text-xs">
+                  {IOC_SOURCE_LABELS[ioc.source] ?? ioc.source}
                 </Badge>
-                {ioc.source && (
-                  <Badge variant="secondary">{IOC_SOURCE_LABELS[ioc.source] ?? ioc.source}</Badge>
-                )}
-              </div>
+              )}
+            </>
+          }
+          meta={[`${ioc.confidence}% confidence`, `Last seen ${formatDate(ioc.last_seen_at)}`]}
+          menu={menu}
+          onClose={() => onOpenChange(false)}
+        />
+      }
+    >
+      <DetailSections>
+        <DetailSection title="Indicator">
+          <DetailFieldGrid>
+            <DetailField label="Type">{typeLabel}</DetailField>
+            <DetailField label="Confidence">{ioc.confidence}%</DetailField>
+            <DetailField label="Normalized" full>
+              <span className="font-mono text-xs break-all">{ioc.normalized}</span>
+            </DetailField>
+            {ioc.source_finding_id && (
+              <DetailField label="Source finding" full>
+                <Link
+                  href={`/findings/${ioc.source_finding_id}`}
+                  className="font-mono text-xs break-all text-primary hover:underline"
+                >
+                  {ioc.source_finding_id}
+                </Link>
+              </DetailField>
+            )}
+            <DetailField label="First seen">{formatDate(ioc.first_seen_at)}</DetailField>
+            <DetailField label="Last seen">{formatDate(ioc.last_seen_at)}</DetailField>
+          </DetailFieldGrid>
+        </DetailSection>
 
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Value</p>
-                <p className="font-mono text-sm break-all">{ioc.value}</p>
-              </div>
-
-              <div className="space-y-1">
-                <SheetInfoRow label="Confidence">{ioc.confidence}%</SheetInfoRow>
-                <SheetInfoRow label="Normalized">
-                  <span className="font-mono text-xs break-all">{ioc.normalized}</span>
-                </SheetInfoRow>
-                {ioc.source_finding_id && (
-                  <SheetInfoRow label="Source finding">
-                    <span className="font-mono text-xs">{ioc.source_finding_id}</span>
-                  </SheetInfoRow>
-                )}
-                <SheetInfoRow label="First seen">{formatDate(ioc.first_seen_at)}</SheetInfoRow>
-                <SheetInfoRow label="Last seen">{formatDate(ioc.last_seen_at)}</SheetInfoRow>
-              </div>
-
-              <IOCMatchesSection iocId={ioc.id} />
-            </SheetBody>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
+        <IOCMatchesSection iocId={ioc.id} />
+      </DetailSections>
+    </DetailSheet>
   )
 }
 
@@ -361,8 +406,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
   const matches = data?.items ?? []
 
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">Runtime matches</p>
+    <DetailSection title="Runtime matches" count={isLoading ? undefined : matches.length}>
       {isLoading ? (
         <Skeleton className="h-12 w-full" />
       ) : matches.length === 0 ? (
@@ -370,12 +414,19 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
           No runtime telemetry has matched this indicator yet.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="divide-y rounded-lg border">
           {matches.map((m) => (
-            <li key={m.id} className="rounded-lg border p-3 text-sm">
+            <li key={m.id} className="px-3 py-2.5 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">{formatDateTime(m.matched_at)}</span>
-                {m.reopened && <Badge variant="destructive">Reopened finding</Badge>}
+                {m.reopened && (
+                  <Badge
+                    variant="outline"
+                    className="border-destructive/30 bg-destructive/10 text-xs text-destructive"
+                  >
+                    Reopened finding
+                  </Badge>
+                )}
               </div>
               {m.finding_id && (
                 <Link
@@ -389,7 +440,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
           ))}
         </ul>
       )}
-    </div>
+    </DetailSection>
   )
 }
 

@@ -660,6 +660,8 @@ func registerScanRoutes(
 
 		// Clone scan
 		r.POST("/{id}/clone", h.CloneScan, middleware.Require(permission.ScansWrite))
+		// Save an unsaved quick scan as a configuration ("Save as scan", D10)
+		r.POST("/{id}/save", h.SaveScan, middleware.Require(permission.ScansWrite))
 
 		// Export scan config
 		r.GET("/{id}/export", h.ExportConfig, middleware.Require(permission.ScansRead))

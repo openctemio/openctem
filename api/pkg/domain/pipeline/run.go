@@ -37,6 +37,13 @@ func (s RunStatus) IsTerminal() bool {
 	return false
 }
 
+// ErrRunAlreadyFinished is returned when a write would move a run that already
+// reached a terminal state (completed, failed, canceled, timeout). A terminal
+// run is final: a late sensor result, a cancel racing a completion, or a stale
+// in-memory copy must not reopen it or record its outcome a second time.
+var ErrRunAlreadyFinished = shared.NewDomainError("RUN_ALREADY_FINISHED",
+	"pipeline run has already finished", shared.ErrConflict)
+
 // Run represents an execution of a pipeline.
 type Run struct {
 	ID         shared.ID
