@@ -315,6 +315,20 @@ func (m *mockAssetGroupRepo) GetGroupAssets(_ context.Context, id shared.ID, pag
 	a := m.members[id]
 	return pagination.NewResult(a, int64(len(a)), page), nil
 }
+func (m *mockAssetGroupRepo) ListScanMembers(_ context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	page := &assetgroup.ScanMemberPage{}
+	if !q.AfterID.IsZero() {
+		return page, nil // one page holds every member
+	}
+	for _, a := range m.members[q.GroupID] {
+		if a.Status == "archived" {
+			page.ArchivedCount++
+			continue
+		}
+		page.Members = append(page.Members, &assetgroup.ScanMember{ID: a.ID, Name: a.Name, Type: a.Type, Status: a.Status})
+	}
+	return page, nil
+}
 func (m *mockAssetGroupRepo) GetGroupFindings(_ context.Context, _ shared.ID, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupFinding], error) {
 	return pagination.Result[*assetgroup.GroupFinding]{}, nil
 }
