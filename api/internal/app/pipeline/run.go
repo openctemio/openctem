@@ -520,6 +520,26 @@ func (s *Service) finishRun(ctx context.Context, run *pipeline.Run, status pipel
 	return true
 }
 
+// OnStepStarted is called when a sensor starts the command of a step. The
+// step run becomes running, with started_at and the sensor, so a run shows
+// which step is executing and how long each step took. Before this nothing
+// called it: a step went from queued straight to completed and its
+// started_at stayed empty.
+func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sensorID, commandID shared.ID) error {
+	rid, err := shared.IDFromString(runID)
+	if err != nil {
+		return err
+	}
+	stepRun, err := s.stepRunRepo.GetByStepKey(ctx, rid, stepKey)
+	if err != nil {
+		return err
+	}
+	if stepRun == nil {
+		return nil
+	}
+	return s.stepRunRepo.AssignSensor(ctx, stepRun.ID, sensorID, commandID)
+}
+
 // OnStepCompleted is called when a sensor reports step completion.
 // This triggers scheduling of dependent steps.
 func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any) error {

@@ -512,6 +512,8 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.triggerPipelineStarted(r.Context(), cmd)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
@@ -740,6 +742,27 @@ func parseOptionalID(s string) shared.ID {
 		return shared.ID{}
 	}
 	return id
+}
+
+// triggerPipelineStarted marks the command's pipeline step as running. It runs
+// in the request, before the sensor gets its answer: the sensor reports the
+// result only after that, so the start is recorded before the asynchronous
+// completion can be. Best-effort: a failure is logged and the start stands.
+func (h *CommandHandler) triggerPipelineStarted(ctx context.Context, cmd *commanddom.Command) {
+	if h.pipelineService == nil || cmd == nil || cmd.SensorID == nil {
+		return
+	}
+	var payload pipelinedom.StepCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || !payload.IsRoutable() {
+		return
+	}
+	if err := h.pipelineService.OnStepStarted(ctx, payload.PipelineRunID, payload.StepKey, *cmd.SensorID, cmd.ID); err != nil {
+		h.logger.Warn("failed to mark pipeline step started",
+			"pipeline_run_id", payload.PipelineRunID,
+			"step_key", payload.StepKey,
+			"error", err,
+		)
+	}
 }
 
 // triggerPipelineProgression triggers pipeline progression when a command completes.
