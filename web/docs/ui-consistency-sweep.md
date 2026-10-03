@@ -41,7 +41,7 @@ Plan (batched — colors change → verify on device between batches):
       "31 inline severity maps" grepped `critical: bg-…` and so INCLUDES maps that
       are actually **Criticality** (business importance) or **Priority**, not finding
       severity — e.g. the scoping pages' `criticalityColors` (business-services,
-      business-units, asset-groups, attack-surface/*). Those intentionally use
+      business-units, assets/groups, attack-surface/*). Those intentionally use
       **green for low** (low criticality = good) and must NOT be folded into the
       severity source (which is blue-for-low). Batch 3 = migrate ONLY genuine
       finding/vuln **severity** sites; leave criticality/priority maps (or give

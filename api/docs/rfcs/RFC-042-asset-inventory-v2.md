@@ -790,6 +790,17 @@ Every lens keeps the same machinery:
 keep working through 308 redirects, following the
 `web/src/config/legacy-routes.ts` pattern.
 
+**Reserved `/assets/*` page segments.** These static pages sit next to
+`/assets/[id]` and are not lenses: `all`, `changes`, `duplicates`,
+`groups` (asset groups, static and dynamic, §6.12), `services` and
+`suggestions` (relationship suggestions). No lens, class or type id may
+take one of these names; `cmd/gen-asset-types` rejects the registry if
+one does. The Assets tabs (§6.19) all live in the web under `/assets`
+(`/assets/groups`, `/assets/changes`, `/assets/suggestions`), because a
+URL mirrors its place in the nav. The APIs keep their top-level
+resources, `/api/v1/asset-groups` and `/api/v1/relationships` (RFC-041;
+`/api/v1/assets/groups` would collide with `/assets/{asset_id}`).
+
 #### 6.3.7 How existing things map in (nothing breaks)
 
 | Existing | v2 |

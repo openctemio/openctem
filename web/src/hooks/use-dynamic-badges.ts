@@ -73,7 +73,7 @@ function useDashboardStatsForBadges(shouldFetch: boolean = true) {
  *
  * @example
  * const badges = useDynamicBadges()
- * // badges = { '/asset-groups': '12', '/findings': '24', ... }
+ * // badges = { '/assets/groups': '12', '/findings': '24', ... }
  */
 export function useDynamicBadges(): DynamicBadges {
   // Sidebar count badges (Findings / Credential Leaks) are gated by the
