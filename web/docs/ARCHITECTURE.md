@@ -24,7 +24,7 @@
 │  │        Next.js Server (Edge/Node.js)            │   │
 │  │  - Server Components                             │   │
 │  │  - Server Actions                                │   │
-│  │  - src/proxy.ts (per-request CSP nonce)          │   │
+│  │  - src/proxy.ts (auth redirect, locale, CSP)     │   │
 │  │  - API Route Handlers                            │   │
 │  └─────────────────┬───────────────────────────────┘   │
 └────────────────────┼─────────────────────────────────────┘
@@ -482,10 +482,11 @@ The shared UI primitives worth knowing:
   `src/config/route-permissions.ts`).
 - **Routing:** the `/api/v1/*` BFF proxy is the route handler
   `src/app/api/v1/[...path]/route.ts`. Next.js 16's **`src/proxy.ts`** (it must sit
-  next to `app/`; there is no `middleware.ts`) sets the per-request CSP nonce
-  (SECURITY.md §4.2). Its server-side auth redirect and locale detection helpers
-  (`src/lib/middleware`) are not wired: the file used to sit at the web root, where
-  Next.js never loaded it, and the client `RouteGuard` does the sign-in redirect.
+  next to `app/`; there is no `middleware.ts`) redirects signed-out page requests
+  to `/login?next=` (the admin console to `/admin/login?next=`), picks the locale
+  and sets the per-request CSP nonce (SECURITY.md §3, §4.2). It checks cookie
+  presence and shape only; the API validates the session, and the client clears
+  a stale cookie on its first 401. `RouteGuard` then checks module and permission.
 
 ---
 

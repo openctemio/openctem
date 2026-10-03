@@ -151,6 +151,30 @@ export type AuditAction =
   | 'scan_zone.deleted'
   | 'scan_zone.sensor_assigned'
   | 'scan_zone.sensor_unassigned'
+  // Scope, tool and scanner template changes (RFC-040)
+  | 'scope_target.created'
+  | 'scope_target.updated'
+  | 'scope_target.deleted'
+  | 'scope_target.activated'
+  | 'scope_target.deactivated'
+  | 'scope_exclusion.created'
+  | 'scope_exclusion.updated'
+  | 'scope_exclusion.deleted'
+  | 'scope_exclusion.activated'
+  | 'scope_exclusion.deactivated'
+  | 'scope_exclusion.approved'
+  | 'scope_exclusion.rejected'
+  | 'tool.created'
+  | 'tool.updated'
+  | 'tool.deleted'
+  | 'tool.activated'
+  | 'tool.deactivated'
+  | 'tool.config_updated'
+  | 'tool.config_deleted'
+  | 'scanner_template.created'
+  | 'scanner_template.updated'
+  | 'scanner_template.deprecated'
+  | 'scanner_template.deleted'
 
 /**
  * Resource types - maps to backend audit.ResourceType
@@ -173,6 +197,10 @@ export type AuditResourceType =
   | 'token'
   | 'sensor'
   | 'scan_zone'
+  | 'scope_target'
+  | 'scope_exclusion'
+  | 'tool'
+  | 'scanner_template'
   | typeof HISTORICAL_SENSOR_RESOURCE_TYPE
 
 /**
@@ -365,6 +393,32 @@ export function getActionLabel(action: AuditAction): string {
     'scan_zone.deleted': 'Scan Zone Deleted',
     'scan_zone.sensor_assigned': 'Sensor Assigned to Scan Zone',
     'scan_zone.sensor_unassigned': 'Sensor Unassigned from Scan Zone',
+    // Scope actions
+    'scope_target.created': 'Scope Target Created',
+    'scope_target.updated': 'Scope Target Updated',
+    'scope_target.deleted': 'Scope Target Deleted',
+    'scope_target.activated': 'Scope Target Activated',
+    'scope_target.deactivated': 'Scope Target Deactivated',
+    'scope_exclusion.created': 'Scope Exclusion Requested',
+    'scope_exclusion.updated': 'Scope Exclusion Updated',
+    'scope_exclusion.deleted': 'Scope Exclusion Deleted',
+    'scope_exclusion.activated': 'Scope Exclusion Activated',
+    'scope_exclusion.deactivated': 'Scope Exclusion Deactivated',
+    'scope_exclusion.approved': 'Scope Exclusion Approved',
+    'scope_exclusion.rejected': 'Scope Exclusion Rejected',
+    // Tool actions
+    'tool.created': 'Tool Created',
+    'tool.updated': 'Tool Updated',
+    'tool.deleted': 'Tool Deleted',
+    'tool.activated': 'Tool Activated',
+    'tool.deactivated': 'Tool Deactivated',
+    'tool.config_updated': 'Tool Configuration Updated',
+    'tool.config_deleted': 'Tool Configuration Reset',
+    // Scanner template actions
+    'scanner_template.created': 'Scanner Template Created',
+    'scanner_template.updated': 'Scanner Template Updated',
+    'scanner_template.deprecated': 'Scanner Template Deprecated',
+    'scanner_template.deleted': 'Scanner Template Deleted',
   }
   const canonical = canonicalAuditAction(action)
   return labels[canonical] || action

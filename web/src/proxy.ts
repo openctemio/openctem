@@ -2,31 +2,44 @@
  * Next.js 16 Proxy (formerly middleware.ts).
  *
  * It lives in src/ because the app does: Next.js only picks up proxy.ts next
- * to the `app` directory. Until RFC-040 the file sat at the web root, where
- * Next.js never loaded it (the built middleware manifest was empty), so
- * neither the server-side auth redirect nor locale detection below has ever
- * run in any deployment; the client-side route guard does the sign-in
- * redirect. Turning them on changes sign-in behaviour (redirect loops with a
- * stale refresh cookie, locale/dir from Accept-Language) and needs its own
- * change and testing, so this file keeps them off and does one job:
+ * to the `app` directory. For every page request it does three things:
  *
- *   Content-Security-Policy with a fresh script nonce for every request
- *   (src/lib/middleware/csp.ts). Next.js reads the nonce from the request's
- *   policy and stamps it on its own scripts; `x-nonce` hands it to the root
- *   layout for the next-themes inline script.
+ * 1. Route protection (src/lib/middleware/auth.ts). A page that needs a session
+ *    and has no session cookie of the right shape is redirected to
+ *    /login?next=<page>; the admin console (RFC-022) to /admin/login?next=<page>.
+ *    Cookie presence and shape only, no network call: the API validates the
+ *    session on every call, and a stale cookie is cleared by the client on its
+ *    first 401 (src/lib/auth/session-expired.ts). Public pages: PUBLIC_ROUTES.
+ *
+ * 2. Locale (src/lib/middleware/i18n.ts): the `locale` cookie, then
+ *    Accept-Language, among the locales the app ships; passed to the root
+ *    layout as `x-locale`.
+ *
+ * 3. Content-Security-Policy with a fresh script nonce
+ *    (src/lib/middleware/csp.ts). Next.js reads the nonce from the request's
+ *    policy and stamps it on its own scripts; `x-nonce` hands it to the root
+ *    layout for the next-themes inline script.
+ *
+ * Keep it cheap: no database, no API call, no JWT verification.
  *
  * @see https://nextjs.org/docs/app/guides/content-security-policy
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { handleAuth } from '@/lib/middleware/auth'
+import { detectLocale } from '@/lib/middleware/i18n'
 import { cspForRequest, generateNonce } from '@/lib/middleware/csp'
 
 export function proxy(req: NextRequest) {
+  const redirect = handleAuth(req)
+  if (redirect) return redirect
+
   const nonce = generateNonce()
   const csp = cspForRequest(nonce)
 
   const headers = new Headers(req.headers)
   headers.set('x-nonce', nonce)
+  headers.set('x-locale', detectLocale(req))
   headers.set('Content-Security-Policy', csp)
 
   const response = NextResponse.next({ request: { headers } })
@@ -38,10 +51,10 @@ export const config = {
   matcher: [
     {
       // Documents only: API routes (JSON, the /api/v1 BFF and its WebSocket
-      // upgrade), static files, images and prefetches carry no inline script
-      // and need no nonce.
+      // upgrade, /api/health), Next.js assets, and static files carry no
+      // inline script, need no nonce and handle their own auth.
       source:
-        '/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+        '/((?!api/|_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|json|webmanifest|js|css|map|woff2?)$).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },

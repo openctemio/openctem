@@ -50,7 +50,9 @@ type resolvedTargets struct {
 	Targets       []string
 	Excluded      int
 	ExcludedNames []string // the targets scope exclusions removed, in order
-	Warnings      []string
+	// Archived counts group members left out because the asset is archived.
+	Archived int
+	Warnings []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
@@ -60,20 +62,43 @@ type resolvedTargets struct {
 // exclusion. Exclusions are enforced here, on the server, for every scan, and
 // a failed exclusion lookup stops the dispatch (fail closed) instead of
 // scanning everything. The per-run cap counts all groups together.
+//
+// A group member is one asset, identified by its id. It is dispatched by name,
+// but exclusions are tested against every value that names it (its addresses
+// and repository URLs too), so a host whose address is excluded is skipped.
+// Archived members are not scanned.
 func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resolvedTargets, error) {
-	seen := make(map[string]bool)
+	seen := make(map[string]int) // lower-cased target -> index in candidates
 	var candidates []scope.ExclusionCandidate
 	names := make(map[shared.ID]string)
 	var warnings []string
+	archived := 0
 
 	add := func(id shared.ID, value string) {
 		v := strings.TrimSpace(value)
-		if v == "" || seen[strings.ToLower(v)] {
+		if v == "" {
 			return
 		}
-		seen[strings.ToLower(v)] = true
+		if _, dup := seen[strings.ToLower(v)]; dup {
+			return
+		}
+		seen[strings.ToLower(v)] = len(candidates)
 		candidates = append(candidates, scope.ExclusionCandidate{ID: id, Values: []string{v}})
 		names[id] = v
+	}
+	// alsoMatch adds an asset's other values to the candidate dispatched
+	// under its name, whichever came first (a direct target with the same
+	// name included), so an exclusion of any of them removes the target.
+	alsoMatch := func(name string, values []string) {
+		i, ok := seen[strings.ToLower(strings.TrimSpace(name))]
+		if !ok {
+			return
+		}
+		for _, v := range values {
+			if v = strings.TrimSpace(v); v != "" && !strings.EqualFold(v, strings.TrimSpace(name)) {
+				candidates[i].Values = append(candidates[i].Values, v)
+			}
+		}
 	}
 
 	for _, t := range sc.Targets {
@@ -86,17 +111,17 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 				continue
 			}
 			listed[groupID] = true
-			members, err := s.listGroupExclusionCandidates(ctx, groupID)
+			members, archivedInGroup, err := s.listGroupScanMembers(ctx, sc.TenantID, groupID)
 			if err != nil {
 				return nil, fmt.Errorf("list asset group %s members: %w", groupID, err)
 			}
+			archived += archivedInGroup
 			if len(members) == 0 {
-				warnings = append(warnings, fmt.Sprintf("asset group %s has no assets; nothing from it is scanned", groupID))
+				warnings = append(warnings, fmt.Sprintf("asset group %s has no assets that can be scanned; nothing from it is scanned", groupID))
 			}
 			for _, m := range members {
-				for _, v := range m.Values {
-					add(m.ID, v)
-				}
+				add(m.ID, m.Name)
+				alsoMatch(m.Name, m.MatchValues)
 			}
 			// Bound the work before the exclusion lookup: exclusions only
 			// remove targets, so far more candidates than the cap cannot fit.
@@ -116,7 +141,10 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		}
 	}
 
-	out := &resolvedTargets{Targets: make([]string, 0, len(candidates)), Warnings: warnings}
+	if archived > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d archived asset(s) in the group(s) were skipped", archived))
+	}
+	out := &resolvedTargets{Targets: make([]string, 0, len(candidates)), Archived: archived, Warnings: warnings}
 	for _, c := range candidates {
 		if excluded[c.ID] {
 			out.Excluded++

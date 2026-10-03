@@ -121,6 +121,11 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 	if err := checkMergeTenant(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}
+	// Findings first, while they still sit on the merged assets: re-key them for
+	// the kept asset and fold duplicates into one survivor (never a delete).
+	if err := rekeyMergedFindings(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
 	// Branches first: their components and findings are moved below by asset.
 	if err := mergeRepositoryExtension(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
