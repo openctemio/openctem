@@ -598,6 +598,19 @@ with the server-stamped provenance (tenant from the key, sensor, command,
 zone from the command, protocol, media type, user agent, receive time), and
 one RFC-005 `ingest_jobs` row per segment plus one for the commit.
 
+**Text caps on every ingest path** (v1 CTIS, v2 segments, SARIF and the
+other converted formats; `internal/app/ingest/text_caps.go`, RFC-040 §5.4).
+Before anything is stored or fingerprinted, `Service.Ingest` cuts oversized
+finding text to a cap, ending it with `…[truncated]`, and makes it valid
+UTF-8: title and rule name 500 characters (their column size), category 255,
+message 8 Ki, description 32 Ki, evidence 64 Ki, snippets and remediation
+text 16 Ki, misconfiguration expected/actual/cause/query 4 Ki. Lists are cut
+to a count and each item to a length: references 100 × 2 Ki (finding and
+remediation), tags 50 × 100, vulnerability classes and subcategories
+50 × 200, remediation steps 50 × 2 Ki. A cut never refuses the report or
+the finding (a title over 500 characters used to fail that finding); the
+number of capped values is logged per report.
+
 ### Processing
 
 The ingest worker runs v2 jobs whatever `INGEST_MODE` is
