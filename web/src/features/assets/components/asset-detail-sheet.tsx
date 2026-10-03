@@ -8,7 +8,7 @@
 'use client'
 
 import * as React from 'react'
-import { FileText, Hash, Pencil, Trash2 } from 'lucide-react'
+import { FileText, Hash, Pencil, Radar, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,7 @@ import { AssetAttributionSection } from './asset-attribution-section'
 import { RelationshipPreview } from './relationships'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
+import { SurfaceFacts, cellsForType } from './service-cells'
 import {
   RiskSummarySection,
   OwnershipSection,
@@ -370,6 +371,15 @@ export function AssetDetailSheet<T extends Asset>({
             {overviewContent}
 
             <DiscoverySection asset={asset} />
+
+            {/* The typed pages pass their own curated sections; the mixed
+                lists (/assets) get the shared service cells for the
+                external-surface types, above the raw properties. */}
+            {overviewContent === undefined && cellsForType(asset.type, asset.subType) && (
+              <DetailSection title="Service facts" icon={Radar}>
+                <SurfaceFacts asset={asset} />
+              </DetailSection>
+            )}
 
             {renderProperties && <PropertiesSection properties={asset.metadata} />}
 

@@ -1,26 +1,34 @@
 /**
- * Middleware Utilities
- *
- * Centralized exports for middleware helpers
- *
- * @example
- * ```typescript
- * import { handleAuth, handleI18n, MIDDLEWARE_MATCHER } from '@/lib/middleware'
- * ```
+ * Helpers for the Next.js proxy (src/proxy.ts).
  */
 
-// Configuration
-export { PUBLIC_ROUTES, API_PREFIX, MIDDLEWARE_MATCHER_REFERENCE, type PublicRoute } from './config'
+export {
+  PUBLIC_ROUTES,
+  API_PREFIX,
+  ADMIN_CONSOLE_ROOT,
+  ADMIN_CONSOLE_LOGIN,
+  LOGIN_PATH,
+  NEXT_PARAM,
+  type PublicRoute,
+} from './config'
 
-// Authentication
 export {
   isPublicRoute,
   isApiRoute,
+  isAdminConsoleRoute,
   requiresAuth,
+  looksLikeJwt,
+  hasSessionCookie,
+  hasAdminConsoleCookie,
   isAuthenticated,
-  validateRedirectUrl,
+  returnPath,
+  decideAuth,
   handleAuth,
+  type AuthDecision,
+  type AuthRequest,
+  type CookieReader,
 } from './auth'
 
-// Internationalization
-export { detectLocale, createHeadersWithLocale, handleI18n } from './i18n'
+export { LOCALE_COOKIE, detectLocale, negotiateLocale, localeFromAcceptLanguage } from './i18n'
+
+export { buildCsp, cspForRequest, generateNonce } from './csp'

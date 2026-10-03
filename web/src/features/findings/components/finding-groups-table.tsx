@@ -28,6 +28,7 @@ import type { ApiFinding, FindingApiFilters } from '../api/finding-api.types'
 /** The dimensions the Findings page groups by (the groups API's group_by). */
 export const GROUP_BY_DIMENSIONS: GroupByDimension[] = [
   'cve_id',
+  'rule_id',
   'asset_id',
   'owner_id',
   'severity',
@@ -74,6 +75,8 @@ export function groupRowFilter(
       return { component_id: key }
     case 'cve_id':
       return { cve_ids: [key] }
+    case 'rule_id':
+      return { rule_id: key }
     case 'finding_type':
       return { finding_types: [key] }
     default:
@@ -90,6 +93,8 @@ function belongsToGroup(dimension: GroupByDimension, key: string, f: ApiFinding)
   switch (dimension) {
     case 'cve_id':
       return f.cve_id === key
+    case 'rule_id':
+      return f.rule_id === key
     case 'finding_type':
       return (f.finding_type ?? '') === key
     case 'asset_id':
@@ -117,6 +122,11 @@ function GroupTitle({ group }: { group: FindingGroup }) {
     if (meta.owner) facts.push(`Owner ${String(meta.owner)}`)
   }
   if (group.group_type === 'component' && meta.ecosystem) facts.push(String(meta.ecosystem))
+  if (group.group_type === 'rule') {
+    // The rule id is the key; the label is the rule name or a title.
+    if (group.label !== group.group_key) facts.push(group.group_key)
+    if (Array.isArray(meta.tools) && meta.tools.length > 0) facts.push(meta.tools.join(', '))
+  }
   facts.push(`${stats.total} ${stats.total === 1 ? 'finding' : 'findings'}`)
   if (group.group_type !== 'asset') {
     facts.push(`${stats.affected_assets} ${stats.affected_assets === 1 ? 'asset' : 'assets'}`)

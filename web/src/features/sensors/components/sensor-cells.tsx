@@ -345,15 +345,45 @@ export function SensorOutboxCell({ sensor }: { sensor: Sensor }) {
   )
 }
 
-/** When the API key stops working. */
+/** What the "legacy key" tag means, shown on hover and in the drawer. */
+export const LEGACY_KEY_EXPLANATION =
+  'This sensor still uses a legacy rda_ key. It renews automatically to the new octs_ format; rda_ keys are retired after enrollment ships.'
+
+/** Tag for a sensor whose current API key is a legacy `rda_` key. */
+export function LegacyKeyTag() {
+  return (
+    <SensorTag tone="muted" title={LEGACY_KEY_EXPLANATION}>
+      legacy key
+    </SensorTag>
+  )
+}
+
+/** When the API key stops working, tagged when it is a legacy key. */
 export function SensorKeyCell({
   sensor,
   now,
 }: {
-  sensor: Pick<Sensor, 'key_expires_at'>
+  sensor: Pick<Sensor, 'key_expires_at' | 'legacy_key'>
   now: number
 }) {
-  const k = keyExpiry(sensor.key_expires_at, now)
+  const expiry = <SensorKeyExpiry expiresAt={sensor.key_expires_at} now={now} />
+  if (!sensor.legacy_key) return expiry
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {expiry}
+      <LegacyKeyTag />
+    </span>
+  )
+}
+
+function SensorKeyExpiry({
+  expiresAt,
+  now,
+}: {
+  expiresAt: string | null | undefined
+  now: number
+}) {
+  const k = keyExpiry(expiresAt, now)
   switch (k.kind) {
     case 'unknown':
       return <span className={muted}>—</span>

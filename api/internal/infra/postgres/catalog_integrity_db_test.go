@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/component"
@@ -265,6 +265,63 @@ func TestThreatIntelPropagation_SetsCatalogRiskSignals(t *testing.T) {
 	}
 	if !exploit || epss.Float64 != 0.5 || !kev.Valid || ransomware.String != "Known" {
 		t.Errorf("catalog not updated from the feeds: exploit=%v epss=%v kev=%v ransomware=%v", exploit, epss, kev, ransomware)
+	}
+}
+
+// A CVE that CISA removed from KEV: the sync prunes kev_catalog, then the
+// propagation must clear the catalog's KEV columns and exploit_available.
+// Before the fix the propagation only ever set them.
+func TestThreatIntelPropagation_ClearsCVEThatLeftKEV(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	cve, other := uniqueCVE(), uniqueCVE()
+	t.Cleanup(func() {
+		for _, c := range []string{cve, other} {
+			for _, q := range []string{`DELETE FROM vulnerabilities WHERE cve_id = $1`, `DELETE FROM kev_catalog WHERE cve_id = $1`} {
+				_, _ = db.ExecContext(context.Background(), q, c)
+			}
+		}
+	})
+	vulns := NewVulnerabilityRepository(&DB{DB: db})
+	if err := vulns.UpsertBatchByCVE(ctx, []*vulnerability.Vulnerability{sensorReportedVuln(t, cve), sensorReportedVuln(t, other)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{cve, other} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO kev_catalog (cve_id, vulnerability_name, date_added, due_date, known_ransomware_campaign_use) VALUES ($1, 'kev name', CURRENT_DATE, CURRENT_DATE, 'Known')`, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ti := NewThreatIntelRepository(&DB{DB: db})
+	if _, err := ti.PropagateToVulnerabilityCatalog(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// CISA drops cve; the next feed holds every other entry.
+	var keep []string
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(array_agg(cve_id), '{}') FROM kev_catalog WHERE cve_id <> $1`, cve).
+		Scan(pq.Array(&keep)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := ti.KEV().PruneNotIn(ctx, keep)
+	if err != nil || n != 1 {
+		t.Fatalf("PruneNotIn = %d %v, want 1 removed", n, err)
+	}
+	if _, err := ti.PropagateToVulnerabilityCatalog(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	read := func(c string) (exploit bool, added, due sql.NullTime, ransomware sql.NullString) {
+		if err := db.QueryRowContext(ctx, `SELECT exploit_available, cisa_kev_date_added, cisa_kev_due_date, cisa_kev_ransomware_use FROM vulnerabilities WHERE cve_id = $1`, c).
+			Scan(&exploit, &added, &due, &ransomware); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if exploit, added, due, rw := read(cve); exploit || added.Valid || due.Valid || rw.Valid {
+		t.Errorf("CVE that left KEV still flagged: exploit=%v added=%v due=%v ransomware=%v", exploit, added, due, rw)
+	}
+	if exploit, added, _, _ := read(other); !exploit || !added.Valid {
+		t.Errorf("CVE still in KEV lost its flags: exploit=%v added=%v", exploit, added)
 	}
 }
 

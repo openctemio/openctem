@@ -6,8 +6,19 @@ export function getDirFromLocale(locale?: string): 'ltr' | 'rtl' {
   const code = (locale ?? defaultLocale).split('-')[0]
   return rtlLocales.has(code) ? 'rtl' : 'ltr'
 }
-export const supportedLocales = ['en', 'vi', 'ar'] as const
-export const defaultLocale = 'en'
+/**
+ * Locales a user can select (language switcher) and the proxy can detect.
+ * Only locales with a catalog below: a locale without one would show English
+ * text, and an RTL one (ar) would also flip the layout. Add a locale here once
+ * its dictionary ships; RTL ones only once the layout has been checked RTL.
+ */
+export const supportedLocales = ['en', 'vi'] as const
+export type SupportedLocale = (typeof supportedLocales)[number]
+export const defaultLocale: SupportedLocale = 'en'
+
+export function isSupportedLocale(value: unknown): value is SupportedLocale {
+  return typeof value === 'string' && (supportedLocales as readonly string[]).includes(value)
+}
 
 // ============================================================
 // Translation layer (lightweight, dependency-free)

@@ -285,6 +285,21 @@ func (m *threatIntelMockKEVRepo) Count(_ context.Context) (int64, error) {
 	return int64(len(m.entries)), nil
 }
 
+func (m *threatIntelMockKEVRepo) PruneNotIn(_ context.Context, keep []string) (int64, error) {
+	k := make(map[string]struct{}, len(keep))
+	for _, id := range keep {
+		k[id] = struct{}{}
+	}
+	var n int64
+	for id := range m.entries {
+		if _, ok := k[id]; !ok {
+			delete(m.entries, id)
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (m *threatIntelMockKEVRepo) DeleteAll(_ context.Context) error {
 	m.entries = make(map[string]*threatintel.KEVEntry)
 	return nil

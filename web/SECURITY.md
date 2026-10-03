@@ -201,24 +201,52 @@ The `PermissionProvider` (`src/context/permission-provider.tsx`) keeps permissio
 
 ### 3.1 Default-Deny Model
 
-The Next.js 16 proxy (`proxy.ts`) uses `handleAuth()` from `src/lib/middleware/auth.ts`:
+`src/proxy.ts` runs `decideAuth()` from `src/lib/middleware/auth.ts` on every page
+request (the matcher skips `/api/*`, `/_next/*` and static files):
 
-- **All routes require authentication by default.**
-- Public routes explicitly whitelisted: `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email`, `/auth/callback`, `/auth/error`.
-- API routes (`/api/*`) handled separately.
-- Authenticated users redirected away from auth pages.
+- **Every page requires the tenant session by default.**
+- Public pages (`PUBLIC_ROUTES` in `src/lib/middleware/config.ts`, matched on a
+  path-segment boundary): `/login`, `/register`, `/forgot-password`,
+  `/reset-password`, `/set-password`, `/invitations/*`, `/verify-email`,
+  `/auth/callback/*`, `/auth/sso/callback/*`, `/auth/error`, `/admin/login/*`, and
+  the `/icon` metadata routes.
+- No session: `307` to `/login?next=<page>`; the tenant-selection cookies (and a
+  malformed token cookie) are expired on that response.
+- The platform admin console (`/admin/*`, RFC-022) has its own rule: without the
+  console's `admin_csrf` cookie (issued and cleared with the `admin_session`
+  cookie, which is scoped to `/api/v1/admin` and so never reaches a page), `307`
+  to `/admin/login?next=<page>`.
+- API routes (`/api/*`) authenticate each call themselves.
 
 ### 3.2 Open Redirect Prevention
 
-`validateRedirectUrl()` ensures redirect targets:
+The proxy builds `next` from the request's own path through `safeInternalHref()`
+(`src/lib/safe-href.ts`): only a same-origin path, never `//host`, `/\host`, or
+a path with control or bidi characters. `/login` validates `next`, `redirect` and
+`returnTo` again with `validateRedirectUrl()`.
 
-- Start with `/` (relative path) but not `//` (protocol-relative, which could redirect to external domains).
-- Or match the `NEXT_PUBLIC_APP_URL` origin exactly.
-- Falls back to `/dashboard` if validation fails.
+### 3.3 Authentication Check and Stale Cookies
 
-### 3.3 Authentication Check
+The proxy checks that a session cookie (`auth_token` or `refresh_token`) is
+**present and shaped like a JWT**, nothing more: no signature or expiry check,
+no network call. The API verifies the token on every call.
 
-The proxy checks for cookie **existence** only (not validity). JWT signature verification happens at the backend API layer. This keeps the proxy lightweight and avoids duplicating verification logic.
+A stale cookie (expired, revoked, signed with a rotated key) therefore passes
+the proxy. The page's first API call gets `401`, the refresh fails, and the
+client calls `endSessionAndSignIn()` (`src/stores/auth-store.ts`) once: it drops
+the team cookies, runs the sign-out server action (which expires the httpOnly
+token cookies) and lands on `/login?redirect=<page>`. The proxy never redirects
+a request that has a session-shaped cookie and never redirects away from
+`/login`, and `/login` uses the same `hasSessionCookie()` check, so the two
+cannot bounce the browser between them.
+
+### 3.4 Locale
+
+The proxy picks the locale from the `locale` cookie (the user's choice in the
+language switcher), then `Accept-Language` as a default, among the locales
+with a shipped catalog (`supportedLocales` in `src/lib/i18n.ts`, currently
+`en` and `vi`), and passes it as `x-locale`. The root layout validates it
+again. No right-to-left locale ships yet, so the page is always `dir="ltr"`.
 
 ---
 
