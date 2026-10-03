@@ -138,11 +138,10 @@ both are unit-tested.
 
 ## Known gaps
 
-- The API does not persist the type-specific fields: `finding_type`, `secret_*`,
-  `misconfig_*`, `compliance_*` and `web3_*` are never written or read by the
-  finding repository. The entity and the API response carry them, but they arrive
-  empty after a reload. Until that is fixed, the secret, misconfiguration,
-  compliance and web3 sections stay hidden. The secret Fix card still shows,
-  because it keys off `source = secret`.
+- The type-specific fields are stored since #823 (columns) and #849 (the typed
+  `type_details` document: a secret's 4+4 preview, fingerprint, scopes and
+  rotation; a misconfiguration's policy name and cause). Findings stored before
+  then show these sections from their next ingest. A secret value is never
+  stored or returned: the preview has at most the first and last 4 characters.
 - Upgrade commands cover the common ecosystems. An unknown ecosystem shows the
   version change without a command.
