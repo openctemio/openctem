@@ -198,8 +198,7 @@ func build(d *SummaryData, now time.Time) *Summary {
 		return out.Exposures.ByType[i].Type < out.Exposures.ByType[j].Type
 	})
 	for _, r := range d.TopRisks {
-		out.TopRisks = append(out.TopRisks, Risk{ID: r.ID, Type: r.Type, Severity: r.Severity, Title: r.Title,
-			AssetID: r.AssetID, AssetName: r.AssetName, LastSeen: r.LastSeen})
+		out.TopRisks = append(out.TopRisks, Risk(r))
 	}
 	out.Monitoring = MonitoringBlock{CTDomainsWatched: d.CTWatched, CTFailing: d.CTFailing,
 		CTNeverQueried: d.CTNeverSucceeded, CTOldestSuccess: d.CTOldestSuccess}
