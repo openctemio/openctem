@@ -11,8 +11,14 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
-  SheetBody,
-  SheetInfoRow,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,13 +37,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import {
   Select,
   SelectContent,
@@ -537,75 +536,75 @@ export default function CompliancePage() {
         </Tabs>
       </Main>
 
-      {/* View Sheet */}
-      <Sheet open={!!viewRequirement} onOpenChange={(open) => !open && setViewRequirement(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-          {viewRequirement && (
-            <>
-              <SheetHeader>
-                <SheetTitle>{viewRequirement.title}</SheetTitle>
-                <SheetDescription>
-                  {viewRequirement.frameworkName} · {viewRequirement.controlId}
-                </SheetDescription>
-              </SheetHeader>
-
-              <SheetBody className="space-y-5">
-                {viewRequirement.description && (
-                  <p className="text-sm text-muted-foreground">{viewRequirement.description}</p>
-                )}
-
-                <div className="divide-y">
-                  <SheetInfoRow label="Status">
-                    <ControlStatusBadge status={viewRequirement.status} />
-                  </SheetInfoRow>
-                  <SheetInfoRow label="Priority">
-                    <PriorityBadge priority={viewRequirement.priority} />
-                  </SheetInfoRow>
-                  <SheetInfoRow label="Owner">
-                    <span className="text-sm">{viewRequirement.owner || '—'}</span>
-                  </SheetInfoRow>
-                  <SheetInfoRow label="Evidence">
-                    <span className="text-sm tabular-nums">{viewRequirement.evidenceCount}</span>
-                  </SheetInfoRow>
-                  <SheetInfoRow label="Findings">
-                    <span
-                      className={`text-sm tabular-nums ${viewRequirement.findingCount > 0 ? 'font-medium text-destructive' : ''}`}
-                    >
-                      {viewRequirement.findingCount}
-                    </span>
-                  </SheetInfoRow>
-                  {viewRequirement.dueDate && (
-                    <SheetInfoRow label="Due date">
-                      <span className="text-sm">
-                        {new Date(viewRequirement.dueDate).toLocaleDateString()}
-                      </span>
-                    </SheetInfoRow>
-                  )}
-                  {viewRequirement.lastAssessed && (
-                    <SheetInfoRow label="Last assessed">
-                      <span className="text-sm">
-                        {new Date(viewRequirement.lastAssessed).toLocaleDateString()}
-                      </span>
-                    </SheetInfoRow>
-                  )}
-                </div>
-
-                {viewRequirement.notes && (
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-semibold">Notes</h3>
-                    <p className="text-sm text-muted-foreground">{viewRequirement.notes}</p>
-                  </div>
-                )}
-
-                <Button className="w-full" onClick={() => openEdit(viewRequirement)}>
-                  <Pencil className="me-2 h-4 w-4" />
+      {/* View drawer (shared detail-drawer frame) */}
+      {viewRequirement && (
+        <DetailSheet
+          open
+          onOpenChange={(open) => !open && setViewRequirement(null)}
+          header={
+            <DetailHeader
+              title={viewRequirement.title}
+              badges={
+                <>
+                  <ControlStatusBadge status={viewRequirement.status} />
+                  <PriorityBadge priority={viewRequirement.priority} />
+                </>
+              }
+              meta={[viewRequirement.frameworkName, viewRequirement.controlId]}
+              actions={
+                <Button size="sm" onClick={() => openEdit(viewRequirement)}>
+                  <Pencil className="h-4 w-4" />
                   Update status
                 </Button>
-              </SheetBody>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+              }
+              onClose={() => setViewRequirement(null)}
+            />
+          }
+        >
+          <div className="space-y-5">
+            <DetailStatGrid aria-label="Key numbers">
+              <DetailStat label="Evidence" value={viewRequirement.evidenceCount} />
+              <DetailStat
+                label="Open findings"
+                value={viewRequirement.findingCount}
+                tone={viewRequirement.findingCount > 0 ? 'destructive' : 'default'}
+              />
+            </DetailStatGrid>
+
+            <DetailSections>
+              {viewRequirement.description && (
+                <DetailSection title="Description">
+                  <p className="text-sm text-muted-foreground">{viewRequirement.description}</p>
+                </DetailSection>
+              )}
+
+              <DetailSection title="Assessment">
+                <DetailFieldGrid>
+                  <DetailField label="Owner">{viewRequirement.owner || '—'}</DetailField>
+                  {viewRequirement.dueDate && (
+                    <DetailField label="Due date">
+                      {new Date(viewRequirement.dueDate).toLocaleDateString()}
+                    </DetailField>
+                  )}
+                  {viewRequirement.lastAssessed && (
+                    <DetailField label="Last assessed">
+                      {new Date(viewRequirement.lastAssessed).toLocaleDateString()}
+                    </DetailField>
+                  )}
+                </DetailFieldGrid>
+              </DetailSection>
+
+              {viewRequirement.notes && (
+                <DetailSection title="Notes">
+                  <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+                    {viewRequirement.notes}
+                  </p>
+                </DetailSection>
+              )}
+            </DetailSections>
+          </div>
+        </DetailSheet>
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={!!editRequirement} onOpenChange={(open) => !open && setEditRequirement(null)}>
