@@ -117,7 +117,10 @@ import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
-import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
+import {
+  FINDINGS_LIST_HIDDEN_STATUSES,
+  FINDINGS_OPEN_STATUSES,
+} from '@/features/findings/lib/list-defaults'
 
 // ============================================
 // Transform API Finding to UI Finding
@@ -295,7 +298,7 @@ const SEVERITY_LABELS: Record<FacetSeverity, string> = {
   low: 'Low',
   info: 'Info',
 }
-const OPEN_STATUSES = ['new', 'confirmed', 'in_progress', 'fix_applied', 'remediation', 'retest']
+const OPEN_STATUSES: string[] = [...FINDINGS_OPEN_STATUSES]
 const STATUS_GROUPS = [
   { label: 'Open', values: OPEN_STATUSES },
   {
