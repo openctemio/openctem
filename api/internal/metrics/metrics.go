@@ -349,6 +349,27 @@ var (
 		[]string{"kind", "result"},
 	)
 
+	// FindingsCoverageAutoResolve counts findings that coverage-scoped
+	// auto-resolve closed ("resolved"), would have closed in dry-run mode
+	// ("would_resolve") or held behind the blinding guard ("held").
+	FindingsCoverageAutoResolve = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "findings_coverage_auto_resolve_total",
+			Help: "Non-repository findings closed, or that would be closed, by coverage-scoped auto-resolve, by mode and result",
+		},
+		[]string{"mode", "result"},
+	)
+
+	// CoverageAutoResolveEvaluations counts coverage evaluations of scan
+	// commands by mode and decision (eligible or why not).
+	CoverageAutoResolveEvaluations = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "coverage_auto_resolve_evaluations_total",
+			Help: "Coverage-scoped auto-resolve evaluations of scan commands, by mode and decision",
+		},
+		[]string{"mode", "decision"},
+	)
+
 	// IngestV2ReportsTotal counts v2 reports reaching a final state, with the
 	// commit's auto-resolve outcome (applied, held, skipped; "none" for
 	// expired and failed reports).

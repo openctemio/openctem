@@ -31,7 +31,9 @@ The `mfa_token`:
 Wrong codes increment `users.failed_login_attempts`. After `AUTH_MAX_LOGIN_ATTEMPTS`
 the account is locked for `AUTH_LOCKOUT_DURATION`, the same lockout as wrong
 passwords. The counter is reset only after the second step succeeds. The
-`/auth/mfa/*` routes share the login rate limiter (5/min per IP).
+`/auth/mfa/*` routes have their own rate-limit buckets (10/min per challenge,
+30/min per IP), counted in Redis so every API replica shares them (see
+[Authentication rate limits](../redis-production-guide.md#authentication-rate-limits)).
 
 ## Self-service API (`/api/v1/users/me/...`)
 
@@ -63,7 +65,17 @@ through `PATCH /tenants/{t}/settings/security` (Settings → Organization → Se
   gets `403 {code:"MFA_ENROLLMENT_REQUIRED"}` for a tenant that requires 2FA. The UI
   then signs the user out and back in, which leads to enrollment. A policy turned on
   mid-session therefore takes effect within one access-token lifetime (15 min default).
-- Federated (SSO/SAML/OAuth) sessions always pass. Their IdP owns the second factor.
+- A session issued by **this organization's own** SAML/OIDC provider passes: the
+  organization chose that IdP, and it owns the second factor.
+- Any other federated session — social OAuth (GitHub/Google/personal Microsoft),
+  another organization's IdP, or an SSO session created before migration `000269`
+  recorded the issuing organization — never went through our second step, so it
+  gets `403 {code:"MFA_ENROLLMENT_REQUIRED"}` for an organization that requires
+  2FA, enrolled or not. The UI signs the user out; they sign in again with
+  password and 2FA, or through that organization's IdP. Users and sessions are
+  global, so without this a sign-in through organization B's IdP would get into
+  organization A without A's 2FA. See `Session.FederatedFor` in
+  [sso-authentication.md](sso-authentication.md#how-a-sessions-login-method-is-recorded).
 - Owners and admins see each member's status in the members list
   (`GET /tenants/{t}/members?include=user` → `mfa_status`: `enabled`, `disabled` or
   `idp`). Other roles do not get the field.

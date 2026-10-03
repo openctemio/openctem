@@ -278,8 +278,9 @@ func TestNewExclusion(t *testing.T) {
 		if exc.Reason() != "Internal only" {
 			t.Errorf("expected reason 'Internal only', got %s", exc.Reason())
 		}
-		if exc.Status() != scope.StatusActive {
-			t.Errorf("expected active, got %s", exc.Status())
+		// A new exclusion is a request: pending, unapproved, not in effect.
+		if exc.Status() != scope.StatusPending {
+			t.Errorf("expected pending, got %s", exc.Status())
 		}
 		if exc.ExpiresAt() != nil {
 			t.Error("expected nil ExpiresAt")
@@ -287,8 +288,8 @@ func TestNewExclusion(t *testing.T) {
 		if exc.IsApproved() {
 			t.Error("expected unapproved")
 		}
-		if !exc.IsActive() {
-			t.Error("expected active")
+		if exc.IsActive() {
+			t.Error("a pending exclusion must not be in effect")
 		}
 	})
 
@@ -301,8 +302,14 @@ func TestNewExclusion(t *testing.T) {
 		if exc.ExpiresAt() == nil {
 			t.Fatal("expected non-nil ExpiresAt")
 		}
+		if exc.IsActive() {
+			t.Error("a pending exclusion must not be in effect")
+		}
+		if err := exc.Approve("admin1"); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
 		if !exc.IsActive() {
-			t.Error("expected active (not yet expired)")
+			t.Error("expected active once approved (not yet expired)")
 		}
 	})
 
@@ -366,7 +373,9 @@ func TestExclusionUpdateMethods(t *testing.T) {
 	})
 
 	t.Run("Deactivate", func(t *testing.T) {
-		exc.Deactivate()
+		if err := exc.Deactivate(); err != nil {
+			t.Fatalf("deactivate: %v", err)
+		}
 		if exc.Status() != scope.StatusInactive {
 			t.Errorf("expected inactive, got %s", exc.Status())
 		}
@@ -376,7 +385,9 @@ func TestExclusionUpdateMethods(t *testing.T) {
 	})
 
 	t.Run("Activate", func(t *testing.T) {
-		exc.Activate()
+		if err := exc.Activate(); err != nil {
+			t.Fatalf("activate: %v", err)
+		}
 		if exc.Status() != scope.StatusActive {
 			t.Errorf("expected active, got %s", exc.Status())
 		}
@@ -401,6 +412,7 @@ func TestExclusionIsActive(t *testing.T) {
 
 	t.Run("ActiveNoExpiry", func(t *testing.T) {
 		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
+		_ = exc.Approve("admin1")
 		if !exc.IsActive() {
 			t.Error("expected active (no expiry)")
 		}
@@ -409,6 +421,7 @@ func TestExclusionIsActive(t *testing.T) {
 	t.Run("ActiveFutureExpiry", func(t *testing.T) {
 		future := time.Now().Add(time.Hour)
 		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", &future, "user1")
+		_ = exc.Approve("admin1")
 		if !exc.IsActive() {
 			t.Error("expected active (future expiry)")
 		}
@@ -419,16 +432,29 @@ func TestExclusionIsActive(t *testing.T) {
 		id := shared.NewID()
 		exc := scope.ReconstituteExclusion(
 			id, tenantID, scope.ExclusionTypeDomain, "test.com", "reason",
-			scope.StatusActive, &past, "", nil, "user1", time.Now(), time.Now(),
+			scope.StatusActive, &past, "admin1", &past, "user1", time.Now(), time.Now(),
 		)
 		if exc.IsActive() {
 			t.Error("expected inactive (past expiry)")
 		}
 	})
 
+	t.Run("ActiveStatusButNeverApproved", func(t *testing.T) {
+		// Defense in depth: a row that says 'active' but carries no approval
+		// (e.g. written by an old pod mid-rollout) is not in effect.
+		exc := scope.ReconstituteExclusion(
+			shared.NewID(), tenantID, scope.ExclusionTypeDomain, "test.com", "reason",
+			scope.StatusActive, nil, "", nil, "user1", time.Now(), time.Now(),
+		)
+		if exc.IsActive() {
+			t.Error("an unapproved exclusion must not be in effect")
+		}
+	})
+
 	t.Run("InactiveByStatus", func(t *testing.T) {
 		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
-		exc.Deactivate()
+		_ = exc.Approve("admin1")
+		_ = exc.Deactivate()
 		if exc.IsActive() {
 			t.Error("expected inactive (deactivated)")
 		}

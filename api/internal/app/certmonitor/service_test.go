@@ -23,12 +23,11 @@ type fakeAssetRepo struct {
 	assets []*assetdom.Asset
 }
 
-func (r *fakeAssetRepo) List(_ context.Context, filter assetdom.Filter, _ assetdom.ListOptions, page pagination.Pagination) (pagination.Result[*assetdom.Asset], error) {
-	// Only return data on the first page; the sweep pages until empty.
-	if page.Page > 1 {
-		return pagination.Result[*assetdom.Asset]{Data: nil, Total: int64(len(r.assets))}, nil
-	}
-	return pagination.Result[*assetdom.Asset]{Data: r.assets, Total: int64(len(r.assets))}, nil
+func (r *fakeAssetRepo) List(_ context.Context, _ assetdom.Filter, _ assetdom.ListOptions, page pagination.Pagination) (pagination.Result[*assetdom.Asset], error) {
+	// Pages like the real repository, including pagination's per-page clamp.
+	start := min(page.Offset(), len(r.assets))
+	end := min(start+page.Limit(), len(r.assets))
+	return pagination.Result[*assetdom.Asset]{Data: r.assets[start:end], Total: int64(len(r.assets))}, nil
 }
 
 // fakeExposureRepo mimics the postgres ON CONFLICT(tenant_id, fingerprint)
@@ -104,7 +103,7 @@ func TestCollectDiscoveries_Subdomains(t *testing.T) {
 		{CommonName: "shop.example.com", NameValue: "shop.example.com.", NotAfter: future},  // trailing dot
 		{CommonName: "attacker.com", NameValue: "notexample.com", NotAfter: future},         // out of scope
 	}
-	subs, _ := collectDiscoveries("Example.com", entries, now, defaultExpiryWindow, 500)
+	subs := collectDiscoveries("Example.com", entries, now, defaultExpiryWindow, defaultExpiredLookback, 500).subdomains
 
 	want := map[string]bool{"www.example.com": true, "api.example.com": true, "shop.example.com": true}
 	if len(subs) != len(want) {
@@ -128,10 +127,16 @@ func TestCollectDiscoveries_ExpiryUsesNewestCert(t *testing.T) {
 		// host B: newest cert expires in 5 days -> EXPIRING (high).
 		{CommonName: "b.example.com", NotAfter: fmtT(now.Add(-30 * 24 * time.Hour))},
 		{CommonName: "b.example.com", NotAfter: fmtT(now.Add(5 * 24 * time.Hour)), IssuerName: "LE", SerialNumber: "s-b"},
-		// host C: newest cert already lapsed -> expired, NOT "expiring soon" (dropped).
+		// host C: newest cert lapsed yesterday -> expired, NOT "expiring soon".
 		{CommonName: "c.example.com", NotAfter: fmtT(now.Add(-1 * 24 * time.Hour))},
+		// host D: newest cert lapsed a year ago -> a retired host, dropped.
+		{CommonName: "d.example.com", NotAfter: fmtT(now.Add(-365 * 24 * time.Hour))},
 	}
-	_, expiring := collectDiscoveries("example.com", entries, now, defaultExpiryWindow, 500)
+	d := collectDiscoveries("example.com", entries, now, defaultExpiryWindow, defaultExpiredLookback, 500)
+	expiring := d.expiring
+	if len(d.expired) != 1 || d.expired[0].Host != "c.example.com" || d.expired[0].DaysLeft != -1 {
+		t.Fatalf("want only c.example.com expired (1 day ago), got %+v", d.expired)
+	}
 
 	if len(expiring) != 1 {
 		t.Fatalf("want exactly 1 expiring host (b), got %d: %+v", len(expiring), expiring)

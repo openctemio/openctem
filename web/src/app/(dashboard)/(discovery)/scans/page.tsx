@@ -8,7 +8,6 @@ import { Main } from '@/components/layout'
 import { triggerErrorHint } from '@/features/scan-zones'
 import {
   PageHeader,
-  StatusBadge,
   RunStatusBadge,
   MetricStrip,
   type MetricStripItem,
@@ -18,10 +17,6 @@ import {
   FacetPanel,
   FacetSection,
   FacetOption,
-  EmptyState,
-  SheetStatCard,
-  DangerZone,
-  DangerZoneItem,
   FilterPanelToggle,
   FilterSheet,
 } from '@/features/shared'
@@ -32,7 +27,6 @@ import { Progress } from '@/components/ui/progress'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Select,
   SelectContent,
@@ -40,7 +34,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,8 +43,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { toast } from 'sonner'
 import {
   Plus,
@@ -60,17 +51,10 @@ import {
   Eye,
   Pause,
   Play,
-  RefreshCw,
   Trash2,
   XCircle,
-  Radar,
-  CheckCircle,
   Clock,
-  AlertTriangle,
-  Target,
   Shield,
-  Calendar,
-  Layers,
   Copy,
   Pencil,
   Tag,
@@ -82,9 +66,8 @@ import {
   FileSpreadsheet,
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/use-debounce'
-import { SEVERITY_BADGE_SOFT, SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { cn, exportToCSV, exportToJSON } from '@/lib/utils'
 import {
@@ -104,12 +87,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { scanEndpoints } from '@/lib/api/endpoints'
 // Note: useAssetGroups can be imported when CreateConfigDialog is implemented
 // import { useAssetGroups } from "@/lib/api/security-hooks";
-import {
-  SCAN_TYPE_LABELS,
-  SCHEDULE_TYPE_LABELS,
-  SCAN_CONFIG_STATUS_LABELS,
-  SCHEDULE_TYPES,
-} from '@/lib/api/scan-types'
+import { SCAN_TYPE_LABELS, SCHEDULE_TYPE_LABELS, SCHEDULE_TYPES } from '@/lib/api/scan-types'
 import type {
   ScanConfig,
   ScanConfigStatus,
@@ -122,7 +100,9 @@ import {
   EditScanDialog,
   QuickScanDialog,
 } from '@/features/scans/components'
-import { SCAN_RUN_STATUS_LABELS } from '@/lib/api/scan-types'
+import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-detail-sheet'
+import { ScanSessionDetailSheet } from '@/features/scans/components/scan-session-detail-sheet'
+import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 
 // ============================================
 // CONFIGURATIONS TAB TYPES
@@ -175,26 +155,8 @@ const runStatusFilters: { value: RunStatusFilter; label: string }[] = [
 // UTILS
 // ============================================
 
-function formatDate(dateString?: string): string {
-  if (!dateString) return '-'
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-/** A run's duration in the largest two units (e.g. "3m 12s"). */
-function formatDuration(ms?: number): string {
-  if (!ms) return '-'
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  if (hours > 0) return `${hours}h ${minutes % 60}m`
-  if (minutes > 0) return `${minutes}m ${seconds % 60}s`
-  return `${seconds}s`
-}
+const formatDate = formatScanDate
+const formatDuration = formatScanDuration
 
 /**
  * Format next run time as relative time (e.g., "in 2 days", "in 3 hours")
@@ -1043,23 +1005,14 @@ function ConfigurationsTab() {
       </FilterSheet>
 
       {/* Config Details Sheet */}
-      <Sheet open={!!selectedConfig} onOpenChange={() => setSelectedConfig(null)}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto p-0">
-          <VisuallyHidden>
-            <SheetTitle>Configuration details</SheetTitle>
-          </VisuallyHidden>
-          {selectedConfig && (
-            <ConfigDetailSheet
-              config={selectedConfig}
-              onClose={() => setSelectedConfig(null)}
-              onDelete={() => {
-                setConfigToDelete(selectedConfig)
-                setDeleteConfirmOpen(true)
-              }}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
+      <ScanConfigDetailSheet
+        config={selectedConfig}
+        onOpenChange={(open) => !open && setSelectedConfig(null)}
+        onDelete={(config) => {
+          setConfigToDelete(config)
+          setDeleteConfirmOpen(true)
+        }}
+      />
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
@@ -1094,465 +1047,6 @@ function ConfigurationsTab() {
           setConfigToEdit(null)
         }}
       />
-    </>
-  )
-}
-
-// ============================================
-// CONFIG DETAIL SHEET
-// ============================================
-
-interface ConfigDetailSheetProps {
-  config: ScanConfig
-  onClose: () => void
-  onDelete?: () => void
-}
-
-function ConfigDetailSheet({ config, onClose: _onClose, onDelete }: ConfigDetailSheetProps) {
-  const [isTriggering, setIsTriggering] = useState(false)
-  const [isPausing, setIsPausing] = useState(false)
-  const [isActivating, setIsActivating] = useState(false)
-
-  // Calculate progress
-  const progress = useMemo(() => {
-    if (config.total_runs === 0) return 0
-    return Math.round((config.successful_runs / config.total_runs) * 100)
-  }, [config.total_runs, config.successful_runs])
-
-  // Real API action handlers
-  const handleTriggerScan = async () => {
-    setIsTriggering(true)
-    try {
-      await post(scanEndpoints.trigger(config.id), {})
-      toast.success(`Scan "${config.name}" triggered successfully`)
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      console.error('Failed to trigger scan:', error)
-      toast.error(getErrorMessage(error, `Failed to trigger scan "${config.name}"`), {
-        description: triggerErrorHint(error),
-      })
-    } finally {
-      setIsTriggering(false)
-    }
-  }
-
-  const handlePauseConfig = async () => {
-    setIsPausing(true)
-    try {
-      await post(scanEndpoints.pause(config.id), {})
-      toast.success(`Scan "${config.name}" paused`)
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      console.error('Failed to pause scan:', error)
-      toast.error(getErrorMessage(error, `Failed to pause scan "${config.name}"`))
-    } finally {
-      setIsPausing(false)
-    }
-  }
-
-  const handleActivateConfig = async () => {
-    setIsActivating(true)
-    try {
-      await post(scanEndpoints.activate(config.id), {})
-      toast.success(`Scan "${config.name}" activated`)
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      console.error('Failed to activate scan:', error)
-      toast.error(getErrorMessage(error, `Failed to activate scan "${config.name}"`))
-    } finally {
-      setIsActivating(false)
-    }
-  }
-
-  const handleDeleteConfig = () => {
-    // Use the parent's delete handler which shows confirmation dialog
-    onDelete?.()
-  }
-
-  return (
-    <>
-      {/* Hero Header */}
-      <div className="border-b px-6 pt-6 pb-4">
-        {/* Status & Type Row - pe-14 to avoid overlap with close button */}
-        <div className="flex items-center justify-between mb-4 pe-14">
-          <Badge variant="outline" className="font-medium">
-            {SCAN_TYPE_LABELS[config.scan_type]}
-          </Badge>
-          <StatusBadge
-            status={
-              config.status === 'active'
-                ? 'active'
-                : config.status === 'paused'
-                  ? 'pending'
-                  : 'inactive'
-            }
-          />
-        </div>
-
-        {/* Title with icon */}
-        <div className="flex items-center gap-3 mb-2">
-          <Radar className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <h2 className="text-lg font-semibold line-clamp-2">{config.name}</h2>
-        </div>
-        {config.description && (
-          <p className="text-sm text-muted-foreground ps-8">{config.description}</p>
-        )}
-
-        {/* Progress Bar */}
-        <div className="mt-5 rounded-lg border p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">Success rate</span>
-            <span className="text-2xl font-semibold tabular-nums">{progress}%</span>
-          </div>
-          <Progress value={progress} className="h-2" />
-          <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-            <span>{config.total_runs} total runs</span>
-            <span>{SCAN_CONFIG_STATUS_LABELS[config.status]}</span>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="flex gap-2 mt-5">
-          {config.status === 'active' && (
-            <>
-              <Button
-                size="sm"
-                className="flex-1"
-                onClick={handleTriggerScan}
-                disabled={isTriggering || isPausing}
-              >
-                {isTriggering ? (
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="me-2 h-4 w-4" />
-                )}
-                Trigger
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="flex-1"
-                onClick={handlePauseConfig}
-                disabled={isPausing || isTriggering}
-              >
-                {isPausing ? (
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Pause className="me-2 h-4 w-4" />
-                )}
-                Pause
-              </Button>
-            </>
-          )}
-          {config.status === 'paused' && (
-            <>
-              <Button
-                size="sm"
-                className="flex-1"
-                onClick={handleActivateConfig}
-                disabled={isActivating || isTriggering}
-              >
-                {isActivating ? (
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="me-2 h-4 w-4" />
-                )}
-                Resume
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1"
-                onClick={handleTriggerScan}
-                disabled={isTriggering || isActivating}
-              >
-                {isTriggering ? (
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="me-2 h-4 w-4" />
-                )}
-                Trigger
-              </Button>
-            </>
-          )}
-          {config.status === 'disabled' && (
-            <Button
-              size="sm"
-              className="flex-1"
-              onClick={handleActivateConfig}
-              disabled={isActivating}
-            >
-              {isActivating ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="me-2 h-4 w-4" />
-              )}
-              Enable
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Content with Tabs */}
-      <Tabs defaultValue="overview" className="px-6 pb-6">
-        <TabsList className="mb-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="config">Configuration</TabsTrigger>
-          <TabsTrigger value="details">Details</TabsTrigger>
-        </TabsList>
-
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4 mt-0">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <SheetStatCard label="Total runs" value={config.total_runs} icon={Target} />
-            <SheetStatCard label="Successful" value={config.successful_runs} icon={CheckCircle} />
-          </div>
-
-          {/* Results Breakdown */}
-          {config.total_runs > 0 && (
-            <div className="rounded-xl border p-4 bg-card">
-              <h4 className="text-sm font-medium mb-3">Run results</h4>
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm flex-1">Successful</span>
-                  <span className="font-semibold tabular-nums">{config.successful_runs}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm flex-1">Failed</span>
-                  <span
-                    className={cn(
-                      'font-semibold tabular-nums',
-                      config.failed_runs > 0 && 'text-destructive'
-                    )}
-                  >
-                    {config.failed_runs}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Timeline */}
-          <div className="rounded-xl border p-4 bg-card">
-            <h4 className="text-sm font-medium mb-3">Timeline</h4>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-muted">
-                  <CheckCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Created</p>
-                  <p className="text-xs text-muted-foreground">{formatDate(config.created_at)}</p>
-                </div>
-              </div>
-              {config.last_run_at && (
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-muted">
-                    <Play className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Last run</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(config.last_run_at)}
-                    </p>
-                  </div>
-                </div>
-              )}
-              {config.next_run_at && (
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-muted">
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Next scheduled</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(config.next_run_at)}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* Configuration Tab */}
-        <TabsContent value="config" className="space-y-4 mt-0">
-          {/* Scan Type & Schedule */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border p-4 bg-card">
-              <p className="text-xs text-muted-foreground mb-1">Scan type</p>
-              <p className="font-medium">{SCAN_TYPE_LABELS[config.scan_type]}</p>
-            </div>
-            <div className="rounded-xl border p-4 bg-card">
-              <p className="text-xs text-muted-foreground mb-1">Schedule</p>
-              <p className="font-medium capitalize">{SCHEDULE_TYPE_LABELS[config.schedule_type]}</p>
-            </div>
-          </div>
-
-          {/* Schedule Settings */}
-          <div className="rounded-xl border p-4 bg-card">
-            <h4 className="text-sm font-medium mb-3">Schedule settings</h4>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">Frequency</span>
-                </div>
-                <span className="text-sm font-medium">
-                  {SCHEDULE_TYPE_LABELS[config.schedule_type]}
-                </span>
-              </div>
-              {config.schedule_time && (
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">Time</span>
-                  </div>
-                  <span className="text-sm font-medium">{config.schedule_time}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Layers className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">Timezone</span>
-                </div>
-                <span className="text-sm font-medium">{config.schedule_timezone}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Tags */}
-          {config.tags && config.tags.length > 0 && (
-            <div className="rounded-xl border p-4 bg-card">
-              <h4 className="text-sm font-medium mb-3">Tags</h4>
-              <div className="flex flex-wrap gap-2">
-                {config.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="gap-1">
-                    <Tag className="h-3 w-3" />
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Details Tab */}
-        <TabsContent value="details" className="space-y-4 mt-0">
-          {/* Created By */}
-          <div className="rounded-xl border p-4 bg-card">
-            <h4 className="text-sm font-medium mb-3">Created by</h4>
-            <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10">
-                <AvatarFallback>
-                  {(config.created_by_name || 'S').charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-medium">{config.created_by_name || 'System'}</p>
-                <p className="text-xs text-muted-foreground">{formatDate(config.created_at)}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Targets Summary */}
-          {((config.asset_group_ids && config.asset_group_ids.length > 0) ||
-            config.asset_group_id ||
-            (config.targets && config.targets.length > 0)) && (
-            <div className="rounded-xl border p-4 bg-card">
-              <h4 className="text-sm font-medium mb-3">Targets</h4>
-              <div className="space-y-2">
-                {/* Asset Groups */}
-                {config.asset_group_ids && config.asset_group_ids.length > 0 ? (
-                  <div>
-                    <span className="text-xs text-muted-foreground">Asset groups</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {config.asset_group_ids.map((id) => (
-                        <Badge key={id} variant="outline" className="text-xs">
-                          {id.slice(0, 8)}...
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                ) : config.asset_group_id ? (
-                  <div>
-                    <span className="text-xs text-muted-foreground">Asset group</span>
-                    <div className="mt-1">
-                      <Badge variant="outline" className="text-xs">
-                        {config.asset_group_id.slice(0, 8)}...
-                      </Badge>
-                    </div>
-                  </div>
-                ) : null}
-                {/* Direct Targets */}
-                {config.targets && config.targets.length > 0 && (
-                  <div>
-                    <span className="text-xs text-muted-foreground">
-                      Direct targets ({config.targets.length})
-                    </span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {config.targets.slice(0, 5).map((target, i) => (
-                        <Badge key={i} variant="secondary" className="text-xs">
-                          {target.length > 30 ? `${target.slice(0, 30)}...` : target}
-                        </Badge>
-                      ))}
-                      {config.targets.length > 5 && (
-                        <Badge variant="secondary" className="text-xs">
-                          +{config.targets.length - 5} more
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Technical Details */}
-          <div className="rounded-xl border p-4 bg-card">
-            <h4 className="text-sm font-medium mb-3">Technical details</h4>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Configuration ID</span>
-                <div className="flex items-center gap-2">
-                  <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-[150px]">
-                    {config.id}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                    aria-label="Copy ID"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      copyToClipboard(config.id)
-                      toast.success('ID copied to clipboard')
-                    }}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <Can permission={Permission.ScansDelete}>
-            <DangerZone as="h3">
-              <DangerZoneItem
-                title="Delete configuration"
-                description="Permanently delete this configuration and all associated data."
-                action={
-                  <Button variant="destructive" size="sm" onClick={handleDeleteConfig}>
-                    <Trash2 className="me-2 h-4 w-4" />
-                    Delete configuration
-                  </Button>
-                }
-              />
-            </DangerZone>
-          </Can>
-        </TabsContent>
-      </Tabs>
     </>
   )
 }
@@ -1936,349 +1430,10 @@ function RunsTab() {
       </div>
 
       {/* Session Details Sheet */}
-      <Sheet open={!!selectedSession} onOpenChange={() => setSelectedSession(null)}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto p-0">
-          <VisuallyHidden>
-            <SheetTitle>Run details</SheetTitle>
-          </VisuallyHidden>
-          {selectedSession && <SessionDetailSheet session={selectedSession} />}
-        </SheetContent>
-      </Sheet>
-    </>
-  )
-}
-
-// ============================================
-// SESSION DETAIL SHEET
-// ============================================
-
-interface SessionDetailSheetProps {
-  session: ScanSession
-}
-
-function SessionDetailSheet({ session }: SessionDetailSheetProps) {
-  // Get severity counts from findings_by_severity
-  const severities = session.findings_by_severity ?? {}
-  const criticalCount = severities.critical ?? 0
-  const highCount = severities.high ?? 0
-  const mediumCount = severities.medium ?? 0
-  const lowCount = severities.low ?? 0
-
-  // Calculate progress based on status
-  const progress =
-    session.status === 'completed'
-      ? 100
-      : session.status === 'running'
-        ? 50
-        : session.status === 'pending'
-          ? 0
-          : session.status === 'failed' ||
-              session.status === 'timeout' ||
-              session.status === 'canceled'
-            ? 100
-            : 0
-
-  return (
-    <>
-      {/* Hero Header */}
-      <div className="border-b px-6 pt-6 pb-4">
-        {/* Status & Scanner Row - pe-14 to avoid overlap with close button */}
-        <div className="flex items-center justify-between mb-3 pe-14">
-          <Badge variant="outline" className="font-medium">
-            {session.scanner_name}
-            {session.scanner_version && ` v${session.scanner_version}`}
-          </Badge>
-          <RunStatusBadge status={session.status} />
-        </div>
-
-        {/* Title */}
-        <h2 className="text-lg font-semibold mb-1 truncate">{session.asset_value}</h2>
-        <p className="text-sm text-muted-foreground">{session.asset_type}</p>
-
-        {/* Progress Bar */}
-        <div className="mt-4 rounded-lg border p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">Status</span>
-            <span className="text-sm font-semibold">{SCAN_RUN_STATUS_LABELS[session.status]}</span>
-          </div>
-          <Progress
-            value={progress}
-            className={cn('h-2', session.status === 'running' && '[&>div]:animate-pulse')}
-          />
-          <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-            <span>{session.findings_total} findings</span>
-            <span>
-              {session.duration_ms
-                ? formatDuration(session.duration_ms)
-                : session.status === 'running'
-                  ? 'In progress'
-                  : '-'}
-            </span>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="flex gap-2 mt-4">
-          {session.status === 'completed' && session.findings_total > 0 && (
-            <Button asChild size="sm" className="flex-1">
-              <Link href={`/findings?scan_id=${session.id}`}>
-                <Eye className="me-2 h-4 w-4" />
-                View {session.findings_total} findings
-              </Link>
-            </Button>
-          )}
-          {(session.status === 'pending' ||
-            (session.status === 'completed' && session.findings_total === 0)) && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="flex-1"
-              onClick={() => {
-                copyToClipboard(session.id)
-                toast.success('Session ID copied to clipboard')
-              }}
-            >
-              <Copy className="me-2 h-4 w-4" />
-              Copy ID
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Content with Tabs */}
-      <Tabs defaultValue="overview" className="px-6 pb-6">
-        <TabsList className="mb-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="findings">Findings</TabsTrigger>
-          <TabsTrigger value="details">Details</TabsTrigger>
-        </TabsList>
-
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4 mt-0">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <SheetStatCard label="Total findings" value={session.findings_total} icon={Target} />
-            <SheetStatCard label="New findings" value={session.findings_new} icon={AlertTriangle} />
-          </div>
-
-          {/* Findings Breakdown */}
-          {session.findings_total > 0 && (
-            <div className="rounded-xl border p-4 bg-card">
-              <h4 className="text-sm font-medium mb-3">Findings by severity</h4>
-              <div className="space-y-2">
-                {(
-                  [
-                    ['critical', 'Critical', criticalCount],
-                    ['high', 'High', highCount],
-                    ['medium', 'Medium', mediumCount],
-                    ['low', 'Low', lowCount],
-                  ] as const
-                ).map(([level, label, count]) => (
-                  <div key={level} className="flex items-center gap-3">
-                    <div className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS[level])} />
-                    <span className="text-sm flex-1">{label}</span>
-                    <span className="font-semibold tabular-nums">{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Fixed Findings */}
-          {session.findings_fixed > 0 && (
-            <SheetStatCard
-              label="Fixed since last scan"
-              value={session.findings_fixed}
-              icon={CheckCircle}
-            />
-          )}
-
-          {/* Timeline */}
-          <div className="rounded-xl border p-4 bg-card">
-            <h4 className="text-sm font-medium mb-3">Timeline</h4>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-muted">
-                  <CheckCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Created</p>
-                  <p className="text-xs text-muted-foreground">{formatDate(session.created_at)}</p>
-                </div>
-              </div>
-              {session.started_at && (
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-muted">
-                    <Play className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Started</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(session.started_at)}
-                    </p>
-                  </div>
-                </div>
-              )}
-              {session.completed_at && (
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-muted">
-                    {session.status === 'completed' ? (
-                      <CheckCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                    ) : (
-                      <XCircle className="h-3.5 w-3.5 text-destructive" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">
-                      {session.status === 'completed' ? 'Completed' : 'Ended'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(session.completed_at)}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* Findings Tab */}
-        <TabsContent value="findings" className="space-y-4 mt-0">
-          {session.findings_total > 0 ? (
-            <div className="rounded-xl border p-4 bg-card">
-              <h4 className="text-sm font-medium mb-3">Findings summary</h4>
-              <p className="text-sm text-muted-foreground mb-4">
-                {session.findings_total} vulnerabilities detected on {session.asset_value}.
-                {session.findings_new > 0 && ` ${session.findings_new} are new.`}
-              </p>
-              <Button asChild size="sm" className="w-full">
-                <Link href={`/findings?scan_id=${session.id}`}>View all findings</Link>
-              </Button>
-            </div>
-          ) : (
-            <EmptyState
-              icon={Shield}
-              title="No findings"
-              description={
-                session.status === 'completed'
-                  ? 'This run detected no vulnerabilities.'
-                  : 'The run is still in progress or has not started yet.'
-              }
-            />
-          )}
-        </TabsContent>
-
-        {/* Details Tab */}
-        <TabsContent value="details" className="space-y-4 mt-0">
-          {/* Scanner Info */}
-          <div className="rounded-xl border p-4 bg-card">
-            <h4 className="text-sm font-medium mb-3">Scanner</h4>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Scanner</span>
-                <span className="text-sm font-medium">{session.scanner_name}</span>
-              </div>
-              {session.scanner_version && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Version</span>
-                  <Badge variant="outline">{session.scanner_version}</Badge>
-                </div>
-              )}
-              {session.scanner_type && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Type</span>
-                  <span className="text-sm font-medium capitalize">{session.scanner_type}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Target Info */}
-          <div className="rounded-xl border p-4 bg-card">
-            <h4 className="text-sm font-medium mb-3">Target</h4>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Asset type</span>
-                <Badge variant="outline" className="capitalize">
-                  {session.asset_type}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Target</span>
-                <span className="text-sm font-medium truncate max-w-[200px]">
-                  {session.asset_value}
-                </span>
-              </div>
-              {session.branch && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Branch</span>
-                  <Badge variant="secondary">{session.branch}</Badge>
-                </div>
-              )}
-              {session.commit_sha && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Commit</span>
-                  <code className="text-xs bg-muted px-2 py-1 rounded">
-                    {session.commit_sha.substring(0, 7)}
-                  </code>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Technical Details */}
-          <div className="rounded-xl border p-4 bg-card">
-            <h4 className="text-sm font-medium mb-3">Technical details</h4>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Run ID</span>
-                <div className="flex items-center gap-2">
-                  <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-[150px]">
-                    {session.id}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                    aria-label="Copy ID"
-                    onClick={() => {
-                      copyToClipboard(session.id)
-                      toast.success('ID copied to clipboard')
-                    }}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-              {session.sensor_id && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Sensor ID</span>
-                  <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-[150px]">
-                    {session.sensor_id.substring(0, 8)}...
-                  </code>
-                </div>
-              )}
-              {session.duration_ms && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Duration</span>
-                  <span className="text-sm font-medium">{formatDuration(session.duration_ms)}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Error Message */}
-          {session.error_message && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Run failed</AlertTitle>
-              <AlertDescription>
-                <p className="font-mono text-xs whitespace-pre-wrap">{session.error_message}</p>
-              </AlertDescription>
-            </Alert>
-          )}
-        </TabsContent>
-      </Tabs>
+      <ScanSessionDetailSheet
+        session={selectedSession}
+        onOpenChange={(open) => !open && setSelectedSession(null)}
+      />
     </>
   )
 }

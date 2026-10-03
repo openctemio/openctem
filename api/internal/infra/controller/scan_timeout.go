@@ -63,8 +63,27 @@ func (c *ScanTimeoutController) Interval() time.Duration {
 	return c.config.Interval
 }
 
-// Reconcile marks expired runs as timed out.
+// Defaults for ending a run no sensor ever picked up (D8).
+const (
+	UnclaimedScheduledRunAfter   = 4 * time.Hour
+	UnclaimedInteractiveRunAfter = time.Hour
+)
+
+// Reconcile ends runs no sensor picked up, then marks expired runs as timed out.
 func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
+	// First, so an unclaimed run ends with the reason instead of as a
+	// generic timeout (and is not retried: no sensor is a permanent class).
+	aborted := int64(0)
+	if a, ok := c.runRepo.(pipeline.UnclaimedRunAborter); ok {
+		n, err := a.AbortUnclaimedRuns(ctx, UnclaimedScheduledRunAfter, UnclaimedInteractiveRunAfter)
+		if err != nil {
+			c.logger.Error("failed to abort unclaimed scan runs", "error", err)
+		} else if n > 0 {
+			c.logger.Info("ended scan runs no sensor picked up", "count", n)
+			aborted = n
+		}
+	}
+
 	count, err := c.runRepo.MarkTimedOutRuns(ctx)
 	if err != nil {
 		c.logger.Error("failed to mark timed out scan runs", "error", err)
@@ -75,5 +94,5 @@ func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
 		c.logger.Info("marked scan runs as timeout", "count", count)
 	}
 
-	return int(count), nil
+	return int(count + aborted), nil
 }

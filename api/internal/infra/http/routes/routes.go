@@ -218,6 +218,11 @@ type Handlers struct {
 	// F-8: Optional single-use WebSocket ticket redeemer. When non-nil,
 	// the /ws route uses ticket auth instead of the JWT chain.
 	WSTicketRedeemer middleware.WSTicketRedeemer
+
+	// AuthRateLimitBackend is the shared store (Redis) the public auth rate
+	// limits count in, so every API replica spends one budget. nil keeps them
+	// in-memory per process (tests, single-instance dev).
+	AuthRateLimitBackend middleware.AuthRateLimitBackend
 }
 
 // AuthConfig holds authentication configuration for route registration.
@@ -283,6 +288,7 @@ func Register(
 	// uses it, so routes outside those chains (account, auth, admin console,
 	// /tenants/{tenant}) stay JWT-only. Reset on every Register so a previous
 	// router's setting can't leak into this one.
+	authRateLimitBackend = h.AuthRateLimitBackend
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
 		apiKeyOrJWT = h.APIKeyAuth.OrJWT
@@ -295,9 +301,6 @@ func Register(
 	if h.Docs != nil {
 		registerDocsRoutes(router, h.Docs)
 	}
-
-	// Auth routes - based on provider (some protected, some public)
-	registerAuthRoutes(router, h, cfg, authCfg, authMiddleware, log)
 
 	// Initialize per-user read endpoint rate limiter to prevent enumeration and scraping.
 	// Applied to all GET requests on authenticated tenant-scoped routes via
@@ -385,6 +388,11 @@ func Register(
 	if userService != nil {
 		userSync = middleware.UserSync(userService, log)
 	}
+
+	// Auth routes - based on provider (some protected, some public).
+	// Registered AFTER the tenant-chain middlewares above are initialized:
+	// /auth/ws-token mounts wsTokenMiddlewares, which reads them.
+	registerAuthRoutes(router, h, cfg, authCfg, authMiddleware, userSync, log)
 
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
@@ -851,7 +859,9 @@ func Register(
 	if h.WebSocket != nil {
 		var wsTicketMW Middleware
 		if h.WSTicketRedeemer != nil {
-			wsTicketMW = middleware.WSTicketAuth(h.WSTicketRedeemer, log)
+			// Re-checks active membership at upgrade (same reader as the
+			// tenant chain) for the user+tenant the ticket is bound to.
+			wsTicketMW = middleware.WSTicketAuth(h.WSTicketRedeemer, membershipReader, log)
 		}
 		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync, wsTicketMW)
 	}
@@ -892,6 +902,17 @@ var csrfProtectionMiddleware Middleware //nolint:gochecknoglobals // set once du
 // middleware.APIKeyAuthMiddleware.OrJWT). Set during Register when the API-key
 // service is wired; nil keeps the token-tenant chains JWT-only.
 var apiKeyOrJWT func(func(http.Handler) http.Handler) func(http.Handler) http.Handler //nolint:gochecknoglobals // set once during init
+
+// authRateLimitBackend is the shared store for the auth rate limits, set on
+// every Register from Handlers.AuthRateLimitBackend (nil = in-memory).
+var authRateLimitBackend middleware.AuthRateLimitBackend //nolint:gochecknoglobals // set once during init
+
+// newAuthRateLimiter builds the auth limiter for one group of routes. scope
+// keeps its budgets apart from other groups' in the shared store; the same
+// scope on another replica shares them.
+func newAuthRateLimiter(scope string) *middleware.AuthRateLimiter {
+	return middleware.NewDistributedAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil, authRateLimitBackend, scope)
+}
 
 // readRateLimitMiddleware is the per-user read endpoint rate limiter,
 // set during Register() if rate limiting is enabled. Applied automatically
@@ -1040,6 +1061,16 @@ func tenantOverlayMiddlewares() []Middleware {
 		mws = append(mws, readRateLimitMiddleware)
 	}
 	return mws
+}
+
+// wsTokenMiddlewares is the chain for GET /api/v1/auth/ws-token. A WebSocket
+// ticket opens the tenant's real-time stream, so issuing one must pass the
+// same tenant gates as any tenant route: SSO enforcement and the organization
+// IP allowlist (buildBaseMiddlewares), then RequireTenant + active membership
+// (tenantOverlayMiddlewares). It stays session-only: unlike
+// buildTokenTenantMiddlewares it does not accept `oct_` API keys.
+func wsTokenMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
+	return append(buildBaseMiddlewares(authMiddleware, userSyncMiddleware), tenantOverlayMiddlewares()...)
 }
 
 // ChainFunc wraps a handler function with middleware(s).

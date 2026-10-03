@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
@@ -21,7 +22,34 @@ type RetryDispatcher interface {
 // satisfies it, so wiring passes the concrete repo unchanged.
 type retryRunRepository interface {
 	ListPendingRetries(ctx context.Context, limit int) ([]pipeline.RetryCandidate, error)
-	ResetRetryClaim(ctx context.Context, runID shared.ID) error
+	ReleaseFailedRetryDispatch(ctx context.Context, runID shared.ID) error
+}
+
+// permanentDispatchCodes are trigger refusals a retry cannot fix (D7): the
+// scanner is gone or disabled, the scan resolves to nothing, no sensor is
+// available, the scan was paused. Such a run is not retried again; the next
+// scheduled occurrence, or a manual trigger, starts fresh.
+var permanentDispatchCodes = map[string]bool{
+	"NO_SENSOR_AVAILABLE":  true,
+	"NO_TARGETS":           true,
+	"ALL_TARGETS_EXCLUDED": true,
+	"TOOL_NOT_FOUND":       true,
+	"TOOL_DISABLED":        true,
+	"TOOL_NOT_SCANNER":     true,
+	"NO_MATCHING_TOOL":     true,
+	"STEP_INVALID":         true,
+	"PIPELINE_NOT_FOUND":   true,
+	"PIPELINE_DISABLED":    true,
+	"PIPELINE_EMPTY":       true,
+	"PIPELINE_NOT_SET":     true,
+	"SCAN_NOT_TRIGGERABLE": true,
+}
+
+// isPermanentDispatchError reports whether a retry dispatch failed for a
+// reason another attempt cannot fix.
+func isPermanentDispatchError(err error) bool {
+	var de *shared.DomainError
+	return errors.As(err, &de) && permanentDispatchCodes[de.Code]
 }
 
 // ScanRetryControllerConfig configures the ScanRetryController.
@@ -99,21 +127,29 @@ func (c *ScanRetryController) Reconcile(ctx context.Context) (int, error) {
 	for _, cand := range candidates {
 		nextAttempt := cand.RetryAttempt + 1
 		if err := c.dispatcher.RetryScanRun(ctx, cand.TenantID, cand.ScanID, nextAttempt); err != nil {
+			if isPermanentDispatchError(err) {
+				// Leave the claim set: this run is not retried again.
+				c.logger.Warn("scan retry not possible; giving up on this run",
+					"scan_id", cand.ScanID.String(),
+					"failed_run_id", cand.RunID.String(),
+					"next_attempt", nextAttempt,
+					"error", err)
+				continue
+			}
 			c.logger.Error("failed to dispatch scan retry",
 				"scan_id", cand.ScanID.String(),
 				"failed_run_id", cand.RunID.String(),
 				"next_attempt", nextAttempt,
 				"error", err)
 			// The dispatch was claimed at LIST time (retry_dispatched_at = NOW)
-			// but created no new run, so the claim is now stale. Release it so
-			// this run is eligible again next tick; otherwise a single transient
-			// failure would permanently stall auto-retry. Budget is not
-			// double-counted: no new run was created, so retry_attempt is unchanged.
-			if resetErr := c.runRepo.ResetRetryClaim(ctx, cand.RunID); resetErr != nil {
-				c.logger.Error("failed to reset retry claim after dispatch failure",
+			// but created no new run. Release the claim and spend the attempt:
+			// a dispatch that keeps failing must run out of budget (and back off
+			// further each time), not be retried every interval forever.
+			if relErr := c.runRepo.ReleaseFailedRetryDispatch(ctx, cand.RunID); relErr != nil {
+				c.logger.Error("failed to release retry claim after dispatch failure",
 					"scan_id", cand.ScanID.String(),
 					"failed_run_id", cand.RunID.String(),
-					"error", resetErr)
+					"error", relErr)
 			}
 			continue
 		}

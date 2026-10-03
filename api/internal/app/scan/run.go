@@ -445,6 +445,9 @@ func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, 
 	}
 
 	// Trigger a new run via the standard trigger path, with retry attempt in context
+	// The new run is created with its retry_attempt. Setting it afterwards
+	// with a full-row update raced the run itself: a run that already finished
+	// was not updated, kept retry_attempt 0, and the retry budget never ran out.
 	run, err := s.TriggerScan(ctx, TriggerScanExecInput{
 		TenantID: tenantID.String(),
 		ScanID:   scanID.String(),
@@ -453,18 +456,10 @@ func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, 
 			"retry_attempt": retryAttempt,
 			"retried_at":    time.Now().Unix(),
 		},
+		RetryAttempt: retryAttempt,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to trigger retry: %w", err)
-	}
-
-	// Persist retry_attempt on the new run (TriggerScan creates it via pipeline)
-	// The trigger path doesn't currently set RetryAttempt, so we update it here.
-	if run != nil {
-		run.RetryAttempt = retryAttempt
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			s.logger.Warn("failed to persist retry_attempt on retried run", "run_id", run.ID.String(), "error", err)
-		}
 	}
 
 	s.logger.Info("scan retry triggered",

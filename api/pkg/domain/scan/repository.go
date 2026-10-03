@@ -87,7 +87,13 @@ type Repository interface {
 	// UpdateNextRunAt updates the next run time for a scan.
 	UpdateNextRunAt(ctx context.Context, id shared.ID, nextRunAt *time.Time) error
 
-	// RecordRun records a run result for a scan.
+	// RecordRunStarted records a newly created run as the scan's last run
+	// (status 'running') without rewriting the rest of the scan row and without
+	// touching the counters.
+	RecordRunStarted(ctx context.Context, id shared.ID, runID shared.ID) error
+
+	// RecordRun records a run's terminal outcome and counts the run.
+	// last_run_status follows only while runID is still the scan's latest run.
 	RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error
 
 	// RecordTriggerFailure records that a scheduled trigger failed BEFORE any
