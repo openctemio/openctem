@@ -1311,6 +1311,16 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		args = append(args, *filter.LastSeenBefore)
 		argIndex++
 	}
+	if filter.CreatedAfter != nil {
+		conditions = append(conditions, fmt.Sprintf("a.created_at >= $%d", argIndex))
+		args = append(args, *filter.CreatedAfter)
+		argIndex++
+	}
+	if filter.ExposureChangedOrCreatedAfter != nil {
+		conditions = append(conditions, fmt.Sprintf("(a.created_at >= $%d OR a.exposure_changed_at >= $%d)", argIndex, argIndex))
+		args = append(args, *filter.ExposureChangedOrCreatedAfter)
+		argIndex++
+	}
 
 	// Layer 2: Data Scope - filter by user's group membership
 	// Default (fail-OPEN): no rows in user_accessible_assets ⇒ NOT EXISTS bypasses

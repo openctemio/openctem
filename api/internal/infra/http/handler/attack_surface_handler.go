@@ -34,10 +34,13 @@ type AttackSurfaceStatsResponse struct {
 	CriticalExposures int     `json:"critical_exposures" example:"12"`
 	RiskScore         float64 `json:"risk_score" example:"72.5"`
 
-	// Trends (week-over-week changes)
+	// Trends: what is new in the last trend_window_days days. Counts, never
+	// negative: assets added; public assets added or newly made public; the
+	// same limited to critical/high criticality.
 	TotalAssetsChange       int `json:"total_assets_change" example:"12"`
-	ExposedServicesChange   int `json:"exposed_services_change" example:"-3"`
+	ExposedServicesChange   int `json:"exposed_services_change" example:"3"`
 	CriticalExposuresChange int `json:"critical_exposures_change" example:"2"`
+	TrendWindowDays         int `json:"trend_window_days" example:"7"`
 
 	// Asset breakdown by type
 	AssetBreakdown []AssetTypeBreakdownResponse `json:"asset_breakdown"`
@@ -287,6 +290,7 @@ func (h *AttackSurfaceHandler) toStatsResponse(stats *attack.SurfaceStats) Attac
 		TotalAssetsChange:       stats.TotalAssetsChange,
 		ExposedServicesChange:   stats.ExposedServicesChange,
 		CriticalExposuresChange: stats.CriticalExposuresChange,
+		TrendWindowDays:         stats.TrendWindowDays,
 		AssetBreakdown:          breakdown,
 		ExposedServicesList:     services,
 		RecentChanges:           changes,
