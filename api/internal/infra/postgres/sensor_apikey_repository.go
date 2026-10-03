@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/lib/pq"
@@ -38,6 +39,10 @@ const sensorAPIKeyColumns = `
 
 // Create inserts a new API key.
 func (r *SensorAPIKeyRepository) Create(ctx context.Context, key *sensordom.APIKey) error {
+	return r.create(ctx, r.db, key)
+}
+
+func (r *SensorAPIKeyRepository) create(ctx context.Context, exec executor, key *sensordom.APIKey) error {
 	query := `
 		INSERT INTO sensor_api_keys (
 			id, sensor_id, name, key_hash, key_prefix, scopes,
@@ -45,7 +50,7 @@ func (r *SensorAPIKeyRepository) Create(ctx context.Context, key *sensordom.APIK
 			is_active, revoked_at, revoked_reason, created_at, key_pepper_id
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err := exec.ExecContext(ctx, query,
 		key.ID.String(),
 		key.SensorID.String(),
 		key.Name,
@@ -193,37 +198,211 @@ func (r *SensorAPIKeyRepository) CountActiveBySensorID(ctx context.Context, sens
 	return n, nil
 }
 
-// RetireKeys brings the expiry of the sensor's active, non-revoked keys
-// forward to at — never later than an expiry they already have. With newest
-// set, only keys created before that key are touched, compared on
-// (created_at, id) as stored, so of two concurrent renewals the newer key is
-// never retired by the older one. It writes expires_at alone, so a
-// concurrent revoke is not undone.
-func (r *SensorAPIKeyRepository) RetireKeys(ctx context.Context, sensorID shared.ID, newest *shared.ID, at time.Time) (int64, error) {
-	var (
-		res sql.Result
-		err error
-	)
-	if newest != nil {
-		res, err = r.db.ExecContext(ctx, `
-			UPDATE sensor_api_keys k
-			SET expires_at = $3
-			FROM sensor_api_keys n
-			WHERE n.id = $2 AND n.sensor_id = $1
-			  AND k.sensor_id = $1
-			  AND k.is_active AND k.revoked_at IS NULL
-			  AND (k.created_at, k.id) < (n.created_at, n.id)
-			  AND (k.expires_at IS NULL OR k.expires_at > $3)`,
-			sensorID.String(), newest.String(), at)
-	} else {
-		res, err = r.db.ExecContext(ctx, `
-			UPDATE sensor_api_keys
-			SET expires_at = $2
-			WHERE sensor_id = $1
-			  AND is_active AND revoked_at IS NULL
-			  AND (expires_at IS NULL OR expires_at > $2)`,
-			sensorID.String(), at)
+// RotateKey issues key and retires everything it supersedes in one
+// transaction that first locks the sensor row, so renewals of one sensor run
+// one after another (see sensordom.APIKeyRepository.RotateKey).
+//
+// Without the lock two renewals interleaved: each retired only the keys that
+// existed when it ran, so a renewal whose new row was not yet inserted, or
+// was inserted with an earlier created_at, survived the other, and a
+// superseded key stayed valid until its own expiry. Under the lock "every
+// other active key" is exactly what a renewal supersedes.
+//
+// The renewal's authentication is re-checked under the lock: an admin
+// regeneration (RegenerateKey) takes the same lock, so a renewal that
+// authenticated with a key the regeneration replaced either committed before
+// it, and has its new key revoked by it, or finds the key gone here.
+func (r *SensorAPIKeyRepository) RotateKey(ctx context.Context, key *sensordom.APIKey, presented sensordom.PresentedKey, inlineKeyHashes []string, retireAt time.Time) error {
+	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		locked, err := lockSensorKeys(ctx, tx, key.SensorID)
+		if err != nil {
+			return err
+		}
+		if err := locked.requireActive(); err != nil {
+			return err
+		}
+		if err := checkPresentedKey(ctx, tx, key.SensorID, locked, presented); err != nil {
+			return err
+		}
+		if err := r.create(ctx, tx, key); err != nil {
+			return err
+		}
+		if _, err := retireSensorKeys(ctx, tx, key.SensorID, &key.ID, retireAt); err != nil {
+			return err
+		}
+		if len(inlineKeyHashes) > 0 {
+			if _, err := retireInlineKey(ctx, tx, key.SensorID, inlineKeyHashes, retireAt); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// errInactiveSensor rolls back a ReplaceInlineKey that matched no active
+// sensor; it never leaves this file.
+var errInactiveSensor = errors.New("no active sensor")
+
+// ReplaceInlineKey replaces the inline key and retires every active key row,
+// in one transaction under the same per-sensor lock as RotateKey, after the
+// same re-check of the renewal's authentication.
+func (r *SensorAPIKeyRepository) ReplaceInlineKey(ctx context.Context, sensorID shared.ID, presented sensordom.PresentedKey, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error) {
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		locked, err := lockSensorKeys(ctx, tx, sensorID)
+		if err != nil {
+			return err
+		}
+		if locked.status != string(sensordom.SensorStatusActive) {
+			return errInactiveSensor
+		}
+		if err := checkPresentedKey(ctx, tx, sensorID, locked, presented); err != nil {
+			return err
+		}
+		updated, err := updateInlineKey(ctx, tx, r.value(), sensorID, hash, prefix, expiresAt, true)
+		if err != nil {
+			return err
+		}
+		if !updated {
+			return errInactiveSensor
+		}
+		_, err = retireSensorKeys(ctx, tx, sensorID, nil, retireAt)
+		return err
+	})
+	if errors.Is(err, errInactiveSensor) || errors.Is(err, sensordom.ErrSensorNotFound) {
+		return false, nil
 	}
+	return err == nil, err
+}
+
+// RegenerateKey installs the administrator's new inline key and revokes
+// every active key row, in one transaction under the per-sensor key lock that
+// renewals take (see sensordom.APIKeyRepository.RegenerateKey).
+//
+// Done as separate writes outside the lock, a renewal that authenticated with
+// the old key just before could mint its row after the revocation had read
+// the key rows, and the key the administrator meant to kill was renewed into
+// a valid one.
+func (r *SensorAPIKeyRepository) RegenerateKey(ctx context.Context, sensorID shared.ID, hash, prefix, reason string) (bool, error) {
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		if _, err := lockSensorKeys(ctx, tx, sensorID); err != nil {
+			return err
+		}
+		updated, err := updateInlineKey(ctx, tx, r.value(), sensorID, hash, prefix, nil, false)
+		if err != nil {
+			return err
+		}
+		if !updated {
+			return sensordom.ErrSensorNotFound
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sensor_api_keys
+			SET is_active = FALSE, revoked_at = NOW(), revoked_reason = $2
+			WHERE sensor_id = $1 AND is_active = TRUE`,
+			sensorID.String(), nullString(reason)); err != nil {
+			return fmt.Errorf("revoke sensor api keys: %w", err)
+		}
+		return nil
+	})
+	if errors.Is(err, sensordom.ErrSensorNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// lockedSensor is the sensor row as read under the per-sensor key lock: the
+// state a key write in the same transaction is decided on.
+type lockedSensor struct {
+	status        string
+	inlineHash    string
+	inlineExpires sql.NullTime
+}
+
+// requireActive refuses a renewal for a sensor that can no longer
+// authenticate (disabled or revoked since the renewal authenticated).
+func (s lockedSensor) requireActive() error {
+	switch sensordom.SensorStatus(s.status) {
+	case sensordom.SensorStatusActive:
+		return nil
+	case sensordom.SensorStatusRevoked:
+		return sensordom.ErrSensorRevoked
+	default:
+		return sensordom.ErrSensorDisabled
+	}
+}
+
+// lockSensorKeys takes the per-sensor key lock: the sensor row, locked until
+// tx ends. FOR NO KEY UPDATE serializes key writers without blocking inserts
+// that only reference the sensor (their foreign-key check takes KEY SHARE).
+// It is a row lock, so it is released with the transaction and never
+// outlives it on a pooled connection. It returns the row's key state as of
+// the lock, which no other key writer can change until tx ends.
+func lockSensorKeys(ctx context.Context, tx *sql.Tx, sensorID shared.ID) (lockedSensor, error) {
+	var (
+		s    lockedSensor
+		hash sql.NullString
+	)
+	err := tx.QueryRowContext(ctx,
+		`SELECT status, api_key_hash, key_expires_at FROM sensors WHERE id = $1 FOR NO KEY UPDATE`,
+		sensorID.String()).Scan(&s.status, &hash, &s.inlineExpires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return lockedSensor{}, sensordom.ErrSensorNotFound
+	}
+	if err != nil {
+		return lockedSensor{}, fmt.Errorf("lock sensor keys: %w", err)
+	}
+	s.inlineHash = hash.String
+	return s, nil
+}
+
+// checkPresentedKey re-checks, under the lock, that the key a renewal
+// authenticated with is still valid: the key row still the sensor's, active,
+// unrevoked and unexpired, or the inline hash still the presented key's and
+// unexpired. ErrPresentedKeyInvalid otherwise.
+func checkPresentedKey(ctx context.Context, tx *sql.Tx, sensorID shared.ID, locked lockedSensor, presented sensordom.PresentedKey) error {
+	if presented.KeyID == nil {
+		if locked.inlineHash == "" || !slices.Contains(presented.InlineKeyHashes, locked.inlineHash) {
+			return fmt.Errorf("%w: the inline key was replaced", sensordom.ErrPresentedKeyInvalid)
+		}
+		if locked.inlineExpires.Valid && !locked.inlineExpires.Time.After(presented.At) {
+			return fmt.Errorf("%w: the inline key expired", sensordom.ErrPresentedKeyInvalid)
+		}
+		return nil
+	}
+	var valid bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT is_active AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $3)
+		FROM sensor_api_keys
+		WHERE id = $1 AND sensor_id = $2`,
+		presented.KeyID.String(), sensorID.String(), presented.At).Scan(&valid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: the key row is gone", sensordom.ErrPresentedKeyInvalid)
+	}
+	if err != nil {
+		return fmt.Errorf("check presented sensor key: %w", err)
+	}
+	if !valid {
+		return fmt.Errorf("%w: the key row was revoked or expired", sensordom.ErrPresentedKeyInvalid)
+	}
+	return nil
+}
+
+// retireSensorKeys brings the expiry of the sensor's active, non-revoked key
+// rows forward to at — never later than an expiry they already have — except
+// the key except (the one just issued) when set. It writes expires_at alone,
+// so a concurrent revoke is not undone. Callers hold lockSensorKeys.
+func retireSensorKeys(ctx context.Context, exec executor, sensorID shared.ID, except *shared.ID, at time.Time) (int64, error) {
+	var keep sql.NullString
+	if except != nil {
+		keep = sql.NullString{String: except.String(), Valid: true}
+	}
+	res, err := exec.ExecContext(ctx, `
+		UPDATE sensor_api_keys
+		SET expires_at = $3
+		WHERE sensor_id = $1
+		  AND ($2::uuid IS NULL OR id <> $2::uuid)
+		  AND is_active AND revoked_at IS NULL
+		  AND (expires_at IS NULL OR expires_at > $3)`,
+		sensorID.String(), keep, at)
 	if err != nil {
 		return 0, fmt.Errorf("retire sensor api keys: %w", err)
 	}

@@ -32387,7 +32387,7 @@ export interface components {
       critical_exposures_change?: number
       /** @example 47 */
       exposed_services?: number
-      /** @example -3 */
+      /** @example 3 */
       exposed_services_change?: number
       /** @description Top exposed services */
       exposed_services_list?: components['schemas']['internal_infra_http_handler.ExposedServiceResponse'][]
@@ -32401,10 +32401,14 @@ export interface components {
        */
       total_assets?: number
       /**
-       * @description Trends (week-over-week changes)
+       * @description Trends: what is new in the last trend_window_days days. Counts, never
+       *     negative: assets added; public assets added or newly made public; the
+       *     same limited to critical/high criticality.
        * @example 12
        */
       total_assets_change?: number
+      /** @example 7 */
+      trend_window_days?: number
     }
     'internal_infra_http_handler.AttackerProfileResponse': {
       assumptions?: string

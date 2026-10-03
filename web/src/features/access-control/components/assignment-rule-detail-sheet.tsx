@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Select,
   SelectContent,
@@ -24,21 +23,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import {
-  GitBranch,
-  Pencil,
-  Trash2,
-  Loader2,
-  Play,
-  Calendar,
-  Target,
   AlertCircle,
+  Hash,
+  Loader2,
+  Pencil,
+  Play,
+  Power,
+  PowerOff,
   Save,
-  X,
+  Target,
+  Trash2,
 } from 'lucide-react'
 import {
   useAssignmentRule,
@@ -50,8 +47,19 @@ import {
 } from '@/features/access-control'
 import { fetcherWithOptions } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { SheetDetailToolbar } from '@/features/shared'
-import { Can, Permission } from '@/lib/permissions'
+import {
+  DetailCallout,
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  type DetailMenuItem,
+} from '@/features/shared'
+import { Permission, useHasPermission } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 
 interface AssignmentRuleDetailSheetProps {
   ruleId: string | null
@@ -72,6 +80,8 @@ export function AssignmentRuleDetailSheet({
   const { updateAssignmentRule, isUpdating } = useUpdateAssignmentRule(open ? ruleId : null)
   const { deleteAssignmentRule, isDeleting } = useDeleteAssignmentRule(open ? ruleId : null)
   const { groups } = useGroups()
+  const canWrite = useHasPermission(Permission.AssignmentRulesWrite)
+  const canDelete = useHasPermission(Permission.AssignmentRulesDelete)
 
   // Group lookup map: id → name
   const groupMap = useMemo(() => {
@@ -202,263 +212,250 @@ export function AssignmentRuleDetailSheet({
     file_path_pattern: 'File Path Pattern',
   }
 
+  const rule = assignmentRule
+  const conditionEntries = Object.entries(rule?.conditions || {}).filter(
+    ([, value]) => value && !(Array.isArray(value) && value.length === 0)
+  )
+
+  const menu: DetailMenuItem[] = []
+  if (rule) {
+    menu.push({
+      label: 'Copy ID',
+      icon: Hash,
+      onSelect: () => {
+        copyToClipboard(rule.id)
+        toast.success('Rule ID copied to clipboard')
+      },
+    })
+    if (canWrite) {
+      menu.push({
+        label: rule.is_active ? 'Deactivate' : 'Activate',
+        icon: rule.is_active ? PowerOff : Power,
+        onSelect: handleToggleActive,
+      })
+    }
+    if (canDelete) {
+      menu.push({
+        label: 'Delete rule',
+        icon: Trash2,
+        destructive: true,
+        separatorBefore: true,
+        onSelect: () => setDeleteDialogOpen(true),
+      })
+    }
+  }
+
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          className="sm:max-w-lg p-0 overflow-y-auto [&>button]:hidden"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <VisuallyHidden>
-            <SheetTitle>Assignment Rule Details</SheetTitle>
-          </VisuallyHidden>
-
-          <TooltipProvider>
-            <SheetDetailToolbar
-              title="Assignment Rule Details"
-              onClose={() => onOpenChange(false)}
-              onCopyId={
-                assignmentRule
-                  ? () => {
-                      copyToClipboard(assignmentRule.id)
-                    }
-                  : undefined
-              }
-              onEdit={assignmentRule ? handleStartEdit : undefined}
-            />
-          </TooltipProvider>
-
-          {isLoading ? (
-            <div className="p-6 space-y-4">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-4 w-32" />
-              <div className="space-y-2 mt-8">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-              </div>
-            </div>
-          ) : isError || !assignmentRule ? (
-            <div className="p-6 flex flex-col items-center justify-center py-12 gap-4">
-              <AlertCircle className="h-12 w-12 text-red-400" />
-              <p className="text-muted-foreground">Failed to load assignment rule</p>
-              <Button variant="outline" onClick={() => mutate()}>
-                Try Again
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-col">
-              {/* Header */}
-              <div className="p-6 border-b">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <GitBranch className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      {isEditing ? (
-                        <Input
-                          value={editForm.name}
-                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          className="text-lg font-semibold"
-                        />
+      <DetailSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        width="lg"
+        header={
+          <DetailHeader
+            title={
+              rule && isEditing ? (
+                <Input
+                  autoFocus
+                  aria-label="Rule name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="h-8 text-base font-semibold"
+                />
+              ) : (
+                (rule?.name ?? 'Assignment rule')
+              )
+            }
+            badges={
+              rule ? (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    'text-xs',
+                    rule.is_active && 'border-success/30 bg-success/10 text-success'
+                  )}
+                >
+                  {rule.is_active ? 'Active' : 'Inactive'}
+                </Badge>
+              ) : undefined
+            }
+            meta={
+              rule
+                ? [`Priority ${rule.priority}`, `Created ${formatDate(rule.created_at)}`]
+                : undefined
+            }
+            actions={
+              rule ? (
+                isEditing ? (
+                  <>
+                    <Button size="sm" onClick={handleSave} disabled={isUpdating}>
+                      {isUpdating ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        <h2 className="text-lg font-semibold">{assignmentRule.name}</h2>
+                        <Save className="h-4 w-4" />
                       )}
-                      <Badge variant={assignmentRule.is_active ? 'default' : 'secondary'}>
-                        {assignmentRule.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {isEditing ? (
-                      <>
-                        <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>
-                          <X className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" onClick={handleSave} disabled={isUpdating}>
-                          {isUpdating ? (
-                            <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="me-2 h-4 w-4" />
-                          )}
-                          Save
-                        </Button>
-                      </>
-                    ) : (
-                      <Can permission={Permission.AssignmentRulesWrite}>
-                        <Button variant="ghost" size="sm" onClick={handleStartEdit}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </Can>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Details */}
-              <div className="p-6 space-y-6">
-                {/* Description */}
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs uppercase">Description</Label>
-                  {isEditing ? (
-                    <Textarea
-                      value={editForm.description}
-                      onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                      rows={2}
-                    />
-                  ) : (
-                    <p className="text-sm">{assignmentRule.description || 'No description'}</p>
-                  )}
-                </div>
-
-                {/* Priority */}
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs uppercase">Priority</Label>
-                  {isEditing ? (
-                    <Input
-                      type="number"
-                      value={editForm.priority}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, priority: parseInt(e.target.value) || 0 })
-                      }
-                    />
-                  ) : (
-                    <p className="text-sm font-medium">{assignmentRule.priority}</p>
-                  )}
-                </div>
-
-                {/* Target Group */}
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs uppercase">Target Group</Label>
-                  {isEditing ? (
-                    <Select
-                      value={editForm.target_group_id}
-                      onValueChange={(v) => setEditForm({ ...editForm, target_group_id: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select group" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {groups.map((g) => (
-                          <SelectItem key={g.id} value={g.id}>
-                            {g.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Target className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm font-medium">
-                        {groupMap[assignmentRule.target_group_id] || 'Unknown Group'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Active Toggle */}
-                {isEditing && (
-                  <div className="flex items-center justify-between">
-                    <Label>Active</Label>
-                    <Switch
-                      aria-label="Active"
-                      checked={editForm.is_active}
-                      onCheckedChange={(v) => setEditForm({ ...editForm, is_active: v })}
-                    />
-                  </div>
-                )}
-
-                {/* Conditions */}
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs uppercase">Conditions</Label>
-                  {Object.keys(assignmentRule.conditions || {}).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No conditions defined</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {Object.entries(assignmentRule.conditions).map(([key, value]) => {
-                        if (!value || (Array.isArray(value) && value.length === 0)) return null
-                        return (
-                          <div key={key} className="flex items-start gap-2">
-                            <span className="text-sm text-muted-foreground min-w-[120px]">
-                              {conditionLabels[key] || key}:
-                            </span>
-                            <div className="flex flex-wrap gap-1">
-                              {Array.isArray(value) ? (
-                                value.map((v) => (
-                                  <Badge key={v} variant="outline" className="text-xs">
-                                    {v}
-                                  </Badge>
-                                ))
-                              ) : (
-                                <Badge variant="outline" className="text-xs">
-                                  {String(value)}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Metadata */}
-                <div className="space-y-2 border-t pt-4">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Calendar className="h-3 w-3" />
-                    <span>Created {formatDate(assignmentRule.created_at)}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Calendar className="h-3 w-3" />
-                    <span>Updated {formatDate(assignmentRule.updated_at)}</span>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                {!isEditing && (
-                  <div className="flex items-center gap-2 border-t pt-4">
-                    <Button variant="outline" size="sm" onClick={handleTest} disabled={isTesting}>
-                      {isTesting ? (
-                        <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Play className="me-2 h-4 w-4" />
-                      )}
-                      Test Rule
+                      Save
                     </Button>
-                    <Can permission={Permission.AssignmentRulesWrite}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleToggleActive}
-                        disabled={isUpdating}
-                      >
-                        {assignmentRule.is_active ? 'Deactivate' : 'Activate'}
+                    <Button size="sm" variant="outline" onClick={() => setIsEditing(false)}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {canWrite && (
+                      <Button size="sm" onClick={handleStartEdit}>
+                        <Pencil className="h-4 w-4" />
+                        Edit
                       </Button>
-                    </Can>
-                    <Can permission={Permission.AssignmentRulesDelete}>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setDeleteDialogOpen(true)}
-                      >
-                        <Trash2 className="me-2 h-4 w-4" />
-                        Delete
-                      </Button>
-                    </Can>
-                  </div>
+                    )}
+                    <Button size="sm" variant="outline" onClick={handleTest} disabled={isTesting}>
+                      {isTesting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
+                      Test rule
+                    </Button>
+                  </>
+                )
+              ) : undefined
+            }
+            menu={menu}
+            onClose={() => onOpenChange(false)}
+          />
+        }
+      >
+        {isLoading ? (
+          <div className="space-y-3" aria-hidden>
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : isError || !rule ? (
+          <DetailCallout
+            tone="destructive"
+            icon={AlertCircle}
+            title="Failed to load assignment rule"
+            actions={
+              <Button variant="outline" size="sm" onClick={() => mutate()}>
+                Try again
+              </Button>
+            }
+          />
+        ) : (
+          <div className="space-y-5">
+            {!rule.is_active && !isEditing && (
+              <DetailCallout tone="warning" icon={AlertCircle} title="This rule is inactive">
+                It does not route new findings until it is activated.
+              </DetailCallout>
+            )}
+
+            <DetailSections>
+              <DetailSection title="Description">
+                {isEditing ? (
+                  <Textarea
+                    aria-label="Description"
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    rows={2}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {rule.description || 'No description'}
+                  </p>
                 )}
-              </div>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+              </DetailSection>
+
+              <DetailSection title="Routing" icon={Target}>
+                {isEditing ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="rule-priority">Priority</Label>
+                      <Input
+                        id="rule-priority"
+                        type="number"
+                        value={editForm.priority}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, priority: parseInt(e.target.value) || 0 })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Target group</Label>
+                      <Select
+                        value={editForm.target_group_id}
+                        onValueChange={(v) => setEditForm({ ...editForm, target_group_id: v })}
+                      >
+                        <SelectTrigger aria-label="Target group">
+                          <SelectValue placeholder="Select group" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {groups.map((g) => (
+                            <SelectItem key={g.id} value={g.id}>
+                              {g.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label>Active</Label>
+                      <Switch
+                        aria-label="Active"
+                        checked={editForm.is_active}
+                        onCheckedChange={(v) => setEditForm({ ...editForm, is_active: v })}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <DetailFieldGrid>
+                    <DetailField label="Target group">
+                      {groupMap[rule.target_group_id] || 'Unknown group'}
+                    </DetailField>
+                    <DetailField label="Priority">{rule.priority}</DetailField>
+                  </DetailFieldGrid>
+                )}
+              </DetailSection>
+
+              <DetailSection title="Conditions" count={conditionEntries.length}>
+                {conditionEntries.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No conditions defined</p>
+                ) : (
+                  <DetailFieldGrid>
+                    {conditionEntries.map(([key, value]) => (
+                      <DetailField key={key} label={conditionLabels[key] || key} full>
+                        <span className="flex flex-wrap gap-1">
+                          {(Array.isArray(value) ? value : [value]).map((v) => (
+                            <Badge key={String(v)} variant="outline" className="text-xs">
+                              {String(v)}
+                            </Badge>
+                          ))}
+                        </span>
+                      </DetailField>
+                    ))}
+                  </DetailFieldGrid>
+                )}
+              </DetailSection>
+
+              <DetailSection title="Details">
+                <DetailFieldGrid>
+                  <DetailField label="Created">{formatDate(rule.created_at)}</DetailField>
+                  <DetailField label="Updated">{formatDate(rule.updated_at)}</DetailField>
+                  <DetailField label="Rule ID" full>
+                    <DetailCopyId id={rule.id} label="Rule ID" />
+                  </DetailField>
+                </DetailFieldGrid>
+              </DetailSection>
+            </DetailSections>
+          </div>
+        )}
+      </DetailSheet>
 
       {/* Delete Confirmation */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-500">
+            <DialogTitle className="flex items-center gap-2">
               <Trash2 className="h-5 w-5" />
               Delete Assignment Rule
             </DialogTitle>

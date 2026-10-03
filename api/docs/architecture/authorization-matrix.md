@@ -135,6 +135,18 @@ Details: [api-keys.md](./api-keys.md).
 | `PUT /api/v1/assets/{id}` | `assets:write` |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` |
 
+#### Business units (`/api/v1/business-units`)
+
+| Endpoint | Gate |
+|----------|------|
+| `GET /api/v1/business-units` · `/{id}` | `assets:read` |
+| `POST /api/v1/business-units` · `PUT /{id}` · `POST/DELETE /{id}/assets[/{assetId}]` | `assets:write` |
+| `DELETE /api/v1/business-units/{id}` | **owner/admin only** (`RequireAdmin`, plus `assets:write`) |
+
+> Deleting a business unit drops its asset links and detaches its child units
+> for the whole organization, so it is owner/admin only (owner decision
+> 2026-10-02); members keep creating, editing and linking assets.
+
 #### Components (`/api/v1/components`)
 
 | Endpoint | Permission Required |
@@ -410,7 +422,7 @@ These routes require the tenant ID in the URL path and use database-based member
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/tenants/{tenant}/members` | Team viewer+ |
+| `GET /api/v1/tenants/{tenant}/members` | Team viewer+; **emails, last sign-in and second-factor status only for owner/admin** (others get ids, names, avatars, roles; `search` matches names only) |
 | `GET /api/v1/tenants/{tenant}/invitations` | Team viewer+ |
 | `PATCH /api/v1/tenants/{tenant}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
@@ -1101,8 +1113,14 @@ Tenable.sc's RBAC.
    and keys, the audit log, billing, and other users' API keys are owner/admin
    only; peer administrators, audit-chain rebaseline and SCIM token mint/revoke
    are owner only; the platform administrator only bootstraps an
-   organization's first owner. Members and viewers keep the member list
-   (emails included) and `sensors:read`. Role diff (migration `000246`):
+   organization's first owner. Members and viewers keep the member list and
+   `sensors:read`. **Member emails are owner/admin only** (owner decision
+   2026-10-02, superseding the earlier "emails stay visible"): the member list
+   (`GET /api/v1/tenants/{tenant}/members?include=user`) omits `email` and
+   `last_login_at` for anyone else and its `search` matches names only, so a
+   search cannot confirm an address; ids, names and avatars stay for the
+   assignee and owner pickers. Business-unit delete is owner/admin only.
+   Role diff (migration `000246`):
 
    | Role | Removed |
    |------|---------|

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -32,7 +33,19 @@ type TriggerScanExecInput struct {
 	// with it, so the retry budget is enforced even when the run finishes
 	// before anything could update it afterwards.
 	RetryAttempt int `json:"-"`
+	// TriggerType is recorded on the run; empty means manual. The scheduler
+	// sends schedule (every run used to be recorded as manual).
+	TriggerType pipeline.TriggerType `json:"-"`
+	// SkipIfRunning refuses the trigger with ErrScanRunInProgress while the
+	// scan has an active run (overlap policy for scheduled runs, D4: skip the
+	// occurrence and record that it was skipped, never pile runs up).
+	SkipIfRunning bool `json:"-"`
 }
+
+// ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
+// the scan's previous run still active.
+var ErrScanRunInProgress = shared.NewDomainError("SCAN_RUN_IN_PROGRESS",
+	"the scan's previous run is still active", shared.ErrConflict)
 
 // TriggerScan triggers a scan execution.
 func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (*pipeline.Run, error) {
@@ -59,6 +72,19 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// NOTE: Concurrent run limits are now checked atomically in CreateRunIfUnderLimit
 	// to prevent race conditions where multiple triggers bypass the limit.
+	if input.SkipIfRunning {
+		active, err := s.runRepo.CountActiveByScanID(ctx, sc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check active runs: %w", err)
+		}
+		if active > 0 {
+			return nil, ErrScanRunInProgress
+		}
+	}
+	triggerType := input.TriggerType
+	if triggerType == "" {
+		triggerType = pipeline.TriggerTypeManual
+	}
 
 	// Validate tools are still available and active before triggering
 	// (Tools may have been disabled or removed since scan was created)
@@ -84,9 +110,9 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		run, err = s.triggerWorkflow(ctx, sc, input.TriggeredBy, input.Context, input.RetryAttempt)
+		run, err = s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt)
 	} else {
-		run, err = s.triggerSingleScan(ctx, sc, input.TriggeredBy, input.Context, input.RetryAttempt)
+		run, err = s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt)
 	}
 
 	if err != nil {
@@ -115,7 +141,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 }
 
 // triggerWorkflow triggers a workflow pipeline execution.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
 	if sc.PipelineID == nil {
 		return nil, fmt.Errorf("%w: pipeline_id is required for workflow", shared.ErrValidation)
 	}
@@ -191,7 +217,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	}
 
 	// Create pipeline run
-	run, err := pipeline.NewRun(template.ID, sc.TenantID, nil, pipeline.TriggerTypeManual, triggeredBy, runContext)
+	run, err := pipeline.NewRun(template.ID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pipeline run: %w", err)
 	}
@@ -223,7 +249,11 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	}
 
 	// Schedule first runnable steps
-	if err := s.scheduleWorkflowSteps(ctx, run, steps); err != nil {
+	if err := s.scheduleWorkflowSteps(ctx, run, steps, template.Settings.MaxParallelSteps); err != nil {
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code == codeWorkflowCannotStart {
+			return nil, err // the run is already failed with the reason
+		}
 		s.logger.Warn("failed to schedule workflow steps", "error", err)
 	}
 
@@ -235,7 +265,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 const QuickScanTemplateID = "00000000-0000-0000-0000-000000000001"
 
 // triggerSingleScan triggers a single scanner execution.
-func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
+func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
 	// Build context
 	if runContext == nil {
 		runContext = make(map[string]any)
@@ -320,7 +350,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
 
 	// Create a pipeline run using the system template
-	run, err := pipeline.NewRun(quickScanTemplateID, sc.TenantID, nil, pipeline.TriggerTypeManual, triggeredBy, runContext)
+	run, err := pipeline.NewRun(quickScanTemplateID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
@@ -388,17 +418,72 @@ func (s *Service) createSingleScanStepRun(ctx context.Context, run *pipeline.Run
 	return stepRun
 }
 
-// scheduleWorkflowSteps schedules runnable workflow steps.
-func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *pipeline.Run, steps []*pipeline.Step) error {
-	for _, step := range steps {
-		if step.StepOrder == 1 {
-			// Queue first step
-			if err := s.queueWorkflowStep(ctx, run, step); err != nil {
-				return err
-			}
+// scheduleWorkflowSteps starts a new workflow run: every step without
+// dependencies whose condition holds is queued, up to the template's parallel
+// limit (the pipeline service starts the rest as dependencies succeed).
+//
+// It used to queue only steps with step_order == 1: a workflow whose
+// independent steps had other orders ran them one after another, a workflow
+// numbered from 0 or 2 never started at all (and hung until the run timeout),
+// and step conditions were ignored for the first step.
+func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *pipeline.Run, steps []*pipeline.Step, maxParallel int) error {
+	if maxParallel <= 0 {
+		maxParallel = 3
+	}
+	queued, roots := 0, 0
+	for _, step := range steps { // sorted by step_order
+		if len(step.DependsOn) > 0 {
+			continue
 		}
+		roots++
+		if !step.ConditionMet(run) {
+			s.skipWorkflowStep(ctx, run, step, "Condition not met")
+			continue
+		}
+		if queued >= maxParallel {
+			continue // started by the pipeline service as slots free up
+		}
+		if err := s.queueWorkflowStep(ctx, run, step); err != nil {
+			return err
+		}
+		queued++
+	}
+	if queued == 0 {
+		msg := "workflow has no step without dependencies; nothing can start"
+		if roots > 0 {
+			msg = "no step started: the condition of every first step was false"
+		}
+		run.Fail(msg)
+		if err := s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusFailed, msg); err != nil {
+			s.logger.Warn("failed to fail a run that cannot start", "run_id", run.ID.String(), "error", err)
+		}
+		return shared.NewDomainError(codeWorkflowCannotStart, msg, shared.ErrValidation)
 	}
 	return nil
+}
+
+// codeWorkflowCannotStart: a workflow run in which no step can start.
+const codeWorkflowCannotStart = "WORKFLOW_CANNOT_START"
+
+// skipWorkflowStep marks a step run skipped at trigger time.
+func (s *Service) skipWorkflowStep(ctx context.Context, run *pipeline.Run, step *pipeline.Step, reason string) {
+	stepRuns, err := s.stepRunRepo.GetByPipelineRunID(ctx, run.ID)
+	if err != nil {
+		s.logger.Warn("failed to load step runs", "run_id", run.ID.String(), "error", err)
+		return
+	}
+	for _, sr := range stepRuns {
+		if sr.StepID == step.ID {
+			sr.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, sr); err != nil {
+				s.logger.Warn("failed to skip step run", "step_key", step.StepKey, "error", err)
+			}
+			if inRun := run.GetStepRun(step.StepKey); inRun != nil {
+				inRun.Skip(reason)
+			}
+			return
+		}
+	}
 }
 
 // queueWorkflowStep queues a workflow step for execution.

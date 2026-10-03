@@ -319,31 +319,41 @@ func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) err
 // RecordKeyUse marks the sensor seen and records the client address of the
 // key use (sensor.KeyUseRecorder). The previous address is read in the same
 // statement, so two concurrent requests each see the address before their
-// own write.
-func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP) (net.IP, error) {
+// own write. The address and its time only move forward: key uses are
+// recorded asynchronously and can arrive out of order, and an older
+// observation must not overwrite a newer address.
+func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (net.IP, error) {
 	query := `
 		WITH prev AS (
-			SELECT id, host(api_key_last_used_ip) AS ip FROM sensors WHERE id = $1
+			SELECT id, host(api_key_last_used_ip) AS ip, api_key_last_used_at AS at
+			FROM sensors WHERE id = $1
 		)
 		UPDATE sensors s
 		SET last_seen_at = NOW(),
 		    health = 'online',
 		    updated_at = NOW(),
-		    api_key_last_used_at = NOW(),
-		    api_key_last_used_ip = COALESCE($2::inet, s.api_key_last_used_ip)
+		    api_key_last_used_at = GREATEST(s.api_key_last_used_at, $3),
+		    api_key_last_used_ip = CASE
+		        WHEN prev.at IS NULL OR prev.at <= $3
+		        THEN COALESCE($2::inet, s.api_key_last_used_ip)
+		        ELSE s.api_key_last_used_ip
+		    END
 		FROM prev
 		WHERE s.id = prev.id
-		RETURNING prev.ip
+		RETURNING prev.ip, (prev.at IS NULL OR prev.at <= $3)
 	`
-	var prev sql.NullString
-	err := r.db.QueryRowContext(ctx, query, id.String(), heartbeatIP(ip)).Scan(&prev)
+	var (
+		prev  sql.NullString
+		fresh bool
+	)
+	err := r.db.QueryRowContext(ctx, query, id.String(), heartbeatIP(ip), at.UTC()).Scan(&prev, &fresh)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("record sensor key use: %w", err)
 	}
-	if !prev.Valid {
+	if !fresh || !prev.Valid {
 		return nil, nil
 	}
 	return parseIP(prev.String), nil
@@ -423,6 +433,11 @@ var (
 // the expiry earlier. It writes key_expires_at alone, so it cannot revive a
 // revoked sensor or put back a replaced key.
 func (r *SensorRepository) RetireInlineKey(ctx context.Context, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
+	return retireInlineKey(ctx, r.db, id, keyHashes, at)
+}
+
+// retireInlineKey is RetireInlineKey on exec (the pool or a transaction).
+func retireInlineKey(ctx context.Context, exec executor, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
 	query := `
 		UPDATE sensors
 		SET key_expires_at = $3,
@@ -431,7 +446,7 @@ func (r *SensorRepository) RetireInlineKey(ctx context.Context, id shared.ID, ke
 		  AND api_key_hash = ANY($2)
 		  AND (key_expires_at IS NULL OR key_expires_at > $3)
 	`
-	res, err := r.db.ExecContext(ctx, query, id.String(), pq.Array(keyHashes), at)
+	res, err := exec.ExecContext(ctx, query, id.String(), pq.Array(keyHashes), at)
 	if err != nil {
 		return false, fmt.Errorf("retire inline sensor key: %w", err)
 	}
@@ -559,6 +574,12 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 // write is guarded by status = 'active' so a self-renewal racing an admin
 // revoke cannot install a fresh key on a revoked sensor.
 func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	return updateInlineKey(ctx, r.db, r.value(), id, hash, prefix, expiresAt, requireActive)
+}
+
+// updateInlineKey is UpdateAPIKey on exec (the pool or a transaction),
+// stamping pepperID as the key's pepper.
+func updateInlineKey(ctx context.Context, exec executor, pepperID sql.NullString, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
 	query := `
 		UPDATE sensors
 		SET api_key_hash = $2,
@@ -571,7 +592,7 @@ func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash,
 	if requireActive {
 		query += " AND status = 'active'"
 	}
-	result, err := r.db.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt), r.value())
+	result, err := exec.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt), pepperID)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor api key: %w", err)
 	}

@@ -15,10 +15,15 @@ import (
 type fakeStore struct {
 	due     []*reportschedule.ReportSchedule
 	updated []*reportschedule.ReportSchedule
+	// lostClaims makes ClaimDue report that another replica won the slot.
+	lostClaims bool
 }
 
 func (f *fakeStore) ListDue(_ context.Context, _ time.Time) ([]*reportschedule.ReportSchedule, error) {
 	return f.due, nil
+}
+func (f *fakeStore) ClaimDue(_ context.Context, _ shared.ID, _ *time.Time, _ time.Time) (bool, error) {
+	return !f.lostClaims, nil
 }
 func (f *fakeStore) Update(_ context.Context, s *reportschedule.ReportSchedule) error {
 	f.updated = append(f.updated, s)
@@ -243,5 +248,21 @@ func TestReportScheduler_NextRunHonoursScheduleTimezone(t *testing.T) {
 		if got == nil || !got.Equal(tc.want) {
 			t.Errorf("tz=%q: next run = %v, want %v", tc.tz, got, tc.want)
 		}
+	}
+}
+
+// A slot another replica claimed is neither delivered nor recorded here.
+func TestReportScheduler_LostClaimSkipsDelivery(t *testing.T) {
+	store := &fakeStore{
+		due:        []*reportschedule.ReportSchedule{newSchedule(t, "executive_summary", "0 8 * * 1", "a@example.invalid")},
+		lostClaims: true,
+	}
+	em := &fakeEmailer{configured: true}
+	n, err := newTestScheduler(store, em).Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if n != 0 || len(em.sentTo) != 0 || len(store.updated) != 0 {
+		t.Fatalf("lost claim: processed=%d sent=%d updated=%d, want all 0", n, len(em.sentTo), len(store.updated))
 	}
 }

@@ -278,6 +278,7 @@
   "sensors.activity.audit.revoked": "Access revoked",
   "sensors.activity.audit.key_regenerated": "API key rotated",
   "sensors.activity.audit.key_renewed": "API key renewed",
+  "sensors.activity.audit.key_renewal_refused": "API key renewal refused (the key was revoked)",
   "sensors.activity.audit.connected": "Sensor connected",
   "sensors.activity.audit.disconnected": "Sensor disconnected",
   "sensors.version.sensor": "Sensor",

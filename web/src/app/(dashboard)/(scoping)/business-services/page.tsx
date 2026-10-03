@@ -11,7 +11,8 @@ import {
   GatedSectionTabs,
   MetricStrip,
   PageHeader,
-  SheetBody,
+  DetailHeader,
+  DetailSheet,
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
@@ -42,13 +43,6 @@ import {
 } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Plus, Pencil, Trash2, AlertCircle, RefreshCw, Link2 } from 'lucide-react'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { BusinessServiceAssets } from '@/features/business-services/components/business-service-assets'
 import { toast } from 'sonner'
 import { get, post, put, del } from '@/lib/api/client'
@@ -657,23 +651,22 @@ export default function BusinessServicesPage() {
         </DialogContent>
       </Dialog>
 
-      <Sheet open={!!assetsService} onOpenChange={(open) => !open && setAssetsService(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
-          {assetsService && (
-            <>
-              <SheetHeader>
-                <SheetTitle>{assetsService.name}</SheetTitle>
-                <SheetDescription>
-                  The assets this service runs on. A cycle scoped to the service covers them.
-                </SheetDescription>
-              </SheetHeader>
-              <SheetBody>
-                <BusinessServiceAssets service={assetsService} onChanged={() => void mutate()} />
-              </SheetBody>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      {assetsService && (
+        <DetailSheet
+          open
+          onOpenChange={(open) => !open && setAssetsService(null)}
+          width="lg"
+          header={
+            <DetailHeader
+              title={assetsService.name}
+              meta={['The assets this service runs on. A cycle scoped to the service covers them.']}
+              onClose={() => setAssetsService(null)}
+            />
+          }
+        >
+          <BusinessServiceAssets service={assetsService} onChanged={() => void mutate()} />
+        </DetailSheet>
+      )}
 
       <ConfirmDialog
         open={!!deletingService}
