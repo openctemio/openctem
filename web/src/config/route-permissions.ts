@@ -572,6 +572,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     message: 'You need admin privileges to access authentication settings.',
   },
+  // Owner only in the API (RequireTeamOwner); admins see an "owners only" note.
+  '/settings/sso-approvals': {
+    permission: Permission.TeamUpdate,
+    message: 'Only an owner can approve or reject SSO changes.',
+  },
   '/settings/modules': {
     permission: Permission.TeamUpdate,
   },

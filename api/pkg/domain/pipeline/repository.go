@@ -239,7 +239,10 @@ type StepRunRepository interface {
 	// UpdateStatus updates step run status.
 	UpdateStatus(ctx context.Context, id shared.ID, status StepRunStatus, errorMessage, errorCode string) error
 
-	// AssignSensor assigns a sensor and command to a step run.
+	// AssignSensor records that a sensor started the step run with the
+	// command: running, started_at, sensor and command. Only a step run that
+	// is still pending or queued changes, so a start reported after the step
+	// finished never reopens it.
 	AssignSensor(ctx context.Context, id shared.ID, sensorID, commandID shared.ID) error
 
 	// Complete marks a step run as completed.

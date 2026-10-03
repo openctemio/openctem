@@ -20,7 +20,11 @@ package routes
 //     are written by owners and admins only; members keep read;
 //   - a scope exclusion a member creates is pending and suppresses nothing;
 //     approving or rejecting it needs attack_surface:scope:exclusions:approve
-//     (owner/admin), and nobody approves their own exclusion.
+//     (owner/admin), and nobody approves their own exclusion;
+//   - scan commands through POST /api/v1/commands are owner/admin only and
+//     their targets get the scan trigger's checks (RFC-040 Q5 (c));
+//   - business units are deleted by owners and admins only;
+//   - member emails in the member list are shown to owners and admins only.
 
 import (
 	"context"
@@ -41,6 +45,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	templateapp "github.com/openctemio/openctem/api/internal/app/template"
@@ -106,6 +111,15 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 	cfg.Auth.Provider = config.AuthProviderLocal
 	authCfg := AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}
 
+	// Scan commands get the scan trigger's target checks: real scope
+	// exclusions and scan zones from the database.
+	commandHandler := handler.NewCommandHandler(commandapp.NewService(postgres.NewCommandRepository(db), log,
+		commandapp.WithSensorLookup(postgres.NewSensorRepository(db))), v, log)
+	commandHandler.SetAuditService(auditSvc)
+	commandHandler.SetScanCommandGate(scanapp.NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, log,
+		scanapp.WithScopeExclusionFilter(scopeapp.NewService(nil, postgres.NewScopeExclusionRepository(db), nil, nil, log)),
+		scanapp.WithScanZones(postgres.NewScanZoneRepository(db), nil)))
+
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{
 		Sensor:    handler.NewSensorHandler(app.NewSensorService(postgres.NewSensorRepository(db), auditSvc, log), v, log),
@@ -116,11 +130,12 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		ScannerTemplate: handler.NewScannerTemplateHandler(
 			app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "authz-policy-template-signing-key-0123456789", log), v, log),
 		TemplateSource: handler.NewTemplateSourceHandler(templateapp.NewSourceService(postgres.NewTemplateSourceRepository(db), log), v, log),
-		Command: handler.NewCommandHandler(commandapp.NewService(postgres.NewCommandRepository(db), log,
-			commandapp.WithSensorLookup(postgres.NewSensorRepository(db))), v, log),
+		Command:        commandHandler,
 		Scope: handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
 			postgres.NewScopeExclusionRepository(db), postgres.NewScopeScheduleRepository(db),
 			postgres.NewAssetRepository(db), log), v, log),
+		BusinessUnit: handler.NewBusinessUnitHandler(
+			app.NewBusinessUnitService(postgres.NewBusinessUnitRepository(db), postgres.NewAssetRepository(db), log), log),
 	}, cfg, log, authCfg, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
@@ -152,6 +167,7 @@ func (h *authzPolicyHarness) tenant() string {
 			`DELETE FROM template_sources WHERE tenant_id = $1`,
 			`DELETE FROM sensors WHERE tenant_id = $1`,
 			`DELETE FROM scope_exclusions WHERE tenant_id = $1`,
+			`DELETE FROM business_units WHERE tenant_id = $1`,
 			`DELETE FROM user_roles WHERE tenant_id = $1`,
 			`DELETE FROM tenant_members WHERE tenant_id = $1`,
 			`DELETE FROM tenants WHERE id = $1`,
@@ -579,5 +595,59 @@ func TestAuthzPolicy_ScopeExclusionsNeedApproval_DB(t *testing.T) {
 	h.expect(member, http.MethodPost, "/api/v1/scope/exclusions/"+rej+"/activate", "", http.StatusConflict)
 	if h.excluded(tid) {
 		t.Fatal("a rejected exclusion suppressed scanning")
+	}
+}
+
+// A member could send a scan command for any address to any sensor of the
+// tenant, past exclusions, zones and the private-range check (RFC-040 Q5 (c)).
+func TestAuthzPolicy_ScanCommandsAreAdminOnlyAndScoped_DB(t *testing.T) {
+	h := newAuthzPolicyHarness(t)
+	tid := h.tenant()
+	owner, admin, member := h.member(tid, "owner"), h.member(tid, "admin"), h.member(tid, "member")
+	sensorID := h.sensor(tid)
+
+	// An approved exclusion for prod.example.com.
+	var excl struct {
+		ID string `json:"id"`
+	}
+	body := h.expect(member, http.MethodPost, "/api/v1/scope/exclusions",
+		`{"exclusion_type":"domain","pattern":"prod.example.com","reason":"fragile"}`, http.StatusCreated)
+	if err := json.Unmarshal([]byte(body), &excl); err != nil {
+		t.Fatal(err)
+	}
+	h.expect(owner, http.MethodPost, "/api/v1/scope/exclusions/"+excl.ID+"/approve", "", http.StatusOK)
+
+	scanCmd := func(target string) string {
+		return `{"type":"scan","sensor_id":"` + sensorID + `","payload":{"scanner":"nuclei","target":"` + target + `"}}`
+	}
+
+	// A member keeps commands:write for other command types, not for scans.
+	h.expect(member, http.MethodPost, "/api/v1/commands", scanCmd("app.example.com"), http.StatusForbidden)
+	h.expect(member, http.MethodPost, "/api/v1/commands", `{"type":"health_check","sensor_id":"`+sensorID+`"}`, http.StatusCreated)
+
+	// An administrator is refused for an excluded or internal target.
+	h.expect(admin, http.MethodPost, "/api/v1/commands", scanCmd("prod.example.com"), http.StatusBadRequest)
+	h.expect(admin, http.MethodPost, "/api/v1/commands", scanCmd("10.0.0.5"), http.StatusBadRequest)
+	h.expect(admin, http.MethodPost, "/api/v1/commands", scanCmd("169.254.169.254"), http.StatusBadRequest)
+
+	// An in-scope target is accepted.
+	h.expect(admin, http.MethodPost, "/api/v1/commands", scanCmd("app.example.com"), http.StatusCreated)
+
+	var stored int
+	if err := h.db.QueryRow(`SELECT count(*) FROM commands WHERE tenant_id = $1 AND type = 'scan'`, tid).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != 1 {
+		t.Fatalf("stored %d scan commands, want only the in-scope one", stored)
+	}
+
+	// Every attempt is in the audit log: four refusals and the creation.
+	var denied, created int
+	if err := h.db.QueryRow(`SELECT count(*) FILTER (WHERE result = 'denied'), count(*) FILTER (WHERE result = 'success' AND resource_name = 'scan')
+		FROM audit_logs WHERE tenant_id = $1 AND action = 'command.created'`, tid).Scan(&denied, &created); err != nil {
+		t.Fatal(err)
+	}
+	if denied != 4 || created != 1 {
+		t.Fatalf("audit: %d denied, %d created scan commands; want 4 and 1", denied, created)
 	}
 }

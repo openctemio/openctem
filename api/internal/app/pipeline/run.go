@@ -303,7 +303,10 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		}
 	}
 
-	payload := stepCommandPayload(run, step, stepRun, settings)
+	payload, err := stepCommandPayload(run, step, stepRun, settings)
+	if err != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
 
 	// Final payload validation before sending to sensor
 	if s.securityValidator != nil {
@@ -518,6 +521,26 @@ func (s *Service) finishRun(ctx context.Context, run *pipeline.Run, status pipel
 	metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), string(status)).Inc()
 	s.recordScanRun(ctx, run, string(status))
 	return true
+}
+
+// OnStepStarted is called when a sensor starts the command of a step. The
+// step run becomes running, with started_at and the sensor, so a run shows
+// which step is executing and how long each step took. Before this nothing
+// called it: a step went from queued straight to completed and its
+// started_at stayed empty.
+func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sensorID, commandID shared.ID) error {
+	rid, err := shared.IDFromString(runID)
+	if err != nil {
+		return err
+	}
+	stepRun, err := s.stepRunRepo.GetByStepKey(ctx, rid, stepKey)
+	if err != nil {
+		return err
+	}
+	if stepRun == nil {
+		return nil
+	}
+	return s.stepRunRepo.AssignSensor(ctx, stepRun.ID, sensorID, commandID)
 }
 
 // OnStepCompleted is called when a sensor reports step completion.
@@ -1056,14 +1079,21 @@ func (s *Service) FailStepRun(ctx context.Context, stepRunID, errorMessage, erro
 	return s.stepRunRepo.UpdateStatus(ctx, srid, pipeline.StepRunStatusFailed, errorMessage, errorCode)
 }
 
-// stepCommandPayload is the command payload of one pipeline step.
-func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) map[string]any {
+// stepCommandPayload is the command payload of one pipeline step. The
+// step's settings go under PayloadKeyConfig, the key the sensor reads (see
+// pipeline.NormalizeStepConfig); a setting the sensor would refuse fails the
+// step before a command is created.
+func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) (map[string]any, error) {
+	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]any{
 		"pipeline_run_id":                   run.ID.String(),
 		"step_run_id":                       stepRun.ID.String(),
 		"step_id":                           step.ID.String(),
 		"step_key":                          step.StepKey,
-		"step_config":                       step.Config,
+		pipeline.PayloadKeyConfig:           config,
 		"required_capabilities":             step.Capabilities,
 		"preferred_tool":                    step.Tool,
 		"timeout_seconds":                   step.TimeoutSeconds,
@@ -1084,5 +1114,5 @@ func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipelin
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
-	return payload
+	return payload, nil
 }

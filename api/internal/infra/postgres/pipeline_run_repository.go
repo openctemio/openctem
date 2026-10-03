@@ -1402,12 +1402,15 @@ func (r *StepRunRepository) UpdateStatus(ctx context.Context, id shared.ID, stat
 	return err
 }
 
-// AssignSensor assigns a sensor and command to a step run.
+// AssignSensor records that a sensor started the step run with the command.
+// Only a pending or queued step run changes: a start that arrives after the
+// step finished (or after a batch of the same step already started it) is a
+// no-op, so it can neither reopen a finished step nor move started_at.
 func (r *StepRunRepository) AssignSensor(ctx context.Context, id shared.ID, sensorID, commandID shared.ID) error {
 	query := `
 		UPDATE step_runs
 		SET sensor_id = $2, command_id = $3, status = 'running', started_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND status IN ('pending', 'queued')
 	`
 	_, err := r.db.ExecContext(ctx, query, id.String(), sensorID.String(), commandID.String())
 	return err

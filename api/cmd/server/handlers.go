@@ -122,6 +122,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	commandHandler.SetPipelineService(svc.Pipeline)
+	commandHandler.SetAuditService(svc.Audit)
+	commandHandler.SetScanCommandGate(svc.Scan)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
@@ -444,10 +446,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	// SSO handler (always initialized - uses DB-stored provider configs)
+	// Scan profile changes go to the tenant's audit log.
+	handlers.ScanProfile.SetAuditService(svc.Audit)
+
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 		// Identity-provider changes go to the organization's audit log.
 		handlers.SSO.SetAuditService(svc.Audit)
+		// Admin-console identity-provider creates/updates wait for an owner.
+		handlers.SSO.SetChangeApproval(svc.SSOChange)
+	}
+	if svc.SSOChange != nil {
+		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
 	}
 
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
@@ -475,6 +485,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// SP entity ID / ACS URL come from APP_URL, never from client headers.
 		handlers.SAML.SetPublicURL(cfg.App.URL)
 		handlers.SAML.SetAuditService(svc.Audit)
+		// Admin-console SAML changes wait for an owner of the organization.
+		handlers.SAML.SetChangeApproval(svc.SSOChange)
 		if cfg.App.URL == "" && cfg.IsProduction() {
 			log.Warn("saml: APP_URL is not set; SP URLs fall back to the request Host (forwarded headers only from SERVER_TRUSTED_PROXIES). Set APP_URL to the public API origin.")
 		}

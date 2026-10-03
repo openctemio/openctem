@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
@@ -112,4 +113,54 @@ func (r *TenantRepository) CreateFirstOwnerMembership(ctx context.Context, m *te
 		return fmt.Errorf("failed to commit first owner: %w", err)
 	}
 	return nil
+}
+
+// activeOwnersQuery lists the organization's active owners (same definition as
+// activeOwnerExistsQuery) whose user account is active.
+const activeOwnersQuery = `
+	SELECT u.id, u.email, u.name
+	  FROM tenant_members m
+	  JOIN users u ON u.id = m.user_id
+	 WHERE m.tenant_id = $1
+	   AND COALESCE(m.status, 'active') = 'active'
+	   AND u.status = 'active'
+	   AND (m.role = 'owner' OR EXISTS (
+	        SELECT 1 FROM user_roles ur
+	         WHERE ur.tenant_id = m.tenant_id AND ur.user_id = m.user_id
+	           AND ur.role_id = '00000000-0000-0000-0000-000000000001'))`
+
+// ListActiveOwners returns the organization's active owners, for notifying
+// them of an SSO change that waits for their approval.
+func (r *TenantRepository) ListActiveOwners(ctx context.Context, tenantID shared.ID) ([]ssochange.OwnerContact, error) {
+	rows, err := r.db.QueryContext(ctx, activeOwnersQuery+` ORDER BY u.email`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list organization owners: %w", err)
+	}
+	defer rows.Close()
+	var out []ssochange.OwnerContact
+	for rows.Next() {
+		var idStr string
+		var c ssochange.OwnerContact
+		if err := rows.Scan(&idStr, &c.Email, &c.Name); err != nil {
+			return nil, fmt.Errorf("scan organization owner: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse owner id: %w", err)
+		}
+		c.UserID = id
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// IsActiveOwner reports whether userID is an active owner of the organization,
+// read from the database rather than from the caller's token.
+func (r *TenantRepository) IsActiveOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	var exists bool
+	q := `SELECT EXISTS (` + activeOwnersQuery + ` AND m.user_id = $2)`
+	if err := r.db.QueryRowContext(ctx, q, tenantID.String(), userID.String()).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check organization owner: %w", err)
+	}
+	return exists, nil
 }

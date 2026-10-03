@@ -311,14 +311,45 @@ type APIKeyRepository interface {
 	// concurrent renewals end with exactly one long-lived key: the one
 	// committed last. Retirement never extends an expiry and writes nothing
 	// but the expiry columns. Any failure leaves nothing written.
-	RotateKey(ctx context.Context, key *APIKey, inlineKeyHashes []string, retireAt time.Time) error
+	//
+	// Before writing, and under the lock, it re-checks the renewal's
+	// authentication: the sensor must still be active (ErrSensorRevoked or
+	// ErrSensorDisabled otherwise) and presented must still be valid
+	// (ErrPresentedKeyInvalid otherwise), so a key revoked or regenerated
+	// after the renewal authenticated is never renewed.
+	RotateKey(ctx context.Context, key *APIKey, presented PresentedKey, inlineKeyHashes []string, retireAt time.Time) error
 
 	// ReplaceInlineKey is a renewal without rotation overlap, serialized per
 	// sensor with RotateKey: it replaces the sensor's inline key (only while
 	// the sensor is active) and brings the expiry of every active key row
 	// forward to retireAt. Returns false, with nothing written, when no
-	// active sensor matched.
-	ReplaceInlineKey(ctx context.Context, sensorID shared.ID, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error)
+	// active sensor matched, and ErrPresentedKeyInvalid, with nothing
+	// written, when presented is no longer valid under the lock.
+	ReplaceInlineKey(ctx context.Context, sensorID shared.ID, presented PresentedKey, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error)
+
+	// RegenerateKey is the administrator's hard rotation, serialized per
+	// sensor with RotateKey and ReplaceInlineKey: it installs hash as the
+	// inline key (no expiry, whatever the sensor's status) and revokes every
+	// active key row with reason, in one transaction. A renewal that
+	// authenticated with a key it replaced therefore either committed first
+	// (and its key is revoked here) or runs after and is refused. Returns
+	// false, with nothing written, when the sensor does not exist.
+	RegenerateKey(ctx context.Context, sensorID shared.ID, hash, prefix, reason string) (bool, error)
+}
+
+// PresentedKey is the credential a key renewal authenticated with. The
+// renewal re-checks it under the per-sensor key lock, because an
+// administrator may have revoked or regenerated it since.
+type PresentedKey struct {
+	// KeyID is the sensor_api_keys row that was presented. It must still be
+	// a key of the sensor, active, unrevoked and unexpired at At.
+	KeyID *shared.ID
+	// InlineKeyHashes, used when KeyID is nil, are the hashes the presented
+	// inline key can be stored under. The sensor's inline hash must still
+	// be one of them and unexpired at At. Empty matches nothing.
+	InlineKeyHashes []string
+	// At is the time expiry is judged at.
+	At time.Time
 }
 
 // KeyUseRecorder is implemented by a sensor repository that records where
@@ -328,8 +359,11 @@ type KeyUseRecorder interface {
 	// RecordKeyUse marks the sensor seen (last_seen_at, health online) and
 	// stores the client address of the key use with its time. It returns the
 	// address stored before (nil when none was). A nil ip records only the
-	// time.
-	RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP) (previous net.IP, err error)
+	// time. at is when the key was used: key uses are recorded off the
+	// request path and can reach the database out of order, so an
+	// observation older than the stored one keeps the stored address and
+	// returns a nil previous address.
+	RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (previous net.IP, err error)
 }
 
 // InstanceObserver is implemented by a sensor repository that keeps the

@@ -145,6 +145,18 @@ retry/backoff. A Jira failure never fails the originating status change.
   (its `WorkItemURIs` contains `/browse/<PROJECT>-`) is not re-created.
 - **Secret redaction** (#135): secret-leak findings never copy the raw value into
   a ticket; descriptions are run through redaction patterns as defense-in-depth.
+- **Output encoding** (RFC-040 §5.4): finding text is attacker-influenced (a
+  scanned page title, a file path, a sensor report) and the description is Jira
+  wiki markup (REST API v2). Every value is secret-redacted first, then encoded
+  by `pkg/safetext`. One-line values (title, location, masked value) are
+  backslash-escaped (`JiraWikiInline`), and the scanner description goes into
+  a `{noformat}` block it cannot close (`JiraWikiBlock`). URLs are defanged
+  (`https[:]//…`), and control, bidi and zero-width characters are removed
+  (Trojan Source). Lengths are capped. The summary is plain text: one line,
+  cleaned, at most 240 characters. Scanner text therefore cannot add links,
+  `[~user]` mentions, `!image!` tracking pixels or `{html}` macros to a ticket.
+  The Mobilization brief is operator-written guidance: it keeps its formatting
+  and is only cleaned.
 - **Outbound opt-in** (#171): `sync_enabled` defaults to false — connecting an
   integration never silently writes to Jira.
 

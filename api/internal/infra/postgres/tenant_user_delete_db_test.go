@@ -496,6 +496,12 @@ func (s *schemaSeeder) fkValues(st *seedTable, strict bool) (map[string]any, boo
 		if fk.ref == st.name {
 			continue // self reference: leave NULL
 		}
+		if st.name == "admin_users" && fk.ref == "users" {
+			// A platform administrator cannot also be an organization member
+			// (000226 trigger), and the seeded user is one: leave user_id NULL,
+			// an API-key administrator identity.
+			continue
+		}
 		row := s.refRow(fk.ref)
 		if row == nil {
 			if ref, ok := s.tables[fk.ref]; ok && !ref.hasTn {

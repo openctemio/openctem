@@ -65,6 +65,7 @@ import type {
 } from '@/features/integrations/types/integration.types'
 import { toast } from 'sonner'
 import { mutate } from 'swr'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 // Finding statuses a Jira webhook may set inbound. false_positive/accepted need
 // approval and resolved needs verification, so they're excluded (the backend
@@ -672,15 +673,13 @@ const columns: ColumnDef<Integration>[] = [
     accessorFn: (i) => (i.base_url ? hostnameOf(i.base_url) : ''),
     cell: ({ row }) =>
       row.original.base_url ? (
-        <a
+        <SafeExternalLink
           href={row.original.base_url}
-          target="_blank"
-          rel="noopener noreferrer"
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ExternalLink className="h-3 w-3" />
           {hostnameOf(row.original.base_url)}
-        </a>
+        </SafeExternalLink>
       ) : (
         <span className="text-sm text-muted-foreground">—</span>
       ),

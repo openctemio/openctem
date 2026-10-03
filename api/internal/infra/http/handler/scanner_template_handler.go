@@ -455,6 +455,29 @@ type TemplateQuotaData struct {
 	MaxTotalStorageBytes    int64 `json:"max_total_storage_bytes"`
 }
 
+// GetSigningKey handles GET /api/v1/scanner-templates/signing-key
+// @Summary      Get the tenant's template-signing public key
+// @Description  The Ed25519 public key custom templates of this tenant are signed with when they are sent to a sensor. Pin it on the tenant's sensors (SENSOR_TEMPLATE_SIGNING_KEYS); sensors refuse custom templates without a valid signature.
+// @Tags         Scanner Templates
+// @Produce      json
+// @Success      200  {object}  app.TemplateSigningKey
+// @Failure      503  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scanner-templates/signing-key [get]
+func (h *ScannerTemplateHandler) GetSigningKey(w http.ResponseWriter, r *http.Request) {
+	key, err := h.service.SigningKey(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		if errors.Is(err, app.ErrTemplateSigningDisabled) {
+			apierror.ServiceUnavailable("Custom template signing is not configured on this platform (APP_TEMPLATE_SIGNING_KEY)").WriteJSON(w)
+			return
+		}
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(key)
+}
+
 // GetUsage handles GET /api/v1/scanner-templates/usage
 // @Summary      Get template usage and quota
 // @Description  Get the current template usage and quota limits for the tenant

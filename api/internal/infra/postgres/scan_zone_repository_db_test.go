@@ -26,6 +26,9 @@ type zoneSensorOpts struct {
 	lastSeen *time.Time
 	status   string
 	platform bool
+	// declaredOnly: the tools are set by the administrator and the sensor
+	// never reported (verified) them; dispatch must not use them.
+	declaredOnly bool
 }
 
 func seedZoneSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID *shared.ID, name string, o zoneSensorOpts) shared.ID {
@@ -42,12 +45,19 @@ func seedZoneSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID *sha
 	}
 	id := shared.NewID()
 	tenant := tenantID.String()
+	// By default the sensor also reported (verified) its tools, as a sensor
+	// on a current SDK does on every heartbeat.
+	var reported any
+	if !o.declaredOnly && o.tools != nil {
+		reported = pq.Array(o.tools)
+	}
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO sensors (id, tenant_id, name, type, status, health, api_key_hash, api_key_prefix,
-		                      tools, execution_mode, max_concurrent_jobs, current_jobs, last_seen_at, is_platform_sensor)
-		 VALUES ($1, $2, $3, 'worker', $4, $5, $6, $7, $8, 'daemon', 5, 0, $9, $10)`,
+		                      tools, execution_mode, max_concurrent_jobs, current_jobs, last_seen_at, is_platform_sensor,
+		                      reported_tool_names)
+		 VALUES ($1, $2, $3, 'worker', $4, $5, $6, $7, $8, 'daemon', 5, 0, $9, $10, $11)`,
 		id.String(), tenant, name+" "+id.String()[:8], o.status, o.health,
-		"hash-"+id.String(), id.String()[:8], pq.Array(o.tools), *o.lastSeen, o.platform)
+		"hash-"+id.String(), id.String()[:8], pq.Array(o.tools), *o.lastSeen, o.platform, reported)
 	if err != nil {
 		t.Fatalf("seed sensor %s: %v", name, err)
 	}

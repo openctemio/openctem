@@ -351,6 +351,18 @@ credentials, err := s.credentialDecrypt(intg.CredentialsEncrypted())
 
 **Environment Variable:** `APP_ENCRYPTION_KEY` (32-byte key, hex or base64 format)
 
+### Untrusted message text
+
+Titles, bodies and fields often carry finding text that a scan target controls.
+Every client returned by `ClientFactory.CreateClient` sends `Message.Cleaned()`
+(`internal/infra/notifier/client.go`). That removes control, bidi-control and
+zero-width characters (Trojan Source: an RLO override would make a message
+display something other than what it says) and caps lengths: 300 characters
+for a title, 2,000 for a field and 20,000 for a body. Each provider then
+escapes its own markup: Slack mrkdwn (`&`, `<`, `>`, so no `<!channel>` or
+disguised links), Telegram markdown, and `html/template` for e-mail. The
+generic webhook sends JSON. See RFC-040 §5.4.
+
 ### Rate Limiting
 
 Test notifications are rate-limited to prevent spam:

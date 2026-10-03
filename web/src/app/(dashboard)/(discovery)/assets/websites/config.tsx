@@ -2,8 +2,17 @@ import type { ColumnDef } from '@tanstack/react-table'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
 import { toStringArray } from '@/features/assets/lib/property-utils'
+import { httpStatus, websiteTLS } from '@/features/assets/lib/certificate-facts'
 import { Badge } from '@/components/ui/badge'
-import { MonitorSmartphone, ShieldCheck, ShieldX, AlertTriangle, Shield, Zap } from 'lucide-react'
+import {
+  MonitorSmartphone,
+  ShieldCheck,
+  ShieldX,
+  AlertTriangle,
+  Shield,
+  Zap,
+  HelpCircle,
+} from 'lucide-react'
 
 const columns: ColumnDef<Asset>[] = [
   {
@@ -31,8 +40,17 @@ const columns: ColumnDef<Asset>[] = [
   {
     id: 'ssl',
     header: 'SSL',
-    cell: ({ row }) =>
-      row.original.metadata.ssl ? (
+    // Unknown when nothing recorded TLS: a missing flag is not "insecure".
+    cell: ({ row }) => {
+      const tls = websiteTLS(row.original)
+      if (tls === null)
+        return (
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <HelpCircle className="h-4 w-4" />
+            <span className="text-xs">Unknown</span>
+          </div>
+        )
+      return tls ? (
         <div className="flex items-center gap-1 text-green-500">
           <ShieldCheck className="h-4 w-4" />
           <span className="text-xs">Secure</span>
@@ -42,13 +60,16 @@ const columns: ColumnDef<Asset>[] = [
           <ShieldX className="h-4 w-4" />
           <span className="text-xs">Insecure</span>
         </div>
-      ),
+      )
+    },
   },
   {
     id: 'http_status',
     header: 'Status Code',
     cell: ({ row }) => {
-      const status = (row.original.metadata.http_status as number) || 200
+      // No probe recorded a status: show "-", never a default 200.
+      const status = httpStatus(row.original)
+      if (status === null) return <span className="text-muted-foreground">-</span>
       const statusClass =
         status >= 200 && status < 300
           ? 'text-green-500 bg-green-500/10'
@@ -194,7 +215,8 @@ export const websitesConfig: AssetPageConfig = {
         {
           label: 'HTTP Status',
           getValue: (asset) => {
-            const status = (asset.metadata.http_status as number) || 200
+            const status = httpStatus(asset)
+            if (status === null) return <span className="text-muted-foreground">Unknown</span>
             return (
               <Badge variant="outline" className={status < 400 ? 'text-green-500' : 'text-red-500'}>
                 {status}
@@ -204,7 +226,10 @@ export const websitesConfig: AssetPageConfig = {
         },
         {
           label: 'SSL Certificate',
-          getValue: (asset) => (asset.metadata.ssl ? 'Valid' : 'Invalid/Missing'),
+          getValue: (asset) => {
+            const tls = websiteTLS(asset)
+            return tls === null ? 'Unknown' : tls ? 'Served over TLS' : 'Not served over TLS'
+          },
         },
         {
           label: 'Server',
@@ -250,8 +275,14 @@ export const websitesConfig: AssetPageConfig = {
         return tech.join(';')
       },
     },
-    { header: 'SSL', accessor: (a) => (a.metadata.ssl ? 'Yes' : 'No') },
-    { header: 'HTTP Status', accessor: (a) => (a.metadata.http_status as number) || 200 },
+    {
+      header: 'SSL',
+      accessor: (a) => {
+        const tls = websiteTLS(a)
+        return tls === null ? '' : tls ? 'Yes' : 'No'
+      },
+    },
+    { header: 'HTTP Status', accessor: (a) => httpStatus(a) ?? '' },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Risk Score', accessor: (a) => a.riskScore },
     { header: 'Findings', accessor: (a) => a.findingCount },
@@ -267,7 +298,12 @@ export const websitesConfig: AssetPageConfig = {
     options: [
       { label: 'Secure', value: 'secure' },
       { label: 'Insecure', value: 'insecure' },
+      { label: 'Unknown', value: 'unknown' },
     ],
-    filterFn: (asset, value) => (value === 'secure' ? !!asset.metadata.ssl : !asset.metadata.ssl),
+    filterFn: (asset, value) => {
+      const tls = websiteTLS(asset)
+      if (value === 'unknown') return tls === null
+      return value === 'secure' ? tls === true : tls === false
+    },
   },
 }

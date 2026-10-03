@@ -207,6 +207,9 @@ type Handlers struct {
 	// SSO handler (per-tenant SSO authentication)
 	SSO  *handler.SSOHandler  // nil if not initialized
 	SAML *handler.SAMLHandler // nil if not initialized - SAML 2.0 SP (RFC-009)
+	// SSOChange lists and decides admin-console SSO changes that wait for an
+	// owner's approval (RFC-022). nil if SAML/SSO is not initialized.
+	SSOChange *handler.SSOChangeHandler
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
@@ -406,7 +409,7 @@ func Register(
 
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
-		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth)
+		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
