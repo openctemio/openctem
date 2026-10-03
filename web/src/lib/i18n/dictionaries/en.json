@@ -146,6 +146,8 @@
   "settings.desc.authentication": "Two-factor, session length and sign-in restrictions.",
   "settings.item.scim": "Directory sync (SCIM)",
   "settings.desc.scim": "Provision members from your identity provider.",
+  "settings.item.sso-approvals": "SSO approvals",
+  "settings.desc.sso-approvals": "Approve or reject sign-in changes proposed by the platform administrator.",
   "settings.item.api-keys": "API keys",
   "settings.desc.api-keys": "Keys for scripts and tools that call the API.",
   "settings.item.mcp": "AI access (MCP)",

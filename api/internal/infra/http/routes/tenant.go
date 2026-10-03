@@ -21,6 +21,7 @@ func registerTenantRoutes(
 	tenantRepo tenant.Repository,
 	membershipReader middleware.MembershipReader,
 	localAuth *handler.LocalAuthHandler,
+	ssoChanges *handler.SSOChangeHandler,
 ) {
 	if membershipReader == nil {
 		membershipReader = tenantRepo
@@ -164,6 +165,15 @@ func registerTenantRoutes(
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())
 		r.PATCH("/settings/api", h.UpdateAPISettings, middleware.RequireTeamOwner())
+
+		// SSO changes a platform administrator proposed for this organization
+		// (RFC-022). Owner only: approving one installs who can sign in.
+		// The service re-checks ownership in the database.
+		if ssoChanges != nil {
+			r.GET("/settings/sso/changes", ssoChanges.OwnerList, middleware.RequireTeamOwner())
+			r.POST("/settings/sso/changes/{changeId}/approve", ssoChanges.Approve, middleware.RequireTeamOwner())
+			r.POST("/settings/sso/changes/{changeId}/reject", ssoChanges.Reject, middleware.RequireTeamOwner())
+		}
 
 		// Owner-only operations
 		r.DELETE("/", h.Delete, middleware.RequireTeamOwner())

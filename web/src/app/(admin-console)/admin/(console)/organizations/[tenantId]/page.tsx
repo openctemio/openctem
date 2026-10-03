@@ -24,6 +24,7 @@ import { SSOPostureBadges } from '@/features/admin-console/components/sso-postur
 import { adminCan } from '@/features/admin-console/types'
 import { SamlConfigForm } from '@/features/saml/components/saml-config-form'
 import { IdentityProvidersPanel } from '@/features/sso/components/identity-providers-panel'
+import { PendingSSOChangesNotice } from '@/features/sso-approvals/components/pending-sso-changes-notice'
 import {
   AddDomainDialog,
   VerifiedDomainsList,
@@ -147,6 +148,7 @@ export default function AdminOrganizationPage({
                 </p>
               )}
               <SSOEnforcementCard org={org} canManage={canManageSSO} onChanged={refresh} />
+              <PendingSSOChangesNotice tenantId={org.id} />
               {/* A section, not a Card: the SAML form is built from its own cards. */}
               <section className="space-y-1">
                 <h2 className="text-base font-semibold">SAML 2.0</h2>
