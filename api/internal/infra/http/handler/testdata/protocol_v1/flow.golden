@@ -86,7 +86,7 @@ POST /api/v1/agent/ingest
 status: 201
 Content-Type: application/json
 
-{"scan_id":"golden-report","assets_created":0,"assets_updated":0,"findings_created":0,"findings_updated":0,"findings_skipped":0,"cves_created":0,"cves_updated":0}
+{"scan_id":"golden-report","assets_created":0,"assets_updated":0,"findings_created":0,"findings_updated":0,"findings_skipped":0,"cves_created":0,"cves_updated":0,"binding":"unsolicited","unsolicited_warned":true}
 
 ----
 POST /api/v1/agent/renew

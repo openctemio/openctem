@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
@@ -71,6 +72,13 @@ type Service struct {
 	// dry_run.
 	coverageMode  CoverageAutoResolveMode
 	coverageGuard BlindingGuard
+
+	// commands binds reports to the commands they name; results holds the
+	// tenant policy for unsolicited reports and their quarantine (RFC-040
+	// §5.3). Without results every tenant behaves as in "warn" mode.
+	commands     commandReader
+	results      sensorresult.Repository
+	resultLimits sensorresult.Limits
 
 	logger *logger.Logger
 
@@ -301,6 +309,36 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			"report_id", sanitizeIngestLogField(report.Metadata.ID), "values_capped", n)
 	}
 
+	// Result binding (RFC-040 §5.3). A server-side ingest (synthetic sensor,
+	// zero id) is trusted. A sensor report without a command passes the
+	// unsolicited gate unless the accept side ran it already: quarantined
+	// (stored, not applied) or applied with the unsolicited limits.
+	opts := input.Options
+	binding := opts.Binding
+	if agt.ID.IsZero() {
+		binding = TrustedBinding()
+	}
+	if binding.Kind == BindingCommand && binding.Tool != "" &&
+		(report.Tool == nil || !tooldom.SameTool(binding.Tool, report.Tool.Name)) {
+		return nil, ErrToolNotPermitted
+	}
+	unsolicitedWarned := false
+	if binding.Kind == BindingUnsolicited && !opts.Admitted {
+		warned, err := s.admitUnsolicited(ctx, agt, tenantID, unsolicitedSubmission{
+			Protocol: sensorresult.ProtocolV1, Route: opts.Route, ReportID: report.Metadata.ID, Report: report,
+		})
+		if err != nil {
+			return nil, err
+		}
+		unsolicitedWarned = warned
+	}
+	// An unsolicited report never auto-resolves in a tenant whose mode is
+	// quarantine (owner decision Q6 (a)); in warn mode it keeps the previous
+	// behavior until the tenant switches.
+	unsolicitedMayResolve := binding.Kind != BindingUnsolicited ||
+		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
+	scope := newAlterScope(binding)
+
 	// report.Metadata.ID and SourceType come from the CTIS payload
 	// submitted by the sensor. A compromised/malicious sensor can
 	// embed CR/LF in those fields to forge log lines downstream
@@ -315,7 +353,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	output := &Output{
-		ReportID: report.Metadata.ID,
+		ReportID:          report.Metadata.ID,
+		Binding:           binding.String(),
+		UnsolicitedWarned: unsolicitedWarned,
 	}
 
 	// Load tenant settings once for both asset processing and finding processing
@@ -335,8 +375,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 
 	// Step 1: Process assets using batch operations
-	opts := input.Options
-	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings)
+	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", logger.SanitizeError(err))
 		// Continue with partial results, but say so: the asset upsert is one
@@ -396,7 +435,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {
-		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, opts.RequireAssetForFindings); err != nil {
+		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, opts.RequireAssetForFindings, scope); err != nil {
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
 		}
@@ -417,6 +456,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	switch {
 	case opts.DeferAutoResolve:
 		s.logger.Debug("auto-resolve deferred to the report commit")
+	case autoResolveEligible && !unsolicitedMayResolve:
+		s.logger.Info("auto-resolve skipped: the report names no command (tenant mode quarantine)",
+			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(report.Tool.Name))
 	case autoResolveEligible && s.sensorMayAutoResolveTool(ctx, agt, report.Tool.Name):
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
@@ -429,8 +471,13 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 		// Auto-resolve across all assets in a single query rather than one per
 		// asset. Pass nil branchID to resolve findings on any default branch.
+		// A report bound to a command resolves only on the assets that
+		// command covers (RFC-040 §5.3).
 		assetIDs := make([]shared.ID, 0, len(assetMap))
 		for _, assetID := range assetMap {
+			if binding.Kind == BindingCommand && !scope.allowedAsset(assetID) {
+				continue
+			}
 			assetIDs = append(assetIDs, assetID)
 		}
 
@@ -469,13 +516,16 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// the scan no longer reports as auto_fixed — so per-branch state reflects what
 	// is actually present on that branch. Additive: it only touches occurrence
 	// rows, never the finding's headline status. Best-effort.
-	if !opts.DeferAutoResolve && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+	if !opts.DeferAutoResolve && unsolicitedMayResolve && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil && report.Metadata.ID != "" &&
 		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 		branchName := report.Metadata.Branch.Name
 		for _, assetID := range assetMap {
+			if binding.Kind == BindingCommand && !scope.allowedAsset(assetID) {
+				continue
+			}
 			br, err := s.branchRepo.GetByName(ctx, assetID, branchName)
 			if err != nil || br == nil {
 				continue // not a repository asset / branch not tracked — skip
@@ -520,6 +570,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		"dependencies_linked", output.DependenciesLinked,
 		"errors", len(output.Errors),
 	)
+
+	recordWithheld(output)
 
 	// Step 6: Create audit log for ingestion
 	s.createIngestAuditLog(ctx, agt, tenantID, report, output)
@@ -617,7 +669,7 @@ func (s *Service) logAutoResolveSkipped(input Input, report *ctis.Report, toolGa
 // agree on. A log with results that identifies no repository is refused with
 // ErrSARIFNoRepository rather than filed under a shared per-tool pseudo-asset,
 // where findings of unrelated repositories would deduplicate into each other.
-func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData []byte, repo SARIFRepository) (*Output, error) {
+func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData []byte, repo SARIFRepository, bind Binding) (*Output, error) {
 	s.logger.Info("ingesting SARIF data",
 		"sensor_id", agt.ID.String(),
 	)
@@ -645,11 +697,11 @@ func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData
 	}
 
 	// Use the unified ingestion pipeline
-	return s.Ingest(ctx, agt, Input{Report: report})
+	return s.Ingest(ctx, agt, Input{Report: report, Options: Options{Binding: bind, Route: "sarif"}})
 }
 
 // IngestRecon processes recon data and ingests it.
-func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInput *ctis.ReconToCTISInput) (*Output, error) {
+func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInput *ctis.ReconToCTISInput, bind Binding) (*Output, error) {
 	s.logger.Info("ingesting recon data",
 		"sensor_id", agt.ID.String(),
 	)
@@ -663,7 +715,7 @@ func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInpu
 	}
 
 	// Use the unified ingestion pipeline
-	return s.Ingest(ctx, agt, Input{Report: report})
+	return s.Ingest(ctx, agt, Input{Report: report, Options: Options{Binding: bind, Route: "recon"}})
 }
 
 // CheckFingerprints checks which fingerprints already exist in the database.
@@ -774,9 +826,8 @@ var reservedAutoResolveTools = map[string]struct{}{
 //   - A sensor may only auto-resolve its effective tools: what it reports
 //     installed narrowed by its tool limit, or its declared tools when it
 //     never reported (RFC-029 §4.3.1).
-//   - A legacy sensor that declares no tools and reports none keeps the previous behavior
-//     (backward compatibility with old SDKs / unconfigured sensors), with a
-//     warning so operators can see which sensors should declare their tools.
+//   - A sensor that declares no tools and reports none auto-resolves nothing
+//     (RFC-040 §5.3; it used to keep the pre-RFC-029 behavior).
 func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sensor, toolName string) bool {
 	if agt == nil || agt.ID.IsZero() {
 		return true
@@ -799,9 +850,12 @@ func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sens
 	}
 
 	if len(tools) == 0 && !reported {
-		s.logger.Warn("auto-resolve allowed for legacy sensor with no declared tools; declare the sensor's tools to scope auto-resolve",
+		// RFC-040 §5.3: a sensor that declares and reports no tools could
+		// close any tool's findings with a "full" report; it no longer
+		// auto-resolves anything.
+		s.logger.Warn("auto-resolve skipped: the sensor declares and reports no tools; declare the sensor's tools to let it auto-resolve",
 			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
-		return true
+		return false
 	}
 	for _, t := range tools {
 		if tooldom.SameTool(t, toolName) {
@@ -938,6 +992,17 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 		"assets_created":         output.AssetsCreated,
 		"assets_updated":         output.AssetsUpdated,
 		"error_count":            len(output.Errors),
+		"binding":                output.Binding,
+	}
+	if output.AssetsLimited > 0 {
+		metadata["assets_limited"] = output.AssetsLimited
+	}
+	if output.ReopensWithheld > 0 {
+		metadata["reopens_withheld"] = output.ReopensWithheld
+	}
+	if output.UnsolicitedWarned {
+		// Tenant mode warn: quarantine mode would have held this report.
+		metadata["unsolicited_warned"] = true
 	}
 
 	// Include first few errors for debugging (limit to 5 to avoid huge audit logs)

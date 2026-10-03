@@ -141,7 +141,7 @@ func TestIngest_OversizedFindingTextIsCappedOnEveryPath_DB(t *testing.T) {
 			}},
 		}},
 	})
-	out, err = h.ingest.IngestSARIF(ctx, agt, sarif, ingest.SARIFRepository{URL: "https://github.com/acme/caps-sarif", Branch: "main"})
+	out, err = h.ingest.IngestSARIF(ctx, agt, sarif, ingest.SARIFRepository{URL: "https://github.com/acme/caps-sarif", Branch: "main"}, ingest.Binding{})
 	if err != nil {
 		t.Fatalf("sarif: oversized text failed the report: %v", err)
 	}

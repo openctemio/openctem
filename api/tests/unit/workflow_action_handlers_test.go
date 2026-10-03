@@ -135,7 +135,7 @@ func (m *wfActionMockFindingRepo) CheckFingerprintsExist(_ context.Context, _ sh
 	return nil, nil
 }
 
-func (m *wfActionMockFindingRepo) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _ string) (int64, error) {
+func (m *wfActionMockFindingRepo) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _, _ string) (int64, error) {
 	return 0, nil
 }
 

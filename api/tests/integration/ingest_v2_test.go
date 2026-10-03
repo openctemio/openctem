@@ -40,6 +40,13 @@ type v2Tenant struct {
 
 func newV2Rig(t *testing.T, guard ingest.BlindingGuard) *v2Rig {
 	t.Helper()
+	return newV2RigWith(t, guard, nil)
+}
+
+// newV2RigWith is newV2Rig with a hook that wires more of the service (the
+// result quarantine, the command reader).
+func newV2RigWith(t *testing.T, guard ingest.BlindingGuard, configure func(*ingest.Service, *postgres.DB)) *v2Rig {
+	t.Helper()
 	sqldb := setupTestDB(t)
 	t.Cleanup(func() { _ = sqldb.Close() })
 	db := &postgres.DB{DB: sqldb}
@@ -49,6 +56,9 @@ func newV2Rig(t *testing.T, guard ingest.BlindingGuard) *v2Rig {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
+	if configure != nil {
+		configure(svc, db)
+	}
 	r := &v2Rig{t: t, db: sqldb, reports: postgres.NewIngestReportRepository(db), jobs: postgres.NewIngestJobRepository(db)}
 	r.proc = ingest.NewV2JobProcessor(svc, r.reports, r.jobs, protov2.DefaultLimits(), guard, log)
 	return r

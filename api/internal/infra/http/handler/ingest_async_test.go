@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -56,7 +57,10 @@ func (s *stubIngestJobRepo) ReleaseStale(_ context.Context, _ time.Duration) (in
 }
 
 func newAsyncHandler(repo ingestjob.Repository, maxPending int) *IngestHandler {
-	h := NewIngestHandler(nil, nil, logger.NewNop())
+	// A service with no stores: the unsolicited gate (RFC-040 §5.3) runs and,
+	// with no result policy store, lets the report be queued (warn).
+	svc := ingest.NewService(nil, nil, nil, nil, nil, nil, nil, nil, logger.NewNop())
+	h := NewIngestHandler(svc, nil, logger.NewNop())
 	h.SetAsyncIngest(repo, maxPending)
 	return h
 }
@@ -130,17 +134,16 @@ func TestIngestCTIS_Async_InvalidPayload400(t *testing.T) {
 
 func TestGetIngestJob_ReturnsStatus(t *testing.T) {
 	now := time.Now()
+	tid := shared.NewID()
+	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
 	repo := &stubIngestJobRepo{getFn: func(id ingestjob.ID) (*ingestjob.Job, error) {
 		return ingestjob.FromRow(
-			id, shared.NewID(), nil, "scan-7", "trivy", []byte("{}"), []byte("sha"),
+			id, tid, &agt.ID, "scan-7", "trivy", []byte("{}"), []byte("sha"),
 			ingestjob.StatusCompleted, 1, 5, 0, []byte(`{"findings_created":4}`), "", "", nil,
 			now, now, now,
 		), nil
 	}}
 	h := newAsyncHandler(repo, 100)
-
-	tid := shared.NewID()
-	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
 	jobID := shared.NewID().String()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/agent/ingest/jobs/"+jobID, nil)
 	rctx := chi.NewRouteContext()
@@ -187,6 +190,38 @@ func TestClientWantsSync(t *testing.T) {
 			}
 			if got := clientWantsSync(r); got != c.want {
 				t.Fatalf("clientWantsSync(%q, Prefer=%q) = %v, want %v", c.url, c.prefer, got, c.want)
+			}
+		})
+	}
+}
+
+// RFC-040 §5.3: a sensor reads only the ingest jobs it queued. Another
+// sensor's job (same tenant) and a job no sensor queued are not found.
+func TestGetIngestJob_OtherSensorsJobNotFound(t *testing.T) {
+	now := time.Now()
+	tid := shared.NewID()
+	other := shared.NewID()
+	for name, owner := range map[string]*shared.ID{"another sensor": &other, "no sensor": nil} {
+		t.Run(name, func(t *testing.T) {
+			repo := &stubIngestJobRepo{getFn: func(id ingestjob.ID) (*ingestjob.Job, error) {
+				return ingestjob.FromRow(
+					id, tid, owner, "scan-8", "trivy", []byte("{}"), []byte("sha"),
+					ingestjob.StatusCompleted, 1, 5, 0, []byte(`{"findings_created":4}`), "", "", nil,
+					now, now, now,
+				), nil
+			}}
+			h := newAsyncHandler(repo, 100)
+			agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
+			jobID := shared.NewID().String()
+			r := httptest.NewRequest(http.MethodGet, "/api/v1/agent/ingest/jobs/"+jobID, nil)
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("id", jobID)
+			ctx := context.WithValue(r.Context(), chi.RouteCtxKey, rctx)
+			ctx = context.WithValue(ctx, sensorContextKey, agt)
+			w := httptest.NewRecorder()
+			h.GetIngestJob(w, r.WithContext(ctx))
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404; body=%s", w.Code, w.Body.String())
 			}
 		})
 	}
