@@ -909,7 +909,7 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
 - **Type and key.** An administrator creates the sensor with type
   `collector` (a rotated key gets `sensor.CollectorScopes()`). Until
   enrollment ships ([RFC-032](../rfcs/RFC-032-sensor-enrollment-and-identity.md)),
-  the collector uses an `rda_` key and renews it like any other sensor.
+  the collector uses an `octs_` key and renews it like any other sensor.
 - **Protocol.** It uses protocol v2 through sdk-go `pkg/sensorkit` (hello,
   heartbeat with control block, manifest, results ingest, durable outbox,
   key renewal), with commands off. Reports go to

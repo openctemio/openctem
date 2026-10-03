@@ -791,10 +791,7 @@ func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.
 // (the current rotating key when there is one, else the inline key; the same
 // choice as sensor.Sensor.KeyState) is a legacy rda_ key.
 func (r *SensorRepository) CountLegacyKeySensors(ctx context.Context) (int64, error) {
-	// sensorActiveKeySQL is the one definition of "the current rotating key".
-	query := `SELECT COUNT(*) FROM sensors s
-		WHERE s.status <> 'revoked'
-		  AND COALESCE(` + sensorActiveKeySQL("s") + `->>'prefix', s.api_key_prefix) LIKE 'rda\_%'`
+	query := `SELECT COUNT(*) FROM sensors s WHERE s.status <> 'revoked' AND ` + sensorLegacyKeySQL("s")
 	var n int64
 	if err := r.db.QueryRowContext(ctx, query).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count legacy-key sensors: %w", err)
