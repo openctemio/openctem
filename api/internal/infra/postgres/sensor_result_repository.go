@@ -2,7 +2,7 @@ package postgres
 
 // Sensor results without a command: the tenant policy and the quarantine
 // (docs/rfcs/RFC-040-platform-sensor-mutual-distrust.md §5.3, migration
-// 000287).
+// 000317).
 
 import (
 	"context"

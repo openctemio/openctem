@@ -69,7 +69,7 @@ synchronously even when `INGEST_MODE=async` (the queue keeps no binding).
 ## Modes and defaults
 
 `sensor_result_policies` holds one row per tenant: `mode` (`warn` |
-`quarantine`) and `allow_advisory_evidence` (default false). Migration 000287
+`quarantine`) and `allow_advisory_evidence` (default false). Migration 000317
 gives every tenant that exists at upgrade time `warn`, because sensors on old
 SDKs and the v1 fallback cannot name their command. A tenant without a row
 (every tenant created later) is on `quarantine`. An administrator switches

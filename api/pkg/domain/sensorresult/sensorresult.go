@@ -28,7 +28,7 @@ type Mode string
 const (
 	// ModeWarn applies the report with the unsolicited limits and records an
 	// audit entry and a metric. The mode of every tenant that existed before
-	// migration 000287.
+	// migration 000317.
 	ModeWarn Mode = "warn"
 	// ModeQuarantine stores the report for review and applies nothing. The
 	// mode of a tenant without a stored policy, i.e. every new tenant.
