@@ -4,7 +4,8 @@
 #
 #   - an organization and its owner (bootstrap-admin), who signs in
 #   - assets of two types, two sensors, a CTIS report with 15 findings
-#     (enough for the findings picker to scroll), a remediation task
+#     (enough for the findings picker to scroll), a scan with a run in
+#     progress, a remediation task
 #
 # Requires: docker, curl, jq. Env: ADMIN_IMAGE (api/Dockerfile.admin-cli),
 # E2E_OWNER_PASSWORD and E2E_DATABASE_URL (web/e2e/ci/make-env.sh),
@@ -86,6 +87,16 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v1/agent/ing
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' --data-binary @"$WORK/report.json")
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
+log "a scan with a run in progress"
+# A heartbeat brings e2e-sensor online so the trigger is accepted. Nothing
+# claims the job, so the run stays in progress for 10-scan-detail-runs.
+code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v1/agent/heartbeat" \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"status":"online","scanners":["nuclei"]}')
+[[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
+call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
+call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
+
 log "remediation task"
 call POST /api/v1/remediation/campaigns '{"name":"E2E remediation task","description":"e2e","priority":"high"}'
 
@@ -98,10 +109,29 @@ for _ in $(seq 1 30); do
 done
 [[ "$n" -ge 15 ]] || { log "only $n of 15 findings visible"; exit 1; }
 
+log "a member (E2E_LIMITED_*)"
+# The member-or-viewer checks in 09, 11 and 12 skip without one.
+MEMBER_EMAIL="e2e-member-$RUN@openctem-test.local"
+MEMBER_PASSWORD="$(openssl rand -hex 10)Q$(openssl rand -hex 3)"
+call GET /api/v1/roles
+ROLE_ID=$(jq -r '[(.roles // .data // .)[] | select((.slug // .name | ascii_downcase) == "member")][0].id' <<<"$BODY")
+[[ -n "$ROLE_ID" && "$ROLE_ID" != null ]] || { log "no member role"; exit 1; }
+call POST "/api/v1/tenants/$SLUG/invitations" "{\"email\":\"$MEMBER_EMAIL\",\"role_ids\":[\"$ROLE_ID\"]}"
+INVITE_TOKEN=$(jq -r .token <<<"$BODY")
+
 # The specs sign in through the form; end this API session.
+call POST /api/v1/auth/logout '{}'
+
+ACCESS_TOKEN=
+JAR="$WORK/member-cookies"
+call POST /api/v1/auth/register "{\"email\":\"$MEMBER_EMAIL\",\"password\":\"$MEMBER_PASSWORD\",\"name\":\"E2E Member\"}"
+call POST /api/v1/auth/login "{\"email\":\"$MEMBER_EMAIL\",\"password\":\"$MEMBER_PASSWORD\"}"
+call POST "/api/v1/invitations/$INVITE_TOKEN/accept-with-refresh" "{\"refresh_token\":\"$(jq -r '.refresh_token // empty' <<<"$BODY")\"}"
 call POST /api/v1/auth/logout '{}'
 
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"
 echo "E2E_USER_PASSWORD=$OWNER_PASSWORD"
 echo "E2E_TENANT_SLUG=$SLUG"
+echo "E2E_LIMITED_EMAIL=$MEMBER_EMAIL"
+echo "E2E_LIMITED_PASSWORD=$MEMBER_PASSWORD"
