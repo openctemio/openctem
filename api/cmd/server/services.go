@@ -1400,6 +1400,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
 	s.Sensor.SetLeaseRenewer(repos.Command)
 	s.Sensor.SetCancelFinder(repos.Command)
+	// Revoking or disabling a sensor takes back its leased commands at once
+	// (RFC-040 §5.2) instead of at lease expiry.
+	s.Sensor.SetHolderReleaser(repos.Command)
 	// Custom templates leave for sensors signed with the tenant's key
 	// (sensors refuse unsigned ones; RFC-038 "Custom template trust").
 	s.TemplateKeys = initTemplateKeyring(cfg, log)
