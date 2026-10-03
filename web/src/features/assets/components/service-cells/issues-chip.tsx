@@ -1,35 +1,22 @@
 import Link from 'next/link'
 import { ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'
 import { factChipBase } from './fact-chip'
 
 /**
- * The statuses `assets.finding_count` counts: every finding on the asset that
- * is not `resolved` (api internal/infra/postgres/asset_repository.go, the
- * LATERAL finding aggregate). The link filters the findings list to the same
- * set, so the number on the chip is the number of rows behind it.
+ * The link opens the asset's findings in the Findings list's "Open" group,
+ * the same statuses its "Open" filter uses.
+ *
+ * The number on the chip is `assets.finding_count`, which the API counts as
+ * every finding on the asset that is not `resolved` (api
+ * internal/infra/postgres/asset_repository.go). That includes false
+ * positives and accepted risks, so it can be higher than the open list it
+ * links to; the tooltip says so rather than hiding it. Counting open
+ * findings only is an API change (follow-up).
  */
-export const UNRESOLVED_FINDING_STATUSES = [
-  'new',
-  'confirmed',
-  'in_progress',
-  'fix_applied',
-  'false_positive',
-  'accepted',
-  'duplicate',
-  'draft',
-  'in_review',
-  'remediation',
-  'retest',
-  'verified',
-  'accepted_risk',
-] as const
-
 export function assetFindingsHref(assetId: string): string {
-  const q = new URLSearchParams({
-    assetId,
-    status: UNRESOLVED_FINDING_STATUSES.join(','),
-  })
+  const q = new URLSearchParams({ assetId, status: FINDINGS_OPEN_STATUSES.join(',') })
   return `/findings?${q.toString()}`
 }
 
@@ -40,7 +27,7 @@ export interface IssuesChipProps {
 }
 
 /**
- * "N issues found", linking to the asset's unresolved findings. Renders
+ * "N issues found", linking to the asset's open findings. Renders
  * nothing at zero: a zero is not a problem and is never coloured.
  */
 export function IssuesChip({ assetId, count, className }: IssuesChipProps) {
@@ -50,7 +37,7 @@ export function IssuesChip({ assetId, count, className }: IssuesChipProps) {
     <Link
       href={assetFindingsHref(assetId)}
       onClick={(e) => e.stopPropagation()}
-      title="Open the findings on this asset that are not resolved"
+      title="Findings on this asset that are not resolved. Opens its open findings."
       className={cn(
         factChipBase,
         'border-transparent bg-warning/15 font-medium text-warning tabular-nums hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',

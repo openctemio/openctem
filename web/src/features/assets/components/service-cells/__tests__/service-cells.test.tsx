@@ -16,13 +16,13 @@ import {
   SurfaceFacts,
   TechChips,
   TlsSummary,
-  UNRESOLVED_FINDING_STATUSES,
   cellsForType,
   httpStatusTone,
   labelError,
   safeExternalHref,
   MAX_TAGS_PER_ASSET,
 } from '..'
+import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'
 
 describe('HttpStatusChip', () => {
   it('colours by the class of the final status', () => {
@@ -50,14 +50,16 @@ describe('HttpStatusChip', () => {
 })
 
 describe('IssuesChip', () => {
-  it("links to the asset's unresolved findings", () => {
+  it("links to the asset's open findings, within the API's 10-status cap", () => {
     render(<IssuesChip assetId="a/1" count={4} />)
     const link = screen.getByRole('link', { name: /4 issues found/ })
     const href = new URL(link.getAttribute('href') ?? '', 'http://x')
     expect(href.pathname).toBe('/findings')
     expect(href.searchParams.get('assetId')).toBe('a/1')
-    expect(href.searchParams.get('status')?.split(',')).toEqual([...UNRESOLVED_FINDING_STATUSES])
-    expect(href.searchParams.get('status')).not.toContain('resolved,')
+    const statuses = href.searchParams.get('status')?.split(',') ?? []
+    expect(statuses).toEqual([...FINDINGS_OPEN_STATUSES])
+    expect(statuses.length).toBeLessThanOrEqual(10)
+    expect(statuses).not.toContain('resolved')
   })
 
   it('renders nothing at zero', () => {

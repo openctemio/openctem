@@ -11,7 +11,7 @@
  */
 export { FactChip, UnknownChip, ChipRow, ChipMono, type FactChipTone } from './fact-chip'
 export { HttpStatusChip, httpStatusTone, httpReason } from './http-status-chip'
-export { IssuesChip, assetFindingsHref, UNRESOLVED_FINDING_STATUSES } from './issues-chip'
+export { IssuesChip, assetFindingsHref } from './issues-chip'
 export { OverflowChips } from './overflow-chips'
 export { TechChips } from './tech-chips'
 export { TlsSummary, CertExpiryChip } from './tls-summary'
