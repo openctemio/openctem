@@ -31,7 +31,6 @@ vi.mock('@/lib/api/sensor-content-hooks', () => content)
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 vi.mock('@/features/scan-zones', () => ({ SensorZonesSection: () => null }))
 vi.mock('../sensor-activity', () => ({
-  SensorActivity: ({ sensorId }: { sensorId: string }) => <p>activity of {sensorId}</p>,
   SensorRecentActivity: () => <p>recent activity</p>,
 }))
 vi.mock('../../hooks', () => ({
@@ -135,14 +134,14 @@ describe('SensorDetailSheet', () => {
     vi.clearAllMocks()
   })
 
-  it('has five tabs and the health checklist one click away', async () => {
+  it('has four tabs (activity is a panel, not a tab) and the health checklist one click away', async () => {
     open()
     const dialog = screen.getByRole('dialog')
     expect(
       within(dialog)
         .getAllByRole('tab')
         .map((t) => t.textContent)
-    ).toEqual(['Overview', 'Jobs', 'Activity', 'Manifest', 'Config'])
+    ).toEqual(['Overview', 'Jobs', 'Manifest', 'Config'])
     expect(screen.queryByRole('list', { name: 'Health' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /Health checks/ }))
     const health = screen.getByRole('list', { name: 'Health' })
@@ -461,10 +460,10 @@ describe('SensorDetailSheet', () => {
     expect(screen.getByRole('button', { name: 'Copy sensor ID' })).toBeInTheDocument()
   })
 
-  it('a member opens the Activity tab (the sensor activity endpoint, not the audit log)', async () => {
+  it('there is no Activity tab: the overview summary opens the activity panel', async () => {
     open()
-    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }))
-    expect(screen.getByText('activity of s1')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Activity' })).toBeNull()
+    expect(screen.getByText('recent activity')).toBeInTheDocument()
   })
 
   it('Install command opens the Config tab with the snippets', async () => {

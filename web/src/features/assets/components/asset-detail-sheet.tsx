@@ -427,7 +427,7 @@ export function AssetDetailSheet<T extends Asset>({
               assetName={asset.name}
               properties={asset.metadata}
             />
-            <AssetMergeHistory assetId={asset.id} />
+            <AssetMergeHistory assetId={asset.id} assetName={asset.name} />
           </DetailSections>
         )}
       </DetailSheet>

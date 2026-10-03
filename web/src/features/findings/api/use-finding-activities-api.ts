@@ -124,6 +124,11 @@ function mapActivity(api: ApiFindingActivity): Activity {
   const metadata = {
     ...api.source_metadata,
     ...changes, // Include all changes data (for ai_triage and other activity types)
+    // The API's own type: several map to one ActivityType (sla_breach and
+    // auto_resolved are both "status_changed"); the feed words them apart.
+    activityType: api.activity_type,
+    actorType: api.actor_type,
+    actorId: api.actor_id,
     assigneeName,
     assigneeEmail,
     assigneeId,
