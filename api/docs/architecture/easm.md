@@ -127,7 +127,7 @@ Candidates and dependencies get passive (T0) checks only.
 
 ## 4. Attribution
 
-**Built (P0, migration 000275).** `asset_attributions` holds per asset a
+**Built (P0, migration 000313).** `asset_attributions` holds per asset a
 state, a confidence 0–100 and the strongest rule; `easm_evidence` holds one row
 per (asset, rule, source) with the technique, the source and the observed
 datum. It is a side table, not columns on `assets`: the asset write paths each
