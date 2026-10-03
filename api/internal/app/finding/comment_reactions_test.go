@@ -295,7 +295,7 @@ func TestCommentReaction_OrderByFirstUse(t *testing.T) {
 
 func TestCommentReaction_InvalidEmojiRefused(t *testing.T) {
 	f := newReactFixture(t)
-	for _, e := range []string{"", "a", "<b>", "👍👍", "​👍"} {
+	for _, e := range []string{"", "a", "<b>", "👍👍", "\u200b👍"} {
 		_, err := f.svc.AddCommentReaction(context.Background(), f.input(e))
 		if !errors.Is(err, vulnerability.ErrReactionInvalidEmoji) {
 			t.Errorf("emoji %q: err = %v, want ErrReactionInvalidEmoji", e, err)
