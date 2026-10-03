@@ -1147,6 +1147,20 @@ func (s *AuditService) LogSensorRevoked(ctx context.Context, actx AuditContext, 
 	return s.LogEvent(ctx, actx, event)
 }
 
+// LogSensorCommandsReleased logs the platform taking back the commands a
+// sensor held when it was revoked or disabled (RFC-040 §5.2): requeued went
+// back to the queue, failed were addressed to that sensor only.
+func (s *AuditService) LogSensorCommandsReleased(ctx context.Context, actx AuditContext, sensorID, sensorName, why string, requeued, failed []string) error {
+	event := NewSuccessEvent(auditdom.ActionSensorCommandsReleased, auditdom.ResourceTypeSensor, sensorID).
+		WithResourceName(sensorName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Sensor '%s' %s: %d held commands re-queued, %d failed", sensorName, why, len(requeued), len(failed))).
+		WithMetadata("trigger", why).
+		WithMetadata("requeued_command_ids", requeued).
+		WithMetadata("failed_command_ids", failed)
+	return s.LogEvent(ctx, actx, event)
+}
+
 // LogSensorKeyRegenerated logs a sensor API key regeneration event.
 func (s *AuditService) LogSensorKeyRegenerated(ctx context.Context, actx AuditContext, sensorID, sensorName string) error {
 	event := NewSuccessEvent(auditdom.ActionSensorKeyRegenerated, auditdom.ResourceTypeSensor, sensorID).

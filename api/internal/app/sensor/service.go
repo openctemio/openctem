@@ -84,6 +84,9 @@ type SensorService struct {
 	// leases renews the leases of the commands a heartbeating sensor holds
 	// (RFC-035 D6); nil renews nothing.
 	leases commanddom.LeaseRenewer
+	// holders takes back the commands a sensor holds when it is revoked or
+	// disabled (RFC-040 §5.2); nil leaves them to lease expiry.
+	holders commanddom.HolderReleaser
 	// cancels finds the commands a heartbeating sensor must stop
 	// (cancel_command_ids). Optional; nil sends none.
 	cancels commanddom.CancelFinder
@@ -135,6 +138,13 @@ func (s *SensorService) HeartbeatHistory(ctx context.Context, tenantID, sensorID
 // report one (an SDK without the load report). Optional.
 func (s *SensorService) SetLeaseRenewer(r commanddom.LeaseRenewer) {
 	s.leases = r
+}
+
+// SetHolderReleaser wires the release of a sensor's leased commands when it
+// is revoked or disabled (RFC-040 §5.2). Without it they wait for their
+// lease to run out.
+func (s *SensorService) SetHolderReleaser(r commanddom.HolderReleaser) {
+	s.holders = r
 }
 
 // SetCancelFinder wires the cancel signal into the heartbeat: the answer
@@ -526,10 +536,13 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		return nil, shared.NewDomainError("FORBIDDEN", "cannot change the status of a revoked sensor", shared.ErrForbidden)
 	}
 
+	withdrawn := false
 	if input.Status != "" {
-		oldStatus := string(a.Status)
+		oldStatus := a.Status
 		a.SetStatus(sensordom.SensorStatus(input.Status), "")
-		changes.Set("status", oldStatus, input.Status)
+		changes.Set("status", string(oldStatus), input.Status)
+		withdrawn = a.Status != oldStatus &&
+			(a.Status == sensordom.SensorStatusRevoked || a.Status == sensordom.SensorStatusDisabled)
 	}
 
 	if input.MaxConcurrentJobs != nil {
@@ -548,6 +561,9 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 			sensorName = oldName
 		}
 		s.warnAudit(s.auditService.LogSensorUpdated(ctx, *input.AuditContext, a.ID.String(), sensorName, changes), "LogSensorUpdated", a.ID.String())
+	}
+	if withdrawn {
+		s.releaseHeldCommands(ctx, a, input.AuditContext)
 	}
 
 	return a, nil
@@ -1630,9 +1646,59 @@ func (s *SensorService) DisableSensor(ctx context.Context, tenantID, sensorID, r
 	if s.auditService != nil && auditCtx != nil {
 		s.warnAudit(s.auditService.LogSensorDeactivated(ctx, *auditCtx, sensorID, a.Name, reason), "LogSensorDeactivated", sensorID)
 	}
+	s.releaseHeldCommands(ctx, a, auditCtx)
 
 	s.logger.Info("sensor disabled", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
 	return a, nil
+}
+
+// releaseHeldCommands takes back the commands a sensor that was just revoked
+// or disabled holds under a lease (RFC-040 §5.2): routed scan work is
+// re-queued for another sensor, the rest fails, and the old holder's late
+// writes are fenced off. It runs after the status change is stored, so a
+// failure here cannot undo the revocation; it is logged, and the lease
+// reaper takes the commands back when their lease runs out.
+func (s *SensorService) releaseHeldCommands(ctx context.Context, a *sensordom.Sensor, auditCtx *auditapp.AuditContext) {
+	if s.holders == nil || a == nil || a.TenantID == nil {
+		return
+	}
+	var why, requeueMsg, failMsg string
+	switch a.Status {
+	case sensordom.SensorStatusRevoked:
+		why, requeueMsg, failMsg = "revoked", commanddom.SensorRevokedRequeuedMessage, commanddom.SensorRevokedFailedMessage
+	case sensordom.SensorStatusDisabled:
+		why, requeueMsg, failMsg = "disabled", commanddom.SensorDisabledRequeuedMessage, commanddom.SensorDisabledFailedMessage
+	default:
+		return
+	}
+	released, err := s.holders.ReleaseHeldBySensor(ctx, *a.TenantID, a.ID, requeueMsg, failMsg)
+	if err != nil {
+		s.logger.Error("failed to release the commands of a "+why+" sensor; they wait for their lease to expire",
+			"sensor_id", a.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	if len(released) == 0 {
+		return
+	}
+	var requeued, failed []string
+	for _, rc := range released {
+		if rc.Requeued {
+			requeued = append(requeued, rc.ID.String())
+		} else {
+			failed = append(failed, rc.ID.String())
+		}
+	}
+	s.logger.Info("released the commands of a "+why+" sensor",
+		"sensor_id", a.ID.String(), "requeued", len(requeued), "failed", len(failed))
+	if s.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: sensorAuditSystemActor}
+	if auditCtx != nil {
+		actx = *auditCtx
+	}
+	s.warnAudit(s.auditService.LogSensorCommandsReleased(ctx, actx, a.ID.String(), a.Name, why, requeued, failed),
+		"LogSensorCommandsReleased", a.ID.String())
 }
 
 // RevokeSensor permanently revokes a sensor's access (admin action).
@@ -1655,6 +1721,7 @@ func (s *SensorService) RevokeSensor(ctx context.Context, tenantID, sensorID, re
 	if s.auditService != nil && auditCtx != nil {
 		s.warnAudit(s.auditService.LogSensorRevoked(ctx, *auditCtx, sensorID, a.Name, reason), "LogSensorRevoked", sensorID)
 	}
+	s.releaseHeldCommands(ctx, a, auditCtx)
 
 	s.logger.Info("sensor revoked", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
 	return a, nil

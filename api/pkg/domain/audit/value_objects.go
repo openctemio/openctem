@@ -154,6 +154,10 @@ const (
 	// ActionSensorContentPolicyUpdated records a change of the tenant's
 	// scanner content policy (RFC-031).
 	ActionSensorContentPolicyUpdated Action = "sensor.content_policy_updated"
+	// ActionSensorCommandsReleased records the platform taking back the
+	// commands a sensor held when it was revoked or disabled (RFC-040 §5.2):
+	// which were re-queued for another sensor and which were failed.
+	ActionSensorCommandsReleased Action = "sensor.commands_released"
 
 	// Scan zone actions (RFC-023): every change to a zone or to which sensors
 	// serve it.
@@ -215,6 +219,33 @@ const (
 	ActionToolUpdated         Action = "tool.updated"
 	ActionToolDeleted         Action = "tool.deleted"
 	ActionToolCapabilitiesSet Action = "tool.capabilities_set"
+	ActionToolActivated       Action = "tool.activated"
+	ActionToolDeactivated     Action = "tool.deactivated"
+	// A tenant's configuration of a tool (enabled flag and settings).
+	ActionToolConfigUpdated Action = "tool.config_updated"
+	ActionToolConfigDeleted Action = "tool.config_deleted"
+
+	// Scope actions: what may be scanned (targets) and what must not be
+	// (exclusions). Every change is audited with before/after (RFC-040
+	// §5.11); a change that widens what is scanned is high severity.
+	ActionScopeTargetCreated        Action = "scope_target.created"
+	ActionScopeTargetUpdated        Action = "scope_target.updated"
+	ActionScopeTargetDeleted        Action = "scope_target.deleted"
+	ActionScopeTargetActivated      Action = "scope_target.activated"
+	ActionScopeTargetDeactivated    Action = "scope_target.deactivated"
+	ActionScopeExclusionCreated     Action = "scope_exclusion.created"
+	ActionScopeExclusionUpdated     Action = "scope_exclusion.updated"
+	ActionScopeExclusionDeleted     Action = "scope_exclusion.deleted"
+	ActionScopeExclusionActivated   Action = "scope_exclusion.activated"
+	ActionScopeExclusionDeactivated Action = "scope_exclusion.deactivated"
+	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
+	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
+
+	// Scanner template actions: custom templates are code a sensor runs.
+	ActionScannerTemplateCreated    Action = "scanner_template.created"
+	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
+	ActionScannerTemplateDeprecated Action = "scanner_template.deprecated"
+	ActionScannerTemplateDeleted    Action = "scanner_template.deleted"
 
 	// Asset Ownership actions
 	ActionAssetAssigned         Action = "asset.assigned"
@@ -383,7 +414,7 @@ func (a Action) IsValid() bool {
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
-		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated,
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -397,6 +428,14 @@ func (a Action) IsValid() bool {
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
+		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
+		ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
+		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
 		ActionPermissionSetAssigned, ActionPermissionSetUnassigned,
@@ -476,7 +515,7 @@ func (a Action) Category() string {
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
-		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated:
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
@@ -485,8 +524,18 @@ func (a Action) Category() string {
 		return "api_key"
 	case ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted:
 		return "capability"
-	case ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet:
+	case ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
+		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted:
 		return "tool"
+	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
+		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected:
+		return "scope"
+	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
+		return "scanner_template"
 	case ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted:
 		return "rule"
@@ -563,8 +612,11 @@ const (
 	ResourceTypeSSOChange ResourceType = "sso_change"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
-	ResourceTypeAuditChain     ResourceType = "audit_chain"
-	ResourceTypeTemplateSource ResourceType = "template_source"
+	ResourceTypeAuditChain      ResourceType = "audit_chain"
+	ResourceTypeTemplateSource  ResourceType = "template_source"
+	ResourceTypeScopeTarget     ResourceType = "scope_target"
+	ResourceTypeScopeExclusion  ResourceType = "scope_exclusion"
+	ResourceTypeScannerTemplate ResourceType = "scanner_template"
 )
 
 // String returns the string representation of the resource type.
@@ -587,7 +639,8 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
-		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource:
+		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate:
 		return true
 	}
 	return false
@@ -665,7 +718,11 @@ func SeverityForAction(a Action) Severity {
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted, ActionCredentialRevealed,
 		ActionTemplateSourceCredentialAttached,
-		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled:
+		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
+		// Widening what sensors scan, and the code they run.
+		ActionScopeTargetCreated, ActionScopeTargetActivated,
+		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated:
 		return SeverityHigh
 
 	// Medium - important changes
@@ -689,6 +746,11 @@ func SeverityForAction(a Action) Severity {
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
+		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
+		ActionScopeTargetUpdated, ActionScopeTargetDeleted, ActionScopeTargetDeactivated,
+		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestFailed, ActionIngestPartialSuccess:

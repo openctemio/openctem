@@ -5,12 +5,14 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,6 +22,7 @@ import (
 // ToolHandler handles HTTP requests for tool registry.
 type ToolHandler struct {
 	service   *tool.Service
+	audit     *app.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
@@ -31,6 +34,59 @@ func NewToolHandler(service *tool.Service, v *validator.Validator, log *logger.L
 		validator: v,
 		logger:    log.With("handler", "tool"),
 	}
+}
+
+// SetAuditService records changes to tools and to the tenant's tool
+// configuration in the tenant's audit log, with the state before and after
+// (RFC-040 §5.11).
+func (h *ToolHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
+}
+
+func (h *ToolHandler) auditTool(r *http.Request, action audit.Action, id string, before, after *tooldom.Tool) {
+	name := ""
+	var b, a map[string]any
+	if before != nil {
+		b, name = auditSnapshot(toToolResponse(before)), before.Name
+	}
+	if after != nil {
+		a, name = auditSnapshot(toToolResponse(after)), after.Name
+	}
+	auditResourceChange(h.audit, h.logger, r, action, audit.ResourceTypeTool, id, name, b, a)
+}
+
+// toolBefore reads the state a change starts from (a platform tool, or the
+// tenant's custom tool); a failed read answers the request, as the change
+// would fail the same way.
+func (h *ToolHandler) toolBefore(w http.ResponseWriter, r *http.Request, custom bool, id string) (*tooldom.Tool, bool) {
+	var (
+		t   *tooldom.Tool
+		err error
+	)
+	if custom {
+		t, err = h.service.GetCustomTool(r.Context(), middleware.GetTenantID(r.Context()), id)
+	} else {
+		t, err = h.service.GetTool(r.Context(), id)
+	}
+	if err != nil {
+		resource := "Tool"
+		if custom {
+			resource = "Custom tool"
+		}
+		h.handleServiceError(w, err, resource)
+		return nil, false
+	}
+	return t, true
+}
+
+// tenantConfigSnapshot is the tenant's config of a tool for the audit log,
+// nil when there is none yet.
+func (h *ToolHandler) tenantConfigSnapshot(r *http.Request, tenantID, toolID string) map[string]any {
+	c, err := h.service.GetTenantToolConfig(r.Context(), tenantID, toolID)
+	if err != nil || c == nil {
+		return nil
+	}
+	return auditSnapshot(toTenantToolConfigResponse(c))
 }
 
 // =============================================================================
@@ -400,6 +456,7 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolCreated, t.ID.String(), nil, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -455,11 +512,16 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	input.TenantID = middleware.GetTenantID(r.Context())
 
+	before, ok := h.toolBefore(w, r, false, toolID)
+	if !ok {
+		return
+	}
 	t, err := h.service.UpdateTool(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolUpdated, toolID, before, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toToolResponse(t))
@@ -483,10 +545,15 @@ func (h *ToolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
+	before, ok := h.toolBefore(w, r, false, toolID)
+	if !ok {
+		return
+	}
 	if err := h.service.DeleteTool(r.Context(), tenantID, toolID); err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolDeleted, toolID, before, nil)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -507,11 +574,16 @@ func (h *ToolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *ToolHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 
+	before, ok := h.toolBefore(w, r, false, toolID)
+	if !ok {
+		return
+	}
 	t, err := h.service.ActivateTool(r.Context(), middleware.GetTenantID(r.Context()), toolID)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolActivated, toolID, before, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toToolResponse(t))
@@ -533,11 +605,16 @@ func (h *ToolHandler) Activate(w http.ResponseWriter, r *http.Request) {
 func (h *ToolHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 
+	before, ok := h.toolBefore(w, r, false, toolID)
+	if !ok {
+		return
+	}
 	t, err := h.service.DeactivateTool(r.Context(), middleware.GetTenantID(r.Context()), toolID)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolDeactivated, toolID, before, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toToolResponse(t))
@@ -732,6 +809,7 @@ func (h *ToolHandler) CreateCustomTool(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err, "Custom tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolCreated, t.ID.String(), nil, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -815,11 +893,16 @@ func (h *ToolHandler) UpdateCustomTool(w http.ResponseWriter, r *http.Request) {
 		Tags:             req.Tags,
 	}
 
+	before, ok := h.toolBefore(w, r, true, toolID)
+	if !ok {
+		return
+	}
 	t, err := h.service.UpdateCustomTool(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err, "Custom tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolUpdated, toolID, before, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toToolResponse(t))
@@ -843,10 +926,15 @@ func (h *ToolHandler) DeleteCustomTool(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
+	before, ok := h.toolBefore(w, r, true, toolID)
+	if !ok {
+		return
+	}
 	if err := h.service.DeleteCustomTool(r.Context(), tenantID, toolID); err != nil {
 		h.handleServiceError(w, err, "Custom tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolDeleted, toolID, before, nil)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -869,11 +957,16 @@ func (h *ToolHandler) ActivateCustomTool(w http.ResponseWriter, r *http.Request)
 	toolID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
+	before, ok := h.toolBefore(w, r, true, toolID)
+	if !ok {
+		return
+	}
 	t, err := h.service.ActivateCustomTool(r.Context(), tenantID, toolID)
 	if err != nil {
 		h.handleServiceError(w, err, "Custom tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolActivated, toolID, before, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toToolResponse(t))
@@ -897,11 +990,16 @@ func (h *ToolHandler) DeactivateCustomTool(w http.ResponseWriter, r *http.Reques
 	toolID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
+	before, ok := h.toolBefore(w, r, true, toolID)
+	if !ok {
+		return
+	}
 	t, err := h.service.DeactivateCustomTool(r.Context(), tenantID, toolID)
 	if err != nil {
 		h.handleServiceError(w, err, "Custom tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolDeactivated, toolID, before, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toToolResponse(t))
@@ -1023,11 +1121,14 @@ func (h *ToolHandler) UpdateTenantConfig(w http.ResponseWriter, r *http.Request)
 		UpdatedBy: userID,
 	}
 
+	before := h.tenantConfigSnapshot(r, tenantID, toolID)
 	config, err := h.service.UpdateTenantToolConfig(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err, "Tenant tool config")
 		return
 	}
+	auditResourceChange(h.audit, h.logger, r, audit.ActionToolConfigUpdated, audit.ResourceTypeTool, toolID, "",
+		before, auditSnapshot(toTenantToolConfigResponse(config)))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTenantToolConfigResponse(config))
@@ -1050,10 +1151,12 @@ func (h *ToolHandler) DeleteTenantConfig(w http.ResponseWriter, r *http.Request)
 	toolID := chi.URLParam(r, "toolId")
 	tenantID := middleware.GetTenantID(r.Context())
 
+	before := h.tenantConfigSnapshot(r, tenantID, toolID)
 	if err := h.service.DeleteTenantToolConfig(r.Context(), tenantID, toolID); err != nil {
 		h.handleServiceError(w, err, "Tenant tool config")
 		return
 	}
+	auditResourceChange(h.audit, h.logger, r, audit.ActionToolConfigDeleted, audit.ResourceTypeTool, toolID, "", before, nil)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1120,6 +1223,8 @@ func (h *ToolHandler) BulkEnable(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err, "Bulk enable")
 		return
 	}
+	auditResourceChange(h.audit, h.logger, r, audit.ActionToolConfigUpdated, audit.ResourceTypeTool, "bulk", "",
+		nil, map[string]any{"tool_ids": req.ToolIDs, "is_enabled": true})
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1159,6 +1264,8 @@ func (h *ToolHandler) BulkDisable(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err, "Bulk disable")
 		return
 	}
+	auditResourceChange(h.audit, h.logger, r, audit.ActionToolConfigUpdated, audit.ResourceTypeTool, "bulk", "",
+		nil, map[string]any{"tool_ids": req.ToolIDs, "is_enabled": false})
 
 	w.WriteHeader(http.StatusNoContent)
 }
