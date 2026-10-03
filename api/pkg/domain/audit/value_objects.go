@@ -264,6 +264,20 @@ const (
 	ActionScanConfigExported  Action = "scan_config.exported"
 	ActionScanConfigImported  Action = "scan_config.imported"
 
+	// Scan profile actions
+	ActionScanProfileCreated            Action = "scan_profile.created"
+	ActionScanProfileUpdated            Action = "scan_profile.updated"
+	ActionScanProfileDeleted            Action = "scan_profile.deleted"
+	ActionScanProfileDefaultSet         Action = "scan_profile.default_set"
+	ActionScanProfileCloned             Action = "scan_profile.cloned"
+	ActionScanProfileQualityGateUpdated Action = "scan_profile.quality_gate_updated"
+
+	// Sensor command actions (made by a user through the API; the sensor's own
+	// poll/ack/complete traffic is not audited here)
+	ActionCommandCreated  Action = "command.created"
+	ActionCommandCanceled Action = "command.canceled"
+	ActionCommandDeleted  Action = "command.deleted"
+
 	// Security events
 	ActionSecurityValidationFailed  Action = "security.validation_failed"
 	ActionSecurityCrossTenantAccess Action = "security.cross_tenant_access"
@@ -385,6 +399,9 @@ func (a Action) IsValid() bool {
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
 		ActionScanConfigExported, ActionScanConfigImported,
+		ActionScanProfileCreated, ActionScanProfileUpdated, ActionScanProfileDeleted,
+		ActionScanProfileDefaultSet, ActionScanProfileCloned, ActionScanProfileQualityGateUpdated,
+		ActionCommandCreated, ActionCommandCanceled, ActionCommandDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionWorkflowCreated, ActionWorkflowUpdated, ActionWorkflowDeleted,
 		ActionWorkflowActivated, ActionWorkflowDeactivated,
@@ -514,6 +531,8 @@ const (
 	ResourceTypePipelineStep     ResourceType = "pipeline_step"
 	ResourceTypePipelineRun      ResourceType = "pipeline_run"
 	ResourceTypeScanConfig       ResourceType = "scan_config"
+	ResourceTypeScanProfile      ResourceType = "scan_profile"
+	ResourceTypeCommand          ResourceType = "command"
 	ResourceTypeWorkflow         ResourceType = "workflow"
 	ResourceTypeWorkflowRun      ResourceType = "workflow_run"
 	ResourceTypeCapability       ResourceType = "capability"
@@ -549,6 +568,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
+		ResourceTypeScanProfile, ResourceTypeCommand,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
@@ -650,6 +670,7 @@ func SeverityForAction(a Action) Severity {
 		ActionRoleCreated, ActionRoleUpdated,
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
 		ActionScanConfigCreated, ActionScanConfigTriggered,
+		ActionScanProfileDeleted, ActionScanProfileDefaultSet, ActionScanProfileQualityGateUpdated,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,

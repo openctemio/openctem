@@ -121,6 +121,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	commandHandler.SetPipelineService(svc.Pipeline)
+	commandHandler.SetAuditService(svc.Audit)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
@@ -437,6 +438,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	// SSO handler (always initialized - uses DB-stored provider configs)
+	// Scan profile changes go to the tenant's audit log.
+	handlers.ScanProfile.SetAuditService(svc.Audit)
+
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 		// Identity-provider changes go to the organization's audit log.

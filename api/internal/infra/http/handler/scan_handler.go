@@ -35,6 +35,12 @@ type ScanHandler struct {
 	logger        *logger.Logger
 }
 
+// auditCtx is the request context carrying the caller as the actor of the
+// scan service's audit entries (see scansvc.WithAuditActor).
+func (h *ScanHandler) auditCtx(r *http.Request) context.Context {
+	return scansvc.WithAuditActor(r.Context(), middleware.GetUserID(r.Context()))
+}
+
 // NewScanHandler creates a new ScanHandler.
 func NewScanHandler(service *scansvc.Service, userRepo user.Repository, coverageStats scancoverage.CoverageStatsReader, v *validator.Validator, log *logger.Logger) *ScanHandler {
 	return &ScanHandler{
@@ -525,7 +531,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		RetryBackoffSeconds: req.RetryBackoffSeconds,
 	}
 
-	s, err := h.service.UpdateScan(r.Context(), input)
+	s, err := h.service.UpdateScan(h.auditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -552,7 +558,7 @@ func (h *ScanHandler) DeleteScan(w http.ResponseWriter, r *http.Request) {
 	scanID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	if err := h.service.DeleteScan(r.Context(), tenantID, scanID); err != nil {
+	if err := h.service.DeleteScan(h.auditCtx(r), tenantID, scanID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -579,7 +585,7 @@ func (h *ScanHandler) ActivateScan(w http.ResponseWriter, r *http.Request) {
 	scanID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	s, err := h.service.ActivateScan(r.Context(), tenantID, scanID)
+	s, err := h.service.ActivateScan(h.auditCtx(r), tenantID, scanID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -606,7 +612,7 @@ func (h *ScanHandler) PauseScan(w http.ResponseWriter, r *http.Request) {
 	scanID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	s, err := h.service.PauseScan(r.Context(), tenantID, scanID)
+	s, err := h.service.PauseScan(h.auditCtx(r), tenantID, scanID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -633,7 +639,7 @@ func (h *ScanHandler) DisableScan(w http.ResponseWriter, r *http.Request) {
 	scanID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	s, err := h.service.DisableScan(r.Context(), tenantID, scanID)
+	s, err := h.service.DisableScan(h.auditCtx(r), tenantID, scanID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1496,7 +1502,7 @@ func (h *ScanHandler) ExportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := h.service.ExportConfigWithOptions(r.Context(), tid, sid, scansvc.ExportOptions{
+	data, err := h.service.ExportConfigWithOptions(h.auditCtx(r), tid, sid, scansvc.ExportOptions{
 		RedactSecrets: !canSeeScanConfigSecrets(r.Context()),
 	})
 	if err != nil {
@@ -1538,7 +1544,7 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := h.service.ImportConfig(r.Context(), tid, data)
+	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

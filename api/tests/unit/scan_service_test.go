@@ -823,11 +823,13 @@ func (m *mockSecurityValidator) ValidateCronExpression(_ string) error {
 // =============================================================================
 
 type mockAuditService struct {
-	events []scanservice.AuditEvent
+	events   []scanservice.AuditEvent
+	contexts []scanservice.AuditContext
 }
 
-func (m *mockAuditService) LogEvent(_ context.Context, _ scanservice.AuditContext, event scanservice.AuditEvent) error {
+func (m *mockAuditService) LogEvent(_ context.Context, actx scanservice.AuditContext, event scanservice.AuditEvent) error {
 	m.events = append(m.events, event)
+	m.contexts = append(m.contexts, actx)
 	return nil
 }
 
