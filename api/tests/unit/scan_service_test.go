@@ -2338,3 +2338,33 @@ func TestScanService_TriggerScan_CollectorToolRefused(t *testing.T) {
 		t.Errorf("err = %v, want it to name the asset collector", err)
 	}
 }
+
+// A workflow run started only steps with step_order == 1: independent steps
+// numbered otherwise never started (the run hung until the run timeout), and
+// a "never" condition on a first step was ignored.
+func TestScanService_TriggerScan_Workflow_StartsByDependencyGraph(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	s := createTestScanInRepo(deps, tenantID, "Graph start", scan.ScanTypeWorkflow)
+	pipelineID := *s.PipelineID
+	deps.toolRepo.addTool("nuclei", true)
+	deps.toolRepo.addTool("httpx", true)
+	deps.stepRepo.steps[pipelineID.String()] = []*pipeline.Step{
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "probe", StepOrder: 2, Tool: "httpx"},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "vulns", StepOrder: 3, Tool: "nuclei"},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "off", StepOrder: 4, Tool: "nuclei",
+			Condition: pipeline.NeverCondition()},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "after", StepOrder: 5, Tool: "nuclei",
+			DependsOn: []string{"probe"}},
+	}
+	before := len(deps.commandRepo.commands)
+
+	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(deps.commandRepo.commands) - before; got != 2 {
+		t.Fatalf("queued %d step command(s), want 2 (the two independent steps; not the 'never' one, not the dependent)", got)
+	}
+}
