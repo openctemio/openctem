@@ -93,11 +93,6 @@ export const authEndpoints = {
   verifyEmail: (token: string) => `${API_BASE.AUTH}/verify-email?token=${token}`,
 
   /**
-   * Resend verification email
-   */
-  resendVerification: () => `${API_BASE.AUTH}/resend-verification`,
-
-  /**
    * Request password reset
    */
   forgotPassword: () => `${API_BASE.AUTH}/forgot-password`,
@@ -1285,11 +1280,6 @@ export const toolEndpoints = {
    * Deactivate tool
    */
   deactivate: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/deactivate`,
-
-  /**
-   * Check tool version
-   */
-  checkVersion: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/check-version`,
 } as const
 
 /**
@@ -2049,11 +2039,6 @@ export const threatIntelEndpoints = {
    * Enrich a single CVE with threat intel
    */
   enrichCVE: (cveId: string) => `${API_BASE.THREAT_INTEL}/enrich/${cveId}`,
-
-  /**
-   * Bulk enrich multiple CVEs
-   */
-  enrichCVEs: () => `${API_BASE.THREAT_INTEL}/enrich/bulk`,
 
   // ============================================
   // EPSS

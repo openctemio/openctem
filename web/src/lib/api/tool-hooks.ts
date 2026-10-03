@@ -275,20 +275,6 @@ export function useDeactivateTool(toolId: string) {
   )
 }
 
-/**
- * Check tool version
- */
-export function useCheckToolVersion(toolId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && toolId ? toolEndpoints.checkVersion(toolId) : null,
-    async (url: string) => {
-      return post<Tool>(url, {})
-    }
-  )
-}
-
 // ============================================
 // PLATFORM TOOLS HOOKS
 // ============================================
