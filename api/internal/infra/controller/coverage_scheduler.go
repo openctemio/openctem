@@ -57,7 +57,10 @@ type CoverageSchedulerConfig struct {
 	CandidateLimit int
 	// IntegrationPageSize is the page size when listing integrations. Default: 100.
 	IntegrationPageSize int
-	Logger              *logger.Logger
+	// Gate checks every batch before dispatch (private-range policy, scope
+	// exclusions, scan zones). Without it nothing is dispatched.
+	Gate   scancoverage.TargetGate
+	Logger *logger.Logger
 }
 
 // NewCoverageScheduler builds a CoverageScheduler.
@@ -101,6 +104,7 @@ func (c *CoverageScheduler) Reconcile(ctx context.Context) (int, error) {
 	}
 	s := scancoverage.NewScheduler(c, c.dispatcher, c, &scancoverage.SchedulerConfig{
 		CandidateLimit: c.config.CandidateLimit,
+		Gate:           c.config.Gate,
 		Logger:         c.logger,
 	})
 	return s.RunOnce(ctx)

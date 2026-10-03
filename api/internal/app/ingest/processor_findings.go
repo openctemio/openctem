@@ -257,7 +257,9 @@ func (p *FindingProcessor) processBatch(
 
 	// Get default asset if available (single asset report)
 	var defaultAssetID shared.ID
-	if len(assetMap) == 1 && !strictAssets {
+	// Not when an asset of the report was skipped by a scope exclusion: its
+	// findings would land on the one asset that was kept.
+	if len(assetMap) == 1 && !strictAssets && len(output.ExcludedAssetRefs) == 0 {
 		for _, id := range assetMap {
 			defaultAssetID = id
 			break
@@ -276,6 +278,11 @@ func (p *FindingProcessor) processBatch(
 	}
 
 	for i, ctisFinding := range report.Findings {
+		if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
+			// Its asset matches a scope exclusion and was not added.
+			output.FindingsSkipped++
+			continue
+		}
 		// Determine target asset
 		var targetAssetID shared.ID
 		if ctisFinding.AssetRef != "" {
