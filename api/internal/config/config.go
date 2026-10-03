@@ -1666,15 +1666,24 @@ func (c *Config) validateProductionRedis() error {
 
 // DSN returns the database connection string.
 func (c *DatabaseConfig) DSN() string {
+	// Values are quoted: unquoted, an empty password swallowed the next
+	// key ("password= dbname=x" sets the password to "dbname=x"), and a
+	// space or backslash in a value broke or changed it.
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode,
+		dsnQuote(c.Host), c.Port, dsnQuote(c.User), dsnQuote(c.Password), dsnQuote(c.Name), dsnQuote(c.SSLMode),
 	)
 	if !c.JITEnabled {
 		// lib/pq forwards unknown keys as session startup parameters.
 		dsn += " jit=off"
 	}
 	return dsn
+}
+
+// dsnQuote quotes a libpq key/value connection-string value: single quotes
+// around it, with backslash and single quote escaped by a backslash.
+func dsnQuote(v string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
 }
 
 // Addr returns the Redis address.
