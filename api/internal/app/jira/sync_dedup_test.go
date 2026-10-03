@@ -168,7 +168,8 @@ func TestTicketDescription_SecretFinding_SuppressesRawSecret(t *testing.T) {
 	if strings.Contains(desc, rawSecret) {
 		t.Fatalf("secret-finding ticket leaked the raw secret: %q", desc)
 	}
-	if !strings.Contains(desc, "AKI****PLE") {
+	// The finding keeps a 4+4 preview of what the scanner reported ("AK…LE").
+	if !strings.Contains(desc, f.SecretMaskedValue()) || f.SecretMaskedValue() == "" {
 		t.Fatalf("expected masked value in description: %q", desc)
 	}
 }

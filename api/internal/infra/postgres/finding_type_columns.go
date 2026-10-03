@@ -10,8 +10,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// The type-specific columns of the findings table: finding_type and the
-// secret_*, compliance_*, web3_* and misconfig_* columns (migration 000012).
+// The type-specific columns of the findings table: finding_type, the
+// secret_*, compliance_*, web3_* and misconfig_* columns (migration 000012)
+// and the type_details JSONB document (migration 000272).
 //
 // Until these were added here, no insert, update or select of the finding
 // repository named them. Ingest set them on the entity and the API returned
@@ -27,10 +28,11 @@ const findingTypeColumnsSQL = `finding_type,
 			compliance_framework, compliance_control_id, compliance_control_name, compliance_result, compliance_section,
 			web3_chain, web3_chain_id, web3_contract_address, web3_swc_id, web3_function_signature, web3_tx_hash,
 			misconfig_policy_id, misconfig_resource_type, misconfig_resource_name, misconfig_resource_path,
-			misconfig_expected, misconfig_actual`
+			misconfig_expected, misconfig_actual,
+			type_details`
 
 // findingTypeColumnCount is the number of columns in findingTypeColumnsSQL.
-const findingTypeColumnCount = 24
+const findingTypeColumnCount = 25
 
 // complianceResults are the values chk_compliance_result accepts.
 var complianceResults = map[string]bool{
@@ -103,7 +105,18 @@ func findingTypeArgs(f *vulnerability.Finding) []any {
 		nullClip(d.MisconfigResourcePath, 1000),
 		nullString(d.MisconfigExpected),
 		nullString(d.MisconfigActual),
+		typeDetailsDoc(d),
 	}
+}
+
+// typeDetailsDoc is the type_details JSONB value: the typed, sanitized
+// document for the finding's type, or NULL when there is nothing to keep.
+func typeDetailsDoc(d vulnerability.TypeDetails) any {
+	doc, err := vulnerability.EncodeTypeDetailsDoc(d)
+	if err != nil || doc == nil {
+		return nil
+	}
+	return doc
 }
 
 // findingTypeConflictSQL is the ON CONFLICT ... DO UPDATE part for the type
@@ -115,7 +128,7 @@ func findingTypeConflictSQL() string {
 		"compliance_framework", "compliance_control_id", "compliance_control_name", "compliance_result", "compliance_section",
 		"web3_chain", "web3_chain_id", "web3_contract_address", "web3_swc_id", "web3_function_signature", "web3_tx_hash",
 		"misconfig_policy_id", "misconfig_resource_type", "misconfig_resource_name", "misconfig_resource_path",
-		"misconfig_expected", "misconfig_actual",
+		"misconfig_expected", "misconfig_actual", "type_details",
 	}
 	var b strings.Builder
 	b.WriteString(",\n\t\t\tfinding_type = CASE WHEN EXCLUDED.finding_type <> 'vulnerability' THEN EXCLUDED.finding_type" +
@@ -161,6 +174,7 @@ type findingTypeScan struct {
 	web3ContractAddress, web3SWCID, web3FunctionSignature, web3TxHash sql.NullString
 	misconfigPolicyID, misconfigResourceType, misconfigResourceName   sql.NullString
 	misconfigResourcePath, misconfigExpected, misconfigActual         sql.NullString
+	typeDetails                                                       []byte
 }
 
 func (s *findingTypeScan) dests() []any {
@@ -171,6 +185,7 @@ func (s *findingTypeScan) dests() []any {
 		&s.web3Chain, &s.web3ChainID, &s.web3ContractAddress, &s.web3SWCID, &s.web3FunctionSignature, &s.web3TxHash,
 		&s.misconfigPolicyID, &s.misconfigResourceType, &s.misconfigResourceName, &s.misconfigResourcePath,
 		&s.misconfigExpected, &s.misconfigActual,
+		&s.typeDetails,
 	}
 }
 
@@ -192,7 +207,7 @@ func (s *findingTypeScan) details() vulnerability.TypeDetails {
 		v := s.secretExpiresAt.Time
 		expires = &v
 	}
-	return vulnerability.TypeDetails{
+	d := vulnerability.TypeDetails{
 		FindingType:           vulnerability.FindingType(s.findingType.String),
 		SecretType:            s.secretType.String,
 		SecretService:         s.secretService.String,
@@ -218,6 +233,10 @@ func (s *findingTypeScan) details() vulnerability.TypeDetails {
 		MisconfigExpected:     s.misconfigExpected.String,
 		MisconfigActual:       s.misconfigActual.String,
 	}
+	// A document that fails validation is ignored rather than failing the
+	// read: the columns above still load.
+	_ = vulnerability.DecodeTypeDetailsDoc(s.typeDetails, &d)
+	return d
 }
 
 func placeholder(n int) string { return "$" + strconv.Itoa(n) }

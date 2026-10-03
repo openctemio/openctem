@@ -187,3 +187,65 @@ func TestFindingTypeDetails_OddScannerValuesDoNotFailTheInsert(t *testing.T) {
 		t.Errorf("finding_type = %q, want the default vulnerability", stored)
 	}
 }
+
+// The facts without a column live in type_details, and no part of the row
+// (columns, metadata, the document) holds the secret a scanner reported.
+func TestFindingTypeDetails_ExtrasPersistAndTheSecretNeverDoes(t *testing.T) {
+	fx := newTypeDetailsFixture(t)
+	ctx := context.Background()
+	const raw = "fake-token-51HxyzABCDEFGHIJKLMNOPQRSTUV1234Qx"
+
+	rotation := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	f := fx.newFinding(t, vulnerability.FindingSourceSecret, "ftd-secret-extras")
+	f.SetFindingType(vulnerability.FindingTypeSecret)
+	f.SetSecretType("api_key")
+	f.SetSecretService("Stripe")
+	f.SetSecretMaskedValue(raw) // a scanner that masks nothing
+	f.SetSecretScopes([]string{"charges:write", "refunds:write"})
+	f.SetSecretRotationDueAt(&rotation)
+	f.SetSecretCommitCount(3)
+	f.SetSecretInHistoryOnly(true)
+	if res, err := fx.repo.CreateBatchWithResult(ctx, []*vulnerability.Finding{f}); err != nil || res.Created != 1 {
+		t.Fatalf("batch create: %v %+v", err, res)
+	}
+
+	var row string
+	if err := fx.db.QueryRowContext(ctx, `SELECT row_to_json(findings)::text FROM findings WHERE id = $1`, f.ID().String()).Scan(&row); err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{raw, raw[4 : len(raw)-4], "ABCDEFGH"} {
+		if strings.Contains(row, leak) {
+			t.Fatalf("the stored row contains the secret (%q)", leak)
+		}
+	}
+
+	got, err := fx.repo.GetByID(ctx, fx.tid, f.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SecretMaskedValue() != "fake…34Qx" || got.SecretFingerprint() != f.SecretFingerprint() {
+		t.Errorf("preview %q fingerprint %q", got.SecretMaskedValue(), got.SecretFingerprint())
+	}
+	if len(got.SecretScopes()) != 2 || got.SecretCommitCount() != 3 || !got.SecretInHistoryOnly() ||
+		got.SecretRotationDueAt() == nil || !got.SecretRotationDueAt().Equal(rotation) {
+		t.Errorf("secret extras lost: scopes=%v commits=%d history=%v rotation=%v",
+			got.SecretScopes(), got.SecretCommitCount(), got.SecretInHistoryOnly(), got.SecretRotationDueAt())
+	}
+
+	// Misconfiguration extras.
+	m := fx.newFinding(t, vulnerability.FindingSourceIaC, "ftd-misconfig-extras")
+	m.SetFindingType(vulnerability.FindingTypeMisconfiguration)
+	m.SetMisconfigPolicyID("AVD-AWS-0088")
+	m.SetMisconfigPolicyName("S3 bucket has no server-side encryption")
+	m.SetMisconfigCause("no server_side_encryption_configuration block")
+	if err := fx.repo.Create(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	gm, err := fx.repo.GetByID(ctx, fx.tid, m.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gm.MisconfigPolicyName() != "S3 bucket has no server-side encryption" || gm.MisconfigCause() == "" {
+		t.Errorf("misconfig extras lost: %q %q", gm.MisconfigPolicyName(), gm.MisconfigCause())
+	}
+}

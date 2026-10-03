@@ -33597,7 +33597,10 @@ export interface components {
       secret_commit_count?: number
       secret_entropy?: number
       secret_expires_at?: string
+      /** @description salted hash of the reported value, for dedup */
+      secret_fingerprint?: string
       secret_in_history_only?: boolean
+      /** @description preview only: at most 4+4 characters */
       secret_masked_value?: string
       secret_revoked?: boolean
       secret_rotation_due_at?: string

@@ -7907,9 +7907,13 @@ definitions:
         type: number
       secret_expires_at:
         type: string
+      secret_fingerprint:
+        description: salted hash of the reported value, for dedup
+        type: string
       secret_in_history_only:
         type: boolean
       secret_masked_value:
+        description: 'preview only: at most 4+4 characters'
         type: string
       secret_revoked:
         type: boolean
