@@ -7,6 +7,7 @@ package sensor_test
 import (
 	"context"
 	"database/sql"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -311,5 +312,52 @@ func TestSensorCloneDetection_Heartbeats_DB(t *testing.T) {
 	_ = h.db.QueryRowContext(ctx, `SELECT instance_id FROM sensors WHERE id = $1`, restarted.String()).Scan(&inst)
 	if inst.String == "inst-z" {
 		t.Fatal("a disabled sensor's heartbeat must not change its instance")
+	}
+}
+
+// Key uses are recorded off the request path, so they can reach the database
+// out of order. An older observation must not overwrite a newer address, and
+// must not report an address change.
+func TestSensorKeyUse_OutOfOrderKeepsNewerAddress_DB(t *testing.T) {
+	h := newActivityHarness(t)
+	tid := h.tenant()
+	ctx := context.Background()
+	id := h.sensorWithKey(tid, crypto.HashTokenPeppered("rda_"+strings.Repeat("78", 32), testEncryptionKey))
+	repo := postgres.NewSensorRepository(&postgres.DB{DB: h.db})
+
+	newer := time.Now().UTC().Truncate(time.Microsecond)
+	older := newer.Add(-time.Second)
+
+	if _, err := repo.RecordKeyUse(ctx, id, net.ParseIP("198.51.100.9"), newer); err != nil {
+		t.Fatal(err)
+	}
+	prev, err := repo.RecordKeyUse(ctx, id, net.ParseIP("203.0.113.7"), older)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev != nil {
+		t.Fatalf("a stale key use reported a previous address %v; it would raise a false key_ip_changed", prev)
+	}
+
+	var ip string
+	var at time.Time
+	if err := h.db.QueryRowContext(ctx, `SELECT host(api_key_last_used_ip), api_key_last_used_at FROM sensors WHERE id = $1`,
+		id.String()).Scan(&ip, &at); err != nil {
+		t.Fatal(err)
+	}
+	if ip != "198.51.100.9" {
+		t.Fatalf("the older key use overwrote the newer address: got %s", ip)
+	}
+	if !at.Equal(newer) {
+		t.Fatalf("the key-use time moved backwards: got %v want %v", at, newer)
+	}
+
+	// A newer use still moves both forward and reports the change.
+	prev, err = repo.RecordKeyUse(ctx, id, net.ParseIP("192.0.2.4"), newer.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev == nil || prev.String() != "198.51.100.9" {
+		t.Fatalf("previous address: got %v want 198.51.100.9", prev)
 	}
 }

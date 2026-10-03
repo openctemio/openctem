@@ -1384,6 +1384,9 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, keyUsage func(context.Context, string)) {
 	sensorID, tenantID, name := a.ID, a.TenantID, a.Name
 	ip := net.ParseIP(clientIP)
+	// When the key was used, taken on the request path: the goroutines below
+	// can reach the database out of order.
+	usedAt := s.now()
 	go func() {
 		bg, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -1395,7 +1398,7 @@ func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, 
 			_ = s.repo.UpdateLastSeen(bg, sensorID)
 			return
 		}
-		prev, err := rec.RecordKeyUse(bg, sensorID, ip)
+		prev, err := rec.RecordKeyUse(bg, sensorID, ip, usedAt)
 		if err != nil {
 			s.logger.Debug("failed to record sensor key use", "sensor_id", sensorID.String(), "error", err)
 			return

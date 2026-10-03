@@ -319,31 +319,41 @@ func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) err
 // RecordKeyUse marks the sensor seen and records the client address of the
 // key use (sensor.KeyUseRecorder). The previous address is read in the same
 // statement, so two concurrent requests each see the address before their
-// own write.
-func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP) (net.IP, error) {
+// own write. The address and its time only move forward: key uses are
+// recorded asynchronously and can arrive out of order, and an older
+// observation must not overwrite a newer address.
+func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (net.IP, error) {
 	query := `
 		WITH prev AS (
-			SELECT id, host(api_key_last_used_ip) AS ip FROM sensors WHERE id = $1
+			SELECT id, host(api_key_last_used_ip) AS ip, api_key_last_used_at AS at
+			FROM sensors WHERE id = $1
 		)
 		UPDATE sensors s
 		SET last_seen_at = NOW(),
 		    health = 'online',
 		    updated_at = NOW(),
-		    api_key_last_used_at = NOW(),
-		    api_key_last_used_ip = COALESCE($2::inet, s.api_key_last_used_ip)
+		    api_key_last_used_at = GREATEST(s.api_key_last_used_at, $3),
+		    api_key_last_used_ip = CASE
+		        WHEN prev.at IS NULL OR prev.at <= $3
+		        THEN COALESCE($2::inet, s.api_key_last_used_ip)
+		        ELSE s.api_key_last_used_ip
+		    END
 		FROM prev
 		WHERE s.id = prev.id
-		RETURNING prev.ip
+		RETURNING prev.ip, (prev.at IS NULL OR prev.at <= $3)
 	`
-	var prev sql.NullString
-	err := r.db.QueryRowContext(ctx, query, id.String(), heartbeatIP(ip)).Scan(&prev)
+	var (
+		prev  sql.NullString
+		fresh bool
+	)
+	err := r.db.QueryRowContext(ctx, query, id.String(), heartbeatIP(ip), at.UTC()).Scan(&prev, &fresh)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("record sensor key use: %w", err)
 	}
-	if !prev.Valid {
+	if !fresh || !prev.Valid {
 		return nil, nil
 	}
 	return parseIP(prev.String), nil
