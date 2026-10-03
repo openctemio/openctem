@@ -30,6 +30,7 @@ import { getCategoryNameById, getCategoryDisplayNameById } from '@/lib/api/tool-
 import { sanitizeExternalUrl } from '@/lib/utils'
 import { ToolCategoryIcon } from './tool-category-icon'
 import { safeImageSrc } from '@/lib/safe-href'
+import Image from 'next/image'
 
 interface ToolTableProps {
   tools: Tool[]
@@ -89,13 +90,18 @@ export function ToolTable({
         header: ({ column }) => <DataTableColumnHeader column={column} title="Tool" />,
         cell: ({ row }) => {
           const tool = row.original
+          const logoSrc = safeImageSrc(tool.logo_url)
           return (
             <div className="flex min-w-0 items-center gap-3">
-              {tool.logo_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={safeImageSrc(tool.logo_url)}
+              {logoSrc ? (
+                // unoptimized: the logo URL is tenant/remote data; it must not be
+                // fetched through the Next image optimizer (no remotePatterns).
+                <Image
+                  src={logoSrc}
                   alt=""
+                  width={28}
+                  height={28}
+                  unoptimized
                   className="h-7 w-7 shrink-0 rounded-md object-contain"
                 />
               ) : (

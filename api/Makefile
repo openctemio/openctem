@@ -350,6 +350,25 @@ generate-relationships:
 	@echo "Generating relationship types from configs/relationship-types.yaml..."
 	@GOWORK=off $(GOCMD) run ./cmd/gen-relationships
 
+## generate-asset-types: Regenerate the asset type registry (Go + TS) from YAML
+##
+## Single source of truth: configs/asset-types.yaml (RFC-042 §6.3).
+## Edit the YAML, run this target, commit YAML + the two generated files. If
+## class, lens or alias data changed, also add a migration whose body is
+## `make asset-types-sql`.
+generate-asset-types:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-asset-types
+
+## asset-types-sql: Print the SQL block that seeds asset_types and re-derives
+##                  assets.asset_class / asset_lens (the body of a registry migration)
+asset-types-sql:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-asset-types -sql
+
+## asset-types-check: Fail if the YAML, the generated files or the newest
+##                    registry migration block disagree (CI: Asset Types Drift)
+asset-types-check:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-asset-types -check
+
 ## proto: Generate protobuf code
 proto:
 	@echo "Generating protobuf..."

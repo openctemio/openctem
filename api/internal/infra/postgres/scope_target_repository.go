@@ -288,12 +288,10 @@ func (r *ScopeTargetRepository) ListActive(ctx context.Context, tenantID shared.
 func (r *ScopeTargetRepository) Count(ctx context.Context, filter scope.TargetFilter) (int64, error) {
 	var conditions []string
 	var args []any
-	argNum := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argNum))
 		args = append(args, *filter.TenantID)
-		argNum++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if len(filter.Statuses) > 0 {
@@ -301,9 +299,8 @@ func (r *ScopeTargetRepository) Count(ctx context.Context, filter scope.TargetFi
 		for i, s := range filter.Statuses {
 			statuses[i] = s.String()
 		}
-		conditions = append(conditions, fmt.Sprintf("status = ANY($%d)", argNum))
 		args = append(args, pq.StringArray(statuses))
-		argNum++
+		conditions = append(conditions, fmt.Sprintf("status = ANY($%d)", len(args)))
 	}
 
 	whereClause := ""
