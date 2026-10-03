@@ -131,6 +131,11 @@ const (
 	StatusActive   Status = "active"
 	StatusInactive Status = "inactive"
 	StatusExpired  Status = "expired" // Only for exclusions
+	// StatusPending: an exclusion waiting for review. It does not take effect
+	// until a holder of attack_surface:scope:exclusions:approve approves it.
+	StatusPending Status = "pending" // Only for exclusions
+	// StatusRejected: a reviewer declined the exclusion. It never takes effect.
+	StatusRejected Status = "rejected" // Only for exclusions
 )
 
 // String returns the string representation of the status.
@@ -141,7 +146,7 @@ func (s Status) String() string {
 // IsValid returns true if the status is valid.
 func (s Status) IsValid() bool {
 	switch s {
-	case StatusActive, StatusInactive, StatusExpired:
+	case StatusActive, StatusInactive, StatusExpired, StatusPending, StatusRejected:
 		return true
 	}
 	return false

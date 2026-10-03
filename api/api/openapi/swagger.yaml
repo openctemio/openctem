@@ -10827,9 +10827,18 @@ definitions:
         type: string
       id:
         type: string
+      in_effect:
+        description: |-
+          InEffect is true only for an approved, active, unexpired exclusion —
+          the ones scans actually skip.
+        type: boolean
       pattern:
         type: string
       reason:
+        type: string
+      rejected_at:
+        type: string
+      rejected_by:
         type: string
       status:
         type: string
@@ -25412,7 +25421,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new scope exclusion
+      description: Create a scope exclusion. It is created pending and does not affect
+        scanning until another user approves it (attack_surface:scope:exclusions:approve).
       parameters:
       - description: Scope exclusion data
         in: body
@@ -25555,7 +25565,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Activate a scope exclusion
+      description: Put an approved scope exclusion back into effect. A pending or
+        rejected exclusion cannot be activated (409).
       parameters:
       - description: Exclusion ID
         in: path
@@ -25577,6 +25588,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Not approved, or rejected
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":
           description: Internal Server Error
           schema:
@@ -25590,7 +25605,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Approve a scope exclusion, marking it as reviewed and authorized
+      description: Approve a pending scope exclusion; it takes effect immediately.
+        Requires attack_surface:scope:exclusions:approve. The requester cannot approve
+        their own exclusion.
       parameters:
       - description: Exclusion ID
         in: path
@@ -25614,6 +25631,10 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Already approved, or rejected
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":
@@ -25658,6 +25679,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Deactivate scope exclusion
+      tags:
+      - Scope
+  /scope/exclusions/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      description: Reject a pending scope exclusion; it never takes effect. Requires
+        attack_surface:scope:exclusions:approve.
+      parameters:
+      - description: Exclusion ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Not awaiting approval
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reject scope exclusion
       tags:
       - Scope
   /scope/exclusions/bulk/delete:

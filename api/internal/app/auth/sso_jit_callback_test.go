@@ -62,9 +62,19 @@ func (r *cbUserRepo) Create(_ context.Context, u *userdom.User) error {
 }
 func (r *cbUserRepo) Update(_ context.Context, _ *userdom.User) error { return nil }
 
-type cbSessionRepo struct{ sessiondom.Repository }
+// cbSessionRepo records the sessions the callback creates (when created is
+// non-nil) so a test can inspect how they were stamped.
+type cbSessionRepo struct {
+	sessiondom.Repository
+	created *[]*sessiondom.Session
+}
 
-func (cbSessionRepo) Create(context.Context, *sessiondom.Session) error { return nil }
+func (r cbSessionRepo) Create(_ context.Context, s *sessiondom.Session) error {
+	if r.created != nil {
+		*r.created = append(*r.created, s)
+	}
+	return nil
+}
 
 type cbRefreshRepo struct {
 	sessiondom.RefreshTokenRepository
@@ -113,6 +123,13 @@ func mockOkta(t *testing.T, email string) *httptest.Server {
 
 func runOktaCallback(t *testing.T, email string, verified map[string]bool, autoProvision bool) (*SSOCallbackResult, *cbUserRepo, *cbMembers, error) {
 	t.Helper()
+	return runOktaCallbackRecording(t, email, verified, autoProvision, nil)
+}
+
+// runOktaCallbackRecording is runOktaCallback that also appends every session
+// the callback creates to sessions (when non-nil).
+func runOktaCallbackRecording(t *testing.T, email string, verified map[string]bool, autoProvision bool, sessions *[]*sessiondom.Session) (*SSOCallbackResult, *cbUserRepo, *cbMembers, error) {
+	t.Helper()
 	idpSrv := mockOkta(t, email)
 	tn, _ := tenantdom.NewTenant("Acme", "acme", shared.NewID().String())
 
@@ -131,7 +148,7 @@ func runOktaCallback(t *testing.T, email string, verified map[string]bool, autoP
 		AllowedRedirectURIs: []string{"https://app.example.com/auth/sso/callback"},
 		AllowRegistration:   false, // SSO admission must not depend on self-registration
 	}
-	svc := NewSSOService(cbIPRepo{ip: ip}, cbTenantRepo{t: tn}, users, cbSessionRepo{}, cbRefreshRepo{}, enc, cfg, logger.NewNop())
+	svc := NewSSOService(cbIPRepo{ip: ip}, cbTenantRepo{t: tn}, users, cbSessionRepo{created: sessions}, cbRefreshRepo{}, enc, cfg, logger.NewNop())
 	svc.httpClient = idpSrv.Client() // trust the mock's TLS cert (SafeHTTPClient refuses loopback)
 	svc.oidcVerifier = newOIDCVerifier(idpSrv.Client(), logger.NewNop())
 	svc.SetTenantMemberRepo(members)
