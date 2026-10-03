@@ -5,7 +5,7 @@ import { ASSETS_SECTION_TABS } from '@/config/section-tabs'
 import { useVisibleSectionTabs } from '@/lib/permissions'
 import { useSuggestionCount } from '@/features/relationships/api/use-relationship-suggestions'
 
-const SUGGESTIONS_HREF = '/relationships/suggestions'
+const SUGGESTIONS_HREF = '/assets/suggestions'
 
 /**
  * Inventory · Groups · What changed · Suggestions, the route tabs of Discovery

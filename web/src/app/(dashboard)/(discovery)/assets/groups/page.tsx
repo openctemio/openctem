@@ -454,7 +454,7 @@ export default function AssetGroupsPage() {
   }
 
   const handleCopyLink = (id: string) => {
-    copyToClipboard(`${window.location.origin}/asset-groups/${id}`)
+    copyToClipboard(`${window.location.origin}/assets/groups/${id}`)
     toast.success('Link copied to clipboard')
   }
 
@@ -571,7 +571,7 @@ export default function AssetGroupsPage() {
               {
                 label: 'Open full page',
                 icon: ExternalLink,
-                onClick: () => router.push(`/asset-groups/${group.id}`),
+                onClick: () => router.push(`/assets/groups/${group.id}`),
               },
               {
                 label: 'Edit',
@@ -588,7 +588,7 @@ export default function AssetGroupsPage() {
               {
                 label: 'Manage assets',
                 icon: Package,
-                onClick: () => router.push(`/asset-groups/${group.id}?tab=assets`),
+                onClick: () => router.push(`/assets/groups/${group.id}?tab=assets`),
                 permission: Permission.AssetGroupsWrite,
               },
               {
