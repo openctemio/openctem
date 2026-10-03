@@ -47,7 +47,7 @@ func TestFailStep_RecordsThePermanentFailureClass(t *testing.T) {
 	sr := pipelinedom.NewStepRun(run.ID, shared.NewID(), "quick_scan", 1, 3)
 	run.AddStepRun(sr)
 
-	if err := s.failStep(context.Background(), run, sr, "scanner not found: nuclei", "COMMAND_FAILED", true); err != nil {
+	if err := s.failStep(context.Background(), run, sr, "scanner not found: nuclei", "COMMAND_FAILED"); err != nil {
 		t.Fatal(err)
 	}
 	if len(steps.saved) == 0 {

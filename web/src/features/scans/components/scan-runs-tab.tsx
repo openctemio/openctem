@@ -42,6 +42,7 @@ export const RUN_STATUS_FILTERS = [
   { value: 'running', label: 'Running' },
   { value: 'pending', label: 'Pending' },
   { value: 'completed', label: 'Completed' },
+  { value: 'partial', label: 'Partial' },
   { value: 'failed', label: 'Failed' },
   { value: 'timeout', label: 'Timed out' },
   { value: 'canceled', label: 'Canceled' },

@@ -209,14 +209,15 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		return err
 	}
 
-	// A dependency gates a step only by SUCCEEDING. Every terminal step used
-	// to count as "completed" here, so a step whose dependency had failed
-	// (or been skipped, or timed out) was queued anyway.
+	// A dependency gates a step only by producing results (completed, or
+	// partial: some batches failed, the others' results are kept). Every
+	// terminal step used to count as "completed" here, so a step whose
+	// dependency had failed (or been skipped, or timed out) was queued anyway.
 	succeededSteps := make(map[string]bool)
 	runningSteps := 0
 	for _, sr := range stepRuns {
 		if sr.IsComplete() {
-			if sr.IsSuccess() {
+			if sr.Status.ProducedResults() {
 				succeededSteps[sr.StepKey] = true
 			}
 		} else if sr.IsRunning() || sr.IsQueued() {
@@ -576,13 +577,15 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 	}
 
 	// A zone-routed scan runs one command per batch under this step: the step
-	// finishes with the last batch, and fails if any batch failed.
+	// finishes with the last batch. If every batch failed the step fails; if
+	// some failed and others completed it ends partial with the results it
+	// has (RFC-046 D5).
 	if b := s.checkStepBatches(ctx, run, stepRun); b.batched {
 		if b.wait {
 			return nil
 		}
 		if b.failed > 0 {
-			return s.failStep(ctx, run, stepRun, b.summary(), errCodeBatchFailed, false)
+			return s.settleBatchedStep(ctx, run, stepRun, b)
 		}
 		findingsCount = b.findings
 	}
@@ -597,75 +600,11 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepKey, "completed").Inc()
 	}
 
-	// Get template with steps
 	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
 	if err != nil {
 		return err
 	}
-	s.refreshStepRuns(ctx, run)
-	s.skipBlockedSteps(ctx, run, template)
-
-	// Update run statistics.
-	//
-	// findingsCount is deliberately NOT added on top: stepRun.Complete stored it
-	// on the step run a few lines above, and calculateRunStats sums exactly those
-	// step runs — so adding it again counts this step's findings twice. A live
-	// scan that produced 2 findings recorded total_findings = 4, and the same
-	// doubled number reached the audit log and the "completed successfully with N
-	// findings" message. OnStepFailed always did it this way.
-	completed, failed, skipped, findings := s.calculateRunStats(run)
-	// FIXED: Don't silently suppress errors - log them instead
-	if err := s.runRepo.UpdateStats(ctx, run.ID, completed, failed, skipped, findings); err != nil {
-		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
-	}
-
-	// Check if pipeline is complete
-	if completed+failed+skipped >= run.TotalSteps {
-		// Evaluate Quality Gate if configured
-		qgResult := s.evaluateQualityGate(ctx, run)
-		if qgResult != nil {
-			run.SetQualityGateResult(qgResult)
-			// FIXED: Don't silently suppress errors - log them instead
-			if err := s.runRepo.Update(ctx, run); err != nil {
-				s.logger.Error("failed to update run with quality gate result", "run_id", run.ID.String(), "error", err)
-			}
-		}
-
-		if failed > 0 {
-			if !s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline completed with failures") {
-				return nil
-			}
-			// Audit log: pipeline failed
-			s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
-				NewFailureEvent(audit.ActionPipelineRunFailed, audit.ResourceTypePipelineRun, run.ID.String(),
-					fmt.Errorf("pipeline completed with %d step failures", failed)).
-					WithMessage(fmt.Sprintf("Pipeline run failed with %d step failures", failed)).
-					WithMetadata("completed_steps", completed).
-					WithMetadata("failed_steps", failed).
-					WithMetadata("total_findings", findings).
-					WithMetadata("quality_gate_passed", qgResult == nil || qgResult.Passed))
-		} else {
-			if !s.finishRun(ctx, run, pipeline.RunStatusCompleted, "") {
-				return nil
-			}
-			if s.runCompleted != nil {
-				run.Status = pipeline.RunStatusCompleted
-				run.TotalFindings = findings
-				s.runCompleted(ctx, run)
-			}
-			// Audit log: pipeline completed
-			s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
-				NewSuccessEvent(audit.ActionPipelineRunCompleted, audit.ResourceTypePipelineRun, run.ID.String()).
-					WithMessage(fmt.Sprintf("Pipeline run completed successfully with %d findings", findings)).
-					WithMetadata("completed_steps", completed).
-					WithMetadata("total_findings", findings).
-					WithMetadata("quality_gate_passed", qgResult == nil || qgResult.Passed))
-		}
-		return nil
-	}
-
-	// Schedule newly runnable steps (dependent steps whose dependencies are now complete)
-	return s.scheduleRunnableSteps(ctx, run, template)
+	return s.advanceRun(ctx, run, template)
 }
 
 // OnStepFailed is called when a sensor reports step failure.
@@ -698,17 +637,13 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 	if s.stepAlreadyFinished(run, stepRun, "failed") {
 		return nil
 	}
-	allowRetry := true
 	if b := s.checkStepBatches(ctx, run, stepRun); b.batched {
 		if b.wait {
 			return nil // the batch's error stays on its command; the last batch reports
 		}
-		// A retry would re-dispatch the step through the generic step path,
-		// without zone routing: a batched step is failed, not retried.
-		allowRetry = false
-		errorMessage, errorCode = b.summary(), errCodeBatchFailed
+		return s.settleBatchedStep(ctx, run, stepRun, b)
 	}
-	return s.failStep(ctx, run, stepRun, errorMessage, errorCode, allowRetry)
+	return s.failStep(ctx, run, stepRun, errorMessage, errorCode)
 }
 
 // stepAlreadyFinished reports (and logs) a result for a step run that already
@@ -728,43 +663,47 @@ func (s *Service) stepAlreadyFinished(run *pipeline.Run, stepRun *pipeline.StepR
 	return true
 }
 
-// failStep records a step failure and settles the run.
-func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipeline.StepRun, errorMessage, errorCode string, allowRetry bool) error {
+// settleBatchedStep records the outcome of a batched step once its last batch
+// finished and at least one batch failed: failed when every batch failed,
+// partial when some batches completed (their results are kept). A batched
+// step is never retried as a step: a retry would re-dispatch it through the
+// generic step path, without zone routing.
+func (s *Service) settleBatchedStep(ctx context.Context, run *pipeline.Run, stepRun *pipeline.StepRun, b stepBatches) error {
+	if b.failed >= b.total {
+		return s.failStep(ctx, run, stepRun, b.summary(), errCodeBatchFailed)
+	}
 	if stepRun != nil {
-		stepKey := stepRun.StepKey
-		// A failure a retry cannot fix (no such scanner on the sensor, target
-		// refused, nothing to scan, no sensor) is recorded with its class and
-		// never retried (D7): it used to be retried up to max_retries with
-		// the same result, and then reported as a generic failure.
-		code, retryable := pipeline.ClassifyStepFailure(errorCode, errorMessage)
-		errorCode = code
-		// Check if retry is possible
-		if allowRetry && retryable && stepRun.CanRetry() {
-			stepRun.PrepareRetry()
-			// FIXED: Don't silently suppress errors - log them instead
-			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
-				s.logger.Error("failed to update step run for retry", "step_key", stepKey, "error", err)
-			}
-			// Record retry metric
-			metrics.StepRetryTotal.WithLabelValues(run.TenantID.String(), stepKey).Inc()
-
-			// Get template and reschedule
-			template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
-			if err == nil {
-				if err := s.scheduleRunnableSteps(ctx, run, template); err != nil {
-					s.logger.Error("failed to reschedule steps after retry", "run_id", run.ID.String(), "error", err)
-				}
-			}
-			return nil
+		stepRun.Partial(b.findings, b.summary(), errCodeBatchFailed)
+		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+			s.logger.Error("failed to record partial step run", "step_key", stepRun.StepKey, "error", err)
 		}
+		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepRun.StepKey, "partial").Inc()
+	}
+	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
+	if err != nil {
+		return err
+	}
+	return s.advanceRun(ctx, run, template)
+}
 
-		stepRun.Fail(errorMessage, errorCode)
+// failStep records a step failure and settles the run.
+//
+// The failure is classified (D7): a failure a retry cannot fix (no such
+// scanner on the sensor, target refused, nothing to scan, no sensor) keeps
+// its class code, which the run-level retry controller never retries. Retries
+// happen at run level only; the step-level retry that used to sit here could
+// never fire (StepRun.CanRetry needs a step that is already failed, and a
+// failure arrives while the step is still running).
+func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipeline.StepRun, errorMessage, errorCode string) error {
+	if stepRun != nil {
+		code, _ := pipeline.ClassifyStepFailure(errorCode, errorMessage)
+		stepRun.Fail(errorMessage, code)
 		// FIXED: Don't silently suppress errors - log them instead
 		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
-			s.logger.Error("failed to update step run status to failed", "step_key", stepKey, "error", err)
+			s.logger.Error("failed to update step run status to failed", "step_key", stepRun.StepKey, "error", err)
 		}
 		// Record failed step metric
-		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepKey, "failed").Inc()
+		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepRun.StepKey, "failed").Inc()
 	}
 
 	// Get template to check fail_fast setting
@@ -772,30 +711,107 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 	if err != nil {
 		return err
 	}
-	s.refreshStepRuns(ctx, run)
-	s.skipBlockedSteps(ctx, run, template)
-
-	// Update run statistics
-	completed, failed, skipped, findings := s.calculateRunStats(run)
-	// FIXED: Don't silently suppress errors - log them instead
-	if err := s.runRepo.UpdateStats(ctx, run.ID, completed, failed, skipped, findings); err != nil {
-		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
-	}
 
 	// If fail_fast, mark run as failed
 	if template.Settings.FailFast {
+		s.refreshStepRuns(ctx, run)
+		st := s.calculateRunStats(run)
+		s.updateRunStats(ctx, run, st)
 		s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline failed: "+errorMessage)
 		return nil
 	}
 
-	// Check if pipeline is complete
-	if completed+failed+skipped >= run.TotalSteps {
-		s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline completed with failures")
-		return nil
-	}
+	return s.advanceRun(ctx, run, template)
+}
 
-	// Continue with other steps
-	return s.scheduleRunnableSteps(ctx, run, template)
+// advanceRun runs after a step settled: it skips the steps whose dependencies
+// can no longer succeed, records the run's counters, and either settles the
+// run (every step finished) or schedules the steps that became runnable.
+func (s *Service) advanceRun(ctx context.Context, run *pipeline.Run, template *pipeline.Template) error {
+	s.refreshStepRuns(ctx, run)
+	s.skipBlockedSteps(ctx, run, template)
+
+	// Findings are summed from the stored step runs only (calculateRunStats):
+	// adding the reported count on top used to count a step's findings twice.
+	st := s.calculateRunStats(run)
+	s.updateRunStats(ctx, run, st)
+
+	if st.settled() < run.TotalSteps {
+		// Schedule newly runnable steps (dependent steps whose dependencies are now complete)
+		return s.scheduleRunnableSteps(ctx, run, template)
+	}
+	s.settleRun(ctx, run, st)
+	return nil
+}
+
+// settleRun records the outcome of a run whose steps have all finished:
+// completed when no step failed or ended partial, failed when no step
+// produced results, partial otherwise (RFC-046 D5: some work done, some
+// lost; the results are kept and the run is not retried as a whole).
+func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats) {
+	qgResult := s.evaluateQualityGate(ctx, run)
+	if qgResult != nil {
+		run.SetQualityGateResult(qgResult)
+		// FIXED: Don't silently suppress errors - log them instead
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			s.logger.Error("failed to update run with quality gate result", "run_id", run.ID.String(), "error", err)
+		}
+	}
+	qgPassed := qgResult == nil || qgResult.Passed
+
+	switch st.outcome() {
+	case pipeline.RunStatusCompleted:
+		if !s.finishRun(ctx, run, pipeline.RunStatusCompleted, "") {
+			return
+		}
+		if s.runCompleted != nil {
+			run.Status = pipeline.RunStatusCompleted
+			run.TotalFindings = st.findings
+			s.runCompleted(ctx, run)
+		}
+		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
+			NewSuccessEvent(audit.ActionPipelineRunCompleted, audit.ResourceTypePipelineRun, run.ID.String()).
+				WithMessage(fmt.Sprintf("Pipeline run completed successfully with %d findings", st.findings)).
+				WithMetadata("completed_steps", st.completed).
+				WithMetadata("total_findings", st.findings).
+				WithMetadata("quality_gate_passed", qgPassed))
+	case pipeline.RunStatusPartial:
+		msg := fmt.Sprintf("Pipeline completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
+		if !s.finishRun(ctx, run, pipeline.RunStatusPartial, msg) {
+			return
+		}
+		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
+			NewSuccessEvent(audit.ActionPipelineRunPartial, audit.ResourceTypePipelineRun, run.ID.String()).
+				WithMessage(fmt.Sprintf("Pipeline run completed partially with %d findings (%d steps failed, %d partial)",
+					st.findings, st.failed, st.partial)).
+				WithMetadata("completed_steps", st.completed).
+				WithMetadata("partial_steps", st.partial).
+				WithMetadata("failed_steps", st.failed).
+				WithMetadata("total_findings", st.findings).
+				WithMetadata("quality_gate_passed", qgPassed))
+	default:
+		if !s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline completed with failures") {
+			return
+		}
+		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
+			NewFailureEvent(audit.ActionPipelineRunFailed, audit.ResourceTypePipelineRun, run.ID.String(),
+				fmt.Errorf("pipeline completed with %d step failures", st.failed)).
+				WithMessage(fmt.Sprintf("Pipeline run failed with %d step failures", st.failed)).
+				WithMetadata("completed_steps", st.completed).
+				WithMetadata("failed_steps", st.failed).
+				WithMetadata("total_findings", st.findings).
+				WithMetadata("quality_gate_passed", qgPassed))
+	}
+}
+
+// updateRunStats stores the run's step counters. A partial step is stored
+// under failed_steps: the columns say how many steps finished all their work
+// and how many did not, and still add up to the steps that settled.
+func (s *Service) updateRunStats(ctx context.Context, run *pipeline.Run, st runStats) {
+	// FIXED: Don't silently suppress errors - log them instead
+	if err := s.runRepo.UpdateStats(ctx, run.ID, st.completed, st.failed+st.partial, st.skipped, st.findings); err != nil {
+		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
+	}
 }
 
 // errCodeBatchFailed is the step error code when a zone batch failed.
@@ -853,20 +869,49 @@ func (s *Service) checkStepBatches(ctx context.Context, run *pipeline.Run, stepR
 	return b
 }
 
+// runStats counts a run's step runs by outcome.
+type runStats struct {
+	completed, partial, failed, skipped, findings int
+}
+
+// settled is how many steps reached an outcome that counts towards the run
+// finishing.
+func (st runStats) settled() int {
+	return st.completed + st.partial + st.failed + st.skipped
+}
+
+// outcome is the run's status once every step settled: completed when no
+// step failed or ended partial, failed when no step produced results,
+// partial otherwise.
+func (st runStats) outcome() pipeline.RunStatus {
+	switch {
+	case st.failed == 0 && st.partial == 0:
+		return pipeline.RunStatusCompleted
+	case st.completed == 0 && st.partial == 0:
+		return pipeline.RunStatusFailed
+	default:
+		return pipeline.RunStatusPartial
+	}
+}
+
 // calculateRunStats calculates run statistics from step runs.
-func (s *Service) calculateRunStats(run *pipeline.Run) (completed, failed, skipped, findings int) {
+func (s *Service) calculateRunStats(run *pipeline.Run) runStats {
+	var st runStats
 	for _, sr := range run.StepRuns {
 		switch sr.Status {
 		case pipeline.StepRunStatusCompleted:
-			completed++
-			findings += sr.FindingsCount
+			st.completed++
+			st.findings += sr.FindingsCount
+		case pipeline.StepRunStatusPartial:
+			st.partial++
+			st.findings += sr.FindingsCount
 		case pipeline.StepRunStatusFailed:
-			failed++
+			st.failed++
 		case pipeline.StepRunStatusSkipped:
-			skipped++
+			st.skipped++
 		}
 	}
-	return
+	return st
 }
 
 // evaluateQualityGate evaluates the quality gate for a completed pipeline run.
@@ -995,7 +1040,7 @@ type ListRunsInput struct {
 	TenantID   string `json:"tenant_id" validate:"required,uuid"`
 	PipelineID string `json:"pipeline_id" validate:"omitempty,uuid"`
 	AssetID    string `json:"asset_id" validate:"omitempty,uuid"`
-	Status     string `json:"status" validate:"omitempty,oneof=pending running completed failed canceled timeout"`
+	Status     string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
 	Page       int    `json:"page"`
 	PerPage    int    `json:"per_page"`
 }
