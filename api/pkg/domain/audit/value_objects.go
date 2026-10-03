@@ -26,6 +26,9 @@ const (
 	ActionTenantRiskScoresRecalculated Action = "tenant.risk_scores_recalculated"
 	ActionTenantAssetSourceUpdated     Action = "tenant.asset_source_updated"
 	ActionTenantAssetLifecycleUpdated  Action = "tenant.asset_lifecycle_updated"
+	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
+	// settings (RFC-039).
+	ActionTenantRetestUpdated Action = "tenant.retest_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -87,6 +90,9 @@ const (
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
+	// ActionFindingRetestRequested records a user pressing "Retest now" on a
+	// finding (RFC-039): who, which finding, which template against which target.
+	ActionFindingRetestRequested Action = "finding.retest_requested"
 	// ActionFindingCommentReactionRemoved records an administrator removing
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
@@ -416,7 +422,7 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
@@ -428,6 +434,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingRetestRequested,
 		ActionFindingCommentReactionRemoved,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
@@ -526,7 +533,7 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
-		ActionFindingCommentReactionRemoved:
+		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved:
 		return "finding"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
@@ -761,7 +768,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthMFAEnabled, ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionMemberAdded, ActionInvitationAccepted,

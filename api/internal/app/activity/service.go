@@ -243,33 +243,63 @@ func (s *FindingActivityService) RecordBatchAutoResolved(
 	return nil
 }
 
-// RecordBatchAutoReopened creates activity records for findings that were auto-reopened
-// during ingestion (previously auto-resolved findings seen again in a new scan).
+// RecordBatchAutoReopened creates activity records for findings a scan
+// re-detected and reopened: a regression of a finding closed as fixed (by a scan
+// or by a person), or a scan refuting a validation downgrade. The reopen cleared
+// the finding's resolution fields, so the entry keeps what they were — the
+// previous status, resolution, method and resolver — plus the scanner and scan
+// that saw it again.
 func (s *FindingActivityService) RecordBatchAutoReopened(
 	ctx context.Context,
 	tenantID shared.ID,
-	findingIDs []shared.ID,
+	reopened []vulnerability.ReopenedFinding,
+	scanner, scanID string,
 ) error {
-	if len(findingIDs) == 0 {
+	if len(reopened) == 0 {
 		return nil
 	}
 
-	activities := make([]*vulnerability.FindingActivity, 0, len(findingIDs))
-	for _, fid := range findingIDs {
+	activities := make([]*vulnerability.FindingActivity, 0, len(reopened))
+	for _, rf := range reopened {
+		changes := map[string]any{
+			"reason":          "regression_detected_again",
+			"old_status":      string(rf.PreviousStatus),
+			"new_status":      string(vulnerability.FindingStatusConfirmed),
+			"previous_status": string(rf.PreviousStatus),
+		}
+		if rf.PreviousStatus == vulnerability.FindingStatusValidatedFixed {
+			changes["reason"] = "validation_downgrade_refuted_by_scan"
+		}
+		if rf.PreviousResolution != "" {
+			changes["previous_resolution"] = rf.PreviousResolution
+		}
+		if rf.PreviousResolutionMethod != "" {
+			changes["previous_resolution_method"] = rf.PreviousResolutionMethod
+		}
+		if rf.PreviousResolvedBy != nil {
+			changes["previous_resolved_by"] = rf.PreviousResolvedBy.String()
+		}
+		if rf.PreviousResolvedAt != nil {
+			changes["previous_resolved_at"] = rf.PreviousResolvedAt.UTC().Format(time.RFC3339)
+		}
+		if scanner != "" {
+			changes["scanner"] = scanner
+		}
+		if scanID != "" {
+			changes["scan_id"] = scanID
+		}
 		activity, err := vulnerability.NewFindingActivity(
 			tenantID,
-			fid,
+			rf.ID,
 			vulnerability.ActivityAutoReopened,
 			nil, // no actor - system action
 			vulnerability.ActorTypeSystem,
-			map[string]any{
-				"reason": "finding_detected_again",
-			},
+			changes,
 			vulnerability.SourceAuto,
 			nil,
 		)
 		if err != nil {
-			s.logger.Warn("failed to create auto-reopened activity", "finding_id", fid.String(), "error", err)
+			s.logger.Warn("failed to create auto-reopened activity", "finding_id", rf.ID.String(), "error", err)
 			continue
 		}
 		activities = append(activities, activity)

@@ -5,6 +5,15 @@
 > agent in the tenant's network executes the technique; the API persists the
 > evidence and applies the outcome.
 
+> **Continuous retest** ([RFC-039](../rfcs/RFC-039-continuous-retest.md),
+> [continuous-retest.md](continuous-retest.md)) reuses this engine's `validate`
+> command transport for a finding's own nuclei template plus a reachability
+> probe. Retest commands carry `retest_id`; their evidence is recorded
+> advisory-only and the retest service, not the verdict rule below, moves the
+> finding. Known gap in the verdict rule below: a nuclei re-run against an
+> unreachable host reports `not_detected` and downgrades the finding (RFC-039
+> §2.3 D-a).
+
 ## What "Validation" means here
 
 CTEM Stage-4 answers: *did the fix actually hold, and is the exposure really

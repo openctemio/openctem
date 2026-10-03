@@ -920,8 +920,7 @@ func TestFindingActivityService_RecordBatchAutoReopened_RepoError(t *testing.T) 
 	svc := newFindingActService(repo)
 
 	err := svc.RecordBatchAutoReopened(context.Background(),
-		shared.NewID(), []shared.ID{shared.NewID()},
-	)
+		shared.NewID(), reopenedOf([]shared.ID{shared.NewID()}...), "nuclei", "scan-1")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -935,8 +934,7 @@ func TestFindingActivityService_RecordBatchAutoReopened_EmptySlice(t *testing.T)
 	svc := newFindingActService(repo)
 
 	err := svc.RecordBatchAutoReopened(context.Background(),
-		shared.NewID(), []shared.ID{},
-	)
+		shared.NewID(), reopenedOf([]shared.ID{}...), "nuclei", "scan-1")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -950,8 +948,7 @@ func TestFindingActivityService_RecordBatchAutoReopened_CorrectChanges(t *testin
 	svc := newFindingActService(repo)
 
 	err := svc.RecordBatchAutoReopened(context.Background(),
-		shared.NewID(), []shared.ID{shared.NewID(), shared.NewID()},
-	)
+		shared.NewID(), reopenedOf([]shared.ID{shared.NewID(), shared.NewID()}...), "nuclei", "scan-1")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -965,8 +962,8 @@ func TestFindingActivityService_RecordBatchAutoReopened_CorrectChanges(t *testin
 		if a.Source() != vulnerability.SourceAuto {
 			t.Errorf("activity %d: source = %s, want %s", i, a.Source(), vulnerability.SourceAuto)
 		}
-		if a.Changes()["reason"] != "finding_detected_again" {
-			t.Errorf("activity %d: reason = %v, want finding_detected_again", i, a.Changes()["reason"])
+		if a.Changes()["reason"] != "regression_detected_again" {
+			t.Errorf("activity %d: reason = %v, want regression_detected_again", i, a.Changes()["reason"])
 		}
 	}
 }

@@ -328,7 +328,7 @@ named.
 - **Scope and assignment rules key on `assets.tags`**
   (`000074` `group_asset_scope_rules`; `000044:108` `assignment_rules`).
   Custom labels must stay in `assets.tags`, or both engines break.
-- **Open PRs reserve migrations 000273–000281.** This RFC uses names, not
+- **Open PRs reserve migrations 000273–000327.** This RFC uses names, not
   numbers; numbers are assigned when each phase is implemented.
 
 ## 4. What PD does, and where it falls short
@@ -2486,7 +2486,7 @@ table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
 
 P0 ships as seven PR slices to `develop`, in order. Each slice merges on
 its own and leaves `develop` working. Migration numbers are taken at
-implementation time, after the ones open PRs reserve (000273–000281).
+implementation time, after the ones open PRs reserve (000273–000327).
 Every slice that adds a table referencing `assets` also updates
 `asset_merge_plan.go`, which the coverage test enforces.
 

@@ -415,13 +415,13 @@ Manual Retest now is available whenever a `validate:nuclei` sensor is online.
 |---|---|
 | `POST /findings/{id}/retest` | `findings:verify` + data scope |
 | `GET /findings/{id}/retests` | `findings:read` + data scope |
-| `GET/PUT /tenants/{t}/settings/retest` | team admin (owner/admin), audited |
+| `GET/PUT /organization/settings/retest` (tenant from the token) | team admin (owner/admin), audited |
 
 ## 9. Phased plan
 
 | Phase | Content |
 |---|---|
-| **P1 (this PR)** | `finding_retests` + cursors (migration 000281); domain decision/transition; retest service (eligibility, gates, limits, dispatch, settle, sweep); Retest now + list routes; settings `retest` (default off) + endpoint; `RetestScheduler` with claim-once; advisory ingest of retest evidence; scan regression reopen keeps the previous resolver and reopens `validated_fixed`; web: Retest now button and last-retest status on the finding page and drawer |
+| **P1 (this PR)** | `finding_retests` + cursors (migration 000327); domain decision/transition; retest service (eligibility, gates, limits, dispatch, settle, sweep); Retest now + list routes; settings `retest` (default off) + endpoint; `RetestScheduler` with claim-once; advisory ingest of retest evidence; scan regression reopen keeps the previous resolver and reopens `validated_fixed`; web: Retest now button and last-retest status on the finding page and drawer |
 | P2 | port/service, TLS and DNS check kinds; ticket comment + notification on fixed/regression; SLA restart decision; web settings page and an auto-retest column/filter; fix D-a/D-b for `/validate` (reach guard) |
 | P3 | retests as `pipeline_runs(kind = retest)` with scan-zone routing and coverage `partial`, once RFC-038 typed settings and scans P1 land; CVE→template resolver; asset-group-scoped auto-retest policies |
 

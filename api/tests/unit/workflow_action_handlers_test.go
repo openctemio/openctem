@@ -179,7 +179,7 @@ func (m *wfActionMockFindingRepo) AutoReopenByFingerprint(_ context.Context, _ s
 	return nil, nil
 }
 
-func (m *wfActionMockFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]shared.ID, error) {
+func (m *wfActionMockFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
 }
 
