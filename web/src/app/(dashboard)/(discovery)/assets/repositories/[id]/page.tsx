@@ -43,6 +43,8 @@ import {
 } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
+import { EntityActivity } from '@/features/activity/components/entity-activity'
+import type { ActivityItem } from '@/features/activity/types'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -77,13 +79,8 @@ import {
   Settings,
   Play,
   GitMerge,
-  GitPullRequest,
   MessageSquare,
-  Filter,
-  UserPlus,
   ChevronRight,
-  AlertOctagon,
-  Bell,
   History,
   Layers,
   Timer,
@@ -175,30 +172,6 @@ const TRIAGE_STATUS_COLORS: Record<TriageStatus, { bg: string; text: string }> =
   needs_triage: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
   triaged: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
   escalated: { bg: 'bg-red-500/15', text: 'text-red-600' },
-}
-
-const ACTIVITY_ACTION_LABELS: Record<ActivityAction, string> = {
-  scan_started: 'Scan Started',
-  scan_completed: 'Scan Completed',
-  scan_failed: 'Scan Failed',
-  finding_created: 'Finding Created',
-  finding_resolved: 'Finding Resolved',
-  finding_regressed: 'Finding Regressed',
-  finding_status_changed: 'Finding Status Changed',
-  finding_assigned: 'Finding Assigned',
-  finding_triaged: 'Finding Triaged',
-  finding_commented: 'Comment Added',
-  branch_created: 'Branch Created',
-  branch_added: 'Branch Added',
-  branch_deleted: 'Branch Deleted',
-  pr_opened: 'Pull Request Opened',
-  pr_merged: 'Pull Request Merged',
-  pr_closed: 'Pull Request Closed',
-  repository_synced: 'Repository Synced',
-  settings_changed: 'Settings Changed',
-  config_updated: 'Config Updated',
-  notification_sent: 'Notification Sent',
-  issue_created: 'Issue Created',
 }
 
 const SCM_PROVIDER_COLORS: Record<SCMProvider, string> = {
@@ -368,6 +341,23 @@ function deriveActivitiesFromFindings(findingsList: FindingDetail[]): ActivityLo
     entity_name: f.title,
     timestamp: f.first_detected_at,
   }))
+}
+
+/** The derived activity as the shared ActivityPanel's events (text only). */
+function repositoryActivityItems(logs: ActivityLog[]): ActivityItem[] {
+  return logs.map((a) => {
+    const resolved = a.action === 'finding_resolved'
+    return {
+      kind: 'event',
+      id: a.id,
+      at: a.timestamp,
+      actor: { name: a.actor_name, kind: a.actor_type === 'user' ? 'user' : 'system' },
+      icon: resolved ? CheckCircle : AlertTriangle,
+      tone: resolved ? 'success' : 'warning',
+      summary: `${resolved ? 'resolved' : 'found'} ${a.entity_name ? `“${a.entity_name}”` : 'a finding'}`,
+      detail: a.comment,
+    }
+  })
 }
 
 const defaultSLAPolicy: SLAPolicy = {
@@ -630,7 +620,6 @@ import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { SafeExternalLink } from '@/components/safe-external-link'
 import { safeImageSrc } from '@/lib/safe-href'
 
 // ============================================
@@ -704,31 +693,6 @@ function SLAStatusBadge({ status, daysRemaining }: { status: SLAStatus; daysRema
           : SLA_STATUS_LABELS[status]}
     </span>
   )
-}
-
-function ActivityIcon({ action }: { action: ActivityAction }) {
-  const iconMap: Partial<Record<ActivityAction, React.ReactNode>> = {
-    scan_started: <Play className="h-4 w-4 text-blue-500" />,
-    scan_completed: <CheckCircle className="h-4 w-4 text-green-500" />,
-    scan_failed: <XCircle className="h-4 w-4 text-red-500" />,
-    finding_created: <AlertTriangle className="h-4 w-4 text-orange-500" />,
-    finding_resolved: <CheckCircle className="h-4 w-4 text-green-500" />,
-    finding_regressed: <AlertOctagon className="h-4 w-4 text-red-500" />,
-    finding_status_changed: <RefreshCw className="h-4 w-4 text-blue-500" />,
-    finding_assigned: <UserPlus className="h-4 w-4 text-purple-500" />,
-    finding_triaged: <Filter className="h-4 w-4 text-indigo-500" />,
-    finding_commented: <MessageSquare className="h-4 w-4 text-gray-500" />,
-    branch_created: <GitBranch className="h-4 w-4 text-green-500" />,
-    branch_deleted: <Trash2 className="h-4 w-4 text-red-500" />,
-    pr_opened: <GitPullRequest className="h-4 w-4 text-blue-500" />,
-    pr_merged: <GitMerge className="h-4 w-4 text-purple-500" />,
-    pr_closed: <XCircle className="h-4 w-4 text-gray-500" />,
-    repository_synced: <RefreshCw className="h-4 w-4 text-blue-500" />,
-    settings_changed: <Settings className="h-4 w-4 text-gray-500" />,
-    notification_sent: <Bell className="h-4 w-4 text-yellow-500" />,
-    issue_created: <ExternalLink className="h-4 w-4 text-blue-500" />,
-  }
-  return iconMap[action] || <Activity className="h-4 w-4 text-gray-500" />
 }
 
 function formatTimeAgo(dateString: string | undefined | null): string {
@@ -1080,57 +1044,22 @@ function OverviewTab({
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
+        {/* Activity: the shared trigger + panel (?activity=open; old ?tab=activity links open it). */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <History className="h-4 w-4" />
-              Recent Activity
+              Activity
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {activities.slice(0, 5).map((activity) => {
-                const findingId = activity.id.startsWith('finding-')
-                  ? activity.id.replace('finding-', '')
-                  : null
-                return (
-                  <div
-                    key={activity.id}
-                    className={
-                      findingId
-                        ? 'flex items-start gap-3 cursor-pointer hover:bg-muted/50 rounded-lg p-2 -mx-2 transition-colors'
-                        : 'flex items-start gap-3 p-2 -mx-2'
-                    }
-                    onClick={findingId ? () => router.push(`/findings/${findingId}`) : undefined}
-                  >
-                    <div className="mt-0.5">
-                      <ActivityIcon action={activity.action} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm">
-                        <span className="font-medium">{activity.actor_name}</span>{' '}
-                        {ACTIVITY_ACTION_LABELS[activity.action].toLowerCase()}
-                        {activity.entity_name && (
-                          <>
-                            {' '}
-                            on <span className="font-medium">{activity.entity_name}</span>
-                          </>
-                        )}
-                      </p>
-                      {activity.comment && (
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                          {activity.comment}
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {formatTimeAgo(activity.timestamp)}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            <EntityActivity
+              entityKey={`repository:${repository.id}`}
+              subject={repository.name}
+              items={repositoryActivityItems(activities)}
+              triggerVariant="plain"
+              emptyTitle="No activity yet"
+            />
           </CardContent>
         </Card>
       </div>
@@ -1871,191 +1800,6 @@ function FindingsTab({
   )
 }
 
-// Activity Tab
-function ActivityTab({ activities }: { activities: ActivityLog[] }) {
-  const [actionFilter, setActionFilter] = useState<string>('all')
-
-  const filteredActivities = useMemo(() => {
-    if (actionFilter === 'all') return activities
-    return activities.filter((a) => {
-      if (actionFilter === 'scans') return a.action.startsWith('scan_')
-      if (actionFilter === 'findings') return a.action.startsWith('finding_')
-      if (actionFilter === 'branches')
-        return a.action.startsWith('branch_') || a.action.startsWith('pr_')
-      return true
-    })
-  }, [activities, actionFilter])
-
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <History className="h-4 w-4" />
-                Activity Timeline
-              </CardTitle>
-              <CardDescription>{filteredActivities.length} events</CardDescription>
-            </div>
-            <Tabs value={actionFilter} onValueChange={setActionFilter}>
-              <TabsList className="h-8">
-                <TabsTrigger value="all" className="text-xs px-2.5 h-7">
-                  All
-                </TabsTrigger>
-                <TabsTrigger value="scans" className="text-xs px-2.5 h-7">
-                  Scans
-                </TabsTrigger>
-                <TabsTrigger value="findings" className="text-xs px-2.5 h-7">
-                  Findings
-                </TabsTrigger>
-                <TabsTrigger value="branches" className="text-xs px-2.5 h-7">
-                  Branches
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="relative">
-            {/* Timeline line */}
-            <div className="absolute left-[19px] top-0 bottom-0 w-px bg-border" />
-
-            <div className="space-y-6">
-              {filteredActivities.map((activity) => (
-                <div key={activity.id} className="relative flex gap-4">
-                  {/* Icon */}
-                  <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-background border">
-                    <ActivityIcon action={activity.action} />
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 pb-6">
-                    <div className="flex items-center gap-2 mb-1">
-                      {activity.actor_type === 'user' && (
-                        <Avatar className="h-5 w-5">
-                          <AvatarImage src={safeImageSrc(activity.actor_avatar)} />
-                          <AvatarFallback className="text-xs">
-                            {activity.actor_name[0]}
-                          </AvatarFallback>
-                        </Avatar>
-                      )}
-                      <span className="font-medium text-sm">{activity.actor_name}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {ACTIVITY_ACTION_LABELS[activity.action].toLowerCase()}
-                      </span>
-                      {activity.entity_name && (
-                        <span className="text-sm">
-                          on <span className="font-medium">{activity.entity_name}</span>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Changes */}
-                    {activity.changes && activity.changes.length > 0 && (
-                      <div className="mt-2 p-3 rounded-lg bg-muted/50 text-sm">
-                        {activity.changes.map((change, i) => (
-                          <div key={i} className="flex items-center gap-2">
-                            <span className="text-muted-foreground capitalize">
-                              {change.field}:
-                            </span>
-                            <span className="line-through text-red-500">
-                              {String(change.old_value || 'none')}
-                            </span>
-                            <ChevronRight className="h-3 w-3" />
-                            <span className="text-green-500">{String(change.new_value)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Comment */}
-                    {activity.comment && (
-                      <p className="mt-2 text-sm text-muted-foreground italic">
-                        &ldquo;{activity.comment}&rdquo;
-                      </p>
-                    )}
-
-                    {/* Scan summary */}
-                    {activity.scan_summary && (
-                      <div className="mt-2 p-3 rounded-lg bg-muted/50">
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="flex items-center gap-1">
-                            <GitBranch className="h-3 w-3" />
-                            {activity.scan_summary.branch}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <AlertTriangle className="h-3 w-3" />
-                            {activity.scan_summary.findings_total} findings
-                          </span>
-                          {activity.scan_summary.findings_new > 0 && (
-                            <span className="text-red-500">
-                              +{activity.scan_summary.findings_new} new
-                            </span>
-                          )}
-                          {activity.scan_summary.findings_resolved > 0 && (
-                            <span className="text-green-500">
-                              -{activity.scan_summary.findings_resolved} resolved
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {Math.round(activity.scan_summary.duration_seconds / 60)}m
-                          </span>
-                          {activity.scan_summary.quality_gate_passed ? (
-                            <Badge variant="outline" className="text-green-500 border-green-500/20">
-                              <CheckCircle className="h-3 w-3 me-1" />
-                              Passed
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-red-500 border-red-500/20">
-                              <XCircle className="h-3 w-3 me-1" />
-                              Failed
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* PR info */}
-                    {activity.pr_info && (
-                      <div className="mt-2 p-3 rounded-lg bg-muted/50">
-                        <div className="flex items-center gap-2 text-sm">
-                          <GitPullRequest className="h-4 w-4" />
-                          <SafeExternalLink
-                            href={activity.pr_info.url}
-                            className="font-medium hover:underline"
-                          >
-                            #{activity.pr_info.number} {activity.pr_info.title}
-                          </SafeExternalLink>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                          <code className="bg-muted px-1 rounded">
-                            {activity.pr_info.source_branch}
-                          </code>
-                          <ChevronRight className="h-3 w-3" />
-                          <code className="bg-muted px-1 rounded">
-                            {activity.pr_info.target_branch}
-                          </code>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Timestamp */}
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {new Date(activity.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
 // Settings Tab
 function SettingsTab({ repository, onDelete }: { repository: Repository; onDelete?: () => void }) {
   const [autoScan, setAutoScan] = useState(repository.scan_settings?.auto_scan ?? false)
@@ -2423,11 +2167,15 @@ export default function RepositoryDetailPage() {
   // fetch it. Fail-open when the platform reports no modules (OSS edition).
   const branchesEnabled = useModuleEnabled('branches')
   const isTabEnabled = useCallback(
-    (tab: DetailTab) => tab !== 'branches' || branchesEnabled,
+    // Activity is not a tab any more: `?tab=activity` lands on Overview and
+    // opens the activity panel there.
+    (tab: DetailTab) => tab !== 'activity' && (tab !== 'branches' || branchesEnabled),
     [branchesEnabled]
   )
 
-  const [activeTab, setActiveTabState] = useState<DetailTab>(urlTab || 'overview')
+  const [activeTab, setActiveTabState] = useState<DetailTab>(
+    urlTab && urlTab !== 'activity' ? urlTab : 'overview'
+  )
   // Sync tab state when URL changes (e.g. from branch click), ignoring tabs
   // whose module is disabled.
   if (urlTab && urlTab !== activeTab && isTabEnabled(urlTab)) {
@@ -2770,10 +2518,6 @@ export default function RepositoryDetailPage() {
               Findings
               <TabsCount value={findings.length} />
             </TabsTrigger>
-            <TabsTrigger value="activity" className="gap-2">
-              <History className="h-4 w-4" />
-              Activity
-            </TabsTrigger>
             <TabsTrigger value="settings" className="gap-2">
               <Settings className="h-4 w-4" />
               Settings
@@ -2814,10 +2558,6 @@ export default function RepositoryDetailPage() {
               branches={branches}
               branchFromUrl={urlBranch || undefined}
             />
-          </TabsContent>
-
-          <TabsContent value="activity">
-            <ActivityTab activities={activities} />
           </TabsContent>
 
           <TabsContent value="settings">
