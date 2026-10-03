@@ -7,6 +7,7 @@ package sensor
 import (
 	"context"
 	"reflect"
+	"strings"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -59,7 +60,7 @@ func (s *SensorService) ObserveLocalPolicyRefusal(ctx context.Context, tenantID,
 		return
 	}
 	s.logger.Warn("sensor refused a job under its local policy", "sensor_id", sensorID.String(),
-		"command_id", commandID, "rule", rule)
+		"command_id", logLine(commandID), "rule", logLine(rule))
 	inserted := true
 	if s.events != nil {
 		res, err := s.events.Record(ctx, sensordom.LocalPolicyRefusalEvent(tenantID, sensorID, commandID, rule, errorMessage, s.now()), s.eventLimits)
@@ -79,4 +80,10 @@ func (s *SensorService) ObserveLocalPolicyRefusal(ctx context.Context, tenantID,
 	s.warnAudit(s.auditService.LogSensorJobRefusedByLocalPolicy(ctx, auditapp.AuditContext{
 		TenantID: tenantID.String(), ActorEmail: sensorAuditSystemActor,
 	}, sensorID.String(), name, commandID, rule), "LogSensorJobRefusedByLocalPolicy", sensorID.String())
+}
+
+// logLine strips line breaks from a value that came from the sensor before
+// it is logged (no forged log lines).
+func logLine(v string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(v, "\n", ""), "\r", "")
 }
