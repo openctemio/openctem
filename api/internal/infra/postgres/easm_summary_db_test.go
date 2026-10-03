@@ -50,6 +50,12 @@ func TestEASMSummaryRepository(t *testing.T) {
 	_ = seedSurfaceAsset(ctx, t, db, tenant, "203.0.113.7", "ip_address", old)
 	_ = seedSurfaceAsset(ctx, t, db, tenant, "laptop-1", "host", now) // not surface
 	_ = seedSurfaceAsset(ctx, t, db, other, "evil.example", "domain", now)
+	// A person marked this one as not ours: counted as rejected, nowhere else.
+	notOurs := seedSurfaceAsset(ctx, t, db, tenant, "notours.acme.com", "subdomain", now.Add(-24*time.Hour))
+	if _, err := db.ExecContext(ctx, `INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, decided_at)
+		VALUES ($1, $2, 'rejected', 0, now())`, notOurs, tenant.String()); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, reason, created_at)
 		VALUES ($1, $3, 'needs_review', 85, 'fqdn_under_asserted_root', now() - interval '3 days'),
@@ -60,7 +66,8 @@ func TestEASMSummaryRepository(t *testing.T) {
 	seedExposure(ctx, t, db, tenant, api, "subdomain_discovered", "info", "active")
 	seedExposure(ctx, t, db, tenant, nil, "subdomain_discovered", "info", "active") // verified domain without an asset
 	seedExposure(ctx, t, db, tenant, root, "certificate_expired", "medium", "resolved")
-	seedExposure(ctx, t, db, tenant, root, "credential_leaked", "critical", "active") // not an EASM type
+	seedExposure(ctx, t, db, tenant, root, "credential_leaked", "critical", "active")      // not an EASM type
+	seedExposure(ctx, t, db, tenant, notOurs, "certificate_expired", "critical", "active") // rejected asset
 	seedExposure(ctx, t, db, other, nil, "certificate_expiring", "critical", "active")
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO ct_monitor_state (tenant_id, domain, last_success_at, consecutive_failures)
@@ -85,7 +92,7 @@ func TestEASMSummaryRepository(t *testing.T) {
 	if d.AssetsByType["domain"] != 1 || d.AssetsByType["subdomain"] != 2 || d.AssetsByType["ip_address"] != 1 || d.AssetsByType["host"] != 0 {
 		t.Errorf("by type = %v", d.AssetsByType)
 	}
-	if d.AttributionByState[""] != 2 || d.AttributionByState["needs_review"] != 1 || d.AttributionByState["confirmed"] != 1 {
+	if d.AttributionByState[""] != 2 || d.AttributionByState["needs_review"] != 1 || d.AttributionByState["confirmed"] != 1 || d.AttributionByState["rejected"] != 1 {
 		t.Errorf("attribution = %v", d.AttributionByState)
 	}
 	if d.OldestReviewSince == nil || now.Sub(*d.OldestReviewSince) < 70*time.Hour {
