@@ -16,6 +16,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -151,6 +152,9 @@ func TestDataScopePolicyMigration_ExistingOrganizationsKeepEverything(t *testing
 			t.Fatalf("%.80s: %v", q, err)
 		}
 	}
+	// Other packages use tenants concurrently; lock it before the DDL so the
+	// ALTER cannot deadlock with them.
+	testdb.LockForDDL(t, ctx, tx, "tenants")
 	exec(`ALTER TABLE tenants DROP CONSTRAINT IF EXISTS chk_tenants_members_without_group_see`)
 	exec(`ALTER TABLE tenants DROP COLUMN members_without_group_see`)
 	plain, flagged := shared.NewID(), shared.NewID()
