@@ -3,6 +3,7 @@ package scancoverage
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -74,6 +75,16 @@ type DispatchRecord struct {
 // the batch's assets (so they sort last next cycle) and, for capped engines,
 // adds the batch to the active-IP set the runner will later reclaim.
 type CursorStore interface {
+	// ClaimBatch claims the batch's assets for this caller before anything is
+	// dispatched: each asset's cursor moves from the LastScannedAt the caller
+	// planned with to `at`, and only assets whose cursor still held that value
+	// are returned. Every API replica runs the scheduler and plans from the same
+	// view; the claim makes sure an asset is dispatched by one of them only.
+	ClaimBatch(ctx context.Context, tenantID shared.ID, batch []Candidate, at time.Time) (claimed []string, err error)
+	// ReleaseBatch undoes a claim whose dispatch failed, so the assets are
+	// picked again next cycle instead of waiting out a whole rotation. It only
+	// touches cursors that still hold the claim time `at`.
+	ReleaseBatch(ctx context.Context, tenantID shared.ID, batch []Candidate, at time.Time) error
 	MarkDispatched(ctx context.Context, rec DispatchRecord) error
 }
 
@@ -199,7 +210,35 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 		return false, nil
 	}
 
-	// 4. Dispatch the batch to a runner.
+	// 4. Claim the batch. Another replica that planned from the same view gets
+	// none (or only the rest) of these assets.
+	claimAt := time.Now().UTC().Truncate(time.Microsecond)
+	claimedIDs, err := s.store.ClaimBatch(ctx, cfg.TenantID, batch, claimAt)
+	if err != nil {
+		return false, fmt.Errorf("claim batch: %w", err)
+	}
+	if len(claimedIDs) < len(batch) {
+		won := make(map[string]bool, len(claimedIDs))
+		for _, id := range claimedIDs {
+			won[id] = true
+		}
+		kept := batch[:0:0]
+		ips = 0
+		for _, c := range batch {
+			if won[c.AssetID] {
+				kept = append(kept, c)
+				ips += CountIPs(c.Target)
+			}
+		}
+		s.logger.Debug("coverage batch partly claimed by another replica",
+			"tenant_id", cfg.TenantID.String(), "planned", len(batch), "claimed", len(kept))
+		batch = kept
+	}
+	if len(batch) == 0 {
+		return false, nil
+	}
+
+	// 5. Dispatch the batch to a runner.
 	targets := make([]string, 0, len(batch))
 	assetIDs := make([]string, 0, len(batch))
 	for _, c := range batch {
@@ -215,10 +254,14 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 		TemplateUUID: cfg.TemplateUUID,
 	})
 	if err != nil {
+		if rerr := s.store.ReleaseBatch(ctx, cfg.TenantID, batch, claimAt); rerr != nil {
+			s.logger.Warn("failed to release coverage claim after a failed dispatch",
+				"tenant_id", cfg.TenantID.String(), "error", rerr)
+		}
 		return false, fmt.Errorf("dispatch: %w", err)
 	}
 
-	// 5. Record the dispatch: advance the cursor + active-IP accounting. If this
+	// 6. Record the dispatch: advance the cursor + active-IP accounting. If this
 	// fails the batch is already in flight, so surface the error (the next cycle
 	// could otherwise re-pick the same assets).
 	if err := s.store.MarkDispatched(ctx, DispatchRecord{

@@ -17,6 +17,10 @@ import (
 // ReportScheduleStore is the persistence surface the scheduler needs.
 type ReportScheduleStore interface {
 	ListDue(ctx context.Context, now time.Time) ([]*reportschedule.ReportSchedule, error)
+	// ClaimDue moves next_run_at from seen to next and reports whether this
+	// caller won the slot. Every replica runs this controller; only the winner
+	// renders and delivers.
+	ClaimDue(ctx context.Context, id shared.ID, seen *time.Time, next time.Time) (bool, error)
 	Update(ctx context.Context, s *reportschedule.ReportSchedule) error
 }
 
@@ -83,9 +87,9 @@ func (c *ReportScheduler) Name() string            { return "report-scheduler" }
 func (c *ReportScheduler) Interval() time.Duration { return c.config.Interval }
 
 // Reconcile renders and delivers every due schedule, then records the run +
-// next fire time. Idempotent at the run level: next_run_at advances past now,
-// so a schedule is not re-picked until its next slot. One failing schedule never
-// aborts the others.
+// next fire time. Each due slot is first claimed (ClaimDue): every API replica
+// runs this controller and lists the same due rows, and without the claim each
+// replica emailed the report. One failing schedule never aborts the others.
 func (c *ReportScheduler) Reconcile(ctx context.Context) (int, error) {
 	now := time.Now()
 	due, err := c.store.ListDue(ctx, now)
@@ -110,6 +114,18 @@ func (c *ReportScheduler) Reconcile(ctx context.Context) (int, error) {
 		// Compute the next fire time first; even if delivery fails we must
 		// advance next_run_at, otherwise the schedule busy-loops every tick.
 		next := c.nextRun(s, now)
+
+		won, err := c.store.ClaimDue(ctx, s.ID(), s.NextRunAt(), *next)
+		if err != nil {
+			c.logger.Error("failed to claim report schedule", "schedule_id", s.ID().String(), "error", err)
+			continue
+		}
+		if !won {
+			// Another replica claimed this slot (or the schedule changed since
+			// it was listed); it delivers, this replica does not.
+			c.logger.Debug("report schedule slot claimed elsewhere", "schedule_id", s.ID().String())
+			continue
+		}
 
 		status := c.runOne(ctx, s)
 		s.RecordRun(status, next)

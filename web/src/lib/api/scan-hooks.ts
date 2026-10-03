@@ -257,6 +257,20 @@ export function useCloneScanConfig(configId: string) {
   )
 }
 
+/**
+ * Save an unsaved quick scan as a configuration ("Save as scan")
+ */
+export function useSaveQuickScan(scanId: string | null) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && scanId ? scanEndpoints.save(scanId) : null,
+    async (url: string, { arg }: { arg: { name: string } }) => {
+      return post<ScanConfig>(url, arg)
+    }
+  )
+}
+
 // ============================================
 // BULK OPERATION HOOKS
 // ============================================

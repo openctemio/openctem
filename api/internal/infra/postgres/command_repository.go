@@ -1336,6 +1336,44 @@ func (r *CommandRepository) FailExhaustedCommands(ctx context.Context, maxRetrie
 	return failed, nil
 }
 
+// FailExhaustedCommandsReturning is FailExhaustedCommands (the same rows and
+// the same change as the fail_exhausted_commands() function) returning the
+// failed commands, so the caller can notify their pipeline runs.
+func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, maxRetries int) ([]*command.Command, error) {
+	const query = `
+		UPDATE commands
+		SET status = 'failed',
+		    error_message = 'Max dispatch attempts exceeded',
+		    completed_at = NOW()
+		WHERE status IN ('pending', 'acknowledged')
+		  AND dispatch_attempts >= $1
+		RETURNING id, tenant_id, payload, dispatch_attempts
+	`
+	rows, err := r.db.QueryContext(ctx, query, maxRetries)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mark exhausted commands as failed: %w", err)
+	}
+	defer rows.Close()
+	var out []*command.Command
+	for rows.Next() {
+		var (
+			id, tenantID string
+			payload      []byte
+			attempts     int
+		)
+		if err := rows.Scan(&id, &tenantID, &payload, &attempts); err != nil {
+			return nil, fmt.Errorf("failed to scan exhausted command: %w", err)
+		}
+		cid, _ := shared.IDFromString(id)
+		tid, _ := shared.IDFromString(tenantID)
+		out = append(out, &command.Command{
+			ID: cid, TenantID: tid, Payload: payload, DispatchAttempts: attempts,
+			Status: command.CommandStatusFailed, ErrorMessage: "Max dispatch attempts exceeded",
+		})
+	}
+	return out, rows.Err()
+}
+
 // GetStatsByTenant returns aggregated command statistics for a tenant in a single query.
 // This is optimized to avoid N queries when fetching stats.
 func (r *CommandRepository) GetStatsByTenant(ctx context.Context, tenantID shared.ID) (command.CommandStats, error) {

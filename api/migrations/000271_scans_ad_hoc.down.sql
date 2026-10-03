@@ -1,0 +1,1 @@
+ALTER TABLE scans DROP COLUMN IF EXISTS ad_hoc;

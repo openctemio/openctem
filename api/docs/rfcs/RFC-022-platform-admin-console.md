@@ -14,6 +14,9 @@
 > **Revision 6** (2026-10-02): organizations are created by the platform
 > administrator by default, and the installer creates the first one (see
 > [Revision 6](#revision-6-admin-only-organization-creation-and-the-first-organization)).
+> **Revision 7** (2026-10-02): a suspended owner still blocks the first-owner
+> bootstrap; a super admin's explicit owner recovery is the only exception (see
+> [Revision 7](#revision-7-suspended-owners-and-owner-recovery)).
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*, modeled on Tenable Security Center,
 > where the system administrator is an account with a system-level role and a
@@ -282,7 +285,8 @@ the system administrator manages organizations but cannot see their data.
 Owner decision, implemented here:
 
 - **Bootstrap only.** `POST /admin/tenants/{tenantId}/users` creates the first
-  owner of an organization that has **no active owner**, and nothing else. An
+  owner of an organization that has **no owner** (active or suspended, since
+  [revision 7](#revision-7-suspended-owners-and-owner-recovery)), and nothing else. An
   organization with an owner answers **409** ("its owner and administrators
   invite or create users themselves"). The request takes `email` and `name`;
   `role` may be omitted, anything but `owner` is a 400. The no-owner check and
@@ -353,6 +357,40 @@ First install: migrations → `bootstrap-admin -email … -backup-email …
 changes the temporary password and enrolls TOTP in `/admin` → the owner sets a
 password through the link → the owner adds users; the administrator configures
 the organization's SSO in the console.
+
+## Revision 7: suspended owners and owner recovery
+
+Revision 5 counted only **active** owners, so an organization whose owner was
+suspended looked owner-less: an `ops_admin` could create a new owner for an
+organization full of data and, without SMTP, receive its set-password link,
+which is the takeover revision 5 set out to prevent. Owner decision
+2026-10-02, implemented here:
+
+- **Any owner blocks the bootstrap.** An owner membership (by the `owner`
+  label or the system owner role), active **or suspended**, makes
+  `POST /admin/tenants/{tenantId}/users` answer 409. The check and the insert
+  stay in one transaction under the per-organization advisory lock.
+- **Explicit owner recovery.** When every owner is suspended nobody can
+  manage the organization, so the same endpoint takes `"recovery": true`:
+  - **super_admin only.** Any other console role gets 403. The route itself
+    stays ops_admin+, and the handler checks the role for a recovery request.
+  - **Only while no owner is active.** An active owner answers 409, with or
+    without the flag.
+  - **Email only.** The set-password link is emailed and **never** returned,
+    even when no SMTP is configured: the request is then refused with 400
+    before anything is created (configure SMTP first). A failed send is
+    reported as `email_failed` and the new owner uses forgot-password. The
+    administrator therefore never holds a credential for an organization that
+    has data.
+  - **Audited twice.** The admin audit row is written as
+    `organization.owner_recovery` at high severity, including refused
+    attempts. The organization's audit log gets `user.created` at **critical**
+    severity with `owner_recovery: true`, by actor `platform-admin:<email>`.
+- The suspended owners are left as they are. The new owner (or an
+  administrator they appoint) decides whether to reactivate or remove them.
+
+Still not provided: ownership transfer, or recovery for an organization whose
+owner is active but unreachable. Those need the owner's own action.
 
 ## Later phases
 
