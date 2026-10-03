@@ -12,8 +12,8 @@
 > [RFC-033](RFC-033-sensor-manifest.md) (manifest),
 > [RFC-034](RFC-034-sensor-network-egress.md) (egress profiles),
 > [RFC-036](RFC-036-easm.md) (EASM: seeds, attribution, observations, tiers)
-> and RFC-041 (API path conventions, `api/docs/architecture/api-conventions.md`,
-> open as #871). Working reference:
+> and [RFC-041](RFC-041-api-path-design.md) (API path conventions,
+> [api-conventions.md](../architecture/api-conventions.md)). Working reference:
 > [architecture/asset-inventory-v2.md](../architecture/asset-inventory-v2.md).
 > UI companion: `web/docs/ui/pd-inspired-inventory-integrations-2026-10.md`
 > (service cards, facet menu, group-by chips, integrations catalog), written
@@ -2086,7 +2086,7 @@ them"):
 
 ### 6.18 API summary
 
-These follow RFC-041 (#871):
+These follow [RFC-041](RFC-041-api-path-design.md):
 
 - `{snake_case_id}` path parameters;
 - the closed verb list;
