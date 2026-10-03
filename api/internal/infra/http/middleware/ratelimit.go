@@ -120,6 +120,13 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	return rl.keyedMiddleware(getClientIP)
 }
 
+// UserMiddleware returns the rate limiting middleware keyed by the
+// authenticated user (the client IP when there is none). Mount it after the
+// auth middleware.
+func (rl *RateLimiter) UserMiddleware() func(http.Handler) http.Handler {
+	return rl.keyedMiddleware(UserKeyFunc)
+}
+
 // keyedMiddleware rate limits by the bucket key returns. The client IP is
 // still what gets logged.
 func (rl *RateLimiter) keyedMiddleware(key func(*http.Request) string) func(http.Handler) http.Handler {

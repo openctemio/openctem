@@ -33,7 +33,6 @@ import { useBootstrapModules, useBootstrapContextSafe } from '@/context/bootstra
 import { matchRoutePermission } from '@/config/route-permissions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
 import { MainRegion } from '@/components/layout/main'
 
 interface RouteGuardProps {

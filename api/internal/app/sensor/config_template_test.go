@@ -124,7 +124,14 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 			"-e API_KEY='rda_4b1e0123456789abcdef'",
 			"-e SENSOR_TOOLS=nuclei,trivy",
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
-			"-v /etc/openctem/certs:/etc/openctem/certs:ro",
+			// The CA and the sensor-local policy both live under /etc/openctem,
+			// mounted read-only; the policy is required (fail closed).
+			"-v /etc/openctem:/etc/openctem:ro",
+			"sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml",
+			"-e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml",
+			// Hardened by default (RFC-040 §5.10).
+			"--read-only --cap-drop ALL --security-opt no-new-privileges:true",
+			"--tmpfs /tmp",
 			":/var/lib/openctem/outbox",
 			"-v dmz-scanner-01-state:/var/lib/openctem/state",
 			"-v dmz-scanner-01-content:/var/lib/openctem/content",
@@ -195,6 +202,10 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 				Restart     string            `yaml:"restart"`
 				Environment map[string]string `yaml:"environment"`
 				Volumes     []string          `yaml:"volumes"`
+				ReadOnly    bool              `yaml:"read_only"`
+				CapDrop     []string          `yaml:"cap_drop"`
+				SecurityOpt []string          `yaml:"security_opt"`
+				Tmpfs       []string          `yaml:"tmpfs"`
 				Configs     []struct {
 					Source string `yaml:"source"`
 					Target string `yaml:"target"`
@@ -226,9 +237,18 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		if !strings.Contains(c, "OPENCTEM_API_KEY=rda_4b1e0123456789abcdef") {
 			t.Errorf("[%s] compose does not say how to write .env with the key:\n%s", dir, c)
 		}
-		if len(s.Volumes) != 3 || !strings.HasSuffix(s.Volumes[0], ":/var/lib/openctem/outbox") ||
-			s.Volumes[1] != "state:/var/lib/openctem/state" || s.Volumes[2] != "content:/var/lib/openctem/content" {
-			t.Errorf("[%s] volumes = %v, want outbox, state and content", dir, s.Volumes)
+		if len(s.Volumes) != 4 || !strings.HasSuffix(s.Volumes[0], ":/var/lib/openctem/outbox") ||
+			s.Volumes[1] != "state:/var/lib/openctem/state" || s.Volumes[2] != "content:/var/lib/openctem/content" ||
+			s.Volumes[3] != "./policy:/etc/openctem/policy:ro" {
+			t.Errorf("[%s] volumes = %v, want outbox, state, content and the read-only policy", dir, s.Volumes)
+		}
+		// Hardened, with the sensor-local policy required (RFC-040).
+		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 1 ||
+			s.SecurityOpt[0] != "no-new-privileges:true" || len(s.Tmpfs) == 0 ||
+			s.Environment["SENSOR_LOCAL_POLICY"] != "/etc/openctem/policy/sensor-policy.yaml" ||
+			s.Environment["SENSOR_KILL_SWITCH_FILE"] != "/etc/openctem/policy/STOP" {
+			t.Errorf("[%s] hardening/policy: read_only=%v cap_drop=%v security_opt=%v tmpfs=%v env=%v", dir,
+				s.ReadOnly, s.CapDrop, s.SecurityOpt, s.Tmpfs, s.Environment)
 		}
 		for _, v := range []string{"outbox", "state", "content"} {
 			if _, ok := doc.Volumes[v]; !ok {

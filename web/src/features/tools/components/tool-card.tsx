@@ -31,6 +31,7 @@ import { ToolCategoryIcon, getCategoryBadgeColor } from './tool-category-icon'
 import { INSTALL_METHOD_DISPLAY_NAMES } from '@/lib/api/tool-types'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { safeHref, safeImageSrc } from '@/lib/safe-href'
+import Image from 'next/image'
 
 interface ToolCardProps {
   tool: Tool
@@ -64,6 +65,7 @@ export function ToolCard({
   const categoryName = getCategoryNameById(categories, tool.category_id)
   const categoryDisplayName = getCategoryDisplayNameById(categories, tool.category_id)
   const canWriteTools = useHasPermission(Permission.ToolsWrite)
+  const logoSrc = safeImageSrc(tool.logo_url)
   return (
     <Card
       className={cn(
@@ -76,11 +78,15 @@ export function ToolCard({
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="relative">
-              {tool.logo_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={safeImageSrc(tool.logo_url)}
+              {logoSrc ? (
+                // unoptimized: the logo URL is tenant/remote data; it must not be
+                // fetched through the Next image optimizer (no remotePatterns).
+                <Image
+                  src={logoSrc}
                   alt={tool.display_name}
+                  width={40}
+                  height={40}
+                  unoptimized
                   className="h-10 w-10 rounded-lg object-contain"
                 />
               ) : (

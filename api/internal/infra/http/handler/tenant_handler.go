@@ -1514,6 +1514,9 @@ type SecuritySettingsResponse struct {
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode string   `json:"email_verification_mode"`
+	// RequireSensorLocalPolicyForPrivateTargets: jobs with private targets
+	// go only to sensors that enforce a local policy (RFC-040 §5.7).
+	RequireSensorLocalPolicyForPrivateTargets bool `json:"require_sensor_local_policy_for_private_targets"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -1556,6 +1559,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
 			EmailVerificationMode: string(s.Security.EmailVerificationMode),
+			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 		},
 		API: APISettingsResponse{
 			APIKeyEnabled:           s.API.APIKeyEnabled,
@@ -1671,6 +1675,8 @@ type UpdateSecuritySettingsRequest struct {
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	// RequireSensorLocalPolicyForPrivateTargets: see SecuritySettingsResponse.
+	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1703,6 +1709,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		IPWhitelist:           req.IPWhitelist,
 		AllowedDomains:        req.AllowedDomains,
 		EmailVerificationMode: req.EmailVerificationMode,
+		RequireSensorLocalPolicyForPrivateTargets: req.RequireSensorLocalPolicyForPrivateTargets,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 	}

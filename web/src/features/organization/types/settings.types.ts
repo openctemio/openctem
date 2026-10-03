@@ -42,6 +42,11 @@ export interface SecuritySettings {
   allowed_domains: string[]
   email_verification_mode: EmailVerificationMode
   /**
+   * Jobs with private targets go only to sensors that enforce a sensor-local
+   * policy (api RFC-040 §5.7). Absent on APIs without it.
+   */
+  require_sensor_local_policy_for_private_targets?: boolean
+  /**
    * The caller's IP as the API sees it (read-only, GET only). Shown next to the
    * IP allowlist so an owner does not lock themselves out.
    */
@@ -54,6 +59,7 @@ export interface UpdateSecuritySettingsInput {
   ip_whitelist?: string[]
   allowed_domains?: string[]
   email_verification_mode?: EmailVerificationMode
+  require_sensor_local_policy_for_private_targets?: boolean
 }
 
 /**
