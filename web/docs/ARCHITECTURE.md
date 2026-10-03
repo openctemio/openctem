@@ -24,7 +24,7 @@
 │  │        Next.js Server (Edge/Node.js)            │   │
 │  │  - Server Components                             │   │
 │  │  - Server Actions                                │   │
-│  │  - proxy.ts (BFF proxy for /api/v1/*)            │   │
+│  │  - src/proxy.ts (per-request CSP nonce)          │   │
 │  │  - API Route Handlers                            │   │
 │  └─────────────────┬───────────────────────────────┘   │
 └────────────────────┼─────────────────────────────────────┘
@@ -480,8 +480,12 @@ The shared UI primitives worth knowing:
 - **`Can`** (`src/components/auth`) gates UI by permission and supports a `minRole`
   prop; route-level access is enforced by `RouteGuard` (module + permission, see
   `src/config/route-permissions.ts`).
-- **Routing:** Next.js 16 uses **`proxy.ts`** at the repo root for the `/api/v1/*`
-  BFF proxy — there is no `middleware.ts`.
+- **Routing:** the `/api/v1/*` BFF proxy is the route handler
+  `src/app/api/v1/[...path]/route.ts`. Next.js 16's **`src/proxy.ts`** (it must sit
+  next to `app/`; there is no `middleware.ts`) sets the per-request CSP nonce
+  (SECURITY.md §4.2). Its server-side auth redirect and locale detection helpers
+  (`src/lib/middleware`) are not wired: the file used to sit at the web root, where
+  Next.js never loaded it, and the client `RouteGuard` does the sign-in redirect.
 
 ---
 

@@ -26,6 +26,7 @@ import {
   useDeleteFindingEvidence,
   type FindingEvidenceNote,
 } from '../../api/use-finding-evidence'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 interface ManualEvidenceNotesSectionProps {
   findingId: string
@@ -73,15 +74,13 @@ function NoteCard({
         <div className="min-w-0 flex-1 space-y-2">
           <p className="text-sm whitespace-pre-wrap break-words">{note.description}</p>
           {hasUrl && (
-            <a
+            <SafeExternalLink
               href={note.url}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-sm text-blue-400 hover:underline break-all"
             >
               {note.url}
               <ExternalLink className="h-3 w-3 shrink-0" />
-            </a>
+            </SafeExternalLink>
           )}
           <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
             {note.type && (

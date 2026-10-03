@@ -60,6 +60,8 @@ import {
   OUTBOX_STATUS_CONFIG,
   OUTBOX_SEVERITY_CONFIG,
 } from '@/features/notifications/types/notification-outbox.types'
+import { safeHref } from '@/lib/safe-href'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 // Status icon mapping
 const STATUS_ICONS: Record<OutboxStatus, React.ElementType> = {
@@ -395,12 +397,12 @@ export default function NotificationOutboxPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {entry.url && (
+              {safeHref(entry.url) && (
                 <DropdownMenuItem asChild>
-                  <a href={entry.url} target="_blank" rel="noopener noreferrer">
+                  <SafeExternalLink href={entry.url}>
                     <ExternalLink className="me-2 h-4 w-4" />
                     View source
-                  </a>
+                  </SafeExternalLink>
                 </DropdownMenuItem>
               )}
               <Can permission={Permission.NotificationsWrite}>

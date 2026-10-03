@@ -1,6 +1,6 @@
 # RFC-044 — Issue definitions and findings
 
-> Status: **Proposed** (2026-10-03). Owner decisions D1–D9 in §12 are open.
+> Status: **Accepted** (2026-10-03; owner approved decisions D1–D9 as recommended, §12; #895).
 > Scope: api (catalog schema, ingest, prioritization, aggregation, routes),
 > web (Issues view, finding identifiers), ctis + sdk-go (identifiers on the
 > wire; separate repos, separate PRs).
@@ -498,7 +498,7 @@ Web:
 | Store definitions nested per finding (OCSF-style) | No catalog lifecycle, no aggregation key |
 | Per-tenant copy of the global catalog | Duplication; feeds would write N copies; research 11 lists it under *avoid* |
 
-## 12. Owner decisions
+## 12. Owner decisions (approved 2026-10-03, all as recommended)
 
 | # | Decision | Recommendation |
 |---|---|---|

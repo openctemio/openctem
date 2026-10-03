@@ -450,6 +450,15 @@ func (s *EmailService) NotifyPasswordChanged(ctx context.Context, userEmail, use
 	}()
 }
 
+// NotifySSOChangePending tells an organization owner that a platform
+// administrator proposed an SSO change that waits for their approval. summary
+// never contains a secret.
+func (s *EmailService) NotifySSOChangePending(ctx context.Context, ownerEmail, ownerName, orgName, summary string) {
+	s.sendSecurityNotice(ctx, ownerEmail, ownerName, "",
+		"An SSO change for "+orgName+" is waiting for your approval",
+		summary+" Review it under Settings > SSO approvals. If you did not expect this change, reject it.")
+}
+
 func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userName, ipAddress, subject, message string) {
 	if !s.IsConfigured() {
 		return

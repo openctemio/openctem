@@ -30,7 +30,14 @@ type SAMLHandler struct {
 	frontendURL string // origin the browser is redirected to after login
 	publicURL   string // configured public origin (APP_URL); see samlBaseURL
 	audit       *app.AuditService
+	changes     *app.SSOChangeService
 	logger      *logger.Logger
+}
+
+// SetChangeApproval routes SAML changes made from the platform admin console
+// through an owner's approval (RFC-022).
+func (h *SAMLHandler) SetChangeApproval(svc *app.SSOChangeService) {
+	h.changes = svc
 }
 
 // SetAuditService records SAML config changes in the organization's audit log.
@@ -266,7 +273,7 @@ func (h *SAMLHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 
 // SetConfig handles PUT /api/v1/settings/saml (JWT admin).
 // @Summary Set an organization's SAML config
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the change is stored as pending (202, SSOChangeResponse) and takes effect only after an owner approves it; an organization without an owner yet gets it applied directly (200).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -283,7 +290,7 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid JSON body").WriteJSON(w)
 		return
 	}
-	p, err := h.svc.UpsertConfig(r.Context(), tenantID, app.SAMLConfigInput{
+	in := app.SAMLConfigInput{
 		IDPEntityID:    body.IDPEntityID,
 		IDPSSOURL:      body.IDPSSOURL,
 		IDPCertificate: body.IDPCertificate,
@@ -291,14 +298,31 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 		DefaultRole:    body.DefaultRole,
 		AutoProvision:  body.AutoProvision,
 		Enabled:        body.Enabled,
-	})
-	if err != nil {
-		if errors.Is(err, shared.ErrValidation) {
-			apierror.BadRequest("invalid SAML configuration").WriteJSON(w)
+	}
+
+	// From the platform admin console the change waits for an owner of the
+	// organization, unless it has no owner yet (then SubmitSAML applies it).
+	var p *samldom.SAMLProvider
+	if by := ssoChangeRequester(r); by != nil {
+		if h.changes == nil {
+			writeSSOChangeApprovalUnavailable(w)
 			return
 		}
-		h.logger.Error("set saml config failed", "error", err)
-		apierror.InternalServerError("failed to save SAML configuration").WriteJSON(w)
+		res, serr := h.changes.SubmitSAML(r.Context(), tenantID, in, *by)
+		if serr != nil {
+			h.writeSetError(w, serr)
+			return
+		}
+		if !res.Applied {
+			writeSSOChangePending(w, r, h.audit, h.logger, res.Change)
+			return
+		}
+		p, err = h.svc.GetConfig(r.Context(), tenantID)
+	} else {
+		p, err = h.svc.UpsertConfig(r.Context(), tenantID, in)
+	}
+	if err != nil {
+		h.writeSetError(w, err)
 		return
 	}
 	logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
@@ -313,6 +337,15 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 			WithMetadata("auto_provision", p.AutoProvision()).
 			WithMetadata("enabled", p.Enabled()))
 	writeJSON(w, http.StatusOK, toSAMLConfigView(p))
+}
+
+func (h *SAMLHandler) writeSetError(w http.ResponseWriter, err error) {
+	if errors.Is(err, shared.ErrValidation) {
+		apierror.BadRequest("invalid SAML configuration").WriteJSON(w)
+		return
+	}
+	h.logger.Error("set saml config failed", "error", err)
+	apierror.InternalServerError("failed to save SAML configuration").WriteJSON(w)
 }
 
 // DeleteConfig handles DELETE /api/v1/settings/saml (JWT admin).
