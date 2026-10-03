@@ -764,7 +764,8 @@ only narrow it:
   (`max_concurrent_jobs`), the administrator's `max_concurrent_jobs` and the
   reported slots (`capacity.slots_total`, see "Load, capacity and release")
   that is set (RFC-033 §6.1)
-- not reported (old SDK): the administrator's values, unchanged
+- not reported (old SDK): the administrator's values, unchanged, except that
+  **dispatch sends such a sensor no tool**: a declared tool is unverified (see below)
 
 Storage (migration 000253): `reported_tools` (jsonb), `reported_tool_names`,
 `reported_capabilities`, `reported_max_jobs`, `reported_os`, `reported_arch`,
@@ -781,8 +782,14 @@ methods agree across a matrix of inputs.
 
 RFC-030's tool gate on the command poll, the claim, the doorbell count and
 the zone predicate (`sensorDispatchTools` in `command_repository.go`) reads
-`effective_tools`. A command that names a tool reaches only sensors whose
-effective tools include it.
+the sensor's **verified** tools: `effective_tools` when the sensor reported
+its tools, none when it never did. The selector, `FindAvailableWithTool`,
+`HasSensorForTool` (the trigger's availability check) and
+`GetAvailableToolsForTenant` use the same expression. A command that names a
+tool reaches only sensors whose own probe found it installed; a tool the
+administrator merely declared on a sensor that never reported gets no work
+(it used to, and failed with "scanner not found"). Tool-less and
+capability-scoped commands are unaffected.
 
 **Capacity vs slots** (Kubernetes' `capacity` vs `allocatable`). The reported
 `max_concurrent_jobs` is the sensor **operator's ceiling** (`SENSOR_MAX_JOBS`),
