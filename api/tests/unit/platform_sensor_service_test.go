@@ -121,8 +121,8 @@ func (m *mockSensorRepo) Update(_ context.Context, a *sensor.Sensor) error {
 	return nil
 }
 
-func (m *mockSensorRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
-	return nil
+func (m *mockSensorRepo) RetireInlineKey(_ context.Context, _ shared.ID, _ []string, _ time.Time) (bool, error) {
+	return false, nil
 }
 
 func (m *mockSensorRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb sensor.HeartbeatUpdate) (bool, error) {

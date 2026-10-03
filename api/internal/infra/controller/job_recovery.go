@@ -2,9 +2,12 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -50,7 +53,20 @@ type JobRecoveryController struct {
 	commandRepo command.Repository
 	config      *JobRecoveryControllerConfig
 	logger      *logger.Logger
+	steps       StepFailureNotifier
 }
+
+// StepFailureNotifier is told when a pipeline step's command died here.
+// Satisfied by the pipeline service.
+type StepFailureNotifier interface {
+	OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error
+}
+
+// SetStepFailureNotifier wires the pipeline: a command failed for exhausting
+// its dispatch attempts then fails its step (and settles the run) right away,
+// instead of the run hanging until the run timeout reports a generic
+// "no result reported before timeout".
+func (c *JobRecoveryController) SetStepFailureNotifier(n StepFailureNotifier) { c.steps = n }
 
 // NewJobRecoveryController creates a new JobRecoveryController.
 func NewJobRecoveryController(
@@ -197,7 +213,20 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 		}
 	}
 
-	// Step 3: Fail commands that have exceeded max retry attempts
+	// Step 3: Fail commands that have exceeded max retry attempts, and tell
+	// their pipeline runs (poison commands).
+	if failer, ok := c.commandRepo.(command.ExhaustedFailer); ok && c.steps != nil {
+		failed, err := failer.FailExhaustedCommandsReturning(ctx, c.config.MaxRetries)
+		if err != nil {
+			c.logger.Error("failed to mark exhausted commands as failed", "error", err)
+		} else if len(failed) > 0 {
+			c.logger.Info("marked exhausted commands as failed",
+				"count", len(failed), "max_retries", c.config.MaxRetries)
+			c.notifyExhausted(ctx, failed)
+			totalProcessed += len(failed)
+		}
+		return totalProcessed, nil
+	}
 	failedExhausted, err := c.commandRepo.FailExhaustedCommands(ctx, c.config.MaxRetries)
 	if err != nil {
 		c.logger.Error("failed to mark exhausted commands as failed",
@@ -213,4 +242,19 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	}
 
 	return totalProcessed, nil
+}
+
+// notifyExhausted fails the pipeline step of each exhausted command.
+func (c *JobRecoveryController) notifyExhausted(ctx context.Context, failed []*command.Command) {
+	for _, cmd := range failed {
+		var p pipeline.StepCommandPayload
+		if err := json.Unmarshal(cmd.Payload, &p); err != nil || !p.IsRoutable() {
+			continue // not a pipeline command
+		}
+		msg := fmt.Sprintf("the command was handed to a sensor %d times and never finished (max dispatch attempts exceeded)", cmd.DispatchAttempts)
+		if err := c.steps.OnStepFailed(ctx, p.PipelineRunID, p.StepKey, msg, pipeline.FailureCommandExhausted); err != nil {
+			c.logger.Error("failed to fail the pipeline step of an exhausted command",
+				"command_id", cmd.ID.String(), "pipeline_run_id", p.PipelineRunID, "step_key", p.StepKey, "error", err)
+		}
+	}
 }

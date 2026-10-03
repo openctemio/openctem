@@ -62,7 +62,7 @@ export function MembersTab({
   const totalPages = Math.ceil(totalCount / limit)
 
   return (
-    <div className="mt-4">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-medium">Group Members ({totalCount})</h4>
         <Button size="sm" onClick={onAddMember}>
@@ -107,13 +107,13 @@ export function MembersTab({
                 key={key}
                 className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
               >
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-9 w-9">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar className="h-9 w-9 shrink-0">
                     <AvatarFallback className="text-xs">{initials}</AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="font-medium text-sm">{name}</p>
-                    <p className="text-xs text-muted-foreground">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium break-words">{name}</p>
+                    <p className="text-xs break-all text-muted-foreground">
                       {email}
                       {(member.added_by_name || member.added_by) && (
                         <span className="ms-1 text-xs text-muted-foreground/60">
@@ -123,8 +123,8 @@ export function MembersTab({
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className={`${roleConfig.bgColor} ${roleConfig.color} border-0 text-xs`}>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
                     {member.role === 'owner' && <Crown className="h-3 w-3 me-1" />}
                     {member.role === 'lead' && <Crown className="h-3 w-3 me-1" />}
                     {member.role === 'member' && <User className="h-3 w-3 me-1" />}

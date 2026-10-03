@@ -114,6 +114,10 @@ type AdminCreateOrgUserRequest struct {
 	Email string `json:"email" validate:"required,email,max=254"`
 	Name  string `json:"name" validate:"max=255"`
 	Role  string `json:"role" validate:"omitempty,oneof=owner"`
+	// Recovery creates a new owner for an organization whose owners are all
+	// suspended. Super admin only; the set-password link is emailed and
+	// never returned; refused while any owner is active.
+	Recovery bool `json:"recovery,omitempty"`
 }
 
 // AdminOrgUserResponse is one member of an organization in the console.
@@ -341,7 +345,7 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 
 // CreateUser handles POST /api/v1/admin/tenants/{tenantId}/users.
 // @Summary Create the first owner of an organization (platform admin)
-// @Description Bootstrap only: creates the owner of an organization that has no active owner, and nothing else (409 when it has one: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log.
+// @Description Bootstrap only: creates the owner of an organization that has no owner, and nothing else (409 when it has one, active or suspended: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log. With "recovery": true (super admin only, 403 otherwise) it creates a new owner of an organization whose owners are all suspended (409 while any owner is active); the link is then emailed only and never returned (400 when the organization cannot send email), and the action is audited as organization.owner_recovery in the admin audit log and at critical severity in the organization's audit log.
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
@@ -349,6 +353,7 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 // @Param request body AdminCreateOrgUserRequest true "First owner"
 // @Success 201 {object} ProvisionedUserResponse
 // @Failure 400 {object} apierror.Error "Bad Request"
+// @Failure 403 {object} apierror.Error "Owner recovery by an administrator who is not a super admin"
 // @Failure 409 {object} apierror.Error "Organization already has an owner, or the account exists"
 // @Security BearerAuth
 // @Router /admin/tenants/{tenantId}/users [post]
@@ -371,11 +376,24 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
-	result, err := h.provisioning.CreateFirstOwner(r.Context(), id.String(), req.Email, req.Name, adminAuditContext(r, id.String()))
+	create := h.provisioning.CreateFirstOwner
+	if req.Recovery {
+		// Owner recovery overrides a suspended owner's hold on the
+		// organization: super admin only, and audited under its own action.
+		middleware.SetAuditAction(r.Context(), "organization.owner_recovery", true)
+		if middleware.GetAdminRole(r.Context()) != string(admin.AdminRoleSuperAdmin) {
+			apierror.Forbidden("Owner recovery requires the super admin role.").WriteJSON(w)
+			return
+		}
+		create = h.provisioning.RecoverOwner
+	}
+	result, err := create(r.Context(), id.String(), req.Email, req.Name, adminAuditContext(r, id.String()))
 	if err != nil {
 		switch {
+		case errors.Is(err, tenant.ErrOrganizationHasOwner) && req.Recovery:
+			apierror.Conflict("This organization has an active owner. Owner recovery is only for an organization whose owners are all suspended.").WriteJSON(w)
 		case errors.Is(err, tenant.ErrOrganizationHasOwner):
-			apierror.Conflict("This organization already has an owner. Its owner and administrators invite or create users themselves.").WriteJSON(w)
+			apierror.Conflict("This organization already has an owner (active or suspended). Its owner and administrators invite or create users themselves; if every owner is suspended, a super admin can use owner recovery.").WriteJSON(w)
 		case errors.Is(err, tenant.ErrPlatformAdminMembership):
 			apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
 		case errors.Is(err, app.ErrAccountExists):
