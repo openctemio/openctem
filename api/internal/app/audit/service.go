@@ -1147,6 +1147,20 @@ func (s *AuditService) LogSensorRevoked(ctx context.Context, actx AuditContext, 
 	return s.LogEvent(ctx, actx, event)
 }
 
+// LogSensorCommandsReleased logs the platform taking back the commands a
+// sensor held when it was revoked or disabled (RFC-040 §5.2): requeued went
+// back to the queue, failed were addressed to that sensor only.
+func (s *AuditService) LogSensorCommandsReleased(ctx context.Context, actx AuditContext, sensorID, sensorName, why string, requeued, failed []string) error {
+	event := NewSuccessEvent(auditdom.ActionSensorCommandsReleased, auditdom.ResourceTypeSensor, sensorID).
+		WithResourceName(sensorName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Sensor '%s' %s: %d held commands re-queued, %d failed", sensorName, why, len(requeued), len(failed))).
+		WithMetadata("trigger", why).
+		WithMetadata("requeued_command_ids", requeued).
+		WithMetadata("failed_command_ids", failed)
+	return s.LogEvent(ctx, actx, event)
+}
+
 // LogSensorKeyRegenerated logs a sensor API key regeneration event.
 func (s *AuditService) LogSensorKeyRegenerated(ctx context.Context, actx AuditContext, sensorID, sensorName string) error {
 	event := NewSuccessEvent(auditdom.ActionSensorKeyRegenerated, auditdom.ResourceTypeSensor, sensorID).
@@ -1159,12 +1173,26 @@ func (s *AuditService) LogSensorKeyRegenerated(ctx context.Context, actx AuditCo
 // LogSensorKeyRenewed logs a sensor rotating its own API key (POST /agent/renew).
 // overlap is true when the renewed key was issued as an additional key row so
 // the superseded key keeps working until its own expiry (rotation overlap).
-func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContext, sensorID, sensorName string, expiresAt *time.Time, overlap bool) error {
+//
+// The new key is always an octs_ key. fromLegacy marks the renewal that moved
+// the sensor off a legacy rda_ key: the metadata then carries
+// previous_key_format "rda" and upgraded_from_legacy_key true. Only format
+// names are recorded, never key material (not even a prefix).
+func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContext, sensorID, sensorName string, expiresAt *time.Time, overlap, fromLegacy bool) error {
+	msg := fmt.Sprintf("Sensor '%s' renewed its API key", sensorName)
+	previous := "octs"
+	if fromLegacy {
+		msg = fmt.Sprintf("Sensor '%s' renewed its API key and moved from a legacy rda_ key to the octs_ format", sensorName)
+		previous = "rda"
+	}
 	event := NewSuccessEvent(auditdom.ActionSensorKeyRenewed, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithSeverity(auditdom.SeverityMedium).
-		WithMessage(fmt.Sprintf("Sensor '%s' renewed its API key", sensorName)).
-		WithMetadata("overlap", overlap)
+		WithMessage(msg).
+		WithMetadata("overlap", overlap).
+		WithMetadata("key_format", "octs").
+		WithMetadata("previous_key_format", previous).
+		WithMetadata("upgraded_from_legacy_key", fromLegacy)
 	if expiresAt != nil {
 		event = event.WithMetadata("expires_at", expiresAt.UTC().Format(time.RFC3339))
 	}

@@ -28,6 +28,13 @@ func sensorActiveKeySQL(alias string) string {
 		  LIMIT 1)`
 }
 
+// sensorLegacyKeySQL is true when the sensor's effective key (the current
+// rotating key from sensorActiveKeySQL, else the inline key) is a legacy rda_
+// key: the SQL side of sensor.Sensor.IsLegacyKey.
+func sensorLegacyKeySQL(alias string) string {
+	return `(COALESCE(` + sensorActiveKeySQL(alias) + `->>'prefix', ` + alias + `.api_key_prefix) LIKE 'rda\_%')`
+}
+
 // sensorKeyUsableSQL is true when the sensor holds at least one credential
 // that still authenticates: an unexpired inline key, or an active,
 // non-revoked, unexpired rotating key. This is what dispatch must check;

@@ -283,6 +283,11 @@ export interface Sensor {
   last_offline_at?: string | null
   /** When the current API key stops working; null = never. */
   key_expires_at?: string | null
+  /**
+   * The current key is a legacy `rda_` key. It renews automatically to the
+   * `octs_` format; `rda_` keys are retired after enrollment ships.
+   */
+  legacy_key?: boolean
   /** Process start, from the uptime the heartbeat reports. */
   started_at?: string | null
   uptime_seconds?: number | null

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { Asset } from '../types'
-import { certDaysLeft, certIssuer, certStatus, httpStatus, websiteTLS } from './certificate-facts'
+import {
+  certDaysLeft,
+  certIsWildcard,
+  certIssuer,
+  certKeySize,
+  certSans,
+  certStatus,
+  certSubject,
+} from './certificate-facts'
 
 const NOW = Date.parse('2026-10-01T00:00:00Z')
 const DAY = 24 * 60 * 60 * 1000
@@ -42,17 +50,26 @@ describe('certIssuer', () => {
   })
 })
 
-describe('website facts', () => {
-  it('has no HTTP status unless one was recorded (never a default 200)', () => {
-    expect(httpStatus(asset({}))).toBeNull()
-    expect(httpStatus(asset({ http_status: 404 }))).toBe(404)
-    expect(httpStatus(asset({ status_code: '301' }))).toBe(301)
+describe('certificate details', () => {
+  it('reads the ingest map as well as the form keys', () => {
+    const ingest = asset({
+      certificate: {
+        subject_cn: '*.example.com',
+        sans: ['*.example.com', 'example.com'],
+        key_size: 2048,
+      },
+    })
+    expect(certSubject(ingest)).toBe('*.example.com')
+    expect(certSans(ingest)).toEqual(['*.example.com', 'example.com'])
+    expect(certKeySize(ingest)).toBe(2048)
+    expect(certIsWildcard(ingest)).toBe(true)
+
+    const form = asset({ cert_subject: 'CN=a', cert_sans: 'a.example.com, b.example.com' })
+    expect(certSans(form)).toEqual(['a.example.com', 'b.example.com'])
   })
 
-  it('reports TLS only as recorded, else unknown (never "insecure")', () => {
-    expect(websiteTLS(asset({}, 'https://shop.example.com'))).toBeNull()
-    expect(websiteTLS(asset({ ssl: false }))).toBe(false)
-    expect(websiteTLS(asset({ ssl: true }))).toBe(true)
-    expect(websiteTLS(asset({ tls: true }))).toBe(true)
+  it('does not say "not a wildcard" when nothing is known', () => {
+    expect(certIsWildcard(asset({}))).toBeNull()
+    expect(certKeySize(asset({}))).toBeNull()
   })
 })

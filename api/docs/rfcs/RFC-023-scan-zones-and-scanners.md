@@ -8,6 +8,10 @@
 > architecture: [scan-zones.md](../architecture/scan-zones.md), which also
 > holds the UI contract). Zones UI pending.
 > Scope: api + agent + ui (+ sdk-go for job verification).
+> Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
+> specifies who signs jobs (D9, P5, P6: a separate signer with its own
+> scope ledger and two-person widening) and turns D8 into a sensor-local
+> policy file.
 > OpenCTEM is an open platform: anyone can build tools, agents, connectors and
 > collectors with the SDK and push results in. Zones and every security control
 > here are therefore defined at the **protocol** level and implemented once in

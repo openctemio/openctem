@@ -43,3 +43,15 @@ func (SensorHeartbeatMetrics) ObserveHeartbeatGap(gap, interval time.Duration) {
 		sensorHeartbeatGapRatio.Observe(gap.Seconds() / interval.Seconds())
 	}
 }
+
+// sensorLegacyKeys is the number of non-revoked sensors still on a legacy
+// rda_ key (RFC-032 revision 2026-10-03). It falls as sensors renew onto
+// octs_ keys; it must reach zero before the rda_ sunset. Set by the sensor
+// health checker on each pass.
+var sensorLegacyKeys = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "openctem_sensor_legacy_keys",
+	Help: "Non-revoked sensors whose current API key is a legacy rda_ key (moves to octs_ on renewal).",
+})
+
+// SetSensorLegacyKeys records the number of sensors still on an rda_ key.
+func SetSensorLegacyKeys(n int64) { sensorLegacyKeys.Set(float64(n)) }

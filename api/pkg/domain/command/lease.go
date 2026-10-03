@@ -43,6 +43,39 @@ type RequeuedCommand struct {
 	Epoch    int
 }
 
+// ReleasedCommand is a command taken back from a sensor that was revoked or
+// disabled while it held it (RFC-040 §5.2, "revocation reaches running work").
+type ReleasedCommand struct {
+	ID   shared.ID
+	Type CommandType
+	// PrevStatus is the state the sensor held it in (acknowledged or
+	// running); Epoch the lease epoch it held.
+	PrevStatus CommandStatus
+	Epoch      int
+	// Requeued is true when the command went back to the queue for another
+	// sensor, false when it was failed because it was addressed to that
+	// sensor only.
+	Requeued bool
+}
+
+// HolderReleaser takes back, at once, every command a sensor holds under a
+// lease, when the sensor stops being trusted (revoked or disabled):
+// routed scan work is re-queued for another sensor, anything addressed to
+// that sensor only is failed with failMessage. Either way the old holder no
+// longer holds it, so its late start, complete or fail is refused by the
+// fence (FencedUpdate).
+type HolderReleaser interface {
+	ReleaseHeldBySensor(ctx context.Context, tenantID, sensorID shared.ID, requeueMessage, failMessage string) ([]ReleasedCommand, error)
+}
+
+// Messages stored on commands taken back from a revoked or disabled sensor.
+const (
+	SensorRevokedRequeuedMessage  = "re-queued: the sensor holding it was revoked"
+	SensorRevokedFailedMessage    = "failed: the sensor it was addressed to was revoked while holding it"
+	SensorDisabledRequeuedMessage = "re-queued: the sensor holding it was disabled"
+	SensorDisabledFailedMessage   = "failed: the sensor it was addressed to was disabled while holding it"
+)
+
 // Fence is what a sensor-side state change expects to still be true: the
 // command is held by SensorID, in Status, under lease epoch Epoch.
 type Fence struct {
