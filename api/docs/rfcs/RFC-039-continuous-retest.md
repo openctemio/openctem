@@ -1,6 +1,6 @@
 # RFC-039 — Continuous retest with regression reopen
 
-> Status: **Proposed** (2026-10-03, #866; Phase 1 implementation #867).
+> Status: **Proposed — decisions approved** (owner, 2026-10-03; #866; Phase 1 implementation #867).
 > Scope: api (retest service, scheduler, ingest regression path, routes) + web
 > (Retest now, last-retest status). No sensor or sdk-go change in Phase 1.
 > Builds on [RFC-011](RFC-011-validation-engine-dispatch.md) /
@@ -425,28 +425,20 @@ Manual Retest now is available whenever a `validate:nuclei` sensor is online.
 | P2 | port/service, TLS and DNS check kinds; ticket comment + notification on fixed/regression; SLA restart decision; web settings page and an auto-retest column/filter; fix D-a/D-b for `/validate` (reach guard) |
 | P3 | retests as `pipeline_runs(kind = retest)` with scan-zone routing and coverage `partial`, once RFC-038 typed settings and scans P1 land; CVE→template resolver; asset-group-scoped auto-retest policies |
 
-## 10. Owner decisions (recommendations in bold)
+## 10. Owner decisions — approved 2026-10-03
 
-- **D1. Clean retest of an open finding: `resolved` or `validated_fixed`?**
-  RFC-011.2 chose `validated_fixed` (human closes) for its validation path.
-  **Recommend `resolved`** for retests: the check is the finding's own template,
-  the target was proven reachable, scan auto-resolve already closes findings on
-  mere absence, and PD's model is "sets Fixed". Alternative: a per-tenant toggle.
-- **D2. SLA on regression:** keep the original deadline (today) or **start a
-  fresh SLA from the reopen** (recommended: an overdue-at-birth regression hides
-  the new exposure window in metrics).
-- **D3. Fix D-a/D-b in `/validate`** with the same reach guard and a nuclei-only
-  proof of fix (recommended, P2) — or retire `/validate` re-verify in favour of
-  retest.
-- **D4. Retire "Request verification scan"** (whole-asset quick scan, not linked
-  to the finding, offered by the web for statuses the API rejects) in favour of
-  Retest now (**recommended**).
-- **D5. `fix_applied` re-detected by a scan:** move back to `in_progress` only
-  when the scan started after the fix was claimed (needs a `fix_applied_at`), or
-  **leave it to retest/proof-of-fix** (recommended for now).
-- **D6. Auto-retest default** stays off until scans P1; then **on for new
-  tenants**, off for existing until an admin opts in.
-- **D7. Limits** in §8.1 — confirm or adjust.
+| # | Question | Decision |
+|---|---|---|
+| D1 | Clean retest of an open finding | **Resolves it** (`resolution_method = retest_verified`). Shipped in P1 (#867). |
+| D2 | SLA on a regression | **Fresh SLA deadline** from the reopen, computed by the tenant's SLA policy; the reason and the previous deadline are recorded on the finding's activity. Phase 2. |
+| D3 | `/validate` defects D-a / D-b | **Fix them**: an unreachable host is unknown, never fixed; a safe-check (reachability) result never moves a finding. Phase 2. |
+| D4 | "Request verification scan" | **Retired** in favour of Retest now. Phase 2. |
+| D5 | `fix_applied` re-detected by a scan | **Left to retest and proof of fix** (no change to ingest). |
+| D6 | Auto-retest default | **Off** for every tenant; turned on for new tenants after scans P1 (HA claims, leases) lands. |
+| D7 | Limits | **Kept as in §8.1**: 1 pending per finding, 10 min cooldown, 3 per asset, 20 manual / 50 auto per tenant. |
+
+Phase 2 also adds the ticket comment and the notification on a regression or a
+fix (§7.4, §7.5).
 
 ## 11. Alternatives considered
 
