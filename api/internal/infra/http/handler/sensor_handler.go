@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -43,9 +44,24 @@ type SensorHandler struct {
 	// contentPolicies supplies the tenant's scanner content policy for the
 	// content view and health (RFC-031); nil uses the platform default.
 	contentPolicies ContentPolicySource
-	now             func() time.Time
-	validator       *validator.Validator
-	logger          *logger.Logger
+	// zones lists the tenant's scan zones, to prefill the sensor-local
+	// policy template with the sensor's ranges; nil leaves them out.
+	zones     ZoneLister
+	now       func() time.Time
+	validator *validator.Validator
+	logger    *logger.Logger
+}
+
+// ZoneLister lists a tenant's scan zones with their assigned sensors.
+// Satisfied by the scan zone repository.
+type ZoneLister interface {
+	List(ctx context.Context, tenantID shared.ID) ([]*scanzone.Zone, error)
+}
+
+// SetZoneLister makes the install snippets prefill the sensor-local policy
+// with the ranges of the sensor's scan zones (RFC-040 §5.7).
+func (h *SensorHandler) SetZoneLister(z ZoneLister) {
+	h.zones = z
 }
 
 // NewSensorHandler creates a new SensorHandler.
@@ -276,6 +292,35 @@ type SensorResponse struct {
 	ManifestDigest string  `json:"manifest_digest"`
 	ManifestAt     *string `json:"manifest_at"`
 	ManifestSource string  `json:"manifest_source" enums:",sensor,heartbeat"`
+
+	// LocalPolicy is the sensor-local policy the sensor reports (RFC-040
+	// §5.7): enforced on the sensor, shown here. Always present; state
+	// "unknown" when the sensor never reported one.
+	LocalPolicy SensorLocalPolicyResponse `json:"local_policy"`
+}
+
+// SensorLocalPolicyResponse is a sensor's local policy as the console shows
+// it. State is the display state: paused while the kill switch is engaged,
+// unknown for a sensor that never reported (an SDK before RFC-040).
+type SensorLocalPolicyResponse struct {
+	State      string                     `json:"state" enums:"enforced,absent,paused,unknown"`
+	Source     string                     `json:"source,omitempty" enums:",file,env"`
+	Digest     string                     `json:"digest,omitempty"`
+	KillSwitch bool                       `json:"kill_switch"`
+	Summary    *sensor.LocalPolicySummary `json:"summary,omitempty"`
+	Warnings   []string                   `json:"warnings,omitempty"`
+	ReportedAt *string                    `json:"reported_at,omitempty"`
+}
+
+// localPolicyResponse is the console view of a sensor's local policy report.
+func localPolicyResponse(a *sensor.Sensor) SensorLocalPolicyResponse {
+	r := a.LocalPolicy
+	out := SensorLocalPolicyResponse{State: r.DisplayState(), ReportedAt: rfc3339Ptr(a.LocalPolicyReportedAt)}
+	if r == nil {
+		return out
+	}
+	out.Source, out.Digest, out.KillSwitch, out.Summary, out.Warnings = r.Source, r.Digest, r.KillSwitch, r.Summary, r.Warnings
+	return out
 }
 
 // SensorContentResponse is one piece of scanner content on a sensor. The
@@ -1077,6 +1122,7 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 	}
 	resp.ManifestDigest, resp.ManifestSource = a.ManifestDigest, a.ManifestSource
 	resp.ManifestAt = rfc3339Ptr(a.ManifestAt)
+	resp.LocalPolicy = localPolicyResponse(a)
 
 	return resp
 }
@@ -1219,6 +1265,10 @@ type SensorConfigTemplatesResponse struct {
 	Compose    string `json:"compose"`
 	Kubernetes string `json:"kubernetes"`
 	Helm       string `json:"helm"`
+	// Policy is the sensor-local policy template (sensor-policy.yaml, RFC-040
+	// §5.7), prefilled with the ranges of the sensor's scan zones, for the
+	// network owner to review and install read-only on the sensor host.
+	Policy string `json:"policy"`
 	// Image is the sensor image the snippets run, with its pinned tag.
 	Image string `json:"image"`
 	// APIURL is the platform URL the snippets point the sensor at.
@@ -1305,13 +1355,22 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 			"path", h.caCertFile, "error", caErr)
 	}
 
-	rendered, err := h.templateService.Render(app.SensorTemplateData{
+	data := app.SensorTemplateData{
 		Sensor:  a,
 		APIKey:  apiKey,
 		BaseURL: baseURL,
 		Image:   image,
 		CACert:  caPEM,
-	})
+	}
+	if h.zones != nil && a.TenantID != nil {
+		// Best effort: without zones the policy template asks for ranges.
+		if zones, zerr := h.zones.List(r.Context(), *a.TenantID); zerr == nil {
+			data.Policy = app.PolicyFromZones(zones, a.ID)
+		} else {
+			h.logger.Warn("scan zones not read for the policy template", "error", logger.SanitizeError(zerr))
+		}
+	}
+	rendered, err := h.templateService.Render(data)
 	if err != nil {
 		h.logger.Error("failed to render sensor config templates", "error", logger.SanitizeError(err), "sensor_id", logger.SanitizeValue(sensorID))
 		apierror.InternalError(err).WriteJSON(w)
@@ -1326,6 +1385,7 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 		Compose:             rendered.Compose,
 		Kubernetes:          rendered.Kubernetes,
 		Helm:                rendered.Helm,
+		Policy:              rendered.Policy,
 		Image:               image,
 		APIURL:              baseURL,
 		APIKeyIncluded:      apiKey != "",

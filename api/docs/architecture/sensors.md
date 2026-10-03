@@ -1147,6 +1147,63 @@ A sensor holds every command it claims under a **lease** (migration 000260:
   (`recover_stuck_tenant_commands`) only handles commands without a lease
   (claimed before migration 000260).
 
+## Sensor-local policy (RFC-040 §5.7)
+
+The owner of the scanned network installs a read-only policy file on the
+sensor host (`/etc/openctem/sensor-policy.yaml`, `SENSOR_LOCAL_POLICY`; keys
+and semantics in the sensor repository, `docs/LOCAL_POLICY.md`). The sensor
+(sdk-go `core.LocalPolicy`) refuses every job outside it, even one the
+platform sent; the platform cannot change it. The platform side only shows it
+and narrows dispatch:
+
+- **Hello feature `local_policy`.** Listed whenever heartbeats are served.
+  SDKs that see it add `local_policy` to the heartbeat and the manifest:
+  `state` (`enforced`, `absent`), `source`, `digest`, a `summary` (counts of
+  allow and deny entries, private yes/no, ports, tools, job types, the
+  custom-template and interactsh switches, rate caps; never the ranges),
+  `kill_switch` and `warnings`. Older SDKs send nothing.
+- **Storage.** `sensors.reported_local_policy` (JSONB, migration 000298) and
+  `local_policy_reported_at`, sanitized at ingest
+  (`sensor.SanitizeLocalPolicyReport`: known states only, digest format,
+  bounded lists and warnings, control and bidi characters removed). A slim
+  heartbeat carries only state, digest and kill switch; the stored summary of
+  the same policy is kept (`MergeLocalPolicyReport`). The manifest's report
+  is stored too (it has the summary), keeping the heartbeat's live kill
+  switch.
+- **Sensor page.** `GET /sensors/{id}` returns `local_policy` with the display
+  state `enforced`, `absent`, `paused` (kill switch engaged) or `unknown`
+  (never reported); the detail sheet's Local policy section shows it with the
+  digest and summary.
+- **Timeline.** `local_policy_changed` (updates) when the state, digest or
+  kill switch changes.
+- **Refusals (detection A11).** A job the sensor refused fails with
+  `refused by local policy: <rule>: <detail>`. `command.Service.Fail` hands
+  every failure to `SensorService.ObserveLocalPolicyRefusal`, which records a
+  `job_refused_local_policy` job event (identical rules fold within the event
+  window) and, once per folded burst, the audit action
+  `sensor.job_refused_local_policy` (severity high).
+- **Tenant switch.** Security settings
+  `require_sensor_local_policy_for_private_targets` (default off, owner
+  decision Q3 (a)). On, a sensor that does not enforce a policy (absent,
+  unknown, or paused) neither sees in its poll nor can claim a command whose
+  payload names a private, loopback, link-local or CGNAT address, a range
+  overlapping one, or a private-namespace host name (`.local`, `.internal`,
+  `.lan`, `.corp`, `.home.arpa`, ...); the claim answers "claimed" so the
+  command waits for a qualifying sensor. Names that resolve to private
+  addresses in public DNS are not detected here; the sensor's own policy
+  covers them. An unreadable tenant setting withholds (fail closed).
+- **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
+  sensor-policy/v1 template (`configs/sensor-templates/policy.tmpl`)
+  prefilled with the ranges of the sensor's scan zones (none for a sensor in
+  the default zone, which scans public targets), tools from the sensor, and
+  custom templates and interactsh off. The docker, Compose and Kubernetes
+  snippets mount it read-only and require it (`SENSOR_LOCAL_POLICY`), set
+  `SENSOR_ALLOW_PRIVATE_TARGETS=1` when a zone range is private, and run the
+  sensor hardened (read-only root filesystem, all capabilities dropped, no
+  privilege escalation, seccomp RuntimeDefault, writable tmpfs/emptyDir
+  scratch directories). The Helm snippet turns on `sensor.localPolicy` of
+  chart 0.11.0.
+
 ## Network egress and proxies (RFC-034, proposed)
 
 > Design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md). Status:

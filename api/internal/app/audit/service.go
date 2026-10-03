@@ -1223,6 +1223,19 @@ func (s *AuditService) LogSensorIdentityCloned(ctx context.Context, actx AuditCo
 	return s.LogEvent(ctx, actx, event)
 }
 
+// LogSensorJobRefusedByLocalPolicy records a sensor refusing a job under the
+// local policy its network owner installed (RFC-040 detection A11). Severity
+// high: the platform asked the sensor for something the owner forbids.
+func (s *AuditService) LogSensorJobRefusedByLocalPolicy(ctx context.Context, actx AuditContext, sensorID, sensorName, commandID, rule string) error {
+	event := NewSuccessEvent(auditdom.ActionSensorJobRefusedByLocalPolicy, auditdom.ResourceTypeSensor, sensorID).
+		WithResourceName(sensorName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Sensor '%s' refused a job under its local policy (%s)", sensorName, rule)).
+		WithMetadata("command_id", commandID).
+		WithMetadata("rule", rule)
+	return s.LogEvent(ctx, actx, event)
+}
+
 // LogAPIKeyCreated logs the creation of a tenant `oct_` API key. Only the key
 // id, name and granted scopes are recorded — nothing derived from the secret
 // (the hash-chained audit row must not carry key material, not even a prefix).

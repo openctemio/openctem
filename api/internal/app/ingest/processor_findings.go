@@ -345,6 +345,15 @@ func (p *FindingProcessor) processBatch(
 		return nil
 	}
 
+	// Step 1b: a network finding without a CVE used to be keyed without its
+	// port (RFC-043 P0). Hand a row stored under that old key to the first port
+	// in this batch that reports it, so its triage carries over before the
+	// existence check below sees the new key.
+	p.adoptLegacyPortlessFingerprints(ctx, tenantID, validFindingsLegacy(validFindings, func(fm findingMeta) (string, string, string) {
+		legacy := legacyPortlessFingerprint(fm.assetID, &fm.finding)
+		return legacy, fm.fingerprint, fm.base
+	}))
+
 	// Step 2: Batch check existing fingerprints
 	existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, fingerprints)
 	if err != nil {
@@ -721,6 +730,13 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 		// applies the matching type-aware algorithm (plain Generate would key
 		// everything by the generic location-based scheme).
 		baseFingerprint = fingerprint.GenerateAuto(input)
+
+		// The generic recipe has no port: one scanner plugin without a CVE on
+		// ports 443 and 8443 of a host was a single finding (RFC-043 P0). Key a
+		// port-specific generic finding on its port and transport as well.
+		if pp := genericNetworkPort(ctisFinding, input); pp != "" {
+			baseFingerprint = fingerprint.Hash("netport:" + pp + ":" + baseFingerprint)
+		}
 	}
 
 	// Create composite fingerprint including assetID
@@ -886,7 +902,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Stamp VulnerabilityID from cveMap if the finding references a known CVE
 	if ctisFinding.Vulnerability != nil {
-		if id, ok := cveMap[ctisFinding.Vulnerability.CVEID]; ok && !id.IsZero() {
+		if id, ok := cveMap[vulnerability.NormalizeCVEID(ctisFinding.Vulnerability.CVEID)]; ok && !id.IsZero() {
 			f.SetVulnerabilityID(id)
 		}
 	}
@@ -1083,6 +1099,17 @@ func (p *FindingProcessor) redactSecretSnippet(f *vulnerability.Finding) {
 
 // inferFindingType determines the FindingType based on source and CTIS finding data.
 func (p *FindingProcessor) inferFindingType(source vulnerability.FindingSource, ctisFinding *ctis.Finding) vulnerability.FindingType {
+	// A finding of the secret technique is a secret. The source comes from the
+	// tool (betterleaks, gitleaks, trufflehog), and a secret scanner reports
+	// nothing else. Its CTIS type cannot override that with "vulnerability":
+	// converters write that generic value when they do not recognize the tool
+	// (ctis FromSARIF does so for betterleaks), and the finding would then skip
+	// the secret handling below, snippet redaction included.
+	if source == vulnerability.FindingSourceSecret &&
+		(ctisFinding.Type == "" || ctisFinding.Type == ctis.FindingTypeVulnerability) {
+		return vulnerability.FindingTypeSecret
+	}
+
 	// First, check if CTIS finding has explicit type
 	if ctisFinding.Type != "" {
 		switch ctisFinding.Type {
@@ -2000,6 +2027,101 @@ func (p *FindingProcessor) withoutHumanResolved(ctx context.Context, tenantID sh
 		kept = append(kept, fp)
 	}
 	return kept
+}
+
+// genericNetworkPort returns "port/transport" when a finding is keyed by the
+// generic fingerprint recipe (no CVE, package, secret, resource, contract or
+// file location) and names a port; "" otherwise. Only those findings take the
+// port into their key: every other recipe already decides what identifies it.
+func genericNetworkPort(f *ctis.Finding, input fingerprint.Input) string {
+	if f.Network == nil || f.Network.Port <= 0 {
+		return ""
+	}
+	if fingerprint.DetectType(input) != fingerprint.TypeGeneric {
+		return ""
+	}
+	proto := strings.ToLower(strings.TrimSpace(f.Network.Protocol))
+	if proto == "" {
+		proto = "tcp"
+	}
+	return strconv.Itoa(f.Network.Port) + "/" + proto
+}
+
+// legacyPortlessFingerprint returns the composite fingerprint a port-specific
+// generic network finding had before the port joined its key, or "" when the
+// finding's key did not change.
+func legacyPortlessFingerprint(assetID shared.ID, f *ctis.Finding) string {
+	if f.Network == nil || f.Network.Port <= 0 {
+		return ""
+	}
+	// Only the generic recipe changed. A sensor-supplied fingerprint and the
+	// network-VA (CVE) key were port-aware already; removing the port there
+	// would point at a different, legitimate finding.
+	if f.Fingerprint != "" && isValidFingerprint(f.Fingerprint) {
+		return ""
+	}
+	if _, _, ok := networkVACVEKey(f); ok {
+		return ""
+	}
+	portless := *f
+	portless.Network = nil
+	composite, _ := generateFindingFingerprint(assetID, &portless, nil)
+	current, _ := generateFindingFingerprint(assetID, f, nil)
+	if composite == current {
+		return ""
+	}
+	return composite
+}
+
+// legacyKey pairs an old fingerprint with the one that replaces it.
+type legacyKey struct {
+	legacy, current, base string
+}
+
+// validFindingsLegacy returns, for each legacy fingerprint, the FIRST finding
+// of the batch that maps to it: only one port may take over an old row.
+func validFindingsLegacy[T any](items []T, keys func(T) (legacy, current, base string)) []legacyKey {
+	seen := map[string]bool{}
+	out := make([]legacyKey, 0, len(items))
+	for _, it := range items {
+		legacy, current, base := keys(it)
+		if legacy == "" || seen[legacy] {
+			continue
+		}
+		seen[legacy] = true
+		out = append(out, legacyKey{legacy: legacy, current: current, base: base})
+	}
+	return out
+}
+
+// legacyFingerprintAdopter is implemented by the postgres finding repository.
+// Optional: a repository without it (tests, mocks) skips the re-key.
+type legacyFingerprintAdopter interface {
+	AdoptLegacyFingerprint(ctx context.Context, tenantID shared.ID, legacy, current, base string) (bool, error)
+}
+
+func (p *FindingProcessor) adoptLegacyPortlessFingerprints(ctx context.Context, tenantID shared.ID, keys []legacyKey) {
+	if len(keys) == 0 {
+		return
+	}
+	adopter, ok := p.repo.(legacyFingerprintAdopter)
+	if !ok {
+		return
+	}
+	adopted := 0
+	for _, k := range keys {
+		moved, err := adopter.AdoptLegacyFingerprint(ctx, tenantID, k.legacy, k.current, k.base)
+		if err != nil {
+			p.logger.Warn("failed to re-key a port-less network finding", "error", err)
+			continue
+		}
+		if moved {
+			adopted++
+		}
+	}
+	if adopted > 0 {
+		p.logger.Info("re-keyed port-less network findings onto their port", "count", adopted)
+	}
 }
 
 // afterCreate runs the post-insert steps for the findings this batch newly

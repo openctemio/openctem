@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -36,23 +36,27 @@ export function DedupReviewPage() {
 
   const reviews = data?.data ?? []
 
-  const act = async (id: string, action: 'approve' | 'reject') => {
-    setBusyId(id)
-    try {
-      if (action === 'approve') {
-        await approveDedupReview(id)
-        toast.success('Duplicates merged')
-      } else {
-        await rejectDedupReview(id)
-        toast.success('Kept as separate assets')
+  // useCallback so the columns memo can depend on it; mutate is stable (SWR).
+  const act = useCallback(
+    async (id: string, action: 'approve' | 'reject') => {
+      setBusyId(id)
+      try {
+        if (action === 'approve') {
+          await approveDedupReview(id)
+          toast.success('Duplicates merged')
+        } else {
+          await rejectDedupReview(id)
+          toast.success('Kept as separate assets')
+        }
+        await mutate()
+      } catch {
+        toast.error(`Failed to ${action} review`)
+      } finally {
+        setBusyId(null)
       }
-      await mutate()
-    } catch {
-      toast.error(`Failed to ${action} review`)
-    } finally {
-      setBusyId(null)
-    }
-  }
+    },
+    [mutate]
+  )
 
   const columns = useMemo<ColumnDef<DedupReview>[]>(
     () => [
@@ -153,9 +157,7 @@ export function DedupReviewPage() {
         ),
       },
     ],
-    // act is stable within a render; busyId drives the disabled state
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busyId]
+    [busyId, act]
   )
 
   return (

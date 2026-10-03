@@ -18,7 +18,13 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 {{- end}}
 {{- if isDaemon .Sensor}}
 
-# {{if .CACert}}2. {{end}}Start the sensor. It connects out to the platform (no inbound port)
+# {{if .CACert}}2{{else}}1{{end}}. Install the sensor-local policy (the "Local policy" tab, saved as
+# sensor-policy.yaml), reviewed by the owner of the network this sensor scans.
+# The sensor refuses every job outside it; without the file it does not start.
+sudo install -d -m 0755 /etc/openctem
+sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
+
+# {{if .CACert}}3{{else}}2{{end}}. Start the sensor. It connects out to the platform (no inbound port)
 # and runs the scans the platform dispatches. Results that cannot be delivered
 # yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
 # The {{$slug}}-state volume keeps the sensor's state, including the API key
@@ -26,7 +32,13 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 # starts with the key above, which a renewal has retired). {{$slug}}-content
 # caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
 # container does not download it again; it can be deleted at any time.
+# Hardened: read-only root filesystem, no capabilities, no privilege
+# escalation (add --cap-add NET_RAW only for naabu SYN scans). /etc/openctem
+# is mounted read-only: the policy, and the kill switch the host owner
+# creates with sudo touch /etc/openctem/STOP.
 docker run -d --name {{$slug}} --restart unless-stopped \
+  --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --tmpfs /tmp --tmpfs /home/openctem --tmpfs /scan --tmpfs /cache --tmpfs /config \
   -e API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
   -e API_KEY={{shellQuote .APIKey}} \
@@ -36,10 +48,14 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- with toolList .Sensor.Tools}}
   -e SENSOR_TOOLS={{.}} \
 {{- end}}
+  -e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml \
+{{- if .Policy.AllowPrivate}}
+  -e SENSOR_ALLOW_PRIVATE_TARGETS=1 \
+{{- end}}
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
-  -v /etc/openctem/certs:/etc/openctem/certs:ro \
 {{- end}}
+  -v /etc/openctem:/etc/openctem:ro \
   -v {{$slug}}-outbox:/var/lib/openctem/outbox \
   -v {{$slug}}-state:/var/lib/openctem/state \
   -v {{$slug}}-content:/var/lib/openctem/content \

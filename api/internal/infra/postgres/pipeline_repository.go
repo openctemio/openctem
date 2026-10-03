@@ -336,24 +336,20 @@ func (r *PipelineTemplateRepository) ListWithSystemTemplates(ctx context.Context
 
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	// Core condition: tenant templates OR system templates
-	conditions = append(conditions, fmt.Sprintf("(tenant_id = $%d OR is_system_template = true)", argIndex))
 	args = append(args, tenantID.String())
-	argIndex++
+	conditions = append(conditions, fmt.Sprintf("(tenant_id = $%d OR is_system_template = true)", len(args)))
 
 	// Additional filters
 	if filter.IsActive != nil {
-		conditions = append(conditions, fmt.Sprintf("is_active = $%d", argIndex))
 		args = append(args, *filter.IsActive)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("is_active = $%d", len(args)))
 	}
 
 	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", len(args), len(args)))
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
@@ -449,30 +445,25 @@ func (r *PipelineTemplateRepository) selectQuery() string {
 func (r *PipelineTemplateRepository) buildWhereClause(filter pipeline.TemplateFilter) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, filter.TenantID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if filter.IsActive != nil {
-		conditions = append(conditions, fmt.Sprintf("is_active = $%d", argIndex))
 		args = append(args, *filter.IsActive)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("is_active = $%d", len(args)))
 	}
 
 	if filter.IsSystemTemplate != nil {
-		conditions = append(conditions, fmt.Sprintf("is_system_template = $%d", argIndex))
 		args = append(args, *filter.IsSystemTemplate)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("is_system_template = $%d", len(args)))
 	}
 
 	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", len(args), len(args)))
 	}
 
 	if len(conditions) == 0 {

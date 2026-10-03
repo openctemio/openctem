@@ -348,24 +348,20 @@ func (r *WorkflowNodeRunRepository) selectQuery() string {
 func (r *WorkflowNodeRunRepository) buildWhereClause(filter workflow.NodeRunFilter) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.WorkflowRunID != nil {
-		conditions = append(conditions, fmt.Sprintf("workflow_run_id = $%d", argIndex))
 		args = append(args, filter.WorkflowRunID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("workflow_run_id = $%d", len(args)))
 	}
 
 	if filter.NodeID != nil {
-		conditions = append(conditions, fmt.Sprintf("node_id = $%d", argIndex))
 		args = append(args, filter.NodeID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("node_id = $%d", len(args)))
 	}
 
 	if filter.Status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, string(*filter.Status))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
 	}
 
 	if len(conditions) == 0 {

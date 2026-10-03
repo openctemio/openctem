@@ -23,6 +23,11 @@ type Service struct {
 	sensors   SensorLookup
 	templates TemplateSigner
 	logger    *logger.Logger
+	// refusals hears about failed commands (local_policy.go); nil: none.
+	refusals RefusalObserver
+	// privatePolicy keeps private targets from sensors without a local
+	// policy when the tenant asks (local_policy.go); nil: never.
+	privatePolicy PrivateTargetPolicy
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -242,7 +247,12 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 
 	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, limit)
 	if err != nil {
-		return cmds, err
+		return nil, err
+	}
+	// The tenant keeps private targets away from sensors without a local
+	// policy (RFC-040 Q3 (a)): they stay pending for one that has it.
+	if anyPrivateTarget(cmds) && s.withholdPrivate(ctx, tenantID, sensorID) {
+		cmds = withoutPrivateTargets(cmds)
 	}
 	if input.MaxScanCommands != nil {
 		cmds = capScanCommands(cmds, *input.MaxScanCommands)
@@ -297,6 +307,9 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 
 	if !cmd.CanBeAcknowledged() {
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
+	}
+	if sid, err := shared.IDFromString(sensorID); err == nil && HasPrivateTarget(cmd.Payload) && s.withholdPrivate(ctx, cmd.TenantID, &sid) {
+		return nil, ErrLocalPolicyRequired
 	}
 
 	// Atomic claim: only one concurrent poller can transition a pending
@@ -469,6 +482,9 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 	cmd.Fail(truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes))
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
+	}
+	if s.refusals != nil && cmd.SensorID != nil {
+		s.refusals.ObserveLocalPolicyRefusal(ctx, cmd.TenantID, *cmd.SensorID, cmd.ID.String(), cmd.ErrorMessage)
 	}
 
 	return cmd, nil

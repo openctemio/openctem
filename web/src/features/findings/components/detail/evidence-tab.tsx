@@ -40,6 +40,7 @@ import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { ManualEvidenceNotesSection } from './manual-evidence-notes'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { safeImageSrc } from '@/lib/safe-href'
+import Image from 'next/image'
 
 interface EvidenceTabProps {
   evidence: Evidence[]
@@ -761,23 +762,34 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {apiAttachments
                     .filter((a) => a.content_type.startsWith('image/'))
-                    .map((att) => (
-                      <SafeExternalLink
-                        key={att.id}
-                        href={att.url}
-                        className="group relative aspect-video rounded-lg border bg-muted overflow-hidden"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={safeImageSrc(att.url)}
-                          alt={att.filename}
-                          className="absolute inset-0 w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                          <p className="text-xs text-white font-medium truncate">{att.filename}</p>
-                        </div>
-                      </SafeExternalLink>
-                    ))}
+                    .map((att) => {
+                      const imgSrc = safeImageSrc(att.url)
+                      return (
+                        <SafeExternalLink
+                          key={att.id}
+                          href={att.url}
+                          className="group relative aspect-video rounded-lg border bg-muted overflow-hidden"
+                        >
+                          {/* unoptimized: attachments are served behind the session cookie,
+                              which the image optimizer cannot send. */}
+                          {imgSrc && (
+                            <Image
+                              src={imgSrc}
+                              alt={att.filename}
+                              fill
+                              unoptimized
+                              sizes="(min-width: 768px) 33vw, 50vw"
+                              className="object-cover"
+                            />
+                          )}
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                            <p className="text-xs text-white font-medium truncate">
+                              {att.filename}
+                            </p>
+                          </div>
+                        </SafeExternalLink>
+                      )
+                    })}
                 </div>
               )}
               {apiAttachments

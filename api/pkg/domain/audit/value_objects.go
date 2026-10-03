@@ -84,6 +84,10 @@ const (
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
+	// ActionFindingCommentReactionRemoved records an administrator removing
+	// another member's reaction from a finding comment (moderation). A
+	// person adding or removing their own reaction is not audited.
+	ActionFindingCommentReactionRemoved Action = "finding.comment_reaction_removed"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -148,6 +152,11 @@ const (
 	// ActionSensorIdentityCloned records the platform seeing two live sensor
 	// processes use the same key (RFC-032 Phase 0 clone detection).
 	ActionSensorIdentityCloned Action = "sensor.identity_cloned"
+	// ActionSensorJobRefusedByLocalPolicy records a sensor refusing a job
+	// because the local policy its network owner installed forbids it
+	// (RFC-040 §5.7, detection A11): the platform asked for something the
+	// owner does not allow.
+	ActionSensorJobRefusedByLocalPolicy Action = "sensor.job_refused_local_policy"
 	// ActionSensorContentRefreshRequested records an administrator asking a
 	// sensor (or the fleet) to refresh its scanner content (RFC-031).
 	ActionSensorContentRefreshRequested Action = "sensor.content_refresh_requested"
@@ -416,6 +425,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingCommentReactionRemoved,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
@@ -426,7 +436,7 @@ func (a Action) IsValid() bool {
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
@@ -512,7 +522,8 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded:
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingCommentReactionRemoved:
 		return "finding"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
@@ -529,7 +540,7 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated:

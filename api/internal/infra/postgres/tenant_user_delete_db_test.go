@@ -230,8 +230,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		h := strings.Repeat("ab", 32)
 		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
-	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
-	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	// emoji has a length CHECK.
+	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
+	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
+	"sensors":           func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
 	// digest has a format CHECK; manifest and ignored have type CHECKs.
