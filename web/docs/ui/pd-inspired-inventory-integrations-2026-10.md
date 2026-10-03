@@ -1,7 +1,9 @@
 # Inventory and integrations, learning from ProjectDiscovery Cloud
 
-OpenCTEM web UI · 2026-10-03 · gap analysis and UI plan. Nothing in this document is implemented yet.
+OpenCTEM web UI · 2026-10-03 · gap analysis and UI plan. Approved 2026-10-03 (D1–D13); not yet implemented.
 Basis: `openctemio/openctem` `develop` @ `e04bfb35`. The sensor and SDK findings come from read-only greps of the `agent` and `sdk-go` repositories.
+
+> **Status (2026-10-03): D1–D13 approved by the owner as recommended** (§8). D14–D16 (design system, §10) are open. Implementation starts with wave 1 in separate PRs.
 
 The owner likes ProjectDiscovery Cloud (PD) for its minimal UI: a short nav, an inventory where each row reads like a card, and an integrations catalog. This document maps each PD pattern to what OpenCTEM has today, lists the gaps, and proposes a phased UI plan that follows the [UI style contract](../ui-style-contract.md), the [Scoping IA](./scoping-ia-2026-10.md) and the Settings IA (2026-10-01).
 
@@ -45,6 +47,10 @@ A mock of the proposed Inventory and Integrations screens was built alongside th
   - Take PD's "newest detections" and turn it into a tenant question: "new checks: am I affected?".
   - A security score only with a visible formula and a "not enough data" state. PD shows 100 "Excellent" with nothing scanned.
   - Settings gains Scan egress IPs, Discovery sources, Severity overrides and Retest & regressions inside the existing 6-group IA (§2.10).
+- **Design system (§10):** research 07 mapped to the style contract.
+  - Adopt: disjunctive facets with range sliders, density modes, saved views, a findings Inbox, merge/unmerge, conditional snooze, drill-down tiles and the three empty-state kinds.
+  - Reject: industry benchmarks.
+  - The contract edits are proposed as a diff, not applied.
 - **Nav:** do not copy PD's flat nav wholesale. It is short because PD has no CTEM stages.
   - Keep the approved Scoping and Settings IA.
   - Turn on the existing badge counts (behind a flag today) with honest sources only.
@@ -634,6 +640,8 @@ These follow the Settings IA groups. There is no new top-level group.
 
 ## 8. Owner decisions
 
+**D1–D13 were approved as recommended on 2026-10-03.** D14–D16 are still open.
+
 | #   | Decision                                  | Options                                                        | Recommendation                                                                                                                |
 | --- | ----------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | D1  | Nav: copy PD's flat ~10-item nav?         | flat / keep CTEM IA + badges + "+ Create" / add a compact mode | **Keep the CTEM IA**, turn badges on, add "+ Create". Optional compact mode later                                             |
@@ -649,6 +657,9 @@ These follow the Settings IA groups. There is no new top-level group.
 | D12 | Security score                            | none / transparent score with a "not enough data" state        | **Transparent score only**, with the formula in a tooltip and no score without recent scans; otherwise leave it out           |
 | D13 | Bulk actions by filter                    | IDs only / IDs or filter selector                              | **Selector** (IDs or filter), data-scoped, with the BulkGuard ceiling and operator approval above it                          |
 | D10 | Screenshots                               | build now / after RFC-036 P3 pipeline                          | **After RFC-036 P0–P3**: they need the recon tools shipped and the egress profile; ship the UI cells with the placeholder now |
+| D14 | Table density default                     | one density / compact default + comfortable                    | **Compact default** for single-line lists; comfortable for multi-line service rows; per-user preference                       |
+| D15 | Saved views vs dynamic groups             | one concept / two                                              | **Two:** a view is a personal or team lens; a group is a scan and policy target                                               |
+| D16 | Virtualized "Scroll all" on 100k lists    | no / yes with keyset paging                                    | **Yes, after keyset pagination** in the API; page size stays the default                                                      |
 
 ---
 
@@ -680,6 +691,116 @@ The HTML mock is not committed. It was built in the analysis session and attache
   - the Profile page as label/value rows (2FA state, weekly digest, theme segmented control, leave/delete);
   - the proposed new items (Severity overrides, Retest & regressions, Exclusions link, Scan egress IPs, Discovery sources);
   - a Scan egress IPs table.
+
+## 10. Design-system changes
+
+Source: `research/07-modern-ui-ux.md`, which has 11 findings from vendor docs that each passed a 3-0 vote (finding 11 passed 2-1).
+
+- Most rest on one vendor's own documentation. They show what that vendor does, not that it works better.
+- Where a point below is our own inference, it says so.
+
+Each point maps to what `docs/ui-style-contract.md` (the "contract") and our components do today, with a verdict of **adopt**, **already have** or **reject**. The proposed contract edits follow as a diff-style list.
+
+These are proposals. The contract is not changed in this PR, because points 2, 4 and 6 change behaviour on every list page and need the owner's sign-off (D14–D16).
+
+### 10.1 Mapping
+
+| #   | Pattern (source)                                                                                                                                                  | Today                                                                                                                                                                                                                                                                                                                                              | Verdict                                                                                   | Why                                                                                                                                                                                                                                                                                                   |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | One unified, resizable, collapsible sidebar, the same links at every scope; tabs only inside a module (Vercel, Tenable)                                           | Collapsible (`collapsible`, `SidebarRail` in `web/src/components/layout/app-sidebar.tsx:39,91`), not resizable. Tabs only inside a module through `SectionTabs` (contract §1.3). Settings **swaps** the sidebar content (Settings IA), and the admin console has its own shell (`app/(admin-console)/admin/(console)/layout.tsx`)                  | **Already have**, plus a small **adopt** (resizable width)                                | Same links at every _tenant_ scope already holds. Settings swapping the rail and a separate admin shell are deliberate: different audiences and permissions (RFC-022, Settings IA). Making the width resizable (persisted per user) is cheap                                                          |
+| 2   | Row virtualization (TanStack Virtual) inside the shadcn table, with cursor-paginated server fetching for 100k+ rows                                               | `DataTable` (`features/shared/components/data-table/data-table.tsx:91-110`) uses page/offset server pagination (`manualPagination`, `pageIndex`); `@tanstack/react-virtual` is not a dependency (`web/package.json:70` has only react-table)                                                                                                       | **Adopt, scoped**                                                                         | Pages of 25–100 rows do not need virtualization. Use it only for an "all rows" scroll mode on assets and findings, together with **keyset (cursor) pagination** in the API, because offset paging degrades at 100k and shifts rows under concurrent ingest. The page-size UI stays the default        |
+| 3   | Server facets per query: dimensions top-N with counts, measures as range sliders (Datadog)                                                                        | `FacetPanel` has no counts by design (`facet-filter-panel.tsx:15-16`). `/assets/facets` gives one count per key. Risk score has min/max query params (`min_risk_score`, `max_risk_score`), but no slider                                                                                                                                           | **Adopt**                                                                                 | With the condition from §4.4: counts are **disjunctive** (all other active filters applied), or they mislead. Measures: risk score, CVSS, EPSS, age, open-port count as range sliders with the histogram's min/max from the same query                                                                |
+| 4   | Discrete density, compact 32px default for assets and findings plus comfortable (Carbon, Primer); one column sorted by default                                    | One density: header `h-10`, cells `p-2` (`web/src/components/ui/table.tsx`). Default sort is per page, not a rule                                                                                                                                                                                                                                  | **Adopt**                                                                                 | Rich service rows (§4.1) are multi-line, so they use comfortable. Single-line lists (findings, scans, sensors) default to compact. A per-user preference, not URL state. "Always a default sort" closes the "dead sort arrows" class found in the 2026-09 consistency campaign                        |
+| 5   | Batch action bar on selection: row menus disabled while it shows, explicit deselect (Carbon)                                                                      | `BulkActionBar` floats at the bottom with a count, Clear and Escape (`features/shared/components/bulk-action-bar.tsx`). Row `⋯` menus stay active                                                                                                                                                                                                  | **Already have** (bar, deselect) + **adopt** (disable row menus)                          | The floating bottom bar is a deliberate choice (selecting must not shift the list), so we keep it rather than Carbon's top bar. Disabling row menus in batch mode prevents acting on one row while believing the action applies to the selection                                                      |
+| 6   | Saved views as non-destructive lenses (filter, sort, grouping, columns), separate from the data (Linear)                                                          | State in the URL (contract §3); 6 fixed preset "views" on `/assets` (`inventory-facets.ts:249-280`); saved views deferred (`inventory-url.ts:10-11`)                                                                                                                                                                                               | **Adopt**                                                                                 | A `saved_views` entity: name, page, URL query, columns, density; personal or shared with the team; it never changes data. **Distinct from dynamic groups**: a group is a scan/policy target, a view is only a lens. The UI must not blur the two (D15)                                                |
+| 7   | Triage as a first-class inbox step (Linear)                                                                                                                       | `new` → `confirmed` exists (`api/pkg/domain/vulnerability/value_objects.go:362-363`); My Work (`sidebar-data.ts:112`) and the Findings verification queue are the closest. No "inbox" view of unreviewed `new` findings per owner                                                                                                                  | **Adopt**                                                                                 | A Findings section tab **Inbox** = `status=new`, scoped to my teams and assets, with keyboard triage (confirm, false positive, duplicate, assign). No new state: `new` already means "not triaged". Our inference: re-detected, newly-KEV and newly-exposed findings re-enter it                      |
+| 8   | Duplicate grouping by fingerprint with unmerge; mutually exclusive states; conditional snooze (Sentry)                                                            | Findings carry a `fingerprint` and `occurrence_count` (`api/pkg/domain/vulnerability/finding.go:171,281`); a `duplicate` status; group by CVE/asset. One status per finding already. Cross-scanner dedup is a known gap (VM audit 2026-08). Snooze exists only for asset staleness (`features/assets/types/asset.types.ts:1069`). No merge/unmerge | **Adopt** (merge/unmerge, conditional snooze); **already have** (exclusive states)        | Unmerge must be remembered for future ingests, or the next scan re-merges. Snooze for findings = `accepted` with conditions: expires, **or wakes** when the finding becomes KEV, EPSS crosses a threshold, or the asset becomes internet-facing. This replaces only time-based expiry                 |
+| 9   | Honest dashboards: one headline score with benchmarks and Total / Per-source / Per-tag; every tile opens a filtered list; choke points as a ranked list (Tenable) | CTEM dashboard (`features/dashboard/components/ctem/`). Loop tiles link to **unfiltered** pages (`ctem-loop.tsx:105-175`, e.g. `/findings`). Attack paths and exposure chains exist (`attack-paths-card.tsx`, `fix-next-queue.tsx`)                                                                                                                | **Adopt** (drill-down, breakdowns, ranked choke points); **reject** (industry benchmarks) | Every tile carries the exact filter that produced its number. A self-hosted OSS platform has no honest cross-customer population, so a "vs industry" benchmark would be invented. Use the tenant's own trend and targets instead. The headline score follows D12 (formula visible, "not enough data") |
+| 10  | Light, dark and high-contrast generated from base, accent and contrast in a perceptual space (Linear LCH)                                                         | Hand-maintained OKLCH tokens per theme (`web/src/styles/theme.css`, about 30 variables × 2); no high-contrast theme; status tokens `success`, `warning`, `info`                                                                                                                                                                                    | **Adopt, later**                                                                          | We are already in OKLCH (Tailwind v4), so a generator is a build-time script that emits the same variables, and the palette-drift gate still applies. The high-contrast theme is the real gain (accessibility). Low urgency: the current two themes are consistent                                    |
+| 11  | Empty-state anatomy: image, title, why plus next action, primary action, secondary link (Carbon)                                                                  | `EmptyState` = icon, title, description, action (`features/shared/components/empty-state.tsx:7-14`); contract §7 "Empty"                                                                                                                                                                                                                           | **Already have** + **adopt** (secondary link, three kinds)                                | Add an optional `secondaryAction` (docs link) and name three kinds in the contract (our inference, not sourced): **no data yet** (first use, with the setup action), **no results** (filters active; action "Clear filters"), **not enough data** (metric cannot be computed; never a zero or 100)    |
+
+### 10.2 Proposed contract amendments
+
+The list is diff-style against `web/docs/ui-style-contract.md`.
+
+```diff
+ ## 1. Page anatomy
++  - The main sidebar is collapsible and resizable (width persisted per user,
++    min 13rem, max 20rem). Its links are the same in every organization.
++    Settings and the admin console keep their own rail (Settings IA, RFC-022).
+
+ ## 3. Lists and tables
++- Density: `compact` (32px rows) or `comfortable` (40px; multi-line rows
++  such as service rows always use it). Default compact for findings, scans,
++  sensors and single-line asset lists. The choice is a per-user preference
++  (not URL state), set from the table's view menu.
++- Every sortable table has exactly one column sorted by default, shown by the
++  arrow. A newly clicked column sorts ascending; clicking again toggles.
++- Pagination: page size 25/50/100 by default. A list that can exceed 10k rows
++  may offer "Scroll all", which virtualizes rows (`@tanstack/react-virtual`
++  inside `DataTable`) over keyset (cursor) pages from the API. Never load the
++  whole set.
+-  - ≥ 3 filter dimensions → `<FacetFilterPanel>` …
++  - ≥ 3 filter dimensions → facets from the server for the current query.
++    Dimensions show their top values with counts; measures (risk, CVSS,
++    EPSS, age) show a range slider. A count is shown only when it is
++    computed with every other active filter applied; otherwise show no count.
++- Bulk actions: while rows are selected, the `BulkActionBar` is the only place
++  to act. Row `⋯` menus are disabled, and the bar always has Clear (Escape
++  works too). Bulk endpoints accept IDs or the list's filter.
++- Saved views: a view stores filter, sort, grouping, columns and density for
++  one page. Personal or team-shared. A view never changes data and is not a
++  group (groups are scan and policy targets).
+
+ ## 2. Headline numbers
++- Every number on a dashboard opens the list it counts, with the same filter.
++- A number that cannot be computed shows "Not enough data" with the reason,
++  never 0 or a perfect score. No industry benchmarks; compare with the
++  tenant's own trend or target.
++- Graph analytics (attack paths, chains) are shown first as a ranked list
++  (choke points by paths × critical assets), with the graph one click away.
+
+ ## 6. Colour
++- Themes: light, dark and high-contrast, generated from base, accent and
++  contrast in OKLCH by `scripts/gen-theme.ts`; `theme.css` is its output.
+
+ ## 7. States
+-- **Empty**: the shared `<EmptyState>` (icon, title, one-line description,
+-  optional action).
++- **Empty**: the shared `<EmptyState>` (icon, title, why + next step,
++  optional primary action, optional secondary link). Three kinds, each with
++  its own wording: no data yet (setup action), no results (Clear filters),
++  not enough data (what is missing).
+
++## 10. Triage
++- Findings has an **Inbox** tab: `status=new` in my scope, keyboard actions
++  (confirm, false positive, duplicate, assign). Statuses are mutually
++  exclusive (already true in the API).
++- Duplicates: group by fingerprint; merge and unmerge are explicit, and an
++  unmerge is remembered for later ingests.
++- Snooze is conditional: until a date, or until the finding becomes KEV, its
++  EPSS crosses a threshold, or its asset becomes internet-facing.
+```
+
+### 10.3 Order of work
+
+1. **Contract-only, cheap:**
+   - default sort everywhere;
+   - row menus disabled in batch mode;
+   - the three empty-state kinds plus `secondaryAction`;
+   - tile drill-down filters on the CTEM dashboard;
+   - a resizable sidebar.
+2. **With P1 of §5:**
+   - disjunctive facets and range sliders;
+   - bulk by selector;
+   - density modes.
+3. **API work first:**
+   - saved views;
+   - the Findings Inbox tab;
+   - merge/unmerge with a remembered unmerge;
+   - conditional snooze;
+   - keyset pagination, then the virtualized "Scroll all" mode.
+4. **Later:** generated themes with high contrast.
 
 ## Appendix: method
 
