@@ -15,7 +15,8 @@ export type {
 } from './hooks/use-attack-path-scoring'
 
 // Components
-export { PathGraph } from './components'
+export { PathGraph, EASMOverview } from './components'
+export { useEASMSummary } from './hooks/use-easm-summary'
 export type { PathGraphNode, PathGraphPath, PathNodeRole } from './components'
 
 export { useExposureChains } from './hooks/use-exposure-chains'
