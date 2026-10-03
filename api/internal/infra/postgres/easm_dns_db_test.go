@@ -20,7 +20,7 @@ func seedNamedAsset(ctx context.Context, t *testing.T, r *EASMDNSRepository, ten
 	return id
 }
 
-// The DNS checks against the real schema (migration 000273): which names are
+// The DNS checks against the real schema (migration 000276): which names are
 // due, rotation, tenant isolation, and resolve/reopen that only ever touch
 // this source's own active or self-resolved exposures. Requires DATABASE_URL.
 func TestEASMDNSRepository(t *testing.T) {

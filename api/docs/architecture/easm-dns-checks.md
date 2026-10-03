@@ -16,7 +16,7 @@ A daily controller (`internal/infra/controller/easm_dns_checks.go`, name
 | Email posture | active `domain` assets that are registrable domains (subdomains inherit the organisation's DMARC policy) | SPF, DMARC, MTA-STS and TLS-RPT gaps | `email_security_weak` |
 
 Code: `internal/app/easmdns` (checks, service), `pkg/dnsprobe` (DNS client),
-`internal/infra/postgres/easm_dns_repository.go`, migration 000273.
+`internal/infra/postgres/easm_dns_repository.go`, migration 000276.
 
 **Attribution.** Every asset is checked except those whose attribution is
 `rejected` (RFC-036 §6.4). A name awaiting review is still checked: looking
