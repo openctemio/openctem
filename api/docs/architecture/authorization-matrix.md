@@ -228,6 +228,15 @@ two-person control:
   be used to skip the approval.
 - Extending the window of an approved exclusion (a later `expires_at`, or
   removing it) sends it back to `pending`; shortening it keeps the approval.
+- Every change to a scope target or exclusion (create, update, delete, bulk
+  delete, activate, deactivate, approve, reject) is one audit entry
+  (`scope_target.*`, `scope_exclusion.*`) with the caller and the state before
+  and after (RFC-040 §5.11). Changes that widen what is scanned (a new or
+  re-activated target, a deleted or deactivated exclusion) are `high`
+  severity. Tools and tenant tool configs (`tool.*`, secret-looking config
+  values masked) and scanner templates (`scanner_template.*`, content hash
+  only, never the content) are audited the same way. Refused changes write
+  nothing.
 - Exclusions that were `active` before migration 000267 were marked approved
   (`approved_by = 'system:pre-approval-grandfathered'` where none was recorded)
   so they stay in effect; inactive and expired ones need an approval to come
@@ -819,7 +828,7 @@ results an out-of-scope id is reported exactly like an unknown id.
 | Surface | Before (audit 2026-10, F4) | Now |
 |---|---|---|
 | `GET /assets`, `/findings` (list, search), `/findings/stats` | scoped | scoped (unchanged) |
-| `GET /findings/groups` (every `group_by`: asset, CVE, owner, component, severity, source, type; incl. the total-groups count and the `statuses=fix_applied` Pending Review queue) | **bypass (group names + counts tenant-wide; listed as scoped by mistake)** | scoped: groups and their counts come only from in-scope findings; pentest findings only to campaign members (the view lists no pentest findings at all) |
+| `GET /findings/groups` (every `group_by`: asset, CVE, rule, owner, component, severity, source, type; incl. the total-groups count and the `statuses=fix_applied` Pending Review queue) | **bypass (group names + counts tenant-wide; listed as scoped by mistake)** | scoped: groups and their counts come only from in-scope findings; pentest findings only to campaign members (the view lists no pentest findings at all) |
 | `GET /findings/related-cves/{cve}` | **bypass (CVE ids/titles/counts)** | scoped (both the source CVE's components and the related findings) |
 | `GET /assets/{id}`, `/findings/{id}`, `/findings/{id}/activities`, `POST /findings/{id}/comments` | scoped | scoped (guard + service) |
 | `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |

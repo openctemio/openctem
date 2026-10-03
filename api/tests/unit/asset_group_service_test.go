@@ -222,6 +222,10 @@ func (m *mockAssetGroupServiceRepo) GetGroupAssets(_ context.Context, _ shared.I
 	return m.groupAssetsResult, nil
 }
 
+func (m *mockAssetGroupServiceRepo) ListScanMembers(_ context.Context, _ assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	return &assetgroup.ScanMemberPage{}, nil
+}
+
 func (m *mockAssetGroupServiceRepo) GetGroupFindings(_ context.Context, _ shared.ID, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupFinding], error) {
 	m.getGroupFindingCalls++
 	if m.getGroupFindingsErr != nil {

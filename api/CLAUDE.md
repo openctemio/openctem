@@ -550,7 +550,7 @@ POST /api/v1/invitations/{token}/accept-with-refresh
 
 | Term | Meaning in this code base |
 |---|---|
-| **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
+| **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`octs_…`; legacy `rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
 | Scanner / Agent / Collector | Sensor **roles** (RFC-023 D18). *Agent* now means only the endpoint role. |
 | `type` | Legacy v1 value (`worker`, `scanner`, `sensor`, `collector`, `runner`), kept as input and storage. |
 | Platform sensor | `is_platform_sensor = true`: shared infrastructure, no tenant. |

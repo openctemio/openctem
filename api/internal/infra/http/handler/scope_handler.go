@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -22,6 +24,7 @@ import (
 // ScopeHandler handles scope configuration HTTP requests.
 type ScopeHandler struct {
 	service   *scope.Service
+	audit     *app.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
@@ -33,6 +36,56 @@ func NewScopeHandler(svc *scope.Service, v *validator.Validator, log *logger.Log
 		validator: v,
 		logger:    log,
 	}
+}
+
+// SetAuditService records every change to scope targets and exclusions in
+// the tenant's audit log, with the state before and after (RFC-040 §5.11).
+func (h *ScopeHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
+}
+
+func (h *ScopeHandler) auditTarget(r *http.Request, action audit.Action, id string, before, after *scopedom.Target) {
+	name := ""
+	var b, a map[string]any
+	if before != nil {
+		b, name = auditSnapshot(toScopeTargetResponse(before)), before.Pattern()
+	}
+	if after != nil {
+		a, name = auditSnapshot(toScopeTargetResponse(after)), after.Pattern()
+	}
+	auditResourceChange(h.audit, h.logger, r, action, audit.ResourceTypeScopeTarget, id, name, b, a)
+}
+
+func (h *ScopeHandler) auditExclusion(r *http.Request, action audit.Action, id string, before, after *scopedom.Exclusion) {
+	name := ""
+	var b, a map[string]any
+	if before != nil {
+		b, name = auditSnapshot(toScopeExclusionResponse(before)), before.Pattern()
+	}
+	if after != nil {
+		a, name = auditSnapshot(toScopeExclusionResponse(after)), after.Pattern()
+	}
+	auditResourceChange(h.audit, h.logger, r, action, audit.ResourceTypeScopeExclusion, id, name, b, a)
+}
+
+// targetBefore and exclusionBefore read the state a change starts from.
+// A failed read answers the request (the change would fail the same way).
+func (h *ScopeHandler) targetBefore(w http.ResponseWriter, r *http.Request, tenantID, id string) (*scopedom.Target, bool) {
+	t, err := h.service.GetTarget(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, "Scope target", err)
+		return nil, false
+	}
+	return t, true
+}
+
+func (h *ScopeHandler) exclusionBefore(w http.ResponseWriter, r *http.Request, tenantID, id string) (*scopedom.Exclusion, bool) {
+	e, err := h.service.GetExclusion(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, "Scope exclusion", err)
+		return nil, false
+	}
+	return e, true
 }
 
 // =============================================================================
@@ -447,6 +500,7 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, "Scope target", err)
 		return
 	}
+	h.auditTarget(r, audit.ActionScopeTargetCreated, target.ID().String(), nil, target)
 
 	// Check for pattern overlaps (non-blocking warnings)
 	warnings, overlapErr := h.service.CheckPatternOverlaps(r.Context(), tenantID, req.TargetType, req.Pattern)
@@ -529,11 +583,16 @@ func (h *ScopeHandler) UpdateTarget(w http.ResponseWriter, r *http.Request) {
 		Tags:        req.Tags,
 	}
 
+	before, ok := h.targetBefore(w, r, tenantID, targetID)
+	if !ok {
+		return
+	}
 	target, err := h.service.UpdateTarget(r.Context(), targetID, tenantID, input)
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
 	}
+	h.auditTarget(r, audit.ActionScopeTargetUpdated, targetID, before, target)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeTargetResponse(target))
@@ -556,10 +615,15 @@ func (h *ScopeHandler) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "id")
 	tenantID := middleware.MustGetTenantID(r.Context())
 
+	before, ok := h.targetBefore(w, r, tenantID, targetID)
+	if !ok {
+		return
+	}
 	if err := h.service.DeleteTarget(r.Context(), targetID, tenantID); err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
 	}
+	h.auditTarget(r, audit.ActionScopeTargetDeleted, targetID, before, nil)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -581,11 +645,16 @@ func (h *ScopeHandler) ActivateTarget(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "id")
 	tenantID := middleware.MustGetTenantID(r.Context())
 
+	before, ok := h.targetBefore(w, r, tenantID, targetID)
+	if !ok {
+		return
+	}
 	target, err := h.service.ActivateTarget(r.Context(), targetID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
 	}
+	h.auditTarget(r, audit.ActionScopeTargetActivated, targetID, before, target)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeTargetResponse(target))
@@ -608,11 +677,16 @@ func (h *ScopeHandler) DeactivateTarget(w http.ResponseWriter, r *http.Request) 
 	targetID := chi.URLParam(r, "id")
 	tenantID := middleware.MustGetTenantID(r.Context())
 
+	before, ok := h.targetBefore(w, r, tenantID, targetID)
+	if !ok {
+		return
+	}
 	target, err := h.service.DeactivateTarget(r.Context(), targetID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
 	}
+	h.auditTarget(r, audit.ActionScopeTargetDeactivated, targetID, before, target)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeTargetResponse(target))
@@ -720,6 +794,7 @@ func (h *ScopeHandler) CreateExclusion(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
 	}
+	h.auditExclusion(r, audit.ActionScopeExclusionCreated, exclusion.ID().String(), nil, exclusion)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -787,11 +862,16 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt: req.ExpiresAt,
 	}
 
+	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)
+	if !ok {
+		return
+	}
 	exclusion, err := h.service.UpdateExclusion(r.Context(), exclusionID, tenantID, input)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
 	}
+	h.auditExclusion(r, audit.ActionScopeExclusionUpdated, exclusionID, before, exclusion)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
@@ -814,10 +894,15 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
 	tenantID := middleware.MustGetTenantID(r.Context())
 
+	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)
+	if !ok {
+		return
+	}
 	if err := h.service.DeleteExclusion(r.Context(), exclusionID, tenantID); err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
 	}
+	h.auditExclusion(r, audit.ActionScopeExclusionDeleted, exclusionID, before, nil)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -842,11 +927,16 @@ func (h *ScopeHandler) ApproveExclusion(w http.ResponseWriter, r *http.Request) 
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
+	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)
+	if !ok {
+		return
+	}
 	exclusion, err := h.service.ApproveExclusion(r.Context(), exclusionID, tenantID, userID)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
 	}
+	h.auditExclusion(r, audit.ActionScopeExclusionApproved, exclusionID, before, exclusion)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
@@ -871,11 +961,16 @@ func (h *ScopeHandler) RejectExclusion(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
+	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)
+	if !ok {
+		return
+	}
 	exclusion, err := h.service.RejectExclusion(r.Context(), exclusionID, tenantID, userID)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
 	}
+	h.auditExclusion(r, audit.ActionScopeExclusionRejected, exclusionID, before, exclusion)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
@@ -899,11 +994,16 @@ func (h *ScopeHandler) ActivateExclusion(w http.ResponseWriter, r *http.Request)
 	exclusionID := chi.URLParam(r, "id")
 	tenantID := middleware.MustGetTenantID(r.Context())
 
+	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)
+	if !ok {
+		return
+	}
 	exclusion, err := h.service.ActivateExclusion(r.Context(), exclusionID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
 	}
+	h.auditExclusion(r, audit.ActionScopeExclusionActivated, exclusionID, before, exclusion)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
@@ -926,11 +1026,16 @@ func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Reques
 	exclusionID := chi.URLParam(r, "id")
 	tenantID := middleware.MustGetTenantID(r.Context())
 
+	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)
+	if !ok {
+		return
+	}
 	exclusion, err := h.service.DeactivateExclusion(r.Context(), exclusionID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
 	}
+	h.auditExclusion(r, audit.ActionScopeExclusionDeactivated, exclusionID, before, exclusion)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
@@ -1359,7 +1464,15 @@ func (h *ScopeHandler) BulkDeleteTargets(w http.ResponseWriter, r *http.Request)
 	}
 
 	result := h.bulkDeleteItems(r.Context(), req.TargetIDs, tenantID, func(ctx context.Context, id, tid string) error {
-		return h.service.DeleteTarget(ctx, id, tid)
+		before, err := h.service.GetTarget(ctx, tid, id)
+		if err != nil {
+			return err
+		}
+		if err := h.service.DeleteTarget(ctx, id, tid); err != nil {
+			return err
+		}
+		h.auditTarget(r, audit.ActionScopeTargetDeleted, id, before, nil)
+		return nil
 	})
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1394,7 +1507,15 @@ func (h *ScopeHandler) BulkDeleteExclusions(w http.ResponseWriter, r *http.Reque
 	}
 
 	result := h.bulkDeleteItems(r.Context(), req.ExclusionIDs, tenantID, func(ctx context.Context, id, tid string) error {
-		return h.service.DeleteExclusion(ctx, id, tid)
+		before, err := h.service.GetExclusion(ctx, tid, id)
+		if err != nil {
+			return err
+		}
+		if err := h.service.DeleteExclusion(ctx, id, tid); err != nil {
+			return err
+		}
+		h.auditExclusion(r, audit.ActionScopeExclusionDeleted, id, before, nil)
+		return nil
 	})
 
 	w.Header().Set("Content-Type", "application/json")

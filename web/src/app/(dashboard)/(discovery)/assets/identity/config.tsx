@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { ShieldCheck, User, Key, UserCheck, AlertTriangle, Shield } from 'lucide-react'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
+import { yesNoUnknown } from '@/features/assets/lib/honest-values'
 
 const getIdentityTypeLabel = (asset: Asset): string => {
   switch (asset.subType) {
@@ -229,7 +230,7 @@ export const identityConfig: AssetPageConfig = {
     { header: 'Email', accessor: (a) => (a.metadata as Record<string, unknown>).email || '' },
     {
       header: 'MFA',
-      accessor: (a) => ((a.metadata as Record<string, unknown>).mfa_enabled ? 'Yes' : 'No'),
+      accessor: (a) => yesNoUnknown((a.metadata as Record<string, unknown>).mfa_enabled),
     },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Risk Score', accessor: (a) => a.riskScore },

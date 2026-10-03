@@ -1504,7 +1504,7 @@ func TestRedactSecretSnippet_UsesMaskedValueAndClearsContext(t *testing.T) {
 
 	p.redactSecretSnippet(f)
 
-	assert.Equal(t, "AKIA****************MPLE", f.Snippet(), "raw secret snippet must be replaced by masked value")
+	assert.Equal(t, "AKIA…MPLE", f.Snippet(), "raw secret snippet must be replaced by the masked preview")
 	assert.Equal(t, "", f.ContextSnippet(), "context snippet (may contain the secret) must be cleared")
 	assert.NotContains(t, f.Snippet(), "AKIAIOSFODNN7EXAMPLE")
 }
