@@ -11,7 +11,20 @@ import {
   useAssets,
 } from '@/features/assets'
 import { Main } from '@/components/layout'
-import { PageHeader, DataTableRowActions, StatsCard, SheetBody } from '@/features/shared'
+import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
+import {
+  PageHeader,
+  DataTableRowActions,
+  StatsCard,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,7 +43,6 @@ import {
   Clock,
   Server,
   Lock,
-  Unlock,
   RefreshCw,
   Download,
   X,
@@ -47,13 +59,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -69,7 +74,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toast } from 'sonner'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
 
@@ -95,20 +100,13 @@ interface ExternalAsset {
 }
 
 const statusColors: Record<AssetStatus, string> = {
-  active:
-    'bg-green-500/10 text-green-500 border-green-500/20 dark:bg-green-900/30 dark:text-green-400',
-  inactive: 'bg-gray-500/10 text-gray-500 border-gray-500/20 dark:bg-gray-800 dark:text-gray-400',
-  monitoring:
-    'bg-blue-500/10 text-blue-500 border-blue-500/20 dark:bg-blue-900/30 dark:text-blue-400',
+  active: 'border-success/30 bg-success/10 text-success',
+  inactive: 'border-border bg-muted text-muted-foreground',
+  monitoring: 'border-info/30 bg-info/10 text-info',
 }
 
-const riskColors: Record<RiskLevel, string> = {
-  critical: 'bg-red-500/10 text-red-500 border-red-500/20 dark:bg-red-900/30 dark:text-red-400',
-  high: 'bg-orange-500/10 text-orange-500 border-orange-500/20 dark:bg-orange-900/30 dark:text-orange-400',
-  medium:
-    'bg-yellow-500/10 text-yellow-500 border-yellow-500/20 dark:bg-yellow-900/30 dark:text-yellow-400',
-  low: 'bg-green-500/10 text-green-500 border-green-500/20 dark:bg-green-900/30 dark:text-green-400',
-}
+// Risk shares the severity scale's soft colours.
+const riskColors: Record<RiskLevel, string> = CRITICALITY_BADGE_SOFT
 
 const typeIcons: Record<AssetType, React.ElementType> = {
   domain: Globe,
@@ -119,6 +117,7 @@ const typeIcons: Record<AssetType, React.ElementType> = {
 
 export default function ExternalSurfacePage() {
   const router = useRouter()
+  const canWriteScope = useHasPermission(Permission.ScopeWrite)
   // Fetch external assets from API
   const { assets: apiAssets, mutate: refetchAssets } = useAssets({
     types: ['domain', 'subdomain', 'service', 'ip_address'],
@@ -736,158 +735,104 @@ export default function ExternalSurfacePage() {
       </Dialog>
 
       {/* View Sheet */}
-      <Sheet open={!!viewAsset} onOpenChange={(open) => !open && setViewAsset(null)}>
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-          {viewAsset && (
-            <>
-              <SheetHeader>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                    <Globe className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <SheetTitle>{viewAsset.name}</SheetTitle>
-                    <SheetDescription>{viewAsset.type}</SheetDescription>
-                  </div>
-                </div>
-              </SheetHeader>
-
-              <SheetBody>
-                <div className="mt-6 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Status</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <Badge variant="outline" className={statusColors[viewAsset.status]}>
-                          {viewAsset.status}
-                        </Badge>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Risk Level</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <Badge variant="outline" className={riskColors[viewAsset.riskLevel]}>
-                          {viewAsset.riskLevel}
-                        </Badge>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {viewAsset.ipAddress && (
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Network</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="font-mono text-sm">
-                          {viewAsset.ipAddress}
-                          {viewAsset.port && `:${viewAsset.port}`}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Findings</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div
-                          className={`text-2xl font-bold ${viewAsset.findingsCount > 0 ? 'text-orange-500' : ''}`}
-                        >
-                          {viewAsset.findingsCount}
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">SSL Expiry</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {viewAsset.sslExpiry ? (
-                            <Lock className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <Unlock className="h-4 w-4 text-gray-500" />
-                          )}
-                          <span className="text-sm">
-                            {viewAsset.sslExpiry
-                              ? new Date(viewAsset.sslExpiry).toLocaleDateString()
-                              : 'No SSL'}
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {viewAsset.technologies && viewAsset.technologies.length > 0 && (
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Technologies</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-wrap gap-2">
-                          {viewAsset.technologies.map((tech) => (
-                            <Badge key={tech} variant="secondary">
-                              {tech}
-                            </Badge>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {viewAsset.notes && (
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Notes</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-muted-foreground">{viewAsset.notes}</p>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Timeline</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Discovered</span>
-                        <span>{new Date(viewAsset.discoveredAt).toLocaleDateString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Last Seen</span>
-                        <span>{new Date(viewAsset.lastSeen).toLocaleDateString()}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="mt-6 flex gap-2">
-                  <Button className="flex-1" variant="outline" onClick={() => openEdit(viewAsset)}>
-                    <Pencil className="me-2 h-4 w-4" />
-                    Edit
-                  </Button>
+      {viewAsset && (
+        <DetailSheet
+          open
+          onOpenChange={(open) => !open && setViewAsset(null)}
+          header={
+            <DetailHeader
+              title={viewAsset.name}
+              badges={
+                <>
+                  <Badge variant="outline" className={statusColors[viewAsset.status]}>
+                    {viewAsset.status}
+                  </Badge>
+                  <Badge variant="outline" className={riskColors[viewAsset.riskLevel]}>
+                    {viewAsset.riskLevel} risk
+                  </Badge>
+                </>
+              }
+              meta={[viewAsset.type]}
+              actions={
+                <>
                   <Button
-                    className="flex-1"
+                    size="sm"
                     onClick={() => router.push(`/findings?assetId=${viewAsset.id}`)}
                   >
-                    <ExternalLink className="me-2 h-4 w-4" />
-                    View Findings
+                    <ExternalLink className="h-4 w-4" />
+                    View findings
                   </Button>
-                </div>
-              </SheetBody>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+                  {canWriteScope && (
+                    <Button size="sm" variant="outline" onClick={() => openEdit(viewAsset)}>
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Button>
+                  )}
+                </>
+              }
+              onClose={() => setViewAsset(null)}
+            />
+          }
+        >
+          <div className="space-y-5">
+            <DetailStatGrid aria-label="Key numbers">
+              <DetailStat
+                label="Findings"
+                value={viewAsset.findingsCount}
+                tone={viewAsset.findingsCount > 0 ? 'warning' : 'default'}
+              />
+              <DetailStat
+                label="SSL expiry"
+                value={
+                  viewAsset.sslExpiry
+                    ? new Date(viewAsset.sslExpiry).toLocaleDateString()
+                    : 'No SSL'
+                }
+              />
+            </DetailStatGrid>
+
+            <DetailSections>
+              {viewAsset.ipAddress && (
+                <DetailSection title="Network">
+                  <p className="font-mono text-sm break-all">
+                    {viewAsset.ipAddress}
+                    {viewAsset.port && `:${viewAsset.port}`}
+                  </p>
+                </DetailSection>
+              )}
+
+              {viewAsset.technologies && viewAsset.technologies.length > 0 && (
+                <DetailSection title="Technologies" count={viewAsset.technologies.length}>
+                  <div className="flex flex-wrap gap-1.5">
+                    {viewAsset.technologies.map((tech) => (
+                      <Badge key={tech} variant="secondary">
+                        {tech}
+                      </Badge>
+                    ))}
+                  </div>
+                </DetailSection>
+              )}
+
+              {viewAsset.notes && (
+                <DetailSection title="Notes">
+                  <p className="text-sm text-muted-foreground">{viewAsset.notes}</p>
+                </DetailSection>
+              )}
+
+              <DetailSection title="Timeline">
+                <DetailFieldGrid>
+                  <DetailField label="Discovered">
+                    {new Date(viewAsset.discoveredAt).toLocaleDateString()}
+                  </DetailField>
+                  <DetailField label="Last seen">
+                    {new Date(viewAsset.lastSeen).toLocaleDateString()}
+                  </DetailField>
+                </DetailFieldGrid>
+              </DetailSection>
+            </DetailSections>
+          </div>
+        </DetailSheet>
+      )}
 
       {/* Quick-scan flow */}
       <ScanAssetsDialog
