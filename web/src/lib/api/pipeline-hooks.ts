@@ -26,6 +26,7 @@ import type {
   UpdateStepRequest,
   TriggerPipelineRunRequest,
   QuickScanRequest,
+  QuickScanResponse,
   ScanManagementOverview,
 } from './pipeline-types'
 
@@ -354,7 +355,7 @@ export function useQuickScan() {
   return useSWRMutation(
     currentTenant ? scanManagementEndpoints.quickScan() : null,
     async (url: string, { arg }: { arg: QuickScanRequest }) => {
-      return post<PipelineRun>(url, arg)
+      return post<QuickScanResponse>(url, arg)
     }
   )
 }
