@@ -180,7 +180,7 @@ var findingCreateSQL = `
 			remediation, pentest_campaign_id, created_by,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status,
+			sla_deadline, sla_status, tags,
 			` + findingTypeColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
@@ -188,7 +188,7 @@ var findingCreateSQL = `
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90` + findingTypePlaceholders(91) + `)
+			$89, $90, $91` + findingTypePlaceholders(92) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -304,8 +304,11 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 		// so a manually-created finding with a deadline keeps it.
 		nullTime(finding.SLADeadline()), // $89
 		finding.SLAStatus().String(),    // $90
+		// Tags. The INSERT used to leave them out, so a new finding's tags
+		// (from the manual or pentest form) were lost until an edit.
+		pq.Array(finding.Tags()), // $91
 	}
-	args = append(args, findingTypeArgs(finding)...) // $91…
+	args = append(args, findingTypeArgs(finding)...) // $92…
 	return args, nil
 }
 
@@ -351,13 +354,35 @@ const DefaultBatchChunkSize = 100
 // CreateBatchWithResult persists multiple findings with partial success support.
 // Uses chunked transactions to isolate failures - if one chunk fails,
 // only that chunk is retried individually to identify the bad finding.
+//
+// Each row is an upsert on (tenant_id, fingerprint). The result says, per
+// input index, whether the row was inserted (Inserted) or an existing finding
+// was updated, and the persisted id (IDs). Created counts inserted rows only;
+// a row that hit an existing finding (a concurrent ingest won the race) counts
+// as Updated, and its in-memory finding is re-pointed at the persisted id so
+// no caller acts on an id that does not exist (RFC-043 B2).
 func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
 	result := &vulnerability.BatchCreateResult{
-		Errors: make(map[int]string),
+		Errors:   make(map[int]string),
+		Inserted: make(map[int]bool),
+		IDs:      make(map[int]shared.ID),
 	}
 
 	if len(findings) == 0 {
 		return result, nil
+	}
+
+	record := func(index int, finding *vulnerability.Finding, row upsertedRow) {
+		result.IDs[index] = row.id
+		result.Inserted[index] = row.inserted
+		if row.inserted {
+			result.Created++
+		} else {
+			result.Updated++
+		}
+		if row.id != finding.ID() {
+			finding.AdoptPersistedID(row.id)
+		}
 	}
 
 	// Process in chunks for better error isolation
@@ -370,85 +395,124 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		chunk := findings[chunkStart:chunkEnd]
 
 		// Try to insert the entire chunk
-		err := r.insertChunk(ctx, chunk)
+		rows, err := r.insertChunk(ctx, chunk)
 		if err == nil {
-			// Chunk succeeded
-			result.Created += len(chunk)
+			for i, finding := range chunk {
+				record(chunkStart+i, finding, rows[i])
+			}
 			continue
 		}
 
 		// Chunk failed - retry individually to identify bad findings
 		for i, finding := range chunk {
 			globalIndex := chunkStart + i
-			if err := r.insertSingleFinding(ctx, finding); err != nil {
+			row, err := r.insertSingleFinding(ctx, finding)
+			if err != nil {
 				result.Skipped++
 				result.Errors[globalIndex] = err.Error()
-			} else {
-				result.Created++
+				continue
 			}
+			record(globalIndex, finding, row)
 		}
 	}
 
 	return result, nil
 }
 
-// insertChunk inserts a chunk of findings in a SINGLE multi-row INSERT.
+// upsertedRow is what the finding upsert returns for one row.
+type upsertedRow struct {
+	id       shared.ID
+	inserted bool
+}
+
+// findingUpsertReturningSQL makes the upsert report the persisted id and
+// whether the row was inserted: xmax is 0 for a freshly inserted tuple and the
+// updating transaction's id for one that ON CONFLICT DO UPDATE touched.
+const findingUpsertReturningSQL = "\nRETURNING id, fingerprint, (xmax = 0) AS inserted"
+
+// insertChunk inserts a chunk of findings in a SINGLE multi-row INSERT and
+// returns, in input order, the persisted row for each finding.
 //
 // Previously this looped a prepared statement once per finding (N round-trips
 // per chunk). A single multi-row INSERT collapses that to one round-trip,
 // which dominates ingest latency for large scan reports. The statement is
 // atomic on its own, so no explicit transaction is needed.
 //
-// On failure (including the rare case where the same chunk contains two
-// findings with an identical (tenant_id, fingerprint) — which ON CONFLICT
-// cannot update twice in one statement), CreateBatchWithResult falls back to
-// per-row inserts, preserving partial-success error isolation.
-func (r *FindingRepository) insertChunk(ctx context.Context, findings []*vulnerability.Finding) error {
+// On failure (including the case where the same chunk contains two findings
+// with an identical (tenant_id, fingerprint) — which ON CONFLICT cannot update
+// twice in one statement), CreateBatchWithResult falls back to per-row
+// inserts, preserving partial-success error isolation.
+func (r *FindingRepository) insertChunk(ctx context.Context, findings []*vulnerability.Finding) ([]upsertedRow, error) {
 	if len(findings) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	args := make([]any, 0, len(findings)*findingInsertColumnCount)
 	for _, finding := range findings {
 		rowArgs, err := findingInsertArgs(finding)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		args = append(args, rowArgs...)
 	}
 
-	query := findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(len(findings)) + "\n" + findingUpsertConflictSQL()
+	query := findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(len(findings)) + "\n" + findingUpsertConflictSQL() + findingUpsertReturningSQL
 
-	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to batch insert findings: %w", err)
+	dbRows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch insert findings: %w", err)
+	}
+	defer dbRows.Close()
+
+	// RETURNING order is not guaranteed to follow VALUES order; match rows
+	// back by fingerprint, which is unique within a successful statement.
+	byFingerprint := make(map[string]upsertedRow, len(findings))
+	for dbRows.Next() {
+		var idStr, fp string
+		var row upsertedRow
+		if err := dbRows.Scan(&idStr, &fp, &row.inserted); err != nil {
+			return nil, fmt.Errorf("failed to scan inserted finding: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse inserted finding id: %w", err)
+		}
+		row.id = id
+		byFingerprint[fp] = row
+	}
+	if err := dbRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to batch insert findings: %w", err)
 	}
 
-	return nil
+	out := make([]upsertedRow, len(findings))
+	for i, finding := range findings {
+		row, ok := byFingerprint[finding.Fingerprint()]
+		if !ok {
+			return nil, fmt.Errorf("batch insert returned no row for fingerprint %s", finding.Fingerprint())
+		}
+		out[i] = row
+	}
+	return out, nil
 }
 
-// insertSingleFinding inserts a single finding with its own transaction.
-func (r *FindingRepository) insertSingleFinding(ctx context.Context, finding *vulnerability.Finding) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+// insertSingleFinding upserts a single finding and returns the persisted row.
+func (r *FindingRepository) insertSingleFinding(ctx context.Context, finding *vulnerability.Finding) (upsertedRow, error) {
+	args, err := findingInsertArgs(finding)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return upsertedRow{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	stmt, err := tx.PrepareContext(ctx, r.upsertQuery())
-	if err != nil {
-		return fmt.Errorf("failed to prepare statement: %w", err)
+	var (
+		row   upsertedRow
+		idStr string
+		fp    string
+	)
+	if err := r.db.QueryRowContext(ctx, r.upsertQuery()+findingUpsertReturningSQL, args...).Scan(&idStr, &fp, &row.inserted); err != nil {
+		return upsertedRow{}, fmt.Errorf("failed to insert finding: %w", err)
 	}
-	defer stmt.Close()
-
-	if err := r.execFindingInsert(ctx, stmt, finding); err != nil {
-		return err
+	if row.id, err = shared.IDFromString(idStr); err != nil {
+		return upsertedRow{}, fmt.Errorf("failed to parse inserted finding id: %w", err)
 	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
+	return row, nil
 }
 
 // upsertQuery returns the single-row INSERT ... ON CONFLICT query for findings
@@ -506,7 +570,7 @@ func findingInsertColumnsSQL() string {
 			remediation, pentest_campaign_id,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status,
+			sla_deadline, sla_status, tags,
 			` + findingTypeColumnsSQL + `
 		)`
 }
@@ -540,7 +604,12 @@ func findingUpsertConflictSQL() string {
 			severity = EXCLUDED.severity,
 			scan_id = EXCLUDED.scan_id,
 			sensor_id = EXCLUDED.sensor_id,
-			metadata = EXCLUDED.metadata,
+			-- Existing keys win, new keys are added. This path is only reached
+			-- when two ingests race on a new fingerprint or one batch repeats
+			-- it (a normal re-sighting goes through EnrichBatchByFingerprints,
+			-- which merges metadata in Go). Overwriting dropped whatever the
+			-- first writer, or a user in the meantime, had stored (RFC-043 B2).
+			metadata = EXCLUDED.metadata || COALESCE(findings.metadata, '{}'::jsonb),
 			updated_at = EXCLUDED.updated_at,
 			last_seen_branch = EXCLUDED.last_seen_branch,
 			last_seen_commit = EXCLUDED.last_seen_commit,
@@ -561,7 +630,9 @@ func findingUpsertConflictSQL() string {
 			related_locations = EXCLUDED.related_locations,
 			stacks = EXCLUDED.stacks,
 			attachments = EXCLUDED.attachments,
-			work_item_uris = EXCLUDED.work_item_uris,
+			-- work_item_uris (ticket links) is never taken from the incoming
+			-- row: a scanner never knows the tickets, and EXCLUDED is always
+			-- empty, so assigning it erased the links (RFC-043 B2).
 			hosted_viewer_uri = EXCLUDED.hosted_viewer_uri,
 			exposure_vector = EXCLUDED.exposure_vector,
 			is_network_accessible = EXCLUDED.is_network_accessible,
@@ -605,8 +676,29 @@ func findingUpsertConflictSQL() string {
 			-- was absent (applier failure → NULL). Move sla_status in lockstep
 			-- with the deadline so the two never disagree.
 			sla_deadline = COALESCE(EXCLUDED.sla_deadline, findings.sla_deadline),
-			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END` +
+			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END,
+			-- Tags merge on a re-sighting, the rule EnrichFrom applies on the
+			-- enrich path: the stored tags (a user may have set them) stay
+			-- first, new non-empty ones not already there are appended, and
+			-- the list stops at vulnerability.MaxFindingTags.
+			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") +
 		findingTypeConflictSQL() + "\n\t"
+}
+
+// findingTagsMergeSQL is the SQL expression merging a stored and an incoming
+// tag array: stored tags first, in order, then incoming tags not already
+// present; empty strings dropped; at most vulnerability.MaxFindingTags.
+// It mirrors Finding.EnrichFrom so both re-ingest paths store the same list.
+func findingTagsMergeSQL(stored, incoming string) string {
+	return `COALESCE((SELECT array_agg(m.t ORDER BY m.ord) FROM (
+				SELECT u.t, min(u.ord) AS ord
+				FROM unnest(COALESCE(` + stored + `, '{}'::text[]) || COALESCE(` + incoming + `, '{}'::text[]))
+					WITH ORDINALITY AS u(t, ord)
+				WHERE u.t <> ''
+				GROUP BY u.t
+				ORDER BY min(u.ord)
+				LIMIT ` + strconv.Itoa(vulnerability.MaxFindingTags) + `
+			) m), '{}'::text[])`
 }
 
 // execFindingInsert executes the insert for a single finding using prepared statement.
@@ -623,7 +715,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 89 + findingTypeColumnCount
+const findingInsertColumnCount = 90 + findingTypeColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -747,6 +839,9 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// work; previously they were computed in memory and never written.
 		nullTime(finding.SLADeadline()),
 		finding.SLAStatus().String(),
+		// Tags. Left out of the INSERT until now, so every ingested finding
+		// was stored with tags = '{}' whatever the report sent.
+		pq.Array(finding.Tags()),
 	}, findingTypeArgs(finding)...), nil
 }
 
@@ -1543,6 +1638,10 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	if len(items) == 0 {
 		return nil
 	}
+	// A report can carry one finding twice; the statement cannot update one
+	// (finding, branch) row twice, and the duplicate used to drop every
+	// occurrence of the report. The last sighting wins (latest commit).
+	items = dedupeLastWins(items, branchOccurrenceKey)
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
@@ -1587,6 +1686,12 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	return nil
 }
 
+// branchOccurrenceKey is the conflict key of finding_branch_occurrences as the
+// batch knows it: one finding (by fingerprint) on one branch.
+func branchOccurrenceKey(it vulnerability.BranchOccurrenceUpsert) string {
+	return it.Fingerprint + "\x1f" + it.BranchID.String()
+}
+
 // BackfillFindingBranches gives existing findings the branch a scan saw them
 // on. Findings are matched by (tenant_id, fingerprint) and the branch must
 // belong to the finding's own repository asset. Two cases are updated:
@@ -1605,6 +1710,7 @@ func (r *FindingRepository) BackfillFindingBranches(ctx context.Context, tenantI
 	if len(items) == 0 {
 		return 0, nil
 	}
+	items = dedupeLastWins(items, branchOccurrenceKey)
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
@@ -2620,96 +2726,6 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 		return nil, nil, fmt.Errorf("failed iterating kev/critical counts: %w", err)
 	}
 	return kev, critical, nil
-}
-
-// RecomputeFingerprintsForAsset recomputes and persists the fingerprint of every
-// finding currently pointing at assetID, using the CORRECT scheme per finding.
-//
-// Motivation: an asset merge repoints findings to the surviving asset with a raw
-// UPDATE (AssetDedupRepository.ApproveAndMerge) that does not recompute the
-// fingerprint. Every fingerprint scheme embeds the asset_id, so a repointed
-// finding keeps a stale fingerprint that never dedupes against future scans of
-// the surviving asset — accumulating duplicates.
-//
-// Two schemes coexist and must be recomputed differently (getting this wrong is
-// how a previous attempt corrupted data):
-//   - Ingested findings use the 64-char COMPOSITE sha256(asset_id + ":" + base).
-//     The base is persisted at ingest (FingerprintBaseKey) so we recompute
-//     CompositeFingerprint(keepID, base). Findings ingested before the base was
-//     persisted have no base to recompute from and are left untouched (skipped).
-//   - Manually-created findings use the 32-char Finding.GenerateFingerprint,
-//     which re-derives from the finding's fields + its (now updated) asset_id, so
-//     calling it again yields the correct value.
-//
-// On a UNIQUE(tenant_id, fingerprint) collision the repointed finding is the
-// duplicate and is deleted, keeping the pre-existing one. Idempotent.
-func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, tenantID, assetID shared.ID) (updated, deduped int, err error) {
-	// Read all findings for the asset up front so the mutations below do not
-	// shift pagination offsets mid-iteration.
-	var all []*vulnerability.Finding
-	page := pagination.Pagination{Page: 1, PerPage: 500}
-	for {
-		res, lerr := r.ListByAssetID(ctx, tenantID, assetID, vulnerability.FindingListOptions{}, page)
-		if lerr != nil {
-			return updated, deduped, fmt.Errorf("failed to list findings for fingerprint recompute: %w", lerr)
-		}
-		all = append(all, res.Data...)
-		if len(res.Data) == 0 || page.Page >= res.TotalPages {
-			break
-		}
-		page.Page++
-	}
-
-	for _, f := range all {
-		oldFP := f.Fingerprint()
-		newFP, composite := recomputeFindingFingerprint(f, assetID.String())
-		if newFP == "" || newFP == oldFP {
-			continue
-		}
-		_, uerr := r.db.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.ID().String(), tenantID.String())
-		if uerr == nil {
-			updated++
-			continue
-		}
-		if !isUniqueViolation(uerr) {
-			return updated, deduped, fmt.Errorf("failed to update finding fingerprint: %w", uerr)
-		}
-		// Collision on (tenant_id, newFP). For the COMPOSITE scheme this is
-		// unambiguous: a native finding recomputes to its unchanged value and was
-		// skipped above (newFP == oldFP), so only a moved duplicate can reach here
-		// — delete it, keep the existing. For the MANUAL scheme a native finding
-		// whose fields drifted after creation (GenerateFingerprint runs only at
-		// create) can also collide, so deleting could destroy a legitimate
-		// finding — skip it instead (the moved duplicate simply keeps its stale
-		// fingerprint, no worse than before the merge).
-		if !composite {
-			continue
-		}
-		if _, derr := r.db.ExecContext(ctx,
-			`DELETE FROM findings WHERE id = $1 AND tenant_id = $2`,
-			f.ID().String(), tenantID.String()); derr != nil {
-			return updated, deduped, fmt.Errorf("failed to delete duplicate finding after fingerprint collision: %w", derr)
-		}
-		deduped++
-	}
-	return updated, deduped, nil
-}
-
-// recomputeFindingFingerprint returns the correct fingerprint for f now that it
-// lives on keepAssetID and whether it is the composite scheme. Returns "" when
-// it cannot be safely recomputed (a composite finding whose base was not
-// persisted). `composite` is true only for the base-derived composite scheme.
-func recomputeFindingFingerprint(f *vulnerability.Finding, keepAssetID string) (newFP string, composite bool) {
-	if base, ok := f.PartialFingerprints()[vulnerability.FingerprintBaseKey]; ok && base != "" {
-		return vulnerability.CompositeFingerprint(keepAssetID, base), true
-	}
-	if len(f.Fingerprint()) == 32 {
-		// Manual scheme: re-derives from f.assetID (already updated to keepID) + fields.
-		return f.GenerateFingerprint(), false
-	}
-	return "", false
 }
 
 // CountOpenByAssetID returns the count of open findings for an asset.

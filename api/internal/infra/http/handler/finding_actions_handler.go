@@ -73,7 +73,7 @@ func (h *FindingActionsHandler) SourceAnalytics(w http.ResponseWriter, r *http.R
 // owner_id, component_id and finding_type, which the UI offers, with 400 and
 // let status and type through to a 500.
 var findingGroupByDimensions = map[string]bool{
-	"cve_id": true, "asset_id": true, "owner_id": true, "component_id": true,
+	"cve_id": true, "rule_id": true, "asset_id": true, "owner_id": true, "component_id": true,
 	"severity": true, "source": true, "finding_type": true,
 }
 

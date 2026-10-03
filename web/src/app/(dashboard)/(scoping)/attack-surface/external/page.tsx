@@ -58,6 +58,8 @@ import {
   type CreateAssetInput,
 } from '@/features/assets'
 import { fetchAllAssets } from '@/features/assets/hooks/use-assets'
+import { ipAddresses } from '@/features/assets/lib/service-facts'
+import { IssuesChip, LabelChips, SurfaceFacts } from '@/features/assets/components/service-cells'
 import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
 import { useTenant } from '@/context/tenant-provider'
@@ -101,9 +103,13 @@ function sentence(s?: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
+/**
+ * The asset's first known IP, read through service-facts. It used to read
+ * `metadata.ip_address` as a string, but ingest stores a map under that key
+ * for IP assets, which rendered an object into the table.
+ */
 function ipOf(a: Asset): string | undefined {
-  const m = a.metadata ?? {}
-  return (m.ip_address as string) || (m.resolved_ip as string) || undefined
+  return ipAddresses(a)[0]
 }
 
 interface FormState {
@@ -354,6 +360,22 @@ export default function ExternalSurfacePage() {
     setScanDialogOpen(true)
   }
 
+  // "+ Add label" on a row: save that asset's tags, then refetch.
+  const saveRowLabels = useCallback(
+    async (id: string, tags: string[]) => {
+      try {
+        await updateAsset(id, { tags })
+        toast.success('Label added')
+        await refetchAssets()
+      } catch (e) {
+        toast.error(getErrorMessage(e, 'Failed to add the label'))
+        throw e
+      }
+    },
+    [refetchAssets]
+  )
+  const canWriteAssets = can(Permission.AssetsWrite)
+
   const handleExport = async () => {
     try {
       const all = await fetchAllAssets(listFilters, (loaded, cap) =>
@@ -364,7 +386,7 @@ export default function ExternalSurfacePage() {
         [
           { header: 'Name', accessor: (a) => a.name },
           { header: 'Type', accessor: (a) => a.type },
-          { header: 'IP address', accessor: (a) => ipOf(a) ?? '' },
+          { header: 'IP addresses', accessor: (a) => ipAddresses(a).join(';') },
           { header: 'Risk score', accessor: (a) => a.riskScore },
           { header: 'Findings', accessor: (a) => a.findingCount },
           { header: 'Last seen', accessor: (a) => a.lastSeen ?? '' },
@@ -392,17 +414,13 @@ export default function ExternalSurfacePage() {
         ),
       },
       {
-        id: 'ip',
-        header: 'IP address',
+        // Status, IP / CNAME, technologies, TLS …: the shared service cells,
+        // chosen per type by cellsForType. IPs are among them, so there is
+        // no separate IP column.
+        id: 'service',
+        header: 'Service facts',
         enableSorting: false,
-        cell: ({ row }) => {
-          const ip = ipOf(row.original)
-          return ip ? (
-            <span className="text-sm tabular-nums">{ip}</span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )
-        },
+        cell: ({ row }) => <SurfaceFacts asset={row.original} className="max-w-[380px]" />,
       },
       {
         id: 'risk',
@@ -414,14 +432,23 @@ export default function ExternalSurfacePage() {
         id: 'findings',
         header: 'Findings',
         enableSorting: false,
+        cell: ({ row }) =>
+          row.original.findingCount > 0 ? (
+            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
+          ) : (
+            <span className="text-muted-foreground tabular-nums">0</span>
+          ),
+      },
+      {
+        id: 'labels',
+        header: 'Labels',
+        enableSorting: false,
         cell: ({ row }) => (
-          <span
-            className={
-              row.original.findingCount > 0 ? 'font-medium text-destructive tabular-nums' : ''
-            }
-          >
-            {row.original.findingCount}
-          </span>
+          <LabelChips
+            className="max-w-[220px]"
+            labels={row.original.tags ?? []}
+            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, tags) : undefined}
+          />
         ),
       },
       {
@@ -466,7 +493,7 @@ export default function ExternalSurfacePage() {
         ),
       },
     ],
-    [router, openEdit]
+    [router, openEdit, canWriteAssets, saveRowLabels]
   )
 
   const filtersActive =

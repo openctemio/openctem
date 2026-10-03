@@ -25,6 +25,42 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Fixed
 
+- **A finding another ingest just created is no longer reported as new, and
+  keeps its ticket links** (RFC-043 P0). Ingest checked which fingerprints
+  existed and then inserted the rest; when two ingests raced on one new
+  finding, or one report named a finding twice, the second insert still
+  counted as created and ran the new-finding steps (workflows,
+  notifications, assignment rules, remediation keys, exposure bridge) under
+  an id that was never stored. Its `ON CONFLICT` update also replaced the
+  stored ticket links (`work_item_uris`) and metadata with the empty values
+  of the incoming row. The upsert now returns the stored id and whether it
+  inserted; only inserted rows count as created and run those steps, a
+  repeated finding in one report is folded into the first, ticket links are
+  never taken from the incoming row, and metadata keeps the stored keys.
+- **Asset stats and facets respect data scope.** `GET /api/v1/assets/stats`
+  and `GET /api/v1/assets/facets` counted every asset of the organization,
+  so a member restricted to some assets (access groups) could read totals,
+  breakdowns and property values of assets they cannot list. Both now apply
+  the same data-scope filter as the asset list: a scoped member's numbers
+  equal what their list shows, and in an organization where members without
+  an access group see nothing, such a member gets empty stats and no facets.
+  Administrators and unrestricted members see the same numbers as before.
+  The facets query is also bounded: it reads the 5,000 most recently
+  updated assets in scope, expands at most 50 elements of an array property
+  per asset and returns the top 20 values per key from the database. On a
+  larger inventory the facet counts are counts within that sample.
+
+- **Group scans resolve members as assets and skip archived ones.** A scan
+  of an asset group matched scope exclusions against each member's name
+  only, so a host whose address was in an excluded network was scanned. It
+  also scanned archived members. Members are now read by asset id (only
+  assets of the scan's tenant), exclusions are tested against the member's
+  name, addresses (`ip_addresses`, `ip`) and repository URLs, and archived
+  members are skipped and counted (`archived_target_count` in the run
+  context, and a warning). **Behaviour change:** archived assets in a group
+  are no longer scanned, and a member whose address matches an approved
+  exclusion is now excluded. Stale and inactive members are still scanned.
+
 - **A pipeline step's settings reach the sensor.** Step commands carried
   the step's config as `step_config`, which no sensor reads, so every step
   ran with its tool's defaults (a naabu step with `ports: "80"` scanned the

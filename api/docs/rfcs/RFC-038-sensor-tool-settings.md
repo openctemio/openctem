@@ -10,6 +10,11 @@
 > echo, `config_version`), [RFC-034](RFC-034-sensor-network-egress.md)
 > (egress profiles: the pattern of "reference, never inline secret") and
 > [RFC-036](RFC-036-easm.md) (T0/T1/T2 intrusiveness tiers).
+> Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
+> §5.6 signs settings documents with the same separate signer as jobs and
+> amends S6 to a DSSE envelope over the exact bytes (no canonical JSON,
+> research 03 finding 8); a job names the settings version and digest it
+> runs with.
 >
 > Owner's request (2026-10-02): "Tools in the sensor need input options /
 > custom config. The SDK should have an interface for the sensor to

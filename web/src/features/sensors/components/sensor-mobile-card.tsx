@@ -81,6 +81,7 @@ export function SensorMobileCard({
   const k = keyExpiry(sensor.key_expires_at, now)
   if (k.kind === 'soon') facts.push({ text: `key expires in ${k.days}d`, tone: 'warning' })
   if (k.kind === 'expired') facts.push({ text: 'key expired', tone: 'destructive' })
+  if (sensor.legacy_key) facts.push({ text: 'legacy key' })
   const content = worstContentState(sensor.content)
   if (content === 'failed' || content === 'stale') {
     facts.push({
