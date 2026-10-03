@@ -53,7 +53,7 @@ src/
 ├── hooks/                  # Global hooks
 ├── types/                  # Global types
 └── assets/                 # Static assets
-proxy.ts                    # Next.js 16 Proxy (locale detection, routing)
+src/proxy.ts                # Next.js 16 Proxy (auth redirect, locale, CSP nonce)
 ```
 
 See [architecture.md](.claude/architecture.md) for details.

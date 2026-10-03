@@ -180,7 +180,7 @@ var findingCreateSQL = `
 			remediation, pentest_campaign_id, created_by,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status,
+			sla_deadline, sla_status, tags,
 			` + findingTypeColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
@@ -188,7 +188,7 @@ var findingCreateSQL = `
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90` + findingTypePlaceholders(91) + `)
+			$89, $90, $91` + findingTypePlaceholders(92) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -304,8 +304,11 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 		// so a manually-created finding with a deadline keeps it.
 		nullTime(finding.SLADeadline()), // $89
 		finding.SLAStatus().String(),    // $90
+		// Tags. The INSERT used to leave them out, so a new finding's tags
+		// (from the manual or pentest form) were lost until an edit.
+		pq.Array(finding.Tags()), // $91
 	}
-	args = append(args, findingTypeArgs(finding)...) // $91…
+	args = append(args, findingTypeArgs(finding)...) // $92…
 	return args, nil
 }
 
@@ -506,7 +509,7 @@ func findingInsertColumnsSQL() string {
 			remediation, pentest_campaign_id,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status,
+			sla_deadline, sla_status, tags,
 			last_seen_tool,
 			` + findingTypeColumnsSQL + `
 		)`
@@ -609,8 +612,29 @@ func findingUpsertConflictSQL() string {
 			-- was absent (applier failure → NULL). Move sla_status in lockstep
 			-- with the deadline so the two never disagree.
 			sla_deadline = COALESCE(EXCLUDED.sla_deadline, findings.sla_deadline),
-			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END` +
+			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END,
+			-- Tags merge on a re-sighting, the rule EnrichFrom applies on the
+			-- enrich path: the stored tags (a user may have set them) stay
+			-- first, new non-empty ones not already there are appended, and
+			-- the list stops at vulnerability.MaxFindingTags.
+			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") +
 		findingTypeConflictSQL() + "\n\t"
+}
+
+// findingTagsMergeSQL is the SQL expression merging a stored and an incoming
+// tag array: stored tags first, in order, then incoming tags not already
+// present; empty strings dropped; at most vulnerability.MaxFindingTags.
+// It mirrors Finding.EnrichFrom so both re-ingest paths store the same list.
+func findingTagsMergeSQL(stored, incoming string) string {
+	return `COALESCE((SELECT array_agg(m.t ORDER BY m.ord) FROM (
+				SELECT u.t, min(u.ord) AS ord
+				FROM unnest(COALESCE(` + stored + `, '{}'::text[]) || COALESCE(` + incoming + `, '{}'::text[]))
+					WITH ORDINALITY AS u(t, ord)
+				WHERE u.t <> ''
+				GROUP BY u.t
+				ORDER BY min(u.ord)
+				LIMIT ` + strconv.Itoa(vulnerability.MaxFindingTags) + `
+			) m), '{}'::text[])`
 }
 
 // execFindingInsert executes the insert for a single finding using prepared statement.
@@ -627,7 +651,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 90 + findingTypeColumnCount
+const findingInsertColumnCount = 91 + findingTypeColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -751,6 +775,9 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// work; previously they were computed in memory and never written.
 		nullTime(finding.SLADeadline()),
 		finding.SLAStatus().String(),
+		// Tags. Left out of the INSERT until now, so every ingested finding
+		// was stored with tags = '{}' whatever the report sent.
+		pq.Array(finding.Tags()),
 		// Tool of this sighting (RFC-043 interim auto-resolve guard).
 		nullString(finding.LastSeenTool()),
 	}, findingTypeArgs(finding)...), nil

@@ -1373,13 +1373,12 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	}
 
 	// Layer 2: Data Scope - non-admin users only see assets in their groups
-	if !input.IsAdmin && input.ActingUserID != "" {
-		userID, err := shared.IDFromString(input.ActingUserID)
-		if err == nil {
-			filter = filter.WithDataScopeUserID(userID)
-			filter.DataScopeStrict = s.dataScopeStrict(ctx, input.TenantID)
-		}
+	access, err := s.listAccessScope(ctx, input.TenantID, input.ActingUserID, input.IsAdmin)
+	if err != nil {
+		return pagination.Result[*assetdom.Asset]{}, err
 	}
+	filter.DataScopeUserID = access.DataScopeUserID
+	filter.DataScopeStrict = access.DataScopeStrict
 
 	// Build list options with sorting
 	opts := assetdom.NewListOptions()
@@ -1392,27 +1391,56 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	return s.repo.List(ctx, filter, opts, page)
 }
 
-// GetPropertyFacets returns distinct property keys and values for faceted filtering.
-func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID string, types []string, subType string) ([]assetdom.PropertyFacet, error) {
+// listAccessScope is the Layer-2 data scope the asset list applies, shared by
+// the list, the stats and the property facets so the counts a user sees match
+// what they can list. Admins and callers with no user (API keys) are not
+// narrowed. An acting user id that does not parse is refused (fail closed)
+// instead of silently dropping the scope.
+func (s *AssetService) listAccessScope(ctx context.Context, tenantID, actingUserID string, isAdmin bool) (assetdom.AccessScope, error) {
+	if isAdmin || actingUserID == "" {
+		return assetdom.AccessScope{}, nil
+	}
+	userID, err := shared.IDFromString(actingUserID)
+	if err != nil {
+		return assetdom.AccessScope{}, fmt.Errorf("%w: invalid acting user id", shared.ErrForbidden)
+	}
+	return assetdom.AccessScope{
+		DataScopeUserID: &userID,
+		DataScopeStrict: s.dataScopeStrict(ctx, tenantID),
+	}, nil
+}
+
+// GetPropertyFacets returns distinct property keys and values for faceted
+// filtering, counted only over the assets the acting user may list.
+func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types []string, subType string) ([]assetdom.PropertyFacet, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	return s.repo.GetPropertyFacets(ctx, parsedTenantID, types, subType)
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetPropertyFacets(ctx, parsedTenantID, access, types, subType)
+}
+
+// GetAssetStats returns aggregated asset statistics using SQL aggregation,
+// counted only over the assets the acting user may list.
+// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types []string, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, tags, subType, countByFields...)
 }
 
 // ListTags returns distinct tags across all assets for a tenant.
 // Supports prefix filtering for autocomplete.
-// GetAssetStats returns aggregated asset statistics using SQL aggregation.
-// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
-	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags, subType, countByFields...)
-}
-
 func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, types []string, limit int) ([]string, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
