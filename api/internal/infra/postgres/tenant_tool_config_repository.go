@@ -405,49 +405,41 @@ func (r *TenantToolConfigRepository) ListToolsWithConfig(
 	// Build WHERE clause for tools filter
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	// Tenant ID for the LEFT JOIN
 	args = append(args, tenantID.String())
-	argIndex++
 
 	// SECURITY: Only show platform tools (tenant_id IS NULL) and tenant's own custom tools
 	// This prevents tenants from seeing other tenants' custom tools
-	conditions = append(conditions, fmt.Sprintf("(t.tenant_id IS NULL OR t.tenant_id = $%d)", argIndex))
 	args = append(args, tenantID.String())
-	argIndex++
+	conditions = append(conditions, fmt.Sprintf("(t.tenant_id IS NULL OR t.tenant_id = $%d)", len(args)))
 
 	if filter.CategoryID != nil {
-		conditions = append(conditions, fmt.Sprintf("t.category_id = $%d", argIndex))
 		args = append(args, filter.CategoryID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("t.category_id = $%d", len(args)))
 	}
 
 	if filter.CategoryName != nil {
-		conditions = append(conditions, fmt.Sprintf("t.category_id IN (SELECT id FROM tool_categories WHERE name = $%d)", argIndex))
 		args = append(args, *filter.CategoryName)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("t.category_id IN (SELECT id FROM tool_categories WHERE name = $%d)", len(args)))
 	}
 
 	if filter.IsActive != nil {
-		conditions = append(conditions, fmt.Sprintf("t.is_active = $%d", argIndex))
 		args = append(args, *filter.IsActive)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("t.is_active = $%d", len(args)))
 	}
 
 	if filter.IsBuiltin != nil {
-		conditions = append(conditions, fmt.Sprintf("t.is_builtin = $%d", argIndex))
 		args = append(args, *filter.IsBuiltin)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("t.is_builtin = $%d", len(args)))
 	}
 
 	if filter.Search != "" {
+		args = append(args, wrapLikePattern(filter.Search))
 		conditions = append(conditions, fmt.Sprintf(
 			"(t.name ILIKE $%d OR t.display_name ILIKE $%d OR t.description ILIKE $%d)",
-			argIndex, argIndex, argIndex,
+			len(args), len(args), len(args),
 		))
-		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
 	}
 
 	whereClause := ""
