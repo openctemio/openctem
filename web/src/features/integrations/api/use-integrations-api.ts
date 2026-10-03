@@ -25,7 +25,6 @@ import type {
   ListSCMRepositoriesResponse,
   CreateNotificationIntegrationRequest,
   TestNotificationResponse,
-  SendNotificationRequest,
   NotificationEventsResponse,
 } from '../types/integration.types'
 
@@ -429,20 +428,6 @@ export function useTestNotificationApi(integrationId: string) {
     currentTenant && integrationId ? `${BASE_URL}/${integrationId}/test-notification` : null,
     async (url: string) => {
       return post<TestNotificationResponse>(url, {})
-    }
-  )
-}
-
-/**
- * Send a notification through an integration
- */
-export function useSendNotificationApi(integrationId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/send` : null,
-    async (url: string, { arg }: { arg: SendNotificationRequest }) => {
-      return post<TestNotificationResponse>(url, arg)
     }
   )
 }

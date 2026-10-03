@@ -1037,32 +1037,6 @@ export async function verifyEmailAction(
   }
 }
 
-/**
- * Resend verification email
- */
-export async function resendVerificationAction(
-  email: string
-): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
-  try {
-    await backendFetch<{ message: string }>(authEndpoints.resendVerification(), {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    })
-
-    return {
-      success: true,
-      data: null,
-      message: 'Verification email sent',
-    }
-  } catch (error) {
-    console.error('Resend verification error:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to send verification email',
-    }
-  }
-}
-
 // ============================================
 // CREATE FIRST TEAM
 // ============================================
