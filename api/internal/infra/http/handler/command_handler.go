@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
@@ -46,6 +48,7 @@ type simulationRunFinalizer interface {
 // CommandHandler handles command-related HTTP requests.
 type CommandHandler struct {
 	service          *command.Service
+	audit            *app.AuditService
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
 	simFinalizer     simulationRunFinalizer
@@ -61,6 +64,14 @@ func NewCommandHandler(svc *command.Service, v *validator.Validator, log *logger
 		validator: v,
 		logger:    log,
 	}
+}
+
+// SetAuditService records commands a user issues, cancels or deletes through
+// the API in the tenant's audit log. A command makes a sensor run something on
+// the tenant's network; the sensor's own poll/ack/complete calls are not
+// audited here.
+func (h *CommandHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
 }
 
 // SetPipelineService sets the pipeline service for triggering pipeline progression.
@@ -239,6 +250,11 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+
+	logRequestChange(h.audit, h.logger, r,
+		app.NewSuccessEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, cmd.ID.String()).
+			WithResourceName(string(cmd.Type)).
+			WithMessage("Command "+string(cmd.Type)+" created"))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -925,6 +941,10 @@ func (h *CommandHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r,
+		app.NewSuccessEvent(audit.ActionCommandCanceled, audit.ResourceTypeCommand, cmd.ID.String()).
+			WithResourceName(string(cmd.Type)).
+			WithMessage("Command "+string(cmd.Type)+" canceled"))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
@@ -951,6 +971,9 @@ func (h *CommandHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r,
+		app.NewSuccessEvent(audit.ActionCommandDeleted, audit.ResourceTypeCommand, commandID).
+			WithMessage("Command deleted"))
 
 	w.WriteHeader(http.StatusNoContent)
 }
