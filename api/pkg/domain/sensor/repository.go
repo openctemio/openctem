@@ -328,8 +328,11 @@ type KeyUseRecorder interface {
 	// RecordKeyUse marks the sensor seen (last_seen_at, health online) and
 	// stores the client address of the key use with its time. It returns the
 	// address stored before (nil when none was). A nil ip records only the
-	// time.
-	RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP) (previous net.IP, err error)
+	// time. at is when the key was used: key uses are recorded off the
+	// request path and can reach the database out of order, so an
+	// observation older than the stored one keeps the stored address and
+	// returns a nil previous address.
+	RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (previous net.IP, err error)
 }
 
 // InstanceObserver is implemented by a sensor repository that keeps the
