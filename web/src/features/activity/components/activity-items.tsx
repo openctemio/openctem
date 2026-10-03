@@ -63,6 +63,21 @@ export function attachmentHref(url: string | undefined): string | undefined {
   return safeHref(url)
 }
 
+/**
+ * Comment-sized markdown: the renderer's own stylesheet sets 16px text, a page
+ * background and document-sized headings. It is unlayered CSS, which beats
+ * Tailwind's layered utilities whatever the specificity, hence `!`.
+ */
+export const COMMENT_MARKDOWN = cn(
+  'min-w-0 break-words',
+  '[&_.wmde-markdown]:bg-transparent! [&_.wmde-markdown]:text-sm! [&_.wmde-markdown]:leading-relaxed! [&_.wmde-markdown]:text-foreground!',
+  '[&_.wmde-markdown_p]:my-1! [&_.wmde-markdown_ul]:my-1! [&_.wmde-markdown_ol]:my-1!',
+  '[&_.wmde-markdown_h1]:mt-2! [&_.wmde-markdown_h1]:mb-1! [&_.wmde-markdown_h1]:border-0! [&_.wmde-markdown_h1]:pb-0! [&_.wmde-markdown_h1]:text-base!',
+  '[&_.wmde-markdown_h2]:mt-2! [&_.wmde-markdown_h2]:mb-1! [&_.wmde-markdown_h2]:border-0! [&_.wmde-markdown_h2]:pb-0! [&_.wmde-markdown_h2]:text-sm!',
+  '[&_.wmde-markdown_h3]:mt-2! [&_.wmde-markdown_h3]:mb-1! [&_.wmde-markdown_h3]:text-sm!',
+  '[&_.wmde-markdown_code]:text-xs! [&_.wmde-markdown_pre]:my-2! [&_.wmde-markdown_pre]:max-w-full! [&_.wmde-markdown_pre]:overflow-x-auto! [&_.wmde-markdown_pre]:text-xs!'
+)
+
 export function actorInitials(actor: ActivityActor): string {
   if (actor.kind === 'system') return 'SY'
   if (actor.kind === 'ai') return 'AI'
@@ -444,12 +459,9 @@ export function CommentCard({
           </div>
         </div>
       ) : (
-        <div className="relative mt-1.5 ps-8">
+        <div className="relative mt-1.5 min-w-0 ps-8">
           <div className={cn(long && !expanded && 'max-h-64 overflow-hidden')}>
-            <MarkdownPreview
-              content={item.body}
-              className="text-sm break-words [&_code]:text-xs [&_p]:my-1 [&_pre]:text-xs"
-            />
+            <MarkdownPreview content={item.body} className={COMMENT_MARKDOWN} />
           </div>
           {long && (
             <button

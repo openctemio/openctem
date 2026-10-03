@@ -129,6 +129,8 @@ function mapActivity(api: ApiFindingActivity): Activity {
     activityType: api.activity_type,
     actorType: api.actor_type,
     actorId: api.actor_id,
+    actorName: api.actor_name,
+    activitySource: api.source,
     assigneeName,
     assigneeEmail,
     assigneeId,

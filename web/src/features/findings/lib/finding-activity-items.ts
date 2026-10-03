@@ -60,13 +60,19 @@ function str(v: unknown): string | undefined {
 
 export function findingActor(a: Activity): ActivityActor {
   const t = str(a.metadata?.actorType)
-  if (a.actor === 'system') {
-    return {
-      name: t === 'scanner' ? 'Scanner' : t === 'integration' ? 'Integration' : 'System',
-      kind: t === 'integration' ? 'integration' : 'system',
-    }
+  // Scanners and integrations come through as actor_type with no person
+  // behind them; the API mapper turns that into "Unknown User".
+  if (t === 'scanner' || t === 'integration' || a.actor === 'system') {
+    const source = str(a.metadata?.actorName) ?? str(a.metadata?.tool_name)
+    const name =
+      t === 'scanner'
+        ? (source ?? 'Scanner')
+        : t === 'integration'
+          ? (source ?? 'Integration')
+          : 'System'
+    return { name, kind: t === 'integration' ? 'integration' : 'system' }
   }
-  if (a.actor === 'ai') return { name: 'AI assistant', kind: 'ai' }
+  if (a.actor === 'ai' || t === 'ai') return { name: 'AI assistant', kind: 'ai' }
   return { id: a.actor.id, name: a.actor.name || a.actor.email || 'Someone', kind: 'user' }
 }
 

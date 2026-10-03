@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { MarkdownPreview } from '@/components/ui/markdown-editor'
 import { cn } from '@/lib/utils'
 import { readDraft, writeDraft } from '../lib/activity-storage'
+import { COMMENT_MARKDOWN } from './activity-items'
 
 export const MAX_COMMENT_LENGTH = 10_000
 
@@ -137,7 +138,7 @@ export const ActivityComposer = forwardRef<ActivityComposerHandle, ActivityCompo
             aria-label="Comment preview"
           >
             {body.trim() ? (
-              <MarkdownPreview content={body} className="text-sm [&_p]:my-1" />
+              <MarkdownPreview content={body} className={COMMENT_MARKDOWN} />
             ) : (
               <p className="text-sm text-muted-foreground">Nothing to preview yet.</p>
             )}

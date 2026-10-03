@@ -188,6 +188,13 @@ export function ActivityPanel({
   // must not move it.
   const [dividerSince, setDividerSince] = useState<number | null>(null)
   const initialScrollDone = useRef(false)
+  // A state, not a ref: the sheet mounts its content after `open` flips, and
+  // the observer below must attach once the element exists.
+  const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null)
+  // What the view holds on to until the reader scrolls: content keeps growing
+  // after the first paint (markdown renders lazily), which would otherwise
+  // leave the panel short of the bottom or of the unread divider.
+  const stick = useRef<'bottom' | 'divider' | null>(null)
 
   // ---- open / close bookkeeping -------------------------------------------
   const wasOpen = useRef(false)
@@ -255,12 +262,50 @@ export function ActivityPanel({
     if (merged.length === 0 && !error) return
     initialScrollDone.current = true
     const divider = el.querySelector<HTMLElement>('[data-activity-unread]')
-    if (divider) {
-      el.scrollTop = Math.max(0, divider.offsetTop - 16)
-    } else {
-      el.scrollTop = el.scrollHeight
-    }
+    stick.current = divider ? 'divider' : 'bottom'
+    applyStick()
   }, [open, loading, merged.length, error, rows])
+
+  function applyStick() {
+    const el = bodyRef.current
+    if (!el) return
+    if (stick.current === 'divider') {
+      const divider = el.querySelector<HTMLElement>('[data-activity-unread]')
+      if (divider) {
+        el.scrollTop = Math.max(0, divider.offsetTop - 16)
+        return
+      }
+    }
+    if (stick.current === 'bottom' || prev.current.nearBottom) el.scrollTop = el.scrollHeight
+  }
+
+  // Hold the position while content grows; let go once the reader scrolls.
+  useEffect(() => {
+    const el = bodyRef.current
+    const content = contentEl
+    if (!el || !content) return
+    const release = () => {
+      stick.current = null
+    }
+    el.addEventListener('wheel', release, { passive: true })
+    el.addEventListener('touchmove', release, { passive: true })
+    el.addEventListener('keydown', release)
+    el.addEventListener('pointerdown', release)
+    let ro: ResizeObserver | undefined
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        if (initialScrollDone.current) applyStick()
+      })
+      ro.observe(content)
+    }
+    return () => {
+      el.removeEventListener('wheel', release)
+      el.removeEventListener('touchmove', release)
+      el.removeEventListener('keydown', release)
+      el.removeEventListener('pointerdown', release)
+      ro?.disconnect()
+    }
+  }, [contentEl])
 
   // Keep the reading position when older items are prepended, and decide what
   // to do with items appended at the end.
@@ -617,7 +662,7 @@ export function ActivityPanel({
         ) : undefined
       }
     >
-      {customBody ?? body}
+      <div ref={setContentEl}>{customBody ?? body}</div>
       {!customBody && newCount > 0 && (
         // Sticks to the bottom of the scrolling feed while you read above.
         <div className="pointer-events-none sticky bottom-1 mt-2 flex justify-center">
