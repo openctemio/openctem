@@ -77,6 +77,9 @@ type SensorService struct {
 	// leases renews the leases of the commands a heartbeating sensor holds
 	// (RFC-035 D6); nil renews nothing.
 	leases commanddom.LeaseRenewer
+	// cancels finds the commands a heartbeating sensor must stop
+	// (cancel_command_ids). Optional; nil sends none.
+	cancels commanddom.CancelFinder
 	// history keeps the per-sensor heartbeat history (the Control channel
 	// sparkline) and gaps observes each heartbeat's gap (metrics); nil
 	// records nothing.
@@ -125,6 +128,39 @@ func (s *SensorService) HeartbeatHistory(ctx context.Context, tenantID, sensorID
 // report one (an SDK without the load report). Optional.
 func (s *SensorService) SetLeaseRenewer(r commanddom.LeaseRenewer) {
 	s.leases = r
+}
+
+// SetCancelFinder wires the cancel signal into the heartbeat: the answer
+// lists the commands the sensor reports holding but must stop (canceled,
+// timed out, re-queued, held elsewhere), as cancel_command_ids. Optional.
+func (s *SensorService) SetCancelFinder(f commanddom.CancelFinder) {
+	s.cancels = f
+}
+
+// MaxCancelCommandIDs bounds cancel_command_ids in a heartbeat answer
+// (sdk-go reads at most 256).
+const MaxCancelCommandIDs = 256
+
+// CommandsToCancel returns the commands among running (the heartbeat's
+// running list, untrusted) that sensor a must stop. Best effort: nil when
+// nothing is wired, nothing is reported, or the lookup fails (logged), so
+// the heartbeat never fails because of it.
+func (s *SensorService) CommandsToCancel(ctx context.Context, a *sensordom.Sensor, running []string) []string {
+	if s.cancels == nil || a == nil || a.TenantID == nil || len(running) == 0 {
+		return nil
+	}
+	if len(running) > maxRenewedCommands {
+		running = running[:maxRenewedCommands]
+	}
+	ids, err := s.cancels.CommandsToCancel(ctx, *a.TenantID, a.ID, running)
+	if err != nil {
+		s.logger.Warn("commands to cancel not looked up", "sensor_id", a.ID.String(), "error", err)
+		return nil
+	}
+	if len(ids) > MaxCancelCommandIDs {
+		ids = ids[:MaxCancelCommandIDs]
+	}
+	return ids
 }
 
 // SetEventRepository wires the sensor activity store: heartbeat diffs and
