@@ -198,21 +198,26 @@ export function ActivityPanel({
 
   // ---- open / close bookkeeping -------------------------------------------
   const wasOpen = useRef(false)
+  // Read at the moment the panel opens or closes, not on every change.
+  const lastSeenRef = useRef(lastSeen)
+  const onSeenRef = useRef(onSeen)
+  useEffect(() => {
+    lastSeenRef.current = lastSeen
+    onSeenRef.current = onSeen
+  }, [lastSeen, onSeen])
   useEffect(() => {
     if (open && !wasOpen.current) {
-      setDividerSince(lastSeen ?? null)
+      setDividerSince(lastSeenRef.current ?? null)
       initialScrollDone.current = false
       setNewCount(0)
-      onSeen?.()
+      onSeenRef.current?.()
     }
     if (!open && wasOpen.current) {
-      onSeen?.()
+      onSeenRef.current?.()
       setFilter(null)
       setExpanded(new Set())
     }
     wasOpen.current = open
-    // lastSeen is read only at the moment the panel opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   // ---- the feed ------------------------------------------------------------
