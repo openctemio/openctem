@@ -32,6 +32,7 @@ export const SENSOR_AUDIT_VERBS = [
   'key_renewed',
   'key_renewal_refused',
   'identity_cloned',
+  'job_refused_local_policy',
   'connected',
   'disconnected',
 ] as const
@@ -385,6 +386,7 @@ export function getActionLabel(action: AuditAction): string {
     'sensor.key_renewed': 'Sensor API Key Renewed',
     'sensor.key_renewal_refused': 'Sensor API Key Renewal Refused',
     'sensor.identity_cloned': 'Sensor Key Used by Two Processes',
+    'sensor.job_refused_local_policy': 'Sensor Refused a Job (Local Policy)',
     'sensor.connected': 'Sensor Connected',
     'sensor.disconnected': 'Sensor Disconnected',
     // Scan zone actions

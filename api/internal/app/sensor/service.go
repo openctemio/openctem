@@ -649,6 +649,10 @@ type SensorHeartbeatData struct {
 	AdvisedSeconds int
 	DoorbellAware  bool
 
+	// LocalPolicy is the local policy report the heartbeat carried
+	// (RFC-040 §5.7), untrusted; nil when it carried none.
+	LocalPolicy *sensordom.LocalPolicyReport
+
 	// ManifestDigest is the manifest digest the sensor echoes (RFC-033); ""
 	// from a sensor that registers no manifest, whose manifest is then
 	// derived from this heartbeat's report.
@@ -774,6 +778,13 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		report.NoCeiling = true
 	}
 
+	// The local policy report: sanitized, and a slim heartbeat's (state,
+	// digest, kill switch) merged with the stored summary of the same policy.
+	localPolicy := sensordom.MergeLocalPolicyReport(a.LocalPolicy, sensordom.SanitizeLocalPolicyReport(data.LocalPolicy))
+	if data.LocalPolicy == nil {
+		localPolicy = nil
+	}
+
 	updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, sensordom.HeartbeatUpdate{
 		TenantID:      a.TenantID,
 		Version:       version,
@@ -796,6 +807,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Build:         build,
 		Interval:      sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware),
 		Control:       data.Control,
+		LocalPolicy:   localPolicy,
 	})
 	if err != nil {
 		return err
@@ -860,6 +872,11 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 				continue
 			}
 			events = append(events, e)
+		}
+		if data.LocalPolicy != nil {
+			if e, ok := sensordom.LocalPolicyEvent(a, localPolicy, now); ok {
+				events = append(events, e)
+			}
 		}
 		s.recordEvents(ctx, events)
 	}

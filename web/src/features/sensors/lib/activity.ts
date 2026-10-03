@@ -25,6 +25,8 @@ import {
   Wrench,
   XCircle,
   type LucideIcon,
+  Lock,
+  ShieldX,
 } from 'lucide-react'
 
 import type { ActivityTimelineTone } from '@/features/shared'
@@ -316,6 +318,34 @@ export function describeSensorActivity(
           to: str(d.to),
         }),
         details: d.from !== undefined ? [fromTo(str(d.from), str(d.to))] : [],
+      }
+    case 'local_policy_changed': {
+      const to = str(d.to)
+      return {
+        icon: Lock,
+        tone: to === 'enforced' ? 'success' : to === 'paused' ? 'destructive' : 'warning',
+        title: t('sensors.activity.localPolicyChanged', '{summary}', { summary: item.summary }),
+        details: d.digest_to
+          ? [
+              t('sensors.activity.policyDigest', 'Policy {digest}', {
+                digest: str(d.digest_to).replace('sha256:', '').slice(0, 12),
+              }),
+            ]
+          : [],
+      }
+    }
+    case 'job_refused_local_policy':
+      return {
+        icon: ShieldX,
+        tone: 'destructive',
+        title: t(
+          'sensors.activity.jobRefusedLocalPolicy',
+          'Refused a job under its local policy ({rule})',
+          {
+            rule: str(d.rule),
+          }
+        ),
+        details: d.reason ? [str(d.reason)] : [],
       }
     case 'manifest_changed':
       return {

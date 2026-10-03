@@ -212,11 +212,16 @@ const (
 	// FeatureManifest: PUT /manifest registers the sensor manifest and the
 	// heartbeat accepts manifest_digest (RFC-033).
 	FeatureManifest = "manifest"
+	// FeatureLocalPolicy: heartbeats and manifests may carry the sensor's
+	// local policy report ("local_policy": state, digest, summary, kill
+	// switch), which the platform stores and shows (RFC-040 §5.7). The
+	// policy itself is enforced on the sensor.
+	FeatureLocalPolicy = "local_policy"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy}
 }
 
 // Deprecation announces a deprecated protocol on hello.

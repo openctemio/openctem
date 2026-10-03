@@ -90,7 +90,13 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 {{- end}}
 {{- if isDaemon .Sensor}}
 
-# {{if .CACert}}2. {{end}}Start the sensor. It connects out to the platform (no inbound port)
+# {{if .CACert}}2{{else}}1{{end}}. Install the sensor-local policy (the "Local policy" tab, saved as
+# sensor-policy.yaml), reviewed by the owner of the network this sensor scans.
+# The sensor refuses every job outside it; without the file it does not start.
+sudo install -d -m 0755 /etc/openctem
+sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
+
+# {{if .CACert}}3{{else}}2{{end}}. Start the sensor. It connects out to the platform (no inbound port)
 # and runs the scans the platform dispatches. Results that cannot be delivered
 # yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
 # The {{$slug}}-state volume keeps the sensor's state, including the API key
@@ -98,7 +104,13 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 # starts with the key above, which a renewal has retired). {{$slug}}-content
 # caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
 # container does not download it again; it can be deleted at any time.
+# Hardened: read-only root filesystem, no capabilities, no privilege
+# escalation (add --cap-add NET_RAW only for naabu SYN scans). /etc/openctem
+# is mounted read-only: the policy, and the kill switch the host owner
+# creates with sudo touch /etc/openctem/STOP.
 docker run -d --name {{$slug}} --restart unless-stopped \
+  --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --tmpfs /tmp --tmpfs /home/openctem --tmpfs /scan --tmpfs /cache --tmpfs /config \
   -e API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
   -e API_KEY={{shellQuote .APIKey}} \
@@ -108,10 +120,14 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- with toolList .Sensor.Tools}}
   -e SENSOR_TOOLS={{.}} \
 {{- end}}
+  -e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml \
+{{- if .Policy.AllowPrivate}}
+  -e SENSOR_ALLOW_PRIVATE_TARGETS=1 \
+{{- end}}
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
-  -v /etc/openctem/certs:/etc/openctem/certs:ro \
 {{- end}}
+  -v /etc/openctem:/etc/openctem:ro \
   -v {{$slug}}-outbox:/var/lib/openctem/outbox \
   -v {{$slug}}-state:/var/lib/openctem/state \
   -v {{$slug}}-content:/var/lib/openctem/content \
@@ -174,7 +190,17 @@ export SSL_CERT_DIR=/etc/openctem/certs
 #        printf '%s\n' 'OPENCTEM_API_KEY=octs_...' > .env && chmod 600 .env
 #      (the key is shown once, when the sensor is created or its key rotated)
 {{- end}}
+{{- if isDaemon .Sensor}}
+#   2. Save the "Local policy" tab as policy/sensor-policy.yaml, after the
+#      owner of the scanned network reviewed it (the sensor refuses every job
+#      outside it; without the file it does not start), owned by root and
+#      read-only:
+#        sudo install -D -m 0644 -o root sensor-policy.yaml policy/sensor-policy.yaml
+#   3. Save this file as compose.yaml and run: docker compose up -d
+#   Kill switch (no job runs while the file exists): sudo touch policy/STOP
+{{- else}}
 #   2. Save this file as compose.yaml and run: docker compose up -d
+{{- end}}
 {{- if .CACert}}
 #   The platform's private CA is embedded below (configs.content needs
 #   Docker Compose 2.23.1 or later).
@@ -188,11 +214,26 @@ services:
     # A one-shot sensor: scans ./src once and sends the results.
     command: ["-tool", "{{firstTool .Sensor.Tools}}", "-target", "/scan", "-push"]
 {{- end}}
+{{- if isDaemon .Sensor}}
+    # Hardened: read-only root filesystem, no capabilities, no privilege
+    # escalation (add NET_RAW to cap_add only for naabu SYN scans).
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp, /home/openctem, /scan, /cache, /config]
+{{- end}}
     environment:
       API_URL: {{yamlQuote .BaseURL}}
       API_KEY: ${OPENCTEM_API_KEY:?set OPENCTEM_API_KEY in .env}
 {{- with toolList .Sensor.Tools}}
       SENSOR_TOOLS: {{yamlQuote .}}
+{{- end}}
+{{- if isDaemon .Sensor}}
+      SENSOR_LOCAL_POLICY: /etc/openctem/policy/sensor-policy.yaml
+      SENSOR_KILL_SWITCH_FILE: /etc/openctem/policy/STOP
+{{- if .Policy.AllowPrivate}}
+      SENSOR_ALLOW_PRIVATE_TARGETS: "1"
+{{- end}}
 {{- end}}
 {{- if .CACert}}
       SSL_CERT_DIR: /etc/openctem/certs
@@ -202,6 +243,8 @@ services:
 {{- if isDaemon .Sensor}}
       - state:/var/lib/openctem/state
       - content:/var/lib/openctem/content
+      # The sensor-local policy and the kill switch, read-only.
+      - ./policy:/etc/openctem/policy:ro
 {{- end}}
 {{- if not (isDaemon .Sensor)}}
       - ./src:/scan:ro
@@ -239,7 +282,17 @@ configs:
 # configs/sensor-templates/kubernetes.tmpl on the API host to change it.
 #
 # Apply in the namespace the sensor should run in:
+{{- if isDaemon .Sensor}}
+#   1. Store the sensor-local policy (the "Local policy" tab, saved as
+#      sensor-policy.yaml), reviewed by the owner of the scanned network. The
+#      sensor refuses every job outside it; without it the pod does not start.
+#      Keep write access to this ConfigMap with the network owner:
+#        kubectl create configmap {{$slug}}-policy -n <namespace> --from-file=sensor-policy.yaml
+#   2. kubectl apply -n <namespace> -f {{$slug}}.yaml
+#   Kill switch: set "kill_switch: true" in the ConfigMap and restart the pod.
+{{- else}}
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
+{{- end}}
 {{- if not .APIKey}}
 # Replace octs_... below with the sensor's API key first (it is shown once,
 # when the sensor is created or its key is rotated).
@@ -327,11 +380,22 @@ spec:
         app.kubernetes.io/instance: {{$slug}}
     spec:
       securityContext:
-        # The image runs as uid/gid 999; this lets it write its volumes.
+        # The image runs as uid/gid 999; fsGroup lets it write its volumes.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
         fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: sensor
           image: {{.Image}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              # Add NET_RAW only for naabu SYN scans.
+              drop: ["ALL"]
           env:
             - name: API_URL
               value: {{yamlQuote .BaseURL}}
@@ -344,6 +408,12 @@ spec:
             - name: SENSOR_TOOLS
               value: {{yamlQuote .}}
 {{- end}}
+            - name: SENSOR_LOCAL_POLICY
+              value: /etc/openctem/policy/sensor-policy.yaml
+{{- if .Policy.AllowPrivate}}
+            - name: SENSOR_ALLOW_PRIVATE_TARGETS
+              value: "1"
+{{- end}}
 {{- if .CACert}}
             - name: SSL_CERT_DIR
               value: /etc/openctem/certs
@@ -355,6 +425,20 @@ spec:
               mountPath: /var/lib/openctem/state
             - name: content
               mountPath: /var/lib/openctem/content
+            - name: policy
+              mountPath: /etc/openctem/policy
+              readOnly: true
+            # Writable scratch directories (the root filesystem is read-only).
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /home/openctem
+            - name: scan
+              mountPath: /scan
+            - name: cache
+              mountPath: /cache
+            - name: config
+              mountPath: /config
 {{- if .CACert}}
             - name: ca
               mountPath: /etc/openctem/certs
@@ -370,6 +454,20 @@ spec:
         - name: content
           persistentVolumeClaim:
             claimName: {{$slug}}-content
+        - name: policy
+          configMap:
+            name: {{$slug}}-policy
+            defaultMode: 0444
+        - name: tmp
+          emptyDir: {}
+        - name: home
+          emptyDir: {}
+        - name: scan
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+        - name: config
+          emptyDir: {}
 {{- if .CACert}}
         - name: ca
           secret:
@@ -461,7 +559,12 @@ kubectl create secret generic {{$slug}}-key \
   --from-literal=api-key="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}"
 {{- end}}
 
-# 2. Turn the bundled sensor on (release "openctem"; use yours).
+# 2. Save the "Local policy" tab as sensor-policy.yaml, reviewed by the owner
+#    of the scanned network: the sensor refuses every job outside it.
+
+# 3. Turn the bundled sensor on (release "openctem"; use yours). Chart 0.11.0
+#    or later: the sensor runs hardened (non-root, read-only root filesystem,
+#    no capabilities, seccomp RuntimeDefault) and mounts the policy read-only.
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \
@@ -472,7 +575,72 @@ helm upgrade openctem openctem/openctem --reuse-values \
 {{- end}}
   --set sensor.outbox.persistence.enabled=true \
   --set sensor.state.persistence.enabled=true \
-  --set sensor.content.persistence.enabled=true
+  --set sensor.content.persistence.enabled=true \
+  --set sensor.localPolicy.enabled=true \
+  --set-file sensor.localPolicy.policy=sensor-policy.yaml
 {{- end}}
+`,
+	"policy": `{{- $slug := slugify .Sensor.Name -}}
+# OpenCTEM sensor-local policy for "{{$slug}}" (RFC-040 §5.7).
+# Generated by OpenCTEM at {{.GeneratedAt}} as a starting point. Edit
+# configs/sensor-templates/policy.tmpl on the API host to change it.
+#
+# The owner of the network this sensor scans reviews and edits this file,
+# then installs it on the sensor host, owned by root and read-only:
+#   sudo install -d -m 0755 /etc/openctem
+#   sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
+# The sensor refuses every job outside it, whatever the platform sends, and
+# reports only its digest and a summary. The platform cannot change it.
+# Every key: https://github.com/openctemio/sensor/blob/main/docs/LOCAL_POLICY.md
+apiVersion: openctem.io/sensor-policy/v1
+
+targets:
+{{- if .Policy.Open}}
+  # This sensor is in the default zone, which scans public targets that no
+  # range lists, so there is no allow list: any target outside "deny" and
+  # the built-in deny list (loopback, link-local and metadata, CGNAT,
+  # multicast) may be scanned. List the ranges and domains to narrow it.
+{{- range .Policy.Ranges}}
+  #   {{.}}
+{{- end}}
+{{- else if .Policy.Ranges}}
+  # The ranges of this sensor's scan zones. Add host names or *.domain
+  # entries the sensor may also scan.
+  allow:
+{{- range .Policy.Ranges}}
+    - {{yamlQuote .}}
+{{- end}}
+{{- else}}
+  # What this sensor may scan: CIDRs, IPs, host names and *.domain. This
+  # sensor has no scan zone yet; list its ranges. Without "allow", any target
+  # outside "deny" and the built-in deny list may be scanned.
+  # allow:
+  #   - 203.0.113.0/24
+  #   - "*.example.com"
+{{- end}}
+  # Never scanned, even when "allow" matches (every address a name resolves
+  # to is checked).
+  deny: []
+  # RFC 1918 / ULA ranges. The sensor must also run with
+  # SENSOR_ALLOW_PRIVATE_TARGETS=1: the policy only narrows.
+  allow_private: {{.Policy.AllowPrivate}}
+{{- with tools .Sensor.Tools}}
+
+tools:
+  # The tools this sensor may run.
+  allow:
+{{- range .}}
+    - {{yamlQuote .}}
+{{- end}}
+{{- end}}
+
+# Platform-supplied custom templates and out-of-band callbacks (nuclei
+# interactsh) stay off unless the network owner turns them on.
+allow_custom_templates: false
+allow_interactsh: false
+
+# While this file exists the sensor runs no job and reports "paused by local
+# policy": sudo touch /etc/openctem/STOP (remove it to resume).
+kill_switch_file: /etc/openctem/STOP
 `,
 }

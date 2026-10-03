@@ -542,8 +542,9 @@ export function DataTable<TData, TValue>({
   onSelectionChangeRef.current = onSelectionChange
   React.useEffect(() => {
     onSelectionChangeRef.current?.(table.getFilteredSelectedRowModel().rows.map((r) => r.original))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowSelection])
+    // `table` is the same instance for the component's lifetime (useReactTable
+    // keeps it in state), so only a selection change re-runs this.
+  }, [rowSelection, table])
 
   return (
     <div className="space-y-4">

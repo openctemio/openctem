@@ -917,6 +917,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize vulnerability & exposure services
 	s.Vulnerability = app.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
+	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
+	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
@@ -1406,7 +1408,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Custom templates leave for sensors signed with the tenant's key
 	// (sensors refuse unsigned ones; RFC-038 "Custom template trust").
 	s.TemplateKeys = initTemplateKeyring(cfg, log)
-	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor)}
+	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
+		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
+		// timeline and the audit log (A11); a tenant can keep private targets
+		// from sensors without a policy.
+		command.WithRefusalObserver(s.Sensor), command.WithPrivateTargetPolicy(s.Tenant)}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}

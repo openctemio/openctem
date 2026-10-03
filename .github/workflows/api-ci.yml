@@ -137,6 +137,14 @@ jobs:
       - name: SQL Schema Drift
         run: bash scripts/check-sql-schema.sh
 
+      # RFC-042: configs/asset-types.yaml is the one definition of asset
+      # types, classes and lenses. Fails when the generated Go/TS or the
+      # asset_types seed in the newest registry migration drifted from it.
+      # The live-schema half runs in internal/infra/postgres
+      # (TestAssetTypeRegistry_*) on the full tier.
+      - name: Asset Types Drift
+        run: GOWORK=off go run ./cmd/gen-asset-types -check
+
       - name: Security Gates (security lint)
         working-directory: .
         env:

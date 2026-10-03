@@ -2986,6 +2986,407 @@ definitions:
       request_id:
         type: string
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.AssetType:
+    enum:
+    - domain
+    - subdomain
+    - certificate
+    - ip_address
+    - website
+    - web_application
+    - api
+    - mobile_app
+    - service
+    - repository
+    - cloud_account
+    - compute
+    - storage
+    - serverless
+    - container_registry
+    - host
+    - container
+    - kubernetes_cluster
+    - kubernetes_namespace
+    - database
+    - data_store
+    - s3_bucket
+    - network
+    - vpc
+    - subnet
+    - load_balancer
+    - firewall
+    - iam_user
+    - iam_role
+    - service_account
+    - unclassified
+    - http_service
+    - open_port
+    - discovered_url
+    - endpoint
+    - application
+    - identity
+    - kubernetes
+    type: string
+    x-enum-comments:
+      AssetTypeApplication: Consolidates website, web_application, api, mobile_app
+      AssetTypeDiscoveredURL: URLs/endpoints from Katana
+      AssetTypeHTTPService: HTTP/HTTPS services from HTTPX
+      AssetTypeIdentity: Consolidates iam_user, iam_role, service_account
+      AssetTypeKubernetes: Consolidates kubernetes_cluster, kubernetes_namespace
+      AssetTypeOpenPort: Individual open ports from Naabu
+      AssetTypeService: Network services (SSH, HTTP, DB, etc.)
+    x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - Network services (SSH, HTTP, DB, etc.)
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - HTTP/HTTPS services from HTTPX
+    - Individual open ports from Naabu
+    - URLs/endpoints from Katana
+    - ""
+    - Consolidates website, web_application, api, mobile_app
+    - Consolidates iam_user, iam_role, service_account
+    - Consolidates kubernetes_cluster, kubernetes_namespace
+    x-enum-varnames:
+    - AssetTypeDomain
+    - AssetTypeSubdomain
+    - AssetTypeCertificate
+    - AssetTypeIPAddress
+    - AssetTypeWebsite
+    - AssetTypeWebApplication
+    - AssetTypeAPI
+    - AssetTypeMobileApp
+    - AssetTypeService
+    - AssetTypeRepository
+    - AssetTypeCloudAccount
+    - AssetTypeCompute
+    - AssetTypeStorage
+    - AssetTypeServerless
+    - AssetTypeContainerRegistry
+    - AssetTypeHost
+    - AssetTypeContainer
+    - AssetTypeKubernetesCluster
+    - AssetTypeKubernetesNamespace
+    - AssetTypeDatabase
+    - AssetTypeDataStore
+    - AssetTypeS3Bucket
+    - AssetTypeNetwork
+    - AssetTypeVPC
+    - AssetTypeSubnet
+    - AssetTypeLoadBalancer
+    - AssetTypeFirewall
+    - AssetTypeIAMUser
+    - AssetTypeIAMRole
+    - AssetTypeServiceAccount
+    - AssetTypeUnclassified
+    - AssetTypeHTTPService
+    - AssetTypeOpenPort
+    - AssetTypeDiscoveredURL
+    - AssetTypeEndpoint
+    - AssetTypeApplication
+    - AssetTypeIdentity
+    - AssetTypeKubernetes
+  github_com_openctemio_openctem_api_pkg_domain_asset.AttributeDefinition:
+    properties:
+      facet:
+        type: boolean
+      group:
+        type: boolean
+      name:
+        type: string
+      type:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AttributeKind'
+      values:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.AttributeKind:
+    enum:
+    - string
+    - int
+    - number
+    - bool
+    - time
+    - enum
+    - list
+    - object
+    type: string
+    x-enum-varnames:
+    - AttributeString
+    - AttributeInt
+    - AttributeNumber
+    - AttributeBool
+    - AttributeTime
+    - AttributeEnum
+    - AttributeList
+    - AttributeObject
+  github_com_openctemio_openctem_api_pkg_domain_asset.Category:
+    enum:
+    - external_surface
+    - application
+    - infrastructure
+    - network
+    - cloud
+    - data
+    - code
+    - identity
+    - other
+    type: string
+    x-enum-varnames:
+    - CategoryExternalSurface
+    - CategoryApplication
+    - CategoryInfrastructure
+    - CategoryNetwork
+    - CategoryCloud
+    - CategoryData
+    - CategoryCode
+    - CategoryIdentity
+    - CategoryOther
+  github_com_openctemio_openctem_api_pkg_domain_asset.Class:
+    enum:
+    - domain
+    - ip_address
+    - certificate
+    - service
+    - web_endpoint
+    - application
+    - host
+    - function
+    - cloud_account
+    - container
+    - cluster
+    - artifact_registry
+    - code_repo
+    - identity
+    - data_store
+    - network
+    - other
+    type: string
+    x-enum-varnames:
+    - ClassDomain
+    - ClassIPAddress
+    - ClassCertificate
+    - ClassService
+    - ClassWebEndpoint
+    - ClassApplication
+    - ClassHost
+    - ClassFunction
+    - ClassCloudAccount
+    - ClassContainer
+    - ClassCluster
+    - ClassArtifactRegistry
+    - ClassCodeRepo
+    - ClassIdentity
+    - ClassDataStore
+    - ClassNetwork
+    - ClassOther
+  github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition:
+    properties:
+      id:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Class'
+      jupiterone:
+        type: string
+      label:
+        type: string
+      lens:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Lens'
+      types:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AssetType'
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.Lens:
+    enum:
+    - external_surface
+    - applications
+    - cloud_infra
+    - containers_k8s
+    - code
+    - identities
+    - data
+    - network
+    type: string
+    x-enum-varnames:
+    - LensExternalSurface
+    - LensApplications
+    - LensCloudInfra
+    - LensContainersK8s
+    - LensCode
+    - LensIdentities
+    - LensData
+    - LensNetwork
+  github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition:
+    properties:
+      classes:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Class'
+        type: array
+      default_group_by:
+        type: string
+      description:
+        type: string
+      id:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Lens'
+      label:
+        type: string
+      row:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule:
+    properties:
+      peers:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'
+        type: array
+      relationship:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType'
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType:
+    enum:
+    - runs_on
+    - deployed_to
+    - contains
+    - exposes
+    - resolves_to
+    - cname_of
+    - depends_on
+    - peer_of
+    - replicates_to
+    - sends_data_to
+    - stores_data_in
+    - authenticates_to
+    - granted_to
+    - has_access_to
+    - load_balances
+    - protected_by
+    - monitors
+    - manages
+    type: string
+    x-enum-varnames:
+    - RelTypeRunsOn
+    - RelTypeDeployedTo
+    - RelTypeContains
+    - RelTypeExposes
+    - RelTypeResolvesTo
+    - RelTypeCnameOf
+    - RelTypeDependsOn
+    - RelTypePeerOf
+    - RelTypeReplicatesTo
+    - RelTypeSendsDataTo
+    - RelTypeStoresDataIn
+    - RelTypeAuthenticatesTo
+    - RelTypeGrantedTo
+    - RelTypeHasAccessTo
+    - RelTypeLoadBalances
+    - RelTypeProtectedBy
+    - RelTypeMonitors
+    - RelTypeManages
+  github_com_openctemio_openctem_api_pkg_domain_asset.SectionDefinition:
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition:
+    properties:
+      alias_of:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'
+      attributes:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AttributeDefinition'
+        type: array
+      card:
+        type: string
+      class:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Class'
+      columns:
+        items:
+          type: string
+        type: array
+      facets:
+        items:
+          type: string
+        type: array
+      group_by:
+        items:
+          type: string
+        type: array
+      icon:
+        type: string
+      identity_keys:
+        items:
+          type: string
+        type: array
+      label:
+        type: string
+      legacy_category:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Category'
+      lens:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Lens'
+      plural:
+        type: string
+      relationships:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships'
+      sections:
+        items:
+          type: string
+        type: array
+      storage:
+        type: string
+      sub_types:
+        items:
+          type: string
+        type: array
+      type:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AssetType'
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef:
+    properties:
+      sub_type:
+        type: string
+      type:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AssetType'
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships:
+    properties:
+      in:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule'
+        type: array
+      out:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule'
+        type: array
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_audit.Changes:
     properties:
       after:
@@ -3426,6 +3827,64 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport:
+    properties:
+      digest:
+        description: Digest is "sha256:<hex>" of the policy; "" when absent.
+        type: string
+      kill_switch:
+        description: KillSwitch is true while the sensor owner stopped every job.
+        type: boolean
+      source:
+        description: Source is "file" or "env" (shorthand settings); "" when absent.
+        type: string
+      state:
+        description: State is LocalPolicyEnforced or LocalPolicyAbsent.
+        type: string
+      summary:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary'
+        description: Summary is the shape of an enforced policy (never the ranges).
+      warnings:
+        description: Warnings are the sensor's operator warnings.
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary:
+    properties:
+      allow_custom_templates:
+        description: AllowCustomTemplates and AllowInteractsh are the policy's switches.
+        type: boolean
+      allow_interactsh:
+        type: boolean
+      allow_private:
+        description: 'AllowPrivate: private ranges may be scanned.'
+        type: boolean
+      checks:
+        items:
+          type: string
+        type: array
+      max_job_seconds:
+        type: integer
+      max_rps:
+        description: MaxRPS and MaxJobSeconds are the caps (0 = not set).
+        type: integer
+      ports:
+        description: Ports is the allowed port list ("" = any).
+        type: string
+      targets_allow:
+        description: TargetsAllow is the number of allow entries; -1 = no allow list.
+        type: integer
+      targets_deny:
+        description: TargetsDeny is the number of deny entries.
+        type: integer
+      tools:
+        description: Tools and Checks are the allowed tools and job types (nil = any).
+        items:
+          type: string
+        type: array
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.Manifest:
     properties:
       capabilities:
@@ -3434,6 +3893,12 @@ definitions:
         type: array
       concurrency:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestConcurrency'
+      local_policy:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport'
+        description: |-
+          LocalPolicy is the sensor-local policy report (RFC-040 §5.7), sent
+          by SDKs that see "local_policy" on hello; sanitized when stored.
       platform:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestPlatform'
       resources:
@@ -4060,6 +4525,25 @@ definitions:
         type: array
     required:
     - asset_ids
+    type: object
+  internal_infra_http_handler.AddCommentReactionRequest:
+    properties:
+      emoji:
+        description: Emoji is a single emoji sequence (max 32 bytes).
+        example: "\U0001F440"
+        type: string
+    type: object
+  internal_infra_http_handler.AddCommentRequest:
+    properties:
+      content:
+        maxLength: 10000
+        minLength: 1
+        type: string
+      is_internal:
+        description: IsInternal keeps the comment inside the organization.
+        type: boolean
+    required:
+    - content
     type: object
   internal_infra_http_handler.AddGroupMemberRequest:
     properties:
@@ -4900,6 +5384,48 @@ definitions:
         type: integer
       type:
         example: domain
+        type: string
+    type: object
+  internal_infra_http_handler.AssetTypeRegistryResponse:
+    properties:
+      cards:
+        items:
+          type: string
+        type: array
+      classes:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition'
+        type: array
+      core_fields:
+        items:
+          type: string
+        type: array
+      data:
+        description: 'Deprecated: the legacy asset_types rows; use Types.'
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AssetTypeResponse'
+        type: array
+      lenses:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      sections:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.SectionDefinition'
+        type: array
+      total:
+        type: integer
+      total_pages:
+        type: integer
+      types:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition'
+        type: array
+      version:
         type: string
     type: object
   internal_infra_http_handler.AssetTypeResponse:
@@ -5911,6 +6437,34 @@ definitions:
         type: string
       type:
         type: string
+    type: object
+  internal_infra_http_handler.CommentReactionSummary:
+    properties:
+      count:
+        type: integer
+      emoji:
+        type: string
+      reacted_by_me:
+        type: boolean
+      sample_users:
+        description: SampleUsers holds up to five reactors, earliest first.
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CommentReactionUser'
+        type: array
+    type: object
+  internal_infra_http_handler.CommentReactionUser:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_infra_http_handler.CommentReactionsResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CommentReactionSummary'
+        type: array
     type: object
   internal_infra_http_handler.ComponentResponse:
     properties:
@@ -7671,6 +8225,52 @@ definitions:
       name:
         type: string
     type: object
+  internal_infra_http_handler.FindingCommentListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.FindingCommentResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.FindingCommentResponse:
+    properties:
+      author_email:
+        type: string
+      author_id:
+        type: string
+      author_name:
+        type: string
+      content:
+        type: string
+      created_at:
+        type: string
+      edited:
+        description: |-
+          Edited is true when the comment was changed after it was posted
+          (updated_at more than a second after created_at).
+        type: boolean
+      finding_id:
+        type: string
+      id:
+        type: string
+      is_internal:
+        description: IsInternal marks an organization-only comment.
+        type: boolean
+      is_status_change:
+        type: boolean
+      new_status:
+        type: string
+      old_status:
+        type: string
+      reactions:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CommentReactionSummary'
+        type: array
+      updated_at:
+        type: string
+    type: object
   internal_infra_http_handler.FindingComponentInfo:
     properties:
       dependency_type:
@@ -8568,6 +9168,13 @@ definitions:
           InstanceID is the random id of the sensor process (sdk-go v0.12+), for
           clone detection. Optional; older SDKs do not send it.
         type: string
+      local_policy:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport'
+        description: |-
+          LocalPolicy is the sensor-local policy report (RFC-040 §5.7): state,
+          digest, summary and kill switch, sent by SDKs that see
+          "local_policy" on hello. Display data; sanitized before it is stored.
       manifest_digest:
         description: |-
           ManifestDigest is the digest of the sensor's registered manifest, as
@@ -11167,6 +11774,12 @@ definitions:
         type: string
       kubernetes:
         type: string
+      policy:
+        description: |-
+          Policy is the sensor-local policy template (sensor-policy.yaml, RFC-040
+          §5.7), prefilled with the ranges of the sensor's scan zones, for the
+          network owner to review and install read-only on the sensor host.
+        type: string
       yaml:
         type: string
     type: object
@@ -11330,6 +11943,34 @@ definitions:
         type: string
       resources:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedResources'
+    type: object
+  internal_infra_http_handler.SensorLocalPolicyResponse:
+    properties:
+      digest:
+        type: string
+      kill_switch:
+        type: boolean
+      reported_at:
+        type: string
+      source:
+        enum:
+        - ""
+        - file
+        - env
+        type: string
+      state:
+        enum:
+        - enforced
+        - absent
+        - paused
+        - unknown
+        type: string
+      summary:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary'
+      warnings:
+        items:
+          type: string
+        type: array
     type: object
   internal_infra_http_handler.SensorManifestListResponse:
     properties:
@@ -11564,6 +12205,13 @@ definitions:
       load_factor:
         description: 0.0 to 1.0
         type: number
+      local_policy:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.SensorLocalPolicyResponse'
+        description: |-
+          LocalPolicy is the sensor-local policy the sensor reports (RFC-040
+          §5.7): enforced on the sensor, shown here. Always present; state
+          "unknown" when the sensor never reported one.
       manifest_at:
         type: string
       manifest_digest:
@@ -12606,6 +13254,15 @@ definitions:
         items:
           type: integer
         type: array
+    type: object
+  internal_infra_http_handler.UpdateCommentRequest:
+    properties:
+      content:
+        maxLength: 10000
+        minLength: 1
+        type: string
+    required:
+    - content
     type: object
   internal_infra_http_handler.UpdateComponentRequest:
     properties:
@@ -15893,53 +16550,62 @@ paths:
     get:
       consumes:
       - application/json
-      description: Retrieves a paginated list of system asset types. Asset types are
-        read-only configuration. Use active_only=true to get all active types without
-        pagination.
+      description: 'Returns the asset type registry (RFC-042): every asset type with
+        its class, lens, attribute schema, facets, group-by fields, row columns, card
+        renderer, detail sections, allowed relationships and identity keys, plus the
+        classes, lenses and the closed sets of sections and cards. The registry is
+        generated from api/configs/asset-types.yaml and holds no tenant data. The
+        response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages
+        fields are the legacy asset_types rows (deprecated, kept for one release);
+        the query parameters below filter only those.'
       parameters:
-      - description: Return only active asset types (bypasses pagination)
+      - description: ETag from a previous response
+        in: header
+        name: If-None-Match
+        type: string
+      - description: 'Legacy rows: only active asset types, without pagination'
         in: query
         name: active_only
         type: boolean
-      - description: Include category details in response
+      - description: 'Legacy rows: include category details'
         in: query
         name: include_category
         type: boolean
-      - description: Search by name or code
+      - description: 'Legacy rows: search by name or code'
         in: query
         name: search
         type: string
-      - description: Filter by category ID
+      - description: 'Legacy rows: filter by category ID'
         in: query
         name: category_id
         type: string
-      - description: Filter by exact code
+      - description: 'Legacy rows: filter by exact code'
         in: query
         name: code
         type: string
-      - description: Filter by system type
+      - description: 'Legacy rows: filter by system type'
         in: query
         name: is_system
         type: boolean
-      - description: Filter by scannable flag
+      - description: 'Legacy rows: filter by scannable flag'
         in: query
         name: is_scannable
         type: boolean
-      - description: Filter by discoverable flag
+      - description: 'Legacy rows: filter by discoverable flag'
         in: query
         name: is_discoverable
         type: boolean
-      - description: Sort field (e.g., 'name', '-display_order')
+      - description: 'Legacy rows: sort field (e.g., ''name'', ''-display_order'')'
         in: query
         name: sort
         type: string
       - default: 1
-        description: Page number
+        description: 'Legacy rows: page number'
         in: query
         name: page
         type: integer
       - default: 50
-        description: Items per page
+        description: 'Legacy rows: items per page'
         in: query
         name: per_page
         type: integer
@@ -15949,20 +16615,9 @@ paths:
         "200":
           description: OK
           schema:
-            properties:
-              data:
-                items:
-                  $ref: '#/definitions/internal_infra_http_handler.AssetTypeResponse'
-                type: array
-              page:
-                type: integer
-              per_page:
-                type: integer
-              total:
-                type: integer
-              total_pages:
-                type: integer
-            type: object
+            $ref: '#/definitions/internal_infra_http_handler.AssetTypeRegistryResponse'
+        "304":
+          description: Not modified (If-None-Match matched the ETag)
         "400":
           description: Bad Request
           schema:
@@ -15977,7 +16632,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: List asset types
+      summary: Asset type registry
       tags:
       - Asset Types
   /asset-types/{id}:
@@ -16023,6 +16678,7 @@ paths:
     get:
       consumes:
       - application/json
+      deprecated: true
       description: Retrieves a paginated list of asset type categories. Use active_only=true
         to get all active categories without pagination.
       parameters:
@@ -16085,6 +16741,7 @@ paths:
     get:
       consumes:
       - application/json
+      deprecated: true
       description: Retrieves a single asset type category by its unique identifier
       parameters:
       - description: Category ID (UUID)
@@ -18348,6 +19005,98 @@ paths:
       summary: Cancel command
       tags:
       - Commands
+  /comments/{comment_id}/reactions:
+    post:
+      consumes:
+      - application/json
+      description: Adds the caller's emoji reaction. Adding a reaction the caller
+        already has changes nothing. A comment holds at most 20 different emoji and
+        10 reactions per person. Returns the comment's reactions, ordered by each
+        emoji's first use.
+      parameters:
+      - description: Comment ID
+        in: path
+        name: comment_id
+        required: true
+        type: string
+      - description: Reaction
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AddCommentReactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CommentReactionsResponse'
+        "400":
+          description: Not a single emoji, or a reaction limit reached
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: React to a finding comment
+      tags:
+      - Findings
+  /comments/{comment_id}/reactions/{emoji}:
+    delete:
+      description: Removes the caller's reaction (the emoji is path-escaped). An organization
+        admin or owner may pass user_id to remove another member's reaction; only
+        that moderation is audited. Returns the comment's reactions.
+      parameters:
+      - description: Comment ID
+        in: path
+        name: comment_id
+        required: true
+        type: string
+      - description: Emoji, path-escaped
+        in: path
+        name: emoji
+        required: true
+        type: string
+      - description: Remove this member's reaction (admin/owner only)
+        in: query
+        name: user_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CommentReactionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove a reaction from a finding comment
+      tags:
+      - Findings
   /components:
     get:
       description: Retrieves a paginated list of components for the current tenant
@@ -20708,6 +21457,149 @@ paths:
       security:
       - BearerAuth: []
       summary: Classify finding
+      tags:
+      - Findings
+  /findings/{id}/comments:
+    get:
+      description: Comments on a finding, oldest first, each with its aggregated emoji
+        reactions.
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingCommentListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List finding comments
+      tags:
+      - Findings
+    post:
+      consumes:
+      - application/json
+      description: 'Posts a comment. is_internal keeps it inside the organization:
+        it is never sent to an integration, ticket or external notifier.'
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Comment
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AddCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingCommentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Add a finding comment
+      tags:
+      - Findings
+  /findings/{id}/comments/{comment_id}:
+    delete:
+      description: Only the author can delete.
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Comment ID
+        in: path
+        name: comment_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete a finding comment
+      tags:
+      - Findings
+    put:
+      consumes:
+      - application/json
+      description: Only the author can edit. The response carries edited=true and
+        the comment's reactions.
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Comment ID
+        in: path
+        name: comment_id
+        required: true
+        type: string
+      - description: New content
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingCommentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Edit a finding comment
       tags:
       - Findings
   /findings/{id}/dataflows:

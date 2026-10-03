@@ -39,7 +39,6 @@ DELETE /api/v1/compliance/findings/{}/controls/{}
 DELETE /api/v1/control-tests/{}
 DELETE /api/v1/custom-capabilities/{}
 DELETE /api/v1/custom-tool-categories/{}
-DELETE /api/v1/findings/{}/comments/{}
 DELETE /api/v1/findings/{}/evidence/notes/{}
 DELETE /api/v1/findings/{}/link-ticket
 DELETE /api/v1/groups/{}/scope-rules/{}
@@ -144,7 +143,6 @@ GET /api/v1/findings/{}/ai-triage
 GET /api/v1/findings/{}/ai-triage/history
 GET /api/v1/findings/{}/ai-triage/{}
 GET /api/v1/findings/{}/approvals
-GET /api/v1/findings/{}/comments
 GET /api/v1/findings/{}/evidence
 GET /api/v1/findings/{}/evidence/notes
 GET /api/v1/findings/{}/priority-explanation
@@ -333,7 +331,6 @@ POST /api/v1/findings/actions/verify
 POST /api/v1/findings/ai-triage/bulk
 POST /api/v1/findings/{}/ai-triage
 POST /api/v1/findings/{}/approvals
-POST /api/v1/findings/{}/comments
 POST /api/v1/findings/{}/create-ticket
 POST /api/v1/findings/{}/evidence
 POST /api/v1/findings/{}/link-ticket
@@ -428,7 +425,6 @@ PUT /api/v1/ctem-cycles/{}
 PUT /api/v1/custom-capabilities/{}
 PUT /api/v1/custom-tool-categories/{}
 PUT /api/v1/exposures/{}/ctem-id
-PUT /api/v1/findings/{}/comments/{}
 PUT /api/v1/groups/{}/scope-rules/{}
 PUT /api/v1/pentest/campaigns/{}
 PUT /api/v1/pentest/findings/{}
