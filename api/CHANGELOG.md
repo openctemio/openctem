@@ -37,6 +37,18 @@ published at https://docs.openctem.io (operations/release-notes-*).
   inserted; only inserted rows count as created and run those steps, a
   repeated finding in one report is folded into the first, ticket links are
   never taken from the incoming row, and metadata keeps the stored keys.
+- **Asset stats and facets respect data scope.** `GET /api/v1/assets/stats`
+  and `GET /api/v1/assets/facets` counted every asset of the organization,
+  so a member restricted to some assets (access groups) could read totals,
+  breakdowns and property values of assets they cannot list. Both now apply
+  the same data-scope filter as the asset list: a scoped member's numbers
+  equal what their list shows, and in an organization where members without
+  an access group see nothing, such a member gets empty stats and no facets.
+  Administrators and unrestricted members see the same numbers as before.
+  The facets query is also bounded: it reads the 5,000 most recently
+  updated assets in scope, expands at most 50 elements of an array property
+  per asset and returns the top 20 values per key from the database. On a
+  larger inventory the facet counts are counts within that sample.
 - **A pipeline step's settings reach the sensor.** Step commands carried
   the step's config as `step_config`, which no sensor reads, so every step
   ran with its tool's defaults (a naabu step with `ports: "80"` scanned the
