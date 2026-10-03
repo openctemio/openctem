@@ -48,7 +48,7 @@ other cannot change**:
 | Direction | The other side cannot change… | …so a compromise of it cannot… |
 |---|---|---|
 | Sensor → platform | the **sensor gateway**'s route table and database role, the lease that binds a result to a job, the size and schema limits, the output encoding in the console | reach admin routes or tables, write results for work it was not given, crash or poison the parser, run script in an analyst's browser |
-| Platform → sensor | the **signing service**'s key and its scope ledger (widening needs two people), the **sensor-local policy file** written by the network owner, the host firewall, the vendor's release signature, the sensor-local vault | make a sensor scan outside the network owner's ranges, run anything but a typed scan, install unsigned code, read credentials, or erase the sensor's own record of what it was told |
+| Platform → sensor | the **signing service**'s key and its scope ledger (widening needs two people), the **sensor-local policy file** written by the network owner, the host firewall, the vendor's release signature, the sensor-local vault, the owner's deploy window and kill switch | make a sensor scan outside the network owner's ranges, run anything but a typed scan, install unsigned code, read credentials, or erase the sensor's own record of what it was told |
 
 The single most important property: **the network owner's local policy on
 the sensor host is the last word.** A validly signed job that is out of that
@@ -118,14 +118,21 @@ The five highest risks (ranked in the architecture document §3):
 
 ### 3.2 Industry practice
 
-> **To be completed from research/05-mutual-distrust** (vendor sensor
-> pairing, signed tasks, local scope and local credential vaults at Tenable,
-> Qualys, Rapid7, Greenbone and CrowdStrike; lessons from SolarWinds,
-> Kaseya VSA and the CrowdStrike July 2024 content update; HSM/KMS signing
-> services with two-person approval; agent-side policy and egress
-> enforcement; hostile agent data). The design below already draws on the
-> sources RFC-023 §2, RFC-032 §4 and research 03 surveyed; this section will
-> record where the wider survey confirms or changes a decision.
+From research/05-mutual-distrust (2026-10-03, adversarially verified
+claims; vendor evidence survived only for Rapid7 and Tenable), with
+research 03 and the surveys in RFC-023 §2 and RFC-032 §4.
+
+| Source | What it shows | Taken here |
+|---|---|---|
+| **Uptane** two-repository model | An online **Director** issues per-device instructions on demand; a separately keyed **Image repository** (offline keys, run by people) publishes what is approved; under full verification the device acts only when both agree. A compromised Director can still choose among approved items or withhold work. | The API is the Director (which job, which sensor, when); the signer's ledger, approved by people and anchored in an offline or customer-held key, is the Image repository (§5.6 points 4–5); the sensor checks the job against **both** the signature and the signed scope document, then its own local policy (§5.7) |
+| **TUF / Uptane roles and thresholds** | Roles can require several keys (a threshold); threshold 1 is allowed, so a quorum must be chosen, not assumed. Assume keys get compromised: minimal trust in online keys, expiry against freeze, monotonic versions against rollback, rotation and revocation through the root. | Offline root, expiring key set, `seq` + nonce + expiry per job (§5.6); the two-person rule is designed in deliberately (§5.6 point 5), and the root can be a 2-of-N threshold for installations that want it |
+| **Vault Transit, AWS KMS** | Sign-as-a-service with non-exportable keys, Ed25519 included (`ECC_NIST_EDWARDS25519`; KMS raw messages ≤ 4096 bytes). Moving the key out of the API stops **theft**, not **misuse**: an API that can call "sign" gets anything signed. | K2 custody (§5.6 point 2); the signer applies its own ledger, rate and approval policy and is callable only by the core's identity |
+| **Rapid7 InsightVM** | Engines can pair in reverse (engine → console, outbound only, polling); in both directions the console still decides what the engine does. | Outbound-only is today's model and stays; it shrinks network exposure but limits nothing a compromised console orders, which is why §5.6–§5.7 exist |
+| **Tenable** linking key | One tenant-wide linking key entered on every scanner; the linking documentation describes no signed tasks and no scanner-side scope (absence in the docs, not proof of absence). | Per-sensor enrollment and identity (RFC-032); signed tasks and local scope are a differentiator: no surveyed vendor documents protection of sensors against a compromised console |
+| **Kaseya VSA (2021)** | An authentication bypass on the management server let attackers push a malicious "agent hot-fix" procedure to every managed endpoint, run from folders the vendor required anti-malware to exclude. | Agents must not run payloads just because the server sent them (§5.8: no exec, signed code only); never ask customers to exclude folders where pushed content is written and executed (§5.10: EDR exclusions narrow, no exclusion of the template or content directories) |
+| **ScreenConnect CVE-2024-1709 (2024)** | One flawed check in the management plane gave full admin; admin-level extension upload turned it into code execution. | Console-uploaded templates, scripts or tools must not reach sensors without a second signer and a sensor-side gate (§5.8; P0 local template gate) |
+| **SolarWinds SUNBURST (2020)** | Trojanized updates carried valid vendor signatures because the build itself was compromised: a signature proves origin, not safety. | Signature checks are necessary but not sufficient: the local allow-list and a second, separately held approval key are what limit a signed but hostile instruction (§5.6, §5.7); RFC-031 pins the release workflow identity and refuses downgrades |
+| **CrowdStrike Channel File 291 (July 2024)** | Validation only on the control side (a Content Validator with a logic bug) let malformed content crash about 8.5 million sensors; the fix added bounds and input-count checks **in the sensor**, canary testing, successive deployment rings with bake-in telemetry, rollback, and **customer control over when content deploys**. | Sensors re-validate everything pushed to them against their own schema (RFC-038 S7, §5.8) and a new item: **staged rollout rings, a customer-controlled deploy window and a local kill switch** for templates, settings and content (§5.12) |
 
 ## 4. Threat model
 
@@ -400,7 +407,7 @@ decides *who* signs, *what* exactly, and *what the signer refuses*.
    | Option | Where the online key lives | Protects against | Fits |
    |---|---|---|---|
    | K1 (default) | file in the signer container (0400, its own volume/Secret, not mounted into the API) | API RCE, SQL injection, DB theft, backup restore, path attacker | single-node and compose installs |
-   | K2 | cloud KMS or an HSM via PKCS#11 (non-exportable key; Ed25519 where the KMS offers it, ECDSA P-256 otherwise: every envelope carries its algorithm, RFC-023 P11) | additionally: theft of the signer's disk | enterprise, regulated |
+   | K2 | cloud KMS (AWS KMS `ECC_NIST_EDWARDS25519`), Vault Transit, or an HSM via PKCS#11: non-exportable key; ECDSA P-256 where Ed25519 is not offered (every envelope carries its algorithm, RFC-023 P11). KMS raw signing is limited to 4096 bytes, so with K2 the DSSE payload is a compact **job statement** carrying the SHA-256 of the full job document, which travels beside it and is checked by the sensor | additionally: theft of the signer's disk. Not misuse: the signer's own policy (point 4) is what stops an API that can call it | enterprise, regulated |
    | K3 (always, on top of K1/K2) | **offline root** key held by the installation owner signs a **key set** (`signers.json`: online key ids, algorithms, `not_after`, monotonic `version`, expiry ≤ 30 days) | rotating or revoking an online key without re-enrolling the fleet; limits a stolen online key to its expiry | every installation; research 03 findings 1–3 |
 
    The sensor pins the **root** fingerprint: from its local policy file
@@ -466,6 +473,18 @@ decides *who* signs, *what* exactly, and *what the signer refuses*.
    credential references only for ranges the ledger allows them on. It then
    assigns `seq` (monotonic per sensor) and `nonce`, signs, and appends to
    its own hash-chained signing log (exported to the SIEM, §5.11).
+
+   **Two repositories, as in Uptane.** The approved part of the ledger
+   (scope roots, zone ranges, tiers, credential-reference ranges, allowed
+   tools and template digests) is published to sensors as a **scope
+   document** per tenant and zone, signed by the approval authority (the
+   offline root's delegated `scope` role; from Phase 3 the approvers'
+   WebAuthn assertions are attached), versioned and expiring like the key
+   set. The sensor runs a job only if the signer's job envelope **and** the
+   current scope document agree (targets, tool, tier and credential
+   references inside the scope document), and then only if its local
+   policy agrees too. A signer whose online key is stolen can therefore
+   sign jobs, but only inside the last scope that people approved.
 5. **Two-person rule for widening.** The ledger changes only through
    change requests. **Narrowing** (removing ranges, lowering a tier,
    revoking a credential reference, removing a sensor) needs one approver.
@@ -485,7 +504,8 @@ decides *who* signs, *what* exactly, and *what the signer refuses*.
    skew, `expires_at` in the future; `nonce` unseen (kept until expiry);
    `seq` greater than the last accepted (persisted, gaps allowed, so replays
    and rollbacks fail); `lease_epoch` matches the claim; settings digest is
-   the applied document's; then the local policy (§5.7). Any failure:
+   the applied document's; the job lies inside the current signed scope
+   document; then the local policy (§5.7). Any failure:
    refuse, report `job-refused` with the reason, write the local job log.
 
 **Migration and compatibility.** The envelope is additive on v2 commands
@@ -642,7 +662,7 @@ in the chart and snippets:
 | Inbound | none. Health and metrics on loopback or a Unix socket; Kubernetes probes use `exec`. No pprof in release builds |
 | Process | non-root user, read-only root filesystem, `cap_drop: [ALL]` plus `NET_RAW` only when a SYN-scan tool is enabled, `no-new-privileges`, seccomp `RuntimeDefault` |
 | OS | immutable, minimal: Flatcar, Bottlerocket, Talos or Fedora CoreOS for dedicated hosts; distroless/Wolfi images; automatic security updates |
-| EDR | supported and recommended on sensor hosts; the docs list the scanner processes and their expected network behaviour so EDR exclusions are narrow |
+| EDR | supported and recommended on sensor hosts; the docs list the scanner processes and their expected network behaviour so EDR exclusions are narrow, and **never exclude the template, content or work directories** where pushed content is written and run (the Kaseya VSA lesson, §3.2) |
 | Rate and kill switch | `rate.max_pps` and `max_concurrent_jobs` in the policy; `kill_switch_file` (or `openctem-sensor stop-all`) refuses new jobs and stops running ones, locally, without the platform |
 | Time | NTP required (signatures and expiry, RFC-032 T12) |
 | Logs | stdout plus an **independent SIEM sink** (syslog RFC 5424 over TLS, or OTLP) configured locally; the platform cannot turn it off |
@@ -684,6 +704,44 @@ in the chart and snippets:
   out-of-policy jobs; a key set or root change; the policy file changed;
   the kill switch used.
 
+### 5.12 Staged rollout, deploy window and kill switch for pushed content
+
+**Threat.** Content pushed from the platform (custom templates, RFC-038
+tool settings, RFC-031 content pins and refreshes, signer key sets and
+scope documents) is malformed or malicious and reaches every sensor at once:
+the CrowdStrike 2024 failure mode (validated only on the control side,
+deployed to everyone at the same time) and the Kaseya/ScreenConnect mode
+(pushed by a compromised console).
+
+**Design.**
+
+- **Re-validate on the sensor** before activation, against the sensor's own
+  schema and limits (RFC-038 S7; template parser and protocol allow-list,
+  §5.8; size and count caps), never relying on the platform's validator.
+  Activation is all-or-nothing per document, and the last good version is
+  kept for rollback (research 03 finding 15).
+- **Rings.** Every pushed document carries a `rollout` block: ring (canary →
+  early → broad), the earliest activation time per ring, and the bake-in
+  period. The platform promotes a version to the next ring only after the
+  previous ring reports `applied` with no error and no health regression
+  for the bake-in period; a failure halts promotion and offers rollback (a
+  new version that restores the previous content, version numbers still
+  only go up). Sensors are assigned to rings by the tenant (default: one
+  canary sensor per zone, then everyone).
+- **Customer-controlled deploy window** in the sensor-local policy:
+  `content: { deploy_window: "Sat 02:00-06:00", auto_apply: [settings],
+  hold: [templates] }`. A sensor does not activate held kinds outside its
+  window; the platform shows "waiting for the owner's window" instead of
+  forcing it. Security-critical narrowing (a key-set revocation, a scope
+  narrowing) is exempt: it always applies at once.
+- **Local kill switch** (§5.7 `kill_switch_file`, plus
+  `content_freeze_file`): the host owner can stop all jobs, or freeze
+  content at the current version, without the platform.
+
+**Migration.** Old sensors ignore the `rollout` block and apply as today;
+rings then only order the platform's pushes. Phase 2 (rings and window),
+the kill switch is P0.
+
 ## 6. Phases
 
 Ranked by risk reduced per unit of work. Each phase is a set of PRs, CI
@@ -707,6 +765,7 @@ green and verified end to end against a real sensor, as in RFC-032 §8.
 | | Ingest worker as a separate sandboxed process; string normaliser; per-field caps; URL validation | api | M | T3, T5 |
 | | Detections A1–A12 | api | M | all, detection |
 | | Keyed audit checkpoints (HMAC key held by the signer, or periodic signer-signed chain heads exported to the SIEM) | api, signer | S–M | T8 |
+| | Staged rollout rings and the customer deploy window for templates, settings and content (§5.12); signed scope documents checked by the sensor next to the job envelope (§5.6, Uptane two-repository) | api, sdk-go, sensor, web | M | T7–T10, bad content |
 | | The RFC-034 forwarder for every job of a proxy-aware tool; `policy render` for nftables/iptables/NetworkPolicy | sdk-go, sensor | M | T6–T10 |
 | **P3 — stronger keys** | WebAuthn-bound approvals verified by the signer; K2 (KMS/HSM); tenant template-signing key; separate `cmd/sensor-gateway` binary; RLS on the gateway role | api, web, signer | L | T7, T9, T10 |
 | | RFC-031 Part B (verified self-update, no downgrade) and content anti-rollback against platform pins | sensor, sdk-go | M | T12, content downgrade |
@@ -775,3 +834,13 @@ installations that need them.
 - CyberArk Central Credential Provider: https://docs.cyberark.com/credential-providers/latest/en/content/ccp/ccp-intro.htm
 - Trojan Source (bidi overrides): https://trojansource.codes/
 - OWASP CSV injection: https://owasp.org/www-community/attacks/CSV_Injection
+- Rapid7 scan engine communication (reverse pairing): https://docs.rapid7.com/insightvm/scan-engine-communication-methods/
+- Tenable Nessus linking: https://docs.tenable.com/nessus/Content/LinkToTenableVulnerabilityManagement.htm
+- CrowdStrike Channel File 291 root cause analysis: https://www.crowdstrike.com/wp-content/uploads/2024/08/Channel-File-291-Incident-Root-Cause-Analysis-08.06.2024.pdf
+- Kaseya VSA / REvil (Sophos): https://www.sophos.com/en-us/blog/independence-day-revil-uses-supply-chain-exploit-to-attack-hundreds-of-businesses/
+- ScreenConnect CVE-2024-1709 (Huntress): https://www.huntress.com/blog/a-catastrophe-for-control-understanding-the-screenconnect-authentication-bypass
+- SolarWinds SUNBURST (Mandiant): https://cloud.google.com/blog/topics/threat-intelligence/evasive-attacker-leverages-solarwinds-supply-chain-compromises-with-sunburst-backdoor
+- TUF security: https://theupdateframework.io/docs/security/
+- Vault Transit: https://developer.hashicorp.com/vault/docs/secrets/transit
+- AWS KMS asymmetric key specs (Ed25519): https://docs.aws.amazon.com/kms/latest/developerguide/asymmetric-key-specs.html
+- Research notes: research/03-sensor-signed-config, research/05-mutual-distrust
