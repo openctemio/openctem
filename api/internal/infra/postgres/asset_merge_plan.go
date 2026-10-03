@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -86,6 +87,15 @@ var assetMergeRefs = []mergeRef{
 	// so is never on both.
 	{table: "asset_identifiers", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"kind", "value"}}}},
+	// Attribution evidence (RFC-036): the kept asset takes every reason the
+	// merged ones had; the same (rule, source) on both is one piece of
+	// evidence, and the kept row keeps the earliest first sighting.
+	{table: "easm_evidence", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"rule", "source"}}}},
+	// DNS-check rotation state (RFC-036): the kept asset's own state wins;
+	// a merged asset's state for a check the kept one never ran moves.
+	{table: "easm_dns_check_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"check_kind"}}}},
 }
 
 // assetMergeEdgeRefs are directed edges between two assets. An edge between
@@ -104,6 +114,7 @@ var assetMergeSpecialRefs = map[string]string{
 	"pentest_campaigns.asset_ids":              "array: merged ids replaced by the kept id",
 	"asset_dedup_review.keep_asset_id":         "other pending reviews about a merged asset are dropped",
 	"asset_dedup_review.merge_asset_ids":       "other pending reviews about a merged asset are dropped",
+	"asset_attributions.asset_id":              "the kept asset keeps the most recent human decision of any merged asset; automatic records of merged assets are dropped (the moved evidence re-derives them)",
 }
 
 // assetMergeLeftAlone are references a merge deliberately does not move.
@@ -123,6 +134,9 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 	}
 	// Branches first: their components and findings are moved below by asset.
 	if err := mergeRepositoryExtension(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
+	if err := mergeAttribution(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}
 	for _, ref := range assetMergeRefs {
@@ -368,6 +382,58 @@ func repointNonFKRefs(ctx context.Context, tx *sql.Tx, tenantID, reviewID, keepI
 		  AND (keep_asset_id = ANY($1) OR merge_asset_ids && $1::uuid[])`,
 		merge, tenantID, reviewID); err != nil {
 		return fmt.Errorf("drop stale pending reviews: %w", err)
+	}
+	return nil
+}
+
+// mergeAttribution settles the attribution record (one per asset) before the
+// merged assets are deleted, which would cascade their records away:
+//
+//   - a person's decision is never lost to a merge: of all human decisions
+//     on the kept and merged assets, the most recent one ends up on the kept
+//     asset (older ones remain in the audit log);
+//   - without any human decision, the kept asset keeps its own record (or
+//     none: a legacy asset counts as confirmed and must not be demoted by a
+//     merged asset's needs_review), and merged assets' automatic records are
+//     dropped — their evidence moves to the kept asset, and the next
+//     collector run re-derives the state from it.
+//
+// It also folds the earliest first sighting of duplicate evidence into the
+// kept asset's row before repointRef drops the duplicate.
+func mergeAttribution(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	merge := pq.Array(mergeIDs)
+	var winner sql.NullString
+	err := tx.QueryRowContext(ctx, `
+		SELECT asset_id FROM asset_attributions
+		WHERE tenant_id = $3 AND decided_at IS NOT NULL AND (asset_id = $1 OR asset_id = ANY($2))
+		ORDER BY decided_at DESC, (asset_id = $1) DESC
+		LIMIT 1`, keepID, merge, tenantID).Scan(&winner)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("pick attribution decision: %w", err)
+	}
+	if winner.Valid && winner.String != keepID {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM asset_attributions WHERE asset_id = $1 AND tenant_id = $2`,
+			keepID, tenantID); err != nil {
+			return fmt.Errorf("replace kept attribution: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE asset_attributions SET asset_id = $1, updated_at = now()
+			WHERE asset_id = $2 AND tenant_id = $3`, keepID, winner.String, tenantID); err != nil {
+			return fmt.Errorf("move attribution decision: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_attributions WHERE tenant_id = $2 AND asset_id = ANY($1)`,
+		merge, tenantID); err != nil {
+		return fmt.Errorf("drop merged attribution: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE easm_evidence k SET
+			first_observed_at = LEAST(k.first_observed_at, m.first_seen),
+			last_observed_at  = GREATEST(k.last_observed_at, m.last_seen)
+		FROM (SELECT rule, source, min(first_observed_at) AS first_seen, max(last_observed_at) AS last_seen
+		      FROM easm_evidence WHERE tenant_id = $3 AND asset_id = ANY($2) GROUP BY rule, source) m
+		WHERE k.asset_id = $1 AND k.tenant_id = $3 AND k.rule = m.rule AND k.source = m.source`,
+		keepID, merge, tenantID); err != nil {
+		return fmt.Errorf("fold duplicate evidence: %w", err)
 	}
 	return nil
 }

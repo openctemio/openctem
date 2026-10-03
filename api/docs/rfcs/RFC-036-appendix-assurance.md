@@ -73,6 +73,7 @@ real third-party target).
 | E-32 | Truncated UDP answers | Retried over TCP | `TestQuery_TXTAndTCPFallback` |
 | E-33 | Thousands of names / restarts / two replicas | 500 names per tenant per run, oldest-checked first; not due within 5/6 of the interval; per-tenant advisory lock per check | `TestEASMDNSRepository`, `TestMonitorTenant_LockedAndBudget` |
 | E-34 | A subdomain-type or non-registrable domain asset for the email check | Skipped (`skipped_not_registrable`): subdomains inherit the organisation's DMARC | `TestMonitorEmail_FlagsWeakAndResolvesFixed` |
+| E-35 | Two assets are merged (dedup review) | The kept asset gets the most recent human decision of either; without one it keeps its own record and merged automatic records are dropped (a legacy asset is never demoted); evidence moves, deduplicated, keeping the earliest first sighting; the kept asset's DNS-check state wins, a merged asset's state for a check the kept one never ran moves | `TestApproveAndMerge_KeepsAttributionDecisions`, `TestAssetMergeCoversEveryAssetReference` |
 | E-17 | IDN names | CT logs carry the punycode (`xn--`) form, which is accepted as-is; Unicode forms are not produced by the sources | `TestCollectDiscoveries_DropsInvalidHostnames` |
 
 ## 3. Threat model of the EASM feature
