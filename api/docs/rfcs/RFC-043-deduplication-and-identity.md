@@ -112,31 +112,45 @@ Non-goals
 
 ### 4.1 Principles
 
-1. **Server-computed.** The sensor's `Finding.Fingerprint` is stored as a
-   sighting attribute (`external_fingerprint`) and may be used as a tiebreaker
-   inside one tool, but it is never the identity (RFC-040: a sensor's claim is a
-   hint). Today a 16-hex string from any sensor becomes the identity verbatim.
-2. **Tuple first, hash second.** Store the canonical tuple
+1. **Layered, server-decided** (R1). Per tool, the server's parser declares
+   an explicit identity recipe: a **tool-native stable id** where the tool has
+   one that is known to be stable (SARIF `partialFingerprints`, Semgrep
+   `match_based_id`, gitleaks' fingerprint), else a
+   hash over an explicit, per-parser field list (DefectDojo's
+   `unique_id_from_tool` / `hash_code` model). The recipe — not the sensor —
+   decides which tool fields count. The opaque `Finding.Fingerprint` a sensor
+   sends is stored on the sighting (`external_fingerprint`) and never becomes the
+   identity by itself (RFC-040: a sensor's claim is a hint). Today any 16-hex
+   string from any sensor becomes the identity verbatim, and every non-hex
+   tool id (Nessus, DefectDojo, gitleaks) is discarded. No field is
+   "always included" across tools: DefectDojo's always-on `service` field is the
+   documented way such a field silently breaks cross-scanner dedup (R1).
+2. **Explicit scope** (R2). The unique key is `(tenant_id, scope_key,
+   fingerprint)`; `scope_key` defaults to the canonical asset id and a wider
+   pool (a business service, a repository family) is opt-in per tenant. Today
+   the asset id is hashed into the fingerprint, which is what makes a merge
+   re-key everything.
+3. **Tuple first, hash second.** Store the canonical tuple
    (`identity_key JSONB`) next to the hash so a recipe change can be recomputed
    from the row, without the original report. This replaces the
    `partial_fingerprints["composite/base"]` workaround of #263.
-3. **Versioned and separated.**
+4. **Versioned and separated** (R6).
    `fingerprint = sha256("v" || version || 0x1f || kind || 0x1f || field1 || 0x1f || …)`.
    The unit separator closes B15 and the `:`-joined ambiguity in
    `ctis/fingerprint`.
-4. **No secrets, no volatile fields.** Never a raw or masked secret (use the
+5. **No secrets, no volatile fields** (R3, R4). Never a raw or masked secret (use the
    per-tenant HMAC of #849), never a line number when a stable anchor exists,
    never a message or title, never a scanner-local id (plugin id, QID) when a
    canonical vulnerability id exists.
-5. **Asset-scoped through the canonical asset id** (RFC-042), so an asset merge
+6. **Asset-scoped through the canonical asset id** (RFC-042), so an asset merge
    re-keys findings by recomputing from `identity_key`, not by guessing.
 
 ### 4.2 Finding identity recipes (version 2)
 
 | Kind | Identity tuple | Notes |
 |---|---|---|
-| SAST | asset, rule family¹, repo-relative POSIX path², logical location (function), `hash(normalized snippet)` | Falls back to `(…, start_line bucket)` only when there is no snippet. Matches ctis `sast-content`; the API must pass `Snippet` and `LogicalLocation` (it does not today). SARIF `partialFingerprints.primaryLocationLineHash` is accepted as the snippet hash when present |
-| SCA | asset, ecosystem + package name (PURL **without** version, qualifiers normalized³), canonical vuln id⁴ | Version moves to the sighting (`installed_version`, `fixed_version`); manifest path moves to a location list. Decision D2 on manifest-level splitting |
+| SAST | tool, rule family¹, repo-relative POSIX path², then the tool's partial fingerprint (SARIF `primaryLocationLineHash` incl. its `:N` occurrence suffix, Semgrep `match_based_id`), else `hash(normalized snippet)` + logical location + occurrence index in the file | Never absolute lines or byte offsets (SARIF 2.1.0 App. B, R3). When a SARIF file has no fingerprints, compute the fallback server-side (GitHub only does this in `upload-sarif`, so API uploads duplicate, R3). Known limits (R4): a file rename or rule-id change re-keys (handled by the rename map / rule alias table below and a rule+snippet fallback match that copies triage); an identical block inserted earlier shifts the `:N` suffix and can swap twins |
+| SCA | asset, canonical PURL type/namespace/name (**without** version; qualifiers only from an allowlist, e.g. `distro` for OS packages)³, canonical vuln class⁴ | Version moves to the sighting (`installed_version`, `fixed_version`); manifest path moves to a location list. Decision D2 on manifest-level splitting |
 | Container | asset (image repository, RFC-042), package (PURL w/o version), canonical vuln id | Digest and tag on the sighting |
 | Secret | asset, `secret_fingerprint` (HMAC of the normalized **raw** secret under a server-held per-tenant key — not #849's key, which is a public constant + tenant id, and not over the masked string), repo-relative path | No line. Same secret in two files → two findings, one correlation group |
 | DAST | asset, canonical rule⁵, method, normalized URL template⁶, sorted parameter names | Query **values** dropped, names kept |
@@ -151,10 +165,18 @@ Non-goals
 alias table per tool, e.g. semgrep `python.lang.security.x` → `…v2`).
 ² repo-relative POSIX path: strip the scan root, `\` → `/`, collapse `./`, keep
 case (paths are case-sensitive on most VCS).
-³ PURL: type and namespace lower-cased per the PURL spec's per-type rules
-(npm/pypi names lower-case, pypi `_`→`-`), version and qualifiers dropped.
-⁴ canonical vuln id: resolve aliases through a `vulnerability_aliases` table
-(OSV `aliases`, GHSA ↔ CVE); prefer CVE > GHSA > OSV/vendor; upper-case.
+³ PURL (ECMA-427, R9): parse and re-serialize; per-type rules (pypi lower-case
+and `_`→`-`, maven case-sensitive, …); version in its own field; qualifiers
+dropped except an explicit allowlist. PURL keeps ecosystems apart on purpose:
+deb, rpm and pypi copies of one library are different components, linked only
+through advisory/CPE mapping, never by PURL string.
+⁴ canonical vuln class: union-find over OSV **`aliases` only** (symmetric and
+transitive, R7) into an equivalence class; the class id prefers CVE > GHSA >
+OSV/vendor, upper-cased. **Never** union across `upstream` (a distro advisory vs
+the upstream CVE) or `related` (different vulnerabilities). Every alias merge
+is logged and can be split by hand; each finding keeps its source ids. An
+over-broad GHSA listing several CVEs would fuse them — the split tool and the
+log exist for that case.
 ⁵ canonical rule: nuclei template id; for CVE templates the CVE id.
 ⁶ URL template: scheme + lower-case host (IDNA) + default-port strip + path
 with numeric/uuid segments replaced by `{id}` (decision D4).
@@ -245,8 +267,13 @@ cannot recompute.
 Same canonical vulnerability on the same canonical asset reported through
 different techniques (package scan vs network scan vs DAST CVE template) stays
 **separate findings** — they have different fixes and different evidence — but
-share a `correlation_id = sha256(v ‖ asset ‖ canonical_vuln_id)` (the column
-exists and is unused). Effects:
+share a `correlation_id = sha256(v ‖ asset ‖ canonical_vuln_class ‖ component
+identity incl. PURL type/distro)` (the column exists and is unused). The
+component part is required (R8): Red Hat backported the CVE-2023-32681 fix to
+`requests 2.20.0-3` (RHSA-2023:4520) while upstream fixes it only in 2.31.0, so
+an upstream-range scanner and a vendor-advisory scanner legitimately disagree
+on the same CVE and host. Each source's verdict is kept on its sighting; the
+last writer never wins. Effects:
 
 - risk, SLA and dashboard counts count the group once (worst member);
 - the UI shows the group with its members;
@@ -299,7 +326,8 @@ location). Then:
 One procedure, used by asset merge, fingerprint migration and a new manual
 "mark duplicate of":
 
-1. Choose the survivor: the finding on the kept asset; else the oldest.
+1. Choose the survivor: the **earliest-created** finding (R2); the kept asset's
+   finding only breaks a tie.
 2. **State inheritance** (in the merge transaction):
 
 | Field | Rule |
@@ -421,7 +449,7 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
 
 | # | Decision | Recommendation |
 |---|---|---|
-| D1 | Is the sensor's fingerprint ever the identity? | No — a hint stored on the sighting (RFC-040) |
+| D1 | Is the sensor's opaque fingerprint ever the identity? | No — a hint stored on the sighting (RFC-040). Tool-native ids are used only where the server's per-tool recipe names them (R1) |
 | D2 | SCA: one finding per (package, vuln) per asset, or per manifest? | Per asset; manifests as locations |
 | D3 | Multi-CVE network plugin: one finding per CVE, or one per plugin with CVE list? | One per CVE (cross-scanner dedup needs it) |
 | D4 | DAST URL template: replace numeric/uuid path segments? | Yes, with a per-tenant opt-out |
@@ -432,8 +460,26 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
 | D9 | Severity on re-ingest: MAX (today, `EnrichFrom`) or last-writer? | Per sighting; finding = max over open sightings, so a vendor downgrade can lower it |
 | D10 | Tombstone retention for merged findings | Keep forever (cheap, keeps links valid) |
 | D11 | Migration window: auto-resolve paused per tenant while re-keying | Yes |
+| D12 | File rename / move: how does a SAST or secret finding keep its triage? | git rename detection on the scan's commit range where available, else a rule + snippet-hash fallback match that copies triage to the new finding and links the old one as duplicate; manual re-link in the UI |
+| D13 | PURL qualifiers that count toward identity, per type | `distro` (deb/rpm/apk) only at first; `arch`, `epoch`, `repository_url` excluded; revisit with Syft/Trivy samples in the golden corpus |
+| D14 | An upstream feed corrects a bad alias (over-broad GHSA) | Rebuild the class, split the affected correlation groups, keep findings and their triage, record an activity on each; never auto-merge findings on alias change alone |
+| D15 | Dedup scope wider than one asset (pools) | Not in P0–P2; opt-in later per tenant |
 
-## 14. Alternatives considered
+## 14. Duplicates as linked records, earliest wins
+
+Following DefectDojo (R2), a merged-away finding is never deleted: it stays as
+an inactive record linked to its original (`status = duplicate`,
+`duplicate_of`). The canonical original is the **earliest-created** record,
+regardless of which ingest arrived first, so an old, triaged finding is never
+demoted to a duplicate of a newer one. §9's survivor rule is amended
+accordingly: kept-asset first only breaks ties between records created at the
+same time; otherwise earliest wins. Triage state is keyed on
+`(scope, fingerprint)` so it carries to re-detections, other branches and
+re-imports (R5; Semgrep shows a fingerprint triaged on every branch it appears
+on). DefectDojo's optional "delete oldest duplicates beyond N" is **not**
+adopted.
+
+## 15. Alternatives considered
 
 - **Keep sensor fingerprints as identity** and fix each sensor: rejected — five
   producers already disagree, and a sensor is not trusted to define identity
@@ -444,7 +490,35 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
   a copy list would rot exactly like the merge plan did before
   `TestAssetMergeCoversEveryAssetReference`.
 
-## 15. Research
+## 16. Research
 
-The deep-research report `research/10-dedup-best-practices.md` was not available
-when this draft was written; it is folded in in a follow-up revision of this PR.
+Folded in from the adversarially verified report
+`research/10-dedup-best-practices.md` (2026-10-03). Findings cited above as R1–R9:
+
+| R | Verified finding | Source | Where used |
+|---|---|---|---|
+| R1 | Layered identity: tool unique id, else per-tool hash fields (DefectDojo `hash_code` / `unique_id_from_tool` / OR); an always-included field breaks cross-scanner dedup | DefectDojo docs | §4.1.1 |
+| R2 | Explicit scope (per asset by default, wider pools opt-in); duplicates kept as linked inactive records; earliest-created is canonical | DefectDojo docs | §4.1.2, §14 |
+| R3 | SARIF 2.1.0 Appendix B: tool + rule + path + partialFingerprints, no absolute lines/offsets; GitHub matches on `primaryLocationLineHash`; API uploads without fingerprints duplicate | OASIS SARIF 2.1.0, GitHub docs | §4.2 SAST |
+| R4 | Content hashes survive moves, break on renames; repeated snippets get an occurrence index (`hash:N`, Semgrep per-file index) | codeql-action `fingerprints.ts`, Semgrep docs | §4.2 SAST |
+| R5 | Triage follows the fingerprint across branches | Semgrep docs (single source, medium) | §14 |
+| R6 | Versioned fingerprint keys (`x/v2`), compare on the newest version both results share | SARIF 2.1.0 | §6 |
+| R7 | Vuln ids: OSV `aliases` only, symmetric + transitive; never `upstream` or `related` | OSV schema | §4.2 note 4 |
+| R8 | Cross-scanner CVE correlation must include ecosystem/distro (Trivy, RHSA-2023:4520) | Trivy docs | §7.1 |
+| R9 | PURL (ECMA-427) only after parse + canonical re-serialization; qualifier allowlist; "ecosystem-independent key" claim refuted 0-3 | ECMA-427, purl-spec | §4.2 note 3 |
+
+Matching the alias design in §6 to R6: `finding_fingerprints` holds one row per
+`(finding, version)`; a lookup tries the newest version the incoming result
+carries, then older ones, which is SARIF's "newest shared version" rule.
+
+**Not covered by verified research — our own engineering reasoning:** asset
+identity normalization (§10; RFC-042 owns the model), certificate identity,
+secret fingerprints (keyed HMAC), the concurrency/upsert design (§5), lifecycle
+per sighting (§8), merge state-inheritance rules (§9), ticket and notification
+dedup (§7.2–7.3) and the test strategy (§11). These rest on the probes in the
+architecture document, not on external sources.
+
+Open questions the research leaves (added to the decisions): file-rename
+identity (D12), the PURL qualifier allowlist per type and epoch/version
+normalization across Syft/Trivy (D13), and rebuilding an alias class when a feed
+corrects a bad alias without corrupting attached triage (D14).

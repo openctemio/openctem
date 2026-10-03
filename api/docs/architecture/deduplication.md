@@ -2,7 +2,7 @@
 
 > Audit of 2026-10-03 against `develop` at `8422b7b8` (api), sdk-go `main`,
 > sensor `main` and ctis `22afe545d848` (the commit the API pins).
-> Design and phase plan: [RFC-043](../rfcs/RFC-043-deduplication-and-identity.md).
+> Design and phase plan (with the verified research folded in): [RFC-043](../rfcs/RFC-043-deduplication-and-identity.md).
 > Asset identity *design* belongs to [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md)
 > (PR #878); this page audits the asset dedup that runs **today**.
 > Finding provenance: [ADR-004](decisions/004-finding-provenance.md).
@@ -201,6 +201,25 @@ Read from the PR diffs on 2026-10-03; line numbers are the PRs' new-file lines.
 | #852 DNS-only checks | Exposure events; fingerprint = sha256(tenant, event_type, title, source, **asset_id**, `domain`) (`pkg/domain/exposure/entity.go:136-165`, develop); `BulkUpsert ON CONFLICT (tenant_id, fingerprint)` keeps state; auto-resolve/reopen only rows it resolved itself; `unknown` neither raises nor clears | **Develop bug, inherited:** an asset merge repoints `exposure_events.asset_id` (`asset_merge_plan.go:53`) without recomputing the stored fingerprint → the next check on the kept asset creates a second exposure and the moved one is never auto-resolved. A rename changes title/domain and orphans the old exposure `active`. Archived assets drop out of `DueTargets`, their exposures never resolve |
 | #867 / #881 RFC-039 retest | `finding_retests` bound by `finding_id` (CASCADE); one pending per finding (`ux_finding_retests_one_pending … WHERE status='pending'`); tick claimed by CAS; settle locks retest + finding; reopen still by fingerprint; #881 restarts SLA on each reopen (no idempotency key) | Cooldown and caps are read-then-insert (not atomic). No idempotency key on dispatch: if `SetCommands` fails the row is settled `unknown` while the commands still run. After a merge or fingerprint change, re-detection creates a new finding, so the old resolved one (with its retest history) never regresses — no reopen, no fresh SLA. Deleting a finding (B1) cascades the retest history |
 | #878 RFC-042 | Three layers (source records → links `asset_sources.linked_by` → canonical); inline strong-key / exact-name match, windowed hostname/IP only **propose** merges; private IPs keyed by (zone, address); split = merge plan in reverse; identity keys per type for repository, host, certificate (sha256), iam_user, domain; service rows `UNIQUE (tenant_id, asset_id, port, transport)` | Defines no key for ip, url, container image or cloud resource; F7 (name unique regardless of type) is a known limit — the cross-type absorb of §2.3 |
+
+## 3a. Against verified practice
+
+From the adversarially verified report `research/10-dedup-best-practices.md`
+(R-numbers as in RFC-043 §16). Areas the research does not cover (asset
+normalization, certificates, secrets, concurrency, lifecycle, tickets, testing)
+are judged against the probes above only.
+
+| Practice | Today | Gap |
+|---|---|---|
+| R1 Layered identity: tool's stable id, else explicit per-tool fields | Any ≥16-hex string the sensor sends is the identity; non-hex tool ids (Nessus, DefectDojo, gitleaks) are discarded; no per-tool field list | B23; identity is decided by whoever wrote the sensor |
+| R2 Explicit scope; duplicates kept as linked records; earliest wins | Scope hashed into the fingerprint (asset id); merge collisions **delete** the moved row; `duplicate_of` never written | B1 |
+| R3 SAST: tool + rule + path + partialFingerprints, no absolute lines | semgrep OSS fallback and `ctis` `sast` key on start/end line; `partialFingerprints` stored but not used | B3 |
+| R4 Content hash + occurrence index; renames need explicit handling | `sast-content` exists in ctis but is unreachable from ingest; no rename handling | B3, D12 |
+| R5 Triage follows the fingerprint across branches | finding identity is branch-independent (`finding_branch_occurrences`), so triage does carry across branches — **OK** | — |
+| R6 Versioned fingerprints, compare on the newest shared version | no version stored (P15) | blocks any recipe change |
+| R7 OSV `aliases` only, equivalence classes | `aliases` column never filled; GHSA ids not catalogued | B16 |
+| R8 Correlation includes ecosystem/distro; per-source status | no correlation; one status per row, last writer for most columns | B6, B13 |
+| R9 Canonical PURL, qualifier allowlist | PURL stored verbatim | B24 |
 
 ## 4. Edge-case checklist
 
