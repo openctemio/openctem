@@ -1,7 +1,7 @@
 # RFC-041: API path design, plane separation and a route style guard
 
-> Status: **Proposed** (2026-10-03). Analysis and design only: this RFC changes
-> no route.
+> Status: **Accepted** (owner decisions 2026-10-03: D1–D12 approved as
+> recommended, §8). Design PR #871. Implementation in progress (§10).
 > Scope: `api/` (routes, OpenAPI, edge gateway), `web/` (API call sites,
 > generated types), sdk-go and the sensor (only through the protocol v2
 > feature negotiation of RFC-029), helm charts (edge rules).
@@ -765,7 +765,14 @@ not normalise names.
 
 ## 8. Decisions for the owner
 
-| # | Decision | Recommendation |
+**Approved by the owner on 2026-10-03: every decision as recommended below.**
+Two notes from the approval:
+
+- D5: the old `/api/v1/webhooks/incoming/*` aliases stay until the
+  deprecation metric reads zero.
+- D11: the lint is blocking from day one, with a shrinking baseline.
+
+| # | Decision | Recommendation (approved) |
 |---|---|---|
 | D1 | Which option: A, B, **B′** or C | **B′** (A is its phase P0/P1) |
 | D2 | Name of the token-scoped singleton that replaces `/tenants/{tenant}` | `/api/v1/organization` (the UI and RFC-022 say "organization"); alternative `/api/v1/tenant` |
@@ -789,3 +796,15 @@ not normalise names.
   remediation, analytics and reports) after a usage check.
 - **Document the 47 URL-tenant routes** as they move (they will be
   documented as `/organization`), and the inbound webhooks.
+
+## 10. Implementation tracking
+
+| Phase | Item | PR |
+|---|---|---|
+| P1 (security first) | URL-tenant chain runs the SSO-enforcement gate for the organization in the URL, and the read rate limit | #874 |
+| P0 | `routes/planes.go` plane table | — |
+| P0 | `tools/lint/routestyle`, blocking, shrink-only baseline | — |
+| P0 | `openapicontract` check D (spec and router parameter names equal) | — |
+| P0 | web check: every `endpoints.ts` builder targets a real route | — |
+| P0 | `Deprecated()` middleware + `deprecated_route_requests_total` | — |
+| P1 | live phantom web calls fixed or removed | — |

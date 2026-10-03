@@ -4,9 +4,8 @@ This is the short style guide every new or changed HTTP route follows.
 
 - The reasoning, the inventory behind it and the migration plan are in
   [RFC-041](../rfcs/RFC-041-api-path-design.md).
-- Status: **Proposed** together with RFC-041. Until the RFC is accepted, read
-  this as the target. Existing routes that differ are recorded in a
-  baseline and converge over time.
+- Status: **Accepted** with RFC-041 (owner decisions 2026-10-03). Existing
+  routes that differ are recorded in a baseline and converge over time.
 - Rules marked **(lint)** are enforced by `tools/lint/routestyle` once it
   lands (RFC-041 §7).
 
