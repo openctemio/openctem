@@ -287,10 +287,10 @@ func registerSensorManagementRoutes(
 		if results != nil {
 			r.GET("/result-policy", results.GetPolicy, middleware.Require(permission.SensorsRead))
 			r.PUT("/result-policy", results.UpdatePolicy, middleware.Require(permission.SensorsWrite))
-			r.GET("/result-quarantine", results.List, middleware.Require(permission.SensorsRead))
-			r.GET("/result-quarantine/{qid}", results.Get, middleware.Require(permission.SensorsRead))
-			r.POST("/result-quarantine/{qid}/accept", results.Accept, middleware.Require(permission.SensorsWrite))
-			r.POST("/result-quarantine/{qid}/discard", results.Discard, middleware.Require(permission.SensorsWrite))
+			r.GET("/quarantined-results", results.List, middleware.Require(permission.SensorsRead))
+			r.GET("/quarantined-results/{qid}", results.Get, middleware.Require(permission.SensorsRead))
+			r.POST("/quarantined-results/{qid}/approve", results.Accept, middleware.Require(permission.SensorsWrite))
+			r.POST("/quarantined-results/{qid}/reject", results.Discard, middleware.Require(permission.SensorsWrite))
 		}
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead))

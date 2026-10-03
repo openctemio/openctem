@@ -180,7 +180,7 @@ func (h *SensorResultHandler) UpdatePolicy(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, resultPolicyResponse(p))
 }
 
-// List handles GET /api/v1/sensors/result-quarantine
+// List handles GET /api/v1/sensors/quarantined-results
 // @Summary      List quarantined sensor results
 // @Description  Reports that named no command, from a sensor whose role may not push results on its own, held for review (newest first). The payload is not included; GET one item for a preview.
 // @Tags         Sensors
@@ -192,7 +192,7 @@ func (h *SensorResultHandler) UpdatePolicy(w http.ResponseWriter, r *http.Reques
 // @Success      200  {object}  ListResponse[QuarantinedResultResponse]
 // @Failure      400  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /sensors/result-quarantine [get]
+// @Router       /sensors/quarantined-results [get]
 func (h *SensorResultHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := resultTenant(w, r)
 	if !ok {
@@ -241,7 +241,7 @@ func (h *SensorResultHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Get handles GET /api/v1/sensors/result-quarantine/{qid}
+// Get handles GET /api/v1/sensors/quarantined-results/{qid}
 // @Summary      Get a quarantined sensor report
 // @Description  One quarantined report with a preview of its assets and findings (at most 100 of each).
 // @Tags         Sensors
@@ -250,7 +250,7 @@ func (h *SensorResultHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  QuarantinedResultDetailResponse
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /sensors/result-quarantine/{qid} [get]
+// @Router       /sensors/quarantined-results/{qid} [get]
 func (h *SensorResultHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID, id, ok := h.itemRef(w, r)
 	if !ok {
@@ -268,7 +268,7 @@ func (h *SensorResultHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// Accept handles POST /api/v1/sensors/result-quarantine/{qid}/accept
+// Accept handles POST /api/v1/sensors/quarantined-results/{qid}/approve
 // @Summary      Accept a quarantined sensor report
 // @Description  Apply the report as a person's decision: it may change the existing assets it names and reopen findings, but never auto-resolves anything. Applied once; a second accept or an accept after a discard is 409. Audited.
 // @Tags         Sensors
@@ -278,7 +278,7 @@ func (h *SensorResultHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /sensors/result-quarantine/{qid}/accept [post]
+// @Router       /sensors/quarantined-results/{qid}/approve [post]
 func (h *SensorResultHandler) Accept(w http.ResponseWriter, r *http.Request) {
 	tenantID, id, ok := h.itemRef(w, r)
 	if !ok {
@@ -300,7 +300,7 @@ func (h *SensorResultHandler) Accept(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Discard handles POST /api/v1/sensors/result-quarantine/{qid}/discard
+// Discard handles POST /api/v1/sensors/quarantined-results/{qid}/reject
 // @Summary      Discard a quarantined sensor report
 // @Description  Drop the report without applying it; its payload is deleted. 409 when it was already reviewed. Audited.
 // @Tags         Sensors
@@ -309,7 +309,7 @@ func (h *SensorResultHandler) Accept(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /sensors/result-quarantine/{qid}/discard [post]
+// @Router       /sensors/quarantined-results/{qid}/reject [post]
 func (h *SensorResultHandler) Discard(w http.ResponseWriter, r *http.Request) {
 	tenantID, id, ok := h.itemRef(w, r)
 	if !ok {

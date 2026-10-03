@@ -65,6 +65,11 @@ call POST /api/v1/assets '{"name":"e2e-web.example.com","type":"domain","critica
 call POST /api/v1/assets '{"name":"10.20.30.40","type":"ip_address","criticality":"medium"}'
 
 log "sensors and a CTIS report"
+# The seed pushes its report from a worker sensor without a command. A new
+# tenant holds such reports for review (RFC-040 §5.3, mode "quarantine");
+# switch to "warn" so the report is applied, as for tenants that existed
+# before that policy.
+call PUT /api/v1/sensors/result-policy '{"mode":"warn"}'
 call POST /api/v1/sensors '{"name":"e2e-sensor","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'
 KEY=$(jq -r .api_key <<<"$BODY")
 call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'

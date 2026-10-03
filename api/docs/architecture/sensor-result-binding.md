@@ -87,10 +87,10 @@ that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
 
 | Endpoint | Permission | |
 |---|---|---|
-| `GET /api/v1/sensors/result-quarantine?status=&sensor_id=&page=&per_page=` | `sensors:read` | newest first, no payload |
-| `GET /api/v1/sensors/result-quarantine/{qid}` | `sensors:read` | with a preview: up to 100 assets and findings |
-| `POST /api/v1/sensors/result-quarantine/{qid}/accept` | `sensors:write` | applies it as a person's decision: may change the existing assets it names and reopen findings, never auto-resolves; once only (409 after) |
-| `POST /api/v1/sensors/result-quarantine/{qid}/discard` | `sensors:write` | drops the payload; once only |
+| `GET /api/v1/sensors/quarantined-results?status=&sensor_id=&page=&per_page=` | `sensors:read` | newest first, no payload |
+| `GET /api/v1/sensors/quarantined-results/{qid}` | `sensors:read` | with a preview: up to 100 assets and findings |
+| `POST /api/v1/sensors/quarantined-results/{qid}/approve` | `sensors:write` | applies it as a person's decision: may change the existing assets it names and reopen findings, never auto-resolves; once only (409 after) |
+| `POST /api/v1/sensors/quarantined-results/{qid}/reject` | `sensors:write` | drops the payload; once only |
 | `GET`/`PUT /api/v1/sensors/result-policy` | `sensors:read` / `sensors:write` | the mode and `allow_advisory_evidence` |
 
 Accept and discard are audited (`sensor.results_accepted`,

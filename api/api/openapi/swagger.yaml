@@ -27819,6 +27819,129 @@ paths:
       summary: Refresh scanner content on every sensor
       tags:
       - Sensors
+  /sensors/quarantined-results:
+    get:
+      description: Reports that named no command, from a sensor whose role may not
+        push results on its own, held for review (newest first). The payload is not
+        included; GET one item for a preview.
+      parameters:
+      - description: 'pending, accepted or discarded (default: every status)'
+        in: query
+        name: status
+        type: string
+      - description: Only this sensor's reports
+        in: query
+        name: sensor_id
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: Items per page (max 100)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_QuarantinedResultResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List quarantined sensor results
+      tags:
+      - Sensors
+  /sensors/quarantined-results/{qid}:
+    get:
+      description: One quarantined report with a preview of its assets and findings
+        (at most 100 of each).
+      parameters:
+      - description: Quarantine item ID
+        in: path
+        name: qid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.QuarantinedResultDetailResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a quarantined sensor report
+      tags:
+      - Sensors
+  /sensors/quarantined-results/{qid}/approve:
+    post:
+      description: 'Apply the report as a person''s decision: it may change the existing
+        assets it names and reopen findings, but never auto-resolves anything. Applied
+        once; a second accept or an accept after a discard is 409. Audited.'
+      parameters:
+      - description: Quarantine item ID
+        in: path
+        name: qid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AcceptQuarantinedResultResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Accept a quarantined sensor report
+      tags:
+      - Sensors
+  /sensors/quarantined-results/{qid}/reject:
+    post:
+      description: Drop the report without applying it; its payload is deleted. 409
+        when it was already reviewed. Audited.
+      parameters:
+      - description: Quarantine item ID
+        in: path
+        name: qid
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Discard a quarantined sensor report
+      tags:
+      - Sensors
   /sensors/result-policy:
     get:
       description: 'What happens to a report that names no command (RFC-040 §5.3).
@@ -27873,129 +27996,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Update the policy for sensor results without a command
-      tags:
-      - Sensors
-  /sensors/result-quarantine:
-    get:
-      description: Reports that named no command, from a sensor whose role may not
-        push results on its own, held for review (newest first). The payload is not
-        included; GET one item for a preview.
-      parameters:
-      - description: 'pending, accepted or discarded (default: every status)'
-        in: query
-        name: status
-        type: string
-      - description: Only this sensor's reports
-        in: query
-        name: sensor_id
-        type: string
-      - default: 1
-        description: Page number
-        in: query
-        name: page
-        type: integer
-      - default: 25
-        description: Items per page (max 100)
-        in: query
-        name: per_page
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_QuarantinedResultResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: List quarantined sensor results
-      tags:
-      - Sensors
-  /sensors/result-quarantine/{qid}:
-    get:
-      description: One quarantined report with a preview of its assets and findings
-        (at most 100 of each).
-      parameters:
-      - description: Quarantine item ID
-        in: path
-        name: qid
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.QuarantinedResultDetailResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get a quarantined sensor report
-      tags:
-      - Sensors
-  /sensors/result-quarantine/{qid}/accept:
-    post:
-      description: 'Apply the report as a person''s decision: it may change the existing
-        assets it names and reopen findings, but never auto-resolves anything. Applied
-        once; a second accept or an accept after a discard is 409. Audited.'
-      parameters:
-      - description: Quarantine item ID
-        in: path
-        name: qid
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.AcceptQuarantinedResultResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Accept a quarantined sensor report
-      tags:
-      - Sensors
-  /sensors/result-quarantine/{qid}/discard:
-    post:
-      description: Drop the report without applying it; its payload is deleted. 409
-        when it was already reviewed. Audited.
-      parameters:
-      - description: Quarantine item ID
-        in: path
-        name: qid
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Discard a quarantined sensor report
       tags:
       - Sensors
   /sensors/stats:
