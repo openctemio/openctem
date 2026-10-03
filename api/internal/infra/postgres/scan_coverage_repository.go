@@ -155,6 +155,9 @@ func (r *ScanCoverageRepository) MarkDispatched(ctx context.Context, rec scancov
 	if len(rec.AssetIDs) == 0 {
 		return nil
 	}
+	// One statement cannot update one asset twice: a batch naming an asset
+	// twice used to fail and leave the whole rotation cursor where it was.
+	assetIDs := dedupeLastWins(rec.AssetIDs, func(id string) string { return id })
 	const query = `
 		INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at, last_session_id, last_command_id)
 		SELECT unnest($1::uuid[]), $2, now(), $3, $4
@@ -175,7 +178,7 @@ func (r *ScanCoverageRepository) MarkDispatched(ctx context.Context, rec scancov
 	}
 
 	if _, err := r.db.ExecContext(ctx, query,
-		pq.Array(rec.AssetIDs), rec.TenantID.String(), sessionID, cmdID,
+		pq.Array(assetIDs), rec.TenantID.String(), sessionID, cmdID,
 	); err != nil {
 		return fmt.Errorf("mark dispatched: %w", err)
 	}

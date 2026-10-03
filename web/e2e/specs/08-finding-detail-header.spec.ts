@@ -8,7 +8,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  *      on a domain or IP read as a code finding. The asset now sits in the
  *      properties rail with its real type.
  *   2. "Activity (0)" in the header while the feed showed an entry (the
- *      synthetic "Recorded by ..." item was not counted).
+ *      synthetic "Recorded by ..." item was not counted). Activity is now the
+ *      shared ActivityPanel, opened from the rail's "Activity" summary.
  *   3. Every title button in the findings list was announced as "View finding
  *      details"; its accessible name now carries the finding's title.
  */
@@ -52,18 +53,37 @@ test.describe('Finding detail header', () => {
     }
   })
 
-  test('the Activity count matches the entries shown', async ({ page }) => {
+  test('the Activity summary opens the panel, by click and by old ?tab=activity links', async ({
+    page,
+  }) => {
     const findings = await listFindings(page)
     test.skip(findings.length === 0, 'Needs a finding')
 
     await page.goto(`/findings/${findings[0].id}`)
-    // Activity is a tab now, not a permanent side column.
-    await page.getByRole('tab', { name: /^Activity/ }).click({ timeout: 30_000 })
-    const feed = page.getByRole('list', { name: 'Activity' })
+    // Activity is not a tab any more.
+    await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('tab', { name: /^Activity/ })).toHaveCount(0)
+
+    const trigger = page.getByRole('button', { name: /^Activity, / })
+    await trigger.click()
+    const panel = page.getByRole('dialog', { name: /Activity/ })
+    await expect(panel).toBeVisible()
+    await expect(page).toHaveURL(/[?&]activity=open/)
+    await panel.getByRole('radio', { name: 'All' }).click()
+    const feed = panel.getByRole('list', { name: 'Activity' })
     await expect(feed).toBeVisible({ timeout: 30_000 })
-    const shown = await feed.getByRole('listitem').count()
-    expect(shown).toBeGreaterThan(0)
-    await expect(page.getByText(`Activity (${shown})`, { exact: true })).toBeVisible()
+    expect(await feed.getByRole('listitem').count()).toBeGreaterThan(0)
+
+    // Esc closes it and focus returns to the summary.
+    await page.keyboard.press('Escape')
+    await expect(panel).toBeHidden()
+    await expect(trigger).toBeFocused()
+
+    // An old link to the Activity tab opens the panel.
+    await page.goto(`/findings/${findings[0].id}?tab=activity`)
+    await expect(page.getByRole('dialog', { name: /Activity/ })).toBeVisible({ timeout: 30_000 })
+    await expect(page).toHaveURL(/[?&]activity=open/)
+    await expect(page).not.toHaveURL(/tab=activity/)
   })
 })
 

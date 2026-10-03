@@ -2,9 +2,10 @@
 
 import useSWR from 'swr'
 import { get } from '@/lib/api/client'
-import { Badge } from '@/components/ui/badge'
-import { GitMerge, ArrowRight, Clock, History } from 'lucide-react'
+import { GitMerge, ArrowRight, History } from 'lucide-react'
 import { DetailSection } from '@/features/shared'
+import { EntityActivity } from '@/features/activity/components/entity-activity'
+import type { ActivityItem } from '@/features/activity/types'
 
 interface MergeLogEntry {
   id: string
@@ -20,13 +21,43 @@ interface MergeLogEntry {
 
 interface AssetMergeHistoryProps {
   assetId: string
+  /** The asset's name, under the panel title. */
+  assetName?: string
+}
+
+/** Merge-log rows as the shared ActivityPanel's events (text only). */
+export function mergeLogItems(entries: MergeLogEntry[]): ActivityItem[] {
+  const out: ActivityItem[] = []
+  for (const e of entries) {
+    let summary: string | null = null
+    if (e.action === 'merge' && e.merged_asset_name) {
+      summary = `merged “${e.merged_asset_name}” into this asset`
+    } else if (e.action === 'rename' && e.old_name && e.new_name) {
+      summary = `renamed it from “${e.old_name}” to “${e.new_name}”`
+    } else if (e.action === 'normalize' && e.old_name) {
+      summary = `normalized the name from “${e.old_name}”`
+    }
+    if (!summary) continue
+    out.push({
+      kind: 'event',
+      id: e.id,
+      at: e.created_at,
+      actor: { name: e.source ? `Deduplication (${e.source})` : 'Deduplication', kind: 'system' },
+      icon: e.action === 'merge' ? GitMerge : ArrowRight,
+      summary,
+      detail: e.correlation_type
+        ? `Matched by ${e.correlation_type.replace(/_/g, ' ')}`
+        : undefined,
+    })
+  }
+  return out
 }
 
 /**
- * Shows merge/rename history for an asset.
- * Displays in asset detail sheets as part of the timeline.
+ * The asset's identity history (merges, renames, normalisations) in the
+ * asset drawer: the shared activity trigger + panel, read only.
  */
-export function AssetMergeHistory({ assetId }: AssetMergeHistoryProps) {
+export function AssetMergeHistory({ assetId, assetName }: AssetMergeHistoryProps) {
   const { data } = useSWR<{ data: MergeLogEntry[] }>(
     assetId ? `/api/v1/assets/dedup/merge-log?asset_id=${assetId}&limit=10` : null,
     get,
@@ -38,58 +69,13 @@ export function AssetMergeHistory({ assetId }: AssetMergeHistoryProps) {
 
   return (
     <DetailSection title="Identity history" icon={History} count={entries.length}>
-      <div className="space-y-2">
-        {entries.map((entry) => (
-          <div key={entry.id} className="flex items-start gap-2 text-xs">
-            <div className="mt-0.5 shrink-0">
-              {entry.action === 'merge' ? (
-                <GitMerge className="h-3.5 w-3.5 text-muted-foreground" />
-              ) : (
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              {entry.action === 'merge' && entry.merged_asset_name && (
-                <p>
-                  Merged <code className="bg-muted px-1 rounded">{entry.merged_asset_name}</code>{' '}
-                  into this asset
-                </p>
-              )}
-              {entry.action === 'rename' && entry.old_name && entry.new_name && (
-                <p>
-                  Renamed from <code className="bg-muted px-1 rounded">{entry.old_name}</code>
-                </p>
-              )}
-              {entry.action === 'normalize' && entry.old_name && (
-                <p>
-                  Normalized from <code className="bg-muted px-1 rounded">{entry.old_name}</code>
-                </p>
-              )}
-              <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
-                <Badge variant="outline" className="h-4 text-[10px] px-1">
-                  {entry.correlation_type}
-                </Badge>
-                <Clock className="h-3 w-3" />
-                <span>{formatTimeAgo(entry.created_at)}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <EntityActivity
+        entityKey={`asset-identity:${assetId}`}
+        title="Identity history"
+        subject={assetName}
+        items={mergeLogItems(entries)}
+        urlParam={false}
+      />
     </DetailSection>
   )
-}
-
-function formatTimeAgo(dateStr: string): string {
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  const diff = Date.now() - d.getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  if (days < 30) return `${days}d ago`
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }

@@ -34368,7 +34368,10 @@ export interface components {
       secret_commit_count?: number
       secret_entropy?: number
       secret_expires_at?: string
+      /** @description keyed hash of the reported value (HMAC under a per-tenant key derived from the platform secret), for dedup */
+      secret_fingerprint?: string
       secret_in_history_only?: boolean
+      /** @description preview only: at most 4+4 characters */
       secret_masked_value?: string
       secret_revoked?: boolean
       secret_rotation_due_at?: string
@@ -36404,6 +36407,12 @@ export interface components {
       last_offline_at?: string
       /** @description Statistics */
       last_seen_at?: string
+      /**
+       * @description LegacyKey is true while the sensor's current key is a legacy rda_ key.
+       *     It moves to an octs_ key on its next renewal; rda_ keys are retired 90
+       *     days after enrollment and key-bound identity (RFC-032) ship.
+       */
+      legacy_key?: boolean
       /**
        * @description Load is the load the sensor last reported on its heartbeat
        *     (resources, capacity, local queue); null when it never reported one.

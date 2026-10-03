@@ -811,7 +811,7 @@ results an out-of-scope id is reported exactly like an unknown id.
 | Surface | Before (audit 2026-10, F4) | Now |
 |---|---|---|
 | `GET /assets`, `/findings` (list, search), `/findings/stats` | scoped | scoped (unchanged) |
-| `GET /findings/groups` (every `group_by`: asset, CVE, owner, component, severity, source, type; incl. the total-groups count and the `statuses=fix_applied` Pending Review queue) | **bypass (group names + counts tenant-wide; listed as scoped by mistake)** | scoped: groups and their counts come only from in-scope findings; pentest findings only to campaign members (the view lists no pentest findings at all) |
+| `GET /findings/groups` (every `group_by`: asset, CVE, rule, owner, component, severity, source, type; incl. the total-groups count and the `statuses=fix_applied` Pending Review queue) | **bypass (group names + counts tenant-wide; listed as scoped by mistake)** | scoped: groups and their counts come only from in-scope findings; pentest findings only to campaign members (the view lists no pentest findings at all) |
 | `GET /findings/related-cves/{cve}` | **bypass (CVE ids/titles/counts)** | scoped (both the source CVE's components and the related findings) |
 | `GET /assets/{id}`, `/findings/{id}`, `/findings/{id}/activities`, `POST /findings/{id}/comments` | scoped | scoped (guard + service) |
 | `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
