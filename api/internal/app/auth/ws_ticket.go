@@ -58,6 +58,12 @@ type WSTicketClaims struct {
 	UserID   string `json:"user_id"`
 	TenantID string `json:"tenant_id"`
 	IssuedAt int64  `json:"iat"`
+	// SessionID and ExpiresAt bind the socket opened with the ticket to the
+	// session that requested it (RFC-045): the socket is closed when that
+	// session is revoked and no later than the requesting access token's
+	// expiry (unix seconds; 0 = unknown).
+	SessionID string `json:"sid,omitempty"`
+	ExpiresAt int64  `json:"exp,omitempty"`
 }
 
 // WSTicketService issues and redeems single-use WebSocket tickets.
@@ -86,7 +92,7 @@ func (s *WSTicketService) TTLSeconds() int {
 // IssueTicket mints a new opaque ticket and stores the caller's identity
 // under it. The returned string is what the client passes as ?ticket= on the
 // WebSocket upgrade.
-func (s *WSTicketService) IssueTicket(ctx context.Context, userID, tenantID string) (string, error) {
+func (s *WSTicketService) IssueTicket(ctx context.Context, userID, tenantID, sessionID string, expiresAt time.Time) (string, error) {
 	if userID == "" || tenantID == "" {
 		return "", errors.New("user and tenant are required")
 	}
@@ -98,9 +104,13 @@ func (s *WSTicketService) IssueTicket(ctx context.Context, userID, tenantID stri
 	ticket := hex.EncodeToString(buf)
 
 	claims := WSTicketClaims{
-		UserID:   userID,
-		TenantID: tenantID,
-		IssuedAt: time.Now().Unix(),
+		UserID:    userID,
+		TenantID:  tenantID,
+		IssuedAt:  time.Now().Unix(),
+		SessionID: sessionID,
+	}
+	if !expiresAt.IsZero() {
+		claims.ExpiresAt = expiresAt.Unix()
 	}
 	payload, err := json.Marshal(claims)
 	if err != nil {

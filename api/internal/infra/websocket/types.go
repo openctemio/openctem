@@ -1,4 +1,7 @@
 // Package websocket provides WebSocket infrastructure for real-time communication.
+//
+// Design (authentication, session binding, limits):
+// docs/rfcs/RFC-045-websocket-auth.md.
 package websocket
 
 import (
@@ -21,6 +24,22 @@ const (
 	MessageTypeUnsubscribed MessageType = "unsubscribed"
 	MessageTypeEvent        MessageType = "event"
 	MessageTypeError        MessageType = "error"
+)
+
+// Close codes the server sends when it ends a connection on its own
+// (RFC 6455 §7.4.2 leaves 4000-4999 to applications; the 44xx values follow
+// the graphql-ws convention of mirroring HTTP statuses). The web client
+// (web/src/lib/websocket/client.ts) keys its reconnect behavior on them.
+const (
+	// CloseUnauthorized: the connection's credential is no longer valid —
+	// the access token expired, the session was signed out or revoked, or
+	// the user's membership or role changed. The client re-authenticates
+	// (refreshing its session when needed) and reconnects, which runs every
+	// upgrade gate again.
+	CloseUnauthorized = 4401
+	// CloseTooManyConnections: the user already holds the maximum number of
+	// sockets on this instance. The client backs off before retrying.
+	CloseTooManyConnections = 4429
 )
 
 // Message is the base WebSocket message structure.

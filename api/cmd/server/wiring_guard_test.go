@@ -304,10 +304,11 @@ var optionalServiceSetters = map[string]string{
 	"UserDashboard.SetDefault":          "request operation, called by the dashboard handler",
 	"Vulnerability.SetFindingTags":      "request operation, called by the finding handler",
 	// Real seams left at their defaults on purpose.
-	"ScannerTemplate.SetQuota":         "default quota applies; the override exists for tests and future config",
-	"Vulnerability.SetFindingNotifier": "deprecated; superseded by the notification outbox",
-	"WebSocketHub.SetAuthorizeFunc":    "superseded by SetChannelAccessChecker",
-	"WebSocketHub.SetPublisher":        "set by websocket.NewRedisBridge on the hub it is given",
+	"ScannerTemplate.SetQuota":            "default quota applies; the override exists for tests and future config",
+	"Vulnerability.SetFindingNotifier":    "deprecated; superseded by the notification outbox",
+	"WebSocketHub.SetAuthorizeFunc":       "superseded by SetChannelAccessChecker",
+	"WebSocketHub.SetPublisher":           "set by websocket.NewRedisBridge on the hub it is given",
+	"WebSocketHub.SetRevocationPublisher": "set by websocket.NewRedisBridge on the hub it is given",
 }
 
 // TestServices_EverySetterWiredOrExplicitlyOptional reflects over every
