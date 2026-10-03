@@ -201,6 +201,7 @@ func TestFindingTypeDetails_ExtrasPersistAndTheSecretNeverDoes(t *testing.T) {
 	f.SetSecretType("api_key")
 	f.SetSecretService("Stripe")
 	f.SetSecretMaskedValue(raw) // a scanner that masks nothing
+	f.SetSecretFingerprint(vulnerability.NewSecretFingerprinter([]byte("server-secret")).Fingerprint(f.TenantID(), raw))
 	f.SetSecretScopes([]string{"charges:write", "refunds:write"})
 	f.SetSecretRotationDueAt(&rotation)
 	f.SetSecretCommitCount(3)
@@ -223,7 +224,7 @@ func TestFindingTypeDetails_ExtrasPersistAndTheSecretNeverDoes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.SecretMaskedValue() != "fake…34Qx" || got.SecretFingerprint() != f.SecretFingerprint() {
+	if got.SecretMaskedValue() != "fake…34Qx" || got.SecretFingerprint() != f.SecretFingerprint() || got.SecretFingerprint() == "" {
 		t.Errorf("preview %q fingerprint %q", got.SecretMaskedValue(), got.SecretFingerprint())
 	}
 	if len(got.SecretScopes()) != 2 || got.SecretCommitCount() != 3 || !got.SecretInHistoryOnly() ||

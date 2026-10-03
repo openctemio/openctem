@@ -7954,7 +7954,7 @@ definitions:
       secret_expires_at:
         type: string
       secret_fingerprint:
-        description: salted hash of the reported value, for dedup
+        description: keyed hash of the reported value (HMAC under a per-tenant key derived from the platform secret), for dedup
         type: string
       secret_in_history_only:
         type: boolean

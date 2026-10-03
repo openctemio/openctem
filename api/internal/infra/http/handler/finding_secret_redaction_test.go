@@ -28,6 +28,7 @@ func TestGetFinding_NeverReturnsTheRawSecret(t *testing.T) {
 	f.SetSecretType("api_key")
 	f.SetSecretService("Stripe")
 	f.SetSecretMaskedValue(raw)
+	f.SetSecretFingerprint(vulnerability.NewSecretFingerprinter([]byte("server-secret")).Fingerprint(tenant, raw))
 
 	svc := app.NewVulnerabilityService(&detailVulnRepo{}, &detailFindingRepo{f: f}, logger.NewNop())
 	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
