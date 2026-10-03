@@ -5,45 +5,49 @@ import { csrfFetch } from '@/lib/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
+import { TabsCount } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import {
-  Shield,
-  Search,
   ChevronRight,
-  Eye,
-  Pencil,
-  Trash2,
-  Loader2,
-  Users,
   Database,
-  Crown,
-  ShieldCheck,
-  User,
-  Lock,
+  Eye,
+  Hash,
   Key,
-  Calendar,
-  Layers,
+  Loader2,
+  Lock,
   Mail,
-  UserPlus,
   MoreHorizontal,
+  Pencil,
+  Search,
+  Shield,
+  Trash2,
   UserMinus,
+  UserPlus,
+  Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { SheetDetailToolbar, EmptyState } from '@/features/shared'
+import {
+  DetailHeader,
+  DetailSection,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+  DetailTabs,
+  EmptyState,
+  type DetailMenuItem,
+  type DetailTab,
+} from '@/features/shared'
 import {
   useRoleMembers,
   useTenantPermissionModules,
@@ -60,17 +64,19 @@ interface RoleDetailSheetProps {
   onDelete?: (role: Role) => void
 }
 
-// Permission type colors
+type RoleTab = 'permissions' | 'members'
+
+// Permission types: a category, told apart by icon and label as well as colour.
 const permissionTypeConfig: Record<
-  string,
-  { color: string; bgColor: string; icon: React.ElementType }
+  'read' | 'write' | 'delete',
+  { label: string; chip: string; icon: React.ElementType }
 > = {
-  read: { color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-950', icon: Eye },
-  write: { color: 'text-blue-600', bgColor: 'bg-blue-50 dark:bg-blue-950', icon: Pencil },
-  delete: { color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-950', icon: Trash2 },
+  read: { label: 'Read', chip: 'bg-success/10 text-success', icon: Eye },
+  write: { label: 'Write', chip: 'bg-info/10 text-info', icon: Pencil },
+  delete: { label: 'Delete', chip: 'bg-destructive/10 text-destructive', icon: Trash2 },
 }
 
-function getPermissionType(permissionId: string): string {
+function getPermissionType(permissionId: string): 'read' | 'write' | 'delete' {
   // Extract the action (last part after the last colon)
   // Permission format: {module}:{subfeature}:{action}
   const action = permissionId.split(':').pop() || ''
@@ -93,53 +99,6 @@ function getPermissionType(permissionId: string): string {
   )
     return 'write'
   return 'read'
-}
-
-// Stable component (declared at module scope so React Compiler can track it across
-// renders — the previous `const Icon = getRoleIcon(...)` + `<Icon />` pattern
-// created a fresh component reference per render and tripped the static-components
-// rule).
-function RoleIcon({
-  slug,
-  isSystem,
-  className,
-}: {
-  slug: string
-  isSystem: boolean
-  className?: string
-}) {
-  if (!isSystem) return <Key className={className} />
-  switch (slug) {
-    case 'owner':
-      return <Crown className={className} />
-    case 'admin':
-      return <ShieldCheck className={className} />
-    case 'member':
-      return <User className={className} />
-    case 'viewer':
-      return <Eye className={className} />
-    default:
-      return <Shield className={className} />
-  }
-}
-
-// Get role config
-function getRoleConfig(slug: string, isSystem: boolean) {
-  if (!isSystem) {
-    return { color: 'text-purple-600', bgColor: 'bg-purple-50 dark:bg-purple-950' }
-  }
-  switch (slug) {
-    case 'owner':
-      return { color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-950' }
-    case 'admin':
-      return { color: 'text-blue-600', bgColor: 'bg-blue-50 dark:bg-blue-950' }
-    case 'member':
-      return { color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-950' }
-    case 'viewer':
-      return { color: 'text-slate-600', bgColor: 'bg-slate-50 dark:bg-slate-900' }
-    default:
-      return { color: 'text-primary', bgColor: 'bg-primary/10' }
-  }
 }
 
 const formatDate = (dateString: string) => {
@@ -182,6 +141,7 @@ export function RoleDetailSheet({
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set())
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false)
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<RoleTab>('permissions')
 
   // Reset state when sheet closes
   const handleOpenChange = (open: boolean) => {
@@ -189,6 +149,7 @@ export function RoleDetailSheet({
       setSearchQuery('')
       setMemberSearchQuery('')
       setExpandedModules(new Set())
+      setActiveTab('permissions')
     }
     onOpenChange(open)
   }
@@ -215,8 +176,8 @@ export function RoleDetailSheet({
         })
 
         if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.message || 'Failed to remove member')
+          const error = await response.json().catch(() => null)
+          throw new Error(error?.message || `HTTP ${response.status}`)
         }
 
         toast.success(`${member.name || member.email} removed from role`)
@@ -311,403 +272,345 @@ export function RoleDetailSheet({
 
   if (!role) return null
 
-  const config = getRoleConfig(role.slug, role.is_system)
+  const menu: DetailMenuItem[] = [
+    {
+      label: 'Copy ID',
+      icon: Hash,
+      onSelect: () => {
+        copyToClipboard(role.id)
+        toast.success('Role ID copied to clipboard')
+      },
+    },
+  ]
+  if (!role.is_system && onDelete) {
+    menu.push({
+      label: 'Delete role',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => onDelete(role),
+    })
+  }
+
+  const tabs: DetailTab<RoleTab>[] = [
+    {
+      value: 'permissions',
+      label: (
+        <>
+          Permissions
+          <TabsCount value={filteredPermissionCount} />
+        </>
+      ),
+    },
+    {
+      value: 'members',
+      label: (
+        <>
+          Members
+          {!isLoadingMembers && <TabsCount value={roleMembers.length} />}
+        </>
+      ),
+    },
+  ]
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        className="sm:max-w-3xl p-0 flex flex-col h-full max-h-screen [&>button]:hidden"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <TooltipProvider>
-          <SheetDetailToolbar
-            title="Role Details"
-            onClose={() => handleOpenChange(false)}
-            onCopyId={() => {
-              copyToClipboard(role.id)
-            }}
-            onEdit={!role.is_system && onEdit ? () => onEdit(role) : undefined}
-          />
-        </TooltipProvider>
-
-        {/* Header */}
-        <SheetHeader className="px-6 py-4 border-b shrink-0">
-          <div className="flex items-center gap-4">
-            <div className={cn('p-3 rounded-xl shrink-0', config.bgColor)}>
-              <RoleIcon
-                slug={role.slug}
-                isSystem={role.is_system}
-                className={cn('h-6 w-6', config.color)}
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <SheetTitle className="text-xl truncate">{role.name}</SheetTitle>
-                {role.is_system && (
-                  <Badge variant="outline" className="font-normal shrink-0">
-                    <Lock className="me-1 h-3 w-3" />
+    <>
+      <DetailSheet
+        open={open}
+        onOpenChange={handleOpenChange}
+        width="2xl"
+        panel={activeTab}
+        header={
+          <DetailHeader
+            title={role.name}
+            badges={
+              <>
+                {role.is_system ? (
+                  <Badge variant="outline" className="gap-1 text-xs font-normal">
+                    <Lock className="h-3 w-3" />
                     System
                   </Badge>
+                ) : (
+                  <Badge variant="outline" className="gap-1 text-xs font-normal">
+                    <Key className="h-3 w-3" />
+                    Custom
+                  </Badge>
                 )}
-              </div>
-              {role.description && (
-                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                  {role.description}
-                </p>
-              )}
-            </div>
-          </div>
-          {/* Actions below header for custom roles */}
-          {!role.is_system && onEdit && onDelete && (
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-              <Button variant="outline" size="sm" onClick={() => onEdit(role)}>
-                <Pencil className="me-1.5 h-3.5 w-3.5" />
-                Edit Role
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                onClick={() => onDelete(role)}
-              >
-                <Trash2 className="me-1.5 h-3.5 w-3.5" />
-                Delete
-              </Button>
-            </div>
-          )}
-        </SheetHeader>
+                {role.has_full_data_access && (
+                  <Badge variant="outline" className="gap-1 text-xs font-normal">
+                    <Database className="h-3 w-3" />
+                    Full data access
+                  </Badge>
+                )}
+              </>
+            }
+            meta={[`Level ${role.hierarchy_level}`, `Created ${formatDate(role.created_at)}`]}
+            actions={
+              !role.is_system && onEdit ? (
+                <Button size="sm" onClick={() => onEdit(role)}>
+                  <Pencil className="h-4 w-4" />
+                  Edit role
+                </Button>
+              ) : undefined
+            }
+            menu={menu}
+            onClose={() => handleOpenChange(false)}
+          />
+        }
+        tabs={<DetailTabs tabs={tabs} value={activeTab} onValueChange={setActiveTab} />}
+      >
+        {activeTab === 'permissions' && (
+          <div className="space-y-5">
+            {role.description && (
+              <p className="text-sm text-muted-foreground">{role.description}</p>
+            )}
 
-        {/* Stats Bar */}
-        <div className="px-6 py-3 border-b bg-muted/30 shrink-0">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">{filteredPermissionCount}</span>
-              <span className="text-sm text-muted-foreground">permissions</span>
-            </div>
-            <Separator orientation="vertical" className="h-4" />
-            <div className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Level {role.hierarchy_level}</span>
-            </div>
-            <Separator orientation="vertical" className="h-4" />
-            <div className="flex items-center gap-2">
-              {role.has_full_data_access ? (
+            <DetailStatGrid aria-label="Key numbers">
+              <DetailStat
+                label="Permissions"
+                value={filteredPermissionCount}
+                caption={`${permissionStats.read} read · ${permissionStats.write} write · ${permissionStats.delete} delete`}
+              />
+              <DetailStat label="Hierarchy level" value={role.hierarchy_level} />
+              <DetailStat
+                label="Data access"
+                value={role.has_full_data_access ? 'Full' : 'By group'}
+                caption={role.has_full_data_access ? 'Sees every asset' : 'Sees its groups’ assets'}
+              />
+            </DetailStatGrid>
+
+            <DetailSection
+              title="Permissions by module"
+              count={filteredPermissions.length}
+              actions={
                 <>
-                  <Database className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-600">Full Access</span>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={expandAll}>
+                    Expand all
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={collapseAll}>
+                    Collapse
+                  </Button>
                 </>
+              }
+            >
+              <div className="relative">
+                <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="Search permissions"
+                  placeholder="Search permissions..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="ps-9"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>Types:</span>
+                {(['read', 'write', 'delete'] as const).map((t) => {
+                  const cfg = permissionTypeConfig[t]
+                  return (
+                    <span
+                      key={t}
+                      className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5', cfg.chip)}
+                    >
+                      <cfg.icon className="h-3 w-3" />
+                      {cfg.label}
+                    </span>
+                  )
+                })}
+              </div>
+
+              {isLoadingModules ? (
+                <div className="space-y-2" aria-hidden>
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-11 w-full" />
+                  ))}
+                </div>
+              ) : filteredPermissions.length === 0 ? (
+                <EmptyState
+                  icon={searchQuery ? Search : Shield}
+                  title={
+                    searchQuery ? 'No permissions match your search' : 'No permissions assigned'
+                  }
+                  card={false}
+                />
               ) : (
-                <>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Group-based</span>
-                </>
-              )}
-            </div>
-            <Separator orientation="vertical" className="h-4" />
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">{formatDate(role.created_at)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <Tabs defaultValue="permissions" className="flex-1 flex flex-col min-h-0">
-          <div className="px-6 pt-2 shrink-0">
-            <TabsList>
-              <TabsTrigger value="permissions" className="gap-2">
-                <Shield className="h-4 w-4" />
-                Permissions
-                <TabsCount value={filteredPermissionCount} />
-              </TabsTrigger>
-              <TabsTrigger value="members" className="gap-2">
-                <Users className="h-4 w-4" />
-                Members
-                {!isLoadingMembers && <TabsCount value={roleMembers.length} />}
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          {/* Permissions Tab */}
-          <TabsContent
-            value="permissions"
-            className="flex-1 flex flex-col min-h-0 mt-0 pt-4 data-[state=inactive]:hidden"
-          >
-            {/* Permission Type Legend */}
-            <div className="px-6 pb-4 shrink-0">
-              <div className="flex items-center gap-4 text-xs">
-                <span className="text-muted-foreground">Types:</span>
-                <div className="flex items-center gap-1">
-                  <div
-                    className={cn(
-                      'px-2 py-0.5 rounded',
-                      permissionTypeConfig.read.bgColor,
-                      permissionTypeConfig.read.color
-                    )}
-                  >
-                    <Eye className="inline h-3 w-3 me-1" />
-                    Read ({permissionStats.read})
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div
-                    className={cn(
-                      'px-2 py-0.5 rounded',
-                      permissionTypeConfig.write.bgColor,
-                      permissionTypeConfig.write.color
-                    )}
-                  >
-                    <Pencil className="inline h-3 w-3 me-1" />
-                    Write ({permissionStats.write})
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div
-                    className={cn(
-                      'px-2 py-0.5 rounded',
-                      permissionTypeConfig.delete.bgColor,
-                      permissionTypeConfig.delete.color
-                    )}
-                  >
-                    <Trash2 className="inline h-3 w-3 me-1" />
-                    Delete ({permissionStats.delete})
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Search and Actions */}
-            <div className="px-6 pb-4 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search permissions..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="ps-9"
-                  />
-                </div>
-                <Button variant="outline" size="sm" onClick={expandAll}>
-                  Expand All
-                </Button>
-                <Button variant="outline" size="sm" onClick={collapseAll}>
-                  Collapse
-                </Button>
-              </div>
-            </div>
-
-            {/* Permissions List */}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <ScrollArea className="h-full px-6">
-                {isLoadingModules ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : filteredPermissions.length === 0 ? (
-                  <EmptyState
-                    icon={searchQuery ? Search : Shield}
-                    title={
-                      searchQuery ? 'No permissions match your search' : 'No permissions assigned'
-                    }
-                    card={false}
-                  />
-                ) : (
-                  <div className="space-y-2 pb-6">
-                    {filteredPermissions.map((module) => {
-                      const isExpanded = expandedModules.has(module.id) || searchQuery.length > 0
-
-                      return (
-                        <Collapsible
-                          key={module.id}
-                          open={isExpanded}
-                          onOpenChange={() => toggleModule(module.id)}
-                        >
-                          <div className="rounded-lg border bg-card">
-                            {/* Module Header */}
-                            <CollapsibleTrigger asChild>
-                              <button className="w-full flex items-center gap-2 p-3 text-start hover:bg-muted/50 rounded-lg transition-colors">
-                                <ChevronRight
-                                  className={cn(
-                                    'h-4 w-4 text-muted-foreground transition-transform',
-                                    isExpanded && 'rotate-90'
-                                  )}
-                                />
-                                <span className="font-medium text-sm flex-1">{module.name}</span>
-                                <Badge variant="secondary" className="text-xs font-mono">
-                                  {module.permissions.length}
-                                </Badge>
-                              </button>
-                            </CollapsibleTrigger>
-
-                            {/* Module Permissions */}
-                            <CollapsibleContent>
-                              <div className="px-3 pb-3">
-                                {module.description && (
-                                  <p className="text-xs text-muted-foreground mb-3 ms-6">
-                                    {module.description}
-                                  </p>
+                <ul className="divide-y rounded-lg border">
+                  {filteredPermissions.map((module) => {
+                    const isExpanded = expandedModules.has(module.id) || searchQuery.length > 0
+                    return (
+                      <li key={module.id}>
+                        <Collapsible open={isExpanded} onOpenChange={() => toggleModule(module.id)}>
+                          <CollapsibleTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 px-3 py-2.5 text-start hover:bg-muted/50"
+                            >
+                              <ChevronRight
+                                className={cn(
+                                  'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                                  isExpanded && 'rotate-90'
                                 )}
-                                <div className="flex flex-wrap gap-1.5 ms-6">
-                                  {module.permissions.map((permission) => {
-                                    const type = getPermissionType(permission.id)
-                                    const typeConfig = permissionTypeConfig[type]
-
-                                    return (
-                                      <TooltipProvider key={permission.id}>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <div
-                                              className={cn(
-                                                'inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium',
-                                                typeConfig.bgColor,
-                                                typeConfig.color
-                                              )}
-                                            >
-                                              <typeConfig.icon className="h-3 w-3" />
-                                              {permission.name}
-                                            </div>
-                                          </TooltipTrigger>
-                                          <TooltipContent side="top" className="max-w-xs">
-                                            <p className="font-mono text-xs">{permission.id}</p>
-                                            {permission.description && (
-                                              <p className="text-xs mt-1">
-                                                {permission.description}
-                                              </p>
-                                            )}
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            </CollapsibleContent>
-                          </div>
-                        </Collapsible>
-                      )
-                    })}
-                  </div>
-                )}
-              </ScrollArea>
-            </div>
-          </TabsContent>
-
-          {/* Members Tab */}
-          <TabsContent
-            value="members"
-            className="flex-1 flex flex-col min-h-0 mt-0 pt-4 data-[state=inactive]:hidden"
-          >
-            {/* Search and Add Button */}
-            <div className="px-6 pb-4 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search members..."
-                    value={memberSearchQuery}
-                    onChange={(e) => setMemberSearchQuery(e.target.value)}
-                    className="ps-9"
-                  />
-                </div>
-                <Button size="sm" onClick={() => setAddMemberDialogOpen(true)}>
-                  <UserPlus className="me-1.5 h-4 w-4" />
-                  Add Member
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <ScrollArea className="h-full px-6">
-                {isLoadingMembers ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : filteredMembers.length === 0 ? (
-                  <EmptyState
-                    icon={Users}
-                    title={
-                      memberSearchQuery
-                        ? 'No members match your search'
-                        : 'No members with this role'
-                    }
-                    card={false}
-                    action={
-                      !memberSearchQuery ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setAddMemberDialogOpen(true)}
-                        >
-                          <UserPlus className="me-1.5 h-4 w-4" />
-                          Add First Member
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                ) : (
-                  <div className="space-y-2 pb-6">
-                    {filteredMembers.map((member) => (
-                      <div
-                        key={member.id}
-                        className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors group"
-                      >
-                        <Avatar className="h-10 w-10 shrink-0">
-                          <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
-                            {getInitials(member.name, member.email || '')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">
-                            {member.name || member.email}
-                          </p>
-                          {member.name && (
-                            <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                              <Mail className="h-3 w-3 shrink-0" />
-                              {member.email}
-                            </p>
-                          )}
-                        </div>
-                        {member.assigned_at && (
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {formatDate(member.assigned_at)}
-                          </span>
-                        )}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                            >
-                              {removingMemberId === member.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <MoreHorizontal className="h-4 w-4" />
+                              />
+                              <span className="flex-1 text-sm font-medium">{module.name}</span>
+                              <span className="text-xs text-muted-foreground tabular-nums">
+                                {module.permissions.length}
+                              </span>
+                            </button>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="space-y-2 px-3 pb-3 ps-9">
+                              {module.description && (
+                                <p className="text-xs text-muted-foreground">
+                                  {module.description}
+                                </p>
                               )}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              className="text-red-600"
-                              onClick={() => handleRemoveMember(member)}
-                              disabled={removingMemberId === member.id}
-                            >
-                              <UserMinus className="me-2 h-4 w-4" />
-                              Remove from Role
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </ScrollArea>
+                              <div className="flex flex-wrap gap-1.5">
+                                {module.permissions.map((permission) => {
+                                  const cfg = permissionTypeConfig[getPermissionType(permission.id)]
+                                  return (
+                                    <Tooltip key={permission.id}>
+                                      <TooltipTrigger asChild>
+                                        <span
+                                          tabIndex={0}
+                                          className={cn(
+                                            'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium',
+                                            cfg.chip
+                                          )}
+                                        >
+                                          <cfg.icon className="h-3 w-3" />
+                                          {permission.name}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-xs">
+                                        <p className="font-mono text-xs">{permission.id}</p>
+                                        {permission.description && (
+                                          <p className="mt-1 text-xs">{permission.description}</p>
+                                        )}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </DetailSection>
+          </div>
+        )}
+
+        {activeTab === 'members' && (
+          <DetailSection
+            title="Members"
+            count={isLoadingMembers ? undefined : roleMembers.length}
+            actions={
+              <Button size="sm" onClick={() => setAddMemberDialogOpen(true)}>
+                <UserPlus className="h-4 w-4" />
+                Add member
+              </Button>
+            }
+          >
+            <div className="relative">
+              <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                aria-label="Search members"
+                placeholder="Search members..."
+                value={memberSearchQuery}
+                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                className="ps-9"
+              />
             </div>
-          </TabsContent>
-        </Tabs>
-      </SheetContent>
+
+            {isLoadingMembers ? (
+              <div className="space-y-2" aria-hidden>
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-14 w-full" />
+                ))}
+              </div>
+            ) : filteredMembers.length === 0 ? (
+              <EmptyState
+                icon={Users}
+                title={
+                  memberSearchQuery ? 'No members match your search' : 'No members with this role'
+                }
+                card={false}
+                action={
+                  !memberSearchQuery ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAddMemberDialogOpen(true)}
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      Add first member
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <ul className="divide-y rounded-lg border">
+                {filteredMembers.map((member) => {
+                  const label = member.name || member.email
+                  return (
+                    <li key={member.id} className="flex items-center gap-3 px-3 py-2.5">
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
+                          {getInitials(member.name, member.email || '')}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium break-words">{label}</p>
+                        {member.name && (
+                          <p className="flex items-center gap-1 text-xs break-all text-muted-foreground">
+                            <Mail className="h-3 w-3 shrink-0" />
+                            {member.email}
+                          </p>
+                        )}
+                      </div>
+                      {member.assigned_at && (
+                        <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                          {formatDate(member.assigned_at)}
+                        </span>
+                      )}
+                      {/* Always visible: a hover-only trigger cannot be found on touch. */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            aria-label={`Actions for ${label}`}
+                          >
+                            {removingMemberId === member.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <MoreHorizontal className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => handleRemoveMember(member)}
+                            disabled={removingMemberId === member.id}
+                          >
+                            <UserMinus className="h-4 w-4" />
+                            Remove from role
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </DetailSection>
+        )}
+      </DetailSheet>
 
       {/* Add Member Dialog */}
       <AddMemberToRoleDialog
@@ -717,6 +620,6 @@ export function RoleDetailSheet({
         existingMembers={roleMembers}
         onSuccess={() => mutateMembers()}
       />
-    </Sheet>
+    </>
   )
 }
