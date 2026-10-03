@@ -61,6 +61,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -631,6 +632,10 @@ type Services struct {
 	TemplateSource  *template.SourceService
 	SecretStore     *app.SecretStoreService
 	TemplateSyncer  *template.Syncer
+
+	// TemplateKeys signs custom templates for sensors; nil when no key is
+	// configured (see initTemplateKeyring).
+	TemplateKeys *scannertemplate.Keyring
 
 	// Workflows
 	Workflow           *app.WorkflowService
@@ -1390,7 +1395,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
 	s.Sensor.SetLeaseRenewer(repos.Command)
 	s.Sensor.SetCancelFinder(repos.Command)
-	s.Command = command.NewService(repos.Command, log, command.WithSensorLookup(repos.Sensor))
+	// Custom templates leave for sensors signed with the tenant's key
+	// (sensors refuse unsigned ones; RFC-038 "Custom template trust").
+	s.TemplateKeys = initTemplateKeyring(cfg, log)
+	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor)}
+	if s.TemplateKeys != nil {
+		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
+	}
+	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	s.SensorPlatformHealth = sensorapp.NewPlatformHealth(sensorapp.PlatformHealthConfig{
 		SlowHeartbeat: cfg.SensorConfig.HealthSlowHeartbeat,
@@ -1436,6 +1448,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
 	s.ScanSession = app.NewScanSessionService(repos.ScanSession, repos.Sensor, log)
 	s.ScannerTemplate = app.NewScannerTemplateService(repos.ScannerTemplate, cfg.Encryption.Key, log)
+	s.ScannerTemplate.SetSigningKeys(s.TemplateKeys)
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
 
 	// Initialize credential service for template sources
@@ -2009,6 +2022,35 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 // call. The actual wiring of the email enqueuer happens in main.go
 // where it can also re-attach the permission and session services
 // after the tenant service is reconstructed.
+
+// initTemplateKeyring returns the keyring custom templates are signed with
+// for sensors: from APP_TEMPLATE_SIGNING_KEY, else derived from
+// APP_ENCRYPTION_KEY. nil (no key at all, development only): templates go
+// unsigned and every sensor refuses them.
+func initTemplateKeyring(cfg *config.Config, log *logger.Logger) *scannertemplate.Keyring {
+	if k := cfg.Encryption.TemplateSigningKey; k != "" {
+		raw, err := crypto.ParseKey(k, "")
+		if err == nil {
+			if kr, err := scannertemplate.NewKeyring(raw); err == nil {
+				log.Info("custom template signing enabled", "key_source", "APP_TEMPLATE_SIGNING_KEY")
+				return kr
+			}
+		}
+		log.Error("APP_TEMPLATE_SIGNING_KEY is invalid; custom templates go unsigned and sensors refuse them")
+		return nil
+	}
+	if cfg.Encryption.IsConfigured() {
+		raw, err := crypto.ParseKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)
+		if err == nil {
+			if kr, err := scannertemplate.NewKeyringFromEncryptionKey(raw); err == nil {
+				log.Info("custom template signing enabled", "key_source", "derived from APP_ENCRYPTION_KEY")
+				return kr
+			}
+		}
+	}
+	log.Warn("no template signing key (APP_TEMPLATE_SIGNING_KEY / APP_ENCRYPTION_KEY); custom templates go unsigned and sensors refuse them")
+	return nil
+}
 
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {

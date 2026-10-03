@@ -296,11 +296,15 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 		result.AddError("requests", "missing execution block (requests, http, dns, etc.)", "MISSING_EXECUTION")
 	}
 
-	// Protocols that run code on the scanner host are refused on the parsed
-	// document, so the surface syntax (block YAML, flow YAML, JSON, escaped
-	// or differently-cased keys) cannot hide them.
+	// Protocols that run code on the scanner host, read its files or drive a
+	// browser are refused on the parsed document, so the surface syntax
+	// (block YAML, flow YAML, JSON, escaped or differently-cased keys)
+	// cannot hide them. Sensors refuse them again and never enable them
+	// (no -code, -file or -headless for custom templates).
 	if key, found := execProtocolKey(tpl); found {
-		result.AddError(key, fmt.Sprintf("the %q protocol runs code on the scanner and is not allowed", key), "DANGEROUS_PATTERN")
+		result.AddError(key, fmt.Sprintf("the %q protocol %s and is not allowed in custom templates", key, nucleiForbiddenProtocols[key]), "DANGEROUS_PATTERN")
+	} else if key, found := selfContainedKey(tpl); found {
+		result.AddError(key, "self-contained templates are not allowed in custom templates", "DANGEROUS_PATTERN")
 	} else if v.hasDangerousPatterns(content) {
 		// Check for potentially dangerous patterns
 		result.AddError("content", "potentially dangerous patterns detected", "DANGEROUS_PATTERN")
@@ -317,21 +321,44 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 	return result
 }
 
-// nucleiExecProtocols are the Nuclei protocol blocks that execute code on the
-// scanner host: code (shell/python/... source), javascript (in-template JS
-// with network access) and headless (a browser driven by template scripts).
-var nucleiExecProtocols = []string{"code", "javascript", "headless"}
+// nucleiForbiddenProtocols are the Nuclei protocol blocks a custom template
+// may not use, with why: code (shell/python/... source) and javascript
+// (in-template JS) execute code on the scanner host, headless drives a
+// browser with template scripts, and file reads the scanner's own disk.
+var nucleiForbiddenProtocols = map[string]string{
+	"code":       "runs code on the scanner",
+	"javascript": "runs code on the scanner",
+	"headless":   "drives a browser on the scanner",
+	"file":       "reads files on the scanner",
+}
+
+// nucleiForbiddenProtocolOrder fixes which key is reported first.
+var nucleiForbiddenProtocolOrder = []string{"code", "javascript", "headless", "file"}
 
 // execProtocolKey reports the first top-level key of a parsed Nuclei
-// template that names an exec protocol. Keys are compared with Unicode case
-// folding because nuclei also loads JSON templates, and encoding/json matches
-// field names case-insensitively ("CODE" and "ſ"-for-"s" variants included).
+// template that names a forbidden protocol. Keys are compared with Unicode
+// case folding because nuclei also loads JSON templates, and encoding/json
+// matches field names case-insensitively ("CODE" and "ſ"-for-"s" variants
+// included).
 func execProtocolKey(tpl map[string]any) (string, bool) {
-	for key := range tpl {
-		k := strings.TrimSpace(key)
-		for _, p := range nucleiExecProtocols {
-			if strings.EqualFold(k, p) {
+	for _, p := range nucleiForbiddenProtocolOrder {
+		for key := range tpl {
+			if strings.EqualFold(strings.TrimSpace(key), p) {
 				return p, true
+			}
+		}
+	}
+	return "", false
+}
+
+// selfContainedKey reports a top-level "self-contained" key that is not
+// false: a self-contained template carries its own targets and runs
+// without the scan's, so it would skip target validation.
+func selfContainedKey(tpl map[string]any) (string, bool) {
+	for key, v := range tpl {
+		if strings.EqualFold(strings.TrimSpace(key), "self-contained") {
+			if b, ok := v.(bool); !ok || b {
+				return "self-contained", true
 			}
 		}
 	}

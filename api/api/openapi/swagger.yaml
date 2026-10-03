@@ -792,6 +792,10 @@ definitions:
       path:
         description: File path where this dependency is defined
         type: string
+      properties:
+        allOf:
+        - $ref: '#/definitions/ctis.Properties'
+        description: Custom properties
       purl:
         description: Package URL (PURL)
         type: string
@@ -1920,11 +1924,20 @@ definitions:
     type: object
   ctis.Suppression:
     properties:
+      expires_at:
+        description: When the suppression stops applying. Empty means it does not
+          expire.
+        type: string
       justification:
         description: Justification for suppression
         type: string
       kind:
         description: 'Suppression kind: in_source, external'
+        type: string
+      reason:
+        description: |-
+          Short reason code or phrase, e.g. "false_positive", "test_code",
+          "risk_accepted".
         type: string
       status:
         description: 'Suppression status: accepted, under_review, rejected'
@@ -2566,6 +2579,19 @@ definitions:
       last_activity_at:
         type: string
       user_agent:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app.TemplateSigningKey:
+    properties:
+      algorithm:
+        type: string
+      key_id:
+        type: string
+      public_key:
+        description: base64 (standard)
+        type: string
+      sensor_env:
+        description: the sensor setting it goes in
         type: string
     type: object
   github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class:
@@ -3893,12 +3919,20 @@ definitions:
       actions:
         description: |-
           Actions are typed control directives from a closed set: pause,
-          resume, drain, rotate_key, update. Never free-form text.
+          resume, drain, rotate_key, update, cancel. Never free-form text.
         items:
           type: string
         type: array
       agent_id:
         type: string
+      cancel_command_ids:
+        description: |-
+          CancelCommandIDs are commands the sensor listed as running that it
+          must stop (canceled, timed out, re-queued, held elsewhere); sent with
+          the cancel action. Only for a sensor that reports its running list.
+        items:
+          type: string
+        type: array
       config_version:
         description: |-
           ConfigVersion is an opaque digest of what the platform governs about
@@ -24487,6 +24521,27 @@ paths:
       security:
       - BearerAuth: []
       summary: Download template content
+      tags:
+      - Scanner Templates
+  /scanner-templates/signing-key:
+    get:
+      description: The Ed25519 public key custom templates of this tenant are signed
+        with when they are sent to a sensor. Pin it on the tenant's sensors (SENSOR_TEMPLATE_SIGNING_KEYS);
+        sensors refuse custom templates without a valid signature.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.TemplateSigningKey'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get the tenant's template-signing public key
       tags:
       - Scanner Templates
   /scanner-templates/usage:

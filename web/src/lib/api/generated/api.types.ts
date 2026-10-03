@@ -19348,6 +19348,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scanner-templates/signing-key': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get the tenant's template-signing public key
+     * @description The Ed25519 public key custom templates of this tenant are signed with when they are sent to a sensor. Pin it on the tenant's sensors (SENSOR_TEMPLATE_SIGNING_KEYS); sensors refuse custom templates without a valid signature.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.TemplateSigningKey']
+          }
+        }
+        /** @description Service Unavailable */
+        503: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/scanner-templates/usage': {
     parameters: {
       query?: never
@@ -29941,6 +29989,8 @@ export interface components {
       name?: string
       /** @description File path where this dependency is defined */
       path?: string
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
       /** @description Package URL (PURL) */
       purl?: string
       /** @description Dependency relationship: direct, indirect, root, transit */
@@ -30620,10 +30670,17 @@ export interface components {
       message?: string
     }
     'ctis.Suppression': {
+      /** @description When the suppression stops applying. Empty means it does not expire. */
+      expires_at?: string
       /** @description Justification for suppression */
       justification?: string
       /** @description Suppression kind: in_source, external */
       kind?: string
+      /**
+       * @description Short reason code or phrase, e.g. "false_positive", "test_code",
+       *     "risk_accepted".
+       */
+      reason?: string
       /** @description Suppression status: accepted, under_review, rejected */
       status?: string
       /** @description When the finding was suppressed */
@@ -31024,6 +31081,14 @@ export interface components {
       is_current?: boolean
       last_activity_at?: string
       user_agent?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app.TemplateSigningKey': {
+      algorithm?: string
+      key_id?: string
+      /** @description base64 (standard) */
+      public_key?: string
+      /** @description the sensor setting it goes in */
+      sensor_env?: string
     }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class':
@@ -31756,10 +31821,16 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Heartbeat': {
       /**
        * @description Actions are typed control directives from a closed set: pause,
-       *     resume, drain, rotate_key, update. Never free-form text.
+       *     resume, drain, rotate_key, update, cancel. Never free-form text.
        */
       actions?: string[]
       agent_id?: string
+      /**
+       * @description CancelCommandIDs are commands the sensor listed as running that it
+       *     must stop (canceled, timed out, re-queued, held elsewhere); sent with
+       *     the cancel action. Only for a sensor that reports its running list.
+       */
+      cancel_command_ids?: string[]
       /**
        * @description ConfigVersion is an opaque digest of what the platform governs about
        *     the sensor; it changes when that changes. Sent to doorbell-aware
