@@ -66,7 +66,8 @@ type AssetService struct {
 	// Scope rule evaluator callback (set by services.go wiring)
 	scopeRuleEvaluator scope.RuleEvaluatorFunc
 
-	// User matcher for auto-resolving owner_ref to owner_id
+	// User matcher for resolving owner_ref (an email) to a tenant member, who
+	// becomes the asset's primary owner in asset_owners.
 	userMatcher UserMatcher
 
 	// Lifecycle repository for RFC-004 Phase 0 snooze operations.
@@ -101,6 +102,35 @@ type UserMatcher interface {
 // SetUserMatcher sets the user matcher for owner auto-resolution.
 func (s *AssetService) SetUserMatcher(m UserMatcher) {
 	s.userMatcher = m
+}
+
+// syncOwnerRefOwner keeps the owner derived from owner_ref in step with it.
+// asset_owners is the only owner store: when ownerRef is the email of a member
+// of the tenant, that member becomes a primary owner (source owner_ref);
+// otherwise the row derived from a previous owner_ref is removed. Owners set by
+// a person or a scope rule are never touched, and an owner_ref owner never
+// grants data access. Best-effort: a failure is logged and never fails the
+// asset write (the owner-resolution controller retries every 30 minutes).
+func (s *AssetService) syncOwnerRefOwner(ctx context.Context, tenantID, assetID shared.ID, ownerRef string) {
+	if s.accessControlRepo == nil {
+		return
+	}
+	var matched *shared.ID
+	if strings.Contains(ownerRef, "@") && s.userMatcher != nil {
+		id, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, ownerRef)
+		if err != nil {
+			s.logger.Warn("owner_ref lookup failed", "asset_id", assetID.String(), "error", err)
+			return
+		}
+		matched = id
+	}
+	if err := s.accessControlRepo.SyncOwnerRefOwner(ctx, tenantID, assetID, matched); err != nil {
+		s.logger.Warn("owner_ref owner sync failed", "asset_id", assetID.String(), "error", err)
+		return
+	}
+	if matched != nil {
+		s.logger.Info("owner_ref matched a member", "asset_id", assetID.String(), "user_id", matched.String())
+	}
 }
 
 // NewAssetService creates a new AssetService.
@@ -402,16 +432,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		a.SetProperties(input.Properties)
 	}
 
-	// Set owner reference from external source and try auto-match
+	// Owner reference from an external source. The matching tenant member
+	// becomes the primary owner once the asset is stored (syncOwnerRefOwner).
 	if input.OwnerRef != "" {
 		a.SetOwnerRef(input.OwnerRef)
-		// Auto-match: if owner_ref looks like an email, try to find user
-		if strings.Contains(input.OwnerRef, "@") && s.userMatcher != nil {
-			if matchedID, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, input.OwnerRef); err == nil && matchedID != nil {
-				a.SetOwnerID(matchedID)
-				s.logger.Info("auto-matched owner_ref to user", "owner_ref", input.OwnerRef, "user_id", matchedID.String())
-			}
-		}
 	}
 
 	// Calculate initial risk score using tenant-specific config. A brand-new
@@ -422,6 +446,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 
 	if err := s.repo.Create(ctx, a); err != nil {
 		return nil, fmt.Errorf("failed to create asset: %w", err)
+	}
+
+	if input.OwnerRef != "" {
+		s.syncOwnerRefOwner(ctx, tenantID, a.ID(), input.OwnerRef)
 	}
 
 	// Record an "appeared" event for the state-history audit trail (powers
@@ -849,14 +877,9 @@ func (s *AssetService) mergeAndUpdateExisting(
 		existing.AddTag(tag)
 	}
 
-	// Update owner ref if provided
+	// Update owner ref if provided (its owner is synced after the update)
 	if input.OwnerRef != "" {
 		existing.SetOwnerRef(input.OwnerRef)
-		if strings.Contains(input.OwnerRef, "@") && s.userMatcher != nil {
-			if matchedID, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, input.OwnerRef); err == nil && matchedID != nil {
-				existing.SetOwnerID(matchedID)
-			}
-		}
 	}
 
 	// Mark as seen (updates last_seen)
@@ -869,6 +892,9 @@ func (s *AssetService) mergeAndUpdateExisting(
 
 	if err := s.repo.Update(ctx, existing); err != nil {
 		return nil, fmt.Errorf("failed to update existing asset: %w", err)
+	}
+	if input.OwnerRef != "" {
+		s.syncOwnerRefOwner(ctx, tenantID, existing.ID(), input.OwnerRef)
 	}
 
 	s.logger.Info("asset upserted (updated existing)", "id", existing.ID().String(), "name", logger.SanitizeValue(existing.Name()))
@@ -1032,7 +1058,9 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		a.UpdateDescription(*input.Description)
 	}
 
+	ownerRefChanged := false
 	if input.OwnerRef != nil {
+		ownerRefChanged = *input.OwnerRef != a.OwnerRef()
 		a.SetOwnerRef(*input.OwnerRef)
 	}
 
@@ -1098,6 +1126,12 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 
 	if err := s.repo.Update(ctx, a); err != nil {
 		return nil, fmt.Errorf("failed to update asset: %w", err)
+	}
+
+	// A changed owner_ref replaces the owner derived from the old one (an
+	// emptied or unmatched owner_ref just removes it).
+	if ownerRefChanged {
+		s.syncOwnerRefOwner(ctx, parsedTenantID, parsedID, a.OwnerRef())
 	}
 
 	// Recalculate affected group stats (risk_score, finding_count, etc.)
