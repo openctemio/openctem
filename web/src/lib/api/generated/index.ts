@@ -70,6 +70,16 @@ export type ApiError = Schemas['github_com_openctemio_openctem_api_pkg_apierror.
 export type AssetTypeResponse = Schemas['internal_infra_http_handler.AssetTypeResponse']
 export type AssetTypeCategoryResponse = Schemas['internal_infra_http_handler.CategoryResponse']
 
+// Asset type registry (RFC-042): GET /asset-types
+export type AssetTypeRegistryResponse =
+  Schemas['internal_infra_http_handler.AssetTypeRegistryResponse']
+export type AssetTypeDefinition =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition']
+export type AssetClassDefinition =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition']
+export type AssetLensDefinition =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition']
+
 // Asset groups
 export type AssetGroupResponse = Schemas['internal_infra_http_handler.AssetGroupResponse']
 export type AssetGroupStatsResponse = Schemas['internal_infra_http_handler.AssetGroupStatsResponse']

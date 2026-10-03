@@ -2986,6 +2986,407 @@ definitions:
       request_id:
         type: string
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.AssetType:
+    enum:
+    - domain
+    - subdomain
+    - certificate
+    - ip_address
+    - website
+    - web_application
+    - api
+    - mobile_app
+    - service
+    - repository
+    - cloud_account
+    - compute
+    - storage
+    - serverless
+    - container_registry
+    - host
+    - container
+    - kubernetes_cluster
+    - kubernetes_namespace
+    - database
+    - data_store
+    - s3_bucket
+    - network
+    - vpc
+    - subnet
+    - load_balancer
+    - firewall
+    - iam_user
+    - iam_role
+    - service_account
+    - unclassified
+    - http_service
+    - open_port
+    - discovered_url
+    - endpoint
+    - application
+    - identity
+    - kubernetes
+    type: string
+    x-enum-comments:
+      AssetTypeApplication: Consolidates website, web_application, api, mobile_app
+      AssetTypeDiscoveredURL: URLs/endpoints from Katana
+      AssetTypeHTTPService: HTTP/HTTPS services from HTTPX
+      AssetTypeIdentity: Consolidates iam_user, iam_role, service_account
+      AssetTypeKubernetes: Consolidates kubernetes_cluster, kubernetes_namespace
+      AssetTypeOpenPort: Individual open ports from Naabu
+      AssetTypeService: Network services (SSH, HTTP, DB, etc.)
+    x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - Network services (SSH, HTTP, DB, etc.)
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - HTTP/HTTPS services from HTTPX
+    - Individual open ports from Naabu
+    - URLs/endpoints from Katana
+    - ""
+    - Consolidates website, web_application, api, mobile_app
+    - Consolidates iam_user, iam_role, service_account
+    - Consolidates kubernetes_cluster, kubernetes_namespace
+    x-enum-varnames:
+    - AssetTypeDomain
+    - AssetTypeSubdomain
+    - AssetTypeCertificate
+    - AssetTypeIPAddress
+    - AssetTypeWebsite
+    - AssetTypeWebApplication
+    - AssetTypeAPI
+    - AssetTypeMobileApp
+    - AssetTypeService
+    - AssetTypeRepository
+    - AssetTypeCloudAccount
+    - AssetTypeCompute
+    - AssetTypeStorage
+    - AssetTypeServerless
+    - AssetTypeContainerRegistry
+    - AssetTypeHost
+    - AssetTypeContainer
+    - AssetTypeKubernetesCluster
+    - AssetTypeKubernetesNamespace
+    - AssetTypeDatabase
+    - AssetTypeDataStore
+    - AssetTypeS3Bucket
+    - AssetTypeNetwork
+    - AssetTypeVPC
+    - AssetTypeSubnet
+    - AssetTypeLoadBalancer
+    - AssetTypeFirewall
+    - AssetTypeIAMUser
+    - AssetTypeIAMRole
+    - AssetTypeServiceAccount
+    - AssetTypeUnclassified
+    - AssetTypeHTTPService
+    - AssetTypeOpenPort
+    - AssetTypeDiscoveredURL
+    - AssetTypeEndpoint
+    - AssetTypeApplication
+    - AssetTypeIdentity
+    - AssetTypeKubernetes
+  github_com_openctemio_openctem_api_pkg_domain_asset.AttributeDefinition:
+    properties:
+      facet:
+        type: boolean
+      group:
+        type: boolean
+      name:
+        type: string
+      type:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AttributeKind'
+      values:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.AttributeKind:
+    enum:
+    - string
+    - int
+    - number
+    - bool
+    - time
+    - enum
+    - list
+    - object
+    type: string
+    x-enum-varnames:
+    - AttributeString
+    - AttributeInt
+    - AttributeNumber
+    - AttributeBool
+    - AttributeTime
+    - AttributeEnum
+    - AttributeList
+    - AttributeObject
+  github_com_openctemio_openctem_api_pkg_domain_asset.Category:
+    enum:
+    - external_surface
+    - application
+    - infrastructure
+    - network
+    - cloud
+    - data
+    - code
+    - identity
+    - other
+    type: string
+    x-enum-varnames:
+    - CategoryExternalSurface
+    - CategoryApplication
+    - CategoryInfrastructure
+    - CategoryNetwork
+    - CategoryCloud
+    - CategoryData
+    - CategoryCode
+    - CategoryIdentity
+    - CategoryOther
+  github_com_openctemio_openctem_api_pkg_domain_asset.Class:
+    enum:
+    - domain
+    - ip_address
+    - certificate
+    - service
+    - web_endpoint
+    - application
+    - host
+    - function
+    - cloud_account
+    - container
+    - cluster
+    - artifact_registry
+    - code_repo
+    - identity
+    - data_store
+    - network
+    - other
+    type: string
+    x-enum-varnames:
+    - ClassDomain
+    - ClassIPAddress
+    - ClassCertificate
+    - ClassService
+    - ClassWebEndpoint
+    - ClassApplication
+    - ClassHost
+    - ClassFunction
+    - ClassCloudAccount
+    - ClassContainer
+    - ClassCluster
+    - ClassArtifactRegistry
+    - ClassCodeRepo
+    - ClassIdentity
+    - ClassDataStore
+    - ClassNetwork
+    - ClassOther
+  github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition:
+    properties:
+      id:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Class'
+      jupiterone:
+        type: string
+      label:
+        type: string
+      lens:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Lens'
+      types:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AssetType'
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.Lens:
+    enum:
+    - external_surface
+    - applications
+    - cloud_infra
+    - containers_k8s
+    - code
+    - identities
+    - data
+    - network
+    type: string
+    x-enum-varnames:
+    - LensExternalSurface
+    - LensApplications
+    - LensCloudInfra
+    - LensContainersK8s
+    - LensCode
+    - LensIdentities
+    - LensData
+    - LensNetwork
+  github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition:
+    properties:
+      classes:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Class'
+        type: array
+      default_group_by:
+        type: string
+      description:
+        type: string
+      id:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Lens'
+      label:
+        type: string
+      row:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule:
+    properties:
+      peers:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'
+        type: array
+      relationship:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType'
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType:
+    enum:
+    - runs_on
+    - deployed_to
+    - contains
+    - exposes
+    - resolves_to
+    - cname_of
+    - depends_on
+    - peer_of
+    - replicates_to
+    - sends_data_to
+    - stores_data_in
+    - authenticates_to
+    - granted_to
+    - has_access_to
+    - load_balances
+    - protected_by
+    - monitors
+    - manages
+    type: string
+    x-enum-varnames:
+    - RelTypeRunsOn
+    - RelTypeDeployedTo
+    - RelTypeContains
+    - RelTypeExposes
+    - RelTypeResolvesTo
+    - RelTypeCnameOf
+    - RelTypeDependsOn
+    - RelTypePeerOf
+    - RelTypeReplicatesTo
+    - RelTypeSendsDataTo
+    - RelTypeStoresDataIn
+    - RelTypeAuthenticatesTo
+    - RelTypeGrantedTo
+    - RelTypeHasAccessTo
+    - RelTypeLoadBalances
+    - RelTypeProtectedBy
+    - RelTypeMonitors
+    - RelTypeManages
+  github_com_openctemio_openctem_api_pkg_domain_asset.SectionDefinition:
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition:
+    properties:
+      alias_of:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'
+      attributes:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AttributeDefinition'
+        type: array
+      card:
+        type: string
+      class:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Class'
+      columns:
+        items:
+          type: string
+        type: array
+      facets:
+        items:
+          type: string
+        type: array
+      group_by:
+        items:
+          type: string
+        type: array
+      icon:
+        type: string
+      identity_keys:
+        items:
+          type: string
+        type: array
+      label:
+        type: string
+      legacy_category:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Category'
+      lens:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.Lens'
+      plural:
+        type: string
+      relationships:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships'
+      sections:
+        items:
+          type: string
+        type: array
+      storage:
+        type: string
+      sub_types:
+        items:
+          type: string
+        type: array
+      type:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AssetType'
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef:
+    properties:
+      sub_type:
+        type: string
+      type:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.AssetType'
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships:
+    properties:
+      in:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule'
+        type: array
+      out:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule'
+        type: array
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_audit.Changes:
     properties:
       after:
@@ -4931,6 +5332,48 @@ definitions:
         type: integer
       type:
         example: domain
+        type: string
+    type: object
+  internal_infra_http_handler.AssetTypeRegistryResponse:
+    properties:
+      cards:
+        items:
+          type: string
+        type: array
+      classes:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition'
+        type: array
+      core_fields:
+        items:
+          type: string
+        type: array
+      data:
+        description: 'Deprecated: the legacy asset_types rows; use Types.'
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AssetTypeResponse'
+        type: array
+      lenses:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      sections:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.SectionDefinition'
+        type: array
+      total:
+        type: integer
+      total_pages:
+        type: integer
+      types:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition'
+        type: array
+      version:
         type: string
     type: object
   internal_infra_http_handler.AssetTypeResponse:
@@ -16055,53 +16498,62 @@ paths:
     get:
       consumes:
       - application/json
-      description: Retrieves a paginated list of system asset types. Asset types are
-        read-only configuration. Use active_only=true to get all active types without
-        pagination.
+      description: 'Returns the asset type registry (RFC-042): every asset type with
+        its class, lens, attribute schema, facets, group-by fields, row columns, card
+        renderer, detail sections, allowed relationships and identity keys, plus the
+        classes, lenses and the closed sets of sections and cards. The registry is
+        generated from api/configs/asset-types.yaml and holds no tenant data. The
+        response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages
+        fields are the legacy asset_types rows (deprecated, kept for one release);
+        the query parameters below filter only those.'
       parameters:
-      - description: Return only active asset types (bypasses pagination)
+      - description: ETag from a previous response
+        in: header
+        name: If-None-Match
+        type: string
+      - description: 'Legacy rows: only active asset types, without pagination'
         in: query
         name: active_only
         type: boolean
-      - description: Include category details in response
+      - description: 'Legacy rows: include category details'
         in: query
         name: include_category
         type: boolean
-      - description: Search by name or code
+      - description: 'Legacy rows: search by name or code'
         in: query
         name: search
         type: string
-      - description: Filter by category ID
+      - description: 'Legacy rows: filter by category ID'
         in: query
         name: category_id
         type: string
-      - description: Filter by exact code
+      - description: 'Legacy rows: filter by exact code'
         in: query
         name: code
         type: string
-      - description: Filter by system type
+      - description: 'Legacy rows: filter by system type'
         in: query
         name: is_system
         type: boolean
-      - description: Filter by scannable flag
+      - description: 'Legacy rows: filter by scannable flag'
         in: query
         name: is_scannable
         type: boolean
-      - description: Filter by discoverable flag
+      - description: 'Legacy rows: filter by discoverable flag'
         in: query
         name: is_discoverable
         type: boolean
-      - description: Sort field (e.g., 'name', '-display_order')
+      - description: 'Legacy rows: sort field (e.g., ''name'', ''-display_order'')'
         in: query
         name: sort
         type: string
       - default: 1
-        description: Page number
+        description: 'Legacy rows: page number'
         in: query
         name: page
         type: integer
       - default: 50
-        description: Items per page
+        description: 'Legacy rows: items per page'
         in: query
         name: per_page
         type: integer
@@ -16111,20 +16563,9 @@ paths:
         "200":
           description: OK
           schema:
-            properties:
-              data:
-                items:
-                  $ref: '#/definitions/internal_infra_http_handler.AssetTypeResponse'
-                type: array
-              page:
-                type: integer
-              per_page:
-                type: integer
-              total:
-                type: integer
-              total_pages:
-                type: integer
-            type: object
+            $ref: '#/definitions/internal_infra_http_handler.AssetTypeRegistryResponse'
+        "304":
+          description: Not modified (If-None-Match matched the ETag)
         "400":
           description: Bad Request
           schema:
@@ -16139,7 +16580,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: List asset types
+      summary: Asset type registry
       tags:
       - Asset Types
   /asset-types/{id}:
@@ -16185,6 +16626,7 @@ paths:
     get:
       consumes:
       - application/json
+      deprecated: true
       description: Retrieves a paginated list of asset type categories. Use active_only=true
         to get all active categories without pagination.
       parameters:
@@ -16247,6 +16689,7 @@ paths:
     get:
       consumes:
       - application/json
+      deprecated: true
       description: Retrieves a single asset type category by its unique identifier
       parameters:
       - description: Category ID (UUID)
