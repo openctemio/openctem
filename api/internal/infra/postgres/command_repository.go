@@ -1093,6 +1093,39 @@ func (r *CommandRepository) FindQueueExpiredPlatformJobs(ctx context.Context, ma
 	return commands, nil
 }
 
+// ExpireIfUnchanged expires a command the expiration checker read earlier, but
+// only if the row has not moved since: the status, sensor assignments, expiry
+// and queue time must still be the ones in the snapshot. Without the condition
+// the checker wrote its stale snapshot back over a command a sensor had just
+// started or completed, and two replicas both expired the same row and both
+// failed its pipeline step.
+func (r *CommandRepository) ExpireIfUnchanged(ctx context.Context, cmd *command.Command, errorMessage string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET status = 'expired', error_message = $3
+		WHERE id = $1 AND tenant_id = $2
+		  AND status = $4
+		  AND sensor_id IS NOT DISTINCT FROM $5
+		  AND platform_sensor_id IS NOT DISTINCT FROM $6
+		  AND expires_at IS NOT DISTINCT FROM $7
+		  AND queued_at IS NOT DISTINCT FROM $8`,
+		cmd.ID.String(), cmd.TenantID.String(), errorMessage,
+		string(cmd.Status),
+		nullIDString(cmd.SensorID),
+		nullIDString(cmd.PlatformSensorID),
+		nullTime(cmd.ExpiresAt),
+		nullTime(cmd.QueuedAt),
+	)
+	if err != nil {
+		return false, fmt.Errorf("expire command: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("expire command: %w", err)
+	}
+	return n == 1, nil
+}
+
 // GetQueuePosition gets the queue position for a specific command.
 func (r *CommandRepository) GetQueuePosition(ctx context.Context, commandID shared.ID) (*command.QueuePosition, error) {
 	query := `
@@ -1406,6 +1439,9 @@ func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID,
 }
 
 var _ command.StepBatchGate = (*CommandRepository)(nil)
+
+// The expiration checker asserts this; without it, it refuses to expire.
+var _ command.ConditionalExpirer = (*CommandRepository)(nil)
 
 // StepBatchState reports the zone batches that share one step run.
 func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRunID shared.ID) (command.StepBatch, error) {

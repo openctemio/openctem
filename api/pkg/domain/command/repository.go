@@ -174,6 +174,18 @@ type StepBatch struct {
 	FirstError string // first failure message, in completion order
 }
 
+// ConditionalExpirer is implemented by the command repository. It is asserted
+// by the expiration checker (not part of Repository) so the many test doubles of
+// Repository do not all have to grow it.
+type ConditionalExpirer interface {
+	// ExpireIfUnchanged marks cmd expired with errorMessage only if the row
+	// still matches the snapshot the caller read: same status, sensor
+	// assignment, expiry and queue time. It reports whether this caller expired
+	// it. A command a sensor picked up or finished after the snapshot, or one
+	// another replica already expired, is left alone.
+	ExpireIfUnchanged(ctx context.Context, cmd *Command, errorMessage string) (bool, error)
+}
+
 // StepBatchGate is implemented by the command repository. It is an optional
 // extension of Repository, asserted where needed, so test doubles of
 // Repository do not all have to grow it.

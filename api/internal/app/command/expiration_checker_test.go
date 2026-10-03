@@ -43,6 +43,16 @@ func (s *stubCommandRepo) Update(_ context.Context, cmd *commanddom.Command) err
 	return nil
 }
 
+// ExpireIfUnchanged records the expiry like Update did; the conditional part is
+// covered against Postgres in expiration_race_db_test.go.
+func (s *stubCommandRepo) ExpireIfUnchanged(_ context.Context, cmd *commanddom.Command, msg string) (bool, error) {
+	c := *cmd
+	c.Status = commanddom.CommandStatusExpired
+	c.ErrorMessage = msg
+	s.updated = append(s.updated, &c)
+	return true, nil
+}
+
 type recordedStepFailure struct {
 	runID, stepKey, message, code string
 }

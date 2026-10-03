@@ -181,13 +181,29 @@ var (
 )
 
 func (c *ExpirationChecker) handleExpiredCommand(ctx context.Context, cmd *commanddom.Command, reason expiryReason) {
-	// Mark command as expired
-	cmd.Expire()
-	cmd.ErrorMessage = reason.errorMessage
-	if err := c.commandRepo.Update(ctx, cmd); err != nil {
+	// Expire only if the row still matches the snapshot FindExpired returned.
+	// A sensor may have picked the command up or finished it since, and every
+	// API replica runs this checker over the same rows: an unconditional write
+	// put a running/completed command back to 'expired' and failed its pipeline
+	// step once per replica.
+	expirer, ok := c.commandRepo.(commanddom.ConditionalExpirer)
+	if !ok {
+		c.logger.Error("command repository cannot expire conditionally; not expiring",
+			"command_id", cmd.ID.String())
+		return
+	}
+	won, err := expirer.ExpireIfUnchanged(ctx, cmd, reason.errorMessage)
+	if err != nil {
 		c.logger.Error("failed to update expired command", "command_id", cmd.ID.String(), "error", err)
 		return
 	}
+	if !won {
+		c.logger.Debug("command changed since it was found expired; leaving it",
+			"command_id", cmd.ID.String(), "reason", reason.code)
+		return
+	}
+	cmd.Expire()
+	cmd.ErrorMessage = reason.errorMessage
 
 	// Record metric
 	app.CommandsExpired.WithLabelValues(cmd.TenantID.String()).Inc()
