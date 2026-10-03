@@ -58,13 +58,15 @@ import {
   Database,
   Key,
   Globe,
-  User,
+  ArrowRightLeft,
   Server,
   ChevronDown,
   BarChart3,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format-date'
+import { EntityActivity } from '@/features/activity/components/entity-activity'
+import type { ActivityItem } from '@/features/activity/types'
 import { useTenant } from '@/context/tenant-provider'
 import { exportToCsv, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { fetchAllPages } from '@/lib/api/fetch-all-pages'
@@ -996,10 +998,12 @@ function ExposureDetailSheet({ exposure, open, onOpenChange, onAction }: Exposur
   const canApprove = useCanApproveExposures()
   const { currentTenant } = useTenant()
   const [secretsRevealed, setSecretsRevealed] = useState(false)
-  const { history, isLoading: historyLoading } = useExposureHistory(
-    currentTenant?.id || null,
-    exposure?.id || null
-  )
+  const {
+    history,
+    isLoading: historyLoading,
+    error: historyError,
+    mutate: retryHistory,
+  } = useExposureHistory(currentTenant?.id || null, exposure?.id || null)
 
   if (!exposure) return null
 
@@ -1094,115 +1098,50 @@ function ExposureDetailSheet({ exposure, open, onOpenChange, onAction }: Exposur
           />
         )}
 
-        <StateHistorySection history={history} isLoading={historyLoading} />
+        {/* State changes: the shared trigger + panel (read only). */}
+        <DetailSection title="Activity" icon={Activity}>
+          <EntityActivity
+            entityKey={`exposure:${exposure.id}`}
+            subject={exposure.title}
+            items={exposureHistoryItems(history)}
+            loading={historyLoading}
+            error={historyError}
+            onRetry={() => void retryHistory()}
+            urlParam={false}
+            emptyTitle="No state changes recorded"
+          />
+        </DetailSection>
       </DetailSections>
     </DetailSheet>
   )
 }
 
 // ============================================
-// STATE HISTORY SECTION COMPONENT
+// STATE HISTORY -> ACTIVITY ITEMS
 // ============================================
 
-const INITIAL_HISTORY_COUNT = 3
-
-interface StateHistorySectionProps {
-  history: import('@/lib/api/exposure-types').ExposureStateHistory[]
-  isLoading: boolean
+function stateWords(state: string) {
+  const s = state.replace(/_/g, ' ')
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-function StateHistorySection({ history, isLoading }: StateHistorySectionProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
-
-  const hasMore = history.length > INITIAL_HISTORY_COUNT
-  const displayedHistory = isExpanded ? history : history.slice(0, INITIAL_HISTORY_COUNT)
-
-  return (
-    <div className="rounded-lg border">
-      <div className="px-4 py-3 border-b bg-muted/30">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">State history</span>
-            {history.length > 0 && (
-              <Badge variant="secondary" className="text-xs">
-                {history.length}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className={cn('p-4', isExpanded && history.length > 5 && 'max-h-80 overflow-y-auto')}>
-        {isLoading ? (
-          <div className="space-y-3" aria-label="Loading state history">
-            {[1, 2].map((i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : history.length > 0 ? (
-          <div className="space-y-3">
-            {displayedHistory.map((entry, index) => (
-              <div
-                key={entry.id}
-                className={cn(
-                  'flex items-start gap-3 text-sm',
-                  index !== displayedHistory.length - 1 && 'pb-3 border-b'
-                )}
-              >
-                <div className="mt-0.5 p-1 rounded-full bg-muted">
-                  <Clock className="h-3 w-3 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-muted-foreground capitalize">
-                      {entry.previous_state.replace(/_/g, ' ')}
-                    </span>
-                    <span className="text-muted-foreground">→</span>
-                    <span className="font-medium capitalize">
-                      {entry.new_state.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                  {entry.reason && (
-                    <div className="mt-1.5 ps-3 border-l-2 border-muted-foreground/30">
-                      <p className="text-xs text-foreground/80 italic">
-                        &ldquo;{entry.reason}&rdquo;
-                      </p>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
-                    {entry.changed_by_user ? (
-                      <div className="flex items-center gap-1.5">
-                        <User className="h-3 w-3" />
-                        <span className="font-medium text-foreground">
-                          {entry.changed_by_user.name || entry.changed_by_user.email}
-                        </span>
-                        <span>•</span>
-                      </div>
-                    ) : null}
-                    <span>{formatRelative(entry.created_at)}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {/* Show more/less button */}
-            {hasMore && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-muted-foreground hover:text-foreground"
-                onClick={() => setIsExpanded(!isExpanded)}
-              >
-                {isExpanded ? <>Show less</> : <>Show all {history.length} changes</>}
-              </Button>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-2">
-            No state changes recorded
-          </p>
-        )}
-      </div>
-    </div>
-  )
+/** State history rows as the shared ActivityPanel's events (text only). */
+function exposureHistoryItems(
+  history: import('@/lib/api/exposure-types').ExposureStateHistory[]
+): ActivityItem[] {
+  return history.map((h) => ({
+    kind: 'event',
+    id: h.id,
+    at: h.created_at,
+    actor: h.changed_by_user
+      ? {
+          id: h.changed_by_user.id,
+          name: h.changed_by_user.name || h.changed_by_user.email || 'Someone',
+          kind: 'user',
+        }
+      : { name: 'System', kind: 'system' },
+    icon: ArrowRightLeft,
+    summary: `changed state ${stateWords(h.previous_state)} → ${stateWords(h.new_state)}`,
+    detail: h.reason ? `“${h.reason}”` : undefined,
+  }))
 }

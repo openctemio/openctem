@@ -12,37 +12,36 @@
  *   │ header: type · CVE · title · actions  │ properties     │
  *   │ SLA callout (when overdue)            │ (sticky rail)  │
  *   │ Why it matters                        │                │
- *   │ Fix                                   │                │
- *   │ Overview | Evidence | … | Activity    │                │
+ *   │ Fix                                   │ Activity · N ▸ │
+ *   │ Overview | Evidence | … | Related     │                │
  *   └──────────────────────────────────────┴────────────────┘
  *
  * Below `lg` the rail sits between the header and "Why it matters", so status
  * and owner stay near the top on a phone.
+ *
+ * Activity is not a tab: the rail's "Activity · N comments" summary opens the
+ * shared ActivityPanel (a sheet, `?activity=open`; old `?tab=activity` links
+ * open it too). See web/docs/ui/activity-panel.md.
  */
 
 import { useParams, useRouter } from 'next/navigation'
 import { useSWRConfig } from 'swr'
-import { toast } from 'sonner'
-import { AlertTriangle, Wifi, WifiOff } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DetailCallout } from '@/features/shared/components/detail-sheet'
 import { useDetailTab } from '@/features/shared/components/detail-sheet-layout'
-import { csrfFetch } from '@/lib/api/client'
-import { getErrorMessage } from '@/lib/api/error-handler'
 import { getTriageCacheKey } from '@/features/ai-triage/api'
-import { useFindingApi, useAddFindingCommentApi } from '@/features/findings/api/use-findings-api'
-import { useFindingActivitiesInfinite } from '@/features/findings/api/use-finding-activities-api'
-import { useActivityStream } from '@/features/findings/hooks/use-activity-stream'
+import { useFindingApi } from '@/features/findings/api/use-findings-api'
+import { useFindingActivityFeed } from '@/features/findings/hooks/use-finding-activity-feed'
 import { useFindingTriage } from '@/features/findings/hooks/use-finding-triage'
-import type { ActivityType, FindingDetail } from '@/features/findings/types'
-import { mergeFindingActivities } from '@/features/findings/lib/finding-activities'
+import type { FindingDetail } from '@/features/findings/types'
 import { toFindingDetail, findingShortName } from '@/features/findings/lib/finding-detail'
+import { FindingActivityView } from '@/features/findings/components/finding-activity'
 import { isBreach, daysUntil } from '@/features/sla/lib/sla'
 import {
-  ActivityPanel,
   DataFlowTab,
   EvidenceTab,
   FindingFixCard,
@@ -57,7 +56,6 @@ import { PentestDetailsTab } from '@/features/findings/components/detail/pentest
 import { getSourceLayout, getOrderedTabs } from '@/features/findings/config/source-layout'
 import '@/features/findings/config/register-layouts'
 
-const TRIAGE_ACTIVITY: ActivityType[] = ['ai_triage', 'ai_triage_failed']
 const CLOSED = new Set([
   'resolved',
   'verified',
@@ -74,7 +72,6 @@ const TAB_LABEL: Record<string, string> = {
   'attack-path': 'Attack path',
   pentest: 'Pentest details',
   related: 'Related',
-  activity: 'Activity',
 }
 
 function evidenceCount(f: FindingDetail) {
@@ -134,80 +131,36 @@ export default function FindingDetailPage() {
   const { mutate } = useSWRConfig()
 
   const { data: apiFinding, error, isLoading, mutate: mutateFinding } = useFindingApi(id)
-  const { trigger: addComment } = useAddFindingCommentApi(id)
-  const {
-    activities: apiActivities,
-    total: activitiesTotal,
-    isLoadingMore,
-    isReachingEnd,
-    loadMore,
-    mutate: mutateActivities,
-  } = useFindingActivitiesInfinite(id)
 
   const handleTriageCompleted = () => {
     if (id) mutate(getTriageCacheKey(id))
     mutateFinding()
-    mutateActivities()
   }
-
-  const {
-    realtimeActivities,
-    status: streamStatus,
-    clearActivities,
-  } = useActivityStream(id, {
-    onActivity: (activity) => {
-      mutateActivities()
-      if (TRIAGE_ACTIVITY.includes(activity.type)) handleTriageCompleted()
-    },
-  })
 
   const finding = apiFinding ? toFindingDetail(apiFinding) : null
   useBreadcrumbTitle(finding ? findingShortName(finding) : null)
+
+  // Activity and comments: the rail's summary and the shared panel. The feed
+  // also gives the Overview its latest AI triage.
+  const feed = useFindingActivityFeed(id, {
+    fromFinding: finding?.activities,
+    onTriageActivity: handleTriageCompleted,
+  })
 
   const triage = useFindingTriage(
     finding ?? { id, status: 'new', severity: 'medium', assignee: undefined },
     { onStatusChange: () => void mutateFinding(), onAssigneeChange: () => void mutateFinding() }
   )
 
-  // Tabs: the source layout decides order and which apply; Activity is always
-  // last but one, before Related.
+  // Tabs: the source layout decides order and which apply; Related is last.
+  // Activity is not a tab (it opens the ActivityPanel); `?tab=activity` links
+  // open the panel instead (useActivityPanel's legacy tab).
   const layout = finding ? getSourceLayout(finding) : {}
   const baseTabs = getOrderedTabs(layout).filter(
     (t) => t !== 'attack-path' || (finding ? dataFlowCount(finding) > 0 : false)
   )
-  const tabs = [...baseTabs.filter((t) => t !== 'related'), 'activity', 'related']
+  const tabs = [...baseTabs.filter((t) => t !== 'related'), 'related']
   const [tab, setTab] = useDetailTab('tab', tabs)
-
-  const { activities: allActivities, count: activityCount } = mergeFindingActivities({
-    fetched: apiActivities,
-    fetchedTotal: activitiesTotal,
-    realtime: realtimeActivities,
-    fromFinding: finding?.activities,
-  })
-
-  const commentRequest = async (url: string, init: RequestInit, done: string, failed: string) => {
-    try {
-      const res = await csrfFetch(url, { credentials: 'include', ...init })
-      if (!res.ok) throw new Error(failed)
-      await mutateActivities()
-      clearActivities()
-      toast.success(done)
-    } catch (e) {
-      toast.error(getErrorMessage(e, failed))
-    }
-  }
-
-  const handleAddComment = async (content: string) => {
-    if (!content.trim()) return
-    try {
-      await addComment({ content })
-      await mutateActivities()
-      clearActivities()
-      toast.success('Comment added')
-    } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to add comment'))
-    }
-  }
 
   if (isLoading) {
     return (
@@ -257,6 +210,13 @@ export default function FindingDetailPage() {
           <div className="rounded-lg border bg-card p-3 lg:p-4">
             <FindingProperties finding={finding} triage={triage} />
           </div>
+          <FindingActivityView
+            className="mt-3"
+            feed={feed}
+            findingId={id}
+            subject={finding.title}
+            shortcut
+          />
         </aside>
 
         <div className="min-w-0 space-y-4 lg:col-start-1">
@@ -290,14 +250,13 @@ export default function FindingDetailPage() {
                       <TabsCount value={evidenceCount(finding)} />
                     )}
                     {t === 'attack-path' && <TabsCount value={dataFlowCount(finding)} />}
-                    {t === 'activity' && <TabsCount value={activityCount} />}
                   </TabsTrigger>
                 ))}
               </TabsList>
             </div>
 
             <TabsContent value="overview" className="mt-5">
-              <OverviewTab finding={finding} activities={allActivities} />
+              <OverviewTab finding={finding} activities={feed.activities} />
             </TabsContent>
             <TabsContent value="evidence" className="mt-5">
               <EvidenceTab evidence={finding.evidence} finding={finding} />
@@ -310,58 +269,6 @@ export default function FindingDetailPage() {
             </TabsContent>
             <TabsContent value="pentest" className="mt-5">
               <PentestDetailsTab finding={finding} />
-            </TabsContent>
-            <TabsContent value="activity" className="mt-5">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Activity ({activityCount})</h2>
-                <span
-                  className="flex items-center gap-1 text-xs text-muted-foreground"
-                  title={
-                    streamStatus === 'connected'
-                      ? 'Live updates on'
-                      : streamStatus === 'connecting'
-                        ? 'Connecting'
-                        : 'Live updates off'
-                  }
-                >
-                  {streamStatus === 'connected' ? (
-                    <Wifi className="h-3.5 w-3.5 text-success" aria-hidden />
-                  ) : (
-                    <WifiOff className="h-3.5 w-3.5" aria-hidden />
-                  )}
-                  {streamStatus === 'connected' ? 'Live' : 'Offline'}
-                </span>
-              </div>
-              <div className="rounded-lg border">
-                <ActivityPanel
-                  activities={allActivities}
-                  onAddComment={(c) => void handleAddComment(c)}
-                  onEditComment={(cid, content) =>
-                    void commentRequest(
-                      `/api/v1/findings/${id}/comments/${cid}`,
-                      {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ content }),
-                      },
-                      'Comment updated',
-                      'Failed to update comment'
-                    )
-                  }
-                  onDeleteComment={(cid) =>
-                    void commentRequest(
-                      `/api/v1/findings/${id}/comments/${cid}`,
-                      { method: 'DELETE' },
-                      'Comment deleted',
-                      'Failed to delete comment'
-                    )
-                  }
-                  total={activitiesTotal}
-                  hasMore={!isReachingEnd}
-                  isLoadingMore={isLoadingMore}
-                  onLoadMore={loadMore}
-                />
-              </div>
             </TabsContent>
             <TabsContent value="related" className="mt-5">
               <RelatedTab finding={finding} />
