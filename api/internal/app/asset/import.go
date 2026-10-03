@@ -118,6 +118,12 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 		if idx, ok := colIndex["properties"]; ok && idx < len(record) {
 			var props map[string]any
 			if json.Unmarshal([]byte(record[idx]), &props) == nil {
+				if err := RejectReservedProperties(props); err != nil {
+					if len(result.Errors) < maxErrors {
+						result.Errors = append(result.Errors, fmt.Sprintf("row %d: %v", rowNum+2, err))
+					}
+					continue
+				}
 				a.SetProperties(props)
 			}
 		}

@@ -1140,7 +1140,7 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// crown-jewel PATCH endpoint); read from there so filtering reflects what
 	// was set. The dedicated is_crown_jewel column is not written by Update.
 	if filter.IsCrownJewel != nil {
-		conditions = append(conditions, fmt.Sprintf("COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE) = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf(crownJewelPropSQL+" = $%d", argIndex))
 		args = append(args, *filter.IsCrownJewel)
 		argIndex++
 	}
@@ -2414,6 +2414,13 @@ func formatPropertyLabel(key string) string {
 	return strings.Join(words, " ")
 }
 
+// crownJewelPropSQL reads the crown-jewel flag from asset a's properties
+// without a cast: only JSON true or the string "true" (any case) count, and
+// any other value (a non-boolean string, a number, an object) reads as
+// false. A ::boolean cast would make one bad value fail every query that
+// reads the flag for the whole tenant.
+const crownJewelPropSQL = `COALESCE(lower(a.properties->>'is_crown_jewel') = 'true', FALSE)`
+
 // ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
 // Used by attack path scoring to build the full in-memory directed graph.
 // Only the columns needed for scoring are fetched.
@@ -2426,7 +2433,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			a.exposure,
 			a.criticality,
 			a.risk_score,
-			COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE),
+			` + crownJewelPropSQL + `,
 			COALESCE(fc.finding_count, 0)
 		FROM assets a
 		-- Per-asset indexed count (see selectQuery) instead of a full-findings

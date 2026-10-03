@@ -588,10 +588,35 @@ export async function createAsset(input: CreateAssetInput): Promise<Asset> {
     tags: input.tags,
     // Per-type fields collected by the form live in `metadata`; the backend
     // stores them under `properties`. Without this they were silently dropped.
-    properties:
-      input.metadata && Object.keys(input.metadata).length > 0 ? input.metadata : undefined,
+    properties: editableProperties(input.metadata),
   })
   return transformAsset(response)
+}
+
+/**
+ * Property keys the API owns: the crown-jewel flag and business impact (set
+ * through PATCH /assets/{id}/crown-jewel), aliases (written on rename) and the
+ * discovery fields. The API refuses a PUT that changes them through
+ * `properties`, so they are never echoed back from a loaded asset.
+ */
+export const RESERVED_PROPERTY_KEYS: ReadonlySet<string> = new Set([
+  'is_crown_jewel',
+  'business_impact_score',
+  'business_impact_notes',
+  'aliases',
+  'discovery_source',
+  'discovery_tool',
+])
+
+/** `metadata` without the API-owned keys, or undefined when nothing is left. */
+export function editableProperties(
+  metadata: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!metadata) return undefined
+  const out = Object.fromEntries(
+    Object.entries(metadata).filter(([k]) => !RESERVED_PROPERTY_KEYS.has(k) && !k.startsWith('__'))
+  )
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
@@ -613,9 +638,9 @@ export async function updateAsset(assetId: string, input: UpdateAssetInput): Pro
     owner_ref: input.ownerRef,
     tags: input.tags,
     // Per-type form fields live in `metadata`; backend merges them into
-    // `properties` (preserving keys like is_crown_jewel). Previously dropped.
-    properties:
-      input.metadata && Object.keys(input.metadata).length > 0 ? input.metadata : undefined,
+    // `properties` (preserving keys like is_crown_jewel). API-owned keys are
+    // left out: a stale copy of them would be refused.
+    properties: editableProperties(input.metadata),
   })
   return transformAsset(response)
 }

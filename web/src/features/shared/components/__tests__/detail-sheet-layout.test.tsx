@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import * as React from 'react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, renderHook, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { KeyRound, Trash2 } from 'lucide-react'
@@ -128,5 +129,90 @@ describe('useDetailTab', () => {
     window.history.replaceState(null, '', '/sensors?view=bogus')
     const { result } = renderHook(() => useDetailTab('view', ['overview', 'jobs'] as const))
     expect(result.current[0]).toBe('overview')
+  })
+})
+
+describe('DetailSheet on phones', () => {
+  const desktopWidth = window.innerWidth
+  beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+  })
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: desktopWidth })
+  })
+
+  function PhoneSheet({
+    panel,
+    phoneHeight,
+    bodyRef,
+  }: {
+    panel?: string
+    phoneHeight?: 'auto' | 'full'
+    bodyRef?: React.Ref<HTMLDivElement>
+  }) {
+    return (
+      <DetailSheet
+        open
+        onOpenChange={() => {}}
+        header={<DetailHeader title="dmz-scanner-01" onClose={() => {}} />}
+        panel={panel}
+        phoneHeight={phoneHeight}
+        bodyRef={bodyRef}
+      >
+        <p>Body of {panel}</p>
+      </DetailSheet>
+    )
+  }
+
+  const sheet = () => document.querySelector('[data-slot="detail-sheet"]') as HTMLElement
+  const body = () => document.querySelector('[data-slot="detail-sheet-body"]') as HTMLElement
+
+  it('is a bottom sheet of one fixed height by default', () => {
+    render(<PhoneSheet panel="overview" />)
+    expect(sheet()).toHaveClass('h-[92svh]', 'rounded-t-2xl')
+    expect(sheet()).not.toHaveClass('max-h-[92svh]')
+    // Clear of the iPhone home indicator.
+    expect(sheet()).toHaveClass('pb-[env(safe-area-inset-bottom)]')
+  })
+
+  it('grows with its content only when asked to', () => {
+    render(<PhoneSheet phoneHeight="auto" />)
+    expect(sheet()).toHaveClass('max-h-[92svh]')
+    expect(sheet()).not.toHaveClass('h-[92svh]')
+  })
+
+  it('starts a new tab at the top of the body', () => {
+    const { rerender } = render(<PhoneSheet panel="overview" />)
+    body().scrollTop = 480
+    rerender(<PhoneSheet panel="overview" />)
+    expect(body().scrollTop).toBe(480)
+    rerender(<PhoneSheet panel="jobs" />)
+    expect(body().scrollTop).toBe(0)
+  })
+
+  it('still hands the body to a caller that manages its scroll', () => {
+    const ref = React.createRef<HTMLDivElement>()
+    const { unmount } = render(<PhoneSheet panel="overview" bodyRef={ref} />)
+    expect(ref.current).toBe(body())
+    unmount()
+    const fn = vi.fn()
+    render(<PhoneSheet bodyRef={fn} />)
+    expect(fn).toHaveBeenCalledWith(body())
+  })
+})
+
+describe('DetailSheet on larger screens', () => {
+  it('is the full-height side drawer, untouched by the phone height', () => {
+    render(
+      <DetailSheet
+        open
+        onOpenChange={() => {}}
+        header={<DetailHeader title="x" onClose={() => {}} />}
+      />
+    )
+    const el = document.querySelector('[data-slot="detail-sheet"]') as HTMLElement
+    expect(el).toHaveClass('h-full', 'sm:max-w-xl')
+    expect(el).not.toHaveClass('h-[92svh]')
+    expect(el).not.toHaveClass('max-h-[92svh]')
   })
 })

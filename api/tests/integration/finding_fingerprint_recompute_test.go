@@ -80,7 +80,7 @@ func (f *mergeFixture) merge() {
 		f.t.Fatalf("seed review: %v", err)
 	}
 	repo := postgres.NewAssetDedupRepository(&postgres.DB{DB: f.db})
-	if err := repo.ApproveAndMerge(context.Background(), f.tenant.String(), reviewID, shared.NewID().String()); err != nil {
+	if err := repo.ApproveAndMerge(context.Background(), f.tenant.String(), reviewID, shared.NewID().String(), nil); err != nil {
 		f.t.Fatalf("merge: %v", err)
 	}
 }
@@ -233,6 +233,52 @@ func TestApproveAndMerge_RekeysWithoutCollision(t *testing.T) {
 	}
 	if s := f.state(manual); s.fingerprint != vulnerability.ManualFingerprint(f.keep.String(), "R1", "a.go", 7, "m") {
 		t.Errorf("manual finding not re-keyed: %s", s.fingerprint)
+	}
+}
+
+// Both copies have a retest in flight. A finding allows one pending retest,
+// so the survivor's keeps running, the loser's is closed as unknown, and every
+// retest of the loser ends up on the survivor.
+func TestApproveAndMerge_MovesRetestsWithOnePending(t *testing.T) {
+	f := newMergeFixture(t, "merge-retests")
+	old := time.Now().Add(-48 * time.Hour)
+	survivor := f.composite(f.away, "base-r", "new", old)
+	loser := f.composite(f.keep, "base-r", "new", old.Add(time.Hour))
+	retest := func(finding shared.ID, status string) string {
+		t.Helper()
+		id := shared.NewID().String()
+		q := `INSERT INTO finding_retests (id, tenant_id, finding_id, trigger, status, prior_status,
+				template_id, target, deadline_at) VALUES ($1,$2,$3,'manual','pending','new','tpl','https://a.example',NOW()+interval '1 hour')`
+		if status == "completed" {
+			q = `INSERT INTO finding_retests (id, tenant_id, finding_id, trigger, status, outcome, completed_at,
+				prior_status, template_id, target, deadline_at) VALUES ($1,$2,$3,'manual','completed','fixed',NOW(),
+				'new','tpl','https://a.example',NOW()-interval '1 hour')`
+		}
+		if _, err := f.db.Exec(q, id, f.tenant.String(), finding.String()); err != nil {
+			t.Fatalf("seed retest: %v", err)
+		}
+		return id
+	}
+	survivorPending := retest(survivor, "pending")
+	loserPending := retest(loser, "pending")
+	loserDone := retest(loser, "completed")
+
+	f.merge()
+
+	if n := f.count(`SELECT count(*) FROM finding_retests WHERE finding_id=$1`, survivor.String()); n != 3 {
+		t.Fatalf("survivor should hold all 3 retests, has %d", n)
+	}
+	if n := f.count(`SELECT count(*) FROM finding_retests WHERE finding_id=$1 AND status='pending'`, survivor.String()); n != 1 {
+		t.Fatalf("survivor should have exactly 1 pending retest, has %d", n)
+	}
+	if n := f.count(`SELECT count(*) FROM finding_retests WHERE id=$1 AND status='pending'`, survivorPending); n != 1 {
+		t.Error("the survivor's own pending retest must keep running")
+	}
+	if n := f.count(`SELECT count(*) FROM finding_retests WHERE id=$1 AND status='completed' AND outcome='unknown'`, loserPending); n != 1 {
+		t.Error("the loser's pending retest must be closed as unknown")
+	}
+	if n := f.count(`SELECT count(*) FROM finding_retests WHERE id=$1 AND outcome='fixed'`, loserDone); n != 1 {
+		t.Error("the loser's completed retest must keep its outcome")
 	}
 }
 

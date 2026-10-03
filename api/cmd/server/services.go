@@ -902,7 +902,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ThreatModel, s.AttackSurface, repos.Asset, repos.AssetRelationship,
 		repos.AttackerProfileReader, repos.Finding, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
+	s.AssetRelationship.SetDataScope(s.DataScope)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
+	s.RelationshipSuggestion.SetDataScope(s.DataScope)
 	s.AssetImport = app.NewAssetImportService(repos.Asset, log)
 
 	// Initialize finding source service (read-only system configuration)
@@ -1598,14 +1600,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 
-	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans
-	// when a finding transitions to fix_applied and the user requests scan-based verification.
-	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
-
 	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check when
 	// findings transition to fix_applied, so a "fixed" claim is verified rather
 	// than trusted. Bounded + best-effort; non-network findings are skipped.
-	s.FindingActions.SetAutoValidator(s.ValidationRun)
+	// RFC-039: a nuclei finding gets a proof-of-fix retest (its own template +
+	// a reachability probe); any other finding falls back to the validation
+	// re-check, whose verdict never resolves on a reachability probe.
+	proofOfFix := retestapp.NewProofOfFix(s.Retest, s.ValidationRun)
+	s.FindingActions.SetAutoValidator(proofOfFix)
 
 	// B3 wire: when a Jira "Done" webhook arrives and the
 	// finding transitions to fix_applied, automatically trigger a
@@ -1614,9 +1616,27 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Without this wire Jira "Done" would only update status and
 	// leave the "did the fix actually work?" question unanswered.
 	if s.JiraSync != nil && s.FindingActions != nil && repos.Finding != nil {
-		rescanHook := jira.NewRescanHook(s.FindingActions, repos.Finding, log)
+		rescanHook := jira.NewRescanHook(proofOfFix, repos.Finding, log)
 		s.JiraSync.SetPostFixAppliedHook(rescanHook.Hook)
 	}
+
+	// RFC-039 Phase 2: a regression (a retest or a scan seeing a finding closed
+	// as fixed again) gets a fresh SLA deadline from the reopen (D2), and a fix
+	// or regression is announced on the linked ticket (opt-in outbound sync) and
+	// as a finding_fixed / finding_reopened notification.
+	regressionSLA := sla.NewRegressionRestarter(s.SLA, repos.FindingSLARestart, log)
+	var ticketCommenter retestapp.TicketCommenter
+	if s.JiraSync != nil {
+		ticketCommenter = s.JiraSync
+	}
+	var notifier retestapp.NotificationEnqueuer
+	if s.Outbox != nil {
+		notifier = s.Outbox
+	}
+	changeAnnouncer := retestapp.NewChangeAnnouncer(repos.Finding, ticketCommenter, notifier, log)
+	s.Retest.SetRegressionSLA(regressionSLA)
+	s.Retest.SetAnnouncer(changeAnnouncer)
+	s.Ingest.SetRegressionHandler(retestapp.NewScanRegressions(regressionSLA, changeAnnouncer, log))
 
 	// Create adapters for pipeline sub-package
 	pipelineAuditAdapter := app.NewPipelineAuditServiceAdapter(s.Audit)

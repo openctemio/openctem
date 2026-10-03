@@ -22,6 +22,14 @@ type AssetStateHistoryHandler struct {
 	assetRepo asset.Repository
 	validator *validator.Validator
 	logger    *logger.Logger
+	dataScope DataScopeEnforcer
+}
+
+// SetDataScope wires the Layer 2 data scope: a scoped member sees only the
+// history of assets in their scope. Returns h for chaining.
+func (h *AssetStateHistoryHandler) SetDataScope(e DataScopeEnforcer) *AssetStateHistoryHandler {
+	h.dataScope = e
+	return h
 }
 
 // NewAssetStateHistoryHandler creates a new asset state history handler.
@@ -224,6 +232,13 @@ func (h *AssetStateHistoryHandler) List(w http.ResponseWriter, r *http.Request) 
 
 	opts := h.parseListOptions(r)
 
+	opts.Scope, err = resolveDataScope(ctx, h.dataScope, tenantID)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
 	changes, total, err := h.repo.List(ctx, tenantID, opts)
 	if err != nil {
 		h.logger.Error("failed to list state history", "error", err)
@@ -265,6 +280,9 @@ func (h *AssetStateHistoryHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	change, err := h.repo.GetByID(ctx, tenantID, changeID)
+	if err == nil && !assetInDataScope(ctx, h.dataScope, tenantID, change.AssetID()) {
+		err = shared.ErrNotFound
+	}
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			apierror.NotFound("State change").WriteJSON(w)
@@ -481,6 +499,13 @@ func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWrite
 		}
 	}
 
+	opts.Scope, err = resolveDataScope(ctx, h.dataScope, tenantID)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
 	changes, total, err := h.repo.List(ctx, tenantID, opts)
 	if err != nil {
 		h.logger.Error("failed to list state history", "error", err)
@@ -528,7 +553,14 @@ func (h *AssetStateHistoryHandler) Timeline(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	timeline, err := h.repo.GetActivityTimeline(ctx, tenantID, from, to)
+	scope, err := resolveDataScope(ctx, h.dataScope, tenantID)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	timeline, err := h.repo.GetActivityTimeline(ctx, tenantID, from, to, scope)
 	if err != nil {
 		h.logger.Error("failed to get activity timeline", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
@@ -585,14 +617,21 @@ func (h *AssetStateHistoryHandler) Stats(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	typeCounts, err := h.repo.CountByType(ctx, tenantID, since)
+	scope, err := resolveDataScope(ctx, h.dataScope, tenantID)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	typeCounts, err := h.repo.CountByType(ctx, tenantID, since, scope)
 	if err != nil {
 		h.logger.Error("failed to count by type", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
 
-	sourceCounts, err := h.repo.CountBySource(ctx, tenantID, since)
+	sourceCounts, err := h.repo.CountBySource(ctx, tenantID, since, scope)
 	if err != nil {
 		h.logger.Error("failed to count by source", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

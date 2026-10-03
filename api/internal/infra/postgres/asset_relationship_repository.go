@@ -159,11 +159,11 @@ func (r *AssetRelationshipRepository) ListByAsset(
 	// Count query using UNION ALL
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
-			SELECT ar.id FROM asset_relationships ar
-			WHERE ar.tenant_id = $1 AND ar.source_asset_id = $2 %s
+			SELECT ar2.id FROM asset_relationships ar2
+			WHERE ar2.tenant_id = $1 AND ar2.source_asset_id = $2 %s
 			UNION ALL
-			SELECT ar.id FROM asset_relationships ar
-			WHERE ar.tenant_id = $1 AND ar.target_asset_id = $2 %s
+			SELECT ar2.id FROM asset_relationships ar2
+			WHERE ar2.tenant_id = $1 AND ar2.target_asset_id = $2 %s
 		) sub
 	`, r.applyDirectionFilter(filterConditions, "outgoing", filter.Direction),
 		r.applyDirectionFilter(filterConditions, "incoming", filter.Direction))
@@ -346,14 +346,16 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 // Used by the usage-stats endpoint so admins can see which relationship
 // types are actually being used and prune the registry based on real
 // data instead of guessing.
-func (r *AssetRelationshipRepository) CountByType(ctx context.Context, tenantID shared.ID) (map[asset.RelationshipType]int64, error) {
+func (r *AssetRelationshipRepository) CountByType(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[asset.RelationshipType]int64, error) {
+	scopeCond, args := pairInScopeCond("source_asset_id", "target_asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT relationship_type, COUNT(*) AS n
 		FROM asset_relationships
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + scopeCond + `
 		GROUP BY relationship_type
 	`
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("count relationships by type: %w", err)
 	}
@@ -497,6 +499,15 @@ func (r *AssetRelationshipRepository) buildFilterConditions(
 		conditions = append(conditions, fmt.Sprintf("ar2.impact_weight <= $%d", argIdx))
 		args = append(args, *filter.MaxImpactWeight)
 		argIdx++
+	}
+
+	// Both ends in scope: the row names the other asset.
+	if filter.Scope != nil {
+		srcCond, scopeArgs := dataScopeCondAt("ar2.source_asset_id", filter.Scope, argIdx)
+		dstCond, _ := dataScopeCondAt("ar2.target_asset_id", filter.Scope, argIdx)
+		conditions = append(conditions, srcCond, dstCond)
+		args = append(args, scopeArgs...)
+		argIdx += len(scopeArgs)
 	}
 
 	condStr := ""
