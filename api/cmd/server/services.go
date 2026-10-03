@@ -39,6 +39,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
+	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
@@ -709,6 +710,8 @@ type Services struct {
 	// Validation (CTEM Stage-4): proof-of-fix / technique-execution evidence
 	// recorded by sensors, reconciling finding status from the outcome.
 	ValidationEvidence *validation.EvidenceIngestService
+	// Retest runs continuous retests (RFC-039): Retest now, settle, auto ticks.
+	Retest *retestapp.Service
 
 	// ValidationRun dispatches validation (safe-check) jobs for findings.
 	ValidationRun *validation.RunService
@@ -1198,6 +1201,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// path.
 	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
 
+	// Continuous retest (RFC-039): re-run a finding's own nuclei template plus a
+	// reachability probe through the same validate-command transport, gated by
+	// the fail-closed scope exclusions (the #835 attribution gate plugs into the
+	// same TargetGate list). Evidence is recorded advisory-only; the retest
+	// service settles the finding (fixed / still present / unknown).
+	s.Retest = retestapp.NewService(
+		repos.FindingRetest,
+		repos.Finding,
+		repos.Asset,
+		repos.Command,
+		validation.NewCommandDispatcher(repos.Command, log),
+		validationSensorAvailability{sensors: repos.Sensor},
+		log,
+		retestapp.ScopeExclusionGate{Scope: s.Scope},
+	)
+	s.Retest.SetAuditLogger(s.Audit)
+
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
@@ -1562,14 +1582,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 
-	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans
-	// when a finding transitions to fix_applied and the user requests scan-based verification.
-	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
-
 	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check when
 	// findings transition to fix_applied, so a "fixed" claim is verified rather
 	// than trusted. Bounded + best-effort; non-network findings are skipped.
-	s.FindingActions.SetAutoValidator(s.ValidationRun)
+	// RFC-039: a nuclei finding gets a proof-of-fix retest (its own template +
+	// a reachability probe); any other finding falls back to the validation
+	// re-check, whose verdict never resolves on a reachability probe.
+	proofOfFix := retestapp.NewProofOfFix(s.Retest, s.ValidationRun)
+	s.FindingActions.SetAutoValidator(proofOfFix)
 
 	// B3 wire: when a Jira "Done" webhook arrives and the
 	// finding transitions to fix_applied, automatically trigger a
@@ -1578,9 +1598,27 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Without this wire Jira "Done" would only update status and
 	// leave the "did the fix actually work?" question unanswered.
 	if s.JiraSync != nil && s.FindingActions != nil && repos.Finding != nil {
-		rescanHook := jira.NewRescanHook(s.FindingActions, repos.Finding, log)
+		rescanHook := jira.NewRescanHook(proofOfFix, repos.Finding, log)
 		s.JiraSync.SetPostFixAppliedHook(rescanHook.Hook)
 	}
+
+	// RFC-039 Phase 2: a regression (a retest or a scan seeing a finding closed
+	// as fixed again) gets a fresh SLA deadline from the reopen (D2), and a fix
+	// or regression is announced on the linked ticket (opt-in outbound sync) and
+	// as a finding_fixed / finding_reopened notification.
+	regressionSLA := sla.NewRegressionRestarter(s.SLA, repos.FindingSLARestart, log)
+	var ticketCommenter retestapp.TicketCommenter
+	if s.JiraSync != nil {
+		ticketCommenter = s.JiraSync
+	}
+	var notifier retestapp.NotificationEnqueuer
+	if s.Outbox != nil {
+		notifier = s.Outbox
+	}
+	changeAnnouncer := retestapp.NewChangeAnnouncer(repos.Finding, ticketCommenter, notifier, log)
+	s.Retest.SetRegressionSLA(regressionSLA)
+	s.Retest.SetAnnouncer(changeAnnouncer)
+	s.Ingest.SetRegressionHandler(retestapp.NewScanRegressions(regressionSLA, changeAnnouncer, log))
 
 	// Create adapters for pipeline sub-package
 	pipelineAuditAdapter := app.NewPipelineAuditServiceAdapter(s.Audit)

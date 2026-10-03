@@ -184,8 +184,8 @@ func TestValidationEvidence_Ingest_TransitionsFinding(t *testing.T) {
 	)
 
 	res, err := ingest.Ingest(ctx, tenantID, findingID, nil, validation.Evidence{
-		ExecutorKind: "safe-check", Technique: "T1046", Outcome: validation.OutcomeNotDetected,
-		Summary: "exposure no longer reproduces",
+		ExecutorKind: "nuclei", Technique: "T1190", Outcome: validation.OutcomeNotDetected,
+		Summary: "exposure no longer reproduces", RawMeta: map[string]any{"reachable": true},
 	})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)

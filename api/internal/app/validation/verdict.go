@@ -48,6 +48,38 @@ func verdictFor(o Outcome) (Verdict, bool) {
 	}
 }
 
+// actionableVerdict is the verdict an Evidence may act on, or false when it
+// carries none (RFC-039 D3, owner decision 2026-10-03):
+//
+//   - A reachability probe (safe-check, or an unknown executor) answers "does
+//     the host answer", not "is the vulnerability there". It never moves a
+//     finding: an open port is not proof the fix failed, a refused connection
+//     is not proof it worked. Its evidence stays visible on the finding.
+//   - A detection re-run (nuclei, BAS) that matched is a verdict: reproducible.
+//   - A detection re-run that did NOT match only counts when the evidence says
+//     the target answered (raw_meta.reachable == true). nuclei prints nothing
+//     and exits 0 for a host that does not answer, so a bare not_detected is
+//     indistinguishable from "host down" — unknown, never fixed. A retest
+//     (RFC-039) proves reachability with its own probe and settles the finding
+//     itself; this rule only governs plain validation evidence.
+func actionableVerdict(ev Evidence) (Verdict, bool) {
+	verdict, ok := verdictFor(ev.Outcome)
+	if !ok {
+		return "", false
+	}
+	switch ExecutorKind(ev.ExecutorKind) {
+	case KindNuclei, KindAtomicRedTeam, KindCaldera:
+	default:
+		return "", false
+	}
+	if verdict == VerdictNotReproducible {
+		if reachable, _ := ev.RawMeta["reachable"].(bool); !reachable {
+			return "", false
+		}
+	}
+	return verdict, true
+}
+
 // VerdictRecorder durably stamps the validation verdict on a finding. It is a
 // narrow side-write next to the status transition: the status change rides the
 // finding entity's normal Update, while validation_outcome / downgraded_at are

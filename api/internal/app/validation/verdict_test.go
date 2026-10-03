@@ -60,7 +60,7 @@ func TestVerdict_NotReproducible_OpenDowngrades(t *testing.T) {
 		t.Run(string(start), func(t *testing.T) {
 			svc, repo, rec := ingestFor(atStatus(t, start))
 			res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
-				ExecutorKind: "safe-check", Outcome: OutcomeNotDetected,
+				ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
 			})
 			if err != nil {
 				t.Fatalf("ingest: %v", err)
@@ -89,7 +89,7 @@ func TestVerdict_NotReproducible_OpenDowngrades(t *testing.T) {
 func TestVerdict_NotReproducible_FixAppliedResolves(t *testing.T) {
 	svc, repo, rec := ingestFor(atStatus(t, vulnerability.FindingStatusFixApplied))
 	res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
-		ExecutorKind: "safe-check", Outcome: OutcomeNotDetected,
+		ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
 	})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
@@ -157,7 +157,7 @@ func TestVerdict_Reproducible_AfterDowngradeReopens(t *testing.T) {
 	svc, repo, _ := ingestFor(f)
 	// First: downgrade it.
 	if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
-		ExecutorKind: "safe-check", Outcome: OutcomeNotDetected,
+		ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
 	}); err != nil {
 		t.Fatalf("ingest downgrade: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestVerdict_BackCompat_NilRecorderTolerated(t *testing.T) {
 	// nil recorder must not panic; the downgrade transition still happens.
 	svc := NewEvidenceIngestService(store, repo, nil, nil, logger.NewNop())
 	res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
-		ExecutorKind: "safe-check", Outcome: OutcomeNotDetected,
+		ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
 	})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
@@ -213,6 +213,58 @@ func TestVerdict_BackCompat_NilRecorderTolerated(t *testing.T) {
 	}
 	if repo.current.Status() != vulnerability.FindingStatusValidatedFixed {
 		t.Fatalf("status = %s, want validated_fixed", repo.current.Status())
+	}
+}
+
+// reachableMeta is evidence that the target answered during the re-run.
+func reachableMeta() map[string]any { return map[string]any{"reachable": true} }
+
+// --- RFC-039 D3: only exploitability-grade results move a finding ------------
+
+// A safe-check is a reachability probe: neither outcome says anything about the
+// vulnerability. Before D3, "connection refused" resolved a fix_applied finding
+// and "port open" re-opened it as "fix did not hold".
+func TestVerdict_SafeCheckNeverMovesAFinding(t *testing.T) {
+	for _, oc := range []Outcome{OutcomeNotDetected, OutcomeDetected} {
+		for _, start := range []vulnerability.FindingStatus{vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusFixApplied} {
+			t.Run(string(oc)+"/"+string(start), func(t *testing.T) {
+				svc, repo, rec := ingestFor(atStatus(t, start))
+				res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+					ExecutorKind: "safe-check", Outcome: oc, RawMeta: reachableMeta(),
+				})
+				if err != nil {
+					t.Fatalf("ingest: %v", err)
+				}
+				if repo.current.Status() != start || res.StatusChanged || res.Downgraded {
+					t.Fatalf("a reachability probe moved the finding: %s → %s (%+v)", start, repo.current.Status(), res)
+				}
+				if rec.calls != 0 {
+					t.Fatal("a reachability probe must not stamp a validation verdict")
+				}
+			})
+		}
+	}
+}
+
+// nuclei prints nothing for a host that does not answer, which the sensor
+// reports as not_detected. Without proof the target answered, that is unknown:
+// the finding is neither downgraded nor resolved.
+func TestVerdict_NucleiMissWithoutReachabilityIsUnknown(t *testing.T) {
+	for _, start := range []vulnerability.FindingStatus{vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusFixApplied} {
+		t.Run(string(start), func(t *testing.T) {
+			svc, repo, rec := ingestFor(atStatus(t, start))
+			if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+				ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, Summary: "template did not match",
+			}); err != nil {
+				t.Fatalf("ingest: %v", err)
+			}
+			if repo.current.Status() != start {
+				t.Fatalf("a bare nuclei miss moved the finding to %s", repo.current.Status())
+			}
+			if rec.calls != 0 {
+				t.Fatal("a bare nuclei miss must not stamp not_reproducible")
+			}
+		})
 	}
 }
 

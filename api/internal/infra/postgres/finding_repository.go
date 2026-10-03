@@ -3476,38 +3476,48 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 	return &id, nil
 }
 
-// AutoReopenByFingerprintsBatch reopens multiple previously CLOSED-AS-FIXED findings in a single query.
-// This is the batch version of AutoReopenByFingerprint for better performance.
-// Reopens any re-detected finding closed as fixed (status resolved or verified),
-// whether auto-confirmed (resolution = 'auto_fixed') or resolved by a person.
+// AutoReopenByFingerprintsBatch reopens, in one statement, every finding a scan
+// re-detected that had been closed as fixed — status resolved or verified,
+// whether auto-resolved (resolution = 'auto_fixed') or resolved by a person —
+// and every validated_fixed finding (the scan refutes the validation downgrade).
 // Deliberate dispositions (false_positive, accepted_risk, duplicate, suppressed)
 // are NEVER reopened.
-// Returns a map of fingerprint -> reopened finding ID.
-func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]shared.ID, error) {
-	result := make(map[string]shared.ID)
+//
+// The reopen clears resolution, resolution_method and resolved_by on the row, so
+// it returns what they were (read under the row lock, in the same statement):
+// the regression's activity entry keeps who resolved the finding and how
+// (RFC-039 §6.5). Returns fingerprint -> reopened finding.
+func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]vulnerability.ReopenedFinding, error) {
+	result := make(map[string]vulnerability.ReopenedFinding)
 
 	if len(fingerprints) == 0 {
 		return result, nil
 	}
 
-	// Reopen findings closed as fixed (resolved/verified) regardless of who fixed
-	// them — a human-resolved finding a later scan re-detects was previously stuck
-	// resolved and invisible. Deliberate dispositions stay closed. resolution is a
-	// free-text note and may be NULL, so NULL must survive NOT IN.
-	// Use ANY($2) for batch lookup efficiency.
+	// resolution is a free-text note and may be NULL, so NULL must survive NOT IN.
 	query := `
-		UPDATE findings
+		WITH prev AS (
+			SELECT id, status, resolution, resolution_method, resolved_by, resolved_at
+			FROM findings
+			WHERE tenant_id = $1
+				AND fingerprint = ANY($2)
+				AND (
+					(status IN ('resolved', 'verified')
+						AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed')))
+					OR status = 'validated_fixed'
+				)
+			FOR UPDATE
+		)
+		UPDATE findings f
 		SET status = 'confirmed',
 			resolution = NULL,
 			resolution_method = NULL,
 			resolved_at = NULL,
 			resolved_by = NULL,
 			updated_at = NOW()
-		WHERE tenant_id = $1
-			AND fingerprint = ANY($2)
-			AND status IN ('resolved', 'verified')
-			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
-		RETURNING id, fingerprint
+		FROM prev
+		WHERE f.id = prev.id
+		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.resolution_method, prev.resolved_by, prev.resolved_at
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
@@ -3517,15 +3527,35 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	defer rows.Close()
 
 	for rows.Next() {
-		var idStr, fp string
-		if err := rows.Scan(&idStr, &fp); err != nil {
+		var (
+			idStr, fp, prevStatus             string
+			resolution, method, resolvedByStr sql.NullString
+			resolvedAt                        sql.NullTime
+		)
+		if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &method, &resolvedByStr, &resolvedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan reopened finding: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
 			continue
 		}
-		result[fp] = id
+		rf := vulnerability.ReopenedFinding{
+			ID:                       id,
+			Fingerprint:              fp,
+			PreviousStatus:           vulnerability.FindingStatus(prevStatus),
+			PreviousResolution:       resolution.String,
+			PreviousResolutionMethod: method.String,
+		}
+		if resolvedByStr.Valid {
+			if by, err := shared.IDFromString(resolvedByStr.String); err == nil {
+				rf.PreviousResolvedBy = &by
+			}
+		}
+		if resolvedAt.Valid {
+			at := resolvedAt.Time
+			rf.PreviousResolvedAt = &at
+		}
+		result[fp] = rf
 	}
 
 	if err := rows.Err(); err != nil {

@@ -4268,6 +4268,21 @@ definitions:
         description: For cross-account
         type: string
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings:
+    properties:
+      auto_enabled:
+        type: boolean
+      daily_cap:
+        description: |-
+          DailyCap bounds the auto retests queued for the tenant per 24 h.
+          0 = DefaultRetestDailyCap.
+        type: integer
+      interval_hours:
+        description: |-
+          IntervalHours is how often each eligible finding is retested.
+          0 = DefaultRetestIntervalHours.
+        type: integer
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_tenant.RiskLevelConfig:
     properties:
       critical_min:
@@ -8830,6 +8845,44 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  internal_infra_http_handler.FindingRetestListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.FindingRetestResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.FindingRetestResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      deadline_at:
+        type: string
+      finding_id:
+        type: string
+      id:
+        type: string
+      outcome:
+        type: string
+      prior_status:
+        type: string
+      reason:
+        type: string
+      requested_by:
+        type: string
+      result_status:
+        type: string
+      status:
+        type: string
+      target:
+        type: string
+      template_id:
+        type: string
+      trigger:
+        type: string
     type: object
   internal_infra_http_handler.FindingSeverityResponse:
     properties:
@@ -22006,6 +22059,79 @@ paths:
       summary: Get finding data flows
       tags:
       - Findings
+  /findings/{id}/retests:
+    get:
+      description: The finding's retest history, newest first (RFC-039).
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Max items (1-100, default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingRetestListResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: A finding's retests
+      tags:
+      - Findings
+    post:
+      description: 'Re-runs the nuclei template that produced the finding against
+        its own target, with a reachability probe of the same target (RFC-039). The
+        result is applied asynchronously: fixed resolves the finding, still present
+        keeps it (or reopens a resolved one), and an unreachable target is "unknown"
+        and changes nothing. Requires findings:verify; out-of-scope findings are 404.'
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingRetestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Retest a finding now
+      tags:
+      - Findings
   /findings/{id}/severity:
     patch:
       consumes:
@@ -24347,6 +24473,63 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/settings/retest:
+    get:
+      description: The tenant's auto-retest settings (RFC-039). auto_enabled is false
+        until an admin turns it on; zero interval/cap mean the defaults (24 h, 200
+        per day).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get auto-retest settings
+      tags:
+      - Tenants
+    put:
+      consumes:
+      - application/json
+      description: Turns auto-retest on or off and sets its interval (6–168 h) and
+        daily cap (1–2000). Audited.
+      parameters:
+      - description: Auto-retest settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update auto-retest settings
+      tags:
+      - Tenants
   /permission-sets:
     get:
       description: List all permission sets for the tenant

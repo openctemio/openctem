@@ -128,6 +128,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
+	// Continuous retest (RFC-039): a retest check's evidence is recorded
+	// advisory-only and its retest settled when the sensor completes or fails it.
+	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
@@ -278,6 +281,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:            findingActionsHandler,
+		FindingRetest:             handler.NewFindingRetestHandler(svc.Retest, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,

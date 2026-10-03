@@ -2155,6 +2155,69 @@ func (h *TenantHandler) UpdateAssetSourceSettings(w http.ResponseWriter, r *http
 	_ = json.NewEncoder(w).Encode(settings.AssetSource)
 }
 
+// GetRetestSettings handles GET /api/v1/organization/settings/retest.
+// @Summary      Get auto-retest settings
+// @Description  The tenant's auto-retest settings (RFC-039). auto_enabled is false until an admin turns it on; zero interval/cap mean the defaults (24 h, 200 per day).
+// @Tags         Tenants
+// @Produce      json
+// @Success      200     {object}  tenant.RetestSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/retest [get]
+func (h *TenantHandler) GetRetestSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	rs, err := h.service.GetRetestSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(rs)
+}
+
+// UpdateRetestSettings handles PUT /api/v1/organization/settings/retest.
+// @Summary      Update auto-retest settings
+// @Description  Turns auto-retest on or off and sets its interval (6–168 h) and daily cap (1–2000). Audited.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body    body      tenant.RetestSettings  true  "Auto-retest settings"
+// @Success      200     {object}  tenant.RetestSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/retest [put]
+func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req tenant.RetestSettings
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+	rs, err := h.service.UpdateRetestSettings(r.Context(), tenantID.String(), req, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(rs)
+}
+
 // GetAssetLifecycleSettings handles
 // GET /api/v1/tenants/{tenant}/settings/asset-lifecycle.
 // Returns the zero-value struct when nothing has been configured so

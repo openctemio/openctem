@@ -158,8 +158,8 @@ func (m *MockFindingRepoForLifecycle) CountBySeverityForScan(ctx context.Context
 func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprint(ctx context.Context, tenantID shared.ID, fingerprint string) (*shared.ID, error) {
 	return nil, nil
 }
-func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]shared.ID, error) {
-	return make(map[string]shared.ID), nil
+func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]vulnerability.ReopenedFinding, error) {
+	return make(map[string]vulnerability.ReopenedFinding), nil
 }
 func (m *MockFindingRepoForLifecycle) CreateBatchWithResult(ctx context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
 	return &vulnerability.BatchCreateResult{Created: len(findings), Errors: make(map[int]string)}, nil

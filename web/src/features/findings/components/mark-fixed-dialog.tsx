@@ -222,8 +222,9 @@ export function MarkFixedDialog({
             <Info className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
             <div>
               <span className="font-medium">{totalFindings} findings</span> will be marked as
-              &quot;Fix Applied&quot;. A verification scan is needed to confirm the fix. You cannot
-              mark findings as &quot;Resolved&quot; directly.
+              &quot;Fix Applied&quot;. A proof-of-fix retest re-runs each finding&apos;s check where
+              it can; a security reviewer confirms the rest. You cannot mark findings as
+              &quot;Resolved&quot; directly.
             </div>
           </div>
         </div>

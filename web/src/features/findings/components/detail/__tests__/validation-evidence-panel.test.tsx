@@ -57,8 +57,26 @@ describe('ValidationEvidencePanel', () => {
       },
     ]
     render(<ValidationEvidencePanel findingId="f-1" />)
-    expect(screen.getByText(/Not detected/i)).toBeInTheDocument()
+    // A safe-check is a reachability probe, never "the fix stood" (RFC-039 D3).
+    expect(screen.getByText('Not reachable')).toBeInTheDocument()
+    expect(screen.queryByText(/fix stood/i)).not.toBeInTheDocument()
     expect(screen.getByText('port closed')).toBeInTheDocument()
+  })
+
+  it('labels a template re-run by its detection outcome', () => {
+    mockEvidence = [
+      {
+        id: 'e-2',
+        finding_id: 'f-1',
+        executor_kind: 'nuclei',
+        technique: 'T1190',
+        outcome: 'detected',
+        summary: 'matched',
+        created_at: '2026-07-02T00:00:00Z',
+      },
+    ]
+    render(<ValidationEvidencePanel findingId="f-1" />)
+    expect(screen.getByText(/Detected \(still exploitable\)/)).toBeInTheDocument()
   })
 
   it('triggers a validation request when "Validate now" is clicked', async () => {

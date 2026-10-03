@@ -54,6 +54,8 @@ type FindingProcessor struct {
 
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
+	// regressions follows up on reopened findings (fresh SLA, announcement).
+	regressions RegressionHandler
 
 	// remediationKeyApplier derives + records each created finding's remediation
 	// group key (RFC-015). Runs POST-insert (needs persisted finding IDs).
@@ -99,9 +101,16 @@ type AssignmentApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (int, error)
 }
 
+// RegressionHandler follows up on findings a scan reopened as regressions: a
+// fresh SLA deadline and an announcement (RFC-039). Implemented by
+// *retest.ScanRegressions.
+type RegressionHandler interface {
+	HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string)
+}
+
 // activityRecorder is the subset of FindingActivityService needed by the processor.
 type activityRecorder interface {
-	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) error
+	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner, scanID string) error
 }
 
 // RemediationKeyApplier derives and persists each finding's remediation group
@@ -143,6 +152,11 @@ func (p *FindingProcessor) SetDataFlowRepository(repo vulnerability.DataFlowRepo
 // SetActivityService sets the activity service for recording auto-reopen audit trail.
 func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
 	p.activityService = svc
+}
+
+// SetRegressionHandler wires the follow-up on scan regressions (RFC-039 D2).
+func (p *FindingProcessor) SetRegressionHandler(h RegressionHandler) {
+	p.regressions = h
 }
 
 // SetFindingCreatedCallback sets the callback for when findings are created.
@@ -408,7 +422,8 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 
-	// Step 3b: Batch auto-reopen previously auto-resolved findings
+	// Step 3b: Batch-reopen re-detected findings that were closed as fixed or
+	// downgraded by validation (regressions).
 	// PERFORMANCE: Single query instead of N queries per existing finding
 	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
 	if len(existingFingerprints) > 0 {
@@ -420,15 +435,23 @@ func (p *FindingProcessor) processBatch(
 			p.logger.Info("batch auto-reopened findings",
 				"count", len(reopenedMap),
 			)
-			// Record audit trail for auto-reopened findings
+			reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
+			for _, rf := range reopenedMap {
+				reopened = append(reopened, rf)
+			}
+			scanner := ""
+			if report.Tool != nil {
+				scanner = report.Tool.Name
+			}
+			// Record the regression on each finding, with who had resolved it.
 			if p.activityService != nil {
-				reopenedIDs := make([]shared.ID, 0, len(reopenedMap))
-				for _, fid := range reopenedMap {
-					reopenedIDs = append(reopenedIDs, fid)
-				}
-				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopenedIDs); err != nil {
+				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopened, scanner, report.Metadata.ID); err != nil {
 					p.logger.Warn("failed to record auto-reopen activities", "error", err)
 				}
+			}
+			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5).
+			if p.regressions != nil {
+				p.regressions.HandleRegressions(ctx, tenantID, reopened, scanner)
 			}
 		}
 	}

@@ -23,9 +23,10 @@ func TestIngest_NotDetected_RecordsAndResolves(t *testing.T) {
 
 	tenantID, findingID := shared.NewID(), shared.NewID()
 	res, err := svc.Ingest(context.Background(), tenantID, findingID, nil, Evidence{
-		ExecutorKind: "safe-check",
+		ExecutorKind: "nuclei",
 		Outcome:      OutcomeNotDetected,
 		Summary:      "exposure gone",
+		RawMeta:      map[string]any{"reachable": true},
 	})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
