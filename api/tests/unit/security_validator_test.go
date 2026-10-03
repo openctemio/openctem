@@ -190,6 +190,54 @@ func TestSecValValidateStepConfig_ValidToolAndCapabilities(t *testing.T) {
 	}
 }
 
+// A step's settings are checked against what the tool's sensor declares
+// when the step is saved: a value the sensor would refuse (a flag in a port
+// list, an intrusive nuclei tag, out-of-band callbacks) is refused here.
+func TestSecValValidateStepConfig_ToolSettings(t *testing.T) {
+	repo := newSecValMockToolRepo()
+	makeActivePlatformTool(repo, "naabu", []string{"portscan"})
+	makeActivePlatformTool(repo, "nuclei", []string{"web"})
+	sv := newSecValValidator(repo)
+
+	valid := []struct {
+		tool   string
+		config map[string]any
+	}{
+		{"naabu", map[string]any{"ports": "80"}},
+		{"naabu", map[string]any{"ports": "80,443,8000-8100", "rate": float64(500), "retries": float64(2)}},
+		{"naabu", map[string]any{"top_ports": "1000", "scan_type": "syn"}}, // shipped preset
+		{"nuclei", map[string]any{"tags": "auth,jwt,oauth", "templates": []any{"http/exposures"}}},
+		{"nuclei", map[string]any{"severity": []any{"critical", "high"}, "rate_limit": float64(100)}},
+	}
+	for _, tc := range valid {
+		if r := sv.ValidateStepConfig(context.Background(), shared.NewID(), tc.tool, nil, tc.config); !r.Valid {
+			t.Errorf("%s %v refused: %v", tc.tool, tc.config, r.Errors)
+		}
+	}
+
+	invalid := []struct {
+		tool   string
+		config map[string]any
+	}{
+		{"naabu", map[string]any{"ports": "-"}},
+		{"naabu", map[string]any{"ports": "80 -nmap-cli id"}},
+		{"naabu", map[string]any{"ports": "70000"}},
+		{"naabu", map[string]any{"ports": "80", "top_ports": float64(100)}},
+		{"naabu", map[string]any{"rate": float64(0)}},
+		{"nuclei", map[string]any{"tags": []any{"cve", "-code"}}},
+		{"nuclei", map[string]any{"tags": "dos"}},
+		{"nuclei", map[string]any{"severity": []any{"urgent"}}},
+		{"nuclei", map[string]any{"allow_interactsh": true}},
+		{"nuclei", map[string]any{"exclude": []any{"-config=/tmp/x"}}},
+	}
+	for _, tc := range invalid {
+		r := sv.ValidateStepConfig(context.Background(), shared.NewID(), tc.tool, nil, tc.config)
+		if r.Valid || !hasCode(r, "INVALID_STEP_SETTING") {
+			t.Errorf("%s %v accepted (errors %v)", tc.tool, tc.config, r.Errors)
+		}
+	}
+}
+
 func TestSecValValidateStepConfig_EmptyToolName_NoToolError(t *testing.T) {
 	repo := newSecValMockToolRepo()
 	sv := newSecValValidator(repo)
@@ -790,7 +838,7 @@ func TestSecValValidateCommandPayload_DangerousStepConfig(t *testing.T) {
 		"pipeline_run_id": "pr1",
 		"step_run_id":     "sr1",
 		"step_id":         "s1",
-		"step_config": map[string]any{
+		"config": map[string]any{
 			"bash": "id",
 		},
 	}
@@ -798,7 +846,7 @@ func TestSecValValidateCommandPayload_DangerousStepConfig(t *testing.T) {
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
 
 	if result.Valid {
-		t.Fatal("expected invalid result for dangerous key in step_config")
+		t.Fatal("expected invalid result for dangerous key in config")
 	}
 	if !hasCode(result, "DANGEROUS_CONFIG_KEY") {
 		t.Errorf("expected DANGEROUS_CONFIG_KEY, got %v", result.Errors)
@@ -813,7 +861,7 @@ func TestSecValValidateCommandPayload_InjectionInStepConfig(t *testing.T) {
 		"pipeline_run_id": "pr1",
 		"step_run_id":     "sr1",
 		"step_id":         "s1",
-		"step_config": map[string]any{
+		"config": map[string]any{
 			"target": "host; cat /etc/passwd",
 		},
 	}
@@ -821,7 +869,7 @@ func TestSecValValidateCommandPayload_InjectionInStepConfig(t *testing.T) {
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
 
 	if result.Valid {
-		t.Fatal("expected invalid result for injection in step_config value")
+		t.Fatal("expected invalid result for injection in config value")
 	}
 	if !hasCode(result, "DANGEROUS_CONFIG_VALUE") {
 		t.Errorf("expected DANGEROUS_CONFIG_VALUE, got %v", result.Errors)
@@ -1509,7 +1557,7 @@ func TestSecValValidationResult_MultipleErrors_AllReported(t *testing.T) {
 	// Missing fields + dangerous config in the same payload → multiple errors
 	payload := map[string]any{
 		// all required fields missing
-		"step_config": map[string]any{
+		"config": map[string]any{
 			"bash": "evil $(id)",
 		},
 	}
