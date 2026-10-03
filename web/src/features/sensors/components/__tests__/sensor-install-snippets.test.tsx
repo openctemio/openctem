@@ -55,7 +55,9 @@ describe('SensorInstallSnippets', () => {
     const user = userEvent.setup()
     render(<SensorInstallSnippets sensorId="11111111-1111-4111-8111-111111111111" />)
     await user.click(await screen.findByRole('tab', { name: 'Local policy' }))
-    expect(await screen.findByText(/openctem\.io\/sensor-policy\/v1/)).toBeInTheDocument()
+    expect(
+      await screen.findByText((text) => text.includes('apiVersion: openctem.io/sensor-policy/v1'))
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download sensor-policy.yaml' })).toBeInTheDocument()
     expect(screen.getByText(/the platform cannot change it/)).toBeInTheDocument()
   })
