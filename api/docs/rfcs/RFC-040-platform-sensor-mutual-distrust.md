@@ -1,6 +1,8 @@
 # RFC-040 — Mutual distrust between the platform and sensors
 
-> Status: **Proposed** (2026-10-03).
+> Status: **Accepted** (2026-10-03; owner approved every recommendation in
+> §9). Proposed 2026-10-03 in #870. P0 implementation is split into the PR
+> groups of §6.1.
 > Scope: api (sensor gateway, signer, ingest pipeline, audit, detections) +
 > web (output encoding) + sdk-go (job verification, local policy, credential
 > providers, local audit) + sensor (`openctemio/sensor`) + helm-charts and
@@ -782,6 +784,19 @@ process with the admin API. P2 adds the human control (two-person widening)
 and the data-path isolation. P3 and P4 harden keys and topology for the
 installations that need them.
 
+### 6.1 P0 work breakdown
+
+P0 ships as four independent PR groups, each owned by its own
+implementation work, each verified end to end before it merges. RFC-032
+P1–P2 runs in parallel as the P0 dependency.
+
+| Group | Repos | Contents |
+|---|---|---|
+| **(A) API authorization and scope** | api | Q5 (c): `scan` commands through `POST /api/v1/commands` run the scan target resolution (exclusions, zone routing, private-address check) **and** are owner/admin only; `UpdateScan` runs the config validator; the ingest worker re-reads the sensor's status before processing a queued report, and revoking a sensor re-queues its leased commands; audit events for scope targets, exclusions, tools and scanner templates, and the widening alert (A7); length caps on sensor-supplied text fields (title, description, message, remediation, references) |
+| **(B) Output encoding** | web, api | `sanitizeExternalUrl` (`safeHref`) on every data-driven `href`/`src` plus an ESLint rule; markdown sanitiser refuses `//host`; CSP `img-src` narrowed and a plan for script nonces; Jira descriptions escaped for wiki markup; server CSV skips leading whitespace like the client |
+| **(C) Result binding and quarantine** | api (+ sdk-go for the command id on v1 where needed) | Q6 (a): unsolicited reports only from collector/CI roles, stored in a quarantine state that never auto-resolves; tenant switch `sensor_results_require_command` (on for new tenants); advisory validation evidence off by default; scan sessions and ingest-job status scoped to the sensor; sensor reports never change compliance, classification, PII/PHI or exposure flags of an existing asset and never reactivate archived assets; auto-reopen and auto-resolve only from command-bound reports of the same tool; legacy "no tools declared" auto-resolve off |
+| **(D) Sensor-local gates** | sdk-go, sensor, helm-charts, snippets | Q3 (a) / Q4 (a): the policy file loader with the P0 subset (`targets.allow/deny`, `ports.allow`, `templates.custom`, `interactsh`, `kill_switch_file`), `SENSOR_ALLOWED_RANGES` / `SENSOR_ALLOWED_PORTS` shorthands in `ScanTargetPolicy`; custom templates and `allow_interactsh` opt-in (off for new installs, existing installs warned); `no_local_policy` health flag and the tenant switch to refuse private targets without a policy; a cap on `timeout_seconds`; hardening defaults (`runAsNonRoot`, read-only root, `cap_drop`, seccomp) in snippets and the chart |
+
 ## 7. Compatibility
 
 | What | Behaviour |
@@ -806,6 +821,9 @@ installations that need them.
 | Full TUF repository for jobs | Jobs are per-sensor, short-lived and many; TUF fits the key set and content, a DSSE envelope with `seq`/`nonce`/expiry fits jobs (Uptane's Director uses the same split) |
 
 ## 9. Owner decisions
+
+**Approved 2026-10-03:** the owner accepted every recommendation below:
+Q1 (a), Q2 (a), Q3 (a), Q4 (a), Q5 (c), Q6 (a), Q7 (a), Q8 (a).
 
 | # | Question | Options | Recommended |
 |---|---|---|---|
