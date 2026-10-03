@@ -11,11 +11,17 @@ import {
   MetricStrip,
   PageHeader,
   RiskScoreBadge,
-  SheetBody,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+  DetailTabs,
   type MetricStripItem,
 } from '@/features/shared'
 import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Button } from '@/components/ui/button'
@@ -23,7 +29,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
 import {
   Plus,
   Download,
@@ -47,13 +52,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -71,7 +69,7 @@ import {
 } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TabsCount } from '@/components/ui/tabs'
 import { BusinessUnitAssets } from '@/features/business-units/components/business-unit-assets'
 import { toast } from 'sonner'
 import { type BusinessUnit, type Criticality, type RiskTolerance } from '@/features/business-units'
@@ -280,6 +278,7 @@ export default function BusinessUnitsPage() {
   const [viewUnit, setViewUnit] = useState<BusinessUnit | null>(null)
   // Which tab the detail sheet opens on: "Manage assets" opens it on Assets.
   const [viewTab, setViewTab] = useState<'overview' | 'assets' | 'hierarchy'>('overview')
+  const canWriteAssets = useHasPermission(Permission.AssetsWrite)
   const openView = (unit: BusinessUnit, tab: 'overview' | 'assets' = 'overview') => {
     setViewTab(tab)
     setViewUnit(unit)
@@ -804,178 +803,177 @@ export default function BusinessUnitsPage() {
       </Dialog>
 
       {/* View Sheet */}
-      <Sheet open={!!viewUnit} onOpenChange={(open) => !open && setViewUnit(null)}>
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-          {viewUnit && (
-            <>
-              <SheetHeader>
-                <div className="flex items-center gap-3">
-                  <Building2 className="h-5 w-5 shrink-0 text-muted-foreground" />
-                  <div>
-                    <SheetTitle>{viewUnit.name}</SheetTitle>
-                    <SheetDescription>{viewUnit.description}</SheetDescription>
-                  </div>
-                </div>
-              </SheetHeader>
-
-              <SheetBody>
-                <Tabs
-                  value={viewTab}
-                  onValueChange={(v) => setViewTab(v as typeof viewTab)}
-                  className="mt-2"
-                >
-                  <TabsList>
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="assets">
-                      Assets{' '}
+      {viewUnit && (
+        <DetailSheet
+          open
+          onOpenChange={(open) => !open && setViewUnit(null)}
+          panel={viewTab}
+          header={
+            <DetailHeader
+              title={viewUnit.name}
+              badges={
+                <>
+                  <Badge variant="outline" className={criticalityColors[viewUnit.criticality]}>
+                    {CRITICALITY_LABELS[viewUnit.criticality]}
+                  </Badge>
+                  <Badge variant="outline" className={riskToleranceColors[viewUnit.riskTolerance]}>
+                    {riskToleranceLabels[viewUnit.riskTolerance]} risk tolerance
+                  </Badge>
+                </>
+              }
+              meta={[viewUnit.description, viewUnit.owner]}
+              actions={
+                canWriteAssets ? (
+                  <Button size="sm" variant="outline" onClick={() => openEdit(viewUnit)}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                ) : undefined
+              }
+              menu={
+                canWriteAssets
+                  ? [
+                      {
+                        label: 'Delete business unit',
+                        icon: Trash2,
+                        destructive: true,
+                        onSelect: () => {
+                          setViewUnit(null)
+                          setDeleteUnit(viewUnit)
+                        },
+                      },
+                    ]
+                  : undefined
+              }
+              onClose={() => setViewUnit(null)}
+            />
+          }
+          tabs={
+            <DetailTabs
+              tabs={[
+                { value: 'overview', label: 'Overview' },
+                {
+                  value: 'assets',
+                  label: (
+                    <>
+                      Assets
                       <TabsCount
                         value={
-                          // The sheet holds a snapshot; the list refreshes after a link.
+                          // The drawer holds a snapshot; the list refreshes after a link.
                           businessUnits.find((u) => u.id === viewUnit.id)?.assetCount ??
                           viewUnit.assetCount
                         }
                       />
-                    </TabsTrigger>
-                    <TabsTrigger value="hierarchy">Hierarchy</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="assets" className="mt-4">
-                    <BusinessUnitAssets unit={viewUnit} onChanged={() => void refreshList()} />
-                  </TabsContent>
-
-                  <TabsContent value="overview" className="mt-4">
-                    {/* One definition list with dividers, not a stack of cards. */}
-                    <dl className="divide-y rounded-lg border">
-                      <div className="flex items-center justify-between gap-4 px-4 py-3">
-                        <dt className="text-sm text-muted-foreground">Criticality</dt>
-                        <dd>
-                          <Badge
-                            variant="outline"
-                            className={criticalityColors[viewUnit.criticality]}
-                          >
-                            {CRITICALITY_LABELS[viewUnit.criticality]}
-                          </Badge>
-                        </dd>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 px-4 py-3">
-                        <dt className="text-sm text-muted-foreground">Risk tolerance</dt>
-                        <dd>
-                          <Badge
-                            variant="outline"
-                            className={riskToleranceColors[viewUnit.riskTolerance]}
-                          >
-                            {riskToleranceLabels[viewUnit.riskTolerance]}
-                          </Badge>
-                        </dd>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 px-4 py-3">
-                        <dt className="text-sm text-muted-foreground">Assets</dt>
-                        <dd className="text-sm font-medium tabular-nums">{viewUnit.assetCount}</dd>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 px-4 py-3">
-                        <dt className="text-sm text-muted-foreground">Risk score</dt>
-                        <dd className="flex items-center gap-3">
-                          <Progress value={viewUnit.riskScore ?? 0} className="h-1.5 w-24" />
-                          <RiskScoreBadge score={viewUnit.riskScore} />
-                        </dd>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 px-4 py-3">
-                        <dt className="text-sm text-muted-foreground">Owner</dt>
-                        <dd className="min-w-0 text-end">
-                          <p className="text-sm font-medium">{viewUnit.owner}</p>
-                          {viewUnit.ownerEmail && (
-                            <p className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
-                              <Mail className="h-3 w-3" />
-                              {viewUnit.ownerEmail}
-                            </p>
-                          )}
-                        </dd>
-                      </div>
-                      {viewUnit.tags.length > 0 && (
-                        <div className="flex items-start justify-between gap-4 px-4 py-3">
-                          <dt className="text-sm text-muted-foreground">Tags</dt>
-                          <dd className="flex flex-wrap justify-end gap-1.5">
-                            {viewUnit.tags.map((tag) => (
-                              <Badge key={tag} variant="secondary">
-                                {tag}
-                              </Badge>
-                            ))}
-                          </dd>
-                        </div>
-                      )}
-                    </dl>
-                  </TabsContent>
-
-                  <TabsContent value="hierarchy" className="mt-4">
-                    {viewUnit.parentId &&
-                      (() => {
-                        const parent = businessUnits.find((u) => u.id === viewUnit.parentId)
-                        return (
-                          <div className="mb-4">
-                            <p className="mb-2 text-sm text-muted-foreground">Parent unit</p>
-                            <button
-                              type="button"
-                              disabled={!parent}
-                              className="flex w-full items-center gap-2 rounded-lg border p-3 text-start enabled:hover:bg-muted/50"
-                              onClick={() => parent && setViewUnit(parent)}
-                            >
-                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">{parent?.name ?? 'Unknown unit'}</span>
-                            </button>
-                          </div>
-                        )
-                      })()}
-
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">Sub-units</p>
-                      {getChildUnits(businessUnits, viewUnit.id).length > 0 ? (
-                        <div className="divide-y rounded-lg border">
-                          {getChildUnits(businessUnits, viewUnit.id).map((child) => (
-                            <div key={child.id} className="p-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Building2 className="h-4 w-4 text-muted-foreground" />
-                                  <span className="font-medium">{child.name}</span>
-                                </div>
-                                <Badge
-                                  variant="outline"
-                                  className={criticalityColors[child.criticality]}
-                                >
-                                  {CRITICALITY_LABELS[child.criticality]}
-                                </Badge>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No sub-units</p>
-                      )}
-                    </div>
-                  </TabsContent>
-                </Tabs>
-
-                <div className="mt-6 flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => openEdit(viewUnit)}>
-                    <Pencil className="me-2 h-4 w-4" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    className="flex-1"
-                    onClick={() => {
-                      setViewUnit(null)
-                      setDeleteUnit(viewUnit)
-                    }}
-                  >
-                    <Trash2 className="me-2 h-4 w-4" />
-                    Delete
-                  </Button>
-                </div>
-              </SheetBody>
-            </>
+                    </>
+                  ),
+                },
+                { value: 'hierarchy', label: 'Hierarchy' },
+              ]}
+              value={viewTab}
+              onValueChange={setViewTab}
+            />
+          }
+        >
+          {viewTab === 'assets' && (
+            <BusinessUnitAssets unit={viewUnit} onChanged={() => void refreshList()} />
           )}
-        </SheetContent>
-      </Sheet>
+
+          {viewTab === 'overview' && (
+            <div className="space-y-5">
+              <DetailStatGrid aria-label="Key numbers">
+                <DetailStat label="Assets" value={viewUnit.assetCount} />
+                <DetailStat
+                  label="Risk score"
+                  value={viewUnit.riskScore ?? 0}
+                  meter={{ value: viewUnit.riskScore ?? 0, max: 100, label: 'Risk score' }}
+                />
+              </DetailStatGrid>
+
+              <DetailSections>
+                {viewUnit.description && (
+                  <DetailSection title="Description">
+                    <p className="text-sm text-muted-foreground">{viewUnit.description}</p>
+                  </DetailSection>
+                )}
+                <DetailSection title="Owner">
+                  <p className="text-sm font-medium">{viewUnit.owner}</p>
+                  {viewUnit.ownerEmail && (
+                    <p className="flex items-center gap-1 text-xs break-all text-muted-foreground">
+                      <Mail className="h-3 w-3 shrink-0" />
+                      {viewUnit.ownerEmail}
+                    </p>
+                  )}
+                </DetailSection>
+
+                {viewUnit.tags.length > 0 && (
+                  <DetailSection title="Tags" count={viewUnit.tags.length}>
+                    <div className="flex flex-wrap gap-1.5">
+                      {viewUnit.tags.map((tag) => (
+                        <Badge key={tag} variant="secondary">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </DetailSection>
+                )}
+              </DetailSections>
+            </div>
+          )}
+
+          {viewTab === 'hierarchy' && (
+            <DetailSections>
+              {viewUnit.parentId &&
+                (() => {
+                  const parent = businessUnits.find((u) => u.id === viewUnit.parentId)
+                  return (
+                    <DetailSection title="Parent unit">
+                      <button
+                        type="button"
+                        disabled={!parent}
+                        className="flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 text-start enabled:hover:bg-muted/50"
+                        onClick={() => parent && setViewUnit(parent)}
+                      >
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium break-words">
+                          {parent?.name ?? 'Unknown unit'}
+                        </span>
+                      </button>
+                    </DetailSection>
+                  )
+                })()}
+
+              <DetailSection
+                title="Sub-units"
+                count={getChildUnits(businessUnits, viewUnit.id).length}
+              >
+                {getChildUnits(businessUnits, viewUnit.id).length > 0 ? (
+                  <ul className="divide-y rounded-lg border">
+                    {getChildUnits(businessUnits, viewUnit.id).map((child) => (
+                      <li key={child.id}>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-start hover:bg-muted/50"
+                          onClick={() => setViewUnit(child)}
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="font-medium break-words">{child.name}</span>
+                          </span>
+                          <Badge variant="outline" className={criticalityColors[child.criticality]}>
+                            {CRITICALITY_LABELS[child.criticality]}
+                          </Badge>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No sub-units</p>
+                )}
+              </DetailSection>
+            </DetailSections>
+          )}
+        </DetailSheet>
+      )}
 
       {/* Delete Confirmation */}
       <ConfirmDialog
