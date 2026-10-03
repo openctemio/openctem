@@ -41,6 +41,14 @@ func (s StepRunStatus) IsTerminal() bool {
 	return false
 }
 
+// ErrStepRunAlreadyFinished is returned when a write would move a step run that
+// already reached a terminal state (completed, failed, skipped, canceled,
+// timeout). Like a run, a finished step is final: a duplicate or late sensor
+// result, a cancel or timeout racing a completion, or a stale in-memory copy
+// must not reopen it, re-queue it or overwrite its outcome and findings count.
+var ErrStepRunAlreadyFinished = shared.NewDomainError("STEP_RUN_ALREADY_FINISHED",
+	"step run has already finished", shared.ErrConflict)
+
 // IsSuccess checks if the status indicates success.
 func (s StepRunStatus) IsSuccess() bool {
 	return s == StepRunStatusCompleted

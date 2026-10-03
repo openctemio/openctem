@@ -571,6 +571,9 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 
 	// Update step run status
 	stepRun := run.GetStepRun(stepKey)
+	if s.stepAlreadyFinished(run, stepRun, "completed") {
+		return nil
+	}
 
 	// A zone-routed scan runs one command per batch under this step: the step
 	// finishes with the last batch, and fails if any batch failed.
@@ -692,6 +695,9 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 	}
 
 	stepRun := run.GetStepRun(stepKey)
+	if s.stepAlreadyFinished(run, stepRun, "failed") {
+		return nil
+	}
 	allowRetry := true
 	if b := s.checkStepBatches(ctx, run, stepRun); b.batched {
 		if b.wait {
@@ -703,6 +709,23 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 		errorMessage, errorCode = b.summary(), errCodeBatchFailed
 	}
 	return s.failStep(ctx, run, stepRun, errorMessage, errorCode, allowRetry)
+}
+
+// stepAlreadyFinished reports (and logs) a result for a step run that already
+// reached a terminal state. A finished step is final, like a finished run: a
+// duplicate completion (a sensor retrying its report, a second command of the
+// same step) or a failure that arrives after the step completed must not
+// overwrite its outcome, recount its findings or settle the run a second time.
+// The repository refuses such a write too (ErrStepRunAlreadyFinished); this
+// check keeps the caller from acting on a result it is about to discard.
+func (s *Service) stepAlreadyFinished(run *pipeline.Run, stepRun *pipeline.StepRun, outcome string) bool {
+	if stepRun == nil || !stepRun.IsComplete() {
+		return false
+	}
+	s.logger.Info("ignoring step result for a step that already finished",
+		"run_id", run.ID.String(), "step_key", stepRun.StepKey,
+		"step_status", string(stepRun.Status), "reported", outcome)
+	return true
 }
 
 // failStep records a step failure and settles the run.
