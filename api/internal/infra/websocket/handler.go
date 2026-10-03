@@ -2,8 +2,10 @@ package websocket
 
 import (
 	"context"
-	"math/rand/v2"
+	"crypto/rand"
+	"encoding/binary"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -95,7 +97,7 @@ func NewHandler(hub *Hub, log *logger.Logger, allowedOrigins []string, appEnv st
 				}
 				metrics.WSUpgradeRejectionsTotal.WithLabelValues("origin").Inc()
 				log.Warn("websocket upgrade rejected: origin not allowed",
-					"origin", origin, "remote_addr", r.RemoteAddr)
+					"origin", sanitizeLogValue(origin), "remote_addr", r.RemoteAddr)
 				return false
 			},
 		},
@@ -106,8 +108,7 @@ func NewHandler(hub *Hub, log *logger.Logger, allowedOrigins []string, appEnv st
 // expiry, capped by the (jittered) maximum connection lifetime.
 func (h *Handler) connectionDeadline(credentialExpiry time.Time) time.Time {
 	now := h.now()
-	jitter := time.Duration(rand.Int64N(int64(maxLifetimeJitter))) //nolint:gosec // spreads reconnects, not a secret
-	deadline := now.Add(maxConnectionLifetime - jitter)
+	deadline := now.Add(maxConnectionLifetime - randomDuration(maxLifetimeJitter))
 	if !credentialExpiry.IsZero() && credentialExpiry.Before(deadline) {
 		deadline = credentialExpiry
 	}
@@ -200,4 +201,29 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 // GetHub returns the hub instance.
 func (h *Handler) GetHub() *Hub {
 	return h.hub
+}
+
+// randomDuration returns a uniformly random duration in [0, maxD). It only
+// spreads reconnects, but uses crypto/rand so no predictable generator sits in
+// the connection path. Falls back to 0 (no jitter) if the system source fails.
+func randomDuration(maxD time.Duration) time.Duration {
+	if maxD <= 0 {
+		return 0
+	}
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0
+	}
+	return time.Duration(binary.BigEndian.Uint64(b[:]) % uint64(maxD))
+}
+
+// sanitizeLogValue makes a client-supplied header safe to log: CR/LF become
+// spaces (no forged log lines, CWE-117) and the length is capped.
+func sanitizeLogValue(s string) string {
+	const maxLen = 256
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	s = strings.ReplaceAll(s, "\r", " ")
+	return strings.ReplaceAll(s, "\n", " ")
 }

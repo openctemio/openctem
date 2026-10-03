@@ -453,3 +453,21 @@ func TestSocket_OverConnectionCapGetsCloseCode(t *testing.T) {
 		t.Fatalf("close code %d, want %d", code, CloseTooManyConnections)
 	}
 }
+
+func TestRandomDuration_Bounds(t *testing.T) {
+	if d := randomDuration(0); d != 0 {
+		t.Fatalf("randomDuration(0) = %v", d)
+	}
+	for i := 0; i < 1000; i++ {
+		if d := randomDuration(time.Minute); d < 0 || d >= time.Minute {
+			t.Fatalf("randomDuration(1m) = %v, out of [0, 1m)", d)
+		}
+	}
+}
+
+func TestSanitizeLogValue(t *testing.T) {
+	got := sanitizeLogValue("https://a.example\r\nlevel=ERROR forged" + strings.Repeat("x", 400))
+	if strings.ContainsAny(got, "\r\n") || len(got) > 256 {
+		t.Fatalf("sanitizeLogValue left CR/LF or %d bytes", len(got))
+	}
+}
