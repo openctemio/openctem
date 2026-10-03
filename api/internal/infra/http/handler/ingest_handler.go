@@ -319,6 +319,10 @@ type HeartbeatRequest struct {
 	// "failures"}. Read leniently (a member of the wrong type is ignored)
 	// and clamped; interval_s feeds the sensor's heartbeat deadline.
 	Control json.RawMessage `json:"control,omitempty" swaggertype:"object"`
+	// LocalPolicy is the sensor-local policy report (RFC-040 §5.7): state,
+	// digest, summary and kill switch, sent by SDKs that see
+	// "local_policy" on hello. Display data; sanitized before it is stored.
+	LocalPolicy *sensor.LocalPolicyReport `json:"local_policy,omitempty"`
 }
 
 // loadReport returns the heartbeat's load report, nil when it carried none.

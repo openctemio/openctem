@@ -1588,11 +1588,25 @@ type UpdateSecuritySettingsInput struct {
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	// RequireSensorLocalPolicyForPrivateTargets: see
+	// tenantdom.SecuritySettings.
+	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
 	// the API sees it (trusted-proxy aware). When set, an IP allowlist that
 	// would exclude it is refused (lockout guard). Empty for the platform
 	// administrator, who is not subject to organization allowlists.
 	RequesterIP string `json:"-"`
+}
+
+// RequiresLocalPolicyForPrivateTargets reports whether the tenant keeps jobs
+// with private targets away from sensors without an enforced local policy
+// (RFC-040 §5.7). It implements command.PrivateTargetPolicy.
+func (s *TenantService) RequiresLocalPolicyForPrivateTargets(ctx context.Context, tenantID shared.ID) (bool, error) {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	return t.TypedSettings().Security.RequireSensorLocalPolicyForPrivateTargets, nil
 }
 
 // ErrIPAllowlistExcludesRequester is returned when saving an IP allowlist that
@@ -1631,6 +1645,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	}
 	if input.EmailVerificationMode != nil {
 		security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)
+	}
+	if input.RequireSensorLocalPolicyForPrivateTargets != nil {
+		security.RequireSensorLocalPolicyForPrivateTargets = *input.RequireSensorLocalPolicyForPrivateTargets
 	}
 
 	// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a

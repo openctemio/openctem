@@ -308,6 +308,14 @@ type SecuritySettings struct {
 	//   "always" = always require verification (operator must configure SMTP)
 	//   "never"  = never require verification (open registration; security risk)
 	EmailVerificationMode EmailVerificationMode `json:"email_verification_mode,omitempty"`
+
+	// RequireSensorLocalPolicyForPrivateTargets keeps jobs with private
+	// targets (RFC 1918, ULA, link-local, CGNAT, private DNS suffixes) away
+	// from sensors that report no enforced local policy (RFC-040 §5.7, owner
+	// decision Q3 (a)): such sensors neither see nor can claim them, and the
+	// jobs wait for a sensor whose network owner installed a policy. Off by
+	// default: sensors without a policy work as before.
+	RequireSensorLocalPolicyForPrivateTargets bool `json:"require_sensor_local_policy_for_private_targets,omitempty"`
 }
 
 // EmailVerificationMode controls per-tenant email verification behavior.

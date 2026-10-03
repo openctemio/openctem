@@ -44,6 +44,14 @@ const (
 	// (RFC-035 §5.6); details carry the gap and the step it reached. A
 	// sensor back from offline gets EventOnline instead.
 	EventHeartbeatRecovered EventType = "heartbeat_recovered"
+	// EventLocalPolicyChanged: the sensor-local policy the sensor reports
+	// (RFC-040 §5.7) changed state or digest, or its kill switch moved. An
+	// update: identical transitions fold, different ones each get a row.
+	EventLocalPolicyChanged EventType = "local_policy_changed"
+	// EventJobRefusedByLocalPolicy: the sensor refused a job because its
+	// local policy forbids it (RFC-040 detection A11); details carry the
+	// command id, rule and reason.
+	EventJobRefusedByLocalPolicy EventType = "job_refused_local_policy"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -72,6 +80,8 @@ func (t EventType) Category() ActivityCategory {
 	switch t {
 	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned, EventHeartbeatRecovered:
 		return CategoryStatus
+	case EventJobRefusedByLocalPolicy:
+		return CategoryJobs
 	default:
 		return CategoryUpdates
 	}
@@ -81,7 +91,8 @@ func (t EventType) Category() ActivityCategory {
 func EventTypesIn(cats []ActivityCategory) []EventType {
 	all := []EventType{EventOnline, EventOffline, EventRestarted, EventVersionChanged, EventSDKVersionChanged,
 		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
-		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged, EventHeartbeatRecovered}
+		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged, EventHeartbeatRecovered,
+		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {

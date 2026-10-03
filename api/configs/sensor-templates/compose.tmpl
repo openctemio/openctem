@@ -11,7 +11,17 @@
 #        printf '%s\n' 'OPENCTEM_API_KEY=octs_...' > .env && chmod 600 .env
 #      (the key is shown once, when the sensor is created or its key rotated)
 {{- end}}
+{{- if isDaemon .Sensor}}
+#   2. Save the "Local policy" tab as policy/sensor-policy.yaml, after the
+#      owner of the scanned network reviewed it (the sensor refuses every job
+#      outside it; without the file it does not start), owned by root and
+#      read-only:
+#        sudo install -D -m 0644 -o root sensor-policy.yaml policy/sensor-policy.yaml
+#   3. Save this file as compose.yaml and run: docker compose up -d
+#   Kill switch (no job runs while the file exists): sudo touch policy/STOP
+{{- else}}
 #   2. Save this file as compose.yaml and run: docker compose up -d
+{{- end}}
 {{- if .CACert}}
 #   The platform's private CA is embedded below (configs.content needs
 #   Docker Compose 2.23.1 or later).
@@ -25,11 +35,26 @@ services:
     # A one-shot sensor: scans ./src once and sends the results.
     command: ["-tool", "{{firstTool .Sensor.Tools}}", "-target", "/scan", "-push"]
 {{- end}}
+{{- if isDaemon .Sensor}}
+    # Hardened: read-only root filesystem, no capabilities, no privilege
+    # escalation (add NET_RAW to cap_add only for naabu SYN scans).
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp, /home/openctem, /scan, /cache, /config]
+{{- end}}
     environment:
       API_URL: {{yamlQuote .BaseURL}}
       API_KEY: ${OPENCTEM_API_KEY:?set OPENCTEM_API_KEY in .env}
 {{- with toolList .Sensor.Tools}}
       SENSOR_TOOLS: {{yamlQuote .}}
+{{- end}}
+{{- if isDaemon .Sensor}}
+      SENSOR_LOCAL_POLICY: /etc/openctem/policy/sensor-policy.yaml
+      SENSOR_KILL_SWITCH_FILE: /etc/openctem/policy/STOP
+{{- if .Policy.AllowPrivate}}
+      SENSOR_ALLOW_PRIVATE_TARGETS: "1"
+{{- end}}
 {{- end}}
 {{- if .CACert}}
       SSL_CERT_DIR: /etc/openctem/certs
@@ -39,6 +64,8 @@ services:
 {{- if isDaemon .Sensor}}
       - state:/var/lib/openctem/state
       - content:/var/lib/openctem/content
+      # The sensor-local policy and the kill switch, read-only.
+      - ./policy:/etc/openctem/policy:ro
 {{- end}}
 {{- if not (isDaemon .Sensor)}}
       - ./src:/scan:ro

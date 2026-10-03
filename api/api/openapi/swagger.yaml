@@ -3426,6 +3426,64 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport:
+    properties:
+      digest:
+        description: Digest is "sha256:<hex>" of the policy; "" when absent.
+        type: string
+      kill_switch:
+        description: KillSwitch is true while the sensor owner stopped every job.
+        type: boolean
+      source:
+        description: Source is "file" or "env" (shorthand settings); "" when absent.
+        type: string
+      state:
+        description: State is LocalPolicyEnforced or LocalPolicyAbsent.
+        type: string
+      summary:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary'
+        description: Summary is the shape of an enforced policy (never the ranges).
+      warnings:
+        description: Warnings are the sensor's operator warnings.
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary:
+    properties:
+      allow_custom_templates:
+        description: AllowCustomTemplates and AllowInteractsh are the policy's switches.
+        type: boolean
+      allow_interactsh:
+        type: boolean
+      allow_private:
+        description: 'AllowPrivate: private ranges may be scanned.'
+        type: boolean
+      checks:
+        items:
+          type: string
+        type: array
+      max_job_seconds:
+        type: integer
+      max_rps:
+        description: MaxRPS and MaxJobSeconds are the caps (0 = not set).
+        type: integer
+      ports:
+        description: Ports is the allowed port list ("" = any).
+        type: string
+      targets_allow:
+        description: TargetsAllow is the number of allow entries; -1 = no allow list.
+        type: integer
+      targets_deny:
+        description: TargetsDeny is the number of deny entries.
+        type: integer
+      tools:
+        description: Tools and Checks are the allowed tools and job types (nil = any).
+        items:
+          type: string
+        type: array
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.Manifest:
     properties:
       capabilities:
@@ -3434,6 +3492,12 @@ definitions:
         type: array
       concurrency:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestConcurrency'
+      local_policy:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport'
+        description: |-
+          LocalPolicy is the sensor-local policy report (RFC-040 §5.7), sent
+          by SDKs that see "local_policy" on hello; sanitized when stored.
       platform:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestPlatform'
       resources:
@@ -8609,6 +8673,13 @@ definitions:
           InstanceID is the random id of the sensor process (sdk-go v0.12+), for
           clone detection. Optional; older SDKs do not send it.
         type: string
+      local_policy:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport'
+        description: |-
+          LocalPolicy is the sensor-local policy report (RFC-040 §5.7): state,
+          digest, summary and kill switch, sent by SDKs that see
+          "local_policy" on hello. Display data; sanitized before it is stored.
       manifest_digest:
         description: |-
           ManifestDigest is the digest of the sensor's registered manifest, as
@@ -11208,6 +11279,12 @@ definitions:
         type: string
       kubernetes:
         type: string
+      policy:
+        description: |-
+          Policy is the sensor-local policy template (sensor-policy.yaml, RFC-040
+          §5.7), prefilled with the ranges of the sensor's scan zones, for the
+          network owner to review and install read-only on the sensor host.
+        type: string
       yaml:
         type: string
     type: object
@@ -11371,6 +11448,34 @@ definitions:
         type: string
       resources:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedResources'
+    type: object
+  internal_infra_http_handler.SensorLocalPolicyResponse:
+    properties:
+      digest:
+        type: string
+      kill_switch:
+        type: boolean
+      reported_at:
+        type: string
+      source:
+        enum:
+        - ""
+        - file
+        - env
+        type: string
+      state:
+        enum:
+        - enforced
+        - absent
+        - paused
+        - unknown
+        type: string
+      summary:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary'
+      warnings:
+        items:
+          type: string
+        type: array
     type: object
   internal_infra_http_handler.SensorManifestListResponse:
     properties:
@@ -11605,6 +11710,13 @@ definitions:
       load_factor:
         description: 0.0 to 1.0
         type: number
+      local_policy:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.SensorLocalPolicyResponse'
+        description: |-
+          LocalPolicy is the sensor-local policy the sensor reports (RFC-040
+          §5.7): enforced on the sensor, shown here. Always present; state
+          "unknown" when the sensor never reported one.
       manifest_at:
         type: string
       manifest_digest:
