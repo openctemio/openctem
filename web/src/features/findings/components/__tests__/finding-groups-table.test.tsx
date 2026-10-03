@@ -75,6 +75,9 @@ describe('groupRowFilter', () => {
   it('maps each dimension the list can filter on, and nothing else', () => {
     expect(groupRowFilter('asset_id', 'a1')).toEqual({ asset_id: 'a1' })
     expect(groupRowFilter('cve_id', 'CVE-1')).toEqual({ cve_ids: ['CVE-1'] })
+    // A rule group (nuclei template, semgrep rule, check, secret rule) lists
+    // its findings through the list's rule_id filter.
+    expect(groupRowFilter('rule_id', 'git-config')).toEqual({ rule_id: 'git-config' })
     expect(groupRowFilter('severity', 'high')).toEqual({ severities: ['high'] })
     expect(groupRowFilter('source', 'sca')).toEqual({ sources: ['sca'] })
     expect(groupRowFilter('component_id', 'c1')).toEqual({ component_id: 'c1' })

@@ -73,6 +73,10 @@ type FindingProcessor struct {
 	// (tenant-scoped). Nil-safe: when unwired, findings are never suppressed at
 	// ingest (prior behavior).
 	suppressionChecker SuppressionChecker
+
+	// secretFingerprinter keys the fingerprint of a reported secret with a
+	// server-held secret. Nil-safe: when unwired, no fingerprint is stored.
+	secretFingerprinter *vulnerability.SecretFingerprinter
 }
 
 // PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
@@ -168,6 +172,11 @@ func (p *FindingProcessor) SetAssignmentApplier(applier AssignmentApplier) {
 // SetRemediationKeyApplier wires remediation-group key derivation (RFC-015).
 func (p *FindingProcessor) SetRemediationKeyApplier(applier RemediationKeyApplier) {
 	p.remediationKeyApplier = applier
+}
+
+// SetSecretFingerprinter wires the keyed secret fingerprint (RFC-043).
+func (p *FindingProcessor) SetSecretFingerprinter(fp *vulnerability.SecretFingerprinter) {
+	p.secretFingerprinter = fp
 }
 
 // SetExposureBridge wires the secret-scan → exposure-store bridge. Nil-safe:
@@ -1153,6 +1162,7 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	}
 	if ctisFinding.Secret.MaskedValue != "" {
 		f.SetSecretMaskedValue(ctisFinding.Secret.MaskedValue)
+		f.SetSecretFingerprint(p.secretFingerprinter.Fingerprint(f.TenantID(), ctisFinding.Secret.MaskedValue))
 	}
 	if ctisFinding.Secret.InHistoryOnly {
 		f.SetSecretInHistoryOnly(true)

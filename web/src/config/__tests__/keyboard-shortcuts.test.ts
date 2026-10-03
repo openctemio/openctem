@@ -35,6 +35,10 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/findings/components/finding-detail-drawer.tsx',
     /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'c' && !e\.shiftKey/,
   ],
+  'open-activity': [
+    'features/activity/components/activity-trigger.tsx',
+    /e\.key !== 'c' && e\.key !== 'C'[\s\S]*e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
+  ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',
     /e\.key === 'Escape' && !e\.defaultPrevented\) onClear\(\)/,

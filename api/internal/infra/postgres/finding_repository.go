@@ -180,7 +180,7 @@ var findingCreateSQL = `
 			remediation, pentest_campaign_id, created_by,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status, tags,
+			sla_deadline, sla_status, tags, rule_name,
 			` + findingTypeColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
@@ -188,7 +188,7 @@ var findingCreateSQL = `
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90, $91` + findingTypePlaceholders(92) + `)
+			$89, $90, $91, $92` + findingTypePlaceholders(93) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -307,8 +307,11 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 		// Tags. The INSERT used to leave them out, so a new finding's tags
 		// (from the manual or pentest form) were lost until an edit.
 		pq.Array(finding.Tags()), // $91
+		// Rule name. Also left out of the INSERT, so the scanner's rule name
+		// (a nuclei template's, a semgrep rule's) arrived only on a re-sighting.
+		nullString(finding.RuleName()), // $92
 	}
-	args = append(args, findingTypeArgs(finding)...) // $92…
+	args = append(args, findingTypeArgs(finding)...) // $93…
 	return args, nil
 }
 
@@ -570,7 +573,7 @@ func findingInsertColumnsSQL() string {
 			remediation, pentest_campaign_id,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status, tags,
+			sla_deadline, sla_status, tags, rule_name,
 			` + findingTypeColumnsSQL + `
 		)`
 }
@@ -681,7 +684,9 @@ func findingUpsertConflictSQL() string {
 			-- enrich path: the stored tags (a user may have set them) stay
 			-- first, new non-empty ones not already there are appended, and
 			-- the list stops at vulnerability.MaxFindingTags.
-			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") +
+			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
+			-- Rule name: first non-empty one wins, as in EnrichFrom.
+			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
 		findingTypeConflictSQL() + "\n\t"
 }
 
@@ -715,7 +720,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 90 + findingTypeColumnCount
+const findingInsertColumnCount = 91 + findingTypeColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -842,6 +847,9 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Tags. Left out of the INSERT until now, so every ingested finding
 		// was stored with tags = '{}' whatever the report sent.
 		pq.Array(finding.Tags()),
+		// Rule name, left out with the tags: a nuclei template's or semgrep
+		// rule's name arrived only on a re-sighting.
+		nullString(finding.RuleName()),
 	}, findingTypeArgs(finding)...), nil
 }
 
@@ -2726,96 +2734,6 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 		return nil, nil, fmt.Errorf("failed iterating kev/critical counts: %w", err)
 	}
 	return kev, critical, nil
-}
-
-// RecomputeFingerprintsForAsset recomputes and persists the fingerprint of every
-// finding currently pointing at assetID, using the CORRECT scheme per finding.
-//
-// Motivation: an asset merge repoints findings to the surviving asset with a raw
-// UPDATE (AssetDedupRepository.ApproveAndMerge) that does not recompute the
-// fingerprint. Every fingerprint scheme embeds the asset_id, so a repointed
-// finding keeps a stale fingerprint that never dedupes against future scans of
-// the surviving asset — accumulating duplicates.
-//
-// Two schemes coexist and must be recomputed differently (getting this wrong is
-// how a previous attempt corrupted data):
-//   - Ingested findings use the 64-char COMPOSITE sha256(asset_id + ":" + base).
-//     The base is persisted at ingest (FingerprintBaseKey) so we recompute
-//     CompositeFingerprint(keepID, base). Findings ingested before the base was
-//     persisted have no base to recompute from and are left untouched (skipped).
-//   - Manually-created findings use the 32-char Finding.GenerateFingerprint,
-//     which re-derives from the finding's fields + its (now updated) asset_id, so
-//     calling it again yields the correct value.
-//
-// On a UNIQUE(tenant_id, fingerprint) collision the repointed finding is the
-// duplicate and is deleted, keeping the pre-existing one. Idempotent.
-func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, tenantID, assetID shared.ID) (updated, deduped int, err error) {
-	// Read all findings for the asset up front so the mutations below do not
-	// shift pagination offsets mid-iteration.
-	var all []*vulnerability.Finding
-	page := pagination.Pagination{Page: 1, PerPage: 500}
-	for {
-		res, lerr := r.ListByAssetID(ctx, tenantID, assetID, vulnerability.FindingListOptions{}, page)
-		if lerr != nil {
-			return updated, deduped, fmt.Errorf("failed to list findings for fingerprint recompute: %w", lerr)
-		}
-		all = append(all, res.Data...)
-		if len(res.Data) == 0 || page.Page >= res.TotalPages {
-			break
-		}
-		page.Page++
-	}
-
-	for _, f := range all {
-		oldFP := f.Fingerprint()
-		newFP, composite := recomputeFindingFingerprint(f, assetID.String())
-		if newFP == "" || newFP == oldFP {
-			continue
-		}
-		_, uerr := r.db.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.ID().String(), tenantID.String())
-		if uerr == nil {
-			updated++
-			continue
-		}
-		if !isUniqueViolation(uerr) {
-			return updated, deduped, fmt.Errorf("failed to update finding fingerprint: %w", uerr)
-		}
-		// Collision on (tenant_id, newFP). For the COMPOSITE scheme this is
-		// unambiguous: a native finding recomputes to its unchanged value and was
-		// skipped above (newFP == oldFP), so only a moved duplicate can reach here
-		// — delete it, keep the existing. For the MANUAL scheme a native finding
-		// whose fields drifted after creation (GenerateFingerprint runs only at
-		// create) can also collide, so deleting could destroy a legitimate
-		// finding — skip it instead (the moved duplicate simply keeps its stale
-		// fingerprint, no worse than before the merge).
-		if !composite {
-			continue
-		}
-		if _, derr := r.db.ExecContext(ctx,
-			`DELETE FROM findings WHERE id = $1 AND tenant_id = $2`,
-			f.ID().String(), tenantID.String()); derr != nil {
-			return updated, deduped, fmt.Errorf("failed to delete duplicate finding after fingerprint collision: %w", derr)
-		}
-		deduped++
-	}
-	return updated, deduped, nil
-}
-
-// recomputeFindingFingerprint returns the correct fingerprint for f now that it
-// lives on keepAssetID and whether it is the composite scheme. Returns "" when
-// it cannot be safely recomputed (a composite finding whose base was not
-// persisted). `composite` is true only for the base-derived composite scheme.
-func recomputeFindingFingerprint(f *vulnerability.Finding, keepAssetID string) (newFP string, composite bool) {
-	if base, ok := f.PartialFingerprints()[vulnerability.FingerprintBaseKey]; ok && base != "" {
-		return vulnerability.CompositeFingerprint(keepAssetID, base), true
-	}
-	if len(f.Fingerprint()) == 32 {
-		// Manual scheme: re-derives from f.assetID (already updated to keepID) + fields.
-		return f.GenerateFingerprint(), false
-	}
-	return "", false
 }
 
 // CountOpenByAssetID returns the count of open findings for an asset.

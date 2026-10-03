@@ -271,6 +271,15 @@ asset group of the scan (`asset_group_ids`), deduplicated, after scope
 exclusions; the 10,000-target cap applies to all groups together. An empty
 group is named in `warnings`.
 
+A group member is one asset of the scan's tenant, read by asset id in keyset
+pages. It is dispatched by its name, but scope exclusions are tested against
+every value that names it: the name, its known addresses
+(`properties.ip_addresses`, legacy `properties.ip`) and, for a repository,
+its URLs. A host whose address is in an excluded network is therefore
+excluded. Archived members are not scanned; their count is in `warnings` and
+in the run context as `archived_target_count`. Stale and inactive members
+are still scanned, because a scan is how they are seen again.
+
 `sensor_routing` is decided once, before the run is created. Nothing falls
 back silently (D14): `sensor_preference: platform` with an asset group, an
 internal target, a zoned target, or a tenant without platform access refuses
