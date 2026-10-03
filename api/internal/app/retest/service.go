@@ -107,8 +107,11 @@ type Service struct {
 	sensors    SensorAvailability
 	gates      []TargetGate
 	audit      AuditLogger
-	now        func() time.Time
-	logger     *logger.Logger
+	// regressionSLA and announcer run after a retest moved a finding.
+	regressionSLA RegressionSLA
+	announcer     Announcer
+	now           func() time.Time
+	logger        *logger.Logger
 }
 
 // NewService wires the service. gates are applied in order; any refusal or
@@ -122,6 +125,12 @@ func NewService(store Store, findings FindingReader, assets AssetReader, command
 		now: time.Now, logger: log.With("service", "retest"),
 	}
 }
+
+// SetRegressionSLA wires the fresh-SLA-on-regression restart (RFC-039 D2).
+func (s *Service) SetRegressionSLA(r RegressionSLA) { s.regressionSLA = r }
+
+// SetAnnouncer wires the ticket comment + notification on a fix or regression.
+func (s *Service) SetAnnouncer(a Announcer) { s.announcer = a }
 
 // SetAuditLogger wires the audit log for "Retest now" requests.
 func (s *Service) SetAuditLogger(a AuditLogger) { s.audit = a }
@@ -144,7 +153,7 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 	if in.TenantID.IsZero() || in.FindingID.IsZero() {
 		return nil, fmt.Errorf("%w: tenant and finding are required", shared.ErrValidation)
 	}
-	if in.Trigger != retestdom.TriggerManual && in.Trigger != retestdom.TriggerAuto {
+	if in.Trigger != retestdom.TriggerManual && !in.Trigger.IsSystem() {
 		return nil, fmt.Errorf("%w: unknown retest trigger", shared.ErrValidation)
 	}
 
@@ -173,7 +182,7 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 		PriorStatus: f.Status(), TemplateID: templateID, Target: target,
 		DeadlineAt: now.Add(Deadline), CreatedAt: now,
 	}
-	if in.Trigger == retestdom.TriggerAuto {
+	if in.Trigger.IsSystem() {
 		rt.RequestedBy = nil
 	}
 	// The pending row claims the finding's single retest slot before anything
@@ -198,11 +207,7 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 		return nil, fmt.Errorf("queue retest: %w", dispatchErr)
 	}
 
-	source := vulnerability.SourceScheduled
-	if in.Trigger == retestdom.TriggerManual {
-		source = vulnerability.SourceAPI
-	}
-	if err := s.store.RecordRequested(ctx, rt, source); err != nil {
+	if err := s.store.RecordRequested(ctx, rt, activitySource(rt.Trigger)); err != nil {
 		s.logger.Warn("failed to record retest request activity", "retest_id", rt.ID.String(), "error", err)
 	}
 	if in.Trigger == retestdom.TriggerManual {
@@ -276,7 +281,7 @@ func (s *Service) checkLimits(ctx context.Context, tenantID, findingID, assetID 
 		return fmt.Errorf("%w: %d retests of this asset are already running", retestdom.ErrRateLimited, n)
 	}
 	limit := MaxPendingManual
-	if trigger == retestdom.TriggerAuto {
+	if trigger.IsSystem() {
 		limit = MaxPendingAuto
 	}
 	n, err = s.store.CountPending(ctx, tenantID, trigger)
@@ -468,10 +473,7 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, outcome rete
 	if rt.ReachCommandID != nil {
 		changes["reach_command_id"] = rt.ReachCommandID.String()
 	}
-	source := vulnerability.SourceScheduled
-	if rt.Trigger == retestdom.TriggerManual {
-		source = vulnerability.SourceAPI
-	}
+	source := activitySource(rt.Trigger)
 	var regression bool
 	res, err := s.store.Settle(ctx, retestdom.SettleInput{
 		TenantID: rt.TenantID, RetestID: rt.ID, FindingID: rt.FindingID,
@@ -494,8 +496,52 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, outcome rete
 		s.logger.Info("retest settled", "tenant_id", rt.TenantID.String(), "finding_id", rt.FindingID.String(),
 			"retest_id", rt.ID.String(), "outcome", string(outcome), "from", string(res.PriorStatus),
 			"to", string(res.ResultStatus), "regression", regression)
+		if res.Moved {
+			s.followUp(ctx, rt, res, regression, reason)
+		}
 	}
 	return res.Applied, nil
+}
+
+// followUp runs after a retest moved a finding: a regression gets a fresh SLA
+// deadline (D2), and a fix, a regression or a rejected fix is announced on the
+// linked ticket and through notifications. Best-effort.
+func (s *Service) followUp(ctx context.Context, rt *retestdom.Retest, res retestdom.SettleResult, regression bool, reason string) {
+	if regression && s.regressionSLA != nil {
+		if _, err := s.regressionSLA.RestartForRegression(ctx, rt.TenantID, []shared.ID{rt.FindingID}, "retest"); err != nil {
+			s.logger.Warn("retest: SLA restart failed", "finding_id", rt.FindingID.String(), "error", err)
+		}
+	}
+	if s.announcer == nil {
+		return
+	}
+	kind := ChangeKind("")
+	switch {
+	case res.ResultStatus == vulnerability.FindingStatusResolved:
+		kind = ChangeFixed
+	case regression:
+		kind = ChangeRegression
+	case res.PriorStatus == vulnerability.FindingStatusFixApplied:
+		kind = ChangeFixRejected
+	default:
+		return // a refuted validation downgrade: no one closed it, nothing to announce
+	}
+	s.announcer.Announce(ctx, Change{
+		TenantID: rt.TenantID, FindingID: rt.FindingID, Kind: kind, Source: "retest",
+		Detail: fmt.Sprintf("Retest of template %s against %s: %s.", rt.TemplateID, rt.Target, reason),
+	})
+}
+
+// activitySource is the activity source a retest's entries are written with.
+func activitySource(t retestdom.Trigger) vulnerability.ActivitySource {
+	switch t {
+	case retestdom.TriggerManual:
+		return vulnerability.SourceAPI
+	case retestdom.TriggerProofOfFix:
+		return vulnerability.SourceAuto
+	default:
+		return vulnerability.SourceScheduled
+	}
 }
 
 // ResolveTarget picks what the template re-run targets: the finding's recorded

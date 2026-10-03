@@ -54,6 +54,8 @@ type FindingProcessor struct {
 
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
+	// regressions follows up on reopened findings (fresh SLA, announcement).
+	regressions RegressionHandler
 
 	// remediationKeyApplier derives + records each created finding's remediation
 	// group key (RFC-015). Runs POST-insert (needs persisted finding IDs).
@@ -97,6 +99,13 @@ type SLAApplier interface {
 // *assignment.BatchAssigner. Returns the number of assignments created.
 type AssignmentApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (int, error)
+}
+
+// RegressionHandler follows up on findings a scan reopened as regressions: a
+// fresh SLA deadline and an announcement (RFC-039). Implemented by
+// *retest.ScanRegressions.
+type RegressionHandler interface {
+	HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string)
 }
 
 // activityRecorder is the subset of FindingActivityService needed by the processor.
@@ -143,6 +152,11 @@ func (p *FindingProcessor) SetDataFlowRepository(repo vulnerability.DataFlowRepo
 // SetActivityService sets the activity service for recording auto-reopen audit trail.
 func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
 	p.activityService = svc
+}
+
+// SetRegressionHandler wires the follow-up on scan regressions (RFC-039 D2).
+func (p *FindingProcessor) SetRegressionHandler(h RegressionHandler) {
+	p.regressions = h
 }
 
 // SetFindingCreatedCallback sets the callback for when findings are created.
@@ -428,19 +442,23 @@ func (p *FindingProcessor) processBatch(
 			p.logger.Info("batch auto-reopened findings",
 				"count", len(reopenedMap),
 			)
+			reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
+			for _, rf := range reopenedMap {
+				reopened = append(reopened, rf)
+			}
+			scanner := ""
+			if report.Tool != nil {
+				scanner = report.Tool.Name
+			}
 			// Record the regression on each finding, with who had resolved it.
 			if p.activityService != nil {
-				reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
-				for _, rf := range reopenedMap {
-					reopened = append(reopened, rf)
-				}
-				scanner := ""
-				if report.Tool != nil {
-					scanner = report.Tool.Name
-				}
 				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopened, scanner, report.Metadata.ID); err != nil {
 					p.logger.Warn("failed to record auto-reopen activities", "error", err)
 				}
+			}
+			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5).
+			if p.regressions != nil {
+				p.regressions.HandleRegressions(ctx, tenantID, reopened, scanner)
 			}
 		}
 	}

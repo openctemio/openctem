@@ -25,7 +25,14 @@ const (
 	TriggerManual Trigger = "manual"
 	// TriggerAuto is the auto-retest scheduler.
 	TriggerAuto Trigger = "auto"
+	// TriggerProofOfFix is the automatic retest of a finding marked
+	// fix_applied (by a person, or by a Jira "Done"). It replaces the retired
+	// whole-asset verification scan (RFC-039 D4).
+	TriggerProofOfFix Trigger = "proof_of_fix"
 )
+
+// IsSystem reports whether the retest was started by the platform, not a user.
+func (t Trigger) IsSystem() bool { return t == TriggerAuto || t == TriggerProofOfFix }
 
 // Status is the lifecycle of one retest attempt.
 type Status string
