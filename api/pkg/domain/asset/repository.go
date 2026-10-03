@@ -139,10 +139,12 @@ type Repository interface {
 
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
 	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
+	// access applies the acting user's data scope, the same predicate as List.
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
 
 	// GetPropertyFacets returns distinct JSONB property keys and their top values for faceted filtering.
-	GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]PropertyFacet, error)
+	// access applies the acting user's data scope, the same predicate as List.
+	GetPropertyFacets(ctx context.Context, tenantID shared.ID, access AccessScope, types []string, subType string) ([]PropertyFacet, error)
 
 	// ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
 	// Used exclusively by attack path scoring which needs the full set of assets
@@ -409,6 +411,21 @@ func (f Filter) WithSyncStatuses(statuses ...SyncStatus) Filter {
 func (f Filter) WithParentID(parentID string) Filter {
 	f.ParentID = &parentID
 	return f
+}
+
+// AccessScope narrows an aggregate read (stats, property facets) to the
+// assets the acting user may list. It carries the same two fields the list's
+// Filter uses, so the repository applies the very same data-scope predicate
+// to counts as to rows. The zero value applies no data scope (admin, or a
+// caller with no user such as an API key), exactly like an unset Filter.
+type AccessScope struct {
+	DataScopeUserID *shared.ID
+	DataScopeStrict bool
+}
+
+// AccessScope returns the data-scope part of the filter.
+func (f Filter) AccessScope() AccessScope {
+	return AccessScope{DataScopeUserID: f.DataScopeUserID, DataScopeStrict: f.DataScopeStrict}
 }
 
 // WithDataScopeUserID adds a data scope filter by user's group membership.

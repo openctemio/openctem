@@ -172,6 +172,61 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 	return out, nil
 }
 
+// ReleaseHeldBySensor takes back every tenant command sensorID holds under a
+// lease (acknowledged or running), at once, for a sensor that was revoked or
+// disabled (RFC-040 §5.2). Routed scan work goes back to pending, unpinned,
+// its zone kept, with requeueMessage, and does not count as a dispatch
+// attempt (the sensor was withdrawn, the command did nothing wrong). Any
+// other command was addressed to that sensor only, so it is failed with
+// failMessage. Both clear the lease, and neither is held by the sensor in
+// the state it held it in any more, so whatever the old holder sends later
+// fails the fence of FencedUpdate (sensor, state and lease epoch); the next
+// claim starts a new epoch, as after a lease expiry.
+func (r *CommandRepository) ReleaseHeldBySensor(ctx context.Context, tenantID, sensorID shared.ID, requeueMessage, failMessage string) ([]command.ReleasedCommand, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE commands c
+		SET status = CASE WHEN held.routed THEN 'pending' ELSE 'failed' END,
+		    sensor_id = CASE WHEN held.routed THEN NULL ELSE c.sensor_id END,
+		    acknowledged_at = CASE WHEN held.routed THEN NULL ELSE c.acknowledged_at END,
+		    started_at = CASE WHEN held.routed THEN NULL ELSE c.started_at END,
+		    completed_at = CASE WHEN held.routed THEN NULL ELSE NOW() END,
+		    error_message = CASE WHEN held.routed THEN $3 ELSE $4 END,
+		    lease_expires_at = NULL
+		FROM (
+			SELECT id, status AS old_status, lease_epoch AS old_epoch,
+			       (`+routedScanWork("commands")+`) AS routed
+			FROM commands
+			WHERE tenant_id = $1 AND sensor_id = $2
+			  AND status IN ('acknowledged', 'running')
+			  AND is_platform_job = FALSE
+			FOR UPDATE
+		) held
+		WHERE c.id = held.id
+		RETURNING c.id, c.type, held.old_status, held.old_epoch, held.routed`,
+		tenantID.String(), sensorID.String(), requeueMessage, failMessage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to release the commands of sensor: %w", err)
+	}
+	defer rows.Close()
+	var out []command.ReleasedCommand
+	for rows.Next() {
+		var id, typ, status string
+		var rc command.ReleasedCommand
+		if err := rows.Scan(&id, &typ, &status, &rc.Epoch, &rc.Requeued); err != nil {
+			return nil, fmt.Errorf("failed to scan released command: %w", err)
+		}
+		if rc.ID, err = shared.IDFromString(id); err != nil {
+			continue
+		}
+		rc.Type, rc.PrevStatus = command.CommandType(typ), command.CommandStatus(status)
+		out = append(out, rc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate released commands: %w", err)
+	}
+	return out, nil
+}
+
 // FencedUpdate is Update for a sensor-side state change: it applies only if
 // the command is still held by sensorID in the state and lease epoch the
 // caller read (expect). A command that was re-queued, re-claimed or finished
