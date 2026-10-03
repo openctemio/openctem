@@ -96,6 +96,9 @@ func TestNetworkFindingWithoutCVE_LegacyRowKeepsItsTriage(t *testing.T) {
 		}
 		statuses[id] = st
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if len(statuses) != 2 {
 		t.Fatalf("got %d findings (%v), want 2: the legacy row re-keyed to one port + one new", len(statuses), statuses)
 	}
