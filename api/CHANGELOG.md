@@ -25,6 +25,18 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Fixed
 
+- **A finding another ingest just created is no longer reported as new, and
+  keeps its ticket links** (RFC-043 P0). Ingest checked which fingerprints
+  existed and then inserted the rest; when two ingests raced on one new
+  finding, or one report named a finding twice, the second insert still
+  counted as created and ran the new-finding steps (workflows,
+  notifications, assignment rules, remediation keys, exposure bridge) under
+  an id that was never stored. Its `ON CONFLICT` update also replaced the
+  stored ticket links (`work_item_uris`) and metadata with the empty values
+  of the incoming row. The upsert now returns the stored id and whether it
+  inserted; only inserted rows count as created and run those steps, a
+  repeated finding in one report is folded into the first, ticket links are
+  never taken from the incoming row, and metadata keeps the stored keys.
 - **A pipeline step's settings reach the sensor.** Step commands carried
   the step's config as `step_config`, which no sensor reads, so every step
   ran with its tool's defaults (a naabu step with `ports: "80"` scanned the
