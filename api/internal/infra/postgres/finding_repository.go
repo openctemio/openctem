@@ -354,13 +354,35 @@ const DefaultBatchChunkSize = 100
 // CreateBatchWithResult persists multiple findings with partial success support.
 // Uses chunked transactions to isolate failures - if one chunk fails,
 // only that chunk is retried individually to identify the bad finding.
+//
+// Each row is an upsert on (tenant_id, fingerprint). The result says, per
+// input index, whether the row was inserted (Inserted) or an existing finding
+// was updated, and the persisted id (IDs). Created counts inserted rows only;
+// a row that hit an existing finding (a concurrent ingest won the race) counts
+// as Updated, and its in-memory finding is re-pointed at the persisted id so
+// no caller acts on an id that does not exist (RFC-043 B2).
 func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
 	result := &vulnerability.BatchCreateResult{
-		Errors: make(map[int]string),
+		Errors:   make(map[int]string),
+		Inserted: make(map[int]bool),
+		IDs:      make(map[int]shared.ID),
 	}
 
 	if len(findings) == 0 {
 		return result, nil
+	}
+
+	record := func(index int, finding *vulnerability.Finding, row upsertedRow) {
+		result.IDs[index] = row.id
+		result.Inserted[index] = row.inserted
+		if row.inserted {
+			result.Created++
+		} else {
+			result.Updated++
+		}
+		if row.id != finding.ID() {
+			finding.AdoptPersistedID(row.id)
+		}
 	}
 
 	// Process in chunks for better error isolation
@@ -373,85 +395,124 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		chunk := findings[chunkStart:chunkEnd]
 
 		// Try to insert the entire chunk
-		err := r.insertChunk(ctx, chunk)
+		rows, err := r.insertChunk(ctx, chunk)
 		if err == nil {
-			// Chunk succeeded
-			result.Created += len(chunk)
+			for i, finding := range chunk {
+				record(chunkStart+i, finding, rows[i])
+			}
 			continue
 		}
 
 		// Chunk failed - retry individually to identify bad findings
 		for i, finding := range chunk {
 			globalIndex := chunkStart + i
-			if err := r.insertSingleFinding(ctx, finding); err != nil {
+			row, err := r.insertSingleFinding(ctx, finding)
+			if err != nil {
 				result.Skipped++
 				result.Errors[globalIndex] = err.Error()
-			} else {
-				result.Created++
+				continue
 			}
+			record(globalIndex, finding, row)
 		}
 	}
 
 	return result, nil
 }
 
-// insertChunk inserts a chunk of findings in a SINGLE multi-row INSERT.
+// upsertedRow is what the finding upsert returns for one row.
+type upsertedRow struct {
+	id       shared.ID
+	inserted bool
+}
+
+// findingUpsertReturningSQL makes the upsert report the persisted id and
+// whether the row was inserted: xmax is 0 for a freshly inserted tuple and the
+// updating transaction's id for one that ON CONFLICT DO UPDATE touched.
+const findingUpsertReturningSQL = "\nRETURNING id, fingerprint, (xmax = 0) AS inserted"
+
+// insertChunk inserts a chunk of findings in a SINGLE multi-row INSERT and
+// returns, in input order, the persisted row for each finding.
 //
 // Previously this looped a prepared statement once per finding (N round-trips
 // per chunk). A single multi-row INSERT collapses that to one round-trip,
 // which dominates ingest latency for large scan reports. The statement is
 // atomic on its own, so no explicit transaction is needed.
 //
-// On failure (including the rare case where the same chunk contains two
-// findings with an identical (tenant_id, fingerprint) — which ON CONFLICT
-// cannot update twice in one statement), CreateBatchWithResult falls back to
-// per-row inserts, preserving partial-success error isolation.
-func (r *FindingRepository) insertChunk(ctx context.Context, findings []*vulnerability.Finding) error {
+// On failure (including the case where the same chunk contains two findings
+// with an identical (tenant_id, fingerprint) — which ON CONFLICT cannot update
+// twice in one statement), CreateBatchWithResult falls back to per-row
+// inserts, preserving partial-success error isolation.
+func (r *FindingRepository) insertChunk(ctx context.Context, findings []*vulnerability.Finding) ([]upsertedRow, error) {
 	if len(findings) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	args := make([]any, 0, len(findings)*findingInsertColumnCount)
 	for _, finding := range findings {
 		rowArgs, err := findingInsertArgs(finding)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		args = append(args, rowArgs...)
 	}
 
-	query := findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(len(findings)) + "\n" + findingUpsertConflictSQL()
+	query := findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(len(findings)) + "\n" + findingUpsertConflictSQL() + findingUpsertReturningSQL
 
-	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to batch insert findings: %w", err)
+	dbRows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch insert findings: %w", err)
+	}
+	defer dbRows.Close()
+
+	// RETURNING order is not guaranteed to follow VALUES order; match rows
+	// back by fingerprint, which is unique within a successful statement.
+	byFingerprint := make(map[string]upsertedRow, len(findings))
+	for dbRows.Next() {
+		var idStr, fp string
+		var row upsertedRow
+		if err := dbRows.Scan(&idStr, &fp, &row.inserted); err != nil {
+			return nil, fmt.Errorf("failed to scan inserted finding: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse inserted finding id: %w", err)
+		}
+		row.id = id
+		byFingerprint[fp] = row
+	}
+	if err := dbRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to batch insert findings: %w", err)
 	}
 
-	return nil
+	out := make([]upsertedRow, len(findings))
+	for i, finding := range findings {
+		row, ok := byFingerprint[finding.Fingerprint()]
+		if !ok {
+			return nil, fmt.Errorf("batch insert returned no row for fingerprint %s", finding.Fingerprint())
+		}
+		out[i] = row
+	}
+	return out, nil
 }
 
-// insertSingleFinding inserts a single finding with its own transaction.
-func (r *FindingRepository) insertSingleFinding(ctx context.Context, finding *vulnerability.Finding) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+// insertSingleFinding upserts a single finding and returns the persisted row.
+func (r *FindingRepository) insertSingleFinding(ctx context.Context, finding *vulnerability.Finding) (upsertedRow, error) {
+	args, err := findingInsertArgs(finding)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return upsertedRow{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	stmt, err := tx.PrepareContext(ctx, r.upsertQuery())
-	if err != nil {
-		return fmt.Errorf("failed to prepare statement: %w", err)
+	var (
+		row   upsertedRow
+		idStr string
+		fp    string
+	)
+	if err := r.db.QueryRowContext(ctx, r.upsertQuery()+findingUpsertReturningSQL, args...).Scan(&idStr, &fp, &row.inserted); err != nil {
+		return upsertedRow{}, fmt.Errorf("failed to insert finding: %w", err)
 	}
-	defer stmt.Close()
-
-	if err := r.execFindingInsert(ctx, stmt, finding); err != nil {
-		return err
+	if row.id, err = shared.IDFromString(idStr); err != nil {
+		return upsertedRow{}, fmt.Errorf("failed to parse inserted finding id: %w", err)
 	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
+	return row, nil
 }
 
 // upsertQuery returns the single-row INSERT ... ON CONFLICT query for findings
@@ -543,7 +604,12 @@ func findingUpsertConflictSQL() string {
 			severity = EXCLUDED.severity,
 			scan_id = EXCLUDED.scan_id,
 			sensor_id = EXCLUDED.sensor_id,
-			metadata = EXCLUDED.metadata,
+			-- Existing keys win, new keys are added. This path is only reached
+			-- when two ingests race on a new fingerprint or one batch repeats
+			-- it (a normal re-sighting goes through EnrichBatchByFingerprints,
+			-- which merges metadata in Go). Overwriting dropped whatever the
+			-- first writer, or a user in the meantime, had stored (RFC-043 B2).
+			metadata = EXCLUDED.metadata || COALESCE(findings.metadata, '{}'::jsonb),
 			updated_at = EXCLUDED.updated_at,
 			last_seen_branch = EXCLUDED.last_seen_branch,
 			last_seen_commit = EXCLUDED.last_seen_commit,
@@ -564,7 +630,9 @@ func findingUpsertConflictSQL() string {
 			related_locations = EXCLUDED.related_locations,
 			stacks = EXCLUDED.stacks,
 			attachments = EXCLUDED.attachments,
-			work_item_uris = EXCLUDED.work_item_uris,
+			-- work_item_uris (ticket links) is never taken from the incoming
+			-- row: a scanner never knows the tickets, and EXCLUDED is always
+			-- empty, so assigning it erased the links (RFC-043 B2).
 			hosted_viewer_uri = EXCLUDED.hosted_viewer_uri,
 			exposure_vector = EXCLUDED.exposure_vector,
 			is_network_accessible = EXCLUDED.is_network_accessible,
@@ -1570,6 +1638,10 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	if len(items) == 0 {
 		return nil
 	}
+	// A report can carry one finding twice; the statement cannot update one
+	// (finding, branch) row twice, and the duplicate used to drop every
+	// occurrence of the report. The last sighting wins (latest commit).
+	items = dedupeLastWins(items, branchOccurrenceKey)
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
@@ -1614,6 +1686,12 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	return nil
 }
 
+// branchOccurrenceKey is the conflict key of finding_branch_occurrences as the
+// batch knows it: one finding (by fingerprint) on one branch.
+func branchOccurrenceKey(it vulnerability.BranchOccurrenceUpsert) string {
+	return it.Fingerprint + "\x1f" + it.BranchID.String()
+}
+
 // BackfillFindingBranches gives existing findings the branch a scan saw them
 // on. Findings are matched by (tenant_id, fingerprint) and the branch must
 // belong to the finding's own repository asset. Two cases are updated:
@@ -1632,6 +1710,7 @@ func (r *FindingRepository) BackfillFindingBranches(ctx context.Context, tenantI
 	if len(items) == 0 {
 		return 0, nil
 	}
+	items = dedupeLastWins(items, branchOccurrenceKey)
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
