@@ -11,7 +11,6 @@ import {
   RiskScoreBadge,
   DataTable,
   DataTableColumnHeader,
-  DetailSection,
   DetailField,
   DetailFieldGrid,
 } from '@/features/shared'
@@ -83,6 +82,7 @@ import { updateAsset } from '../hooks/use-assets'
 import { AssetFormDialogShared } from './asset-form-dialog-shared'
 import { AssetDeleteDialogShared } from './asset-delete-dialog-shared'
 import { IssuesChip, LabelChips } from './service-cells'
+import { TypedDetailSections } from './typed-detail-sections'
 
 type StatusFilter = string
 
@@ -1339,34 +1339,7 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
         }
         overviewContent={
           selectedAsset && config.detailSections ? (
-            <>
-              {config.detailSections.map((section, si) => {
-                // Resolve every field eagerly so we can filter empty
-                // ones and skip whole sections that end up with no
-                // content. Fields whose getValue returns null /
-                // undefined are dropped — this lets per-type configs
-                // hide rows where the underlying metadata is missing
-                // instead of rendering a "-" wall.
-                const resolvedFields = section.fields
-                  .map((field) => ({
-                    ...field,
-                    value: field.getValue(selectedAsset!),
-                  }))
-                  .filter((f) => f.value !== null && f.value !== undefined)
-                if (resolvedFields.length === 0) return null
-                return (
-                  <DetailSection key={si} title={section.title}>
-                    <DetailFieldGrid>
-                      {resolvedFields.map((field, fi) => (
-                        <DetailField key={fi} label={field.label} full={field.fullWidth}>
-                          {field.value}
-                        </DetailField>
-                      ))}
-                    </DetailFieldGrid>
-                  </DetailSection>
-                )
-              })}
-            </>
+            <TypedDetailSections sections={config.detailSections} asset={selectedAsset} />
           ) : undefined
         }
       />

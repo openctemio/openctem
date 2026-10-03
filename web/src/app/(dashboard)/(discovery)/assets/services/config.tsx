@@ -27,16 +27,19 @@ import {
   FactChip,
   HttpStatusChip,
   OverflowChips,
+  EmptyCell,
   TechChips,
   TlsSummary,
-  UnknownChip,
+  tlsNotCollected,
 } from '@/features/assets/components/service-cells'
 
 // The services page lists every `service` asset: HTTP services from httpx
 // (sub_type http, nested `service.*` + `status_code`, `technologies`),
 // open ports from naabu (sub_type open_port, flat `port`/`protocol`), and
 // services from nmap-style scans. Each cell reads both shapes through
-// service-facts; nothing is defaulted (no "TCP", no port 0).
+// service-facts; nothing is defaulted (no "TCP", no port 0). A fact nothing
+// collected is an empty cell (`—`) in the list and one "Not collected yet"
+// line in the drawer (ui-style-contract §7, "Unknown facts").
 
 /** HTTP-only facts (status, technologies) do not apply to an SSH port. */
 const isWeb = (a: Asset) => isHttpService(a) || a.subType === 'discovered_url'
@@ -46,7 +49,6 @@ const notApplicable = (what: string) => (
     —
   </span>
 )
-const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
 
 /** "nginx/1.25.3" for a web service, "OpenSSH 9.6p1" for an nmap one. */
 function productLabel(a: Asset): string | undefined {
@@ -72,7 +74,7 @@ export const servicesConfig: AssetPageConfig = {
       header: 'Port',
       cell: ({ row }) => {
         const port = servicePort(row.original)
-        if (port === null) return <UnknownChip>Unknown</UnknownChip>
+        if (port === null) return <EmptyCell />
         return (
           <FactChip tone="muted">
             <ChipMono>{port}</ChipMono>
@@ -85,7 +87,7 @@ export const servicesConfig: AssetPageConfig = {
       header: 'Protocol',
       cell: ({ row }) => {
         const protocol = serviceProtocol(row.original)
-        if (!protocol) return <UnknownChip>Unknown</UnknownChip>
+        if (!protocol) return <EmptyCell />
         return <FactChip tone="muted">{protocol.toUpperCase()}</FactChip>
       },
     },
@@ -94,7 +96,7 @@ export const servicesConfig: AssetPageConfig = {
       header: 'Product',
       cell: ({ row }) => {
         const label = productLabel(row.original)
-        if (!label) return <UnknownChip>Not collected</UnknownChip>
+        if (!label) return <EmptyCell />
         return (
           <span className="block max-w-[180px] truncate text-sm" title={label}>
             {label}
@@ -110,6 +112,7 @@ export const servicesConfig: AssetPageConfig = {
           <HttpStatusChip
             status={httpStatusCode(row.original)}
             chain={redirectChain(row.original)}
+            fallback={<EmptyCell />}
           />
         ) : (
           notApplicable('HTTP status')
@@ -121,7 +124,7 @@ export const servicesConfig: AssetPageConfig = {
       cell: ({ row }) =>
         isWeb(row.original) ? (
           <ChipRow className="max-w-[220px]">
-            <TechChips technologies={technologies(row.original)} max={2} />
+            <TechChips technologies={technologies(row.original)} max={2} fallback={<EmptyCell />} />
           </ChipRow>
         ) : (
           notApplicable('web technologies')
@@ -132,7 +135,7 @@ export const servicesConfig: AssetPageConfig = {
       header: 'TLS',
       cell: ({ row }) => (
         <div className="max-w-[200px]">
-          <TlsSummary facts={tlsFacts(row.original)} />
+          <TlsSummary facts={tlsFacts(row.original)} fallback={<EmptyCell />} />
         </div>
       ),
     },
@@ -263,19 +266,26 @@ export const servicesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Protocol',
-          getValue: (asset) => serviceProtocol(asset)?.toUpperCase() ?? unknownText(),
+          getValue: (asset) => serviceProtocol(asset)?.toUpperCase(),
+          notCollected: 'protocol',
         },
         {
           label: 'Transport',
-          getValue: (asset) => serviceTransport(asset)?.toUpperCase() ?? unknownText(),
+          getValue: (asset) => serviceTransport(asset)?.toUpperCase(),
+          notCollected: 'transport',
         },
         {
           label: 'Product',
-          getValue: (asset) => productLabel(asset) ?? unknownText('Not collected'),
+          getValue: (asset) => productLabel(asset),
+          notCollected: 'product',
         },
         {
           label: 'TLS',
-          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} explainMissing />,
+          getValue: (asset) =>
+            tlsFacts(asset).kind === 'not_collected' ? null : (
+              <TlsSummary facts={tlsFacts(asset)} />
+            ),
+          notCollected: (asset) => tlsNotCollected(tlsFacts(asset)),
         },
         {
           label: 'IP addresses',
@@ -285,54 +295,54 @@ export const servicesConfig: AssetPageConfig = {
               <ChipRow>
                 <OverflowChips label="IP" values={ips} />
               </ChipRow>
-            ) : (
-              unknownText()
-            )
+            ) : null
           },
+          notCollected: 'IP addresses',
         },
         {
           label: 'Banner',
           fullWidth: true,
           getValue: (asset) => {
             const banner = serviceBanner(asset)
-            if (!banner) return unknownText('Not collected')
+            if (!banner) return null
             return (
               <code className="block text-xs bg-muted p-2 rounded overflow-x-auto">{banner}</code>
             )
           },
+          notCollected: 'banner',
         },
       ],
     },
     {
       title: 'Web',
       fields: [
+        // HTTP-only facts do not apply to an SSH port: those rows are left
+        // out of the drawer, and they are not a gap either.
         {
           label: 'HTTP status',
           getValue: (asset) =>
-            isWeb(asset) ? (
+            isWeb(asset) && httpStatusCode(asset) !== null ? (
               <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} />
-            ) : (
-              notApplicable('HTTP status')
-            ),
+            ) : null,
+          notCollected: (asset) =>
+            isWeb(asset) && httpStatusCode(asset) === null ? 'HTTP status' : null,
         },
         {
           label: 'Title',
-          getValue: (asset) =>
-            isWeb(asset)
-              ? (pageTitle(asset) ?? unknownText('Not collected'))
-              : notApplicable('title'),
+          getValue: (asset) => (isWeb(asset) ? pageTitle(asset) : null),
+          notCollected: (asset) => (isWeb(asset) && !pageTitle(asset) ? 'page title' : null),
         },
         {
           label: 'Technologies',
           fullWidth: true,
           getValue: (asset) =>
-            isWeb(asset) ? (
+            isWeb(asset) && technologies(asset) !== null ? (
               <ChipRow>
                 <TechChips technologies={technologies(asset)} max={Infinity} />
               </ChipRow>
-            ) : (
-              notApplicable('web technologies')
-            ),
+            ) : null,
+          notCollected: (asset) =>
+            isWeb(asset) && technologies(asset) === null ? 'technologies' : null,
         },
       ],
     },
