@@ -250,3 +250,61 @@ func TestRootProbesAreNotPartOfTheDocumentedSurface(t *testing.T) {
 		}
 	}
 }
+
+// TestSpecParamNamesMatchRoutes is check D (RFC-041 §7). Checks A–C compare
+// operations with every path parameter reduced to {}, so a spec that says
+// /repositories/{repository_id} for a route registered as
+// /repositories/{repositoryId} passes them — and every generated client then
+// carries the spec's name, not the server's. This compares the names.
+//
+// Today's mismatches are frozen in api/openapi/param-name-drift.txt, which
+// only shrinks: a new mismatch fails, and so does a line that no longer
+// matches one.
+func TestSpecParamNamesMatchRoutes(t *testing.T) {
+	_, routesDir, spec, _ := paths(t)
+	driftPath := filepath.Join(filepath.Dir(spec), "param-name-drift.txt")
+
+	specRaw, err := openapicontract.SpecRawPaths(spec)
+	if err != nil {
+		t.Fatalf("reading spec: %v", err)
+	}
+	routeRaw, err := openapicontract.RawRoutes(routesDir)
+	if err != nil {
+		t.Fatalf("reading routes: %v", err)
+	}
+	baseline, err := openapicontract.Baseline(driftPath)
+	if err != nil {
+		t.Fatalf("reading baseline: %v", err)
+	}
+
+	mismatched := map[openapicontract.Op]bool{}
+	var fresh []string
+	for _, op := range openapicontract.SortedOps(specRaw) {
+		route, ok := routeRaw[op]
+		if !ok {
+			continue // TestEveryDocumentedPathIsRouted reports it
+		}
+		if strings.Join(openapicontract.ParamNames(route), ",") == strings.Join(openapicontract.ParamNames(specRaw[op]), ",") {
+			continue
+		}
+		mismatched[op] = true
+		if !baseline[op] {
+			fresh = append(fresh, op.Method+" "+route+"  (spec: "+specRaw[op]+")")
+		}
+	}
+	if len(fresh) > 0 {
+		t.Errorf("%d documented operation(s) name their path parameters differently in the spec\n"+
+			"and in the router. Make the handler's @Router use the route's names and run\n"+
+			"`make swagger`:\n  %s", len(fresh), strings.Join(fresh, "\n  "))
+	}
+	var stale []string
+	for _, op := range openapicontract.SortedOps(baseline) {
+		if !mismatched[op] {
+			stale = append(stale, op.String())
+		}
+	}
+	if len(stale) > 0 {
+		t.Errorf("%d line(s) in api/openapi/param-name-drift.txt no longer match a mismatch; delete them:\n  %s",
+			len(stale), strings.Join(stale, "\n  "))
+	}
+}
