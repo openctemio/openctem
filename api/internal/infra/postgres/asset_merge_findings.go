@@ -1,0 +1,289 @@
+package postgres
+
+// Findings in an asset merge (RFC-043 §9, §14).
+//
+// A finding's fingerprint embeds its asset id, so a finding moved to the kept
+// asset must be re-keyed. When the re-keyed fingerprint is already taken — the
+// kept asset (or another merged asset) has the same finding — the two are one
+// finding. The earliest-created one survives; the other becomes a tombstone
+// (status duplicate, duplicate_of = survivor) after its state and every row
+// that references it have been carried over. No finding is ever deleted: a
+// delete would cascade comments, activities, approvals, evidence, retests and
+// more (see findingMergeRefs).
+//
+// All of it runs inside the merge transaction, before the findings are moved.
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+)
+
+// findingMergeRefs are the columns that reference findings.id. A loser's rows
+// move to the survivor; rows whose unique key the survivor already has are
+// dropped (the survivor's copy wins). TestFindingMergeCoversEveryFindingReference
+// compares this list with the schema, so a new table cannot be forgotten.
+var findingMergeRefs = []mergeRef{
+	{table: "finding_comments", column: "finding_id", tenantCol: "tenant_id"},
+	{table: "finding_activities", column: "finding_id", tenantCol: "tenant_id"},
+	{table: "finding_status_approvals", column: "finding_id", tenantCol: "tenant_id"},
+	{table: "validation_evidence", column: "finding_id", tenantCol: "tenant_id"},
+	{table: "pentest_retests", column: "finding_id", tenantCol: "tenant_id"},
+	{table: "ai_triage_results", column: "finding_id", tenantCol: "tenant_id"},
+	{table: "deprecated.finding_regression_events", column: "finding_id", tenantCol: "tenant_id"},
+	{table: "iocs", column: "source_finding_id", tenantCol: "tenant_id"},
+	{table: "ioc_matches", column: "finding_id", tenantCol: "tenant_id"},
+	{table: "findings", column: "duplicate_of", tenantCol: "tenant_id"},
+
+	{table: "finding_suppressions", column: "finding_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"suppression_rule_id"}}}},
+	{table: "finding_data_sources", column: "finding_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"source_type", "source_id"}}}},
+	{table: "finding_data_flows", column: "finding_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"flow_index"}}}},
+	{table: "finding_group_assignments", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"group_id"}}}},
+	{table: "compliance_finding_mappings", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"control_id"}}}},
+	{table: "compensating_control_findings", column: "finding_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"control_id"}}}},
+	{table: "finding_branch_occurrences", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"branch_id"}}}},
+	{table: "finding_verification_checklists", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{}}},
+	{table: "finding_remediation_keys", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
+}
+
+// FindingMergeReferenceHandling returns "table.column" for every reference to
+// findings.id that a finding merge re-points. The schema-coverage test
+// compares it with the migrated schema.
+func FindingMergeReferenceHandling() map[string]string {
+	out := make(map[string]string, len(findingMergeRefs))
+	for _, r := range findingMergeRefs {
+		if len(r.keys) == 0 {
+			out[r.table+"."+r.column] = "moved to the survivor"
+		} else {
+			out[r.table+"."+r.column] = "moved to the survivor; rows whose unique key the survivor already has are dropped"
+		}
+	}
+	return out
+}
+
+type mergeFinding struct {
+	id, assetID, fingerprint, base string
+	ruleID, filePath, message      string
+	startLine                      int
+	createdAt                      time.Time
+}
+
+// rekeyMergedFindings re-keys the findings of the merged assets for the kept
+// asset and folds each collision into one survivor. It runs before the
+// findings are moved, in the merge transaction.
+func rekeyMergedFindings(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, asset_id, fingerprint, COALESCE(partial_fingerprints->>$3, ''),
+		       COALESCE(rule_id, ''), COALESCE(file_path, ''), COALESCE(message, ''),
+		       COALESCE(start_line, 0), created_at
+		FROM findings
+		WHERE tenant_id = $1 AND asset_id = ANY($2) AND status <> 'duplicate'
+		ORDER BY created_at, id
+		FOR UPDATE`, tenantID, pq.Array(mergeIDs), vulnerability.FingerprintBaseKey)
+	if err != nil {
+		return fmt.Errorf("list merged findings: %w", err)
+	}
+	var moved []mergeFinding
+	for rows.Next() {
+		var f mergeFinding
+		if err := rows.Scan(&f.id, &f.assetID, &f.fingerprint, &f.base, &f.ruleID, &f.filePath,
+			&f.message, &f.startLine, &f.createdAt); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan merged finding: %w", err)
+		}
+		moved = append(moved, f)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("list merged findings: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("list merged findings: %w", err)
+	}
+
+	for _, f := range moved {
+		if err := rekeyMergedFinding(ctx, tx, tenantID, keepID, f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string, f mergeFinding) error {
+	newFP := mergedFindingFingerprint(f, keepID)
+	if newFP == "" || newFP == f.fingerprint {
+		return nil
+	}
+	var holderID string
+	var holderCreated time.Time
+	err := tx.QueryRowContext(ctx,
+		`SELECT id, created_at FROM findings WHERE tenant_id = $1 AND fingerprint = $2 FOR UPDATE`,
+		tenantID, newFP).Scan(&holderID, &holderCreated)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE findings SET fingerprint = $1 WHERE id = $2 AND tenant_id = $3`,
+			newFP, f.id, tenantID); err != nil {
+			return fmt.Errorf("re-key merged finding: %w", err)
+		}
+		return nil
+	case err != nil:
+		return fmt.Errorf("look up re-keyed fingerprint: %w", err)
+	case !f.createdAt.Before(holderCreated):
+		// The finding already holding the key is as old or older: it survives.
+		return mergeFindingInto(ctx, tx, tenantID, holderID, f.id)
+	default:
+		// The moved finding is older: it survives and takes the key.
+		if err := mergeFindingInto(ctx, tx, tenantID, f.id, holderID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE findings SET fingerprint = $1 WHERE id = $2 AND tenant_id = $3`,
+			newFP, f.id, tenantID); err != nil {
+			return fmt.Errorf("re-key surviving finding: %w", err)
+		}
+		return nil
+	}
+}
+
+// mergedFindingFingerprint is f's fingerprint on the kept asset, or "" when it
+// cannot be recomputed safely.
+//   - Ingested findings: CompositeFingerprint(keep, base) from the stored base.
+//   - Manual findings (32 characters): ManualFingerprint over the stored
+//     columns, but only when those columns still reproduce the stored value on
+//     the old asset. A finding edited since creation no longer does, and
+//     re-keying it could fold it into an unrelated finding.
+//   - Anything else (legacy composite without a base, pentest keys, which do
+//     not contain the asset): left as it is.
+func mergedFindingFingerprint(f mergeFinding, keepID string) string {
+	if f.base != "" {
+		return vulnerability.CompositeFingerprint(keepID, f.base)
+	}
+	if len(f.fingerprint) == 32 &&
+		vulnerability.ManualFingerprint(f.assetID, f.ruleID, f.filePath, f.startLine, f.message) == f.fingerprint {
+		return vulnerability.ManualFingerprint(keepID, f.ruleID, f.filePath, f.startLine, f.message)
+	}
+	return ""
+}
+
+// findingStatusRank orders statuses for a merge: the more deliberate decision
+// wins. A closed-as-fixed status ranks below every open one, so a loser that
+// was fixed never closes a survivor that is still open.
+func findingStatusRank(status string) int {
+	switch vulnerability.FindingStatus(status) {
+	case vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted,
+		vulnerability.FindingStatusAcceptedRisk:
+		return 5
+	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied,
+		vulnerability.FindingStatusValidatedFixed, vulnerability.FindingStatusRemediation,
+		vulnerability.FindingStatusRetest:
+		return 4
+	case vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInReview:
+		return 3
+	case vulnerability.FindingStatusNew, vulnerability.FindingStatusDraft:
+		return 2
+	case vulnerability.FindingStatusResolved, vulnerability.FindingStatusVerified:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// mergeFindingInto folds loser into survivor: the survivor inherits the
+// loser's state where the loser's is stronger, every row that references the
+// loser moves to the survivor, and the loser becomes a tombstone.
+func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string) error {
+	var survivorStatus, loserStatus string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT (SELECT status FROM findings WHERE id = $1 AND tenant_id = $3),
+		        (SELECT status FROM findings WHERE id = $2 AND tenant_id = $3)`,
+		survivorID, loserID, tenantID).Scan(&survivorStatus, &loserStatus); err != nil {
+		return fmt.Errorf("read statuses for finding merge: %w", err)
+	}
+
+	if findingStatusRank(loserStatus) > findingStatusRank(survivorStatus) {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE findings s SET
+				status = l.status, resolution = l.resolution, resolution_method = l.resolution_method,
+				resolved_at = l.resolved_at, resolved_by = l.resolved_by,
+				verified_at = l.verified_at, verified_by = l.verified_by
+			FROM findings l
+			WHERE s.id = $1 AND s.tenant_id = $3 AND l.id = $2 AND l.tenant_id = $3`,
+			survivorID, loserID, tenantID); err != nil {
+			return fmt.Errorf("inherit finding status: %w", err)
+		}
+	}
+
+	// Tickets and tags are unioned (survivor's order first), the earliest
+	// detection and deadline win, the latest sighting wins, an unassigned
+	// survivor takes the loser's assignee.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE findings s SET
+			work_item_uris = COALESCE(s.work_item_uris, '{}') || ARRAY(
+				SELECT u FROM unnest(COALESCE(l.work_item_uris, '{}')) AS u
+				WHERE NOT u = ANY(COALESCE(s.work_item_uris, '{}'))),
+			tags = COALESCE(s.tags, '{}') || ARRAY(
+				SELECT t FROM unnest(COALESCE(l.tags, '{}')) AS t
+				WHERE NOT t = ANY(COALESCE(s.tags, '{}'))),
+			first_detected_at = LEAST(s.first_detected_at, l.first_detected_at),
+			last_seen_at = GREATEST(s.last_seen_at, l.last_seen_at),
+			sla_deadline = LEAST(s.sla_deadline, l.sla_deadline),
+			sla_status = CASE WHEN l.sla_deadline IS NOT NULL
+				AND (s.sla_deadline IS NULL OR l.sla_deadline < s.sla_deadline)
+				THEN l.sla_status ELSE s.sla_status END,
+			assigned_to = COALESCE(s.assigned_to, l.assigned_to),
+			assigned_by = CASE WHEN s.assigned_to IS NULL THEN l.assigned_by ELSE s.assigned_by END,
+			assigned_at = CASE WHEN s.assigned_to IS NULL THEN l.assigned_at ELSE s.assigned_at END,
+			duplicate_count = COALESCE(s.duplicate_count, 0) + COALESCE(l.duplicate_count, 0) + 1
+		FROM findings l
+		WHERE s.id = $1 AND s.tenant_id = $3 AND l.id = $2 AND l.tenant_id = $3`,
+		survivorID, loserID, tenantID); err != nil {
+		return fmt.Errorf("inherit finding state: %w", err)
+	}
+
+	for _, ref := range findingMergeRefs {
+		if err := repointRef(ctx, tx, ref, survivorID, []string{loserID}, tenantID); err != nil {
+			return fmt.Errorf("finding merge: %w", err)
+		}
+	}
+
+	// The tombstone keeps its id (links, tickets and audit references still
+	// resolve) and gives up its key so the survivor can hold it.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE findings SET
+			status = 'duplicate', duplicate_of = $1,
+			fingerprint = 'dup:' || id::text,
+			resolved_at = COALESCE(resolved_at, NOW())
+		WHERE id = $2 AND tenant_id = $3`, survivorID, loserID, tenantID); err != nil {
+		return fmt.Errorf("mark merged finding duplicate: %w", err)
+	}
+
+	survivorChanges, _ := json.Marshal(map[string]string{
+		"merged_from": loserID, "reason": "asset_merge", "loser_status": loserStatus,
+	})
+	loserChanges, _ := json.Marshal(map[string]string{"duplicate_of": survivorID, "reason": "asset_merge"})
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, changes, source, message)
+		VALUES ($1, $2, 'duplicate_marked', 'system', $3, 'asset_merge', $4),
+		       ($1, $5, 'duplicate_marked', 'system', $6, 'asset_merge', $7)`,
+		tenantID, survivorID, survivorChanges, "Merged duplicate finding "+loserID+" into this finding",
+		loserID, loserChanges, "Marked duplicate of "+survivorID+" by an asset merge"); err != nil {
+		return fmt.Errorf("record finding merge activity: %w", err)
+	}
+	return nil
+}
