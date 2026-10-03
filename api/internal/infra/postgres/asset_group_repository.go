@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -660,6 +661,85 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 	}
 
 	return pagination.NewResult(assets, total, page), nil
+}
+
+// scanMemberMatchProps selects the asset properties exclusion matching reads for
+// a scan member (scope.AssetExclusionValues): its addresses and, for
+// repositories, its URLs. Only these leave the database.
+const scanMemberMatchProps = `jsonb_strip_nulls(jsonb_build_object(
+		'ip_addresses', a.properties->'ip_addresses',
+		'ip', a.properties->'ip',
+		'full_name', a.properties->'full_name',
+		'web_url', a.properties->'web_url',
+		'clone_url', a.properties->'clone_url'))`
+
+// ListScanMembers returns one keyset page of a group's members for scan
+// dispatch. The group must belong to q.TenantID and so must every member
+// returned. Archived assets are never returned; the first page counts them.
+func (r *AssetGroupRepository) ListScanMembers(ctx context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	limit := q.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	page := &assetgroup.ScanMemberPage{}
+	first := q.AfterName == "" && q.AfterID.IsZero()
+
+	if first {
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM asset_group_members agm
+			JOIN asset_groups ag ON ag.id = agm.asset_group_id
+			JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = ag.tenant_id
+			WHERE agm.asset_group_id = $1 AND ag.tenant_id = $2 AND a.status = 'archived'`,
+			q.GroupID.String(), q.TenantID.String()).Scan(&page.ArchivedCount); err != nil {
+			return nil, fmt.Errorf("count archived group members: %w", err)
+		}
+	}
+
+	args := []any{q.GroupID.String(), q.TenantID.String(), limit}
+	cursor := ""
+	if !first {
+		cursor = ` AND (a.name, a.id) > ($4, $5)`
+		args = append(args, q.AfterName, q.AfterID.String())
+	}
+	//nolint:gosec // G202: cursor and scanMemberMatchProps are fixed SQL with numbered placeholders
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT a.id, a.name, a.asset_type, a.status, `+scanMemberMatchProps+`
+		FROM asset_group_members agm
+		JOIN asset_groups ag ON ag.id = agm.asset_group_id
+		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = ag.tenant_id
+		WHERE agm.asset_group_id = $1 AND ag.tenant_id = $2 AND a.status <> 'archived'`+cursor+`
+		ORDER BY a.name, a.id
+		LIMIT $3`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list group scan members: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			id, name, assetType, status string
+			props                       []byte
+		)
+		if err := rows.Scan(&id, &name, &assetType, &status, &props); err != nil {
+			return nil, fmt.Errorf("scan group scan member: %w", err)
+		}
+		aid, err := shared.IDFromString(id)
+		if err != nil {
+			return nil, fmt.Errorf("group scan member id: %w", err)
+		}
+		m := &assetgroup.ScanMember{ID: aid, Name: name, Type: assetType, Status: status}
+		if len(props) > 0 {
+			if err := json.Unmarshal(props, &m.Properties); err != nil {
+				return nil, fmt.Errorf("group scan member %s properties: %w", id, err)
+			}
+		}
+		page.Members = append(page.Members, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate group scan members: %w", err)
+	}
+	return page, nil
 }
 
 // RecalculateCounts recalculates asset counts for a group.

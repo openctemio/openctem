@@ -37,6 +37,18 @@ published at https://docs.openctem.io (operations/release-notes-*).
   updated assets in scope, expands at most 50 elements of an array property
   per asset and returns the top 20 values per key from the database. On a
   larger inventory the facet counts are counts within that sample.
+
+- **Group scans resolve members as assets and skip archived ones.** A scan
+  of an asset group matched scope exclusions against each member's name
+  only, so a host whose address was in an excluded network was scanned. It
+  also scanned archived members. Members are now read by asset id (only
+  assets of the scan's tenant), exclusions are tested against the member's
+  name, addresses (`ip_addresses`, `ip`) and repository URLs, and archived
+  members are skipped and counted (`archived_target_count` in the run
+  context, and a warning). **Behaviour change:** archived assets in a group
+  are no longer scanned, and a member whose address matches an approved
+  exclusion is now excluded. Stale and inactive members are still scanned.
+
 - **A pipeline step's settings reach the sensor.** Step commands carried
   the step's config as `step_config`, which no sensor reads, so every step
   ran with its tool's defaults (a naabu step with `ports: "80"` scanned the
