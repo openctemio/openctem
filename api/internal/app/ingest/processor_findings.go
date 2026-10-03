@@ -1091,6 +1091,17 @@ func (p *FindingProcessor) redactSecretSnippet(f *vulnerability.Finding) {
 
 // inferFindingType determines the FindingType based on source and CTIS finding data.
 func (p *FindingProcessor) inferFindingType(source vulnerability.FindingSource, ctisFinding *ctis.Finding) vulnerability.FindingType {
+	// A finding of the secret technique is a secret. The source comes from the
+	// tool (betterleaks, gitleaks, trufflehog), and a secret scanner reports
+	// nothing else. Its CTIS type cannot override that with "vulnerability":
+	// converters write that generic value when they do not recognize the tool
+	// (ctis FromSARIF does so for betterleaks), and the finding would then skip
+	// the secret handling below, snippet redaction included.
+	if source == vulnerability.FindingSourceSecret &&
+		(ctisFinding.Type == "" || ctisFinding.Type == ctis.FindingTypeVulnerability) {
+		return vulnerability.FindingTypeSecret
+	}
+
 	// First, check if CTIS finding has explicit type
 	if ctisFinding.Type != "" {
 		switch ctisFinding.Type {
