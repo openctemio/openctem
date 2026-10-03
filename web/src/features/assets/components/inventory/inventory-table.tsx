@@ -11,7 +11,7 @@
  * reordering only the rows on screen.
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ChevronRight, Globe, MinusCircle, User, Users } from 'lucide-react'
 import { toast } from 'sonner'
@@ -28,6 +28,7 @@ import { AssetTypeIcon } from '../../lib/asset-type-icon'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { ASSET_TYPE_LABELS, type Asset } from '../../types/asset.types'
 import { SORT_FIELDS, sortToSorting, sortingToSort } from '../../lib/inventory-url'
+import { IssuesChip, LabelChips, SurfaceFacts, cellsForType } from '../service-cells'
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 
@@ -81,6 +82,21 @@ export function InventoryTable({
   const sorting = useMemo(() => sortToSorting(sort), [sort])
   // RFC-042 class and lens of each row ("Code repository · Code").
   const { classAndLens } = useAssetTypeRegistry()
+
+  // "+ Add label" on a row: one PUT of that asset's tags, then a refetch.
+  const saveRowLabels = useCallback(
+    async (id: string, tags: string[]) => {
+      try {
+        await updateAsset(id, { tags })
+        toast.success('Label added')
+        onAssetUpdated?.()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to add the label')
+        throw err
+      }
+    },
+    [onAssetUpdated]
+  )
 
   const columns = useMemo<ColumnDef<Asset>[]>(() => {
     const sortable = (id: string) => id in SORT_FIELDS
@@ -146,6 +162,19 @@ export function InventoryTable({
             </span>
           </div>
         ),
+      },
+      {
+        // External-surface facts (status, IP, technologies, TLS …) for the
+        // types cellsForType lists; other types have none to show here.
+        id: 'service',
+        enableSorting: false,
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Service facts" />,
+        cell: ({ row }) =>
+          cellsForType(row.original.type, row.original.subType) ? (
+            <SurfaceFacts asset={row.original} className="max-w-[380px]" />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
       },
       {
         id: 'criticality',
@@ -218,15 +247,12 @@ export function InventoryTable({
         accessorKey: 'findingCount',
         enableSorting: sortable('findings'),
         header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
-        cell: ({ row }) => {
-          const count = row.original.findingCount
-          if (!count) return <span className="text-muted-foreground tabular-nums">0</span>
-          return (
-            <Badge variant={count > 5 ? 'destructive' : 'secondary'} className="tabular-nums">
-              {count}
-            </Badge>
-          )
-        },
+        cell: ({ row }) =>
+          row.original.findingCount > 0 ? (
+            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
+          ) : (
+            <span className="text-muted-foreground tabular-nums">0</span>
+          ),
       },
       {
         id: 'last_seen',
@@ -244,30 +270,17 @@ export function InventoryTable({
       {
         id: 'tags',
         enableSorting: false,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Tags" />,
-        cell: ({ row }) => {
-          const tags = row.original.tags ?? []
-          if (tags.length === 0) return <span className="text-muted-foreground">—</span>
-          const visible = tags.slice(0, 2)
-          const rest = tags.length - visible.length
-          return (
-            <div className="flex flex-wrap gap-1">
-              {visible.map((t) => (
-                <Badge key={t} variant="secondary" className="text-xs">
-                  {t}
-                </Badge>
-              ))}
-              {rest > 0 && (
-                <Badge variant="outline" className="text-xs">
-                  +{rest}
-                </Badge>
-              )}
-            </div>
-          )
-        },
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Labels" />,
+        cell: ({ row }) => (
+          <LabelChips
+            className="max-w-[240px]"
+            labels={row.original.tags ?? []}
+            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, tags) : undefined}
+          />
+        ),
       },
     ]
-  }, [classAndLens])
+  }, [classAndLens, canWriteAssets, saveRowLabels])
 
   return (
     <>
@@ -293,42 +306,49 @@ export function InventoryTable({
         mobileRow={(a) => {
           const typeLabel = ASSET_TYPE_LABELS[a.type] ?? a.type
           const context = a.groupName || a.description
+          const hasFacts = a.findingCount > 0 || !!cellsForType(a.type, a.subType)
+          // The card opens the drawer (a stretched button); the chip row sits
+          // above it so its links and "+N" tooltips are not nested inside a
+          // button.
           return (
-            <button
-              type="button"
-              onClick={() => setSelectedAsset(a)}
-              className="flex w-full items-start gap-3 px-3 py-3 text-start transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <AssetTypeIcon
-                type={a.type}
-                className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {typeLabel}
-                  {context && ` · ${context}`}
-                </p>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <CriticalityBadge criticality={a.criticality} size="sm" showTooltip={false} />
-                  {/* Most assets are active; say so only when one is not. */}
-                  {a.status !== 'active' && (
-                    <AssetStatusBadge
-                      status={a.status}
-                      daysSinceLastSeen={daysSinceISO(a.lastSeen)}
-                      snoozedUntil={a.lifecyclePausedUntil}
-                    />
-                  )}
-                  {a.riskScore > 0 && <RiskScoreBadge score={a.riskScore} size="sm" />}
-                  {a.findingCount > 0 && (
-                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tabular-nums">
-                      {a.findingCount} {a.findingCount === 1 ? 'finding' : 'findings'}
-                    </Badge>
-                  )}
+            <div className="relative px-3 py-3 transition-colors hover:bg-muted/50">
+              <button
+                type="button"
+                onClick={() => setSelectedAsset(a)}
+                className="flex w-full items-start gap-3 text-start after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+              >
+                <AssetTypeIcon
+                  type={a.type}
+                  className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {typeLabel}
+                    {context && ` · ${context}`}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <CriticalityBadge criticality={a.criticality} size="sm" showTooltip={false} />
+                    {/* Most assets are active; say so only when one is not. */}
+                    {a.status !== 'active' && (
+                      <AssetStatusBadge
+                        status={a.status}
+                        daysSinceLastSeen={daysSinceISO(a.lastSeen)}
+                        snoozedUntil={a.lifecyclePausedUntil}
+                      />
+                    )}
+                    {a.riskScore > 0 && <RiskScoreBadge score={a.riskScore} size="sm" />}
+                  </div>
                 </div>
-              </div>
-              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
+                <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+              {hasFacts && (
+                <div className="relative z-10 mt-1.5 flex flex-wrap items-center gap-1 ps-7">
+                  <IssuesChip assetId={a.id} count={a.findingCount} />
+                  <SurfaceFacts asset={a} />
+                </div>
+              )}
+            </div>
           )
         }}
         emptyMessage="No assets match these filters"

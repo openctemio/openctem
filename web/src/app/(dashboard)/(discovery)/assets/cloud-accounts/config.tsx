@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge'
 import { Cloud, Shield, AlertTriangle, CheckCircle, ShieldCheck, ShieldX } from 'lucide-react'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
+import { yesNoUnknown } from '@/features/assets/lib/honest-values'
 
 const providerConfig: Record<string, { label: string; color: string }> = {
   aws: { label: 'AWS', color: 'bg-orange-500/15 text-orange-600' },
@@ -219,7 +220,7 @@ export const cloudAccountsConfig: AssetPageConfig = {
       iconBg: 'bg-blue-500/10',
       iconColor: 'text-blue-500',
       label: 'Resources',
-      getValue: (asset) => (asset.metadata.resource_count as number) ?? 0,
+      getValue: (asset) => (asset.metadata.resource_count as number) ?? '—',
     },
     {
       icon: CheckCircle,
@@ -319,10 +320,10 @@ export const cloudAccountsConfig: AssetPageConfig = {
     { header: 'Provider', accessor: (a) => (a.metadata.cloud_provider as string) || '' },
     { header: 'Account ID', accessor: (a) => (a.metadata.account_id as string) || '' },
     { header: 'Account Alias', accessor: (a) => (a.metadata.account_alias as string) || '' },
-    { header: 'Resources', accessor: (a) => (a.metadata.resource_count as number) || 0 },
-    { header: 'MFA Enabled', accessor: (a) => (a.metadata.mfa_enabled ? 'Yes' : 'No') },
-    { header: 'SSO Enabled', accessor: (a) => (a.metadata.sso_enabled ? 'Yes' : 'No') },
-    { header: 'Monthly Spend', accessor: (a) => (a.metadata.monthly_spend as number) || 0 },
+    { header: 'Resources', accessor: (a) => (a.metadata.resource_count as number) ?? '' },
+    { header: 'MFA Enabled', accessor: (a) => yesNoUnknown(a.metadata.mfa_enabled) },
+    { header: 'SSO Enabled', accessor: (a) => yesNoUnknown(a.metadata.sso_enabled) },
+    { header: 'Monthly Spend', accessor: (a) => (a.metadata.monthly_spend as number) ?? '' },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Risk Score', accessor: (a) => a.riskScore },
     { header: 'Findings', accessor: (a) => a.findingCount },

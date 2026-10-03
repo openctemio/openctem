@@ -29,7 +29,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -83,6 +82,7 @@ import { useAssetTags } from '../hooks/use-asset-tags'
 import { updateAsset } from '../hooks/use-assets'
 import { AssetFormDialogShared } from './asset-form-dialog-shared'
 import { AssetDeleteDialogShared } from './asset-delete-dialog-shared'
+import { IssuesChip, LabelChips } from './service-cells'
 
 type StatusFilter = string
 
@@ -604,6 +604,22 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
     [dialogs, mutate]
   )
 
+  // "+ Add label" in a row saves that row's tags. The drawer keeps its own
+  // editor (handleUpdateTags above); both refetch the list.
+  const handleRowLabels = useCallback(
+    async (asset: Asset, tags: string[]) => {
+      try {
+        await updateAsset(asset.id, { tags })
+        toast.success('Label added')
+        await mutate()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to add the label')
+        throw err
+      }
+    },
+    [mutate]
+  )
+
   // Form submit handlers
   const handleFormCreate = useCallback(
     async (data: Record<string, unknown>) => {
@@ -817,94 +833,29 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
           />
         ),
       },
-      // Tags
-      //
-      // Tag chips can hold values like "source:gcp-dns" (14 chars) which
-      // are wider than a tight max-w cap. The previous version applied
-      // truncate + max-w-[80px] directly on the Badge — but Badge is
-      // `inline-flex` with `justify-center` and `overflow-hidden`, and
-      // text-overflow:ellipsis does not work on flex items unless the
-      // child has `min-w-0`. The result was text clipped on both sides
-      // with no ellipsis, leaving operators staring at "urce:gcp-dns"
-      // and wondering what the actual tag name was.
-      //
-      // The fix: wrap each tag value in an inner <span> that owns the
-      // truncate behaviour (block display → ellipsis works), give the
-      // badge a roomier max width that fits typical "key:value" tags,
-      // and add a native title tooltip for the full value on hover.
-      // Two-tag preview + tooltip with the rest stays the same.
+      // Labels (the asset's tags): the shared label chips with "+ Add label",
+      // the same cell on every asset list.
       {
         id: 'tags',
-        header: 'Tags',
-        cell: ({ row }) => {
-          const tags = row.original.tags
-          if (!tags?.length) return <span className="text-muted-foreground">-</span>
-          const visible = tags.slice(0, 2)
-          const remaining = tags.slice(2)
-          return (
-            <div className="flex flex-wrap items-center gap-1 max-w-[220px]">
-              {visible.map((tag) => (
-                <Badge
-                  key={tag}
-                  variant="outline"
-                  className="text-xs px-1.5 py-0 max-w-[140px]"
-                  title={tag}
-                >
-                  <span className="block truncate">{tag}</span>
-                </Badge>
-              ))}
-              {remaining.length > 0 && (
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Badge variant="secondary" className="text-xs px-1.5 py-0 cursor-default">
-                        +{remaining.length}
-                      </Badge>
-                    </TooltipTrigger>
-                    {/*
-                      TooltipContent uses bg-primary + text-primary-foreground
-                      (dark bg, light text) regardless of theme. The default
-                      Badge `variant="outline"` paints text in `text-foreground`
-                      which is the regular dark text — that gives BLACK chips
-                      on a BLACK tooltip background and the user can't read
-                      the tag names. Override the colours to use the popover
-                      foreground tokens so the chips contrast against the
-                      tooltip background in both light and dark themes.
-                    */}
-                    <TooltipContent side="bottom" className="max-w-[280px]">
-                      <div className="flex flex-wrap gap-1">
-                        {remaining.map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded-md border border-primary-foreground/30 bg-primary-foreground/10 px-1.5 py-0.5 text-xs text-primary-foreground"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-            </div>
-          )
-        },
+        header: 'Labels',
+        cell: ({ row }) => (
+          <LabelChips
+            className="max-w-[240px]"
+            labels={row.original.tags ?? []}
+            onSave={canWriteAssets ? (tags) => handleRowLabels(row.original, tags) : undefined}
+          />
+        ),
       },
-      // Findings
+      // Findings: "N issues found", linking to the asset's unresolved findings.
       {
         accessorKey: 'findingCount',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
-        cell: ({ row }) => {
-          const count = row.original.findingCount
-          if (count === 0) {
-            return (
-              <Badge variant="outline" className="text-muted-foreground">
-                0
-              </Badge>
-            )
-          }
-          return <Badge variant={count > 5 ? 'destructive' : 'secondary'}>{count}</Badge>
-        },
+        cell: ({ row }) =>
+          row.original.findingCount > 0 ? (
+            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
+          ) : (
+            <span className="text-muted-foreground tabular-nums">0</span>
+          ),
       },
       // Risk
       {
@@ -1036,7 +987,7 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
         },
       },
     ]
-  }, [config, scopeMatchesMap, dialogs, handleCopy, can, router])
+  }, [config, scopeMatchesMap, dialogs, handleCopy, can, router, canWriteAssets, handleRowLabels])
 
   // Only sort fields the API accepts; a stale URL value must not leave an
   // arrow on a column the rows are not actually ordered by.

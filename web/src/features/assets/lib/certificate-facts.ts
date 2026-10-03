@@ -1,14 +1,15 @@
 import type { Asset } from '../types'
 
 /**
- * Read certificate and website facts from an asset's properties.
+ * Read certificate facts from a certificate asset's properties. HTTP status,
+ * TLS on a service and the other web-service facts live in service-facts.ts.
  *
  * Two shapes exist and both must be read:
  *  - the manual form writes flat keys (`cert_not_after`, `cert_issuer`,
- *    `http_status`, `ssl`);
+ *    `cert_subject`, `cert_sans`, …);
  *  - ingest (scanners, CTIS) writes a nested `certificate` map with
- *    `not_after`, `issuer_cn`/`issuer_org`, `expired` (api
- *    internal/app/ingest/mappers.go buildCertificateProperties).
+ *    `not_after`, `issuer_cn`/`issuer_org`, `subject_cn`, `sans`, `expired`
+ *    (api internal/app/ingest/mappers.go buildCertificateProperties).
  *
  * A fact the asset does not carry is UNKNOWN. It is never shown as "valid",
  * "200" or "insecure" (RFC-036 E8): that made scanned certificates look
@@ -67,22 +68,60 @@ export function certStatus(asset: Asset, now: number = Date.now()): CertStatus {
   return 'valid'
 }
 
-/** The website's last HTTP status, or null when no probe recorded one. */
-export function httpStatus(asset: Asset): number | null {
-  const raw = asset.metadata?.http_status ?? asset.metadata?.status_code
+/** The certificate's subject: the form key, else the ingest CN. */
+export function certSubject(asset: Asset): string | undefined {
+  return str(asset.metadata?.cert_subject) ?? str(nested(asset).subject_cn)
+}
+
+/** Subject alternative names, from the form key or the ingest map. */
+export function certSans(asset: Asset): string[] {
+  const raw = asset.metadata?.cert_sans ?? nested(asset).sans
+  if (Array.isArray(raw)) return raw.map((v) => String(v).trim()).filter(Boolean)
+  if (typeof raw === 'string')
+    return raw
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean)
+  return []
+}
+
+export function certSerial(asset: Asset): string | undefined {
+  return str(asset.metadata?.cert_serial_number) ?? str(nested(asset).serial_number)
+}
+
+export function certSignatureAlgorithm(asset: Asset): string | undefined {
+  return str(asset.metadata?.cert_signature_algorithm) ?? str(nested(asset).signature_algorithm)
+}
+
+/** Key size in bits, or null when not recorded. */
+export function certKeySize(asset: Asset): number | null {
+  const raw = asset.metadata?.cert_key_size ?? nested(asset).key_size
   const n = typeof raw === 'string' ? parseInt(raw, 10) : raw
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null
 }
 
+export function certKeyAlgorithm(asset: Asset): string | undefined {
+  return str(nested(asset).key_algorithm)
+}
+
+export function certFingerprint(asset: Asset): string | undefined {
+  return str(nested(asset).fingerprint)
+}
+
+/** Whether the certificate is self-signed, or null when not recorded. */
+export function certSelfSigned(asset: Asset): boolean | null {
+  const v = nested(asset).self_signed
+  return typeof v === 'boolean' ? v : null
+}
+
 /**
- * Whether the site is served over TLS: true / false as recorded, or null when
- * nothing recorded it. The URL scheme is deliberately not used: the page's
- * "SSL secure / insecure" counts come from the recorded `ssl` key, and the
- * rows must agree with them.
+ * Whether the certificate covers a wildcard name: the recorded flag, else
+ * read from the subject and SANs. Null when neither is known.
  */
-export function websiteTLS(asset: Asset): boolean | null {
-  const m = asset.metadata ?? {}
-  if (typeof m.ssl === 'boolean') return m.ssl
-  if (typeof m.tls === 'boolean') return m.tls
-  return null
+export function certIsWildcard(asset: Asset): boolean | null {
+  const flag = asset.metadata?.cert_is_wildcard
+  if (typeof flag === 'boolean') return flag
+  const names = [certSubject(asset), ...certSans(asset)].filter(Boolean) as string[]
+  if (names.length === 0) return null
+  return names.some((n) => n.startsWith('*.'))
 }

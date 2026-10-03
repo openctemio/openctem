@@ -3,4 +3,3 @@
  */
 
 export * from './domain-hierarchy'
-export * from './config-builder'
