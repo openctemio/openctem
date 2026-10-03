@@ -488,7 +488,10 @@ The connection itself is opened with a single-use ticket from
 `GET /api/v1/auth/ws-token`, which runs the tenant gates (SSO enforcement,
 organization IP allowlist, active membership); the upgrade re-checks active
 membership for the ticket's user and tenant. A suspended or removed member
-therefore gets no stream. See
+therefore gets no stream, and an open socket is closed when its session is
+signed out or revoked, when the member is suspended, removed or changes
+role, and at its token's expiry ([RFC-045](../rfcs/RFC-045-websocket-auth.md)),
+so a stream never outlives the access that opened it. See
 [authorization-matrix.md](./authorization-matrix.md#real-time-websocket-apiv1authws-token-apiv1ws).
 
 ## Deprecation Notice

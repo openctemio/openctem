@@ -20,6 +20,25 @@ import (
 type PermissionVersionService struct {
 	redisClient *redis.Client
 	logger      *logger.Logger
+	onChange    PermissionChangeListener
+}
+
+// PermissionChangeListener is told that a user's access in a tenant changed:
+// their version was bumped (role assigned, removed or redefined) or dropped
+// (membership removed or suspended). The WebSocket hub uses it to close the
+// user's live sockets in that tenant (RFC-045). It must not block.
+type PermissionChangeListener func(ctx context.Context, tenantID, userID string)
+
+// SetChangeListener registers the listener. Must be called during wiring,
+// before requests are served.
+func (s *PermissionVersionService) SetChangeListener(fn PermissionChangeListener) {
+	s.onChange = fn
+}
+
+func (s *PermissionVersionService) notifyChange(ctx context.Context, tenantID, userID string) {
+	if s.onChange != nil {
+		s.onChange(ctx, tenantID, userID)
+	}
 }
 
 const (
@@ -84,6 +103,9 @@ func (s *PermissionVersionService) Increment(ctx context.Context, tenantID, user
 	if tenantID == "" || userID == "" {
 		return 1
 	}
+
+	// The access changed whether or not the counter below can be written.
+	defer s.notifyChange(ctx, tenantID, userID)
 
 	key := s.buildKey(tenantID, userID)
 
@@ -183,6 +205,7 @@ func (s *PermissionVersionService) Delete(ctx context.Context, tenantID, userID 
 	if tenantID == "" || userID == "" {
 		return nil
 	}
+	defer s.notifyChange(ctx, tenantID, userID)
 
 	key := s.buildKey(tenantID, userID)
 	if err := s.redisClient.Client().Del(ctx, key).Err(); err != nil {

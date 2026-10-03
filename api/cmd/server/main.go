@@ -331,6 +331,11 @@ func run() int {
 		authCfg.RevokedSessions = services.SessionRevocations
 	}
 
+	// Close a socket whose session was revoked while its upgrade was in flight.
+	if handlers.WebSocket != nil && services.SessionRevocations != nil {
+		handlers.WebSocket.SetSessionRevocationChecker(services.SessionRevocations)
+	}
+
 	server := http.NewServer(cfg, log)
 	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache, services.PermCache, services.PermVersion)
 

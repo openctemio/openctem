@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -76,6 +77,14 @@ func WSTicketAuth(svc WSTicketRedeemer, members MembershipReader, log *logger.Lo
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, UserIDKey, claims.UserID)
 			ctx = context.WithValue(ctx, TenantIDKey, claims.TenantID)
+			// Session binding (RFC-045): the socket closes when the session
+			// that requested the ticket is revoked, and at its token expiry.
+			if claims.SessionID != "" {
+				ctx = context.WithValue(ctx, SessionIDKey, claims.SessionID)
+			}
+			if claims.ExpiresAt > 0 {
+				ctx = context.WithValue(ctx, CredentialExpiresAtKey, time.Unix(claims.ExpiresAt, 0))
+			}
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

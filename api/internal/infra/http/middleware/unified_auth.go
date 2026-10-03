@@ -322,6 +322,28 @@ func GetSessionID(ctx context.Context) string {
 	return ""
 }
 
+// CredentialExpiresAtKey carries the expiry of the credential that
+// authenticated the request when no token claims are in the context to read
+// it from (the single-use WebSocket ticket).
+const CredentialExpiresAtKey logger.ContextKey = "credential_expires_at"
+
+// GetCredentialExpiry returns when the credential that authenticated the
+// request stops being valid: the access token's exp (local or OIDC), or the
+// value a ticket middleware recorded. Zero when unknown. A long-lived
+// connection (the WebSocket) must not outlive it.
+func GetCredentialExpiry(ctx context.Context) time.Time {
+	if t, ok := ctx.Value(CredentialExpiresAtKey).(time.Time); ok && !t.IsZero() {
+		return t
+	}
+	if c := GetLocalClaims(ctx); c != nil && c.ExpiresAt != nil {
+		return c.ExpiresAt.Time
+	}
+	if c := GetClaims(ctx); c != nil && c.ExpiresAt != nil {
+		return c.ExpiresAt.Time
+	}
+	return time.Time{}
+}
+
 // GetPermissions extracts the permissions from context.
 func GetPermissions(ctx context.Context) []string {
 	if perms, ok := ctx.Value(PermissionsKey).([]string); ok {

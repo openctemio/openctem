@@ -517,6 +517,25 @@ same tenant gates as any JWT-tenant route.
   `websocket.Hub.defaultAuthorize` against the connection's user and tenant
   (own `user:{tenant}:{user}` only, own `tenant:{id}` only, permission +
   data scope for `finding:`/`triage:`, `scans:read` for `scan:`).
+- **The socket is bound to its session** ([RFC-045](../rfcs/RFC-045-websocket-auth.md)).
+  The server closes it with code `4401`:
+  - at the expiry of the access token it was opened with (a ticket carries
+    the requesting token's expiry and session id), and at most 15 minutes
+    (less up to 60 s of jitter) after it opened, so gates that publish no
+    event (IP allowlist edits, SSO enforcement, data scope) are re-applied
+    on the reconnect;
+  - when its session is signed out or revoked: every path that writes the
+    session revocation store (logout, sign out device / everywhere,
+    password change, 2FA enrolment, user or member suspension, session-limit
+    eviction, OIDC back-channel logout) also publishes on Redis `ws:revoke`,
+    and every API instance closes its matching sockets;
+  - when the user's membership or role in its tenant changes (permission
+    version bumped or dropped: role assigned, removed or redefined, member
+    role changed, member removed or suspended).
+- Limits: 10 sockets per user per instance (more → `4429`), 50 subscriptions
+  per socket, 10 messages/s (burst 60; abuse → `1008`), 4 KiB frames, 60 s
+  read deadline with server pings. Nothing is delivered after the server's
+  close frame.
 
 ### Platform Admin Routes (`/api/v1/admin/*`)
 
