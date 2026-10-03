@@ -224,7 +224,7 @@ type Repositories struct {
 	// SAML SP config (RFC-009 Phase 9d, migration 000182)
 	SAMLProvider *postgres.SAMLProviderRepository
 
-	// Admin-console SSO changes awaiting an owner (RFC-022, migration 000268)
+	// Admin-console SSO changes awaiting an owner (RFC-022, migration 000273)
 	SSOChange *postgres.SSOChangeRepository
 }
 
@@ -440,7 +440,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// SAML SP config (RFC-009 Phase 9d, migration 000182).
 		SAMLProvider: postgres.NewSAMLProviderRepository(db),
 
-		// Admin-console SSO changes awaiting an owner (migration 000268).
+		// Admin-console SSO changes awaiting an owner (migration 000273).
 		SSOChange: postgres.NewSSOChangeRepository(db),
 	}
 }

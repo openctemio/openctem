@@ -368,7 +368,7 @@ organization. So the console only **proposes** such a change:
 - **What waits.** `PUT /admin/tenants/{id}/sso/saml`,
   `POST /admin/tenants/{id}/sso/identity-providers` and
   `PUT /admin/tenants/{id}/sso/identity-providers/{idpId}` answer **202** with
-  the stored change (`sso_pending_changes`, migration 000268). The live config
+  the stored change (`sso_pending_changes`, migration 000273). The live config
   is untouched. The request is validated first (certificate, roles, domains,
   provider type), so a bad config is refused at once with 400, and a second
   provider of the same type with 409.
