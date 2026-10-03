@@ -5094,7 +5094,7 @@ definitions:
         example: 47
         type: integer
       exposed_services_change:
-        example: -3
+        example: 3
         type: integer
       exposed_services_list:
         description: Top exposed services
@@ -5114,8 +5114,14 @@ definitions:
         example: 303
         type: integer
       total_assets_change:
-        description: Trends (week-over-week changes)
+        description: |-
+          Trends: what is new in the last trend_window_days days. Counts, never
+          negative: assets added; public assets added or newly made public; the
+          same limited to critical/high criticality.
         example: 12
+        type: integer
+      trend_window_days:
+        example: 7
         type: integer
     type: object
   internal_infra_http_handler.AttackerProfileResponse:

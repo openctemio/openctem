@@ -315,6 +315,17 @@ func (s *Service) logAudit(ctx context.Context, actx AuditContext, event AuditEv
 	}
 }
 
+// recordScheduledOutcome writes a scheduled occurrence that did not produce a
+// run (skipped by the overlap policy, or the trigger failed) to the scan's
+// audit trail, with the reason.
+func (s *Service) recordScheduledOutcome(ctx context.Context, sc *scan.Scan, message string, cause error) {
+	s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+		NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), cause).
+			WithResourceName(sc.Name).
+			WithMessage(message).
+			WithMetadata("trigger_type", "schedule"))
+}
+
 // =============================================================================
 // Validation Helpers
 // =============================================================================

@@ -33,7 +33,19 @@ type TriggerScanExecInput struct {
 	// with it, so the retry budget is enforced even when the run finishes
 	// before anything could update it afterwards.
 	RetryAttempt int `json:"-"`
+	// TriggerType is recorded on the run; empty means manual. The scheduler
+	// sends schedule (every run used to be recorded as manual).
+	TriggerType pipeline.TriggerType `json:"-"`
+	// SkipIfRunning refuses the trigger with ErrScanRunInProgress while the
+	// scan has an active run (overlap policy for scheduled runs, D4: skip the
+	// occurrence and record that it was skipped, never pile runs up).
+	SkipIfRunning bool `json:"-"`
 }
+
+// ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
+// the scan's previous run still active.
+var ErrScanRunInProgress = shared.NewDomainError("SCAN_RUN_IN_PROGRESS",
+	"the scan's previous run is still active", shared.ErrConflict)
 
 // TriggerScan triggers a scan execution.
 func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (*pipeline.Run, error) {
@@ -60,6 +72,19 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// NOTE: Concurrent run limits are now checked atomically in CreateRunIfUnderLimit
 	// to prevent race conditions where multiple triggers bypass the limit.
+	if input.SkipIfRunning {
+		active, err := s.runRepo.CountActiveByScanID(ctx, sc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check active runs: %w", err)
+		}
+		if active > 0 {
+			return nil, ErrScanRunInProgress
+		}
+	}
+	triggerType := input.TriggerType
+	if triggerType == "" {
+		triggerType = pipeline.TriggerTypeManual
+	}
 
 	// Validate tools are still available and active before triggering
 	// (Tools may have been disabled or removed since scan was created)
@@ -85,9 +110,9 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		run, err = s.triggerWorkflow(ctx, sc, input.TriggeredBy, input.Context, input.RetryAttempt)
+		run, err = s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt)
 	} else {
-		run, err = s.triggerSingleScan(ctx, sc, input.TriggeredBy, input.Context, input.RetryAttempt)
+		run, err = s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt)
 	}
 
 	if err != nil {
@@ -116,7 +141,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 }
 
 // triggerWorkflow triggers a workflow pipeline execution.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
 	if sc.PipelineID == nil {
 		return nil, fmt.Errorf("%w: pipeline_id is required for workflow", shared.ErrValidation)
 	}
@@ -192,7 +217,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	}
 
 	// Create pipeline run
-	run, err := pipeline.NewRun(template.ID, sc.TenantID, nil, pipeline.TriggerTypeManual, triggeredBy, runContext)
+	run, err := pipeline.NewRun(template.ID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pipeline run: %w", err)
 	}
@@ -240,7 +265,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 const QuickScanTemplateID = "00000000-0000-0000-0000-000000000001"
 
 // triggerSingleScan triggers a single scanner execution.
-func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
+func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
 	// Build context
 	if runContext == nil {
 		runContext = make(map[string]any)
@@ -325,7 +350,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
 
 	// Create a pipeline run using the system template
-	run, err := pipeline.NewRun(quickScanTemplateID, sc.TenantID, nil, pipeline.TriggerTypeManual, triggeredBy, runContext)
+	run, err := pipeline.NewRun(quickScanTemplateID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
@@ -473,7 +498,22 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 		}
 	}
 
-	payload, _ := json.Marshal(workflowStepPayload(run, step, stepRunID))
+	payloadMap, err := workflowStepPayload(run, step, stepRunID)
+	if err != nil {
+		// A setting the sensor would refuse fails the step here, with the
+		// reason, instead of a command that fails on the sensor.
+		for _, sr := range stepRuns {
+			if sr.StepID == step.ID {
+				sr.Fail(err.Error(), "INVALID_STEP_CONFIG")
+				if uerr := s.stepRunRepo.Update(ctx, sr); uerr != nil {
+					s.logger.Warn("failed to fail step run", "step_key", step.StepKey, "error", uerr)
+				}
+				break
+			}
+		}
+		return fmt.Errorf("%w: step %s: %w", shared.ErrValidation, step.StepKey, err)
+	}
+	payload, _ := json.Marshal(payloadMap)
 
 	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
 	if err != nil {
@@ -503,14 +543,20 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 }
 
 // workflowStepPayload is the command payload of one workflow step, with
-// consistent field names for pipeline progression.
-func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string) map[string]any {
+// consistent field names for pipeline progression. The step's settings go
+// under PayloadKeyConfig, the key the sensor reads (see
+// pipeline.NormalizeStepConfig).
+func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string) (map[string]any, error) {
+	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
+	if err != nil {
+		return nil, err
+	}
 	payloadMap := map[string]any{
 		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
 		pipeline.PayloadKeyStepRunID:     stepRunID,
 		pipeline.PayloadKeyStepKey:       step.StepKey,
 		"step_id":                        step.ID.String(),
-		"step_config":                    step.Config,
+		pipeline.PayloadKeyConfig:        config,
 		"required_capabilities":          step.Capabilities,
 		"preferred_tool":                 step.Tool,
 		"timeout_seconds":                step.TimeoutSeconds,
@@ -529,7 +575,7 @@ func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID strin
 	if targets, ok := run.Context["targets"]; ok {
 		payloadMap["targets"] = targets
 	}
-	return payloadMap
+	return payloadMap, nil
 }
 
 // EmbeddedTemplate represents a template embedded in scan command payload.

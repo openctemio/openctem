@@ -132,8 +132,11 @@ type MemberStats struct {
 // MemberSearchFilters defines filters for searching members.
 type MemberSearchFilters struct {
 	Search string // Search by name or email (case-insensitive)
-	Limit  int    // Maximum number of results (0 = no limit)
-	Offset int    // Offset for pagination
+	// SearchNameOnly restricts Search to the member's name. Set for callers
+	// who may not see member emails, so a search cannot confirm an address.
+	SearchNameOnly bool
+	Limit          int // Maximum number of results (0 = no limit)
+	Offset         int // Offset for pagination
 }
 
 // MemberSearchResult contains the search results and total count.
