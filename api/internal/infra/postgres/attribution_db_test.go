@@ -7,7 +7,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 )
 
-// Attribution against the real schema (migration 000272): evidence upsert is
+// Attribution against the real schema (migration 000275): evidence upsert is
 // idempotent per (asset, rule, source), a foreign tenant's asset id writes
 // nothing, automation never overwrites a human decision, and the scan gate
 // blocks only non-confirmed records. Requires DATABASE_URL.
