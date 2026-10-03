@@ -6,8 +6,8 @@ This is the short style guide every new or changed HTTP route follows.
   [RFC-041](../rfcs/RFC-041-api-path-design.md).
 - Status: **Accepted** with RFC-041 (owner decisions 2026-10-03). Existing
   routes that differ are recorded in a baseline and converge over time.
-- Rules marked **(lint)** are enforced by `tools/lint/routestyle` once it
-  lands (RFC-041 §7).
+- Rules marked **(lint)** are enforced by `tools/lint/routestyle` (RFC-041
+  §7). The plane table is `internal/infra/http/routes/plane`.
 
 ## 1. Planes
 
@@ -96,6 +96,11 @@ Rules:
 | Long-running job | `POST /things/exports` → 202 + `Location: /things/exports/{export_id}`, then `GET` it | 202 / 200 |
 
 `GET` never changes state (RFC 9110 §9.2.1). **(lint)**
+
+A `GET` may end in `export`, `download`, `preview` or `compare`, because
+those name a read (a document, a preview, a comparison). Auth-plane paths
+follow the protocols they implement (OAuth, SAML, OIDC) and are exempt from
+the collection and action rules.
 
 ### 4.1 Custom methods (actions)
 

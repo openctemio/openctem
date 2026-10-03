@@ -560,7 +560,7 @@ Every moved route gets an alias with `Deprecation`/`Sunset`.
 
 ### Option B′ (recommended): plane table on the exclusive prefixes, host split, move only what leaks
 
-The plane table, in code (`routes/planes.go`) and checked by CI:
+The plane table, in code (`routes/plane`) and checked by CI:
 
 | Plane | Canonical prefix | Optional own host | Authenticator | Edge policy |
 |---|---|---|---|---|
@@ -697,7 +697,7 @@ The release train runs every other Monday (RFC-037), and dates are
 
 | Phase | When | What | Consumers touched |
 |---|---|---|---|
-| P0 | next train (2026-10-12) | RFC accepted; `routes/planes.go`; `tools/lint/routestyle` blocking with a frozen baseline; `Deprecated()` middleware and metric; spec/route parameter-name equality (check D); web phantom-call check; conventions doc | none |
+| P0 | next train (2026-10-12) | RFC accepted; `routes/plane`; `tools/lint/routestyle` blocking with a frozen baseline; `Deprecated()` middleware and metric; spec/route parameter-name equality (check D); web phantom-call check; conventions doc | none |
 | P1 | trains of 2026-10-26 and 2026-11-09 | invitation token to body (aliases, `Deprecation` now); SSO gate decision for the URL-tenant chain (fix if the test confirms the gap); Caddy routes by plane table; stale `/platform/*` rule removed; optional admin hostname; fix the live phantom web calls | web, gateway |
 | P2 | 2026-11 → 2026-12 | `/api/v1/organization/*` and `/api/v1/me/*` added, web moved in the same release, old paths aliased with `Deprecation`; sdk-go `evidence` and `credentials` v2 features; `/hooks/{provider}` (if D5) | web, SDK (optional), webhook docs |
 | P3 | 2027-01-15 | **removal** of the URL-tenant, `/users/me` and invitation-path aliases (web-only; one quarter after deprecation, telemetry at zero) | none if telemetry is zero |
@@ -710,7 +710,7 @@ web types in the same PR, and the baseline shrinks with it.
 ### 6.3 Interplay with other RFCs
 
 - **RFC-040:** the sensor gateway mounts plane `sensor` from
-  `routes/planes.go` and nothing else. Its route table *is* the plane table,
+  `routes/plane` and nothing else. Its route table *is* the plane table,
   checked by the lint.
 - **RFC-032:** `POST /api/v2/sensor/enroll` is in the sensor plane by
   construction. The new credentials (`octs_` sensor key, `octe_` enrollment
@@ -734,7 +734,7 @@ the group and route middleware). It runs in `api-ci` with the other linters.
 
 | Rule | Check |
 |---|---|
-| R1 plane | Every route matches exactly one plane in `routes/planes.go`. The authenticator in its chain matches the plane: sensor authenticator ⇔ sensor plane; `AdminAuthMiddleware` ⇔ admin plane; tenant chains only on the user, self or organization planes. |
+| R1 plane | Every route matches exactly one plane in `routes/plane`. The authenticator in its chain matches the plane: sensor authenticator ⇔ sensor plane; `AdminAuthMiddleware` ⇔ admin plane; tenant chains only on the user, self or organization planes. |
 | R2 segments | Static segments match `^[a-z][a-z0-9-]*$` (SCIM exempt by plane). |
 | R3 params | Parameter names match `^[a-z][a-z0-9_]*$`. Identifiers end in `_id`. One collection uses one parameter name everywhere. Route and spec names are equal. |
 | R4 collections | The segment before a parameter is plural, or is on the allowlist of singletons and alternate keys. |
@@ -802,8 +802,8 @@ Two notes from the approval:
 | Phase | Item | PR |
 |---|---|---|
 | P1 (security first) | URL-tenant chain runs the SSO-enforcement gate for the organization in the URL, and the read rate limit | #874 |
-| P0 | `routes/planes.go` plane table | — |
-| P0 | `tools/lint/routestyle`, blocking, shrink-only baseline | — |
+| P0 | `routes/plane` plane table | #876 |
+| P0 | `tools/lint/routestyle`, blocking, shrink-only baseline (362 violations frozen) | #876 |
 | P0 | `openapicontract` check D (spec and router parameter names equal) | — |
 | P0 | web check: every `endpoints.ts` builder targets a real route | — |
 | P0 | `Deprecated()` middleware + `deprecated_route_requests_total` | — |
