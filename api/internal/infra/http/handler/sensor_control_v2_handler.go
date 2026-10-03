@@ -499,6 +499,8 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 	// Side effects run on the real transition only, never on a replay.
 	if !res.Replayed {
 		switch t {
+		case command.TransitionStart:
+			h.commands.triggerPipelineStarted(r.Context(), res.Command)
 		case command.TransitionComplete:
 			h.commands.triggerPipelineProgression(r.Context(), res.Command)
 			h.commands.triggerValidationEvidence(res.Command)
