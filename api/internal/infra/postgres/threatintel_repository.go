@@ -242,8 +242,11 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 	// from a schema built purely from migrations.
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO epss_scores (cve_id, epss_score, percentile, model_version, score_date, updated_at)
-		SELECT cve_id, epss_score, percentile, model_version, score_date, NOW()
+		SELECT DISTINCT ON (cve_id) cve_id, epss_score, percentile, model_version, score_date, NOW()
 		FROM temp_epss_scores
+		-- A feed that repeats a CVE must not fail the whole sync (ON CONFLICT
+		-- cannot update one row twice): keep the newest score date per CVE.
+		ORDER BY cve_id, score_date DESC NULLS LAST
 		ON CONFLICT (cve_id) DO UPDATE SET
 			epss_score = EXCLUDED.epss_score,
 			percentile = EXCLUDED.percentile,

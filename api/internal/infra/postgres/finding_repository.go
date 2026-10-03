@@ -1543,6 +1543,10 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	if len(items) == 0 {
 		return nil
 	}
+	// A report can carry one finding twice; the statement cannot update one
+	// (finding, branch) row twice, and the duplicate used to drop every
+	// occurrence of the report. The last sighting wins (latest commit).
+	items = dedupeLastWins(items, branchOccurrenceKey)
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
@@ -1587,6 +1591,12 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	return nil
 }
 
+// branchOccurrenceKey is the conflict key of finding_branch_occurrences as the
+// batch knows it: one finding (by fingerprint) on one branch.
+func branchOccurrenceKey(it vulnerability.BranchOccurrenceUpsert) string {
+	return it.Fingerprint + "\x1f" + it.BranchID.String()
+}
+
 // BackfillFindingBranches gives existing findings the branch a scan saw them
 // on. Findings are matched by (tenant_id, fingerprint) and the branch must
 // belong to the finding's own repository asset. Two cases are updated:
@@ -1605,6 +1615,7 @@ func (r *FindingRepository) BackfillFindingBranches(ctx context.Context, tenantI
 	if len(items) == 0 {
 		return 0, nil
 	}
+	items = dedupeLastWins(items, branchOccurrenceKey)
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))

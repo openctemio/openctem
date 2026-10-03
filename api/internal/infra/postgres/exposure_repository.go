@@ -381,13 +381,18 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 		return nil
 	}
 
+	// Fold events that share a fingerprint: the statement below cannot update
+	// one row twice, and a single duplicate used to fail the whole batch.
+	rows := foldExposureBatch(events)
+
 	// Build batch INSERT query
 	const numCols = 18 // number of columns in the insert
-	valueStrings := make([]string, 0, len(events))
-	valueArgs := make([]any, 0, len(events)*numCols)
+	valueStrings := make([]string, 0, len(rows))
+	valueArgs := make([]any, 0, len(rows)*numCols)
 
-	for i, event := range events {
-		details, err := json.Marshal(event.Details())
+	for i, row := range rows {
+		event, last := row.first, row.last
+		details, err := json.Marshal(last.Details())
 		if err != nil {
 			return fmt.Errorf("failed to marshal details for event %d: %w", i, err)
 		}
@@ -399,25 +404,27 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 		}
 		valueStrings = append(valueStrings, "("+strings.Join(placeholders, ", ")+")")
 
+		// Identity and state come from the first occurrence, the refreshed
+		// fields from the last one: the same row one-by-one upserts leave.
 		valueArgs = append(valueArgs,
 			event.ID().String(),
 			event.TenantID().String(),
 			nullIDPtr(event.AssetID()),
 			event.EventType().String(),
-			event.Severity().String(),
+			last.Severity().String(),
 			event.State().String(),
-			event.Title(),
-			nullString(event.Description()),
+			last.Title(),
+			nullString(last.Description()),
 			details,
 			event.Fingerprint(),
 			event.Source(),
-			event.FirstSeenAt(),
-			event.LastSeenAt(),
+			row.firstSeen,
+			row.lastSeen,
 			nullTime(event.ResolvedAt()),
 			nullIDPtr(event.ResolvedBy()),
 			nullString(event.ResolutionNotes()),
 			event.CreatedAt(),
-			event.UpdatedAt(),
+			last.UpdatedAt(),
 		)
 	}
 
@@ -747,4 +754,35 @@ func (r *ExposureRepository) buildWhereClause(filter exposure.Filter) (string, [
 	}
 
 	return strings.Join(conditions, " AND "), args
+}
+
+// exposureBatchRow is one fingerprint of a bulk upsert after folding.
+type exposureBatchRow struct {
+	first, last         *exposure.ExposureEvent
+	firstSeen, lastSeen time.Time
+}
+
+// foldExposureBatch returns one row per (tenant, fingerprint), in order of
+// first occurrence, keeping the earliest first-seen and the latest last-seen.
+func foldExposureBatch(events []*exposure.ExposureEvent) []exposureBatchRow {
+	index := make(map[string]int, len(events))
+	rows := make([]exposureBatchRow, 0, len(events))
+	for _, e := range events {
+		k := e.TenantID().String() + "\x1f" + e.Fingerprint()
+		i, ok := index[k]
+		if !ok {
+			index[k] = len(rows)
+			rows = append(rows, exposureBatchRow{first: e, last: e, firstSeen: e.FirstSeenAt(), lastSeen: e.LastSeenAt()})
+			continue
+		}
+		r := &rows[i]
+		r.last = e
+		if e.FirstSeenAt().Before(r.firstSeen) {
+			r.firstSeen = e.FirstSeenAt()
+		}
+		if e.LastSeenAt().After(r.lastSeen) {
+			r.lastSeen = e.LastSeenAt()
+		}
+	}
+	return rows
 }
