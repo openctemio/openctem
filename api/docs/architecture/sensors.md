@@ -601,8 +601,20 @@ one RFC-005 `ingest_jobs` row per segment plus one for the commit.
 ### Processing
 
 The ingest worker runs v2 jobs whatever `INGEST_MODE` is
-(`internal/app/ingest/v2_jobs.go`, `v2.go`). Each segment runs through the
-v1 pipeline with the v2 options:
+(`internal/app/ingest/v2_jobs.go`, `v2.go`).
+
+**The sensor is re-read before a queued job runs** (v1 async jobs and v2
+segment and commit jobs; `internal/app/ingest/queued_sensor.go`, RFC-040
+§5.2). The sensor was authenticated when the report was accepted, but it may
+have been revoked, disabled or deleted while the report waited. Its work is
+then dropped: nothing is ingested, a v2 report goes to `failed`, the job
+completes (no retry) with `{"dropped": true, "reason": …}`, and the tenant's
+audit log gets an `ingest.failed` entry with result `denied`. A v1 job is
+ingested as the stored sensor, not as a minimal sensor rebuilt from the job.
+A failed lookup is retried; without a sensor repository every job fails
+(fail closed).
+
+Each segment runs through the v1 pipeline with the v2 options:
 
 - **No fallback asset.** A finding binds to the asset its `asset_ref` names
   in its own segment, or to the segment's only asset when it names none.

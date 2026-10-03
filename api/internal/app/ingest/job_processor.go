@@ -11,7 +11,6 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ctisIngestEnvelope is the wrapped ingest payload shape: { "report": { ... } }.
@@ -65,6 +64,9 @@ type ingester interface {
 // through the normal ingest pipeline. Used by the async worker (RFC-005).
 type JobProcessor struct {
 	service ingester
+	// sensors re-reads the submitting sensor before a queued report is
+	// processed; nil refuses every job (fail closed).
+	sensors queuedSensorChecker
 	// v2 processes protocol v2 results jobs (RFC-026). Nil when v2 results
 	// are disabled; a v2 job then fails and is retried until it is enabled.
 	v2 *V2JobProcessor
@@ -82,13 +84,15 @@ func (p *JobProcessor) Housekeep(ctx context.Context) {
 
 // NewJobProcessor wires a processor over the ingest service.
 func NewJobProcessor(service *Service) *JobProcessor {
-	return &JobProcessor{service: service}
+	return &JobProcessor{service: service, sensors: service}
 }
 
-// Process parses the job payload and ingests it under a synthetic sensor built
-// from the job's stored identity (the sensor was already authenticated when the
-// job was accepted, so no re-auth/DB fetch is needed). Returns the marshaled
-// counts to store on the completed job.
+// Process parses the job payload, re-reads the sensor that submitted it and
+// ingests it as that sensor. The sensor was authenticated when the job was
+// accepted, but it may have been revoked, disabled or deleted while the job
+// waited in the queue (RFC-040 §5.2): its work is then dropped, recorded in
+// the audit log, and the job completes without being retried. Returns the
+// marshaled counts (or the drop) to store on the completed job.
 func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte, error) {
 	if job.V2() != nil {
 		if p.v2 == nil {
@@ -104,15 +108,15 @@ func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte,
 		report.Version = "1.0"
 	}
 
-	tenantID := job.TenantID()
-	sensorID := shared.ID{}
-	if job.SensorID() != nil {
-		sensorID = *job.SensorID()
+	if p.sensors == nil {
+		return nil, errors.New("ingest worker: sensor status check is not configured")
 	}
-	agt := &sensor.Sensor{
-		ID:       sensorID,
-		TenantID: &tenantID,
-		Status:   sensor.SensorStatusActive,
+	agt, dropped, err := p.sensors.QueuedWorkSensor(ctx, job.TenantID(), job.SensorID(), job.ReportID())
+	if err != nil {
+		return nil, err
+	}
+	if dropped != nil {
+		return json.Marshal(dropped)
 	}
 
 	output, err := p.service.Ingest(ctx, agt, Input{Report: report})
