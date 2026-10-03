@@ -103,75 +103,9 @@ const nextConfig: NextConfig = {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()',
           },
-          // Content Security Policy - Prevents XSS attacks
-          // API calls go through /api/proxy (same-origin) so connect-src 'self' is sufficient.
-          //
-          // Script-src narrowing: 'unsafe-eval' is required only by the
-          // dev HMR runtime (Turbopack evaluates modules at runtime);
-          // production bundles do not need it. 'unsafe-inline' is kept
-          // because Next.js 16 still emits inline bootstrapping scripts
-          // for hydration — dropping it requires the nonce-per-request
-          // flow in proxy.ts (tracked as a follow-up). Removing just
-          // 'unsafe-eval' in prod already closes the most abused eval()
-          // gadgets without breaking hydration.
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              process.env.NODE_ENV === 'development'
-                ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
-                : "script-src 'self' 'unsafe-inline'",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", // Tailwind + Google Fonts
-              "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com", // Google Fonts stylesheets
-              "img-src 'self' data: https:",
-              "font-src 'self' data: https://fonts.gstatic.com", // Google Fonts files
-              (() => {
-                if (process.env.NODE_ENV === 'development') {
-                  return "connect-src 'self' http: ws: wss:" // Dev: allow all for HMR
-                }
-                // Prod: derive allowed origins from existing config
-                const origins: string[] = ["'self'"]
-                const appUrl = process.env.NEXT_PUBLIC_APP_URL
-                const backendUrl = process.env.BACKEND_API_URL
-                const wsUrl = process.env.NEXT_PUBLIC_WS_BASE_URL
-                // Add app URL origins (HTTPS + WSS)
-                if (appUrl) {
-                  try {
-                    const u = new URL(appUrl)
-                    origins.push(`https://${u.hostname}`)
-                    origins.push(`wss://${u.hostname}`)
-                    // Also allow API port if different (e.g., :8080)
-                    if (backendUrl) {
-                      const b = new URL(backendUrl)
-                      if (b.port && b.port !== '443') {
-                        origins.push(`https://${u.hostname}:${b.port}`)
-                        origins.push(`wss://${u.hostname}:${b.port}`)
-                      }
-                    }
-                  } catch {
-                    /* ignore invalid URL */
-                  }
-                }
-                // WebSocket on separate host/port (e.g., NEXT_PUBLIC_WS_BASE_URL=https://ws.example.com:9090)
-                if (wsUrl) {
-                  try {
-                    const w = new URL(wsUrl)
-                    origins.push(`wss://${w.host}`)
-                    origins.push(`https://${w.host}`)
-                  } catch {
-                    /* ignore invalid URL */
-                  }
-                }
-                // Fallback: if no URL config provided, allow all HTTPS/WSS
-                // (self-hosted platform — backend auth is the real gate, not CSP)
-                if (origins.length === 1) origins.push('https:', 'wss:')
-                return `connect-src ${origins.join(' ')}`
-              })(),
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join('; '),
-          },
+          // Content-Security-Policy is set per request by proxy.ts, with a
+          // fresh script nonce (src/lib/middleware/csp.ts). A static policy
+          // here could only allow inline scripts with 'unsafe-inline'.
         ],
       },
     ]

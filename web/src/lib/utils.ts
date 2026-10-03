@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { nanoid, customAlphabet } from 'nanoid'
+import { safeHref } from './safe-href'
 
 // Alphabet without '-' to avoid breaking slug-nanoid format when splitting by '-'
 const stepKeyId = customAlphabet(
@@ -76,16 +77,12 @@ export function generateTempStepId(): string {
 
 /**
  * Sanitize an external URL to prevent XSS via javascript: or data: protocols.
- * Only allows http: and https: protocols. Returns '#' for anything else.
+ * Only allows http: and https: (a bare host gets https). Returns '#' for
+ * anything else. Prefer `safeHref` / `<SafeExternalLink>` for new code: they
+ * return `undefined` so the link is not rendered at all.
  */
 export function sanitizeExternalUrl(url: string): string {
-  try {
-    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.href
-    return '#'
-  } catch {
-    return '#'
-  }
+  return safeHref(url, { allowRelative: false }) ?? '#'
 }
 
 export function sleep(ms: number = 1000) {

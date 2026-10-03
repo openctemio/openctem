@@ -168,7 +168,8 @@ func TestTicketDescription_SecretFinding_SuppressesRawSecret(t *testing.T) {
 	if strings.Contains(desc, rawSecret) {
 		t.Fatalf("secret-finding ticket leaked the raw secret: %q", desc)
 	}
-	if !strings.Contains(desc, "AKI****PLE") {
+	// Wiki-escaped: Jira renders `\*` as a literal asterisk.
+	if !strings.Contains(desc, `AKI\*\*\*\*PLE`) {
 		t.Fatalf("expected masked value in description: %q", desc)
 	}
 }

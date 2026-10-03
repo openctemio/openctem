@@ -187,6 +187,11 @@ func run() int {
 		services.Auth.SetSecurityNotifier(services.Email)
 	}
 
+	// Owners are emailed about an SSO change that waits for their approval.
+	if services.SSOChange != nil && services.Email != nil {
+		services.SSOChange.SetMailer(services.Email)
+	}
+
 	// Wire SMTP availability checker into auth service for smart email verification.
 	// When no SMTP is configured (system or tenant), email verification is auto-disabled
 	// so first-time deployments can register users without setting up SMTP first.

@@ -286,13 +286,18 @@ const commandToolSQL = `COALESCE(NULLIF(commands.payload->>'scanner', ''), NULLI
 // aliased alias work for. It is the one place that decides it, for the poll,
 // the claim, the heartbeat doorbell and the zone predicate.
 //
-// It is the sensor's effective tools (RFC-029 §4.3.1, migration 000253):
-// the tools it reports installed, narrowed by its tool limit (sensors.tools;
-// an empty limit allows every reported tool), or the tools set on it when it
-// never reported. The trigger's availability check (HasSensorForTool) and
-// the selector read the same column.
+// It is the tools the sensor VERIFIED: the ones its own probe reported
+// installed (heartbeat tools[] or the RFC-033 manifest), narrowed by its tool
+// limit (sensors.tools; an empty limit allows every reported tool). That is
+// effective_tools (RFC-029 §4.3.1, migration 000253) for a sensor that
+// reported. A sensor that never reported has no verified tool: its
+// effective_tools fall back to the tools the administrator declared, which
+// nothing checked, so dispatch reads none from it (live: a declared-only
+// sensor failed 24 trivy commands with "scanner not found: trivy"). The
+// trigger's availability check (HasSensorForTool), the selector and the zone
+// router use this same expression.
 func sensorDispatchTools(alias string) string {
-	return alias + ".effective_tools"
+	return `(CASE WHEN ` + alias + `.reported_tool_names IS NULL THEN ARRAY[]::text[] ELSE ` + alias + `.effective_tools END)`
 }
 
 // toolClaimPredicate is the tool gate (RFC-030 B5): keep a command only if it
@@ -1093,6 +1098,39 @@ func (r *CommandRepository) FindQueueExpiredPlatformJobs(ctx context.Context, ma
 	return commands, nil
 }
 
+// ExpireIfUnchanged expires a command the expiration checker read earlier, but
+// only if the row has not moved since: the status, sensor assignments, expiry
+// and queue time must still be the ones in the snapshot. Without the condition
+// the checker wrote its stale snapshot back over a command a sensor had just
+// started or completed, and two replicas both expired the same row and both
+// failed its pipeline step.
+func (r *CommandRepository) ExpireIfUnchanged(ctx context.Context, cmd *command.Command, errorMessage string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET status = 'expired', error_message = $3
+		WHERE id = $1 AND tenant_id = $2
+		  AND status = $4
+		  AND sensor_id IS NOT DISTINCT FROM $5
+		  AND platform_sensor_id IS NOT DISTINCT FROM $6
+		  AND expires_at IS NOT DISTINCT FROM $7
+		  AND queued_at IS NOT DISTINCT FROM $8`,
+		cmd.ID.String(), cmd.TenantID.String(), errorMessage,
+		string(cmd.Status),
+		nullIDString(cmd.SensorID),
+		nullIDString(cmd.PlatformSensorID),
+		nullTime(cmd.ExpiresAt),
+		nullTime(cmd.QueuedAt),
+	)
+	if err != nil {
+		return false, fmt.Errorf("expire command: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("expire command: %w", err)
+	}
+	return n == 1, nil
+}
+
 // GetQueuePosition gets the queue position for a specific command.
 func (r *CommandRepository) GetQueuePosition(ctx context.Context, commandID shared.ID) (*command.QueuePosition, error) {
 	query := `
@@ -1444,6 +1482,9 @@ func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID,
 }
 
 var _ command.StepBatchGate = (*CommandRepository)(nil)
+
+// The expiration checker asserts this; without it, it refuses to expire.
+var _ command.ConditionalExpirer = (*CommandRepository)(nil)
 
 // StepBatchState reports the zone batches that share one step run.
 func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRunID shared.ID) (command.StepBatch, error) {

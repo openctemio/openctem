@@ -143,6 +143,11 @@ const (
 	// POST /agent/renew (self-service, kubelet-style), as opposed to the admin
 	// hard rotation recorded by ActionSensorKeyRegenerated.
 	ActionSensorKeyRenewed Action = "sensor.key_renewed"
+	// ActionSensorKeyRenewalRefused records a renewal refused because the key
+	// it authenticated with was revoked, expired or regenerated (or the
+	// sensor disabled) before it could rotate. A security signal: the old
+	// key is still in use after an administrator killed it.
+	ActionSensorKeyRenewalRefused Action = "sensor.key_renewal_refused"
 	// ActionSensorIdentityCloned records the platform seeing two live sensor
 	// processes use the same key (RFC-032 Phase 0 clone detection).
 	ActionSensorIdentityCloned Action = "sensor.identity_cloned"
@@ -192,6 +197,11 @@ const (
 	ActionSSOVerifiedDomainAdded     Action = "sso.verified_domain_added"
 	ActionSSOVerifiedDomainVerified  Action = "sso.verified_domain_verified"
 	ActionSSOVerifiedDomainDeleted   Action = "sso.verified_domain_deleted"
+	// A platform administrator's SAML / identity-provider change waits for an
+	// owner of the organization, who approves (applies) or rejects it.
+	ActionSSOChangeRequested Action = "sso.change_requested"
+	ActionSSOChangeApproved  Action = "sso.change_approved"
+	ActionSSOChangeRejected  Action = "sso.change_rejected"
 
 	// Group actions
 	ActionGroupCreated Action = "group.created"
@@ -266,6 +276,20 @@ const (
 	ActionScanConfigDisabled  Action = "scan_config.disabled"
 	ActionScanConfigExported  Action = "scan_config.exported"
 	ActionScanConfigImported  Action = "scan_config.imported"
+
+	// Scan profile actions
+	ActionScanProfileCreated            Action = "scan_profile.created"
+	ActionScanProfileUpdated            Action = "scan_profile.updated"
+	ActionScanProfileDeleted            Action = "scan_profile.deleted"
+	ActionScanProfileDefaultSet         Action = "scan_profile.default_set"
+	ActionScanProfileCloned             Action = "scan_profile.cloned"
+	ActionScanProfileQualityGateUpdated Action = "scan_profile.quality_gate_updated"
+
+	// Sensor command actions (made by a user through the API; the sensor's own
+	// poll/ack/complete traffic is not audited here)
+	ActionCommandCreated  Action = "command.created"
+	ActionCommandCanceled Action = "command.canceled"
+	ActionCommandDeleted  Action = "command.deleted"
 
 	// Security events
 	ActionSecurityValidationFailed  Action = "security.validation_failed"
@@ -361,7 +385,7 @@ func (a Action) IsValid() bool {
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
@@ -373,6 +397,7 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
@@ -388,6 +413,9 @@ func (a Action) IsValid() bool {
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
 		ActionScanConfigExported, ActionScanConfigImported,
+		ActionScanProfileCreated, ActionScanProfileUpdated, ActionScanProfileDeleted,
+		ActionScanProfileDefaultSet, ActionScanProfileCloned, ActionScanProfileQualityGateUpdated,
+		ActionCommandCreated, ActionCommandCanceled, ActionCommandDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionWorkflowCreated, ActionWorkflowUpdated, ActionWorkflowDeleted,
 		ActionWorkflowActivated, ActionWorkflowDeactivated,
@@ -450,7 +478,7 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
@@ -481,7 +509,8 @@ func (a Action) Category() string {
 		return "audit"
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
-		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted:
+		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected:
 		return "sso"
 	}
 	return "unknown"
@@ -517,6 +546,8 @@ const (
 	ResourceTypePipelineStep     ResourceType = "pipeline_step"
 	ResourceTypePipelineRun      ResourceType = "pipeline_run"
 	ResourceTypeScanConfig       ResourceType = "scan_config"
+	ResourceTypeScanProfile      ResourceType = "scan_profile"
+	ResourceTypeCommand          ResourceType = "command"
 	ResourceTypeWorkflow         ResourceType = "workflow"
 	ResourceTypeWorkflowRun      ResourceType = "workflow_run"
 	ResourceTypeCapability       ResourceType = "capability"
@@ -531,6 +562,8 @@ const (
 	ResourceTypeSAMLConfig       ResourceType = "saml_config"
 	ResourceTypeIdentityProvider ResourceType = "identity_provider"
 	ResourceTypeVerifiedDomain   ResourceType = "verified_domain"
+	// ResourceTypeSSOChange is an SSO change waiting for an owner's approval.
+	ResourceTypeSSOChange ResourceType = "sso_change"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
 	ResourceTypeAuditChain     ResourceType = "audit_chain"
@@ -552,10 +585,11 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
+		ResourceTypeScanProfile, ResourceTypeCommand,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
-		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain,
+		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource:
 		return true
 	}
@@ -624,11 +658,12 @@ func SeverityForAction(a Action) Severity {
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
-		ActionSensorDeactivated, ActionSensorKeyRegenerated,
+		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted, ActionCredentialRevealed,
@@ -653,6 +688,7 @@ func SeverityForAction(a Action) Severity {
 		ActionRoleCreated, ActionRoleUpdated,
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
 		ActionScanConfigCreated, ActionScanConfigTriggered,
+		ActionScanProfileDeleted, ActionScanProfileDefaultSet, ActionScanProfileQualityGateUpdated,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,

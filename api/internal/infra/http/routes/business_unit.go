@@ -22,7 +22,10 @@ func registerBusinessUnitRoutes(
 		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsWrite))
+		// Deleting a business unit is owner/admin only (owner decision
+		// 2026-10-02): members hold assets:write, and a delete drops the
+		// unit's asset links and child hierarchy for the whole organization.
+		r.DELETE("/{id}", h.Delete, middleware.RequireAdmin(), middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/assets", h.AddAsset, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{id}/assets/{assetId}", h.RemoveAsset, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)

@@ -303,14 +303,47 @@ func NewService(
 	return svc
 }
 
+type auditActorKey struct{}
+
+// WithAuditActor returns ctx carrying the id of the user making the request.
+// Most scan mutations (update, delete, activate, pause, disable, import,
+// export) take no actor argument; the HTTP handler attaches the caller here
+// so their audit entries say who made the change instead of leaving the actor
+// empty. An explicit AuditContext.ActorID still wins.
+func WithAuditActor(ctx context.Context, actorID string) context.Context {
+	if actorID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, auditActorKey{}, actorID)
+}
+
+func auditActorFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(auditActorKey{}).(string)
+	return v
+}
+
 // logAudit logs an audit event if audit service is configured.
 func (s *Service) logAudit(ctx context.Context, actx AuditContext, event AuditEvent) {
 	if s.auditService == nil {
 		return
 	}
+	if actx.ActorID == "" {
+		actx.ActorID = auditActorFromContext(ctx)
+	}
 	if err := s.auditService.LogEvent(ctx, actx, event); err != nil {
 		s.logger.Error("failed to log audit event", "error", err, "action", event.Action)
 	}
+}
+
+// recordScheduledOutcome writes a scheduled occurrence that did not produce a
+// run (skipped by the overlap policy, or the trigger failed) to the scan's
+// audit trail, with the reason.
+func (s *Service) recordScheduledOutcome(ctx context.Context, sc *scan.Scan, message string, cause error) {
+	s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+		NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), cause).
+			WithResourceName(sc.Name).
+			WithMessage(message).
+			WithMetadata("trigger_type", "schedule"))
 }
 
 // =============================================================================

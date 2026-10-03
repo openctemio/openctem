@@ -97,6 +97,7 @@ import type {
   ExposureSeverity,
   ExposureState,
 } from '@/lib/api/exposure-types'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 type ActionType = 'resolve' | 'accept' | 'false_positive' | 'reactivate'
 
@@ -880,15 +881,13 @@ function ExposureDetailsView({
                     <span className="text-muted-foreground">{label}</span>
                     <div className="flex items-center gap-2">
                       {showAsUrl ? (
-                        <a
+                        <SafeExternalLink
                           href={stringValue}
-                          target="_blank"
-                          rel="noopener noreferrer"
                           className="text-primary hover:underline flex items-center gap-1 max-w-[200px] truncate"
                         >
                           {displayValue}
                           <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                        </a>
+                        </SafeExternalLink>
                       ) : (
                         <span
                           className={cn(
@@ -948,15 +947,13 @@ function ExposureDetailsView({
                   <span className="text-muted-foreground">{label}</span>
                   <div className="flex items-center gap-2">
                     {showAsUrl ? (
-                      <a
+                      <SafeExternalLink
                         href={stringValue}
-                        target="_blank"
-                        rel="noopener noreferrer"
                         className="text-primary hover:underline flex items-center gap-1 max-w-[200px] truncate"
                       >
                         {displayValue}
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                      </a>
+                      </SafeExternalLink>
                     ) : (
                       <span
                         className={cn(

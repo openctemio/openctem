@@ -2,10 +2,7 @@ package handler
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
-	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -52,10 +49,5 @@ func logOrgSSOEvent(ctx context.Context, svc *app.AuditService, log *logger.Logg
 // normalized text, for recording which certificate was configured without
 // storing it.
 func certificateFingerprint(cert string) string {
-	norm := strings.Join(strings.Fields(cert), "")
-	if norm == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(norm))
-	return hex.EncodeToString(sum[:])
+	return app.CertificateFingerprint(cert)
 }
