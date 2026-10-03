@@ -43,6 +43,16 @@ const (
 	// Metadata lists the changed field names.
 	ActionAssetCreateMerged Action = "asset.create_merged"
 
+	// Human changes to assets (API/UI). Metadata carries the names of the
+	// changed fields, counts and ids, never field values.
+	ActionAssetCreated           Action = "asset.created"
+	ActionAssetUpdated           Action = "asset.updated"
+	ActionAssetDeleted           Action = "asset.deleted"
+	ActionAssetStatusChanged     Action = "asset.status_changed"
+	ActionAssetBulkStatusChanged Action = "asset.bulk_status_changed"
+	ActionAssetCrownJewelChanged Action = "asset.crown_jewel_changed"
+	ActionAssetImported          Action = "asset.imported"
+
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
 	ActionMemberRemoved     Action = "member.removed"
@@ -424,6 +434,8 @@ func (a Action) IsValid() bool {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetCreateMerged,
+		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -758,7 +770,9 @@ func SeverityForAction(a Action) Severity {
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
-		ActionScannerTemplateCreated, ActionScannerTemplateUpdated:
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		// Deleting an asset also deletes its findings.
+		ActionAssetDeleted:
 		return SeverityHigh
 
 	// Medium - important changes
@@ -770,6 +784,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetCreateMerged,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,

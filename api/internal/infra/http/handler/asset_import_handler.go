@@ -7,10 +7,12 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scanner/nessus"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,9 +20,40 @@ import (
 
 // AssetImportHandler handles bulk asset import endpoints.
 type AssetImportHandler struct {
-	service *app.AssetImportService
-	ingest  *ingest.Service
-	logger  *logger.Logger
+	service      *app.AssetImportService
+	ingest       *ingest.Service
+	logger       *logger.Logger
+	auditService *auditapp.AuditService
+}
+
+// SetAuditService wires the audit logger: every import records who imported
+// what and how many assets it created or updated.
+func (h *AssetImportHandler) SetAuditService(svc *auditapp.AuditService) {
+	h.auditService = svc
+}
+
+// auditImport records a finished import (counts only, never row data).
+func (h *AssetImportHandler) auditImport(r *http.Request, source string, result *app.AssetImportResult) {
+	if h.auditService == nil || result == nil {
+		return
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionAssetImported, auditdom.ResourceTypeAsset, "").
+		WithMessage("Assets imported from "+source).
+		WithSeverity(auditdom.SeverityForAction(auditdom.ActionAssetImported)).
+		WithMetadata("source", source).
+		WithMetadata("created", result.AssetsCreated).
+		WithMetadata("updated", result.AssetsUpdated).
+		WithMetadata("skipped", result.AssetsSkipped).
+		WithMetadata("errors", len(result.Errors))
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	_ = h.auditService.LogEvent(r.Context(), actx, event)
 }
 
 // NewAssetImportHandler creates a new AssetImportHandler.
@@ -45,6 +78,7 @@ func (h *AssetImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	h.auditImport(r, "csv", result)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -68,6 +102,7 @@ func (h *AssetImportHandler) ImportNessus(w http.ResponseWriter, r *http.Request
 		}
 		return
 	}
+	h.auditImport(r, "nessus", result)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -167,6 +202,7 @@ func (h *AssetImportHandler) ImportKubernetes(w http.ResponseWriter, r *http.Req
 		}
 		return
 	}
+	h.auditImport(r, "kubernetes", result)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
