@@ -7,10 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"net/url"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -38,50 +35,7 @@ func randomHexKey(t *testing.T) string {
 // unless DATABASE_URL is set and the role may create databases.
 func freshDB(t *testing.T) *sql.DB {
 	t.Helper()
-	base := testdb.URL()
-	if base == "" {
-		t.Skip("DATABASE_URL not set; skipping rekey DB test")
-	}
-	admin, err := sql.Open("postgres", base)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
-	if err := admin.Ping(); err != nil {
-		t.Skipf("cannot reach DATABASE_URL: %v", err)
-	}
-	name := "rekey_" + randomHexKey(t)[:12] + "_test"
-	if _, err := admin.Exec(`CREATE DATABASE ` + name); err != nil {
-		t.Skipf("cannot create a private test database: %v", err)
-	}
-	t.Cleanup(func() { _, _ = admin.Exec(`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`) })
-
-	u, err := url.Parse(base)
-	if err != nil {
-		t.Fatalf("parse DATABASE_URL: %v", err)
-	}
-	u.Path = "/" + name
-	db, err := sql.Open("postgres", u.String())
-	if err != nil {
-		t.Fatalf("open private db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	files, err := filepath.Glob(filepath.Join("..", "..", "..", "migrations", "*.up.sql"))
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no migrations found: %v", err)
-	}
-	sort.Strings(files)
-	for _, f := range files {
-		body, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(string(body)); err != nil {
-			t.Fatalf("migrate %s: %v", filepath.Base(f), err)
-		}
-	}
-	return db
+	return testdb.PrivateDatabase(t, "rekey", filepath.Join("..", "..", "..", "migrations"))
 }
 
 // seedAll writes a value under key into every registered location and
