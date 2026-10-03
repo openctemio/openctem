@@ -72,7 +72,10 @@ what the platform looks at. It has four tabs:
 - **In-Scope Targets** — **Add Target** (type + value + description) for each
   domain, IP range, or asset you want covered.
 - **Exclusions** — **Add Exclusion** (type + value + reason) for anything that
-  must never be scanned.
+  must never be scanned. A new exclusion is **Pending approval** and does not
+  affect any scan until an owner or admin (or anyone granted
+  `attack_surface:scope:exclusions:approve`) other than you approves it from
+  the same table; they can also reject it. A rejected exclusion never applies.
 - **Scan Schedules** — **Create Schedule** (name, targets, cadence) to scan the
   scope automatically on a recurring basis.
 - **Overview** — a summary of the above.

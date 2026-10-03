@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
 
 	"github.com/go-chi/chi/v5"
 
@@ -48,6 +49,7 @@ type CommandHandler struct {
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
 	simFinalizer     simulationRunFinalizer
+	coverage         commandCoverageEvaluator
 	validator        *validator.Validator
 	logger           *logger.Logger
 }
@@ -76,6 +78,32 @@ func (h *CommandHandler) SetValidationIngest(svc validationEvidenceIngester) {
 // running attack-simulation from a validate command's safe-check outcome.
 func (h *CommandHandler) SetSimulationFinalizer(svc simulationRunFinalizer) {
 	h.simFinalizer = svc
+}
+
+// commandCoverageEvaluator runs coverage-scoped auto-resolve for a completed
+// scan command (ingest.Service).
+type commandCoverageEvaluator interface {
+	EvaluateCommandCoverage(ctx context.Context, tenantID, commandID shared.ID) ingest.CoverageOutcome
+}
+
+// SetCoverageEvaluator wires coverage-scoped auto-resolve, evaluated when a
+// scan command completes (and again when its last report is finalized).
+func (h *CommandHandler) SetCoverageEvaluator(svc commandCoverageEvaluator) {
+	h.coverage = svc
+}
+
+// triggerCoverageAutoResolve evaluates a completed scan command's coverage in
+// the background; it never delays the sensor's completion response.
+func (h *CommandHandler) triggerCoverageAutoResolve(cmd *commanddom.Command) {
+	if h.coverage == nil || cmd == nil || cmd.Type != commanddom.CommandTypeScan {
+		return
+	}
+	tenantID, commandID := cmd.TenantID, cmd.ID
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		h.coverage.EvaluateCommandCoverage(ctx, tenantID, commandID)
+	}()
 }
 
 // CommandResponse represents a command in API responses.
@@ -539,6 +567,9 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 
 	// Finalize a running attack-simulation from a completed safe-check (RFC-012).
 	h.triggerSimulationFinalize(cmd)
+
+	// Coverage-scoped auto-resolve of the scan's non-repository findings.
+	h.triggerCoverageAutoResolve(cmd)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))

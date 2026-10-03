@@ -28,6 +28,10 @@ func newExclusion(t *testing.T, tenantID shared.ID, pattern string) *scopedom.Ex
 	if err != nil {
 		t.Fatalf("NewExclusion: %v", err)
 	}
+	// Only approved exclusions are in effect.
+	if err := e.Approve("approver"); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
 	return e
 }
 

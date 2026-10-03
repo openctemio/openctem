@@ -80,6 +80,7 @@ func newCtlHarness(t *testing.T) *ctlHarness {
 		postgres.NewAuditRepository(db), log)
 	cmdRepo := postgres.NewCommandRepository(db)
 	cmdSvc := command.NewService(cmdRepo, log)
+	sensorSvc.SetCancelFinder(cmdRepo)
 
 	ih := handler.NewIngestHandler(ingestSvc, sensorSvc, log)
 	ih.SetDoorbell(app.NewDoorbell(cmdRepo, app.DefaultDoorbellConfig().Normalized(5*time.Minute), log))

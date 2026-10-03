@@ -91,8 +91,11 @@ func (g *SSOEnforcementGate) Invalidate(tenantID string) {
 // Enforce is the per-request SSO-enforcement middleware. It re-applies the
 // mint-time decision using the signed access-token claims:
 //
-//   - Federated sessions (auth_method sso/saml) ALWAYS pass — an SSO-enforced
-//     tenant must admit the very login method it requires.
+//   - Federated claims (auth_method sso/saml) pass — an SSO-enforced tenant
+//     must admit the very login method it requires. The claim is minted per
+//     tenant (Session.AuthMethodFor): it is federated only when THIS tenant's
+//     own identity provider issued the session; a sign-in through another
+//     organization's IdP or social OAuth carries "password" and is enforced.
 //   - The tenant OWNER always passes (break-glass — enabling enforcement can
 //     never lock every administrator out).
 //   - Any other (non-owner, non-federated) session is rejected when its token's
