@@ -1338,18 +1338,19 @@ func (h *IngestHandler) writeIngestError(w http.ResponseWriter, msg string, err 
 	case errors.As(err, &qe):
 		// Not an error of the sensor's payload: it was stored for review.
 		// 422, not 403: sensor SDKs read 401/403 as a key they lost.
-		h.logger.Info(msg+": quarantined", logAttrs...)
+		h.logger.Info(msg+": quarantined", "quarantine_id", qe.ID.String())
 		apierror.New(http.StatusUnprocessableEntity, ingest.CodeResultsQuarantined, qe.Error()).
 			WithDetails(map[string]string{"quarantine_id": qe.ID.String()}).WriteJSON(w)
 	case errors.Is(err, sensorresult.ErrFull):
-		h.logger.Warn(msg+": quarantine full", logAttrs...)
+		h.logger.Warn(msg + ": quarantine full")
 		apierror.New(http.StatusUnprocessableEntity, "RESULTS_QUARANTINE_FULL",
 			"This sensor's role may not send results without a command assigned to it, and the results quarantine is full: the report was refused.").WriteJSON(w)
 	case errors.As(err, &de) && de.Code == ingest.CodeCommandNotFound:
-		h.logger.Warn(msg, logAttrs...)
+		// Fixed messages only: the sensor-supplied parts are not logged.
+		h.logger.Warn(msg + ": command not found")
 		apierror.New(http.StatusNotFound, ingest.CodeCommandNotFound, de.Message).WriteJSON(w)
 	case errors.As(err, &de) && de.Code == ingest.CodeToolNotPermitted:
-		h.logger.Warn(msg, logAttrs...)
+		h.logger.Warn(msg + ": tool not permitted")
 		apierror.New(http.StatusUnprocessableEntity, ingest.CodeToolNotPermitted, de.Message).WriteJSON(w)
 	case errors.As(err, &de) && de.Code == ingest.CodePayloadTooLarge:
 		h.logger.Warn(msg, logAttrs...)
