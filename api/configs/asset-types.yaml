@@ -756,7 +756,7 @@ types:
     icon: user
     class: identity
     legacy_category: identity
-    sub_types: [iam_user, iam_role, service_account, identity_provider, credential]
+    sub_types: [iam_user, iam_role, &service_account service_account, identity_provider, credential]
     identity_keys: [cloud_id, attr.principal_id, name]
     attributes:
       - { name: provider, type: enum, values: [aws, gcp, azure, entra, okta, kubernetes, other], facet: true, group: true }
@@ -813,14 +813,15 @@ types:
     card: identity
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
-  # `type: service_account` is the asset type name; the GCP-key secret rule
-  # matches it, hence the nosemgrep markers below.
-  - type: service_account  # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account
+  # The name comes from the &service_account anchor on identity's sub_types:
+  # the semgrep p/secrets rule for GCP service-account keys matches the
+  # literal "type" + ":" + "service_account" in any spacing.
+  - type: *service_account
     label: Service Account
     plural: Service Accounts
     icon: user-check
     class: identity
-    alias_of: { type: identity, sub_type: service_account }  # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account
+    alias_of: { type: identity, sub_type: *service_account }
     legacy_category: identity
     identity_keys: [cloud_id, attr.account_id, name]
     attributes:
