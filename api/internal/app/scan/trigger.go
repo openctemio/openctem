@@ -10,12 +10,12 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
@@ -1105,6 +1105,9 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if r.Excluded > 0 {
 		runContext["excluded_target_count"] = r.Excluded
 	}
+	if r.Archived > 0 {
+		runContext["archived_target_count"] = r.Archived
+	}
 	if len(r.Warnings) > 0 {
 		runContext["dispatch_warnings"] = r.Warnings
 	}
@@ -1131,36 +1134,55 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	return nil
 }
 
-// listGroupExclusionCandidates materializes an asset group's members into scope
-// exclusion candidates (id + name). Paginated to keep memory bounded.
-func (s *Service) listGroupExclusionCandidates(ctx context.Context, groupID shared.ID) ([]scope.ExclusionCandidate, error) {
-	// pagination.New clamps perPage to 100. This was 500 with a
-	// page*500 >= total stop, so after the first (clamped) page of 100 the
-	// loop believed it had read everything: a scan of a group with 101-500
-	// assets silently scanned only the first 100. Stop on rows read instead.
-	const perPage = 100
-	page := pagination.New(1, perPage)
-	candidates := make([]scope.ExclusionCandidate, 0)
-	read := 0
+// groupScanMember is a group member to dispatch: the asset id, the name the
+// scanner is handed, and every value scope exclusions are tested against.
+type groupScanMember struct {
+	ID          shared.ID
+	Name        string
+	MatchValues []string
+}
 
+// groupScanMemberPage is the keyset page size for group members; the
+// repository caps it at 1000.
+const groupScanMemberPage = 1000
+
+// listGroupScanMembers reads an asset group's scannable members, one asset
+// each, in keyset pages: only assets of the scan's tenant, archived assets
+// left out and counted. Offset paging over a list ordered by name could skip
+// or repeat members when two shared a sort key or the group changed mid-read.
+func (s *Service) listGroupScanMembers(ctx context.Context, tenantID, groupID shared.ID) ([]groupScanMember, int, error) {
+	var (
+		out      []groupScanMember
+		archived int
+		q        = assetgroup.ScanMemberQuery{TenantID: tenantID, GroupID: groupID, Limit: groupScanMemberPage}
+	)
 	for {
-		res, err := s.assetGroupRepo.GetGroupAssets(ctx, groupID, page, nil)
+		page, err := s.assetGroupRepo.ListScanMembers(ctx, q)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		read += len(res.Data)
-		for _, ga := range res.Data {
-			candidates = append(candidates, scope.ExclusionCandidate{
-				ID:     ga.ID,
-				Values: []string{ga.Name},
+		archived += int(page.ArchivedCount)
+		for _, m := range page.Members {
+			out = append(out, groupScanMember{
+				ID:          m.ID,
+				Name:        m.Name,
+				MatchValues: scope.AssetExclusionValues(m.Type, m.Name, m.Properties),
 			})
 		}
-		if len(res.Data) == 0 || int64(read) >= res.Total {
-			break
+		// Stop before materializing a huge group: exclusions only remove
+		// targets, so this many members can never fit in one run.
+		if len(out) > 2*maxResolvedTargets {
+			return nil, 0, fmt.Errorf("%w: asset group %s has more than %d scannable assets, more than the %d targets allowed per run",
+				shared.ErrValidation, groupID, 2*maxResolvedTargets, maxResolvedTargets)
 		}
-		page.Page++
+		// An empty page ends the read; a short one does not, so a repository
+		// that clamps the page size cannot cut the group short.
+		if len(page.Members) == 0 {
+			return out, archived, nil
+		}
+		last := page.Members[len(page.Members)-1]
+		q.AfterName, q.AfterID = last.Name, last.ID
 	}
-	return candidates, nil
 }
 
 // filterAssetsForSingleScan applies smart filtering based on scanner-asset compatibility.

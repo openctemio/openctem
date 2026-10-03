@@ -4,7 +4,8 @@
 # Which areas did this event touch? Writes to $GITHUB_OUTPUT:
 #   api=true|false   the Go API (api/) or a shared file
 #   web=true|false   the web app (web/), the API spec it is generated from,
-#                    or a shared file
+#                    the route manifest its endpoint check reads, or a
+#                    shared file
 # The ONE place the routing rules live: every workflow's `changes` job calls
 # this and reads the output it needs, so the rules cannot drift apart.
 #
@@ -27,7 +28,7 @@ set -euo pipefail
 
 shared=(Makefile go.work go.work.sum .github/ deploy/)
 api_paths=(api/ "${shared[@]}")
-web_paths=(web/ api/api/openapi/swagger.yaml "${shared[@]}")
+web_paths=(web/ api/api/openapi/swagger.yaml api/api/openapi/routes.txt "${shared[@]}")
 
 out() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/stdout}"; echo "$1=$2${3:+ ($3)}"; }
 all() { out api true "$1"; out web true "$1"; exit 0; }

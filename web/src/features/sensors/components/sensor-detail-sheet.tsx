@@ -65,6 +65,7 @@ import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
   distinctHostname,
+  LEGACY_KEY_EXPLANATION,
   ProtocolTag,
   PROTOCOL_V1_SUNSET,
   PROTOCOL_V2_SENSOR_VERSION,
@@ -541,6 +542,9 @@ function ConnectionAndIdentity({
             <span className="text-xs [&>span]:text-xs">
               <SensorKeyCell sensor={sensor} now={now} />
             </span>
+            {sensor.legacy_key && (
+              <span className="text-xs text-muted-foreground">{LEGACY_KEY_EXPLANATION}</span>
+            )}
           </span>
         </DetailField>
         {sensor.ip_address && (

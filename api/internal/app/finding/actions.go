@@ -225,7 +225,7 @@ func (s *FindingActionsService) ListFindingGroups(
 	}
 
 	validDimensions := map[string]bool{
-		"cve_id": true, "asset_id": true, "owner_id": true,
+		"cve_id": true, "rule_id": true, "asset_id": true, "owner_id": true,
 		"component_id": true, "severity": true, "source": true, "finding_type": true,
 	}
 	if !validDimensions[groupBy] {
