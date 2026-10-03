@@ -59,7 +59,7 @@ export API_KEY={{shellQuote .APIKey}}
 {{- else}}
 # The API key is shown once, when the sensor is created or its key is rotated.
 export API_URL={{shellQuote .BaseURL}}
-export API_KEY='rda_...'
+export API_KEY='octs_...'
 {{- end}}
 {{- with toolList .Sensor.Tools}}
 export SENSOR_TOOLS={{.}}
@@ -78,7 +78,7 @@ export SSL_CERT_DIR=/etc/openctem/certs
 #
 # The command reads the sensor's API key from OPENCTEM_API_KEY. The key is
 # shown once, when the sensor is created or its key is rotated:
-#   export OPENCTEM_API_KEY='rda_...'
+#   export OPENCTEM_API_KEY='octs_...'
 {{- end}}
 {{- if .CACert}}
 
@@ -171,7 +171,7 @@ export SSL_CERT_DIR=/etc/openctem/certs
 {{- if .APIKey}}
 #        printf '%s\n' 'OPENCTEM_API_KEY={{.APIKey}}' > .env && chmod 600 .env
 {{- else}}
-#        printf '%s\n' 'OPENCTEM_API_KEY=rda_...' > .env && chmod 600 .env
+#        printf '%s\n' 'OPENCTEM_API_KEY=octs_...' > .env && chmod 600 .env
 #      (the key is shown once, when the sensor is created or its key rotated)
 {{- end}}
 #   2. Save this file as compose.yaml and run: docker compose up -d
@@ -241,7 +241,7 @@ configs:
 # Apply in the namespace the sensor should run in:
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
 {{- if not .APIKey}}
-# Replace rda_... below with the sensor's API key first (it is shown once,
+# Replace octs_... below with the sensor's API key first (it is shown once,
 # when the sensor is created or its key is rotated).
 {{- end}}
 apiVersion: v1
@@ -253,7 +253,7 @@ metadata:
     app.kubernetes.io/instance: {{$slug}}
 type: Opaque
 stringData:
-  api-key: {{if .APIKey}}{{.APIKey}}{{else}}rda_...{{end}}
+  api-key: {{if .APIKey}}{{.APIKey}}{{else}}octs_...{{end}}
 {{- if .CACert}}
   ca.crt: |
 {{indent 4 .CACert}}
@@ -450,7 +450,7 @@ spec:
 {{- else}}
 {{- if not .APIKey}}
 # The key is shown once, when the sensor is created or its key is rotated:
-#   export OPENCTEM_API_KEY='rda_...'
+#   export OPENCTEM_API_KEY='octs_...'
 {{- end}}
 
 # 1. Store the sensor's API key in a Secret (never in Helm values).

@@ -1,9 +1,60 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
 import { Server, Network, CheckCircle, AlertTriangle, Shield } from 'lucide-react'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
-import { toStringArray } from '@/features/assets/lib/property-utils'
+import type { Asset } from '@/features/assets'
+import {
+  formatTechnology,
+  httpStatusCode,
+  ipAddresses,
+  isHttpService,
+  pageTitle,
+  redirectChain,
+  serviceBanner,
+  serviceName,
+  servicePort,
+  serviceProduct,
+  serviceProtocol,
+  serviceTransport,
+  serviceVersion,
+  technologies,
+  tlsFacts,
+  webServer,
+} from '@/features/assets/lib/service-facts'
+import {
+  ChipMono,
+  ChipRow,
+  FactChip,
+  HttpStatusChip,
+  OverflowChips,
+  TechChips,
+  TlsSummary,
+  UnknownChip,
+} from '@/features/assets/components/service-cells'
+
+// The services page lists every `service` asset: HTTP services from httpx
+// (sub_type http, nested `service.*` + `status_code`, `technologies`),
+// open ports from naabu (sub_type open_port, flat `port`/`protocol`), and
+// services from nmap-style scans. Each cell reads both shapes through
+// service-facts; nothing is defaulted (no "TCP", no port 0).
+
+/** HTTP-only facts (status, technologies) do not apply to an SSH port. */
+const isWeb = (a: Asset) => isHttpService(a) || a.subType === 'discovered_url'
+
+const notApplicable = (what: string) => (
+  <span className="text-xs text-muted-foreground" title={`Not an HTTP service: no ${what}`}>
+    —
+  </span>
+)
+const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
+
+/** "nginx/1.25.3" for a web service, "OpenSSH 9.6p1" for an nmap one. */
+function productLabel(a: Asset): string | undefined {
+  if (isHttpService(a)) return webServer(a)
+  const product = serviceProduct(a) ?? serviceName(a)
+  const version = serviceVersion(a)
+  return [product, version].filter(Boolean).join(' ') || undefined
+}
 
 export const servicesConfig: AssetPageConfig = {
   type: 'service',
@@ -17,64 +68,73 @@ export const servicesConfig: AssetPageConfig = {
 
   columns: [
     {
-      accessorKey: 'metadata.port',
+      id: 'port',
       header: 'Port',
       cell: ({ row }) => {
-        const port = row.original.metadata.port
-        if (!port) return '-'
+        const port = servicePort(row.original)
+        if (port === null) return <UnknownChip>Unknown</UnknownChip>
         return (
-          <Badge variant="outline" className="font-mono">
-            {port}
-          </Badge>
+          <FactChip tone="muted">
+            <ChipMono>{port}</ChipMono>
+          </FactChip>
         )
       },
     },
     {
-      accessorKey: 'metadata.protocol',
+      id: 'protocol',
       header: 'Protocol',
       cell: ({ row }) => {
-        const protocol = (row.original.metadata.protocol as string)?.toUpperCase() || 'TCP'
+        const protocol = serviceProtocol(row.original)
+        if (!protocol) return <UnknownChip>Unknown</UnknownChip>
+        return <FactChip tone="muted">{protocol.toUpperCase()}</FactChip>
+      },
+    },
+    {
+      id: 'version',
+      header: 'Product',
+      cell: ({ row }) => {
+        const label = productLabel(row.original)
+        if (!label) return <UnknownChip>Not collected</UnknownChip>
         return (
-          <Badge
-            variant="secondary"
-            className={protocol === 'UDP' ? 'bg-purple-500/10 text-purple-500' : ''}
-          >
-            {protocol}
-          </Badge>
+          <span className="block max-w-[180px] truncate text-sm" title={label}>
+            {label}
+          </span>
         )
       },
     },
     {
-      accessorKey: 'metadata.version',
-      header: 'Version',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.metadata.version || '-'}
-        </span>
-      ),
+      id: 'http_status',
+      header: 'Status',
+      cell: ({ row }) =>
+        isWeb(row.original) ? (
+          <HttpStatusChip
+            status={httpStatusCode(row.original)}
+            chain={redirectChain(row.original)}
+          />
+        ) : (
+          notApplicable('HTTP status')
+        ),
     },
     {
       id: 'technology',
-      header: 'Technology',
-      cell: ({ row }) => {
-        const raw = row.original.metadata.technology
-        const tech = toStringArray(raw)
-        if (tech.length === 0) return <span className="text-muted-foreground">-</span>
-        return (
-          <div className="flex flex-wrap gap-1 max-w-[150px]">
-            {tech.slice(0, 2).map((t) => (
-              <Badge key={t} variant="outline" className="text-xs">
-                {t}
-              </Badge>
-            ))}
-            {tech.length > 2 && (
-              <Badge variant="outline" className="text-xs">
-                +{tech.length - 2}
-              </Badge>
-            )}
-          </div>
-        )
-      },
+      header: 'Technologies',
+      cell: ({ row }) =>
+        isWeb(row.original) ? (
+          <ChipRow className="max-w-[220px]">
+            <TechChips technologies={technologies(row.original)} max={2} />
+          </ChipRow>
+        ) : (
+          notApplicable('web technologies')
+        ),
+    },
+    {
+      id: 'tls',
+      header: 'TLS',
+      cell: ({ row }) => (
+        <div className="max-w-[200px]">
+          <TlsSummary facts={tlsFacts(row.original)} />
+        </div>
+      ),
     },
   ],
 
@@ -161,12 +221,16 @@ export const servicesConfig: AssetPageConfig = {
       { label: 'TCP', value: 'tcp' },
       { label: 'UDP', value: 'udp' },
     ],
-    filterFn: (asset, value) => (asset.metadata.protocol as string)?.toLowerCase() === value,
+    filterFn: (asset, value) => serviceTransport(asset) === value,
   },
 
   copyAction: {
     label: 'Copy Service Info',
-    getValue: (asset) => `${asset.name}:${asset.metadata.port}/${asset.metadata.protocol || 'tcp'}`,
+    getValue: (asset) => {
+      const port = servicePort(asset)
+      const protocol = serviceProtocol(asset)
+      return [asset.name, port !== null ? `:${port}` : '', protocol ? `/${protocol}` : ''].join('')
+    },
   },
 
   detailStats: [
@@ -175,7 +239,7 @@ export const servicesConfig: AssetPageConfig = {
       iconBg: 'bg-blue-500/10',
       iconColor: 'text-blue-500',
       label: 'Port',
-      getValue: (asset) => asset.metadata.port || '-',
+      getValue: (asset) => servicePort(asset) ?? '—',
     },
     {
       icon: Shield,
@@ -199,22 +263,39 @@ export const servicesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Protocol',
-          getValue: (asset) => (
-            <Badge variant="secondary">
-              {(asset.metadata.protocol as string)?.toUpperCase() || 'TCP'}
-            </Badge>
-          ),
+          getValue: (asset) => serviceProtocol(asset)?.toUpperCase() ?? unknownText(),
         },
         {
-          label: 'Version',
-          getValue: (asset) => asset.metadata.version || '-',
+          label: 'Transport',
+          getValue: (asset) => serviceTransport(asset)?.toUpperCase() ?? unknownText(),
+        },
+        {
+          label: 'Product',
+          getValue: (asset) => productLabel(asset) ?? unknownText('Not collected'),
+        },
+        {
+          label: 'TLS',
+          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} explainMissing />,
+        },
+        {
+          label: 'IP addresses',
+          getValue: (asset) => {
+            const ips = ipAddresses(asset)
+            return ips.length ? (
+              <ChipRow>
+                <OverflowChips label="IP" values={ips} />
+              </ChipRow>
+            ) : (
+              unknownText()
+            )
+          },
         },
         {
           label: 'Banner',
           fullWidth: true,
           getValue: (asset) => {
-            const banner = asset.metadata.banner as string
-            if (!banner) return '-'
+            const banner = serviceBanner(asset)
+            if (!banner) return unknownText('Not collected')
             return (
               <code className="block text-xs bg-muted p-2 rounded overflow-x-auto">{banner}</code>
             )
@@ -223,25 +304,35 @@ export const servicesConfig: AssetPageConfig = {
       ],
     },
     {
-      title: 'Technology Stack',
+      title: 'Web',
       fields: [
+        {
+          label: 'HTTP status',
+          getValue: (asset) =>
+            isWeb(asset) ? (
+              <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} />
+            ) : (
+              notApplicable('HTTP status')
+            ),
+        },
+        {
+          label: 'Title',
+          getValue: (asset) =>
+            isWeb(asset)
+              ? (pageTitle(asset) ?? unknownText('Not collected'))
+              : notApplicable('title'),
+        },
         {
           label: 'Technologies',
           fullWidth: true,
-          getValue: (asset) => {
-            const raw = asset.metadata.technology
-            const tech = toStringArray(raw)
-            if (tech.length === 0) return '-'
-            return (
-              <div className="flex flex-wrap gap-2">
-                {tech.map((t) => (
-                  <Badge key={t} variant="secondary">
-                    {t}
-                  </Badge>
-                ))}
-              </div>
-            )
-          },
+          getValue: (asset) =>
+            isWeb(asset) ? (
+              <ChipRow>
+                <TechChips technologies={technologies(asset)} max={Infinity} />
+              </ChipRow>
+            ) : (
+              notApplicable('web technologies')
+            ),
         },
       ],
     },
@@ -249,16 +340,13 @@ export const servicesConfig: AssetPageConfig = {
 
   exportFields: [
     { header: 'Name', accessor: (a) => a.name },
-    { header: 'Port', accessor: (a) => a.metadata.port },
-    { header: 'Protocol', accessor: (a) => a.metadata.protocol || 'tcp' },
-    { header: 'Version', accessor: (a) => a.metadata.version || '' },
+    { header: 'Port', accessor: (a) => servicePort(a) ?? '' },
+    { header: 'Protocol', accessor: (a) => serviceProtocol(a) ?? '' },
+    { header: 'Product', accessor: (a) => productLabel(a) ?? '' },
+    { header: 'HTTP Status', accessor: (a) => httpStatusCode(a) ?? '' },
     {
       header: 'Technologies',
-      accessor: (a) => {
-        const raw = a.metadata.technology
-        const tech = toStringArray(raw)
-        return tech.join(';')
-      },
+      accessor: (a) => (technologies(a) ?? []).map(formatTechnology).join(';'),
     },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Risk Score', accessor: (a) => a.riskScore },

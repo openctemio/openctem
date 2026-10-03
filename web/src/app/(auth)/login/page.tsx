@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/card'
 import { env } from '@/lib/env'
 import { validateRedirectUrl } from '@/lib/redirect'
+import { hasSessionCookie } from '@/lib/middleware/auth'
 
 // Use refactored LoginForm from features directory
 import { LoginForm } from '@/features/auth/components/login-form'
@@ -18,6 +19,9 @@ import { LegalNotice } from '@/features/auth/components/legal-notice'
 
 interface LoginPageProps {
   searchParams: Promise<{
+    // The page to return to: `next` from the proxy (src/proxy.ts), `redirect`
+    // from the client after a session ends, `returnTo` from invitations.
+    next?: string
     redirect?: string
     returnTo?: string
     org?: string
@@ -33,16 +37,15 @@ interface LoginPageProps {
 }
 
 export default async function SignIn({ searchParams }: LoginPageProps) {
-  // Get redirect URL from search params (support both 'redirect' and 'returnTo')
   const params = await searchParams
-  const redirectTo = validateRedirectUrl(params.returnTo || params.redirect, '/')
+  const returnTo = params.returnTo || params.next || params.redirect
+  const redirectTo = validateRedirectUrl(returnTo, '/')
 
-  // Check if user is already authenticated
+  // Already signed in? The same check as the proxy (cookie present and shaped
+  // like a token): if the two disagreed, a cookie the proxy rejects but this
+  // page accepts would bounce the browser between them.
   const cookieStore = await cookies()
-  const hasAuthToken = cookieStore.get(env.auth.cookieName)?.value
-  const hasRefreshToken = cookieStore.get(env.auth.refreshCookieName)?.value
-
-  if (hasAuthToken || hasRefreshToken) {
+  if (hasSessionCookie((name) => cookieStore.get(name)?.value)) {
     // User is authenticated - determine where to redirect
     const hasTenant = cookieStore.get(env.cookies.tenant)?.value
     const hasPendingTenants = cookieStore.get(env.cookies.pendingTenants)?.value
@@ -85,7 +88,7 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
           {/* Sign-up is offered only when the server allows it, or when the
               visitor came from an invitation (accounts are otherwise created
               by an administrator). */}
-          <SignUpPrompt returnTo={params.returnTo || params.redirect} email={params.email} />
+          <SignUpPrompt returnTo={returnTo} email={params.email} />
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/sensorkey"
 )
 
 // ============================================================================
@@ -532,14 +533,17 @@ func TestSensorService_CreateSensor_Success(t *testing.T) {
 		t.Errorf("expected health 'unknown', got %q", out.Sensor.Health)
 	}
 
-	// API key must start with "rda_"
-	if !strings.HasPrefix(out.APIKey, "rda_") {
-		t.Errorf("expected API key to start with 'rda_', got %q", out.APIKey)
+	// New keys are octs_ keys with a valid checksum, never legacy rda_.
+	if p, ok := sensorkey.Valid(out.APIKey); !ok || p != sensorkey.PrefixSensorKey {
+		t.Errorf("expected a valid octs_ API key, got %q", out.APIKey)
 	}
 
-	// API key length: "rda_" + 64 hex chars = 68
-	if len(out.APIKey) != 68 {
-		t.Errorf("expected API key length 68, got %d", len(out.APIKey))
+	// API key length: "octs_" + 43 base62 chars + 6 checksum chars = 54
+	if len(out.APIKey) != 54 {
+		t.Errorf("expected API key length 54, got %d", len(out.APIKey))
+	}
+	if out.Sensor.IsLegacyKey() {
+		t.Error("a newly created sensor must not be on a legacy key")
 	}
 
 	if out.Sensor.APIKeyHash == "" {
@@ -1210,8 +1214,8 @@ func TestSensorService_RegenerateAPIKey_Success(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if !strings.HasPrefix(newKey, "rda_") {
-		t.Errorf("expected regenerated key to start with 'rda_', got %q", newKey)
+	if _, ok := sensorkey.Valid(newKey); !ok || !strings.HasPrefix(newKey, "octs_") {
+		t.Errorf("expected regenerated key to be a valid octs_ key, got %q", newKey)
 	}
 
 	updated := repo.sensors[a.ID.String()]
@@ -1258,8 +1262,8 @@ func TestSensorService_RenewAPIKey_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if !strings.HasPrefix(newKey, "rda_") {
-		t.Errorf("expected renewed key to start with 'rda_', got %q", newKey)
+	if _, ok := sensorkey.Valid(newKey); !ok || !strings.HasPrefix(newKey, "octs_") {
+		t.Errorf("expected renewed key to be a valid octs_ key, got %q", newKey)
 	}
 	if repo.sensors[a.ID.String()].APIKeyHash == oldHash {
 		t.Error("expected API key hash to change after renewal")
@@ -1279,8 +1283,8 @@ func TestSensorService_RenewAPIKey_PlatformSensor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error for platform sensor renewal, got %v", err)
 	}
-	if !strings.HasPrefix(newKey, "rda_") {
-		t.Errorf("expected renewed key to start with 'rda_', got %q", newKey)
+	if _, ok := sensorkey.Valid(newKey); !ok || !strings.HasPrefix(newKey, "octs_") {
+		t.Errorf("expected renewed key to be a valid octs_ key, got %q", newKey)
 	}
 }
 
@@ -2206,8 +2210,10 @@ func TestSensorService_APIKeyFormat(t *testing.T) {
 		t.Fatalf("failed to create sensor: %v", err)
 	}
 
-	// Verify prefix format: "rda_" + first 8 hex chars
-	expectedPrefix := out.APIKey[:12]
+	// Verify prefix format: "octs_" + first 5 random chars (10 characters,
+	// fits the VARCHAR(12) column; the SDK's 8-character log hint is a prefix
+	// of it).
+	expectedPrefix := out.APIKey[:10]
 	if out.Sensor.InlineKeyPrefix != expectedPrefix {
 		t.Errorf("expected prefix %q, got %q", expectedPrefix, out.Sensor.InlineKeyPrefix)
 	}

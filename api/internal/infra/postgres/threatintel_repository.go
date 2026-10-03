@@ -79,13 +79,27 @@ const (
 		    OR v.cisa_kev_ransomware_use IS DISTINCT FROM k.known_ransomware_campaign_use
 		    OR v.cisa_kev_notes IS DISTINCT FROM k.notes
 		    OR NOT v.exploit_available)`
+	// catalogClearKEV undoes catalogFromKEV for a CVE that is no longer in the
+	// KEV feed (CISA removes entries, rarely). exploit_available is written only
+	// from KEV (global-catalog-trust.md), so it goes back to false with it.
+	catalogClearKEV = `
+		UPDATE vulnerabilities v
+		SET cisa_kev_date_added     = NULL,
+		    cisa_kev_due_date       = NULL,
+		    cisa_kev_ransomware_use = NULL,
+		    cisa_kev_notes          = NULL,
+		    exploit_available       = false
+		WHERE (v.cisa_kev_date_added IS NOT NULL
+		    OR v.cisa_kev_due_date IS NOT NULL
+		    OR v.exploit_available)
+		  AND NOT EXISTS (SELECT 1 FROM kev_catalog k WHERE k.cve_id = v.cve_id)`
 )
 
 // PropagateToVulnerabilityCatalog copies the EPSS and KEV feeds onto the
 // shared vulnerabilities catalog. Only rows that differ are written.
 func (r *ThreatIntelRepository) PropagateToVulnerabilityCatalog(ctx context.Context) (int64, error) {
 	var total int64
-	for _, q := range []string{catalogFromEPSS, catalogFromKEV} {
+	for _, q := range []string{catalogFromEPSS, catalogFromKEV, catalogClearKEV} {
 		res, err := r.db.ExecContext(ctx, q)
 		if err != nil {
 			return total, fmt.Errorf("propagate threat intel to catalog: %w", err)
@@ -242,8 +256,11 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 	// from a schema built purely from migrations.
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO epss_scores (cve_id, epss_score, percentile, model_version, score_date, updated_at)
-		SELECT cve_id, epss_score, percentile, model_version, score_date, NOW()
+		SELECT DISTINCT ON (cve_id) cve_id, epss_score, percentile, model_version, score_date, NOW()
 		FROM temp_epss_scores
+		-- A feed that repeats a CVE must not fail the whole sync (ON CONFLICT
+		-- cannot update one row twice): keep the newest score date per CVE.
+		ORDER BY cve_id, score_date DESC NULLS LAST
 		ON CONFLICT (cve_id) DO UPDATE SET
 			epss_score = EXCLUDED.epss_score,
 			percentile = EXCLUDED.percentile,
@@ -767,6 +784,20 @@ func (r *KEVRepository) Count(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("failed to count KEV entries: %w", err)
 	}
 	return count, nil
+}
+
+// PruneNotIn removes the KEV entries whose CVE is not in keep.
+func (r *KEVRepository) PruneNotIn(ctx context.Context, keep []string) (int64, error) {
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM kev_catalog WHERE NOT (cve_id = ANY($1))`, pq.Array(keep))
+	if err != nil {
+		return 0, fmt.Errorf("failed to prune KEV catalog: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to count pruned KEV entries: %w", err)
+	}
+	return n, nil
 }
 
 // DeleteAll removes all KEV entries.

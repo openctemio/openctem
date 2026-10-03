@@ -366,6 +366,15 @@ type KeyUseRecorder interface {
 	RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (previous net.IP, err error)
 }
 
+// LegacyKeyCounter is implemented by a sensor repository that can count the
+// sensors still on a legacy rda_ key (Sensor.IsLegacyKey), for the
+// openctem_sensor_legacy_keys gauge that tracks the move to octs_ keys.
+type LegacyKeyCounter interface {
+	// CountLegacyKeySensors counts the non-revoked sensors, across all
+	// tenants and platform sensors, whose effective key is an rda_ key.
+	CountLegacyKeySensors(ctx context.Context) (int64, error)
+}
+
 // InstanceObserver is implemented by a sensor repository that keeps the
 // clone-detection state (identity.go).
 type InstanceObserver interface {
