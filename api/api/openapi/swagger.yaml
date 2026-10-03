@@ -4180,6 +4180,12 @@ definitions:
       name:
         maxLength: 255
         type: string
+      recovery:
+        description: |-
+          Recovery creates a new owner for an organization whose owners are all
+          suspended. Super admin only; the set-password link is emailed and
+          never returned; refused while any owner is active.
+        type: boolean
       role:
         enum:
         - owner
@@ -14237,11 +14243,16 @@ paths:
       consumes:
       - application/json
       description: 'Bootstrap only: creates the owner of an organization that has
-        no active owner, and nothing else (409 when it has one: its owner and administrators
-        add users themselves). The one-time set-password link is emailed when the
-        organization can send email and is then never returned; only when email cannot
-        be sent is setup_token returned, once. Written to the organization''s audit
-        log.'
+        no owner, and nothing else (409 when it has one, active or suspended: its
+        owner and administrators add users themselves). The one-time set-password
+        link is emailed when the organization can send email and is then never returned;
+        only when email cannot be sent is setup_token returned, once. Written to the
+        organization''s audit log. With "recovery": true (super admin only, 403 otherwise)
+        it creates a new owner of an organization whose owners are all suspended (409
+        while any owner is active); the link is then emailed only and never returned
+        (400 when the organization cannot send email), and the action is audited as
+        organization.owner_recovery in the admin audit log and at critical severity
+        in the organization''s audit log.'
       parameters:
       - description: Organization ID
         in: path
@@ -14263,6 +14274,10 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Owner recovery by an administrator who is not a super admin
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "409":

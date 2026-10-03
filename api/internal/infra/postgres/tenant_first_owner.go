@@ -14,33 +14,48 @@ import (
 // methods back that rule; the check and the insert share one transaction and a
 // per-organization advisory lock, so two concurrent requests cannot both see
 // "no owner" and create two owners.
+//
+// Any owner membership counts, active or suspended: an organization whose
+// owner is suspended has an owner, and its data is theirs. Only the explicit
+// owner recovery (super admin, recovery=true) may add an owner then, and only
+// while none of its owners is active.
 
-// activeOwnerExistsQuery is true when the organization has an active member
-// who is its owner by membership label or by holding the system owner role.
-const activeOwnerExistsQuery = `
-	SELECT EXISTS (
-		SELECT 1 FROM tenant_members m
-		 WHERE m.tenant_id = $1
-		   AND COALESCE(m.status, 'active') = 'active'
-		   AND (m.role = 'owner' OR EXISTS (
-		        SELECT 1 FROM user_roles ur
-		         WHERE ur.tenant_id = m.tenant_id AND ur.user_id = m.user_id
-		           AND ur.role_id = '00000000-0000-0000-0000-000000000001'))
-	)`
+// ownerPresenceQuery reports whether the organization has any member who is
+// its owner (by membership label or by holding the system owner role), and
+// whether any of them is active.
+const ownerPresenceQuery = `
+	SELECT COUNT(*) > 0,
+	       COALESCE(BOOL_OR(COALESCE(m.status, 'active') = 'active'), FALSE)
+	  FROM tenant_members m
+	 WHERE m.tenant_id = $1
+	   AND (m.role = 'owner' OR EXISTS (
+	        SELECT 1 FROM user_roles ur
+	         WHERE ur.tenant_id = m.tenant_id AND ur.user_id = m.user_id
+	           AND ur.role_id = '00000000-0000-0000-0000-000000000001'))`
 
-// HasActiveOwner reports whether the organization has an active owner.
-func (r *TenantRepository) HasActiveOwner(ctx context.Context, tenantID shared.ID) (bool, error) {
-	var exists bool
-	if err := r.db.QueryRowContext(ctx, activeOwnerExistsQuery, tenantID.String()).Scan(&exists); err != nil {
-		return false, fmt.Errorf("check organization owner: %w", err)
+type ownerQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func queryOwnerPresence(ctx context.Context, q ownerQuerier, tenantID string) (tenant.OwnerPresence, error) {
+	var p tenant.OwnerPresence
+	if err := q.QueryRowContext(ctx, ownerPresenceQuery, tenantID).Scan(&p.Any, &p.Active); err != nil {
+		return p, fmt.Errorf("check organization owner: %w", err)
 	}
-	return exists, nil
+	return p, nil
+}
+
+// OwnerPresence reports whether the organization has an owner, and whether
+// any of its owners is active.
+func (r *TenantRepository) OwnerPresence(ctx context.Context, tenantID shared.ID) (tenant.OwnerPresence, error) {
+	return queryOwnerPresence(ctx, r.db, tenantID.String())
 }
 
 // CreateFirstOwnerMembership inserts m, which must be an owner membership, and
-// the matching system owner role, only when the organization has no active
-// owner. It returns tenant.ErrOrganizationHasOwner otherwise.
-func (r *TenantRepository) CreateFirstOwnerMembership(ctx context.Context, m *tenant.Membership) (err error) {
+// the matching system owner role, only when the organization has no owner at
+// all, or, with recovery, no active owner. It returns
+// tenant.ErrOrganizationHasOwner otherwise.
+func (r *TenantRepository) CreateFirstOwnerMembership(ctx context.Context, m *tenant.Membership, recovery bool) (err error) {
 	if !m.IsOwner() {
 		return fmt.Errorf("%w: first-owner membership must have the owner role", shared.ErrValidation)
 	}
@@ -59,11 +74,11 @@ func (r *TenantRepository) CreateFirstOwnerMembership(ctx context.Context, m *te
 		`SELECT pg_advisory_xact_lock(hashtext('tenant_first_owner'), hashtext($1))`, tenantID); err != nil {
 		return fmt.Errorf("lock organization: %w", err)
 	}
-	var exists bool
-	if err = tx.QueryRowContext(ctx, activeOwnerExistsQuery, tenantID).Scan(&exists); err != nil {
-		return fmt.Errorf("check organization owner: %w", err)
+	presence, err := queryOwnerPresence(ctx, tx, tenantID)
+	if err != nil {
+		return err
 	}
-	if exists {
+	if presence.BlocksBootstrap(recovery) {
 		err = tenant.ErrOrganizationHasOwner
 		return err
 	}
