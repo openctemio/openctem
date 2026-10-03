@@ -29,6 +29,7 @@ import {
 import type { LicenseRisk, LicenseCategory } from '@/features/components'
 import { toast } from 'sonner'
 import { TableSkeleton } from '@/components/list-page-parts'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 type LicenseRow = NonNullable<ReturnType<typeof useLicenseStatsApi>['data']>[number]
 
@@ -52,15 +53,13 @@ const licenseColumns: ColumnDef<LicenseRow>[] = [
       return (
         <div>
           {license.url ? (
-            <a
+            <SafeExternalLink
               href={license.url}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
             >
               {license.license_id}
               <ExternalLink className="h-3 w-3" />
-            </a>
+            </SafeExternalLink>
           ) : (
             <span className="font-medium">{license.license_id}</span>
           )}

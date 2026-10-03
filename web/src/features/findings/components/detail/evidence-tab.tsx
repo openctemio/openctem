@@ -38,6 +38,8 @@ import { ValidationEvidencePanel } from './validation-evidence-panel'
 import { ComplianceMappingCard } from './compliance-mapping-card'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { ManualEvidenceNotesSection } from './manual-evidence-notes'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { safeImageSrc } from '@/lib/safe-href'
 
 interface EvidenceTabProps {
   evidence: Evidence[]
@@ -88,10 +90,8 @@ function RepositoryLink({
   const isGitLab = repositoryUrl.toLowerCase().includes('gitlab')
 
   return (
-    <a
+    <SafeExternalLink
       href={link}
-      target="_blank"
-      rel="noopener noreferrer"
       className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0"
       title="View in repository"
     >
@@ -104,7 +104,7 @@ function RepositoryLink({
       )}
       <span className="hidden sm:inline">View source</span>
       <ExternalLink className="h-2.5 w-2.5" />
-    </a>
+    </SafeExternalLink>
   )
 }
 
@@ -374,10 +374,8 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
                 {repositoryCodeUrl ? (
-                  <a
+                  <SafeExternalLink
                     href={repositoryCodeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="text-sm font-mono text-blue-400 hover:text-blue-300 hover:underline break-all inline-flex items-center gap-1"
                   >
                     {finding.filePath}
@@ -390,7 +388,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                       </span>
                     )}
                     <ExternalLink className="h-3 w-3 shrink-0 ms-1" />
-                  </a>
+                  </SafeExternalLink>
                 ) : (
                   <p className="text-sm font-mono text-slate-300 break-all">
                     {finding.filePath}
@@ -725,15 +723,13 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                         {uri && (
                           <div className="mt-2">
                             {isExternal ? (
-                              <a
+                              <SafeExternalLink
                                 href={uri}
-                                target="_blank"
-                                rel="noopener noreferrer"
                                 className="text-sm text-blue-400 hover:underline break-all inline-flex items-center gap-1"
                               >
                                 {uri}
                                 <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                              </a>
+                              </SafeExternalLink>
                             ) : (
                               <p className="text-sm font-mono text-muted-foreground break-all">
                                 {uri}
@@ -766,34 +762,30 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                   {apiAttachments
                     .filter((a) => a.content_type.startsWith('image/'))
                     .map((att) => (
-                      <a
+                      <SafeExternalLink
                         key={att.id}
                         href={att.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
                         className="group relative aspect-video rounded-lg border bg-muted overflow-hidden"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={att.url}
+                          src={safeImageSrc(att.url)}
                           alt={att.filename}
                           className="absolute inset-0 w-full h-full object-cover"
                         />
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                           <p className="text-xs text-white font-medium truncate">{att.filename}</p>
                         </div>
-                      </a>
+                      </SafeExternalLink>
                     ))}
                 </div>
               )}
               {apiAttachments
                 .filter((a) => !a.content_type.startsWith('image/'))
                 .map((att) => (
-                  <a
+                  <SafeExternalLink
                     key={att.id}
                     href={att.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="flex items-center gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
                   >
                     <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -803,7 +795,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                         {att.content_type} · {(att.size / 1024).toFixed(1)} KB
                       </p>
                     </div>
-                  </a>
+                  </SafeExternalLink>
                 ))}
             </div>
           </div>
