@@ -19,7 +19,7 @@ Permissions are included in the access token and checked using `middleware.Requi
 of truth is `permission.AllPermissions()` in
 `pkg/domain/permission/permission.go`; `permission.IsValid()` /
 `ParsePermission()` validate against it. As of this writing it defines
-**168 permissions**, grouped by module. Rather than hand-mirror all 168 (which
+**169 permissions**, grouped by module. Rather than hand-mirror all 169 (which
 would drift), the table below lists the module groups and the count each
 contributes — derive the exact strings from `AllPermissions()`.
 
@@ -33,7 +33,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Team | 23 | `team:*`, `members:*`, `groups:*`, `roles:*`, `permission_sets:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
-| Attack Surface | 3 | `scope:read/write/delete` |
+| Attack Surface | 4 | `scope:read/write/delete`, `scope:exclusions:approve` |
 | Validation (legacy) | 4 | `validation:read/write`, `pentest:read/write` |
 | Pentest (granular) | 11 | `pentest_campaigns:*`, `pentest_findings:*`, `pentest_retests:*`, `pentest_templates:*`, `pentest_reports:write` |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
@@ -41,7 +41,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
-| **Total** | **168** | |
+| **Total** | **169** | |
 
 > There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and
 > no `/api/v1/projects/*` routes; the resource hierarchy is
@@ -188,9 +188,38 @@ Details: [api-keys.md](./api-keys.md).
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
 
-`POST /api/v1/scope/exclusions/{id}/approve` is gated on `scope:write`, and the
-service refuses an approval by the user who requested the exclusion
-(`created_by`) with 403 — the same separation of duties as finding approvals.
+An exclusion stops scans from touching whatever it matches, so it is a
+two-person control:
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/scope/exclusions` · `/{id}` | `attack_surface:scope:read` |
+| `POST /api/v1/scope/exclusions` · `PUT /{id}` · `POST /{id}/activate` · `/{id}/deactivate` | `attack_surface:scope:write` |
+| `POST /api/v1/scope/exclusions/{id}/approve` · `/{id}/reject` | `attack_surface:scope:exclusions:approve` (owner, admin) |
+| `DELETE /api/v1/scope/exclusions/{id}` · `POST /bulk/delete` | `attack_surface:scope:delete` |
+
+- A new exclusion is created `pending` and is applied nowhere — not to scan
+  target selection, not to `POST /scope/check`, not to coverage — until it is
+  approved. Only an approved, `active`, unexpired exclusion is in effect
+  (`in_effect: true` in the response); every consumer reads exclusions through
+  `ExclusionRepository.ListActive`, which filters on exactly that.
+- `scope:write` (held by members) only requests an exclusion.
+  `attack_surface:scope:exclusions:approve` is granted to the owner and admin
+  system roles (migration 000267); custom roles get it only when a tenant adds
+  it.
+- The requester (`created_by`) cannot approve their own exclusion, even when
+  they hold the approve permission: 403, the same separation of duties as
+  finding approvals.
+- `reject` moves a pending exclusion to `rejected`; it can then be deleted but
+  never approved or activated (409).
+- `activate` only works on an approved exclusion (409 otherwise), so it cannot
+  be used to skip the approval.
+- Extending the window of an approved exclusion (a later `expires_at`, or
+  removing it) sends it back to `pending`; shortening it keeps the approval.
+- Exclusions that were `active` before migration 000267 were marked approved
+  (`approved_by = 'system:pre-approval-grandfathered'` where none was recorded)
+  so they stay in effect; inactive and expired ones need an approval to come
+  back.
 
 #### Scan zones (`/api/v1/scan-zones`, RFC-023)
 
