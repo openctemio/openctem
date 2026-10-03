@@ -241,6 +241,12 @@ func (s *Service) SetExposureBridge(bridge ExposureBridge) {
 	s.findingProcessor.SetExposureBridge(bridge)
 }
 
+// SetSecretFingerprinter wires the keyed fingerprint stored for secret
+// findings. Without it, secret findings carry no fingerprint.
+func (s *Service) SetSecretFingerprinter(fp *vulnerability.SecretFingerprinter) {
+	s.findingProcessor.SetSecretFingerprinter(fp)
+}
+
 // SetSuppressionChecker wires approved suppression-rule enforcement into the
 // ingest finding path: a new finding matching an active (approved, non-expired)
 // rule lands resolved+suppressed. Nil-safe: when not wired, findings are never

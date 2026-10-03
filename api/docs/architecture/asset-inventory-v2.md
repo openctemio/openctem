@@ -1,0 +1,388 @@
+# Asset inventory v2
+
+This page is the working reference for how the inventory is modelled,
+queried, grouped, excluded and automated. The decisions and their reasons
+are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
+
+- **Status: planned.** RFC-042 was accepted on 2026-10-03, with owner
+  decisions D1–D21 as recommended. Nothing on this page is built yet
+  unless a section says so. P0 ships as the seven slices in RFC-042 §9.1.
+- Update each section from "planned" to "shipped" in the PR that lands
+  it.
+- The UI design is in `web/docs/ui/pd-inspired-inventory-integrations-2026-10.md`.
+
+## The model in five lines
+
+1. An **asset** has identity ([RFC-028](../rfcs/RFC-028-asset-identity-model.md)),
+   owner, criticality, attribution ([RFC-036](../rfcs/RFC-036-easm.md)) and
+   labels.
+2. A **service** is one `host:port/transport` row in `asset_services`.
+   Its HTTP, TLS, network, technology, label and screenshot columns are
+   typed. People browse services.
+3. An **observation** is a facet value seen over a time span. A row is
+   written only when the value changes (`inventory_observations`).
+4. **OQL** is the single query language for lists, facets, group-by,
+   saved filters, dynamic groups, policies, exports and scan selections.
+5. The **target gate** (`scope.Gate`) decides whether anything may be
+   probed. Every dispatch path calls it.
+
+## Classes, the type registry and lenses
+
+OpenCTEM has 37 asset types. Each type belongs to exactly one fixed
+**class**, JupiterOne's `_class` above `_type`. Each class belongs to
+exactly one **lens**, which is a UI tab. The source-native type
+(`aws_instance`, `github_repo`) stays on the source record for
+provenance.
+
+| Lens | Classes (types) |
+|---|---|
+| External surface | `domain` (domain, subdomain), `ip_address`, `certificate`, `service` (service rows, generic service), `web_endpoint` (discovered_url) |
+| Applications | `application` (application, website, web_application, api, mobile_app) |
+| Cloud & infrastructure | `host` (host, compute, endpoint), `function` (serverless), `cloud_account` |
+| Containers & Kubernetes | `container`, `cluster` (kubernetes*), `artifact_registry` (container_registry) |
+| Code | `code_repo` (repository) |
+| Identities | `identity` (identity, iam_user, iam_role, service_account) |
+| Data | `data_store` (database, data_store, storage, s3_bucket) |
+| Network | `network` (network, vpc, subnet, firewall, load_balancer) |
+| (All assets only) | `other` (unclassified) |
+
+OQL has `lens:`, `class:` and `type:` core fields.
+
+**The registry.** `api/configs/asset-types.yaml` is the single
+definition. `make generate-asset-types` emits Go and TypeScript, and
+`GET /api/v1/asset-types` serves the same data to the web. Per type it
+declares:
+
+- the class;
+- the attribute schema;
+- facets and group-by fields;
+- the row and card renderer names;
+- the detail sections;
+- allowed relationships;
+- identity keys in match order;
+- the scanners that accept the type.
+
+**Storage.** Per-type attributes live in `properties` JSONB, validated
+against the schema. Every facet attribute gets a generated partial
+expression index, and a `jsonb_path_ops` GIN index serves containment
+queries. Core facets are real columns. Extension tables are used only for one-to-many data
+(`asset_services`, `asset_components`, `asset_repositories`).
+
+**Retired.** These are replaced by the registry or generated from it:
+
+- `category.go`;
+- `asset_type_categories`;
+- `category-templates.tsx`;
+- the per-type `config.tsx` pages.
+
+**Lenses.** A lens is a registry preset: its classes or base query, its
+row or card, and its default facets and group-by. The lenses are:
+
+- All assets (core columns + a type-aware cell);
+- External surface (the PD-style service cards);
+- Applications;
+- Cloud & infrastructure;
+- Containers & Kubernetes;
+- Code;
+- Identities;
+- Data;
+- Network.
+
+The old `/assets/<type>` pages redirect to lens presets.
+
+**The unified core** applies to every type: name, type, class, owner,
+criticality and effective criticality, attribution state and confidence,
+exposure, labels, first and last seen, sources, open findings and groups.
+
+**Attack surface to code.**
+`GET /api/v1/assets/{asset_id}/paths?to_class=code_repo` walks
+traversable relationship types, for example
+
+> domain → subdomain → IP → service → application → load balancer →
+> workload → container ← repository (`deployed_to`)
+
+with data scope applied at every hop.
+
+## Three layers: source record, link, canonical row
+
+| Layer | Asset | Service |
+|---|---|---|
+| Per-source record | `asset_sources` (`contributed_data`, run tag) | `service_sources` |
+| Correlation link | `asset_sources.linked_by` / `linked_run_id` (view `asset_links`) + RFC-028 `asset_identifiers` | through the asset |
+| Canonical row | `assets` | `asset_services` |
+
+**At ingest.** Ingest upserts the source record and matches inline on
+strong keys only (an RFC-028 strong identifier or an exact name).
+
+**The correlation job.** It is single-flight per tenant and scan zone,
+and runs after scan runs (5-minute debounce) and nightly. It:
+
+1. proposes windowed hostname and IP matches to dedup review (the IP
+   window defaults to 3 days);
+2. recomputes preferred fields with RFC-003 source priority;
+3. writes the snapshot used by the rollups.
+
+**The zone boundary.** Private addresses (RFC 1918, ULA, CGNAT) are keyed
+by (zone, address), so two zones never merge `10.0.0.5`. Public addresses
+and names correlate tenant-wide.
+
+**Merge and split.** Merge is `ApproveAndMerge`. Split is
+`POST /api/v1/assets/{asset_id}/split`. Both are audited.
+
+**Gone.** "Gone" is decided only inside the targets, ports and zone a
+completed run covered. A gone service becomes `closed` and a gone asset
+`stale`; neither is ever deleted.
+
+## Tables
+
+| Table | Purpose | Phase |
+|---|---|---|
+| `asset_types.class`, `assets.asset_class`, `assets.asset_lens` | Class and lens from the registry, denormalised for facets | P0 |
+| `asset_services` (evolved) | Service rows; typed HTTP/TLS/network columns; `legacy_asset_id`; `open_finding_count`, `max_open_severity` | P0 |
+| `assets` (+ `dns_a`, `dns_aaaa`, `dns_cname`, `dns_resolved_at`, `apex_domain`, `system_labels`) | DNS belongs to the name | P0 |
+| `findings.service_id` | Which service a finding is on ("Issues found") | P0 |
+| `technologies`, `technology_categories` | Global catalog imported from webappanalyzer (GPL-3.0), pinned per release | P0 |
+| `service_technologies` | Detected technology + version (`version_key int[]` for comparisons) per service | P0 |
+| `labels`, `label_assignments` | Label definitions; provenance for system and policy labels. Custom labels stay in `tags` arrays | P0 |
+| `saved_filters` | Named OQL queries, visibility private/tenant/roles | P0 |
+| `inventory_facet_counts` | Per-tenant snapshot for unfiltered facets, with `computed_at` | P0 |
+| `asset_groups` (+ `kind`, `subject`, `query`, `origin`, `cadence`, run fields, counts) | Static and dynamic groups | P0 |
+| `asset_group_service_members` | Static groups of services | P0 |
+| `asset_policies`, `asset_policy_runs`, `asset_policy_effects` | Policy engine | P1 |
+| `inventory_change` | Transactional outbox of inventory changes (`origin`, `chain_depth`) | P1 |
+| `inventory_observations` | Change-only facet history (shared with RFC-036 P4) | P1 |
+| `inventory_daily_rollups` | Trends; 400 days daily, then monthly | P1 |
+| `service_sources`; `asset_sources` (+ `tenant_id`, `last_seen_run_id`, `linked_by`, `linked_at`, `linked_run_id`); view `asset_links` | Per-source records and correlation links | P1 |
+| `scope_exclusions` (+ `applies_to`, `pattern_kind`, `effect`, `exclusion_kind`) | One exclusion model | P1 |
+| `service_screenshots`, `screenshot_phash_bands` | Re-encoded captures and similarity index | P2 |
+| `discovery_edges` | Lineage for candidates, assets and services | P3 |
+| `content_releases` | New nuclei templates per content version | P4 |
+
+Every table that references `assets` must be added to
+`api/internal/infra/postgres/asset_merge_plan.go`.
+`api/tests/integration/asset_merge_coverage_test.go` fails otherwise.
+
+## OQL cheat sheet
+
+```
+port:443,8443                 any of
+-label:staging                NOT
+host:*.staging.acme.com       wildcard (one or more labels)
+ip:10.0.0.0/8                 CIDR containment
+tech:jquery tech.version<3.5  technology and version compare
+tls.expires<30d               relative time (from now)
+first_seen>-7d                within the last 7 days
+(title:*jenkins* OR tech:jenkins) is.public:true
+title="Sign In"               exact, case-sensitive (":" is fuzzy)
+tls.issuer:*                  field is non-empty
+services:(port:22 AND banner:*OpenSSH_7*)   one service must match all
+source:nessus port:3389       restrict to one source's records
+```
+
+- Juxtaposition means AND. `OR`, `NOT` and parentheses work as usual.
+- Fields come only from the registry in `api/internal/app/oql`.
+- Values are always bound parameters.
+- The compiler always adds the tenant predicate and, for non-admin
+  callers, the data-scope predicate.
+- Limits: 2,000 characters, 64 clauses, depth 8.
+- `POST /api/v1/oql/validate` returns the canonical form, an English
+  explanation and any errors.
+
+## Facets and group-by
+
+- `GET /api/v1/services/facets?q=&fields=&size=` returns value counts per
+  field.
+  - With facet-menu queries, each field is counted without its own
+    clause (multi-select).
+  - Unfiltered requests read the snapshot and return `"source": "snapshot"`
+    with `as_of`.
+  - Filtered requests run live, per field, under a 1.5 s timeout.
+  - A field that times out returns a bounded-sample count marked
+    `"exact": false`.
+- `GET /api/v1/services/groups?group_by=<field>&q=` returns groups with a
+  count, the first `items_per_group` services, and a `query` string.
+  - Paging inside a group: `GET /api/v1/services?q=<that query>`.
+  - Export: `POST /api/v1/services/exports {q}`.
+  - Scan: `POST /api/v1/scans/preview {selection: {q}}`.
+- Supported `group_by` values: `tech`, `port`, `label`, `domain`, `host`,
+  `ip`, `cname`, `status`, `title`, `server`.
+
+## The target gate
+
+```
+allowed(t) = not archived
+         AND attribution allows active checks (NULL = legacy confirmed)
+         AND not excluded (name, aliases, resolved IPs, lineage ancestors)
+         AND tier <= ceiling
+         AND tool accepts the type
+```
+
+It runs at:
+
+- scan trigger;
+- RFC-030 claim;
+- every pipeline hop;
+- `POST /pipelines/runs` with targets;
+- the scan-coverage dispatcher;
+- quick scans;
+- policy-triggered scans;
+- validation re-checks.
+
+It returns `allowed[]` and `skipped[{target, reason}]`.
+`POST /api/v1/scans/preview` shows the same result before a scan is
+created, and returns a `preview_token`. The token is valid for 15 minutes.
+The gate runs again at dispatch whatever the preview said.
+
+## Exclusions
+
+| Pattern | Matches |
+|---|---|
+| `acme.com` | that name only |
+| `*.acme.com` | subdomains only (existing rows were rewritten to the pair `acme.com` + `*.acme.com`) |
+| `test.*.acme.com` | exactly one label in the middle |
+| `10.0.0.0/8`, `10.0.0.1-10.0.0.9` | addresses |
+
+- **Approval.** The approval workflow from migration 267 is unchanged.
+  Approved, active, unexpired rows count; a requester cannot approve their
+  own exclusion.
+- **Discovery.** Collectors and ingest do not create anything from a
+  discovery source that matches. A tenant-targeted name that matches is
+  created **archived** with `archived_reason = excluded:<id>`.
+- **Dispatch.** The gate.
+- **Graph cut.** When an exclusion is approved, descendants in
+  `discovery_edges` whose every path to a root passes through an excluded
+  node are archived with `excluded_ancestor:<asset_id>`.
+- **Reversal.** Removing, rejecting or expiring an exclusion un-archives
+  exactly the rows archived because of it.
+- **Never delete.** No exclusion path deletes an asset.
+
+## Policies
+
+**Lifecycle:**
+
+1. Draft. A new policy is disabled.
+2. `POST /asset-policies/{asset_policy_id}/preview` returns the count,
+   samples, per-action effects and cap warnings.
+3. `/enable` is accepted only with a preview that matches the current
+   definition and is less than 24 hours old.
+4. Runs happen on triggers (`discover`, `change` with facets,
+   `schedule`) or manually through `/run`.
+5. Any edit disables the policy again.
+
+**Actions:** `add_label`, `remove_label`, `notify`, `archive`,
+`mark_out_of_scope` (a pending exclusion, through approval),
+`set_criticality`, `set_owner`, `trigger_scan` (through the gate, the
+budget and a second approver). There is no delete.
+
+**Safety:**
+
+- **Self-origin skip.** A policy never fires on its own changes
+  (`origin = policy:<id>`).
+- **Depth.** Chain depth is limited to 3.
+- **Caps.** Per-run caps: 1,000 subjects; archive min(100, 5 %).
+  Exceeding a cap pauses the policy as `paused_needs_confirmation`.
+- **Breaker.** Three capped runs in a row set `disabled_breaker`.
+- **Tenant ceilings.** At most 50 enabled policies and 10,000 effects per
+  hour.
+- **Audit.** Every effect is recorded in `asset_policy_effects`. One
+  audit-log entry per run.
+- **Restore.** `POST /assets/bulk/reactivate {selection: {policy_run_id}}`
+  restores a run's archives.
+
+## Screenshots
+
+**Capture on the sensor** (`octm-shot`):
+
+- Chromium sandbox on, non-root, 512 MB, 20 s;
+- the host is pinned to the scanned IP;
+- private, metadata and non-HTTP requests are blocked unless the zone is
+  internal and the address is in scope;
+- no downloads, service workers or persistent profile;
+- egress through the zone's RFC-034 profile.
+
+**Upload** to `POST /api/v2/sensor/screenshots`.
+
+**On the API:**
+
+- decode the PNG and re-encode to WebP (400 KB cap) plus a 320-px
+  thumbnail (40 KB cap);
+- recompute the pHash;
+- store at `screenshots/<tenant>/<sha256>.webp` through `FileStorage`;
+- never store SVG or the original bytes.
+
+**Serving:**
+
+- path: `GET /api/v1/services/{service_id}/screenshots/{screenshot_id}/image`;
+- requires `assets:read` and data scope;
+- headers: `image/webp`, `nosniff`, `CSP: default-src 'none'; sandbox`,
+  `CORP: same-origin`;
+- no public or presigned URLs.
+
+**Clusters:** Hamming distance ≤ 3 is matched immediately through four
+16-bit bands; distance 4–6 is matched by the nightly reconcile.
+
+**Retention:** 30 days, but the latest capture per live service is always
+kept. The default quota is 5 GB per tenant; when it is reached, capture
+pauses with a visible warning.
+
+## Change kinds and alerts
+
+| Kind | Source facet |
+|---|---|
+| `asset_created`, `service_created` | insert |
+| `service_closed` | ports, after two consecutive misses |
+| `cert_changed`, `cert_expiring` (30/14/7/1 d) | tls |
+| `tech_added`, `tech_removed`, `tech_version_changed` | tech |
+| `title_changed`, `status_changed`, `server_changed` | http |
+| `dns_changed` | dns |
+| `screenshot_changed` | screenshot (pHash distance > 10) |
+
+- Alerts are per-tenant digests through the outbox.
+- A notification integration can filter them with an OQL query.
+- The in-memory `new_asset` throttle in `assetdiscovery.Notifier` is
+  replaced by an outbox digest row, so several API replicas no longer
+  send duplicate digests.
+
+## Honest numbers
+
+Every metric in `/inventory/trends`, `/inventory/distributions`, the facet
+responses and `/inventory/content-checks` carries one of:
+
+- `status: ok`;
+- `status: partial`, which lists the missing days;
+- `status: insufficient_data`, with a `reason`.
+
+Counts carry `exact: false` when they are a lower bound. Lists cap the
+total at "10,000+". Trends are never back-filled from before the first
+observation, and days are never interpolated.
+
+## Performance targets
+
+See [RFC-042 §7](../rfcs/RFC-042-asset-inventory-v2.md#7-performance-targets).
+In short, at 100k services per tenant:
+
+| Operation | p95 target |
+|---|---|
+| List | ≤ 300 ms |
+| Filtered facets | ≤ 600 ms |
+| Group-by page | ≤ 600 ms |
+| Dynamic group resolution at dispatch, 10k members | ≤ 2 s |
+
+The `api/tests/perf/inventory` fixtures and the `EXPLAIN` guard tests
+hold these targets.
+
+## Related
+
+- [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md): the design and the
+  owner decisions.
+- [RFC-036](../rfcs/RFC-036-easm.md) and [easm.md](easm.md): seeds,
+  attribution, candidates and the review queue.
+- [change-detection.md](change-detection.md): state history and the
+  existing triggers.
+- [asset-identity-resolution.md](asset-identity-resolution.md) and
+  [RFC-028](../rfcs/RFC-028-asset-identity-model.md): identity and merge.
+- [scan-orchestration.md](scan-orchestration.md) and
+  [RFC-030](../rfcs/RFC-030-scan-work-distribution.md): dispatch and
+  claim-time chunks.
+- [notification-system.md](notification-system.md): the outbox and its
+  channels.

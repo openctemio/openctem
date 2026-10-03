@@ -273,10 +273,17 @@ className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
 - Full detail pages (a record with its own URL): the main column answers
   what / why it matters / how to fix, and a sticky properties rail (`lg`, about
   19rem) holds the editable state and facts as label → value rows. Below `lg`
-  the rail moves under the header with the trivia folded. Activity is a tab,
-  not a permanent column. The page names itself in the breadcrumb with
-  `useBreadcrumbTitle`. Its drawer reuses the page's sections. The finding
-  detail page is the reference (`docs/finding-detail.md`).
+  the rail moves under the header with the trivia folded. The page names
+  itself in the breadcrumb with `useBreadcrumbTitle`. Its drawer reuses the
+  page's sections. The finding detail page is the reference
+  (`docs/finding-detail.md`).
+- Activity and comments, on every page and drawer: `<EntityActivity>` from
+  `src/features/activity/` (`docs/ui/activity-panel.md`). The page shows a
+  compact "Activity · N comments" summary; it opens the shared
+  `ActivityPanel` sheet (feed, filter, composer pinned at the bottom). Never a
+  full timeline inline, never an Activity tab, never a hand-rolled comment
+  box. A page keeps the open state in the URL (`?activity=open`); a drawer
+  keeps it in memory.
 - Destructive confirmation: `<ConfirmDialog destructive>`.
 
 ## 9. Responsiveness

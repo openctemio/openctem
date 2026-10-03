@@ -11,22 +11,13 @@
  * GET /findings/{id} (package, advisory, asset criticality).
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import {
-  ExternalLink,
-  FileText,
-  Link2,
-  MessageSquare,
-  Send,
-  ShieldCheck,
-  Ticket,
-} from 'lucide-react'
+import { ExternalLink, FileText, Link2, ShieldCheck, Ticket } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
 import { copyToClipboard } from '@/lib/clipboard'
 import { DetailSection, DetailSections } from '@/features/shared/components/detail-sheet'
 import {
@@ -57,6 +48,8 @@ import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingRetestSection } from './detail/finding-retest'
+import { FindingActivity } from './finding-activity'
+import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 
 interface FindingDetailDrawerProps {
   finding: Finding | null
@@ -67,7 +60,6 @@ interface FindingDetailDrawerProps {
   onStatusChange?: (findingId: string, status: FindingStatus) => void
   onSeverityChange?: (findingId: string, severity: Severity) => void
   onAssigneeChange?: (findingId: string, assignee: FindingUser | null) => void
-  onAddComment?: (findingId: string, comment: string) => void
 }
 
 function DrawerBodySkeleton() {
@@ -93,13 +85,11 @@ export function FindingDetailDrawer({
   onStatusChange,
   onSeverityChange,
   onAssigneeChange,
-  onAddComment,
 }: FindingDetailDrawerProps) {
   const router = useRouter()
   const integrationsEnabled = useModuleEnabled('integrations')
   const [ticketOpen, setTicketOpen] = useState(false)
-  const [comment, setComment] = useState('')
-  const [composing, setComposing] = useState(false)
+  const activityRef = useRef<EntityActivityHandle>(null)
 
   // The full record: package, advisory, asset criticality. Only while open.
   const { data: api } = useFindingApi(open && finding ? finding.id : null)
@@ -134,7 +124,8 @@ export function FindingDetailDrawer({
     [finding, onOpenChange, router]
   )
 
-  // ⌘/Ctrl+Enter opens the full page; Esc closes the comment box first.
+  // ⌘/Ctrl+Enter opens the full page; ⌘/Ctrl+C opens the activity panel on
+  // its comment box (unless text is selected: then it is a copy).
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -143,7 +134,6 @@ export function FindingDetailDrawer({
         e.preventDefault()
         openPage()
       }
-      // ⌘/Ctrl+C toggles the comment box, unless text is selected (copy).
       if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
         if (
           t.tagName !== 'TEXTAREA' &&
@@ -151,24 +141,13 @@ export function FindingDetailDrawer({
           !window.getSelection()?.toString()
         ) {
           e.preventDefault()
-          setComposing((v) => !v)
+          activityRef.current?.open({ compose: true })
         }
-      }
-      if (e.key === 'Escape' && composing) {
-        e.preventDefault()
-        e.stopPropagation()
-        setComposing(false)
-        setComment('')
       }
     }
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
-  }, [open, composing, openPage])
-
-  useEffect(() => {
-    setComposing(false)
-    setComment('')
-  }, [finding?.id])
+  }, [open, openPage])
 
   if (!finding || !detail) return null
 
@@ -185,13 +164,6 @@ export function FindingDetailDrawer({
       ? [{ label: 'Create ticket', icon: Ticket, onSelect: () => setTicketOpen(true) }]
       : []),
   ]
-
-  const sendComment = () => {
-    if (!comment.trim()) return
-    onAddComment?.(finding.id, comment.trim())
-    setComment('')
-    setComposing(false)
-  }
 
   const asset = detail.assets[0]
   const description = findingDescription(detail)
@@ -303,47 +275,15 @@ export function FindingDetailDrawer({
               )}
             </DetailSections>
 
-            <div className="space-y-2 border-t pt-4">
-              {composing ? (
-                <div className="space-y-2">
-                  <Textarea
-                    placeholder="Add a comment…"
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    className="min-h-[72px] resize-none text-sm"
-                    aria-label="Comment"
-                    autoFocus
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setComposing(false)
-                        setComment('')
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button size="sm" onClick={sendComment} disabled={!comment.trim()}>
-                      <Send className="h-3.5 w-3.5" />
-                      Send
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                onAddComment && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start text-muted-foreground"
-                    onClick={() => setComposing(true)}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    Add a comment…
-                  </Button>
-                )
-              )}
+            <FindingActivity
+              ref={activityRef}
+              findingId={finding.id}
+              subject={detail.title}
+              enabled={open}
+              urlParam={false}
+            />
+
+            <div className="border-t pt-4">
               <Button className="w-full" onClick={() => openPage()}>
                 <ExternalLink className="h-4 w-4" />
                 Open full details

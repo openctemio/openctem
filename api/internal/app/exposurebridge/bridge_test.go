@@ -223,8 +223,10 @@ func TestBridge_SecretValueStaysMasked(t *testing.T) {
 		event = e
 	}
 	masked := event.Details()["masked_value"]
-	if masked != "AKIA****WXYZ" {
-		t.Errorf("masked_value = %v, want the finding's masked value", masked)
+	// The finding re-masks what the scanner sent to a 4+4 preview at most
+	// (vulnerability.MaskSecretPreview); the event carries that preview.
+	if masked != "AKI…XYZ" {
+		t.Errorf("masked_value = %v, want the finding's masked preview", masked)
 	}
 	// The bridge only ever reads SecretMaskedValue; no raw-value key should exist.
 	if _, ok := event.Details()["secret_value"]; ok {

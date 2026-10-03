@@ -49,10 +49,6 @@ const ICON_ALLOWLIST: Record<string, { icons: string[]; reason: string }> = {
     reason:
       'Context chip ("filtered to asset X") above the table marks an applied filter; it is a label, not a trigger.',
   },
-  'src/app/(dashboard)/(discovery)/assets/repositories/[id]/page.tsx': {
-    icons: ['Filter'],
-    reason: 'Activity-feed icon for the "finding triaged" event type.',
-  },
   'src/features/scans/components/filtering-result-banner.tsx': {
     icons: ['Filter'],
     reason: 'Banner reporting how many scan results the scanner filtered out; no trigger.',

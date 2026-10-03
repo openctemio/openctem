@@ -42,7 +42,7 @@ func TestDedupReviewApproveRejectUnknownOrForeignIs404(t *testing.T) {
 	})
 
 	pg := &postgres.DB{DB: db}
-	h := handler.NewAdminDedupHandler(postgres.NewAssetDedupRepository(pg), postgres.NewFindingRepository(pg), logger.NewNop())
+	h := handler.NewAdminDedupHandler(postgres.NewAssetDedupRepository(pg), logger.NewNop())
 
 	call := func(action func(http.ResponseWriter, *http.Request), tenant shared.ID, id string) int {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/assets/dedup/reviews/"+id+"/x", nil)

@@ -109,6 +109,9 @@ function mapWSActivity(event: WSActivityEvent): Activity {
   // Merge all changes into metadata
   const metadata = {
     ...changes,
+    activityType: api.activity_type,
+    actorType: api.actor_type,
+    actorId: api.actor_id,
     assigneeName,
     assigneeEmail,
     assigneeId,
@@ -158,6 +161,11 @@ interface UseActivityStreamOptions {
   enabled?: boolean
   /** Callback when a new activity is received */
   onActivity?: (activity: Activity) => void
+  /**
+   * Any other event on the finding's channel (e.g. `reactions_updated`).
+   * Events other than `activity_created` are never mapped to activities.
+   */
+  onEvent?: (event: { type: string } & Record<string, unknown>) => void
   /** Callback when connection status changes */
   onStatusChange?: (status: ConnectionStatus) => void
   /** Maximum reconnection attempts before giving up (handled by WebSocket client) */
@@ -203,7 +211,7 @@ export function useActivityStream(
   findingId: string | null,
   options: UseActivityStreamOptions = {}
 ): UseActivityStreamReturn {
-  const { enabled = true, onActivity, onStatusChange } = options
+  const { enabled = true, onActivity, onStatusChange, onEvent } = options
 
   const { currentTenant } = useTenant()
 
@@ -211,15 +219,23 @@ export function useActivityStream(
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const onActivityRef = useRef(onActivity)
   const onStatusChangeRef = useRef(onStatusChange)
+  const onEventRef = useRef(onEvent)
 
   // Keep refs updated
   useEffect(() => {
     onActivityRef.current = onActivity
     onStatusChangeRef.current = onStatusChange
-  }, [onActivity, onStatusChange])
+    onEventRef.current = onEvent
+  }, [onActivity, onStatusChange, onEvent])
 
   // Handle incoming activity event from WebSocket
   const handleActivityEvent = useCallback((data: WSActivityEvent) => {
+    if (!data || data.type !== 'activity_created' || !data.activity) {
+      if (data && typeof (data as { type?: unknown }).type === 'string') {
+        onEventRef.current?.(data as unknown as { type: string } & Record<string, unknown>)
+      }
+      return
+    }
     try {
       const activity = mapWSActivity(data)
 
