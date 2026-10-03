@@ -6011,7 +6011,7 @@ definitions:
       tags:
         items:
           type: string
-        maxItems: 20
+        maxItems: 50
         type: array
       type:
         type: string
@@ -6539,7 +6539,7 @@ definitions:
       tags:
         items:
           type: string
-        maxItems: 20
+        maxItems: 50
         type: array
       topics:
         items:
@@ -12464,7 +12464,7 @@ definitions:
       tags:
         items:
           type: string
-        maxItems: 20
+        maxItems: 50
         type: array
     type: object
   internal_infra_http_handler.UpdateAssetServiceRequest:
