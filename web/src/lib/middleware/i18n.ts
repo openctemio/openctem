@@ -1,83 +1,51 @@
 /**
- * Internationalization Middleware Helpers
+ * Locale detection for the proxy (src/proxy.ts).
  *
- * Functions for handling locale detection and injection in middleware
+ * Order: the user's explicit choice (the `locale` cookie the language switcher
+ * writes), then the browser's Accept-Language as a default, then English.
+ * Only locales the app ships a catalog for are ever selected (see
+ * supportedLocales in src/lib/i18n.ts), so a browser setting cannot switch the
+ * page to an untranslated locale or to right-to-left.
  */
 
 import { NextRequest } from 'next/server'
-import { supportedLocales, defaultLocale } from '@/lib/i18n'
+import { defaultLocale, isSupportedLocale, type SupportedLocale } from '@/lib/i18n'
 
-// ============================================
-// LOCALE DETECTION
-// ============================================
+export const LOCALE_COOKIE = 'locale'
+
+/** Longest Accept-Language header we parse; anything longer is not a browser. */
+const MAX_ACCEPT_LANGUAGE = 512
 
 /**
- * Detect user's locale from cookie or Accept-Language header
- *
- * Priority:
- * 1. Locale cookie (user preference)
- * 2. Accept-Language header (browser setting)
- * 3. Default locale (fallback)
+ * The best supported locale in an Accept-Language header, by q-value (ties
+ * keep header order), matched on the primary subtag (`vi-VN` is `vi`).
  */
-export function detectLocale(req: NextRequest): string {
-  // 1. Check locale cookie
-  const cookieLocale = req.cookies.get('locale')?.value
-  if (cookieLocale && supportedLocales.includes(cookieLocale as never)) {
-    return cookieLocale
-  }
-
-  // 2. Check Accept-Language header
-  const acceptLanguage = req.headers.get('accept-language') || ''
-  const browserLocale = acceptLanguage.split(',')[0]?.split('-')[0]
-
-  if (browserLocale && supportedLocales.includes(browserLocale as never)) {
-    return browserLocale
-  }
-
-  // 3. Fallback to default
-  return defaultLocale
+export function localeFromAcceptLanguage(
+  header: string | null | undefined
+): SupportedLocale | undefined {
+  if (!header || header.length > MAX_ACCEPT_LANGUAGE) return undefined
+  const ranked = header
+    .split(',')
+    .map((part, index) => {
+      const [tag, ...params] = part.trim().split(';')
+      const qParam = params.map((p) => p.trim()).find((p) => p.startsWith('q='))
+      const q = qParam ? Number(qParam.slice(2)) : 1
+      return { lang: tag.trim().split('-')[0].toLowerCase(), q: Number.isFinite(q) ? q : 0, index }
+    })
+    .filter((entry) => entry.q > 0)
+    .sort((a, b) => b.q - a.q || a.index - b.index)
+  return ranked.map((entry) => entry.lang).find(isSupportedLocale)
 }
 
-// ============================================
-// HEADER INJECTION
-// ============================================
-
-/**
- * Create new headers with locale injected
- *
- * @param req - Next.js request object
- * @param locale - Detected locale
- * @returns New Headers object with x-locale header
- */
-export function createHeadersWithLocale(req: NextRequest, locale: string): Headers {
-  const headers = new Headers(req.headers)
-  headers.set('x-locale', locale)
-  return headers
+/** Cookie first, then Accept-Language, then the default. */
+export function negotiateLocale(
+  cookieLocale: string | undefined,
+  acceptLanguage: string | null | undefined
+): SupportedLocale {
+  if (isSupportedLocale(cookieLocale)) return cookieLocale
+  return localeFromAcceptLanguage(acceptLanguage) ?? defaultLocale
 }
 
-// ============================================
-// I18N HANDLER
-// ============================================
-
-/**
- * Handle i18n in middleware
- * Detects locale and returns headers with locale injected
- *
- * @param req - Next.js request object
- * @returns Object with locale and modified headers
- *
- * @example
- * ```typescript
- * const { locale, headers } = handleI18n(req)
- * return NextResponse.next({ request: { headers } })
- * ```
- */
-export function handleI18n(req: NextRequest): {
-  locale: string
-  headers: Headers
-} {
-  const locale = detectLocale(req)
-  const headers = createHeadersWithLocale(req, locale)
-
-  return { locale, headers }
+export function detectLocale(req: NextRequest): SupportedLocale {
+  return negotiateLocale(req.cookies.get(LOCALE_COOKIE)?.value, req.headers.get('accept-language'))
 }
