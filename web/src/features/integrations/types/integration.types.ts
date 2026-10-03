@@ -267,17 +267,6 @@ export interface TestNotificationResponse {
 }
 
 /**
- * Send notification request
- */
-export interface SendNotificationRequest {
-  title: string
-  body: string
-  severity?: 'critical' | 'high' | 'medium' | 'low'
-  url?: string
-  fields?: Record<string, string>
-}
-
-/**
  * Test credentials request
  */
 export interface TestCredentialsRequest {

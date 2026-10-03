@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -206,6 +207,15 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 		}
 	}
 
+	// 6. The settings the tool's sensor declares: right type and range, no
+	// flag-like or intrusive values (the sensor refuses the same; this
+	// refuses them when the step is saved).
+	if config != nil {
+		if _, err := pipeline.NormalizeStepConfig(toolName, config); err != nil {
+			addValidationError(result, "config", err.Error(), "INVALID_STEP_SETTING")
+		}
+	}
+
 	return result
 }
 
@@ -247,16 +257,17 @@ func (v *SecurityValidator) ValidateCommandPayload(ctx context.Context, tenantID
 		}
 	}
 
-	// Validate step_config if present
-	if stepConfig, ok := payload["step_config"].(map[string]any); ok {
+	// Validate the step's settings (payload key `config`, which the sensor
+	// reads) if present
+	if stepConfig, ok := payload[pipeline.PayloadKeyConfig].(map[string]any); ok {
 		if errs := v.validateConfigKeys(stepConfig); len(errs) > 0 {
 			for _, err := range errs {
-				addValidationError(result, "step_config", err, "DANGEROUS_CONFIG_KEY")
+				addValidationError(result, pipeline.PayloadKeyConfig, err, "DANGEROUS_CONFIG_KEY")
 			}
 		}
 		if errs := v.validateConfigValues(stepConfig); len(errs) > 0 {
 			for _, err := range errs {
-				addValidationError(result, "step_config", err, "DANGEROUS_CONFIG_VALUE")
+				addValidationError(result, pipeline.PayloadKeyConfig, err, "DANGEROUS_CONFIG_VALUE")
 			}
 		}
 	}

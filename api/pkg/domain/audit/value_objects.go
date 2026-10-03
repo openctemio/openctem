@@ -194,6 +194,11 @@ const (
 	ActionSSOVerifiedDomainAdded     Action = "sso.verified_domain_added"
 	ActionSSOVerifiedDomainVerified  Action = "sso.verified_domain_verified"
 	ActionSSOVerifiedDomainDeleted   Action = "sso.verified_domain_deleted"
+	// A platform administrator's SAML / identity-provider change waits for an
+	// owner of the organization, who approves (applies) or rejects it.
+	ActionSSOChangeRequested Action = "sso.change_requested"
+	ActionSSOChangeApproved  Action = "sso.change_approved"
+	ActionSSOChangeRejected  Action = "sso.change_rejected"
 
 	// Group actions
 	ActionGroupCreated Action = "group.created"
@@ -416,6 +421,7 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
@@ -545,7 +551,8 @@ func (a Action) Category() string {
 		return "audit"
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
-		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted:
+		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected:
 		return "sso"
 	}
 	return "unknown"
@@ -597,6 +604,8 @@ const (
 	ResourceTypeSAMLConfig       ResourceType = "saml_config"
 	ResourceTypeIdentityProvider ResourceType = "identity_provider"
 	ResourceTypeVerifiedDomain   ResourceType = "verified_domain"
+	// ResourceTypeSSOChange is an SSO change waiting for an owner's approval.
+	ResourceTypeSSOChange ResourceType = "sso_change"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
 	ResourceTypeAuditChain      ResourceType = "audit_chain"
@@ -625,7 +634,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
-		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain,
+		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate:
 		return true
@@ -695,6 +704,7 @@ func SeverityForAction(a Action) Severity {
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionMemberRemoved, ActionMemberRoleChanged,

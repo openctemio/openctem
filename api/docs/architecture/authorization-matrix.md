@@ -644,7 +644,8 @@ and certificates are never logged — an IdP update records
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
-| `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited) |
+| `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
+| `GET /api/v1/admin/tenants/{tenantId}/sso/changes` | any admin (what is waiting for the owner) |
 
 **First-owner bootstrap** (owner decision 2026-10-02, RFC-022 revision 5).
 The platform administrator belongs to no organization and cannot put a person
@@ -671,6 +672,28 @@ cannot send email gets 400. The link is emailed only, never returned. It is
 audited as `organization.owner_recovery` (admin log, high, refusals included)
 and as `user.created` with `owner_recovery: true` at critical severity in the
 organization's log.
+
+**SSO changes wait for an owner** (owner decision 2026-10-02, RFC-022
+revision 8). A platform administrator who could set an organization's SAML
+certificate or OIDC client could sign in as any of its members, so on an
+organization that has an active owner those writes are stored in
+`sso_pending_changes` and the live config is untouched until an owner decides:
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/tenants/{t}/settings/sso/changes` | **owner** (`RequireTeamOwner`) |
+| `POST /api/v1/tenants/{t}/settings/sso/changes/{id}/approve` | **owner** (`RequireTeamOwner` + the service re-checks active ownership in the database); applies the change and marks it approved in one transaction; audited `sso.change_approved` |
+| `POST /api/v1/tenants/{t}/settings/sso/changes/{id}/reject` | **owner** (same gates); audited `sso.change_rejected` |
+
+Administrators, members and viewers of the organization get 403; an owner of
+another organization gets 404 (the change is looked up in the caller's
+organization) or 403 (naming the other organization fails the ownership
+check). An expired change (7 days) answers 410; one already decided or
+superseded by a newer submission answers 409. Every active owner is notified
+in-app (`sso_change_pending`) and by email when SMTP is configured, without
+secrets. **Bootstrap exception:** an organization with no active owner gets the
+change applied directly. Deletes, SSO enforcement and verified domains are not
+gated (none adds a way in).
 
 **Tenant-side counterparts:**
 - `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.

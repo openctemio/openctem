@@ -601,8 +601,20 @@ one RFC-005 `ingest_jobs` row per segment plus one for the commit.
 ### Processing
 
 The ingest worker runs v2 jobs whatever `INGEST_MODE` is
-(`internal/app/ingest/v2_jobs.go`, `v2.go`). Each segment runs through the
-v1 pipeline with the v2 options:
+(`internal/app/ingest/v2_jobs.go`, `v2.go`).
+
+**The sensor is re-read before a queued job runs** (v1 async jobs and v2
+segment and commit jobs; `internal/app/ingest/queued_sensor.go`, RFC-040
+§5.2). The sensor was authenticated when the report was accepted, but it may
+have been revoked, disabled or deleted while the report waited. Its work is
+then dropped: nothing is ingested, a v2 report goes to `failed`, the job
+completes (no retry) with `{"dropped": true, "reason": …}`, and the tenant's
+audit log gets an `ingest.failed` entry with result `denied`. A v1 job is
+ingested as the stored sensor, not as a minimal sensor rebuilt from the job.
+A failed lookup is retried; without a sensor repository every job fails
+(fail closed).
+
+Each segment runs through the v1 pipeline with the v2 options:
 
 - **No fallback asset.** A finding binds to the asset its `asset_ref` names
   in its own segment, or to the segment's only asset when it names none.
@@ -1150,13 +1162,32 @@ inside it. Use one zone per segment (scan-zones.md).
 ## Tool settings (RFC-038, proposed)
 
 > Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
-> **proposed, nothing shipped yet.**
+> **proposed; per-scan settings for naabu and nuclei shipped** (below).
 
-Today a tool's options are not managed by the platform: the sensor's
-wrappers take them from host env vars or code, and the SDK copies only
-`allow_interactsh` and `exclude` from a command's `config` into
-`core.ScanOptions`; other `scanner_config` / scan-profile `options` keys
-are ignored. The design: each tool declares a typed settings schema,
+**Per-scan settings (shipped).** A scan command's settings travel in the
+payload key `config` (`pipeline.PayloadKeyConfig`), the key the SDK reads
+(`ScanCommandPayload.Config`). Pipeline steps used to send them as
+`step_config`, which no sensor reads, so every step ran with its tool's
+defaults. On the sensor, the SDK's executor resolves the keys the tool's
+settings schema declares (scope `scan`) into `core.ScanOptions.Settings`
+and fails the command on any value the schema refuses; other keys are
+reported in the command result's `ignored_config_keys`. The sensor declares:
+
+| Tool | Keys | Notes |
+|---|---|---|
+| naabu | `ports`, `top_ports`, `exclude_ports`, `rate`, `retries` | port lists only (`80,443,8000-8100`, `top-100`, `top-1000`, `full`); `rate` only lowers the sensor's rate |
+| nuclei | `tags`, `exclude_tags`, `severity` | `dos`, `fuzz`, `fuzzing`, `intrusive` refused as tags; `exclude_tags` adds to the sensor's |
+
+The api checks the same rules when a step is saved
+(`SecurityValidator.ValidateStepConfig` -> `pipeline.NormalizeStepConfig`,
+error code `INVALID_STEP_SETTING`) and normalizes values at dispatch
+(comma-separated lists to arrays, numeric strings to numbers, tags
+lowercased). `allow_interactsh` is refused on a pipeline step. The sensor
+stays the authority: `pipeline.NormalizeStepConfig` mirrors its schemas until
+the platform stores the schemas sensors report (RFC-038 P2).
+
+Otherwise a tool's options are not managed by the platform: the sensor's
+wrappers take them from host env vars or code. The design: each tool declares a typed settings schema,
 registered by digest in the manifest; admins edit a generated form on the
 sensor's page; the api validates and audits, then pushes a signed,
 versioned settings document that the sensor re-validates, stores and

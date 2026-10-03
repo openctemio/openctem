@@ -1,55 +1,38 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
-import { getErrorMessage } from '@/lib/api/error-handler'
+/**
+ * External attack surface: every internet-facing (exposure = public) asset,
+ * served page by page by the assets API.
+ *
+ * Every number on this page comes from the server (RFC-036 E8). Before, the
+ * page loaded the first 100 assets of scope "external" (a scope nothing sets
+ * automatically), computed its cards from that page, showed "Expiring certs"
+ * from a field the API never returns (always 0) and a hard-coded "94%"
+ * coverage card.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  createAsset,
-  updateAsset,
-  deleteAsset as apiDeleteAsset,
-  type CreateAssetInput,
-  useAssets,
-} from '@/features/assets'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Download, Eye, Pencil, Plus, RefreshCw, Search as SearchIcon, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+
 import { Main } from '@/components/layout'
-import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
 import {
-  PageHeader,
+  DataTable,
   DataTableRowActions,
-  StatsCard,
-  DetailField,
-  DetailFieldGrid,
-  DetailHeader,
-  DetailSection,
-  DetailSections,
-  DetailSheet,
-  DetailStat,
-  DetailStatGrid,
+  ErrorState,
+  MetricStrip,
+  PageHeader,
+  RelativeTime,
+  RiskScoreBadge,
+  StackedCell,
+  type MetricStripItem,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
-import {
-  Globe,
-  Plus,
-  Eye,
-  Pencil,
-  Trash2,
-  ExternalLink,
-  Shield,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  Server,
-  Lock,
-  RefreshCw,
-  Download,
-  X,
-  Search as SearchIcon,
-  ArrowUpRight,
-} from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -66,179 +49,247 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { toast } from 'sonner'
-import { Can, Permission, useHasPermission } from '@/lib/permissions'
-import { exportToCsv } from '@/hooks/use-csv-export'
+  createAsset,
+  deleteAsset as apiDeleteAsset,
+  updateAsset,
+  useAssets,
+  type Asset,
+  type AssetSearchFilters,
+  type CreateAssetInput,
+} from '@/features/assets'
+import { fetchAllAssets } from '@/features/assets/hooks/use-assets'
+import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
+import { useTenant } from '@/context/tenant-provider'
+import { useRiskThresholds } from '@/context/risk-scoring-provider'
+import { useDebounce } from '@/hooks/use-debounce'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { exportToCsv } from '@/hooks/use-csv-export'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
+import type { RiskLevelThresholds } from '@/features/shared/types'
+import {
+  externalSurfaceFilters,
+  riskRange,
+  type RiskBand,
+} from '@/features/attack-surface/lib/external-filters'
 
-type AssetStatus = 'active' | 'inactive' | 'monitoring'
-type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
-type AssetType = 'domain' | 'subdomain' | 'service' | 'certificate'
+const PAGE_SIZES = [20, 50, 100]
 
-interface ExternalAsset {
-  id: string
+const TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'domain', label: 'Domain' },
+  { value: 'subdomain', label: 'Subdomain' },
+  { value: 'ip_address', label: 'IP address' },
+  { value: 'service', label: 'Service' },
+  { value: 'application', label: 'Application' },
+  { value: 'certificate', label: 'Certificate' },
+  { value: 'host', label: 'Host' },
+]
+
+const RISK_OPTIONS: { value: RiskBand; label: string }[] = [
+  { value: 'critical', label: 'Critical' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+]
+
+const CREATE_TYPES = ['domain', 'subdomain', 'ip_address', 'service', 'certificate'] as const
+
+function sentence(s?: string): string {
+  if (!s) return ''
+  const t = s.replace(/_/g, ' ')
+  return t.charAt(0).toUpperCase() + t.slice(1)
+}
+
+function ipOf(a: Asset): string | undefined {
+  const m = a.metadata ?? {}
+  return (m.ip_address as string) || (m.resolved_ip as string) || undefined
+}
+
+interface FormState {
   name: string
-  type: AssetType
-  parentDomain?: string
-  ipAddress?: string
-  port?: number
-  status: AssetStatus
-  riskLevel: RiskLevel
-  sslExpiry?: string
-  lastSeen: string
-  discoveredAt: string
-  findingsCount: number
-  technologies?: string[]
-  notes?: string
+  type: (typeof CREATE_TYPES)[number]
+  parentDomain: string
+  ipAddress: string
+  port: string
+  notes: string
 }
 
-const statusColors: Record<AssetStatus, string> = {
-  active: 'border-success/30 bg-success/10 text-success',
-  inactive: 'border-border bg-muted text-muted-foreground',
-  monitoring: 'border-info/30 bg-info/10 text-info',
+const EMPTY_FORM: FormState = {
+  name: '',
+  type: 'subdomain',
+  parentDomain: '',
+  ipAddress: '',
+  port: '',
+  notes: '',
 }
 
-// Risk shares the severity scale's soft colours.
-const riskColors: Record<RiskLevel, string> = CRITICALITY_BADGE_SOFT
-
-const typeIcons: Record<AssetType, React.ElementType> = {
-  domain: Globe,
-  subdomain: ArrowUpRight,
-  service: Server,
-  certificate: Lock,
+/** A count from the assets API: one row is fetched, only `total` is used. */
+function useAssetCount(filters: AssetSearchFilters) {
+  const { total, isLoading } = useAssets({ ...filters, page: 1, pageSize: 1 })
+  return { total, isLoading }
 }
 
 export default function ExternalSurfacePage() {
   const router = useRouter()
-  const canWriteScope = useHasPermission(Permission.ScopeWrite)
-  // Fetch external assets from API
-  const { assets: apiAssets, mutate: refetchAssets } = useAssets({
-    types: ['domain', 'subdomain', 'service', 'ip_address'],
-    scopes: ['external'],
-    pageSize: 100,
-  })
-  const apiMapped = useMemo<ExternalAsset[]>(() => {
-    if (!apiAssets || apiAssets.length === 0) return []
-    return apiAssets.map((a): ExternalAsset => ({
-      id: a.id,
-      name: a.name,
-      type: a.type as ExternalAsset['type'],
-      ipAddress:
-        (a.metadata?.ip_address as string) || (a.metadata?.resolved_ip as string) || undefined,
-      status: a.status === 'active' ? 'active' : 'inactive',
-      riskLevel:
-        a.riskScore >= 70
-          ? 'critical'
-          : a.riskScore >= 50
-            ? 'high'
-            : a.riskScore >= 30
-              ? 'medium'
-              : 'low',
-      lastSeen: a.updatedAt || a.createdAt,
-      discoveredAt: a.createdAt,
-      findingsCount: a.findingCount || 0,
-      technologies: a.tags,
-    }))
-  }, [apiAssets])
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const thresholds: RiskLevelThresholds = useRiskThresholds()
 
-  // Real external assets from the assets API; empty until data loads.
-  const [assets, setAssets] = useState<ExternalAsset[]>([])
+  const [qParam, setQParam] = useUrlFilter('q', '')
+  const [typeParam, setTypeParam] = useUrlFilter('type', 'all')
+  const [riskParam, setRiskParam] = useUrlFilter('risk', 'all')
+  const [findingsParam, setFindingsParam] = useUrlFilter('findings', 'all')
+  const [pageParam, setPageParam] = useUrlFilter('page', '1')
+  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
+
+  const [searchInput, setSearchInput] = useState(qParam)
+  const search = useDebounce(searchInput, 300)
+  // Push the debounced search into the URL and back to page 1. The ref holds
+  // the last value written, so the URL echoing it back (or a new setter
+  // identity) never re-triggers the reset to page 1.
+  const pushedSearch = useRef(qParam)
   useEffect(() => {
-    setAssets(apiMapped)
-  }, [apiMapped])
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterType, setFilterType] = useState<AssetType | 'all'>('all')
-  const [filterRisk, setFilterRisk] = useState<RiskLevel | 'all'>('all')
+    if (search === pushedSearch.current) return
+    pushedSearch.current = search
+    setQParam(search)
+    setPageParam('1')
+  }, [search, setQParam, setPageParam])
+
+  const pagination = useMemo(() => {
+    const size = parseInt(perPageParam, 10)
+    return {
+      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
+      pageSize: PAGE_SIZES.includes(size) ? size : 20,
+    }
+  }, [pageParam, perPageParam])
+  const setPagination = useCallback(
+    (next: { pageIndex: number; pageSize: number }) => {
+      setPageParam(String(next.pageIndex + 1))
+      setPerPageParam(String(next.pageSize))
+    },
+    [setPageParam, setPerPageParam]
+  )
+
+  const listFilters = useMemo(
+    () =>
+      externalSurfaceFilters(
+        {
+          search: qParam,
+          type: typeParam,
+          risk: riskParam as RiskBand | 'all',
+          withFindings: findingsParam === 'true',
+        },
+        thresholds
+      ),
+    [qParam, typeParam, riskParam, findingsParam, thresholds]
+  )
+
+  const {
+    assets,
+    total,
+    isLoading,
+    error,
+    mutate: refetchAssets,
+  } = useAssets({
+    ...listFilters,
+    page: pagination.pageIndex + 1,
+    pageSize: pagination.pageSize,
+    sort: '-risk_score',
+  })
+
+  // Headline numbers: each one is a server count over ALL internet-facing
+  // assets (not the current page, not the current search).
+  const base = externalSurfaceFilters({}, thresholds)
+  const allCount = useAssetCount(base)
+  const criticalCount = useAssetCount({ ...base, ...riskRange('critical', thresholds) })
+  const withFindingsCount = useAssetCount({ ...base, hasFindings: true })
+  const canReadExposures = can(Permission.FindingsRead)
+  const { total: expiringCerts } = useExposures(currentTenant?.id ?? null, {
+    event_types: ['certificate_expiring', 'certificate_expired'],
+    states: ['active'],
+    per_page: 1,
+  })
+
+  const metrics: MetricStripItem[] = [
+    {
+      key: 'all',
+      label: 'Internet-facing assets',
+      value: allCount.total,
+      onClick: () => {
+        setRiskParam('all')
+        setFindingsParam('all')
+        setPageParam('1')
+      },
+      active: riskParam === 'all' && findingsParam === 'all',
+    },
+    {
+      key: 'critical',
+      label: 'Critical risk',
+      value: criticalCount.total,
+      tone: 'danger',
+      hint: `Risk score ${thresholds.critical_min} or more`,
+      onClick: () => {
+        setRiskParam(riskParam === 'critical' ? 'all' : 'critical')
+        setPageParam('1')
+      },
+      active: riskParam === 'critical',
+    },
+    {
+      key: 'findings',
+      label: 'With open findings',
+      value: withFindingsCount.total,
+      tone: 'warning',
+      onClick: () => {
+        setFindingsParam(findingsParam === 'true' ? 'all' : 'true')
+        setPageParam('1')
+      },
+      active: findingsParam === 'true',
+    },
+    {
+      key: 'certs',
+      label: 'Expiring certificates',
+      value: canReadExposures ? expiringCerts : '—',
+      tone: 'warning',
+      hint: canReadExposures ? 'Open, expired included' : 'Needs permission to read findings',
+    },
+  ]
+  const metricsLoading =
+    (allCount.isLoading || criticalCount.isLoading || withFindingsCount.isLoading) &&
+    allCount.total === 0
+
+  // ---- create / edit / delete -------------------------------------------
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [viewAsset, setViewAsset] = useState<ExternalAsset | null>(null)
-  const [editAsset, setEditAsset] = useState<ExternalAsset | null>(null)
-  const [deleteAsset, setDeleteAsset] = useState<ExternalAsset | null>(null)
+  const [editAsset, setEditAsset] = useState<Asset | null>(null)
+  const [deleteAsset, setDeleteAsset] = useState<Asset | null>(null)
+  const [formData, setFormData] = useState<FormState>(EMPTY_FORM)
   const [scanCandidates, setScanCandidates] = useState<ScanCandidate[]>([])
   const [scanDialogOpen, setScanDialogOpen] = useState(false)
 
-  const [formData, setFormData] = useState({
-    name: '',
-    type: 'subdomain' as AssetType,
-    parentDomain: '',
-    ipAddress: '',
-    port: '',
-    status: 'active' as AssetStatus,
-    riskLevel: 'medium' as RiskLevel,
-    notes: '',
+  const metadataFromForm = () => ({
+    ...(formData.ipAddress ? { ip_address: formData.ipAddress } : {}),
+    ...(formData.port ? { port: Number(formData.port) } : {}),
+    ...(formData.parentDomain ? { parent_domain: formData.parentDomain } : {}),
   })
-
-  // Use lazy state initialization for current time
-  const [currentTime] = useState(() => Date.now())
-
-  const stats = useMemo(() => {
-    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000
-    return {
-      total: assets.length,
-      active: assets.filter((a) => a.status === 'active').length,
-      critical: assets.filter((a) => a.riskLevel === 'critical').length,
-      totalFindings: assets.reduce((acc, a) => acc + a.findingsCount, 0),
-      expiringCerts: assets.filter((a) => {
-        if (!a.sslExpiry) return false
-        const expiryTime = new Date(a.sslExpiry).getTime()
-        return expiryTime - currentTime <= thirtyDaysMs
-      }).length,
-    }
-  }, [assets, currentTime])
-
-  const filteredAssets = useMemo(() => {
-    return assets.filter((asset) => {
-      if (searchQuery && !asset.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-        return false
-      }
-      if (filterType !== 'all' && asset.type !== filterType) return false
-      if (filterRisk !== 'all' && asset.riskLevel !== filterRisk) return false
-      return true
-    })
-  }, [assets, searchQuery, filterType, filterRisk])
-
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      type: 'subdomain',
-      parentDomain: '',
-      ipAddress: '',
-      port: '',
-      status: 'active',
-      riskLevel: 'medium',
-      notes: '',
-    })
-  }
 
   const handleCreate = async () => {
     if (!formData.name) {
-      toast.error('Please enter an asset name')
+      toast.error('Enter an asset name')
       return
     }
-    // Persist through the real API. This previously only pushed onto local
-    // state and reported success, so the asset vanished on the next reload —
-    // the page reads from useAssets but the writes never reached it.
     try {
+      // exposure 'public' is what puts an asset on this page.
       await createAsset({
         name: formData.name,
         type: formData.type as CreateAssetInput['type'],
         scope: 'external',
+        exposure: 'public',
         description: formData.notes || undefined,
-        metadata: {
-          ...(formData.ipAddress ? { ip_address: formData.ipAddress } : {}),
-          ...(formData.port ? { port: Number(formData.port) } : {}),
-          ...(formData.parentDomain ? { parent_domain: formData.parentDomain } : {}),
-        },
+        metadata: metadataFromForm(),
       })
       toast.success('External asset added')
       setIsCreateOpen(false)
-      resetForm()
+      setFormData(EMPTY_FORM)
       await refetchAssets()
     } catch (e) {
       toast.error(getErrorMessage(e, 'Failed to add external asset'))
@@ -247,24 +298,18 @@ export default function ExternalSurfacePage() {
 
   const handleEdit = async () => {
     if (!editAsset || !formData.name) {
-      toast.error('Please enter an asset name')
+      toast.error('Enter an asset name')
       return
     }
-    // Persist through the real API. This previously only mutated local state and
-    // reported success, so edits silently reverted on the next refetch.
     try {
       await updateAsset(editAsset.id, {
         name: formData.name,
         description: formData.notes || undefined,
-        metadata: {
-          ...(formData.ipAddress ? { ip_address: formData.ipAddress } : {}),
-          ...(formData.port ? { port: Number(formData.port) } : {}),
-          ...(formData.parentDomain ? { parent_domain: formData.parentDomain } : {}),
-        },
+        metadata: metadataFromForm(),
       })
-      toast.success('External asset updated successfully')
+      toast.success('External asset updated')
       setEditAsset(null)
-      resetForm()
+      setFormData(EMPTY_FORM)
       await refetchAssets()
     } catch (e) {
       toast.error(getErrorMessage(e, 'Failed to update external asset'))
@@ -275,7 +320,7 @@ export default function ExternalSurfacePage() {
     if (!deleteAsset) return
     try {
       await apiDeleteAsset(deleteAsset.id)
-      toast.success('External asset deleted successfully')
+      toast.success('External asset deleted')
       setDeleteAsset(null)
       await refetchAssets()
     } catch (e) {
@@ -283,146 +328,283 @@ export default function ExternalSurfacePage() {
     }
   }
 
-  // Derive a scan target from an external asset: prefer resolved IP, fall back
-  // to the asset name (domain / subdomain / service host is itself a target).
-  const toScanCandidate = (a: ExternalAsset): ScanCandidate => ({
-    id: a.id,
-    label: a.name || a.ipAddress || a.id,
-    target: (a.ipAddress || a.name || '').trim(),
-  })
+  const openEdit = useCallback((a: Asset) => {
+    const m = a.metadata ?? {}
+    setFormData({
+      name: a.name,
+      type: (CREATE_TYPES as readonly string[]).includes(a.type)
+        ? (a.type as FormState['type'])
+        : 'subdomain',
+      parentDomain: (m.parent_domain as string) || '',
+      ipAddress: ipOf(a) || '',
+      port: m.port != null ? String(m.port) : '',
+      notes: a.description || '',
+    })
+    setEditAsset(a)
+  }, [])
 
-  const openScanDialog = (items: ExternalAsset[]) => {
-    setScanCandidates(items.map(toScanCandidate))
+  const openScanDialog = (items: Asset[]) => {
+    setScanCandidates(
+      items.map((a) => ({
+        id: a.id,
+        label: a.name || ipOf(a) || a.id,
+        target: (ipOf(a) || a.name || '').trim(),
+      }))
+    )
     setScanDialogOpen(true)
   }
 
-  const handleExport = () => {
-    exportToCsv(
-      filteredAssets,
-      [
-        { header: 'Name', accessor: (a) => a.name },
-        { header: 'Type', accessor: (a) => a.type },
-        { header: 'Parent Domain', accessor: (a) => a.parentDomain ?? '' },
-        { header: 'IP Address', accessor: (a) => a.ipAddress ?? '' },
-        { header: 'Port', accessor: (a) => a.port ?? '' },
-        { header: 'Status', accessor: (a) => a.status },
-        { header: 'Risk Level', accessor: (a) => a.riskLevel },
-        { header: 'Findings', accessor: (a) => a.findingsCount },
-        { header: 'Last Seen', accessor: (a) => a.lastSeen },
-      ],
-      'external-assets'
-    )
+  const handleExport = async () => {
+    try {
+      const all = await fetchAllAssets(listFilters, (loaded, cap) =>
+        toast.warning(`Export stopped at ${loaded} of more than ${cap} assets`)
+      )
+      exportToCsv(
+        all,
+        [
+          { header: 'Name', accessor: (a) => a.name },
+          { header: 'Type', accessor: (a) => a.type },
+          { header: 'IP address', accessor: (a) => ipOf(a) ?? '' },
+          { header: 'Risk score', accessor: (a) => a.riskScore },
+          { header: 'Findings', accessor: (a) => a.findingCount },
+          { header: 'Last seen', accessor: (a) => a.lastSeen ?? '' },
+        ],
+        'external-assets'
+      )
+    } catch (e) {
+      toast.error(getErrorMessage(e, 'Export failed'))
+    }
   }
 
-  const openEdit = (asset: ExternalAsset) => {
-    setFormData({
-      name: asset.name,
-      type: asset.type,
-      parentDomain: asset.parentDomain || '',
-      ipAddress: asset.ipAddress || '',
-      port: asset.port?.toString() || '',
-      status: asset.status,
-      riskLevel: asset.riskLevel,
-      notes: asset.notes || '',
-    })
-    setEditAsset(asset)
-  }
+  const columns = useMemo<ColumnDef<Asset>[]>(
+    () => [
+      {
+        id: 'name',
+        header: 'Asset',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <StackedCell
+            truncate
+            className="max-w-[360px]"
+            primary={<span className="font-medium">{row.original.name}</span>}
+            secondary={sentence(row.original.type)}
+          />
+        ),
+      },
+      {
+        id: 'ip',
+        header: 'IP address',
+        enableSorting: false,
+        cell: ({ row }) => {
+          const ip = ipOf(row.original)
+          return ip ? (
+            <span className="text-sm tabular-nums">{ip}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )
+        },
+      },
+      {
+        id: 'risk',
+        header: 'Risk',
+        enableSorting: false,
+        cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
+      },
+      {
+        id: 'findings',
+        header: 'Findings',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span
+            className={
+              row.original.findingCount > 0 ? 'font-medium text-destructive tabular-nums' : ''
+            }
+          >
+            {row.original.findingCount}
+          </span>
+        ),
+      },
+      {
+        id: 'last_seen',
+        header: 'Last seen',
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.lastSeen ? (
+            <RelativeTime date={row.original.lastSeen} />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        id: 'actions',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span onClick={(e) => e.stopPropagation()}>
+            <DataTableRowActions
+              actions={[
+                {
+                  label: 'Open',
+                  icon: Eye,
+                  onClick: () => router.push(`/assets/${row.original.id}`),
+                },
+                {
+                  label: 'Edit',
+                  icon: Pencil,
+                  onClick: () => openEdit(row.original),
+                  permission: Permission.AssetsWrite,
+                },
+                {
+                  label: 'Delete',
+                  icon: Trash2,
+                  onClick: () => setDeleteAsset(row.original),
+                  destructive: true,
+                  permission: Permission.AssetsDelete,
+                },
+              ]}
+            />
+          </span>
+        ),
+      },
+    ],
+    [router, openEdit]
+  )
+
+  const filtersActive =
+    !!qParam || typeParam !== 'all' || riskParam !== 'all' || findingsParam !== 'all'
+
+  const toolbarStart = (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative w-full sm:w-64">
+        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search assets"
+          aria-label="Search assets"
+          className="h-9 ps-9"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+        />
+      </div>
+      <Select
+        value={typeParam}
+        onValueChange={(v) => {
+          setTypeParam(v)
+          setPageParam('1')
+        }}
+      >
+        <SelectTrigger className="h-9 w-36" aria-label="Filter by type">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All types</SelectItem>
+          {TYPE_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={riskParam}
+        onValueChange={(v) => {
+          setRiskParam(v)
+          setPageParam('1')
+        }}
+      >
+        <SelectTrigger className="h-9 w-32" aria-label="Filter by risk">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All risks</SelectItem>
+          {RISK_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+
+  const toolbarEnd = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-9"
+      onClick={() => void refetchAssets()}
+      aria-label="Refresh"
+    >
+      <RefreshCw className="h-4 w-4" />
+    </Button>
+  )
 
   const formFields = (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Asset Name *</Label>
+          <Label htmlFor="ext-name">Name</Label>
           <Input
-            placeholder="e.g., api.example.com"
+            id="ext-name"
+            placeholder="api.example.com"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           />
         </div>
-        <div className="space-y-2">
-          <Label>Type</Label>
-          <Select
-            value={formData.type}
-            onValueChange={(v) => setFormData({ ...formData, type: v as AssetType })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="domain">Domain</SelectItem>
-              <SelectItem value="subdomain">Subdomain</SelectItem>
-              <SelectItem value="service">Service</SelectItem>
-              <SelectItem value="certificate">Certificate</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {!editAsset && (
+          <div className="space-y-2">
+            <Label>Type</Label>
+            <Select
+              value={formData.type}
+              onValueChange={(v) => setFormData({ ...formData, type: v as FormState['type'] })}
+            >
+              <SelectTrigger aria-label="Asset type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CREATE_TYPES.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {sentence(t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>Parent Domain</Label>
+          <Label htmlFor="ext-parent">Parent domain</Label>
           <Input
-            placeholder="e.g., example.com"
+            id="ext-parent"
+            placeholder="example.com"
             value={formData.parentDomain}
             onChange={(e) => setFormData({ ...formData, parentDomain: e.target.value })}
           />
         </div>
         <div className="space-y-2">
-          <Label>IP Address</Label>
+          <Label htmlFor="ext-ip">IP address</Label>
           <Input
-            placeholder="e.g., 192.168.1.1"
+            id="ext-ip"
+            placeholder="203.0.113.10"
             value={formData.ipAddress}
             onChange={(e) => setFormData({ ...formData, ipAddress: e.target.value })}
           />
         </div>
-      </div>
-      <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>Port</Label>
+          <Label htmlFor="ext-port">Port</Label>
           <Input
+            id="ext-port"
             type="number"
-            placeholder="e.g., 443"
+            placeholder="443"
             value={formData.port}
             onChange={(e) => setFormData({ ...formData, port: e.target.value })}
           />
         </div>
-        <div className="space-y-2">
-          <Label>Status</Label>
-          <Select
-            value={formData.status}
-            onValueChange={(v) => setFormData({ ...formData, status: v as AssetStatus })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-              <SelectItem value="monitoring">Monitoring</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Risk Level</Label>
-          <Select
-            value={formData.riskLevel}
-            onValueChange={(v) => setFormData({ ...formData, riskLevel: v as RiskLevel })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="critical">Critical</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
       <div className="space-y-2">
-        <Label>Notes</Label>
+        <Label htmlFor="ext-notes">Notes</Label>
         <Input
-          placeholder="Additional notes..."
+          id="ext-notes"
+          placeholder="Optional"
           value={formData.notes}
           onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
         />
@@ -434,293 +616,110 @@ export default function ExternalSurfacePage() {
     <>
       <Main>
         <PageHeader
-          title="External Attack Surface"
-          description="Monitor and manage internet-facing assets and their exposure"
+          title="External attack surface"
+          description="Every internet-facing asset, riskiest first."
         >
-          <div className="flex gap-2">
-            <Can permission={Permission.ScansExecute}>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openScanDialog(filteredAssets)}
-                disabled={filteredAssets.length === 0}
-              >
-                <RefreshCw className="me-2 h-4 w-4" />
-                Scan Now
-              </Button>
-            </Can>
-            <Button variant="outline" size="sm" onClick={handleExport}>
-              <Download className="me-2 h-4 w-4" />
-              Export
+          <Can permission={Permission.ScansExecute}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openScanDialog(assets)}
+              disabled={assets.length === 0}
+            >
+              <RefreshCw className="me-2 h-4 w-4" />
+              Scan this page
             </Button>
-            <Can permission={Permission.ScopeWrite}>
-              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                <Plus className="me-2 h-4 w-4" />
-                Add Asset
-              </Button>
-            </Can>
-          </div>
+          </Can>
+          <Button variant="outline" size="sm" onClick={() => void handleExport()}>
+            <Download className="me-2 h-4 w-4" />
+            Export
+          </Button>
+          <Can permission={Permission.AssetsWrite}>
+            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="me-2 h-4 w-4" />
+              Add asset
+            </Button>
+          </Can>
         </PageHeader>
 
-        {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-5 mb-6">
-          <StatsCard
-            title="Total Assets"
-            value={stats.total}
-            icon={Globe}
-            description={`${stats.active} active`}
-          />
-          <StatsCard
-            title="Critical Risk"
-            value={stats.critical}
-            valueClassName="text-red-600"
-            icon={AlertTriangle}
-            description="Needs immediate attention"
-          />
-          <StatsCard
-            title="Total Findings"
-            value={stats.totalFindings}
-            icon={Shield}
-            description="Across all assets"
-          />
-          <StatsCard
-            title="Expiring Certs"
-            value={stats.expiringCerts}
-            valueClassName="text-amber-600"
-            icon={Clock}
-            description="Within 30 days"
-          />
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Coverage</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-500">94%</div>
-              <Progress value={94} className="mt-2" />
-            </CardContent>
-          </Card>
-        </div>
+        <MetricStrip className="mt-5" loading={metricsLoading} items={metrics} />
 
-        {/* Filters */}
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            <div className="flex flex-wrap gap-4">
-              <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="Search assets..."
-                    className="ps-9"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Select
-                  value={filterType}
-                  onValueChange={(v) => setFilterType(v as AssetType | 'all')}
-                >
-                  <SelectTrigger className="w-32" aria-label="Filter by type">
-                    <SelectValue placeholder="Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="domain">Domain</SelectItem>
-                    <SelectItem value="subdomain">Subdomain</SelectItem>
-                    <SelectItem value="service">Service</SelectItem>
-                    <SelectItem value="certificate">Certificate</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={filterRisk}
-                  onValueChange={(v) => setFilterRisk(v as RiskLevel | 'all')}
-                >
-                  <SelectTrigger className="w-32" aria-label="Filter by risk">
-                    <SelectValue placeholder="Risk" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Risks</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-                {(filterType !== 'all' || filterRisk !== 'all' || searchQuery) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setFilterType('all')
-                      setFilterRisk('all')
-                      setSearchQuery('')
-                    }}
-                  >
-                    <X className="me-1 h-3 w-3" />
-                    Clear
-                  </Button>
-                )}
-              </div>
+        <div className="mt-5">
+          {error && !isLoading ? (
+            <ErrorState title="external assets" error={error} onRetry={() => refetchAssets()} />
+          ) : isLoading && assets.length === 0 ? (
+            <div className="space-y-2">
+              <Skeleton className="h-9 w-full max-w-sm" />
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Assets Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>External Assets</CardTitle>
-            <CardDescription>
-              {filteredAssets.length} of {assets.length} assets
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Asset</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>IP / Port</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Risk</TableHead>
-                  <TableHead>Findings</TableHead>
-                  <TableHead>Last Seen</TableHead>
-                  <TableHead className="w-[50px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAssets.map((asset) => {
-                  const TypeIcon = typeIcons[asset.type] ?? Globe
-                  return (
-                    <TableRow
-                      key={asset.id}
-                      className="cursor-pointer"
-                      onClick={() => setViewAsset(asset)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-                            <TypeIcon className="h-4 w-4 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{asset.name}</p>
-                            {asset.parentDomain && (
-                              <p className="text-xs text-muted-foreground">{asset.parentDomain}</p>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {asset.type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <code className="text-xs">
-                          {asset.ipAddress}
-                          {asset.port && `:${asset.port}`}
-                        </code>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={statusColors[asset.status]}>
-                          {asset.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={riskColors[asset.riskLevel]}>
-                          {asset.riskLevel}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={asset.findingsCount > 0 ? 'text-orange-500 font-medium' : ''}
-                        >
-                          {asset.findingsCount}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {new Date(asset.lastSeen).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        <Can permission={[Permission.ScopeWrite, Permission.ScopeDelete]}>
-                          <span onClick={(e) => e.stopPropagation()}>
-                            <DataTableRowActions
-                              actions={[
-                                {
-                                  label: 'View Details',
-                                  icon: Eye,
-                                  onClick: () => setViewAsset(asset),
-                                },
-                                {
-                                  label: 'Edit',
-                                  icon: Pencil,
-                                  onClick: () => openEdit(asset),
-                                  permission: Permission.ScopeWrite,
-                                },
-                                {
-                                  label: 'Delete',
-                                  icon: Trash2,
-                                  onClick: () => setDeleteAsset(asset),
-                                  destructive: true,
-                                  permission: Permission.ScopeDelete,
-                                },
-                              ]}
-                            />
-                          </span>
-                        </Can>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+          ) : (
+            <DataTable
+              columns={columns}
+              data={assets}
+              getRowId={(a) => a.id}
+              showSearch={false}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              toolbarEnd={toolbarEnd}
+              manualPagination
+              rowCount={total}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              onRowClick={(a) => router.push(`/assets/${a.id}`)}
+              emptyMessage={
+                filtersActive ? 'No internet-facing assets match' : 'No internet-facing assets yet'
+              }
+              emptyDescription={
+                filtersActive
+                  ? 'Clear the search or filters to see every internet-facing asset.'
+                  : 'Assets appear here once a scan, import or the certificate monitor marks them public.'
+              }
+            />
+          )}
+        </div>
       </Main>
 
-      {/* Create Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add External Asset</DialogTitle>
-            <DialogDescription>Add a new internet-facing asset to monitor</DialogDescription>
+            <DialogTitle>Add external asset</DialogTitle>
+            <DialogDescription>Add an internet-facing asset to monitor.</DialogDescription>
           </DialogHeader>
           {formFields}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate}>Add Asset</Button>
+            <Button onClick={handleCreate}>Add asset</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog */}
       <Dialog open={!!editAsset} onOpenChange={(open) => !open && setEditAsset(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Edit External Asset</DialogTitle>
-            <DialogDescription>Update asset information</DialogDescription>
+            <DialogTitle>Edit external asset</DialogTitle>
+            <DialogDescription>Update the asset&apos;s name, address and notes.</DialogDescription>
           </DialogHeader>
           {formFields}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditAsset(null)}>
               Cancel
             </Button>
-            <Button onClick={handleEdit}>Save Changes</Button>
+            <Button onClick={handleEdit}>Save changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
       <Dialog open={!!deleteAsset} onOpenChange={(open) => !open && setDeleteAsset(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Asset</DialogTitle>
+            <DialogTitle>Delete asset</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete &quot;{deleteAsset?.name}&quot;? This action cannot be
-              undone.
+              Delete &quot;{deleteAsset?.name}&quot;? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -734,107 +733,6 @@ export default function ExternalSurfacePage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Sheet */}
-      {viewAsset && (
-        <DetailSheet
-          open
-          onOpenChange={(open) => !open && setViewAsset(null)}
-          header={
-            <DetailHeader
-              title={viewAsset.name}
-              badges={
-                <>
-                  <Badge variant="outline" className={statusColors[viewAsset.status]}>
-                    {viewAsset.status}
-                  </Badge>
-                  <Badge variant="outline" className={riskColors[viewAsset.riskLevel]}>
-                    {viewAsset.riskLevel} risk
-                  </Badge>
-                </>
-              }
-              meta={[viewAsset.type]}
-              actions={
-                <>
-                  <Button
-                    size="sm"
-                    onClick={() => router.push(`/findings?assetId=${viewAsset.id}`)}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    View findings
-                  </Button>
-                  {canWriteScope && (
-                    <Button size="sm" variant="outline" onClick={() => openEdit(viewAsset)}>
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </Button>
-                  )}
-                </>
-              }
-              onClose={() => setViewAsset(null)}
-            />
-          }
-        >
-          <div className="space-y-5">
-            <DetailStatGrid aria-label="Key numbers">
-              <DetailStat
-                label="Findings"
-                value={viewAsset.findingsCount}
-                tone={viewAsset.findingsCount > 0 ? 'warning' : 'default'}
-              />
-              <DetailStat
-                label="SSL expiry"
-                value={
-                  viewAsset.sslExpiry
-                    ? new Date(viewAsset.sslExpiry).toLocaleDateString()
-                    : 'No SSL'
-                }
-              />
-            </DetailStatGrid>
-
-            <DetailSections>
-              {viewAsset.ipAddress && (
-                <DetailSection title="Network">
-                  <p className="font-mono text-sm break-all">
-                    {viewAsset.ipAddress}
-                    {viewAsset.port && `:${viewAsset.port}`}
-                  </p>
-                </DetailSection>
-              )}
-
-              {viewAsset.technologies && viewAsset.technologies.length > 0 && (
-                <DetailSection title="Technologies" count={viewAsset.technologies.length}>
-                  <div className="flex flex-wrap gap-1.5">
-                    {viewAsset.technologies.map((tech) => (
-                      <Badge key={tech} variant="secondary">
-                        {tech}
-                      </Badge>
-                    ))}
-                  </div>
-                </DetailSection>
-              )}
-
-              {viewAsset.notes && (
-                <DetailSection title="Notes">
-                  <p className="text-sm text-muted-foreground">{viewAsset.notes}</p>
-                </DetailSection>
-              )}
-
-              <DetailSection title="Timeline">
-                <DetailFieldGrid>
-                  <DetailField label="Discovered">
-                    {new Date(viewAsset.discoveredAt).toLocaleDateString()}
-                  </DetailField>
-                  <DetailField label="Last seen">
-                    {new Date(viewAsset.lastSeen).toLocaleDateString()}
-                  </DetailField>
-                </DetailFieldGrid>
-              </DetailSection>
-            </DetailSections>
-          </div>
-        </DetailSheet>
-      )}
-
-      {/* Quick-scan flow */}
       <ScanAssetsDialog
         open={scanDialogOpen}
         onOpenChange={setScanDialogOpen}

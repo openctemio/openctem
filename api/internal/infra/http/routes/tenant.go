@@ -21,6 +21,7 @@ func registerTenantRoutes(
 	tenantRepo tenant.Repository,
 	membershipReader middleware.MembershipReader,
 	localAuth *handler.LocalAuthHandler,
+	ssoChanges *handler.SSOChangeHandler,
 ) {
 	if membershipReader == nil {
 		membershipReader = tenantRepo
@@ -64,6 +65,17 @@ func registerTenantRoutes(
 	// The organization's IP allowlist, for the organization in the URL.
 	if ipAllowlistMiddleware != nil {
 		tenantMiddlewares = append(tenantMiddlewares, ipAllowlistMiddleware)
+	}
+	// Per-request SSO enforcement for the organization in the URL, with the
+	// caller's role there (RequireMembership above puts it in the context).
+	// The token-tenant chains run the same gate through buildBaseMiddlewares;
+	// this chain does not use that builder, so it adds the gate here.
+	if ssoEnforcementMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, ssoEnforcementMiddleware)
+	}
+	// The per-user read budget of the token-tenant chains.
+	if readRateLimitMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, readRateLimitMiddleware)
 	}
 
 	router.Group("/api/v1/tenants/{tenant}", func(r Router) {
@@ -153,6 +165,15 @@ func registerTenantRoutes(
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())
 		r.PATCH("/settings/api", h.UpdateAPISettings, middleware.RequireTeamOwner())
+
+		// SSO changes a platform administrator proposed for this organization
+		// (RFC-022). Owner only: approving one installs who can sign in.
+		// The service re-checks ownership in the database.
+		if ssoChanges != nil {
+			r.GET("/settings/sso/changes", ssoChanges.OwnerList, middleware.RequireTeamOwner())
+			r.POST("/settings/sso/changes/{changeId}/approve", ssoChanges.Approve, middleware.RequireTeamOwner())
+			r.POST("/settings/sso/changes/{changeId}/reject", ssoChanges.Reject, middleware.RequireTeamOwner())
+		}
 
 		// Owner-only operations
 		r.DELETE("/", h.Delete, middleware.RequireTeamOwner())

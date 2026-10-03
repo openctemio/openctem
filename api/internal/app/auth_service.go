@@ -11,6 +11,9 @@ type (
 	SSOService              = auth.SSOService
 	SAMLService             = auth.SAMLService
 	SAMLConfigInput         = auth.SAMLConfigInput
+	SSOChangeService        = auth.SSOChangeService
+	SSOChangeRequester      = auth.SSOChangeRequester
+	SSOChangeResult         = auth.SSOChangeResult
 	OAuthService            = auth.OAuthService
 	SessionService          = auth.SessionService
 	EmailService            = auth.EmailService
@@ -75,6 +78,9 @@ var (
 	NewAuthService                = auth.NewAuthService
 	NewSSOService                 = auth.NewSSOService
 	NewSAMLService                = auth.NewSAMLService
+	NewSSOChangeService           = auth.NewSSOChangeService
+	DescribeSSOChange             = auth.DescribeSSOChange
+	CertificateFingerprint        = auth.CertificateFingerprint
 	NewOAuthService               = auth.NewOAuthService
 	NewSessionService             = auth.NewSessionService
 	NewEmailService               = auth.NewEmailService
