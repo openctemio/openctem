@@ -407,21 +407,44 @@ func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, id shared.ID, next
 	return nil
 }
 
-// RecordRun records a run result for a scan.
+// RecordRunStarted records a newly created run as the scan's last run, with
+// status 'running'. One narrow UPDATE: the trigger path used to write the
+// whole scan row back from the copy it read before dispatching, which undid
+// any edit made meanwhile (a pause, a config change) and never stored the
+// 'running' status anyway. Counters are not touched here; RecordRun counts
+// the run when it finishes.
+func (r *ScanRepository) RecordRunStarted(ctx context.Context, id shared.ID, runID shared.ID) error {
+	const query = `
+		UPDATE scans
+		SET last_run_id = $2,
+		    last_run_at = NOW(),
+		    last_run_status = 'running',
+		    updated_at = NOW()
+		WHERE id = $1
+	`
+	if _, err := r.db.ExecContext(ctx, query, id.String(), runID.String()); err != nil {
+		return fmt.Errorf("failed to record run start: %w", err)
+	}
+	return nil
+}
+
+// RecordRun records a run's terminal outcome on its scan and counts the run.
+// last_run_status follows only while this run is still the scan's latest: an
+// older run finishing late must not relabel a newer one that is running.
 func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error {
 	var successIncrement, failedIncrement int
 	switch status {
 	case "completed", "success":
 		successIncrement = 1
-	case "failed", "error":
+	case "failed", "error", "timeout":
 		failedIncrement = 1
 	}
 
 	query := `
 		UPDATE scans
-		SET last_run_id = $2,
-		    last_run_at = NOW(),
-		    last_run_status = $3,
+		SET last_run_status = CASE WHEN last_run_id IS NULL OR last_run_id = $2 THEN $3 ELSE last_run_status END,
+		    last_run_id = COALESCE(last_run_id, $2),
+		    last_run_at = CASE WHEN last_run_id IS NULL THEN NOW() ELSE last_run_at END,
 		    total_runs = total_runs + 1,
 		    successful_runs = successful_runs + $4,
 		    failed_runs = failed_runs + $5,
