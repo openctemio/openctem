@@ -63,6 +63,7 @@ real third-party target).
 | E-23 | A promoted name's registrable parent does not exist yet | Ingest creates the parent domain only when the root is verified or already a domain asset; an unverified scope target never makes the platform invent a parent domain | `promotionReport` (`root_domain` only for verified/asset roots); scratch e2e (no extra root for the scope-target case) |
 | E-24 | The promotion step fails after exposures were written | Logged; exposures stay; the next run retries (CT is re-read) | by construction (`MonitorTenant`) |
 | E-25 | A scan's group contains only unconfirmed assets | The run is refused with `ALL_TARGETS_UNCONFIRMED`; mixed groups scan the confirmed members and warn with the skipped count | `TestResolveScanTargets_SkipsUnconfirmedGroupMembers`; scratch e2e |
+| E-35 | Two assets are merged (dedup review) | The kept asset gets the most recent human decision of either; without one it keeps its own record and merged automatic records are dropped (a legacy asset is never demoted); evidence moves, deduplicated, keeping the earliest first sighting | `TestApproveAndMerge_KeepsAttributionDecisions`, `TestAssetMergeCoversEveryAssetReference` |
 | E-17 | IDN names | CT logs carry the punycode (`xn--`) form, which is accepted as-is; Unicode forms are not produced by the sources | `TestCollectDiscoveries_DropsInvalidHostnames` |
 
 ## 3. Threat model of the EASM feature
