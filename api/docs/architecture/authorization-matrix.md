@@ -242,6 +242,23 @@ two-person control:
   so they stay in effect; inactive and expired ones need an approval to come
   back.
 
+Where an exclusion in effect applies (RFC-042 F16). A failed exclusion
+lookup stops the path; nothing is scanned or discovered without it (fail
+closed):
+
+| Path | Effect of a match |
+|------|-------------------|
+| Scan trigger (direct targets and asset-group members) | Target dropped from the run; a run whose every target is excluded is refused (`ALL_TARGETS_EXCLUDED`) |
+| `POST /api/v1/pipelines/runs`, the `trigger_pipeline` workflow action | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
+| Tenable rolling coverage dispatcher | Asset skipped this rotation (its cursor still moves, so it does not hold the top of every batch); same for a target the validator or zone routing refuses. A batch stays in one zone and the command is stamped with it |
+| Certificate Transparency discovery | An excluded watched domain is not queried; an excluded host gets no exposure |
+| Ingest | A NEW asset matching by name, repository URL or address (and a root domain or resolved IP derived from one) is not added: counted as `assets_skipped_excluded`, named in the warnings, its findings skipped and never attached to another asset. An asset already in the inventory is not changed or deleted |
+
+All of them go through the same matcher (`scope.Service.ExcludedTargets` /
+`LoadExclusionMatcher`); the pipeline and coverage paths go through
+`scan.Service.ResolveDispatchTargets`, which applies a scan's checks (scan
+create's target validator, exclusions, zone routing) in one call.
+
 #### Scan zones (`/api/v1/scan-zones`, RFC-023)
 
 | Endpoint | Permission Required |

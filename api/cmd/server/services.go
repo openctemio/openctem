@@ -952,6 +952,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
+	// Excluded names are neither queried nor discovered (RFC-042 F16).
+	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)
 	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
 	// Re-check a little under the sweep interval: the next scheduled run
@@ -1440,6 +1442,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
+	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)))
@@ -1604,6 +1607,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithQualityGate(repos.ScanProfile, repos.Finding),
 		pipeline.WithScanDeactivator(s.Scan),     // Cascade pause scans when pipeline is deactivated
 		pipeline.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
+		// Targets of a directly started run pass a scan trigger's checks:
+		// private-range policy, scope exclusions, scan zones (RFC-042 F16).
+		pipeline.WithTargetGate(s.Scan),
 	)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation

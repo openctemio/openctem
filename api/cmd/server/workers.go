@@ -291,7 +291,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		scancoverage.NewDispatcher(repos.Command),
 		&controller.CoverageSchedulerConfig{
 			Interval: 5 * time.Minute,
-			Logger:   log.With("controller", "coverage-scheduler"),
+			// Each batch passes a scan trigger's target checks (RFC-042 F16).
+			Gate:   svc.Scan,
+			Logger: log.With("controller", "coverage-scheduler"),
 		},
 	))
 
