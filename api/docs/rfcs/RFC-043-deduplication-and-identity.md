@@ -1,6 +1,6 @@
 # RFC-043 — Deduplication and identity
 
-> Status: **Proposed** (draft for owner review, 2026-10-03).
+> Status: **Accepted — decisions D1–D15 approved** (owner, 2026-10-03; #892).
 > Scope: api (ingest, finding and asset repositories, merge, tickets,
 > notifications, migrations) + sensor/sdk-go (fingerprint hints only) + web
 > (duplicate link, correlation group view). No change to the CTIS wire format is
@@ -445,7 +445,7 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
 19. Golden corpus in CI, property tests, schema gate, finding-merge coverage
     test; sensor fingerprints demoted to sighting attributes everywhere.
 
-## 13. Owner decisions needed
+## 13. Owner decisions (approved as recommended, 2026-10-03)
 
 | # | Decision | Recommendation |
 |---|---|---|
