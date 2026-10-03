@@ -178,6 +178,10 @@ type reconcileResult struct {
 //	    - other open states      → hold (stamp "still exploitable")
 //	inconclusive/error/skipped   → no verdict, no state change.
 //
+// Only an exploitability-grade result acts (actionableVerdict, RFC-039 D3): a
+// safe-check reachability probe never moves a finding, and a detection miss
+// needs evidence that the target answered.
+//
 // The downgrade default is conservative — validated_fixed is NOT a closed state,
 // so a human still closes it (validated_fixed→resolved requires findings:verify).
 // A non-intrusive re-check is not proof enough to silently close a live finding
@@ -194,9 +198,10 @@ func applyOutcomeToFinding(
 	tenantID, findingID shared.ID,
 	ev Evidence,
 ) (reconcileResult, error) {
-	verdict, hasVerdict := verdictFor(ev.Outcome)
+	verdict, hasVerdict := actionableVerdict(ev)
 	if !hasVerdict {
-		// inconclusive / error / skipped carry no confirm/downgrade signal.
+		// inconclusive / error / skipped, a reachability-only probe, or a
+		// detection miss without proof the target answered: no signal.
 		return reconcileResult{}, nil
 	}
 

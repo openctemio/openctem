@@ -94,6 +94,31 @@ keeps `previous_status`, `previous_resolution`, `previous_resolution_method`,
 person who resolved it is never lost. Deliberate dispositions are never
 reopened.
 
+## Phase 2: what follows a status change (owner decisions D2–D4)
+
+- **Fresh SLA on a regression (D2).** A finding closed as fixed that a scan or
+  a retest sees again gets a new SLA deadline computed by the tenant's policy
+  (priority class, then severity) from the reopen, `sla_status = on_track`, and
+  an `sla_restarted` activity with the reason, the trigger (`scan`/`retest`) and
+  the previous deadline (`sla.RegressionRestarter`,
+  `postgres.FindingSLARestartRepository`). A `validated_fixed` finding a scan
+  reopens was never closed: its SLA keeps running.
+- **Announcements.** A retest that resolves a finding (`finding_fixed`), a
+  regression (`finding_reopened`) and a rejected fix (`fix_applied` still
+  detected, `finding_reopened`) queue a notification and comment on the linked
+  Jira issue — only when the tenant enabled outbound sync on its Jira
+  integration (`jira.SyncService.CommentOnFinding`). Platform-written text only,
+  free text capped at 300 characters, at most 50 announcements per scan
+  (`retest.ChangeAnnouncer`, `retest.ScanRegressions`).
+- **Honest `/validate` (D3).** See [validation-engine.md](validation-engine.md):
+  a safe-check never moves a finding; a nuclei miss without proof the target
+  answered is unknown.
+- **Proof of fix (D4).** Marking a finding `fix_applied` (or a Jira "Done")
+  starts a `proof_of_fix` retest for a nuclei finding (`retest.ProofOfFix`),
+  else the validation re-check. The whole-asset "Request verification scan"
+  (`POST /findings/{id}/request-verification`) is removed, with its service,
+  adapter and web button.
+
 ## Code
 
 | Piece | Where |
@@ -107,6 +132,8 @@ reopened.
 | Controller | `internal/infra/controller/retest_scheduler.go` |
 | Tenant setting | `pkg/domain/tenant/retest_settings.go` |
 | Web: Retest now + last retest | `web/src/features/findings/components/detail/finding-retest.tsx` |
+| Fresh SLA on regression | `internal/app/sla/regression.go`, `internal/infra/postgres/finding_sla_restart_repository.go`, migration `000285_retest_phase2` |
+| Announcements, scan regressions, proof of fix | `internal/app/retest/announce.go`, `internal/app/retest/proof_of_fix.go`, `internal/app/jira/sync_service.go` (`CommentOnFinding`) |
 
 ## Tests
 

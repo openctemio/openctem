@@ -20,15 +20,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// VerificationScanTrigger is the interface for triggering targeted verification scans.
-// Implemented by the scan.Service; kept as interface to avoid import cycles.
-type VerificationScanTrigger interface {
-	// TriggerVerificationScan launches a quick scan on the given targets.
-	// targets is a list of asset identifiers (names / hostnames / URLs).
-	// Returns the pipeline run ID and scan ID on success.
-	TriggerVerificationScan(ctx context.Context, tenantID, createdBy, scannerName, workflowID string, targets []string) (pipelineRunID, scanID string, err error)
-}
-
 // AutoValidator dispatches a CTEM Stage-4 safe-check re-check for a finding and
 // returns the command ID it was queued under. Implemented by
 // *validation.RunService. When wired, marking findings fix_applied auto-queues a
@@ -45,9 +36,8 @@ type FindingActionsService struct {
 	groupRepo       group.Repository
 	assetRepo       asset.Repository
 	activityService *activity.FindingActivityService
-	scanTrigger     VerificationScanTrigger // optional; set via SetVerificationScanTrigger
-	autoValidator   AutoValidator           // optional; set via SetAutoValidator
-	dataScope       *datascope.Enforcer     // optional; Layer 2 scope on by-id actions
+	autoValidator   AutoValidator       // optional; set via SetAutoValidator
+	dataScope       *datascope.Enforcer // optional; Layer 2 scope on by-id actions
 	db              *sql.DB
 	logger          *logger.Logger
 }
@@ -157,14 +147,10 @@ func loadVerificationChecklist(
 	return vulnerability.ReconstituteVerificationChecklist(data), nil
 }
 
-// SetVerificationScanTrigger wires the scan trigger (called after both services are initialized).
-func (s *FindingActionsService) SetVerificationScanTrigger(trigger VerificationScanTrigger) {
-	s.scanTrigger = trigger
-}
-
 // SetAutoValidator wires the proof-of-fix auto-validator. When set, a successful
-// fix_applied transition auto-queues a safe-check re-check per finding (bounded,
-// best-effort). Optional: nil → no auto-validation (prior behavior).
+// fix_applied transition auto-queues a proof-of-fix check per finding (bounded,
+// best-effort): a retest of the finding's own template for a nuclei finding
+// (RFC-039), a plain validation re-check otherwise. Optional: nil → none.
 func (s *FindingActionsService) SetAutoValidator(v AutoValidator) {
 	s.autoValidator = v
 }
@@ -839,92 +825,6 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	}
 
 	return result, nil
-}
-
-// --- Verification Scan ---
-
-// RequestVerificationScanInput is the input for requesting a verification scan.
-type RequestVerificationScanInput struct {
-	FindingID   string
-	ScannerName string // required if WorkflowID is empty
-	WorkflowID  string // required if ScannerName is empty
-}
-
-// RequestVerificationScanResult is the result of requesting a verification scan.
-type RequestVerificationScanResult struct {
-	FindingID     string `json:"finding_id"`
-	AssetID       string `json:"asset_id"`
-	AssetName     string `json:"asset_name"`
-	PipelineRunID string `json:"pipeline_run_id"`
-	ScanID        string `json:"scan_id"`
-}
-
-// RequestVerificationScan triggers a targeted quick scan on the asset associated with a finding.
-// The finding must be in fix_applied status (dev has marked it as fixed; awaiting scan verification).
-// The scan result is expected to either confirm the fix (→ resolved) or reveal the vuln still exists
-// (→ back to in_progress) via the normal ingest pipeline.
-func (s *FindingActionsService) RequestVerificationScan(
-	ctx context.Context, tenantID, userID string, input RequestVerificationScanInput,
-) (*RequestVerificationScanResult, error) {
-	if s.scanTrigger == nil {
-		return nil, fmt.Errorf("%w: verification scan trigger not configured", shared.ErrInternal)
-	}
-
-	if input.ScannerName == "" && input.WorkflowID == "" {
-		return nil, fmt.Errorf("%w: scanner_name or workflow_id is required", shared.ErrValidation)
-	}
-
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
-	}
-
-	fid, err := shared.IDFromString(input.FindingID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid finding_id", shared.ErrValidation)
-	}
-
-	f, err := s.findingRepo.GetByID(ctx, tid, fid)
-	if err != nil {
-		return nil, fmt.Errorf("finding not found: %w", err)
-	}
-
-	if f.Status() != vulnerability.FindingStatusFixApplied {
-		return nil, fmt.Errorf(
-			"%w: finding must be in fix_applied status to request verification scan (current: %s)",
-			shared.ErrValidation, f.Status(),
-		)
-	}
-
-	assetEntity, err := s.assetRepo.GetByID(ctx, tid, f.AssetID())
-	if err != nil {
-		return nil, fmt.Errorf("asset not found for finding: %w", err)
-	}
-
-	targets := []string{assetEntity.Name()}
-
-	runID, scanID, err := s.scanTrigger.TriggerVerificationScan(
-		ctx, tenantID, userID, input.ScannerName, input.WorkflowID, targets,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to trigger verification scan: %w", err)
-	}
-
-	s.logger.Info("verification scan triggered",
-		"finding_id", f.ID(),
-		"asset_id", f.AssetID(),
-		"asset_name", assetEntity.Name(),
-		"pipeline_run_id", runID,
-		"scan_id", scanID,
-	)
-
-	return &RequestVerificationScanResult{
-		FindingID:     f.ID().String(),
-		AssetID:       f.AssetID().String(),
-		AssetName:     assetEntity.Name(),
-		PipelineRunID: runID,
-		ScanID:        scanID,
-	}, nil
 }
 
 // --- Validation helpers ---
