@@ -140,6 +140,11 @@ const (
 	// POST /agent/renew (self-service, kubelet-style), as opposed to the admin
 	// hard rotation recorded by ActionSensorKeyRegenerated.
 	ActionSensorKeyRenewed Action = "sensor.key_renewed"
+	// ActionSensorKeyRenewalRefused records a renewal refused because the key
+	// it authenticated with was revoked, expired or regenerated (or the
+	// sensor disabled) before it could rotate. A security signal: the old
+	// key is still in use after an administrator killed it.
+	ActionSensorKeyRenewalRefused Action = "sensor.key_renewal_refused"
 	// ActionSensorIdentityCloned records the platform seeing two live sensor
 	// processes use the same key (RFC-032 Phase 0 clone detection).
 	ActionSensorIdentityCloned Action = "sensor.identity_cloned"
@@ -358,7 +363,7 @@ func (a Action) IsValid() bool {
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
@@ -447,7 +452,7 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
@@ -625,7 +630,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
-		ActionSensorDeactivated, ActionSensorKeyRegenerated,
+		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted, ActionCredentialRevealed,
