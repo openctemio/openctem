@@ -4071,3 +4071,31 @@ func (r *FindingRepository) CountAutoResolveCandidates(ctx context.Context, tena
 	}
 	return stale, open, nil
 }
+
+// AdoptLegacyFingerprint re-keys the finding stored under legacy to current
+// (and records base as its pre-composite base), unless a finding with current
+// already exists. Used when a fingerprint recipe gains an input (RFC-043 P0:
+// the port of a network finding without a CVE), so the existing row and its
+// triage carry over instead of a duplicate appearing. Race-safe: the NOT EXISTS
+// guard and the unique index decide; losing a race is not an error.
+func (r *FindingRepository) AdoptLegacyFingerprint(ctx context.Context, tenantID shared.ID, legacy, current, base string) (bool, error) {
+	if legacy == "" || current == "" || legacy == current {
+		return false, nil
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE findings
+		SET fingerprint = $3,
+			partial_fingerprints = jsonb_set(COALESCE(partial_fingerprints, '{}'::jsonb), '{`+vulnerability.FingerprintBaseKey+`}', to_jsonb($4::text)),
+			updated_at = NOW()
+		WHERE tenant_id = $1 AND fingerprint = $2
+		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`,
+		tenantID.String(), legacy, current, base)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("adopt legacy fingerprint: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}

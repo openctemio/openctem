@@ -281,13 +281,23 @@ func registerAssetTypeRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Asset Type Category routes (read-only)
+	// Asset Type Category routes (read-only). Deprecated: the
+	// asset_type_categories table is retired by the RFC-042 type registry
+	// (classes and lenses, served by GET /api/v1/asset-types) and is dropped
+	// after one release.
+	categoriesDeprecated := middleware.Deprecated(middleware.Deprecation{
+		Plane:        "user",
+		Route:        "asset_type_categories",
+		Successor:    "/api/v1/asset-types",
+		DeprecatedAt: time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC),
+		SunsetAt:     time.Date(2027, 4, 3, 0, 0, 0, 0, time.UTC),
+	})
 	router.Group("/api/v1/asset-types/categories", func(r Router) {
 		r.GET("/", h.ListCategories, middleware.Require(permission.AssetsRead))
 		r.GET("/{categoryId}", h.GetCategory, middleware.Require(permission.AssetsRead))
-	}, tenantMiddlewares...)
+	}, append([]Middleware{categoriesDeprecated}, tenantMiddlewares...)...)
 
-	// Asset Type routes (read-only)
+	// Asset type registry (RFC-042) and the legacy asset_types rows; read-only.
 	router.Group("/api/v1/asset-types", func(r Router) {
 		r.GET("/", h.ListAssetTypes, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}", h.GetAssetType, middleware.Require(permission.AssetsRead))

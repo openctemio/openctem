@@ -85,15 +85,17 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 			continue
 		}
 
-		a, createErr := assetdom.NewAssetWithTenant(tid, name, assetdom.AssetType(assetType), assetdom.CriticalityMedium)
+		subType := ""
+		if idx, ok := colIndex["sub_type"]; ok && idx < len(record) {
+			subType = strings.TrimSpace(record[idx])
+		}
+		// Normalize with the sub-type, as lookups do (RFC-043 section 10).
+		a, createErr := assetdom.NewAssetWithSubType(name, assetdom.AssetType(assetType), subType, assetdom.CriticalityMedium)
 		if createErr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("invalid asset %s: %v", name, createErr))
 			continue
 		}
-
-		if idx, ok := colIndex["sub_type"]; ok && idx < len(record) {
-			a.SetSubType(strings.TrimSpace(record[idx]))
-		}
+		a.SetTenantID(tid)
 		if idx, ok := colIndex["description"]; ok && idx < len(record) {
 			a.UpdateDescription(strings.TrimSpace(record[idx]))
 		}

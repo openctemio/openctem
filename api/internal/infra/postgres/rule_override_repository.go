@@ -246,36 +246,30 @@ func (r *RuleOverrideRepository) selectQuery() string {
 func (r *RuleOverrideRepository) buildWhereClause(filter rule.OverrideFilter) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, filter.TenantID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if filter.ToolID != nil {
-		conditions = append(conditions, fmt.Sprintf("(tool_id = $%d OR tool_id IS NULL)", argIndex))
 		args = append(args, filter.ToolID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("(tool_id = $%d OR tool_id IS NULL)", len(args)))
 	}
 
 	if filter.AssetGroupID != nil {
-		conditions = append(conditions, fmt.Sprintf("asset_group_id = $%d", argIndex))
 		args = append(args, filter.AssetGroupID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("asset_group_id = $%d", len(args)))
 	}
 
 	if filter.ScanProfileID != nil {
-		conditions = append(conditions, fmt.Sprintf("scan_profile_id = $%d", argIndex))
 		args = append(args, filter.ScanProfileID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("scan_profile_id = $%d", len(args)))
 	}
 
 	if filter.Enabled != nil {
-		conditions = append(conditions, fmt.Sprintf("enabled = $%d", argIndex))
 		args = append(args, *filter.Enabled)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("enabled = $%d", len(args)))
 	}
 
 	if len(conditions) == 0 {
