@@ -547,7 +547,11 @@ func (p *FindingProcessor) processBatch(
 
 		// Step 5b: Fallback scan-id-only update for findings where buildFinding or enrichment failed
 		if len(unenrichedFingerprints) > 0 {
-			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID)
+			sightingTool := ""
+			if report.Tool != nil {
+				sightingTool = report.Tool.Name
+			}
+			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID, sightingTool)
 			if err != nil {
 				p.logger.Warn("failed to update existing findings (fallback)", "error", err)
 			} else {
