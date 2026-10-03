@@ -72,6 +72,21 @@ func (s *SAMLService) GetConfig(ctx context.Context, tenantID shared.ID) (*samld
 
 // UpsertConfig validates and stores the tenant's SAML config.
 func (s *SAMLService) UpsertConfig(ctx context.Context, tenantID shared.ID, in SAMLConfigInput) (*samldom.SAMLProvider, error) {
+	p, err := s.BuildConfig(ctx, tenantID, in)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.Upsert(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// BuildConfig validates in and returns the SAML config it describes, keeping
+// the id of the tenant's existing config, without storing it. An SSO change
+// that waits for an owner's approval is validated with it when submitted and
+// rebuilt with it when approved.
+func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SAMLConfigInput) (*samldom.SAMLProvider, error) {
 	if strings.TrimSpace(in.IDPEntityID) == "" || strings.TrimSpace(in.IDPSSOURL) == "" {
 		return nil, samlValidationErr("idp_entity_id and idp_sso_url are required")
 	}
@@ -97,12 +112,8 @@ func (s *SAMLService) UpsertConfig(ctx context.Context, tenantID shared.ID, in S
 	if existing, err := s.repo.GetByTenant(ctx, tenantID); err == nil && existing != nil {
 		id = existing.ID()
 	}
-	p := samldom.Reconstruct(id, tenantID, in.IDPEntityID, in.IDPSSOURL, in.IDPCertificate,
-		in.AllowedDomains, role, in.AutoProvision, in.Enabled, time.Now().UTC(), time.Now().UTC())
-	if err := s.repo.Upsert(ctx, p); err != nil {
-		return nil, err
-	}
-	return p, nil
+	return samldom.Reconstruct(id, tenantID, in.IDPEntityID, in.IDPSSOURL, in.IDPCertificate,
+		in.AllowedDomains, role, in.AutoProvision, in.Enabled, time.Now().UTC(), time.Now().UTC()), nil
 }
 
 // DeleteConfig removes the tenant's SAML config.

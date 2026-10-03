@@ -261,6 +261,11 @@ type Filter struct {
 	Environments         []string   // Filter by environment (production|staging|development|testing|dr)
 	LastSeenAfter        *time.Time // Filter assets last seen at/after this time (freshness)
 	LastSeenBefore       *time.Time // Filter assets last seen at/before this time (freshness)
+	CreatedAfter         *time.Time // Filter assets added to the inventory at/after this time
+	// ExposureChangedOrCreatedAfter keeps assets that were added, or whose
+	// exposure level last changed, at/after this time. Combined with an
+	// Exposures filter it answers "newly exposed since t".
+	ExposureChangedOrCreatedAfter *time.Time
 
 	// Layer 2: Data Scope - filter assets by user's group membership
 	// When set, only assets accessible to this user are returned.
@@ -472,6 +477,19 @@ func (f Filter) WithLastSeenAfter(t time.Time) Filter {
 	return f
 }
 
+// WithCreatedAfter filters assets added to the inventory at/after t.
+func (f Filter) WithCreatedAfter(t time.Time) Filter {
+	f.CreatedAfter = &t
+	return f
+}
+
+// WithExposureChangedOrCreatedAfter filters assets added, or whose exposure
+// last changed, at/after t.
+func (f Filter) WithExposureChangedOrCreatedAfter(t time.Time) Filter {
+	f.ExposureChangedOrCreatedAfter = &t
+	return f
+}
+
 // WithLastSeenBefore filters assets last seen at/before t.
 func (f Filter) WithLastSeenBefore(t time.Time) Filter {
 	f.LastSeenBefore = &t
@@ -504,5 +522,7 @@ func (f Filter) IsEmpty() bool {
 		f.IsInternetAccessible == nil &&
 		len(f.Environments) == 0 &&
 		f.LastSeenAfter == nil &&
-		f.LastSeenBefore == nil
+		f.LastSeenBefore == nil &&
+		f.CreatedAfter == nil &&
+		f.ExposureChangedOrCreatedAfter == nil
 }

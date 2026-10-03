@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils'
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { useCapabilityMetadata } from '@/lib/api'
 import type { ToolWithConfig } from '@/lib/api/tool-types'
+import { safeImageSrc } from '@/lib/safe-href'
 
 // Map Lucide icon names from database to actual components
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -345,7 +346,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                           {tool.logo_url ? (
                             /* eslint-disable-next-line @next/next/no-img-element */
                             <img
-                              src={tool.logo_url}
+                              src={safeImageSrc(tool.logo_url)}
                               alt={tool.display_name}
                               className={cn(
                                 'h-8 w-8 rounded-lg object-contain bg-white p-0.5',

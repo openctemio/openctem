@@ -34,6 +34,7 @@ import {
 import { useUserNotificationChannel } from '@/hooks/use-websocket'
 import { useTenant } from '@/context/tenant-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
+import { safeHref } from '@/lib/safe-href'
 
 const severityColors: Record<string, string> = { ...SEVERITY_TEXT_COLORS }
 
@@ -129,8 +130,11 @@ function NotificationItem({ notification, onMarkAsRead, onClose }: NotificationI
     </div>
   )
 
-  if (notification.url) {
-    return <Link href={notification.url}>{content}</Link>
+  // The target comes from the server; a stored javascript:/data: value must
+  // not become a link.
+  const href = safeHref(notification.url)
+  if (href) {
+    return <Link href={href}>{content}</Link>
   }
 
   return content

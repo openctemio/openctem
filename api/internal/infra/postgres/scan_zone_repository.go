@@ -322,7 +322,7 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		  AND s.last_seen_at IS NOT NULL
 		  AND `+sensorKeyUsableSQL("s")+`
 		  AND (s.execution_mode = 'daemon' OR s.type IN ('worker', 'collector'))
-		  AND ($3::text = '' OR $3::text = ANY(s.effective_tools))
+		  AND ($3::text = '' OR $3::text = ANY(`+sensorDispatchTools("s")+`))
 		ORDER BY zs.zone_id, active_commands ASC,
 		         `+sensorFreeSlotsSQL("s")+` DESC,
 		         `+sensorToolThroughputSQL("s", "$3")+` DESC NULLS LAST,
