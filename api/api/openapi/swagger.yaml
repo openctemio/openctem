@@ -2640,6 +2640,114 @@ definitions:
       position:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock:
+    properties:
+      candidate:
+        type: integer
+      confirmed:
+        type: integer
+      dependency:
+        type: integer
+      legacy:
+        type: integer
+      monitor_only:
+        type: integer
+      needs_review:
+        type: integer
+      rejected:
+        type: integer
+      review_oldest_since:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock:
+    properties:
+      by_severity:
+        additionalProperties:
+          type: integer
+        type: object
+      by_type:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.TypeCount'
+        type: array
+      open:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock:
+    properties:
+      ct_domains_watched:
+        type: integer
+      ct_failing:
+        type: integer
+      ct_never_succeeded:
+        type: integer
+      ct_oldest_success:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.NewBlock:
+    properties:
+      cycle_start:
+        type: string
+      last_7_days:
+        type: integer
+      last_30_days:
+        type: integer
+      since_cycle:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.Risk:
+    properties:
+      asset_id:
+        type: string
+      asset_name:
+        type: string
+      id:
+        type: string
+      last_seen:
+        type: string
+      severity:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.Summary:
+    properties:
+      attribution:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock'
+      exposures:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock'
+      generated_at:
+        type: string
+      monitoring:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock'
+      new:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.NewBlock'
+      surface:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock'
+      top_risks:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.Risk'
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock:
+    properties:
+      by_type:
+        additionalProperties:
+          type: integer
+        type: object
+      exposed_services:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.TypeCount:
+    properties:
+      count:
+        type: integer
+      type:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput:
     properties:
       base_branch_scanned:
@@ -4518,6 +4626,23 @@ definitions:
     required:
     - role_arn
     type: object
+  internal_infra_http_handler.AcceptQuarantinedResultResponse:
+    properties:
+      assets_created:
+        type: integer
+      assets_updated:
+        type: integer
+      errors:
+        items:
+          type: string
+        type: array
+      findings_auto_reopened:
+        type: integer
+      findings_created:
+        type: integer
+      findings_updated:
+        type: integer
+    type: object
   internal_infra_http_handler.ActivityItem:
     properties:
       description:
@@ -4937,6 +5062,58 @@ definitions:
       introduced:
         type: string
       package:
+        type: string
+    type: object
+  internal_infra_http_handler.AssetAttributionDecisionRequest:
+    properties:
+      state:
+        description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
+        type: string
+    type: object
+  internal_infra_http_handler.AssetAttributionEvidence:
+    properties:
+      first_observed_at:
+        type: string
+      last_observed_at:
+        type: string
+      observed:
+        additionalProperties: {}
+        type: object
+      rule:
+        type: string
+      source:
+        type: string
+      technique:
+        type: string
+      weight:
+        type: number
+    type: object
+  internal_infra_http_handler.AssetAttributionResponse:
+    properties:
+      active_checks_allowed:
+        description: 'ActiveChecksAllowed: whether a scan may touch the asset.'
+        type: boolean
+      confidence:
+        type: integer
+      decided_at:
+        type: string
+      evidence:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AssetAttributionEvidence'
+        type: array
+      human_decided:
+        description: 'HumanDecided: a person set the state; automation will not change
+          it.'
+        type: boolean
+      reason:
+        type: string
+      recorded:
+        type: boolean
+      state:
+        description: |-
+          State: confirmed, needs_review, candidate, dependency, monitor_only,
+          rejected. An asset with no record is a legacy asset and reports
+          confirmed with recorded=false.
         type: string
     type: object
   internal_infra_http_handler.AssetBriefResponse:
@@ -9310,8 +9487,18 @@ definitions:
     properties:
       assets_created:
         type: integer
+      assets_limited:
+        description: |-
+          AssetsLimited counts existing assets the report matched but was not
+          allowed to change, because no command covering them stood behind it.
+        type: integer
       assets_updated:
         type: integer
+      binding:
+        description: |-
+          Binding is "command" when the report named a command assigned to this
+          sensor (X-OpenCTEM-Command-ID), "unsolicited" otherwise (RFC-040 §5.3).
+        type: string
       cves_created:
         type: integer
       cves_updated:
@@ -9326,8 +9513,20 @@ definitions:
         type: integer
       findings_updated:
         type: integer
+      reopens_withheld:
+        description: |-
+          ReopensWithheld counts findings a person had resolved that the report
+          saw again but was not allowed to reopen.
+        type: integer
       scan_id:
         type: string
+      unsolicited_warned:
+        description: |-
+          UnsolicitedWarned: this sensor's role may not send results without a
+          command; the report was applied only because the tenant's policy is
+          "warn". Under "quarantine" it is held for review (422
+          RESULTS_QUARANTINED).
+        type: boolean
     type: object
   internal_infra_http_handler.IntegrationResponse:
     description: Integration details including provider info and status
@@ -9692,6 +9891,23 @@ definitions:
       data:
         items:
           $ref: '#/definitions/internal_infra_http_handler.IntegrationResponse'
+        type: array
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_infra_http_handler.ListResponse-internal_infra_http_handler_QuarantinedResultResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.QuarantinedResultResponse'
         type: array
       links:
         $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
@@ -10562,6 +10778,147 @@ definitions:
       passed:
         type: boolean
       reason:
+        type: string
+    type: object
+  internal_infra_http_handler.QuarantinePreview:
+    properties:
+      assets:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.QuarantinePreviewAsset'
+        type: array
+      assets_omitted:
+        type: integer
+      findings:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.QuarantinePreviewFinding'
+        type: array
+      findings_omitted:
+        type: integer
+    type: object
+  internal_infra_http_handler.QuarantinePreviewAsset:
+    properties:
+      ref:
+        type: string
+      type:
+        type: string
+      value:
+        type: string
+    type: object
+  internal_infra_http_handler.QuarantinePreviewFinding:
+    properties:
+      asset_ref:
+        type: string
+      rule_id:
+        type: string
+      severity:
+        type: string
+      title:
+        type: string
+    type: object
+  internal_infra_http_handler.QuarantinedResultDetailResponse:
+    properties:
+      assets_count:
+        type: integer
+      created_at:
+        type: string
+      findings_count:
+        type: integer
+      id:
+        type: string
+      payload_size:
+        type: integer
+      preview:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.QuarantinePreview'
+        description: |-
+          Preview lists the report's assets and findings (at most 100 of each);
+          absent once the report was discarded.
+      protocol:
+        enum:
+        - v1
+        - v2
+        type: string
+      reason:
+        enum:
+        - no_command
+        type: string
+      report_id:
+        type: string
+      result:
+        additionalProperties: {}
+        description: Result is what applying an accepted report did.
+        type: object
+      reviewed_at:
+        type: string
+      reviewed_by:
+        type: string
+      route:
+        type: string
+      segment:
+        type: integer
+      sensor_id:
+        type: string
+      sensor_name:
+        type: string
+      sensor_type:
+        type: string
+      status:
+        enum:
+        - pending
+        - accepted
+        - discarded
+        type: string
+      tool_name:
+        type: string
+    type: object
+  internal_infra_http_handler.QuarantinedResultResponse:
+    properties:
+      assets_count:
+        type: integer
+      created_at:
+        type: string
+      findings_count:
+        type: integer
+      id:
+        type: string
+      payload_size:
+        type: integer
+      protocol:
+        enum:
+        - v1
+        - v2
+        type: string
+      reason:
+        enum:
+        - no_command
+        type: string
+      report_id:
+        type: string
+      result:
+        additionalProperties: {}
+        description: Result is what applying an accepted report did.
+        type: object
+      reviewed_at:
+        type: string
+      reviewed_by:
+        type: string
+      route:
+        type: string
+      segment:
+        type: integer
+      sensor_id:
+        type: string
+      sensor_name:
+        type: string
+      sensor_type:
+        type: string
+      status:
+        enum:
+        - pending
+        - accepted
+        - discarded
+        type: string
+      tool_name:
         type: string
     type: object
   internal_infra_http_handler.ReconIngestRequest:
@@ -12353,6 +12710,33 @@ definitions:
         - unknown
         type: string
     type: object
+  internal_infra_http_handler.SensorResultPolicyResponse:
+    properties:
+      allow_advisory_evidence:
+        description: |-
+          AllowAdvisoryEvidence accepts validation evidence without the validate
+          command assigned to the sensor (recorded as advisory, never changes the
+          finding).
+        type: boolean
+      default_mode:
+        description: DefaultMode is the mode of a tenant that never set one.
+        type: string
+      mode:
+        description: |-
+          Mode is what happens to a report that names no command from a sensor
+          whose role may not push results on its own (every role but collector
+          and runner): "warn" applies it with limits and audits it, "quarantine"
+          holds it for review.
+        enum:
+        - warn
+        - quarantine
+        type: string
+      updated_at:
+        description: UpdatedAt / UpdatedBy are null while the tenant uses the defaults.
+        type: string
+      updated_by:
+        type: string
+    type: object
   internal_infra_http_handler.SensorRevokeRequest:
     properties:
       reason:
@@ -13856,6 +14240,16 @@ definitions:
           type: string
         maxItems: 20
         type: array
+    type: object
+  internal_infra_http_handler.UpdateSensorResultPolicyRequest:
+    properties:
+      allow_advisory_evidence:
+        type: boolean
+      mode:
+        enum:
+        - warn
+        - quarantine
+        type: string
     type: object
   internal_infra_http_handler.UpdateSeverityRequest:
     properties:
@@ -17192,6 +17586,85 @@ paths:
       summary: Archive asset
       tags:
       - Assets
+  /assets/{id}/attribution:
+    get:
+      description: Whether the asset is believed to be the organization's, how confident
+        the platform is, and the evidence (rule, technique, source, observed datum).
+        Assets discovered passively under a domain the organization did not verify
+        wait for review and are skipped by scans until confirmed.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAttributionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Asset attribution
+      tags:
+      - Assets
+    put:
+      consumes:
+      - application/json
+      description: Record whether the asset is the organization's. confirmed lets
+        scans reach it; rejected, dependency (the organization's name on someone else's
+        infrastructure) and monitor_only keep it passive. Automation never changes
+        a decided state. Audited.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Decision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AssetAttributionDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAttributionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Decide asset attribution
+      tags:
+      - Assets
   /assets/{id}/components:
     get:
       description: Retrieves all components for an asset
@@ -20440,6 +20913,35 @@ paths:
       summary: Get global dashboard stats
       tags:
       - Dashboard
+  /easm/summary:
+    get:
+      description: 'The external attack surface in one call: surface assets by type
+        and internet-facing services, attribution (confirmed, awaiting review and
+        the age of the oldest review item, dependency, monitor only, rejected), assets
+        first seen in the last 7/30 days and since the latest CTEM cycle started,
+        open external exposures by severity and type, the top open risks, and how
+        fresh the Certificate-Transparency monitoring is. Narrowed to the caller''s
+        data scope.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.Summary'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: EASM overview
+      tags:
+      - Attack Surface
   /exposures:
     get:
       consumes:
@@ -28668,6 +29170,185 @@ paths:
       security:
       - BearerAuth: []
       summary: Refresh scanner content on every sensor
+      tags:
+      - Sensors
+  /sensors/quarantined-results:
+    get:
+      description: Reports that named no command, from a sensor whose role may not
+        push results on its own, held for review (newest first). The payload is not
+        included; GET one item for a preview.
+      parameters:
+      - description: 'pending, accepted or discarded (default: every status)'
+        in: query
+        name: status
+        type: string
+      - description: Only this sensor's reports
+        in: query
+        name: sensor_id
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: Items per page (max 100)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_QuarantinedResultResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List quarantined sensor results
+      tags:
+      - Sensors
+  /sensors/quarantined-results/{qid}:
+    get:
+      description: One quarantined report with a preview of its assets and findings
+        (at most 100 of each).
+      parameters:
+      - description: Quarantine item ID
+        in: path
+        name: qid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.QuarantinedResultDetailResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a quarantined sensor report
+      tags:
+      - Sensors
+  /sensors/quarantined-results/{qid}/approve:
+    post:
+      description: 'Apply the report as a person''s decision: it may change the existing
+        assets it names and reopen findings, but never auto-resolves anything. Applied
+        once; a second accept or an accept after a discard is 409. Audited.'
+      parameters:
+      - description: Quarantine item ID
+        in: path
+        name: qid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AcceptQuarantinedResultResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Accept a quarantined sensor report
+      tags:
+      - Sensors
+  /sensors/quarantined-results/{qid}/reject:
+    post:
+      description: Drop the report without applying it; its payload is deleted. 409
+        when it was already reviewed. Audited.
+      parameters:
+      - description: Quarantine item ID
+        in: path
+        name: qid
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Discard a quarantined sensor report
+      tags:
+      - Sensors
+  /sensors/result-policy:
+    get:
+      description: 'What happens to a report that names no command (RFC-040 §5.3).
+        Collector and CI runner sensors may always push results on their own; they
+        are applied with limits (no change to existing assets, no reopening of findings
+        a person resolved). For every other role the mode decides: warn applies them
+        with the same limits and audits them, quarantine holds them for review. Tenants
+        created before this policy existed are on warn; new tenants default to quarantine.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorResultPolicyResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get the policy for sensor results without a command
+      tags:
+      - Sensors
+    put:
+      consumes:
+      - application/json
+      description: Set the mode (warn or quarantine) and whether advisory validation
+        evidence is accepted. Audited.
+      parameters:
+      - description: Policy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateSensorResultPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorResultPolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update the policy for sensor results without a command
       tags:
       - Sensors
   /sensors/stats:

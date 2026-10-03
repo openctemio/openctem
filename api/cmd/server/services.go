@@ -65,6 +65,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -1448,6 +1449,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
+	// CT names become inventory assets through this same ingest path, with
+	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is
+	// built before ingest.
+	if s.CertMonitor != nil {
+		s.CertMonitor.SetPromotion(s.Ingest, repos.Asset, repos.Attribution)
+	}
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
@@ -1479,6 +1486,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// serial, MAC, SCM repository ID) before name and IP; conflicts go to
 	// the same review queue.
 	s.Ingest.SetIdentityStore(repos.AssetIdentifier, repos.AssetDedup)
+	// Result binding (RFC-040 §5.3): reports name the command they belong
+	// to; reports without one are applied with limits, or quarantined per the
+	// tenant's policy.
+	s.Ingest.SetCommandReader(repos.Command)
+	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
@@ -1563,6 +1575,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithProfileRepo(repos.ScanProfile),
 		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
 		scan.WithScopeExclusionFilter(s.Scope),
+		scan.WithAttributionGate(repos.Attribution),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to from the platform.
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
