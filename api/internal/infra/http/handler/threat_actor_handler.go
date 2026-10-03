@@ -156,13 +156,15 @@ func (h *ThreatActorHandler) handleError(w http.ResponseWriter, err error) {
 // ─── Request/Response Types ───
 
 type CreateThreatActorRequest struct {
-	Name             string            `json:"name" validate:"required,min=1,max=255"`
-	Aliases          []string          `json:"aliases" validate:"omitempty,max=50,dive,max=255"`
-	Description      string            `json:"description" validate:"omitempty,max=5000"`
-	ActorType        string            `json:"actor_type" validate:"omitempty,oneof=apt cybercrime hacktivist insider nation_state unknown"`
-	Sophistication   string            `json:"sophistication" validate:"omitempty,max=100"`
-	Motivation       string            `json:"motivation" validate:"omitempty,max=255"`
-	CountryOfOrigin  string            `json:"country_of_origin" validate:"omitempty,max=100"`
+	Name           string   `json:"name" validate:"required,min=1,max=255"`
+	Aliases        []string `json:"aliases" validate:"omitempty,max=50,dive,max=255"`
+	Description    string   `json:"description" validate:"omitempty,max=5000"`
+	ActorType      string   `json:"actor_type" validate:"omitempty,oneof=apt cybercrime hacktivist insider nation_state unknown"`
+	Sophistication string   `json:"sophistication" validate:"omitempty,max=100"`
+	Motivation     string   `json:"motivation" validate:"omitempty,max=255"`
+	// The column is VARCHAR(3) (an ISO 3166 code); a longer value used to
+	// pass validation and fail at the database with a generic error.
+	CountryOfOrigin  string            `json:"country_of_origin" validate:"omitempty,max=3"`
 	MitreGroupID     string            `json:"mitre_group_id" validate:"omitempty,max=50"`
 	TTPs             []threatactor.TTP `json:"ttps" validate:"omitempty,max=500"`
 	TargetIndustries []string          `json:"target_industries" validate:"omitempty,max=100,dive,max=255"`
