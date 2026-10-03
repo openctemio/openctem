@@ -126,6 +126,10 @@ func (r *FindingRepository) CoverageStaleFindings(ctx context.Context, tenantID 
 					LEFT JOIN scans ps ON ps.tenant_id = ir.tenant_id AND ps.id::text = pc.payload->>'scan_id'
 					WHERE ir.tenant_id = o.tenant_id
 						AND ir.report_id::text = o.scan_id
+						-- The last sighting must be a report of this tool: a
+						-- finding another tool reported last (same profile, other
+						-- command) stays open (RFC-043 interim cross-tool guard).
+						AND ir.tool_name = $3
 						AND COALESCE(ps.profile_id::text, '') = $5
 				)
 			) AS stale

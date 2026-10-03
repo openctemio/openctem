@@ -176,6 +176,11 @@ giving teams with seed data the full coverage.
   one via the API or the UI before running.
 - **Random 429s, toasts covering menus** — raise `RATE_LIMIT_READ_PER_MIN`
   on the API under test (see Setup).
+- **A sign-in pauses for up to a minute** — expected. The API allows 5
+  sign-ins a minute per address, and the suite makes more than that from
+  one address. Sign in through `submitSignIn` / `loginAs` in
+  `helpers/auth.ts`: on "Rate limit exceeded" they wait for the window and
+  submit again, instead of timing out.
 - **Tests pass locally, fail in CI** — bump `workers: 1` in
   `playwright.config.ts` (already the default for `CI=true`) and check
   for tests that depend on shared state.

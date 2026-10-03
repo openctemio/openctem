@@ -292,6 +292,11 @@ func (h *ScanSessionHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	// A sensor reads only the sessions it registered (RFC-040 §5.3).
+	if session.SensorID == nil || !session.SensorID.Equals(agt.ID) {
+		apierror.NotFound("scan session").WriteJSON(w)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(legacyv1.NewScanSession(session))

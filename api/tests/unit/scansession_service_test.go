@@ -1096,10 +1096,11 @@ func TestScanSessionService_UpdateScanSession_NilSensorID_OnSession(t *testing.T
 
 	input := app.UpdateScanSessionInput{Status: "completed"}
 
-	// When session has no SensorID, ownership check should pass (no owner to verify against)
+	// RFC-040 §5.3: a session no sensor registered is not any sensor's to
+	// update (it used to pass, so any sensor key of the tenant could).
 	err := svc.UpdateScanSession(context.Background(), agt, session.ID.String(), input)
-	if err != nil {
-		t.Fatalf("expected no error when session has nil SensorID, got %v", err)
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("expected forbidden when the session has no sensor, got %v", err)
 	}
 }
 
