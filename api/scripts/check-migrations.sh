@@ -74,7 +74,10 @@ discover_from_git() {
   fi
 
   # Added (A), Copied (C), Modified (M), Renamed (R) up-migration files.
-  git -C "$REPO_ROOT" diff --name-only --diff-filter=ACMR "$merge_base" HEAD -- 'migrations/*.up.sql'
+  # --relative: paths relative to REPO_ROOT (api/), which is a subdirectory of
+  # the monorepo; without it git prints api/migrations/... and every file is
+  # "missing", so nothing is checked.
+  git -C "$REPO_ROOT" diff --relative --name-only --diff-filter=ACMR "$merge_base" HEAD -- 'migrations/*.up.sql'
 }
 
 FILES=()

@@ -525,6 +525,21 @@ func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, a
 		return err
 	}
 
+	// The deleter is held to the same ceiling as a creator or editor: a
+	// delegated role manager may not remove a role carrying permissions (or
+	// full data access) they do not hold themselves. Owners pass.
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	deleter, err := s.loadGrantActor(ctx, tid, actx.ActorID)
+	if err != nil {
+		return err
+	}
+	if err := deleter.mayCarry(r.Permissions(), r.HasFullDataAccess()); err != nil {
+		return fmt.Errorf("%w (role %q)", err, r.Name())
+	}
+
 	roleName := r.Name()
 	var tenantIDStr string
 	if r.TenantID() != nil {
