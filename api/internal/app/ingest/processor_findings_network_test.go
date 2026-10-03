@@ -16,7 +16,7 @@ func goldenNetworkFindings() []*ctis.Finding {
 		// network VA: the port is in the fingerprint (netva:<port>:<cve>)
 		{Type: ctis.FindingTypeVulnerability, Title: "OpenSSL RCE", RuleID: "nessus-118987",
 			Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2022-3602"}, Network: net},
-		// no CVE: generic algorithm, the port is not in the fingerprint
+		// no CVE: keyed on port and transport since #920 (RFC-043)
 		{Type: ctis.FindingTypeVulnerability, Title: "SSL Certificate Cannot Be Trusted", RuleID: "nessus-51192", Network: net},
 		// host-level network VA (no port)
 		{Type: ctis.FindingTypeVulnerability, Title: "Host-level CVE", RuleID: "nessus-1",
@@ -25,13 +25,14 @@ func goldenNetworkFindings() []*ctis.Finding {
 }
 
 // Storing the port must not change any fingerprint: fingerprint changes go
-// through the dedup RFC's re-fingerprint migration. These values were computed
-// on develop (6355cf55) before findings stored their port.
+// through the dedup RFC's re-fingerprint migration. These values are what
+// develop computes (a911f939, after #920 keyed no-CVE network findings on
+// their port) without this change.
 func TestGenerateFindingFingerprint_NetworkFindings_Unchanged(t *testing.T) {
 	assetID := shared.MustIDFromString("0193e000-0000-7000-8000-000000000001")
 	want := [][2]string{
 		{"3448e177470ef2628ca2572ee3d80f476aca76d262cf7f85bcae44aada153a06", "a715fd46e1966e5359f4ee90c04de391b83df0b8e36ac373b449e47ac399a38c"},
-		{"8f6645c3b51291a168a614c7807c81006333445c80836a5b9baa40f893bf8bf2", "1ba75daf95a6f44ac4ed4ae044d4e42a7cd8382e2065f889c8faf10f44455834"},
+		{"67f13437c04edfee6d79b6b2b1e8d337af47ddce7686f33f664e54554d3a4cff", "1472da3219a89c3339bc42a801548c4b71ea169ec3e6a51ff09eecf5066aaea0"},
 		{"c4217533d21dfa08da665ed155bfdcfabeabf8ca9ee8d7709eecf926d8743d17", "129397079e4ce7560ed537e3b25b2f7200050bbdf1a64dcdd43216912818c7dc"},
 	}
 	for i, f := range goldenNetworkFindings() {
