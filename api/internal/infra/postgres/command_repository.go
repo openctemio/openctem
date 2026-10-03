@@ -1330,8 +1330,7 @@ func (r *CommandRepository) ReleasePendingFromUnavailableSensors(ctx context.Con
 		FROM sensors s
 		WHERE c.sensor_id = s.id
 		  AND c.status = 'pending'
-		  AND c.type = 'scan'
-		  AND c.payload ? 'pipeline_run_id'
+		  AND `+routedScanWork("c")+`
 		  AND (s.health IN ('stale', 'offline') OR s.status <> 'active')`)
 	if err != nil {
 		return 0, fmt.Errorf("failed to release pending commands of unavailable sensors: %w", err)
@@ -1341,6 +1340,15 @@ func (r *CommandRepository) ReleasePendingFromUnavailableSensors(ctx context.Con
 		return 0, fmt.Errorf("failed to read rows affected: %w", err)
 	}
 	return n, nil
+}
+
+// routedScanWork is the SQL predicate for scan work the platform routed to a
+// sensor (trigger-time zone pinning, pipeline step routing): type 'scan'
+// with a pipeline_run_id in the payload. Such a command may be handed to
+// another sensor; any other command addressed to a sensor is for that
+// sensor only.
+func routedScanWork(alias string) string {
+	return alias + ".type = 'scan' AND " + alias + ".payload ? 'pipeline_run_id'"
 }
 
 // RecoverStuckTenantCommands returns stuck tenant commands to the pool.

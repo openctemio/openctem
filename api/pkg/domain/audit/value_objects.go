@@ -154,6 +154,10 @@ const (
 	// ActionSensorContentPolicyUpdated records a change of the tenant's
 	// scanner content policy (RFC-031).
 	ActionSensorContentPolicyUpdated Action = "sensor.content_policy_updated"
+	// ActionSensorCommandsReleased records the platform taking back the
+	// commands a sensor held when it was revoked or disabled (RFC-040 §5.2):
+	// which were re-queued for another sensor and which were failed.
+	ActionSensorCommandsReleased Action = "sensor.commands_released"
 
 	// Scan zone actions (RFC-023): every change to a zone or to which sensors
 	// serve it.
@@ -383,7 +387,7 @@ func (a Action) IsValid() bool {
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
-		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated,
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -476,7 +480,7 @@ func (a Action) Category() string {
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
-		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated:
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
