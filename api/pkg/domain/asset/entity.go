@@ -97,6 +97,17 @@ type Asset struct {
 // applies to the normalized name, which is what is stored.
 const MaxNameLength = 255
 
+// MaxTagsPerAsset is the most tags (labels) one asset can carry. Ingest, the
+// create and update API and the web all use this one limit. They used to
+// differ (ingest 50, the update API 20), so an asset a scanner had tagged
+// 21 times could not be saved from the UI, even to remove a tag.
+// The request structs in the HTTP handler repeat it in their `validate`
+// tags (a struct tag cannot name a constant); a test keeps them equal.
+const MaxTagsPerAsset = 50
+
+// MaxTagLength is the longest single tag, in characters.
+const MaxTagLength = 50
+
 // validateName checks a normalized name against what assets.name can hold.
 // A longer name is refused rather than truncated: the name is the asset's
 // identity (unique per tenant), so a truncated name could merge two different
@@ -629,6 +640,10 @@ func (a *Asset) CalculateRiskScore() {
 }
 
 // AddTag adds a tag to the asset.
+//
+// An asset holds at most MaxTagsPerAsset tags. A tag past the cap is not
+// added (ingest merges scanner tags into existing assets on every run, and
+// without the cap an asset grew past what the update API accepts).
 func (a *Asset) AddTag(tag string) {
 	if tag == "" {
 		return
@@ -637,6 +652,9 @@ func (a *Asset) AddTag(tag string) {
 		if t == tag {
 			return
 		}
+	}
+	if len(a.tags) >= MaxTagsPerAsset {
+		return
 	}
 	a.tags = append(a.tags, tag)
 	a.updatedAt = time.Now().UTC()
