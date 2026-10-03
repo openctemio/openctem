@@ -59,13 +59,7 @@ import {
 } from '@/features/assets'
 import { fetchAllAssets } from '@/features/assets/hooks/use-assets'
 import { ipAddresses } from '@/features/assets/lib/service-facts'
-import {
-  ChipRow,
-  IssuesChip,
-  LabelChips,
-  OverflowChips,
-  SurfaceFacts,
-} from '@/features/assets/components/service-cells'
+import { IssuesChip, LabelChips, SurfaceFacts } from '@/features/assets/components/service-cells'
 import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
 import { useTenant } from '@/context/tenant-provider'
@@ -421,26 +415,12 @@ export default function ExternalSurfacePage() {
       },
       {
         // Status, IP / CNAME, technologies, TLS …: the shared service cells,
-        // chosen per type by cellsForType.
+        // chosen per type by cellsForType. IPs are among them, so there is
+        // no separate IP column.
         id: 'service',
         header: 'Service facts',
         enableSorting: false,
         cell: ({ row }) => <SurfaceFacts asset={row.original} className="max-w-[380px]" />,
-      },
-      {
-        id: 'ip',
-        header: 'IP addresses',
-        enableSorting: false,
-        cell: ({ row }) => {
-          const ips = ipAddresses(row.original)
-          return ips.length ? (
-            <ChipRow>
-              <OverflowChips label="IP" values={ips} />
-            </ChipRow>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )
-        },
       },
       {
         id: 'risk',

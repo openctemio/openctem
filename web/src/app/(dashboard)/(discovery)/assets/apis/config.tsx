@@ -400,7 +400,7 @@ export const apisConfig: AssetPageConfig = {
         },
         {
           label: 'TLS',
-          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} />,
+          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} explainMissing />,
         },
         {
           label: 'TLS Version',

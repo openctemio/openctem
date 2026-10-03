@@ -41,20 +41,22 @@ export interface TlsSummaryProps {
   facts: TlsFacts
   /** Show issuer and SAN lines under the chip (the list cell does). */
   detail?: boolean
+  /** Say "Certificate not collected" under a TLS chip (the drawer does). */
+  explainMissing?: boolean
 }
 
 /**
  * TLS on a service in one cell: the certificate's expiry chip with issuer
  * and SAN under it, or one of three explicit states: "TLS" with the
- * certificate not collected, "No TLS" (served over plain HTTP) and "Not
+ * certificate not collected, "No TLS" (served over plain HTTP) and "TLS not
  * collected" (nothing recorded). None of them is shown as healthy.
  */
-export function TlsSummary({ facts, detail = true }: TlsSummaryProps) {
+export function TlsSummary({ facts, detail = true, explainMissing = false }: TlsSummaryProps) {
   switch (facts.kind) {
     case 'not_collected':
       return (
         <UnknownChip title="No probe recorded whether this service uses TLS">
-          Not collected
+          TLS not collected
         </UnknownChip>
       )
     case 'none':
@@ -67,11 +69,11 @@ export function TlsSummary({ facts, detail = true }: TlsSummaryProps) {
     case 'tls':
       return (
         <div className="min-w-0">
-          <FactChip tone="muted">
+          <FactChip tone="muted" title="Served over TLS; the certificate was not collected">
             <Lock aria-hidden="true" />
             TLS
           </FactChip>
-          {detail && (
+          {explainMissing && (
             <p className="mt-1 text-xs text-muted-foreground">Certificate not collected</p>
           )}
         </div>

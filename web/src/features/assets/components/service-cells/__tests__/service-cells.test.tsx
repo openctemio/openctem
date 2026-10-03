@@ -92,7 +92,7 @@ describe('TechChips', () => {
     const { rerender } = render(<TechChips technologies={[]} />)
     expect(screen.getByText('No technologies')).toHaveAttribute('data-tone', 'unknown')
     rerender(<TechChips technologies={null} />)
-    expect(screen.getByText('Not collected')).toHaveAttribute('data-tone', 'unknown')
+    expect(screen.getByText('Technologies not collected')).toHaveAttribute('data-tone', 'unknown')
   })
 })
 
@@ -123,9 +123,14 @@ describe('TlsSummary', () => {
     const { rerender } = render(<TlsSummary facts={{ kind: 'none' }} />)
     expect(screen.getByText('No TLS')).toBeInTheDocument()
     rerender(<TlsSummary facts={{ kind: 'tls' }} />)
+    expect(
+      screen.getByTitle('Served over TLS; the certificate was not collected')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Certificate not collected')).toBeNull()
+    rerender(<TlsSummary facts={{ kind: 'tls' }} explainMissing />)
     expect(screen.getByText('Certificate not collected')).toBeInTheDocument()
     rerender(<TlsSummary facts={{ kind: 'not_collected' }} />)
-    expect(screen.getByText('Not collected')).toHaveAttribute('data-tone', 'unknown')
+    expect(screen.getByText('TLS not collected')).toHaveAttribute('data-tone', 'unknown')
   })
 })
 
@@ -226,6 +231,11 @@ describe('cellsForType', () => {
     expect(screen.getByText('443/https')).toBeInTheDocument()
     rerender(<SurfaceFacts asset={{ ...bareService, type: 'repository' } as Asset} />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('SurfaceFacts says "Not resolved" for a DNS name without records', () => {
+    render(<SurfaceFacts asset={{ ...bareService, type: 'subdomain' } as Asset} />)
+    expect(screen.getByText('Not resolved')).toHaveAttribute('data-tone', 'unknown')
   })
 
   it('SurfaceFacts shows open ports for an IP and unknowns for a bare service', () => {

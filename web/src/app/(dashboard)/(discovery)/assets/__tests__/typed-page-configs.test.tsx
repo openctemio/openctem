@@ -98,7 +98,7 @@ describe('services page', () => {
     expect(col('port').getByText('Unknown')).toBeInTheDocument()
     expect(col('protocol').getByText('Unknown')).toBeInTheDocument()
     expect(col('protocol').queryByText('TCP')).toBeNull()
-    expect(col('tls').getByText('Not collected')).toBeInTheDocument()
+    expect(col('tls').getByText('TLS not collected')).toBeInTheDocument()
     expect(servicesConfig.copyAction?.getValue(bareService)).toBe('staging.example.org')
     expect(csv(servicesConfig, bareService).Protocol).toBe('')
   })

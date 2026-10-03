@@ -83,6 +83,17 @@ const RENDER: Record<SurfaceCell, (asset: Asset) => ReactNode> = {
   product: (a) => <ProductChip asset={a} />,
   ip: (a) => <OverflowChips label="IP" values={ipAddresses(a)} />,
   cname: (a) => <OverflowChips label="CNAME" values={cnames(a)} />,
+  dns: (a) => {
+    const targets = cnames(a)
+    const ips = ipAddresses(a)
+    if (targets.length === 0 && ips.length === 0) return <UnknownChip>Not resolved</UnknownChip>
+    return (
+      <>
+        <OverflowChips label="CNAME" values={targets} />
+        <OverflowChips label="IP" values={ips} />
+      </>
+    )
+  },
   asn: (a) => {
     const { asn, org } = asnInfo(a)
     if (!asn) return null

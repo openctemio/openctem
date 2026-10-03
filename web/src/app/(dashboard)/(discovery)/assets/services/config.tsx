@@ -275,7 +275,7 @@ export const servicesConfig: AssetPageConfig = {
         },
         {
           label: 'TLS',
-          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} />,
+          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} explainMissing />,
         },
         {
           label: 'IP addresses',

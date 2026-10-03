@@ -11,11 +11,11 @@ export interface TechChipsProps {
 
 /**
  * One chip per technology, name then version ("jQuery 3.3.1"). Two explicit
- * empty states: "No technologies" (a probe ran and found none) and "Not
- * collected" (no fingerprinting ran).
+ * empty states: "No technologies" (a probe ran and found none) and
+ * "Technologies not collected" (no fingerprinting ran).
  */
 export function TechChips({ technologies, max = 3 }: TechChipsProps) {
-  if (technologies === null) return <UnknownChip>Not collected</UnknownChip>
+  if (technologies === null) return <UnknownChip>Technologies not collected</UnknownChip>
   if (technologies.length === 0) return <UnknownChip>No technologies</UnknownChip>
   const shown = technologies.slice(0, max)
   const rest = technologies.slice(max)

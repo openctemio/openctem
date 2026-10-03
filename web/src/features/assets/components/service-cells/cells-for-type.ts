@@ -24,6 +24,8 @@ export type SurfaceCell =
   | 'ip'
   /** CNAME targets with "+N". */
   | 'cname'
+  /** A DNS name's CNAMEs and IPs, or "Not resolved". */
+  | 'dns'
   /** ASN of an IP. */
   | 'asn'
   /** Open ports of an IP. */
@@ -40,7 +42,7 @@ const HTTP_SERVICE: readonly SurfaceCell[] = ['status', 'port', 'ip', 'cname', '
 const SERVICE: readonly SurfaceCell[] = ['port', 'product', 'status', 'ip', 'tech', 'tls']
 const OPEN_PORT: readonly SurfaceCell[] = ['port', 'product']
 const DISCOVERED_URL: readonly SurfaceCell[] = ['status']
-const DNS_NAME: readonly SurfaceCell[] = ['ip', 'cname']
+const DNS_NAME: readonly SurfaceCell[] = ['dns']
 const IP: readonly SurfaceCell[] = ['asn', 'ports']
 const CERTIFICATE: readonly SurfaceCell[] = ['cert']
 const API: readonly SurfaceCell[] = ['status', 'tech', 'tls']
