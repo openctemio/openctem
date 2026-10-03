@@ -38,6 +38,14 @@ describe('sensor audit events before and after the rename', () => {
     expect(canonicalAuditResourceType('scan_zone')).toBe('scan_zone')
   })
 
+  it('labels the scope, tool and scanner template changes (RFC-040)', () => {
+    expect(getActionLabel('scope_target.created')).toBe('Scope Target Created')
+    expect(getActionLabel('scope_exclusion.deactivated')).toBe('Scope Exclusion Deactivated')
+    expect(getActionLabel('tool.config_updated')).toBe('Tool Configuration Updated')
+    expect(getActionLabel('scanner_template.updated')).toBe('Scanner Template Updated')
+    expect(canonicalAuditResourceType('scope_exclusion')).toBe('scope_exclusion')
+  })
+
   it('leaves every other action alone', () => {
     expect(canonicalAuditAction('finding.created')).toBe('finding.created')
     expect(canonicalAuditAction('user_agent.created')).toBe('user_agent.created')

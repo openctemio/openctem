@@ -228,6 +228,15 @@ two-person control:
   be used to skip the approval.
 - Extending the window of an approved exclusion (a later `expires_at`, or
   removing it) sends it back to `pending`; shortening it keeps the approval.
+- Every change to a scope target or exclusion (create, update, delete, bulk
+  delete, activate, deactivate, approve, reject) is one audit entry
+  (`scope_target.*`, `scope_exclusion.*`) with the caller and the state before
+  and after (RFC-040 §5.11). Changes that widen what is scanned (a new or
+  re-activated target, a deleted or deactivated exclusion) are `high`
+  severity. Tools and tenant tool configs (`tool.*`, secret-looking config
+  values masked) and scanner templates (`scanner_template.*`, content hash
+  only, never the content) are audited the same way. Refused changes write
+  nothing.
 - Exclusions that were `active` before migration 000267 were marked approved
   (`approved_by = 'system:pre-approval-grandfathered'` where none was recorded)
   so they stay in effect; inactive and expired ones need an approval to come

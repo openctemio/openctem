@@ -444,6 +444,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// SSO handler (always initialized - uses DB-stored provider configs)
 	// Scan profile changes go to the tenant's audit log.
 	handlers.ScanProfile.SetAuditService(svc.Audit)
+	// Changes to what sensors scan and run (scope targets and exclusions,
+	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
+	handlers.Scope.SetAuditService(svc.Audit)
+	handlers.Tool.SetAuditService(svc.Audit)
+	handlers.ScannerTemplate.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
