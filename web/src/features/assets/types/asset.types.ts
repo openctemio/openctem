@@ -5,6 +5,10 @@
  */
 
 import type { Status } from '@/features/shared/types'
+import {
+  LEGACY_ASSET_CATEGORY_LABELS,
+  type LegacyAssetCategory,
+} from '@/features/asset-types/registry.generated'
 
 /**
  * Asset Type Categories (CTEM-aligned)
@@ -972,28 +976,15 @@ export interface AssetMetadata {
 /**
  * Asset represents a single discoverable asset
  */
-export type AssetCategory =
-  | 'external_surface'
-  | 'application'
-  | 'infrastructure'
-  | 'network'
-  | 'cloud'
-  | 'data'
-  | 'code'
-  | 'identity'
-  | 'other'
+/**
+ * Legacy derived category of an asset type (the `category` field of asset
+ * responses), generated from api/configs/asset-types.yaml. New code uses the
+ * RFC-042 class and lens (features/asset-types).
+ */
+export type AssetCategory = LegacyAssetCategory
 
-export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
-  external_surface: 'External Surface',
-  application: 'Applications',
-  infrastructure: 'Infrastructure',
-  network: 'Network',
-  cloud: 'Cloud',
-  data: 'Data',
-  code: 'Code',
-  identity: 'Identity',
-  other: 'Other',
-}
+export const ASSET_CATEGORY_LABELS: Readonly<Record<AssetCategory, string>> =
+  LEGACY_ASSET_CATEGORY_LABELS
 
 export interface Asset {
   id: string

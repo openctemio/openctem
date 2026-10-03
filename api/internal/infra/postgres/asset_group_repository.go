@@ -399,12 +399,10 @@ func (r *AssetGroupRepository) List(
 func (r *AssetGroupRepository) Count(ctx context.Context, filter assetgroup.Filter) (int64, error) {
 	var conditions []string
 	var args []any
-	argNum := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("ag.tenant_id = $%d", argNum))
 		args = append(args, *filter.TenantID)
-		argNum++
+		conditions = append(conditions, fmt.Sprintf("ag.tenant_id = $%d", len(args)))
 	}
 
 	whereClause := ""

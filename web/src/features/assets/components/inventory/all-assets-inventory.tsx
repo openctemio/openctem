@@ -13,7 +13,7 @@
  */
 
 import { AssetsSectionTabs } from '../assets-section-tabs'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Lock, RefreshCw, Search } from 'lucide-react'
 import { Main } from '@/components/layout'
@@ -147,12 +147,17 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   useEffect(() => {
     setSearchInput(filters.search ?? '')
   }, [filters.search])
-  useEffect(() => {
+  // Only the debounced input triggers a URL write. The other filters are read as
+  // an effect event (latest value, not a dependency): changing one of them must
+  // not push a stale debounced search back into the URL.
+  const commitSearch = useEffectEvent((next: string) => {
     const current = filters.search ?? ''
-    if (debouncedSearch !== current) {
-      setFilters({ ...filters, search: debouncedSearch || undefined, page: 1 })
+    if (next !== current) {
+      setFilters({ ...filters, search: next || undefined, page: 1 })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
+  useEffect(() => {
+    commitSearch(debouncedSearch)
   }, [debouncedSearch])
 
   // Filter panel: closed by default so the table gets the width; the viewer's

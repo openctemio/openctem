@@ -430,25 +430,21 @@ func (r *FindingActivityRepository) doScan(scan func(dest ...any) error) (*vulne
 func (r *FindingActivityRepository) buildWhereClause(filter vulnerability.FindingActivityFilter, findingID shared.ID, tenantID shared.ID) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	// Security: Always filter by tenant_id first to ensure tenant isolation
-	conditions = append(conditions, fmt.Sprintf("fa.tenant_id = $%d", argIndex))
 	args = append(args, tenantID.String())
-	argIndex++
+	conditions = append(conditions, fmt.Sprintf("fa.tenant_id = $%d", len(args)))
 
 	// Always filter by finding_id
-	conditions = append(conditions, fmt.Sprintf("fa.finding_id = $%d", argIndex))
 	args = append(args, findingID.String())
-	argIndex++
+	conditions = append(conditions, fmt.Sprintf("fa.finding_id = $%d", len(args)))
 
 	// Filter by activity types
 	if len(filter.ActivityTypes) > 0 {
 		placeholders := make([]string, len(filter.ActivityTypes))
 		for i, t := range filter.ActivityTypes {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, string(t))
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("fa.activity_type IN (%s)", strings.Join(placeholders, ", ")))
 	}
@@ -457,9 +453,8 @@ func (r *FindingActivityRepository) buildWhereClause(filter vulnerability.Findin
 	if len(filter.ActorTypes) > 0 {
 		placeholders := make([]string, len(filter.ActorTypes))
 		for i, at := range filter.ActorTypes {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, string(at))
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("fa.actor_type IN (%s)", strings.Join(placeholders, ", ")))
 	}
@@ -468,9 +463,8 @@ func (r *FindingActivityRepository) buildWhereClause(filter vulnerability.Findin
 	if len(filter.ActorIDs) > 0 {
 		placeholders := make([]string, len(filter.ActorIDs))
 		for i, aid := range filter.ActorIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, aid.String())
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("fa.actor_id IN (%s)", strings.Join(placeholders, ", ")))
 	}
@@ -479,24 +473,21 @@ func (r *FindingActivityRepository) buildWhereClause(filter vulnerability.Findin
 	if len(filter.Sources) > 0 {
 		placeholders := make([]string, len(filter.Sources))
 		for i, s := range filter.Sources {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, string(s))
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("fa.source IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
 	// Filter by time range
 	if filter.Since != nil {
-		conditions = append(conditions, fmt.Sprintf("fa.created_at >= $%d", argIndex))
 		args = append(args, *filter.Since)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("fa.created_at >= $%d", len(args)))
 	}
 
 	if filter.Until != nil {
-		conditions = append(conditions, fmt.Sprintf("fa.created_at <= $%d", argIndex))
 		args = append(args, *filter.Until)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("fa.created_at <= $%d", len(args)))
 	}
 
 	return strings.Join(conditions, " AND "), args
@@ -505,20 +496,17 @@ func (r *FindingActivityRepository) buildWhereClause(filter vulnerability.Findin
 func (r *FindingActivityRepository) buildTenantWhereClause(filter vulnerability.FindingActivityFilter, tenantID shared.ID) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	// Always filter by tenant_id
-	conditions = append(conditions, fmt.Sprintf("fa.tenant_id = $%d", argIndex))
 	args = append(args, tenantID.String())
-	argIndex++
+	conditions = append(conditions, fmt.Sprintf("fa.tenant_id = $%d", len(args)))
 
 	// Filter by activity types
 	if len(filter.ActivityTypes) > 0 {
 		placeholders := make([]string, len(filter.ActivityTypes))
 		for i, t := range filter.ActivityTypes {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, string(t))
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("fa.activity_type IN (%s)", strings.Join(placeholders, ", ")))
 	}
@@ -527,9 +515,8 @@ func (r *FindingActivityRepository) buildTenantWhereClause(filter vulnerability.
 	if len(filter.ActorTypes) > 0 {
 		placeholders := make([]string, len(filter.ActorTypes))
 		for i, at := range filter.ActorTypes {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, string(at))
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("fa.actor_type IN (%s)", strings.Join(placeholders, ", ")))
 	}
@@ -538,9 +525,8 @@ func (r *FindingActivityRepository) buildTenantWhereClause(filter vulnerability.
 	if len(filter.ActorIDs) > 0 {
 		placeholders := make([]string, len(filter.ActorIDs))
 		for i, aid := range filter.ActorIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, aid.String())
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("fa.actor_id IN (%s)", strings.Join(placeholders, ", ")))
 	}
@@ -549,24 +535,21 @@ func (r *FindingActivityRepository) buildTenantWhereClause(filter vulnerability.
 	if len(filter.Sources) > 0 {
 		placeholders := make([]string, len(filter.Sources))
 		for i, s := range filter.Sources {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, string(s))
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("fa.source IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
 	// Filter by time range
 	if filter.Since != nil {
-		conditions = append(conditions, fmt.Sprintf("fa.created_at >= $%d", argIndex))
 		args = append(args, *filter.Since)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("fa.created_at >= $%d", len(args)))
 	}
 
 	if filter.Until != nil {
-		conditions = append(conditions, fmt.Sprintf("fa.created_at <= $%d", argIndex))
 		args = append(args, *filter.Until)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("fa.created_at <= $%d", len(args)))
 	}
 
 	return strings.Join(conditions, " AND "), args

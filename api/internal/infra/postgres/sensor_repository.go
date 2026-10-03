@@ -486,6 +486,10 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 	if err != nil {
 		return false, err
 	}
+	localPolicy, err := localPolicyArg(hb.LocalPolicy)
+	if err != nil {
+		return false, err
+	}
 
 	query := `
 		UPDATE sensors
@@ -538,6 +542,9 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    -- Control report: NULL ($36) leaves the stored one as it is.
 		    reported_control = COALESCE($36::jsonb, reported_control),
 		    control_reported_at = CASE WHEN $36::jsonb IS NULL THEN control_reported_at ELSE NOW() END,
+		    -- Local policy report (RFC-040 §5.7): NULL ($37) leaves it as it is.
+		    reported_local_policy = COALESCE($37::jsonb, reported_local_policy),
+		    local_policy_reported_at = CASE WHEN $37::jsonb IS NULL THEN local_policy_reported_at ELSE NOW() END,
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -561,7 +568,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		load.resources, load.capacity, load.queue, load.present,
 		hb.Build.SDKName, hb.Build.SDKVersion, hb.Build.Product, hb.Build.Commit, nullTime(hb.Build.BuildTime),
 		rep.clearMaxJobs,
-		heartbeatIntervalSeconds(hb.Interval), control,
+		heartbeatIntervalSeconds(hb.Interval), control, localPolicy,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -841,6 +848,7 @@ func (r *SensorRepository) selectQuery() string {
 		       instance_id, instance_state, identity_cloned_at,
 		       manifest_digest, manifest_at, manifest_source,
 		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at,
+		       reported_local_policy, local_policy_reported_at,
 		       ` + sensorActiveKeySQL("sensors") + ` AS active_key
 		FROM sensors
 	`
@@ -1004,6 +1012,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		hbDueAt          sql.NullTime
 		control          []byte
 		controlAt        sql.NullTime
+		localPolicy      []byte
+		localPolicyAt    sql.NullTime
 		activeKey        []byte
 	)
 
@@ -1082,6 +1092,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&hbDueAt,
 		&control,
 		&controlAt,
+		&localPolicy,
+		&localPolicyAt,
 		&activeKey,
 	)
 
@@ -1214,6 +1226,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		a.HeartbeatDueAt = &hbDueAt.Time
 	}
 	a.Control = scanControl(a.ID, control, controlAt)
+	a.LocalPolicy, a.LocalPolicyReportedAt = scanLocalPolicy(a.ID, localPolicy, localPolicyAt)
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
