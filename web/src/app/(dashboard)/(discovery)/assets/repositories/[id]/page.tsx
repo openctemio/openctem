@@ -630,6 +630,8 @@ import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { safeImageSrc } from '@/lib/safe-href'
 
 // ============================================
 // Helper Components
@@ -988,7 +990,7 @@ function OverviewTab({
                 {defaultBranch.last_commit_sha && (
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={defaultBranch.last_commit_author_avatar} />
+                      <AvatarImage src={safeImageSrc(defaultBranch.last_commit_author_avatar)} />
                       <AvatarFallback>
                         {defaultBranch.last_commit_author?.[0] || '?'}
                       </AvatarFallback>
@@ -1175,7 +1177,7 @@ function OverviewTab({
                   </div>
                   {finding.assigned_to_name && (
                     <Avatar className="h-6 w-6">
-                      <AvatarImage src={finding.assigned_to_avatar} />
+                      <AvatarImage src={safeImageSrc(finding.assigned_to_avatar)} />
                       <AvatarFallback>{finding.assigned_to_name[0]}</AvatarFallback>
                     </Avatar>
                   )}
@@ -1805,7 +1807,7 @@ function FindingsTab({
                     {finding.assigned_to_name && (
                       <div className="flex items-center gap-1.5">
                         <Avatar className="h-5 w-5">
-                          <AvatarImage src={finding.assigned_to_avatar} />
+                          <AvatarImage src={safeImageSrc(finding.assigned_to_avatar)} />
                           <AvatarFallback className="text-xs">
                             {finding.assigned_to_name[0]}
                           </AvatarFallback>
@@ -1932,7 +1934,7 @@ function ActivityTab({ activities }: { activities: ActivityLog[] }) {
                     <div className="flex items-center gap-2 mb-1">
                       {activity.actor_type === 'user' && (
                         <Avatar className="h-5 w-5">
-                          <AvatarImage src={activity.actor_avatar} />
+                          <AvatarImage src={safeImageSrc(activity.actor_avatar)} />
                           <AvatarFallback className="text-xs">
                             {activity.actor_name[0]}
                           </AvatarFallback>
@@ -2020,14 +2022,12 @@ function ActivityTab({ activities }: { activities: ActivityLog[] }) {
                       <div className="mt-2 p-3 rounded-lg bg-muted/50">
                         <div className="flex items-center gap-2 text-sm">
                           <GitPullRequest className="h-4 w-4" />
-                          <a
+                          <SafeExternalLink
                             href={activity.pr_info.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="font-medium hover:underline"
                           >
                             #{activity.pr_info.number} {activity.pr_info.title}
-                          </a>
+                          </SafeExternalLink>
                         </div>
                         <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                           <code className="bg-muted px-1 rounded">

@@ -29,6 +29,7 @@ import { INSTALL_METHOD_DISPLAY_NAMES } from '@/lib/api/tool-types'
 import { getCategoryNameById, getCategoryDisplayNameById } from '@/lib/api/tool-category-hooks'
 import { sanitizeExternalUrl } from '@/lib/utils'
 import { ToolCategoryIcon } from './tool-category-icon'
+import { safeImageSrc } from '@/lib/safe-href'
 
 interface ToolTableProps {
   tools: Tool[]
@@ -93,7 +94,7 @@ export function ToolTable({
               {tool.logo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={tool.logo_url}
+                  src={safeImageSrc(tool.logo_url)}
                   alt=""
                   className="h-7 w-7 shrink-0 rounded-md object-contain"
                 />

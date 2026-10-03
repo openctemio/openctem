@@ -26,7 +26,12 @@ import {
   useSamlConfig,
   useSaveSamlConfig,
   useDeleteSamlConfig,
+  usePendingSSOChanges,
 } from '@/features/saml/api/use-saml-config'
+import {
+  isPendingSSOChange,
+  PENDING_SSO_MESSAGE,
+} from '@/features/sso-approvals/api/use-sso-changes'
 import { emptySamlConfig, type SamlConfig } from '@/features/saml/types/saml.types'
 
 function CopyableUrl({ label, url }: { label: string; url: string }) {
@@ -77,6 +82,7 @@ export function SamlConfigForm({
   const { data, error, isLoading, mutate } = useSamlConfig(tenantId)
   const { trigger: save, isMutating: isSaving } = useSaveSamlConfig(tenantId)
   const { trigger: remove, isMutating: isDeleting } = useDeleteSamlConfig(tenantId)
+  const { mutate: mutatePending } = usePendingSSOChanges(tenantId)
 
   const [form, setForm] = useState<SamlConfig>(emptySamlConfig)
   const [domainsText, setDomainsText] = useState('')
@@ -123,9 +129,16 @@ export function SamlConfigForm({
         .filter(Boolean),
     }
     try {
-      await save(payload)
-      toast.success('SAML configuration saved')
-      void mutate()
+      const res = await save(payload)
+      if (isPendingSSOChange(res)) {
+        // Stored for an owner's approval; the live config is unchanged.
+        toast.info(PENDING_SSO_MESSAGE)
+        resetToSaved()
+        void mutatePending()
+      } else {
+        toast.success('SAML configuration saved')
+        void mutate()
+      }
       onChanged?.()
     } catch (e) {
       toast.error(getErrorMessage(e, 'Failed to save SAML configuration'))

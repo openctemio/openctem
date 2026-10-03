@@ -48,6 +48,7 @@ type v2Harness struct {
 	reports  *postgres.IngestReportRepository
 	jobs     *postgres.IngestJobRepository
 	proc     *ingest.V2JobProcessor
+	ingest   *ingest.Service
 	sensors  *app.SensorService
 	jwtToken string
 }
@@ -84,7 +85,7 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
-	h := &v2Harness{t: t, db: sqldb, reports: postgres.NewIngestReportRepository(db), jobs: postgres.NewIngestJobRepository(db), sensors: sensorSvc}
+	h := &v2Harness{t: t, db: sqldb, reports: postgres.NewIngestReportRepository(db), jobs: postgres.NewIngestJobRepository(db), sensors: sensorSvc, ingest: ingestSvc}
 	parked := parkedJobs{h.jobs}
 	limits := opts.limits
 	if limits.MaxContentBytes == 0 {
@@ -636,5 +637,101 @@ func TestSensorV2_CompletedReportCountsTowardSensorTotals(t *testing.T) {
 	h.work(id)
 	if scans2, findings2 := totals(); scans2 != scans || findings2 != findings {
 		t.Fatalf("retry counted again: %d/%d -> %d/%d", scans, findings, scans2, findings2)
+	}
+}
+
+// A report queued by a sensor that is revoked before the worker reaches it
+// is dropped, not ingested (RFC-040 §5.2). The worker used to rebuild the
+// sensor as active from the job and land the report anyway.
+func TestSensorV2_QueuedReportOfRevokedSensorIsDropped(t *testing.T) {
+	for _, action := range []string{"revoke", "disable"} {
+		t.Run(action, func(t *testing.T) {
+			h := newV2Harness(t, v2HarnessOpts{})
+			id := newReportID()
+			resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "1.0", "a", "b"))
+			h.expect(resp, raw, 202, "")
+
+			ctx := context.Background()
+			var err error
+			if action == "revoke" {
+				_, err = h.sensors.RevokeSensor(ctx, h.tenantID, h.sensorID, "compromised", nil)
+			} else {
+				_, err = h.sensors.DisableSensor(ctx, h.tenantID, h.sensorID, "maintenance", nil)
+			}
+			if err != nil {
+				t.Fatalf("%s sensor: %v", action, err)
+			}
+
+			h.work(id) // fails the test if the worker returns an error (a retry)
+
+			var findings, assets int
+			_ = h.db.QueryRow(`SELECT COUNT(*) FROM findings WHERE tenant_id = $1`, h.tenantID).Scan(&findings)
+			_ = h.db.QueryRow(`SELECT COUNT(*) FROM assets WHERE tenant_id = $1`, h.tenantID).Scan(&assets)
+			if findings != 0 || assets != 0 {
+				t.Fatalf("%sd sensor's queued report was ingested: %d findings, %d assets", action, findings, assets)
+			}
+			var state string
+			_ = h.db.QueryRow(`SELECT state FROM ingest_reports WHERE report_id = $1`, id).Scan(&state)
+			if state != string(protov2.StateFailed) {
+				t.Fatalf("report state %q, want failed", state)
+			}
+			var audited int
+			_ = h.db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'ingest.failed'
+				AND result = 'denied' AND resource_id = $2`, h.tenantID, id).Scan(&audited)
+			if audited == 0 {
+				t.Fatal("dropped report not in the audit log")
+			}
+			_, _ = h.db.ExecContext(ctx, `DELETE FROM audit_logs WHERE tenant_id = $1`, h.tenantID)
+		})
+	}
+}
+
+// The same for a protocol v1 report queued in async mode.
+func TestIngestV1_QueuedReportOfRevokedSensorIsDropped(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{})
+	ctx := context.Background()
+	tenantID, sensorID := shared.MustIDFromString(h.tenantID), shared.MustIDFromString(h.sensorID)
+	report := []byte(`{"version":"1.0","metadata":{"id":"v1-queued","source_type":"scanner"},"tool":{"name":"semgrep"},` +
+		`"assets":[{"id":"repo","type":"repository","value":"github.com/acme/v1-queued"}],` +
+		`"findings":[{"type":"vulnerability","title":"t","severity":"high","rule_id":"r1","asset_ref":"repo"}]}`)
+	proc := ingest.NewJobProcessor(h.ingest)
+
+	// While the sensor is active the queued report is ingested.
+	if _, err := proc.Process(ctx, ingestjob.NewJob(tenantID, &sensorID, "v1-queued", "scanner", report)); err != nil {
+		t.Fatalf("active sensor: %v", err)
+	}
+	var assets int
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM assets WHERE tenant_id = $1`, h.tenantID).Scan(&assets)
+	if assets != 1 {
+		t.Fatalf("active sensor's report: %d assets, want 1", assets)
+	}
+	t.Cleanup(func() {
+		for _, q := range []string{`DELETE FROM findings WHERE tenant_id = $1`, `DELETE FROM assets WHERE tenant_id = $1`,
+			`DELETE FROM audit_logs WHERE tenant_id = $1`} {
+			_, _ = h.db.ExecContext(context.Background(), q, h.tenantID)
+		}
+	})
+
+	if _, err := h.sensors.RevokeSensor(ctx, h.tenantID, h.sensorID, "compromised", nil); err != nil {
+		t.Fatal(err)
+	}
+	second := bytes.Replace(report, []byte("v1-queued"), []byte("v1-queued-2"), -1)
+	out, err := proc.Process(ctx, ingestjob.NewJob(tenantID, &sensorID, "v1-queued-2", "scanner", second))
+	if err != nil {
+		t.Fatalf("a dropped job must complete, not retry: %v", err)
+	}
+	var dropped ingest.DroppedJob
+	if err := json.Unmarshal(out, &dropped); err != nil || !dropped.Dropped {
+		t.Fatalf("job result %s, want a drop", out)
+	}
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM assets WHERE tenant_id = $1`, h.tenantID).Scan(&assets)
+	if assets != 1 {
+		t.Fatalf("revoked sensor's queued report was ingested: %d assets, want 1", assets)
+	}
+	var audited int
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'ingest.failed'
+		AND result = 'denied' AND resource_id = 'v1-queued-2'`, h.tenantID).Scan(&audited)
+	if audited != 1 {
+		t.Fatalf("%d audit entries for the dropped report, want 1", audited)
 	}
 }

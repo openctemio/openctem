@@ -143,7 +143,6 @@ func newV1Harness(t *testing.T) *v1Harness {
 	if err != nil {
 		t.Fatalf("create sensor: %v", err)
 	}
-
 	h := &v1Harness{t: t, db: sqldb, srv: srv, key: out.APIKey, client: srv.Client(),
 		sensorID: out.Sensor.ID.String(), tenantID: tenantID.String(), ingest: ih}
 	h.masks = []mask{
@@ -151,6 +150,18 @@ func newV1Harness(t *testing.T) *v1Harness {
 		{out.Sensor.ID.String(), "<self>"},
 	}
 	return h
+}
+
+// reportTools records that the sensor reported (verified) its declared
+// tools, as every supported SDK (v0.10.0 and later) does on its first
+// heartbeat. Dispatch only hands a sensor the tools it verified, so the
+// golden flows model such a sensor.
+func (h *v1Harness) reportTools() {
+	h.t.Helper()
+	if _, err := h.db.ExecContext(context.Background(),
+		`UPDATE sensors SET reported_tool_names = tools, reported_at = now() WHERE id = $1`, h.sensorID); err != nil {
+		h.t.Fatalf("record reported tools: %v", err)
+	}
 }
 
 func (h *v1Harness) seedCommand(label string) string {
@@ -233,6 +244,7 @@ func (h *v1Harness) mask(s string) string {
 
 func TestProtocolV1_GoldenWire(t *testing.T) {
 	h := newV1Harness(t)
+	h.reportTools()
 	var transcript []string
 	step := func(method, path string, body any) []byte {
 		tr, raw := h.do(method, path, body, true)
@@ -306,6 +318,7 @@ func TestProtocolV1_GoldenWire(t *testing.T) {
 // (sdk-go v0.6.0) never reads.
 func TestProtocolV1_GoldenDoorbell(t *testing.T) {
 	h := newV1Harness(t)
+	h.reportTools()
 	var transcript []string
 	step := func(note, method, path string) []byte {
 		tr, raw := h.do(method, path, nil, true)

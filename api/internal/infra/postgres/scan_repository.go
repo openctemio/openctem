@@ -622,57 +622,29 @@ func (r *ScanRepository) UpdateStatusByAssetGroupID(ctx context.Context, assetGr
 	return nil
 }
 
-// scanSchedulerLockNamespace is a constant used as the first key in 2-arg
-// pg_advisory_lock to namespace scan scheduler locks. Picked to be unlikely
-// to collide with other application locks.
-const scanSchedulerLockNamespace int32 = 0x5343414e // "SCAN" in ASCII
-
-// TryLockScanForScheduler attempts to acquire a session-level advisory lock for the given scan ID.
-// Uses pg_try_advisory_lock(int4, int4) — the first arg namespaces this lock to the scan scheduler,
-// the second arg is a 32-bit hash of the scan UUID.
-func (r *ScanRepository) TryLockScanForScheduler(ctx context.Context, id shared.ID) (bool, error) {
-	key := scanIDLockKey(id)
-	var acquired bool
-	err := r.db.QueryRowContext(ctx,
-		"SELECT pg_try_advisory_lock($1, $2)",
-		scanSchedulerLockNamespace, key,
-	).Scan(&acquired)
+// ClaimScheduledRun claims one due occurrence of a scheduled scan: it moves
+// next_run_at from dueAt to next, and only if next_run_at still equals dueAt
+// and the scan is still active. Exactly one scheduler (on any replica) wins a
+// given occurrence; the losers see false and skip it.
+//
+// This replaces a session-level pg_try_advisory_lock taken through the
+// connection pool. Lock and unlock ran on whatever pooled connection each
+// statement got: the unlock usually hit a different session, released nothing
+// (its result was ignored), and the lock stayed held by the first session
+// until that connection closed — from then on every attempt to schedule that
+// scan, on every replica, saw "locked by another instance" and skipped it.
+func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, id shared.ID, dueAt time.Time, next *time.Time) (bool, error) {
+	const query = `
+		UPDATE scans
+		SET next_run_at = $3, updated_at = NOW()
+		WHERE id = $1 AND next_run_at = $2 AND status = 'active'
+	`
+	res, err := r.db.ExecContext(ctx, query, id.String(), dueAt, next)
 	if err != nil {
-		return false, fmt.Errorf("failed to try advisory lock for scan %s: %w", id.String(), err)
+		return false, fmt.Errorf("failed to claim scheduled run for scan %s: %w", id.String(), err)
 	}
-	return acquired, nil
-}
-
-// UnlockScanForScheduler releases a previously acquired session-level scheduler lock.
-func (r *ScanRepository) UnlockScanForScheduler(ctx context.Context, id shared.ID) error {
-	key := scanIDLockKey(id)
-	var released bool
-	err := r.db.QueryRowContext(ctx,
-		"SELECT pg_advisory_unlock($1, $2)",
-		scanSchedulerLockNamespace, key,
-	).Scan(&released)
-	if err != nil {
-		return fmt.Errorf("failed to release advisory lock for scan %s: %w", id.String(), err)
-	}
-	return nil
-}
-
-// scanIDLockKey converts a scan UUID to a deterministic int32 key for advisory locks.
-// Uses FNV-1a 32-bit hash of the UUID string. Collisions are rare and only cause
-// brief serialization (the worst case is two unrelated scans waiting for each other,
-// which is acceptable since each trigger is fast).
-func scanIDLockKey(id shared.ID) int32 {
-	const (
-		fnvOffsetBasis uint32 = 2166136261
-		fnvPrime       uint32 = 16777619
-	)
-	h := fnvOffsetBasis
-	s := id.String()
-	for i := 0; i < len(s); i++ {
-		h ^= uint32(s[i])
-		h *= fnvPrime
-	}
-	return int32(h) //nolint:gosec // intentional truncation for advisory lock key
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
 // selectQuery returns the base SELECT query.

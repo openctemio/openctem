@@ -1,0 +1,22 @@
+# Documented operations whose path-parameter NAMES differ between the spec
+# and the router (check D, tools/lint/openapicontract, RFC-041 §7).
+# Frozen on 2026-10-03. SHRINK-ONLY: a new mismatch fails, and so does a line
+# that no longer matches one. To remove a line, make the handler's @Router use
+# the route's parameter names (or rename the route's), run `make swagger`, and
+# delete the line.
+#
+# Format: METHOD /path  (the route as registered)
+GET /api/v1/assets/{assetId}/sla-policy
+GET /api/v1/repositories/{repositoryId}/branches
+POST /api/v1/repositories/{repositoryId}/branches
+GET /api/v1/repositories/{repositoryId}/branches/default
+DELETE /api/v1/repositories/{repositoryId}/branches/{branchId}
+GET /api/v1/repositories/{repositoryId}/branches/{branchId}
+PUT /api/v1/repositories/{repositoryId}/branches/{branchId}
+PUT /api/v1/repositories/{repositoryId}/branches/{branchId}/default
+DELETE /api/v1/tenant-tools/{toolId}
+GET /api/v1/tenant-tools/{toolId}
+PUT /api/v1/tenant-tools/{toolId}
+GET /api/v1/tenant-tools/{toolId}/effective-config
+GET /api/v1/tenant-tools/{toolId}/with-config
+GET /api/v1/vulnerabilities/cve/{cveId}

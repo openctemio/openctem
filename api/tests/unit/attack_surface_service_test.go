@@ -485,15 +485,9 @@ func TestAttackSurfaceService_GetStats_BreakdownError(t *testing.T) {
 		t.Fatalf("expected no error (graceful degradation), got %v", err)
 	}
 
-	// Breakdown should have 6 entries (all asset types) with zero values
-	if len(stats.AssetBreakdown) != 6 {
-		t.Fatalf("expected 6 breakdown entries, got %d", len(stats.AssetBreakdown))
-	}
-	for _, b := range stats.AssetBreakdown {
-		if b.Total != 0 || b.Exposed != 0 {
-			t.Errorf("expected zero counts for type %s on error, got total=%d exposed=%d",
-				b.Type, b.Total, b.Exposed)
-		}
+	// A failed breakdown is empty, not a list of invented zero rows.
+	if len(stats.AssetBreakdown) != 0 {
+		t.Fatalf("expected no breakdown entries on error, got %d", len(stats.AssetBreakdown))
 	}
 }
 
@@ -503,11 +497,12 @@ func TestAttackSurfaceService_GetStats_AssetBreakdownTypes(t *testing.T) {
 	repo.countErrors = []error{nil, nil, nil}
 	repo.breakdownResult = map[string]asset.AssetTypeStats{
 		"domain":        {Total: 10, Exposed: 3},
-		"website":       {Total: 8, Exposed: 2},
+		"website":       {Total: 8, Exposed: 2}, // legacy name of application
+		"application":   {Total: 1, Exposed: 1},
 		"service":       {Total: 12, Exposed: 7},
 		"repository":    {Total: 5, Exposed: 0},
 		"cloud_account": {Total: 3, Exposed: 1},
-		"host":          {Total: 12, Exposed: 4},
+		"subdomain":     {Total: 20, Exposed: 20}, // never shown by the old fixed list
 	}
 
 	svc := newTestAttackSurfaceService(repo)
@@ -517,25 +512,22 @@ func TestAttackSurfaceService_GetStats_AssetBreakdownTypes(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	expectedTypes := []string{"domain", "website", "service", "repository", "cloud_account", "host"}
-	if len(stats.AssetBreakdown) != len(expectedTypes) {
-		t.Fatalf("expected %d breakdown entries, got %d", len(expectedTypes), len(stats.AssetBreakdown))
+	// Every type present, legacy names folded, largest first.
+	want := []attack.AssetTypeBreakdown{
+		{Type: "subdomain", Total: 20, Exposed: 20},
+		{Type: "service", Total: 12, Exposed: 7},
+		{Type: "domain", Total: 10, Exposed: 3},
+		{Type: "application", Total: 9, Exposed: 3},
+		{Type: "repository", Total: 5, Exposed: 0},
+		{Type: "cloud_account", Total: 3, Exposed: 1},
 	}
-
-	for i, expected := range expectedTypes {
-		if stats.AssetBreakdown[i].Type != expected {
-			t.Errorf("breakdown[%d]: expected type=%s, got %s", i, expected, stats.AssetBreakdown[i].Type)
+	if len(stats.AssetBreakdown) != len(want) {
+		t.Fatalf("expected %d breakdown entries, got %d: %+v", len(want), len(stats.AssetBreakdown), stats.AssetBreakdown)
+	}
+	for i, w := range want {
+		if stats.AssetBreakdown[i] != w {
+			t.Errorf("breakdown[%d] = %+v, want %+v", i, stats.AssetBreakdown[i], w)
 		}
-	}
-
-	// Verify specific values
-	if stats.AssetBreakdown[0].Total != 10 || stats.AssetBreakdown[0].Exposed != 3 {
-		t.Errorf("domain: expected total=10 exposed=3, got total=%d exposed=%d",
-			stats.AssetBreakdown[0].Total, stats.AssetBreakdown[0].Exposed)
-	}
-	if stats.AssetBreakdown[2].Total != 12 || stats.AssetBreakdown[2].Exposed != 7 {
-		t.Errorf("service: expected total=12 exposed=7, got total=%d exposed=%d",
-			stats.AssetBreakdown[2].Total, stats.AssetBreakdown[2].Exposed)
 	}
 }
 
@@ -642,9 +634,13 @@ func TestAttackSurfaceService_GetStats_RecentChangesAdded(t *testing.T) {
 }
 
 func TestAttackSurfaceService_GetStats_RecentChangesChanged(t *testing.T) {
-	createdAt := time.Now().UTC().Add(-48 * time.Hour) // Created 2 days ago
-	updatedAt := time.Now().UTC()                      // Updated now
-	changedAsset := makeAttackSurfaceAsset("old-service.example.com", asset.AssetTypeHost, asset.ExposurePrivate,
+	// The asset list is ordered by creation, so every row from it is an
+	// addition dated at its creation. An update alone is not a change: before,
+	// any re-scan made an asset "changed". Real changes come from state history
+	// (covered in internal/app/attack).
+	createdAt := time.Now().UTC().Add(-48 * time.Hour)
+	updatedAt := time.Now().UTC()
+	oldAsset := makeAttackSurfaceAsset("old-service.example.com", asset.AssetTypeHost, asset.ExposurePrivate,
 		asset.CriticalityLow, 1, createdAt, updatedAt, updatedAt)
 
 	repo := newMockAttackSurfaceRepo()
@@ -652,7 +648,7 @@ func TestAttackSurfaceService_GetStats_RecentChangesChanged(t *testing.T) {
 	repo.countErrors = []error{nil, nil, nil}
 	repo.listResults = []pagination.Result[*asset.Asset]{
 		{Data: []*asset.Asset{}, Total: 0, Page: 1, PerPage: 5, TotalPages: 0},
-		{Data: []*asset.Asset{changedAsset}, Total: 1, Page: 1, PerPage: 5, TotalPages: 1},
+		{Data: []*asset.Asset{oldAsset}, Total: 1, Page: 1, PerPage: 5, TotalPages: 1},
 	}
 
 	svc := newTestAttackSurfaceService(repo)
@@ -664,8 +660,11 @@ func TestAttackSurfaceService_GetStats_RecentChangesChanged(t *testing.T) {
 	if len(stats.RecentChanges) != 1 {
 		t.Fatalf("expected 1 recent change, got %d", len(stats.RecentChanges))
 	}
-	if stats.RecentChanges[0].Type != "changed" {
-		t.Errorf("expected change type=changed, got %s", stats.RecentChanges[0].Type)
+	if stats.RecentChanges[0].Type != "added" {
+		t.Errorf("expected change type=added, got %s", stats.RecentChanges[0].Type)
+	}
+	if !stats.RecentChanges[0].Timestamp.Equal(oldAsset.CreatedAt()) {
+		t.Errorf("expected the creation time, got %v", stats.RecentChanges[0].Timestamp)
 	}
 	if stats.RecentChanges[0].AssetType != "host" {
 		t.Errorf("expected asset type=host, got %s", stats.RecentChanges[0].AssetType)
@@ -732,9 +731,9 @@ func TestAttackSurfaceService_GetStats_AllErrors(t *testing.T) {
 	if len(stats.RecentChanges) != 0 {
 		t.Errorf("expected empty RecentChanges, got %d items", len(stats.RecentChanges))
 	}
-	// Breakdown should still have 6 zero-value entries
-	if len(stats.AssetBreakdown) != 6 {
-		t.Errorf("expected 6 breakdown entries, got %d", len(stats.AssetBreakdown))
+	// A failed breakdown is empty.
+	if len(stats.AssetBreakdown) != 0 {
+		t.Errorf("expected no breakdown entries, got %d", len(stats.AssetBreakdown))
 	}
 }
 
@@ -750,9 +749,18 @@ func TestAttackSurfaceService_GetStats_CountFilterVerification(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	// Verify Count was called 3 times
-	if repo.countCall != 3 {
-		t.Fatalf("expected 3 Count calls, got %d", repo.countCall)
+	// Three totals, then three trend counts (new in the trend window).
+	if repo.countCall != 6 {
+		t.Fatalf("expected 6 Count calls, got %d", repo.countCall)
+	}
+	for i := 3; i < 6; i++ {
+		f := repo.countFilters[i]
+		if f.TenantID == nil {
+			t.Errorf("trend Count call %d should have TenantID set", i)
+		}
+		if f.CreatedAfter == nil && f.ExposureChangedOrCreatedAfter == nil {
+			t.Errorf("trend Count call %d should be bounded to the trend window", i)
+		}
 	}
 
 	// First call: total assets (only tenantID filter)
@@ -812,18 +820,14 @@ func TestAttackSurfaceService_GetStats_ListFilterVerification(t *testing.T) {
 		t.Fatalf("expected 2 List calls, got %d", repo.listCall)
 	}
 
-	// First List call: exposed services (public + restricted)
+	// First List call: exposed assets (public only: the population the
+	// exposed count and the external surface page cover)
 	lf0 := repo.listFilters[0]
 	if lf0.TenantID == nil {
 		t.Error("first List call should have TenantID set")
 	}
-	if len(lf0.Exposures) != 2 {
-		t.Fatalf("first List call should have 2 exposure filters, got %d", len(lf0.Exposures))
-	}
-	hasPublic := lf0.Exposures[0] == asset.ExposurePublic || lf0.Exposures[1] == asset.ExposurePublic
-	hasRestricted := lf0.Exposures[0] == asset.ExposureRestricted || lf0.Exposures[1] == asset.ExposureRestricted
-	if !hasPublic || !hasRestricted {
-		t.Errorf("first List call should filter by public and restricted, got %v", lf0.Exposures)
+	if len(lf0.Exposures) != 1 || lf0.Exposures[0] != asset.ExposurePublic {
+		t.Fatalf("first List call should filter by public only, got %v", lf0.Exposures)
 	}
 
 	// Second List call: recent changes (tenantID only)
@@ -836,10 +840,10 @@ func TestAttackSurfaceService_GetStats_ListFilterVerification(t *testing.T) {
 	}
 }
 
-func TestAttackSurfaceService_GetStats_TrendsAreZero(t *testing.T) {
+func TestAttackSurfaceService_GetStats_TrendsFromWindowCounts(t *testing.T) {
 	repo := newMockAttackSurfaceRepo()
-	repo.countResults = []int64{50, 15, 3}
-	repo.countErrors = []error{nil, nil, nil}
+	// totals, then new assets / newly exposed / newly exposed critical
+	repo.countResults = []int64{50, 15, 3, 7, 4, 1}
 
 	svc := newTestAttackSurfaceService(repo)
 	stats, err := svc.GetStats(context.Background(), serviceTenantID)
@@ -847,14 +851,12 @@ func TestAttackSurfaceService_GetStats_TrendsAreZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if stats.TotalAssetsChange != 0 {
-		t.Errorf("expected TotalAssetsChange=0, got %d", stats.TotalAssetsChange)
+	if stats.TotalAssetsChange != 7 || stats.ExposedServicesChange != 4 || stats.CriticalExposuresChange != 1 {
+		t.Errorf("trends = %d/%d/%d, want 7/4/1",
+			stats.TotalAssetsChange, stats.ExposedServicesChange, stats.CriticalExposuresChange)
 	}
-	if stats.ExposedServicesChange != 0 {
-		t.Errorf("expected ExposedServicesChange=0, got %d", stats.ExposedServicesChange)
-	}
-	if stats.CriticalExposuresChange != 0 {
-		t.Errorf("expected CriticalExposuresChange=0, got %d", stats.CriticalExposuresChange)
+	if stats.TrendWindowDays != 7 {
+		t.Errorf("expected TrendWindowDays=7, got %d", stats.TrendWindowDays)
 	}
 }
 
@@ -862,7 +864,7 @@ func TestAttackSurfaceService_GetStats_BreakdownMissingTypes(t *testing.T) {
 	repo := newMockAttackSurfaceRepo()
 	repo.countResults = []int64{5, 2, 1}
 	repo.countErrors = []error{nil, nil, nil}
-	// Only return data for "domain" - other types should have zero values
+	// Only "domain" has assets: types the tenant does not have are not listed.
 	repo.breakdownResult = map[string]asset.AssetTypeStats{
 		"domain": {Total: 5, Exposed: 2},
 	}
@@ -873,26 +875,11 @@ func TestAttackSurfaceService_GetStats_BreakdownMissingTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if len(stats.AssetBreakdown) != 6 {
-		t.Fatalf("expected 6 breakdown entries, got %d", len(stats.AssetBreakdown))
+	if len(stats.AssetBreakdown) != 1 {
+		t.Fatalf("expected 1 breakdown entry, got %d", len(stats.AssetBreakdown))
 	}
-
-	// Domain should have values
-	if stats.AssetBreakdown[0].Type != "domain" {
-		t.Errorf("expected first breakdown type=domain, got %s", stats.AssetBreakdown[0].Type)
-	}
-	if stats.AssetBreakdown[0].Total != 5 {
-		t.Errorf("expected domain total=5, got %d", stats.AssetBreakdown[0].Total)
-	}
-
-	// Other types should be zero
-	for i := 1; i < 6; i++ {
-		if stats.AssetBreakdown[i].Total != 0 {
-			t.Errorf("expected %s total=0, got %d", stats.AssetBreakdown[i].Type, stats.AssetBreakdown[i].Total)
-		}
-		if stats.AssetBreakdown[i].Exposed != 0 {
-			t.Errorf("expected %s exposed=0, got %d", stats.AssetBreakdown[i].Type, stats.AssetBreakdown[i].Exposed)
-		}
+	if b := stats.AssetBreakdown[0]; b.Type != "domain" || b.Total != 5 || b.Exposed != 2 {
+		t.Errorf("breakdown[0] = %+v, want domain 5/2", b)
 	}
 }
 

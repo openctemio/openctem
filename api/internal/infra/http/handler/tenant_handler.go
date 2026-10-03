@@ -143,12 +143,14 @@ type MemberResponse struct {
 
 // MemberWithUserResponse represents a member with user details.
 type MemberWithUserResponse struct {
-	ID          string     `json:"id"`
-	UserID      string     `json:"user_id"`
-	Role        string     `json:"role"`
-	InvitedBy   string     `json:"invited_by,omitempty"`
-	JoinedAt    time.Time  `json:"joined_at"`
-	Email       string     `json:"email"`
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Role      string    `json:"role"`
+	InvitedBy string    `json:"invited_by,omitempty"`
+	JoinedAt  time.Time `json:"joined_at"`
+	// Email and LastLoginAt are included only for owners and admins of the
+	// tenant; other members get ids, names and avatars (enough for pickers).
+	Email       string     `json:"email,omitempty"`
 	Name        string     `json:"name"`
 	AvatarURL   string     `json:"avatar_url,omitempty"`
 	Status      string     `json:"status"`
@@ -611,7 +613,12 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // ListMembers handles GET /api/v1/tenants/{tenant}/members
 // Query parameters:
 //   - include: comma-separated list (user, roles)
-//   - search: search term for name or email (requires include=user)
+//   - search: search term for name or email (requires include=user); name
+//     only for callers who are not an owner or admin
+//
+// Member emails and last sign-in are owner/admin only (owner decision
+// 2026-10-02): other members get ids, names, avatars and roles, which is what
+// the assignee and owner pickers need.
 //   - limit: max results (default 10, max 100)
 //   - offset: pagination offset
 func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
@@ -632,6 +639,11 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 	includeUser := includes["user"]
 	includeRoles := includes["roles"]
+
+	// Owners and admins see the member directory (emails, last sign-in,
+	// second-factor status); everyone else sees names only.
+	callerRole := middleware.GetTeamRole(r.Context())
+	showDirectory := callerRole == tenant.RoleOwner || callerRole == tenant.RoleAdmin
 
 	// Parse search/pagination parameters. We always go through the
 	// paginated SearchMembersWithUserInfo path when include=user is
@@ -664,9 +676,10 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		// Always paginate when include=user. The legacy unpaginated
 		// path was a memory hazard for large tenants.
 		filters := tenant.MemberSearchFilters{
-			Search: search,
-			Limit:  limit,
-			Offset: offset,
+			Search:         search,
+			SearchNameOnly: !showDirectory,
+			Limit:          limit,
+			Offset:         offset,
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
 		if err != nil {
@@ -676,9 +689,6 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		members := result.Members
 		total := result.Total
 
-		// Second-factor status is shown to the tenant's owners and admins only.
-		callerRole := middleware.GetTeamRole(r.Context())
-		showMFA := callerRole == tenant.RoleOwner || callerRole == tenant.RoleAdmin
 		response := make([]MemberWithUserResponse, len(members))
 		for i, m := range members {
 			var invitedBy string
@@ -691,14 +701,14 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				Role:         m.Role.String(),
 				InvitedBy:    invitedBy,
 				JoinedAt:     m.JoinedAt,
-				Email:        m.Email,
 				Name:         m.Name,
 				AvatarURL:    m.AvatarURL,
 				Status:       m.Status,
-				LastLoginAt:  m.LastLoginAt,
 				PendingSetup: m.PendingSetup,
 			}
-			if showMFA {
+			if showDirectory {
+				response[i].Email = m.Email
+				response[i].LastLoginAt = m.LastLoginAt
 				response[i].MFAStatus = m.MFAStatus
 			}
 		}
@@ -722,7 +732,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	// Basic member list. Paginated like the include=user path: it used to
 	// return every member of the organization in one response.
 	result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(),
-		tenant.MemberSearchFilters{Search: search, Limit: limit, Offset: offset})
+		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
