@@ -1,35 +1,33 @@
 'use client'
 
 import { Badge } from '@/components/ui/badge'
-import { ShieldCheck, CheckCircle, Clock, XCircle, AlertTriangle, Shield } from 'lucide-react'
+import {
+  ShieldCheck,
+  CheckCircle,
+  Clock,
+  XCircle,
+  AlertTriangle,
+  Shield,
+  HelpCircle,
+} from 'lucide-react'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
 import { toStringArray } from '@/features/assets/lib/property-utils'
+import {
+  certDaysLeft,
+  certIssuer,
+  certNotAfter,
+  certNotBefore,
+  certStatus,
+  type CertStatus,
+} from '@/features/assets/lib/certificate-facts'
 
-// Helper to compute certificate validity status from metadata
-type CertStatus = 'valid' | 'expiring' | 'expired'
-
-function getCertStatus(asset: Asset): CertStatus {
-  const notAfter = asset.metadata?.cert_not_after as string | undefined
-  if (!notAfter) return 'valid'
-
-  const expiryDate = new Date(notAfter)
-  const now = new Date()
-  const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-
-  if (daysUntilExpiry < 0) return 'expired'
-  if (daysUntilExpiry <= 30) return 'expiring'
-  return 'valid'
-}
-
-function getDaysUntilExpiry(asset: Asset): number | null {
-  const notAfter = asset.metadata?.cert_not_after as string | undefined
-  if (!notAfter) return null
-
-  const expiryDate = new Date(notAfter)
-  const now = new Date()
-  return Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-}
+// Validity comes from certificate-facts: it reads both the form keys and the
+// nested map ingest writes, and a certificate without a date is "unknown",
+// never "valid".
+const getCertStatus = (asset: Asset): CertStatus => certStatus(asset)
+const getDaysUntilExpiry = (asset: Asset): number | null => certDaysLeft(asset)
+const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString() : '-')
 
 function CertStatusBadge({ status }: { status: CertStatus }) {
   switch (status) {
@@ -54,6 +52,13 @@ function CertStatusBadge({ status }: { status: CertStatus }) {
           Expired
         </span>
       )
+    case 'unknown':
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+          <HelpCircle className="h-3.5 w-3.5" />
+          Unknown
+        </span>
+      )
     default:
       return null
   }
@@ -74,18 +79,18 @@ export const certificatesConfig: AssetPageConfig = {
       id: 'issuer',
       header: 'Issuer',
       cell: ({ row }) => {
-        const issuer = (row.original.metadata?.cert_issuer as string) || '-'
+        const issuer = certIssuer(row.original) || '-'
         return <span className="text-muted-foreground">{issuer}</span>
       },
     },
     {
       id: 'validUntil',
-      accessorFn: (row) => row.metadata?.cert_not_after || '',
+      accessorFn: (row) => certNotAfter(row)?.toISOString() ?? '',
       header: 'Valid Until',
       cell: ({ row }) => {
-        const notAfter = row.original.metadata?.cert_not_after as string | undefined
+        const notAfter = certNotAfter(row.original)
         if (!notAfter) return <span className="text-muted-foreground">-</span>
-        return <span className="text-sm">{new Date(notAfter).toLocaleDateString()}</span>
+        return <span className="text-sm">{notAfter.toLocaleDateString()}</span>
       },
     },
     {
@@ -215,6 +220,7 @@ export const certificatesConfig: AssetPageConfig = {
       { label: 'Valid', value: 'valid' },
       { label: 'Expiring', value: 'expiring' },
       { label: 'Expired', value: 'expired' },
+      { label: 'Unknown', value: 'unknown' },
     ],
     filterFn: (asset: Asset, value: string) => getCertStatus(asset) === value,
   },
@@ -271,7 +277,7 @@ export const certificatesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Issuer',
-          getValue: (asset: Asset) => (asset.metadata?.cert_issuer as string) || '-',
+          getValue: (asset: Asset) => certIssuer(asset) || '-',
         },
         {
           label: 'Subject',
@@ -279,17 +285,11 @@ export const certificatesConfig: AssetPageConfig = {
         },
         {
           label: 'Valid From',
-          getValue: (asset: Asset) =>
-            asset.metadata?.cert_not_before
-              ? new Date(asset.metadata.cert_not_before as string).toLocaleDateString()
-              : '-',
+          getValue: (asset: Asset) => fmtDate(certNotBefore(asset)),
         },
         {
           label: 'Valid Until',
-          getValue: (asset: Asset) =>
-            asset.metadata?.cert_not_after
-              ? new Date(asset.metadata.cert_not_after as string).toLocaleDateString()
-              : '-',
+          getValue: (asset: Asset) => fmtDate(certNotAfter(asset)),
         },
         {
           label: 'Algorithm',
@@ -341,10 +341,13 @@ export const certificatesConfig: AssetPageConfig = {
 
   exportFields: [
     { header: 'Certificate', accessor: (a: Asset) => a.name },
-    { header: 'Issuer', accessor: (a: Asset) => (a.metadata?.cert_issuer as string) || '' },
+    { header: 'Issuer', accessor: (a: Asset) => certIssuer(a) || '' },
     { header: 'Subject', accessor: (a: Asset) => (a.metadata?.cert_subject as string) || '' },
-    { header: 'Valid From', accessor: (a: Asset) => (a.metadata?.cert_not_before as string) || '' },
-    { header: 'Valid To', accessor: (a: Asset) => (a.metadata?.cert_not_after as string) || '' },
+    {
+      header: 'Valid From',
+      accessor: (a: Asset) => certNotBefore(a)?.toISOString() ?? '',
+    },
+    { header: 'Valid To', accessor: (a: Asset) => certNotAfter(a)?.toISOString() ?? '' },
     {
       header: 'Days Left',
       accessor: (a: Asset) => {
