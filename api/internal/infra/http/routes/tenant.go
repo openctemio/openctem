@@ -109,6 +109,8 @@ func registerTenantRoutes(
 		r.PUT("/settings/asset-source", h.UpdateAssetSourceSettings, middleware.RequireTeamAdmin())
 
 		// Asset lifecycle settings (admin+) — stale detection + snooze.
+		r.GET("/settings/retest", h.GetRetestSettings, middleware.RequireTeamAdmin())
+		r.PUT("/settings/retest", h.UpdateRetestSettings, middleware.RequireTeamAdmin())
 		r.GET("/settings/asset-lifecycle", h.GetAssetLifecycleSettings, middleware.RequireTeamAdmin())
 		r.PUT("/settings/asset-lifecycle", h.UpdateAssetLifecycleSettings, middleware.RequireTeamAdmin())
 		r.POST("/settings/asset-lifecycle/dry-run", h.DryRunAssetLifecycle, middleware.RequireTeamAdmin())

@@ -48,6 +48,7 @@ import {
   FindingFixCard,
   FindingHeader,
   FindingProperties,
+  FindingRetestSection,
   FindingWhyItMatters,
   OverviewTab,
   RelatedTab,
@@ -257,6 +258,10 @@ export default function FindingDetailPage() {
           <div className="rounded-lg border bg-card p-3 lg:p-4">
             <FindingProperties finding={finding} triage={triage} />
           </div>
+          <FindingRetestSection
+            finding={{ ...finding, status: triage.status }}
+            className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+          />
         </aside>
 
         <div className="min-w-0 space-y-4 lg:col-start-1">

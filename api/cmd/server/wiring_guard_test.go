@@ -305,6 +305,7 @@ var optionalServiceSetters = map[string]string{
 	"Vulnerability.SetFindingTags":      "request operation, called by the finding handler",
 	// Real seams left at their defaults on purpose.
 	"ScannerTemplate.SetQuota":         "default quota applies; the override exists for tests and future config",
+	"Retest.SetClock":                  "test clock; production uses time.Now",
 	"Vulnerability.SetFindingNotifier": "deprecated; superseded by the notification outbox",
 	"WebSocketHub.SetAuthorizeFunc":    "superseded by SetChannelAccessChecker",
 	"WebSocketHub.SetPublisher":        "set by websocket.NewRedisBridge on the hub it is given",

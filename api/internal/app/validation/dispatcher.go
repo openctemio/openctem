@@ -69,6 +69,10 @@ type ValidateCommandPayload struct {
 	// safe-check job, which the sensor then handles as today.
 	TemplateID string `json:"template_id,omitempty"`
 	CVEID      string `json:"cve_id,omitempty"`
+	// RetestID is set when the job is one of a finding retest's two checks
+	// (RFC-039). The sensor ignores it; the completion hook records the
+	// evidence advisory-only and hands the result to the retest service.
+	RetestID string `json:"retest_id,omitempty"`
 	// RequiredCapabilities lets the platform route the job only to sensors that
 	// advertise the validation capability (mirrors the scan command payload).
 	RequiredCapabilities []string `json:"required_capabilities"`
@@ -113,6 +117,10 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 	if !job.SimulationRunID.IsZero() {
 		simRunID = job.SimulationRunID.String()
 	}
+	retestID := ""
+	if !job.RetestID.IsZero() {
+		retestID = job.RetestID.String()
+	}
 
 	// Route a KindNuclei job only to sensors advertising the deeper
 	// `validate:nuclei` capability; everything else rides the base `validate`
@@ -138,6 +146,7 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 		TimeoutSeconds:       job.TimeoutSeconds,
 		TemplateID:           job.TemplateID,
 		CVEID:                job.CVEID,
+		RetestID:             retestID,
 		RequiredCapabilities: []string{requiredCap},
 	}
 

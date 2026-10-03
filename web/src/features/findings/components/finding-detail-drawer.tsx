@@ -56,6 +56,7 @@ import { StatusSelect } from './status-select'
 import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingProperties } from './detail/finding-properties'
+import { FindingRetestSection } from './detail/finding-retest'
 
 interface FindingDetailDrawerProps {
   finding: Finding | null
@@ -253,6 +254,7 @@ export function FindingDetailDrawer({
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
             <DetailSections>
               <FindingProperties finding={detail} triage={triage} hideTriage />
+              <FindingRetestSection finding={{ ...detail, status: triage.status }} />
 
               {description.text && (
                 <DetailSection title="Description" icon={FileText}>

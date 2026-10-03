@@ -5,6 +5,7 @@
 export { FindingHeader } from './finding-header'
 export { FindingWhyItMatters, SignalChip } from './finding-why-it-matters'
 export { FindingFixCard } from './finding-fix-card'
+export { FindingRetestSection } from './finding-retest'
 export { FindingProperties, SlaDue } from './finding-properties'
 export { findingTypeSections } from './finding-type-details'
 export { OverviewTab } from './overview-tab'

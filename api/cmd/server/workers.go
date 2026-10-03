@@ -311,6 +311,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Continuous retest (RFC-039): settle stale retests and serve due
+	// auto-retest ticks. Auto-retest is per tenant and off by default
+	// (settings.retest.auto_enabled); each tick is claimed by compare-and-set,
+	// so every replica can run this controller without double-firing.
+	if svc.Retest != nil {
+		w.ControllerManager.Register(controller.NewRetestScheduler(
+			svc.Retest, repos.FindingRetest, time.Minute, log,
+		))
+	}
+
 	w.ControllerManager.Register(controller.NewDataExpirationController(
 		repos.Suppression,
 		repos.ScopeExcl,
