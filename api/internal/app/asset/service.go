@@ -299,6 +299,12 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	input.Name = strings.ReplaceAll(input.Name, "\x00", "")
 	input.Description = strings.ReplaceAll(input.Description, "\x00", "")
 
+	// Platform-owned keys (crown jewel, business impact, aliases, discovery
+	// fields) have their own endpoints and are never taken from properties.
+	if err := RejectReservedProperties(input.Properties); err != nil {
+		return nil, err
+	}
+
 	// Promote known fields from properties into proper columns.
 	// Collectors may send sub_type, scope, etc. inside properties JSONB.
 	input = PromoteKnownProperties(input)
@@ -974,6 +980,14 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	a, err := s.repo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Platform-owned keys cannot be changed through properties; an
+	// unchanged echo of the stored value is dropped.
+	if input.Properties != nil {
+		if err := stripUnchangedReservedProperties(input.Properties, a.Properties()); err != nil {
+			return nil, err
+		}
 	}
 
 	oldName := a.Name()
