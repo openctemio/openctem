@@ -335,7 +335,6 @@ POST /api/v1/findings/{}/create-ticket
 POST /api/v1/findings/{}/evidence
 POST /api/v1/findings/{}/link-ticket
 POST /api/v1/findings/{}/remediation/steps
-POST /api/v1/findings/{}/request-verification
 POST /api/v1/findings/{}/validate
 POST /api/v1/groups/{}/assets/bulk
 POST /api/v1/groups/{}/scope-rules
