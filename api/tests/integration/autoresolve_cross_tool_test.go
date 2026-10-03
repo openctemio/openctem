@@ -98,7 +98,7 @@ func TestAutoResolve_CrossToolFindingStaysOpenWhileTheLastToolSeesIt(t *testing.
 }
 
 // The tool that saw the finding last closes it when its own full scan no
-// longer reports it — single-tool behaviour is unchanged.
+// longer reports it — single-tool behavior is unchanged.
 func TestAutoResolve_LastSeeingToolStillResolves(t *testing.T) {
 	c := newCrossToolRig(t)
 	c.fullScan(t, "trivy", lodashFinding(), anchorFinding())

@@ -6,7 +6,7 @@
 -- whichever tool missed it although the other still saw it. last_seen_tool is
 -- the tool of the last sighting (written with scan_id); auto-resolve lets only
 -- that tool close the finding. NULL (rows written before this migration) falls
--- back to tool_name, the previous behaviour, until the next sighting fills it.
+-- back to tool_name, the previous behavior, until the next sighting fills it.
 -- Interim: RFC-043 P2 moves lifecycle to per-tool sightings.
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS last_seen_tool VARCHAR(100);
 
