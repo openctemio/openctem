@@ -197,7 +197,7 @@ func (p *FindingProcessor) ProcessBatch(
 	output *Output,
 	cveMap map[string]shared.ID,
 ) error {
-	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false)
+	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false, fullScope())
 }
 
 // processBatch is ProcessBatch; strictAssets (protocol v2,
@@ -215,6 +215,7 @@ func (p *FindingProcessor) processBatch(
 	output *Output,
 	cveMap map[string]shared.ID,
 	strictAssets bool,
+	scope *alterScope,
 ) error {
 	if len(report.Findings) == 0 {
 		return nil
@@ -372,9 +373,15 @@ func (p *FindingProcessor) processBatch(
 	unenrichedFingerprints := make([]string, 0)          // Fingerprints where buildFinding failed
 	existingSnippets := make(map[string]string)          // Track snippets for existing findings
 
+	// Fingerprints on assets the report may not change (RFC-040 §5.3): a
+	// finding a person resolved there stays resolved.
+	var guardedFingerprints []string
 	for _, fm := range validFindings {
 		if existsMap[fm.fingerprint] {
 			existingFingerprints = append(existingFingerprints, fm.fingerprint)
+			if !scope.allowedAsset(fm.assetID) {
+				guardedFingerprints = append(guardedFingerprints, fm.fingerprint)
+			}
 			// Track snippet for potential update (if current DB value is invalid)
 			if fm.finding.Location != nil && fm.finding.Location.Snippet != "" && fm.finding.Location.Snippet != "requires login" {
 				existingSnippets[fm.fingerprint] = fm.finding.Location.Snippet
@@ -403,6 +410,7 @@ func (p *FindingProcessor) processBatch(
 
 	// Step 3b: Batch auto-reopen previously auto-resolved findings
 	// PERFORMANCE: Single query instead of N queries per existing finding
+	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
 	if len(existingFingerprints) > 0 {
 		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(ctx, tenantID, existingFingerprints)
 		if err != nil {
@@ -1977,6 +1985,48 @@ func normalizeEnumToken(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// humanResolvedLookup finds which fingerprints belong to findings a person
+// closed (resolved or verified by any method but scan_verified).
+// Implemented by *postgres.FindingRepository.
+type humanResolvedLookup interface {
+	HumanResolvedFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error)
+}
+
+// withoutHumanResolved drops from fingerprints the guarded ones whose finding
+// a person resolved: the report may not reopen them (RFC-040 §5.3). Findings
+// the scanner itself auto-resolved still reopen when they are seen again.
+// Fails closed: when the lookup is unavailable or fails, no guarded
+// fingerprint is reopened.
+func (p *FindingProcessor) withoutHumanResolved(ctx context.Context, tenantID shared.ID, fingerprints, guarded []string, output *Output) []string {
+	if len(guarded) == 0 {
+		return fingerprints
+	}
+	var human map[string]bool
+	if lookup, ok := p.repo.(humanResolvedLookup); ok {
+		h, err := lookup.HumanResolvedFingerprints(ctx, tenantID, guarded)
+		if err != nil {
+			p.logger.Warn("could not tell human-resolved findings apart; none of the guarded findings is reopened", "error", err)
+		} else {
+			human = h
+		}
+	}
+	if human == nil {
+		human = make(map[string]bool, len(guarded))
+		for _, fp := range guarded {
+			human[fp] = true
+		}
+	}
+	kept := make([]string, 0, len(fingerprints))
+	for _, fp := range fingerprints {
+		if human[fp] {
+			output.ReopensWithheld++
+			continue
+		}
+		kept = append(kept, fp)
+	}
+	return kept
 }
 
 // genericNetworkPort returns "port/transport" when a finding is keyed by the

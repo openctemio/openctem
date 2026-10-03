@@ -66,6 +66,12 @@ TENANT_ID=$(call POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$
 [ -n "$TENANT_ID" ] || fail "tenant $SLUG not in login response"
 ACCESS_TOKEN=$(call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}" | jq -r '.access_token')
 
+# The harness pushes a report outside any command, as sensors on old SDKs do.
+# A new tenant holds such reports from a worker sensor for review
+# (RFC-040 §5.3, mode "quarantine"); tenants that existed before that policy
+# are on "warn", which is the case this check is about.
+call PUT /api/v1/sensors/result-policy '{"mode":"warn"}' >/dev/null
+
 created=$(call POST /api/v1/sensors \
 	'{"name":"compat-v1","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}')
 SENSOR_ID=$(jq -r '.sensor.id' <<<"$created")

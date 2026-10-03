@@ -27,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
@@ -145,6 +146,60 @@ type IngestResponse struct {
 	CVEsCreated     int      `json:"cves_created"`
 	CVEsUpdated     int      `json:"cves_updated"`
 	Errors          []string `json:"errors,omitempty"`
+	// Binding is "command" when the report named a command assigned to this
+	// sensor (X-OpenCTEM-Command-ID), "unsolicited" otherwise (RFC-040 §5.3).
+	Binding string `json:"binding,omitempty"`
+	// AssetsLimited counts existing assets the report matched but was not
+	// allowed to change, because no command covering them stood behind it.
+	AssetsLimited int `json:"assets_limited,omitempty"`
+	// ReopensWithheld counts findings a person had resolved that the report
+	// saw again but was not allowed to reopen.
+	ReopensWithheld int `json:"reopens_withheld,omitempty"`
+	// UnsolicitedWarned: this sensor's role may not send results without a
+	// command; the report was applied only because the tenant's policy is
+	// "warn". Under "quarantine" it is held for review (422
+	// RESULTS_QUARANTINED).
+	UnsolicitedWarned bool `json:"unsolicited_warned,omitempty"`
+}
+
+// HeaderCommandID binds a v1 ingest request to the command it is the result
+// of (RFC-040 §5.3). It must name a command assigned to the sensor and open;
+// anything else is 404 COMMAND_NOT_FOUND.
+const HeaderCommandID = "X-OpenCTEM-Command-ID"
+
+// newIngestResponse is the v1 response for an ingest output.
+func newIngestResponse(output *ingest.Output) IngestResponse {
+	return IngestResponse{
+		ScanID:            output.ReportID,
+		AssetsCreated:     output.AssetsCreated,
+		AssetsUpdated:     output.AssetsUpdated,
+		FindingsCreated:   output.FindingsCreated,
+		FindingsUpdated:   output.FindingsUpdated,
+		FindingsSkipped:   output.FindingsSkipped,
+		CVEsCreated:       output.CVEsCreated,
+		CVEsUpdated:       output.CVEsUpdated,
+		Errors:            output.Errors,
+		Binding:           output.Binding,
+		AssetsLimited:     output.AssetsLimited,
+		ReopensWithheld:   output.ReopensWithheld,
+		UnsolicitedWarned: output.UnsolicitedWarned,
+	}
+}
+
+// bindRequest resolves the X-OpenCTEM-Command-ID header into the request's
+// binding. It answers 404 COMMAND_NOT_FOUND and returns false when the
+// header names a command this sensor does not hold open.
+func (h *IngestHandler) bindRequest(w http.ResponseWriter, r *http.Request, agt *sensor.Sensor) (ingest.Binding, bool) {
+	id := strings.TrimSpace(r.Header.Get(HeaderCommandID))
+	b, err := h.ingestService.BindCommand(r.Context(), agt, id)
+	if err != nil {
+		h.logger.Warn("ingest refused: the command it names is not open on this sensor",
+			"sensor_id", agt.ID.String(), "command_id", sanitizeLogField(id))
+		apierror.New(http.StatusNotFound, ingest.CodeCommandNotFound,
+			"No open command with this id is assigned to this sensor.").WriteJSON(w)
+		return ingest.Binding{}, false
+	}
+	return b, true
 }
 
 // CTISIngestRequest represents the request body for CTIS ingestion.
@@ -633,7 +688,13 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 	// ?sync=true or the `Prefer: respond-sync` header. This lets operators flip
 	// INGEST_MODE=async globally while older sensors opt back to sync until the
 	// fleet is updated.
-	if h.asyncMode && h.ingestJobRepo != nil && agt.TenantID != nil && !clientWantsSync(r) {
+	binding, ok := h.bindRequest(w, r, agt)
+	if !ok {
+		return
+	}
+	// A report bound to a command is processed synchronously: the queue
+	// keeps no binding, and the command's lease is checked now.
+	if h.asyncMode && h.ingestJobRepo != nil && agt.TenantID != nil && !clientWantsSync(r) && binding.Kind == ingest.BindingUnsolicited {
 		h.enqueueAsync(w, r, agt, bodyBytes)
 		return
 	}
@@ -665,7 +726,8 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := ingest.Input{
-		Report: &report,
+		Report:  &report,
+		Options: ingest.Options{Binding: binding, Route: "ctis"},
 	}
 
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
@@ -674,17 +736,7 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := IngestResponse{
-		ScanID:          output.ReportID,
-		AssetsCreated:   output.AssetsCreated,
-		AssetsUpdated:   output.AssetsUpdated,
-		FindingsCreated: output.FindingsCreated,
-		FindingsUpdated: output.FindingsUpdated,
-		FindingsSkipped: output.FindingsSkipped,
-		CVEsCreated:     output.CVEsCreated,
-		CVEsUpdated:     output.CVEsUpdated,
-		Errors:          output.Errors,
-	}
+	resp := newIngestResponse(output)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -730,12 +782,16 @@ func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	binding, ok := h.bindRequest(w, r, agt)
+	if !ok {
+		return
+	}
 	q := r.URL.Query()
 	output, err := h.ingestService.IngestSARIF(r.Context(), agt, body, ingest.SARIFRepository{
 		URL:       q.Get("repository_url"),
 		Branch:    q.Get("branch"),
 		CommitSHA: q.Get("commit_sha"),
-	})
+	}, binding)
 	if errors.Is(err, shared.ErrValidation) {
 		// The log or its repository parameters are unusable (see
 		// ingest.ErrSARIFNoRepository): a 4xx the sensor can act on, not a 500.
@@ -747,17 +803,7 @@ func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := IngestResponse{
-		ScanID:          output.ReportID,
-		AssetsCreated:   output.AssetsCreated,
-		AssetsUpdated:   output.AssetsUpdated,
-		FindingsCreated: output.FindingsCreated,
-		FindingsUpdated: output.FindingsUpdated,
-		FindingsSkipped: output.FindingsSkipped,
-		CVEsCreated:     output.CVEsCreated,
-		CVEsUpdated:     output.CVEsUpdated,
-		Errors:          output.Errors,
-	}
+	resp := newIngestResponse(output)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -805,26 +851,21 @@ func (h *IngestHandler) IngestReconReport(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	binding, ok := h.bindRequest(w, r, agt)
+	if !ok {
+		return
+	}
+
 	// Convert recon request to CTIS input
 	reconInput := h.buildReconToCTISInput(&req)
 
-	output, err := h.ingestService.IngestRecon(r.Context(), agt, reconInput)
+	output, err := h.ingestService.IngestRecon(r.Context(), agt, reconInput, binding)
 	if err != nil {
 		h.writeIngestError(w, "recon ingestion failed", err)
 		return
 	}
 
-	resp := IngestResponse{
-		ScanID:          output.ReportID,
-		AssetsCreated:   output.AssetsCreated,
-		AssetsUpdated:   output.AssetsUpdated,
-		FindingsCreated: output.FindingsCreated,
-		FindingsUpdated: output.FindingsUpdated,
-		FindingsSkipped: output.FindingsSkipped,
-		CVEsCreated:     output.CVEsCreated,
-		CVEsUpdated:     output.CVEsUpdated,
-		Errors:          output.Errors,
-	}
+	resp := newIngestResponse(output)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1216,9 +1257,15 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 		report.Metadata.ID = req.ReportID
 	}
 
+	binding, ok := h.bindRequest(w, r, agt)
+	if !ok {
+		return
+	}
+
 	// Process the chunk through normal ingestion
 	input := ingest.Input{
-		Report: report,
+		Report:  report,
+		Options: ingest.Options{Binding: binding, Route: "chunk"},
 	}
 
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
@@ -1287,8 +1334,28 @@ func (h *IngestHandler) writeIngestError(w http.ResponseWriter, msg string, err 
 		logAttrs = append(logAttrs, a)
 	}
 
-	var de *shared.DomainError
+	var (
+		de *shared.DomainError
+		qe *ingest.QuarantinedError
+	)
 	switch {
+	case errors.As(err, &qe):
+		// Not an error of the sensor's payload: it was stored for review.
+		// 422, not 403: sensor SDKs read 401/403 as a key they lost.
+		h.logger.Info(msg+": quarantined", "quarantine_id", qe.ID.String())
+		apierror.New(http.StatusUnprocessableEntity, ingest.CodeResultsQuarantined, qe.Error()).
+			WithDetails(map[string]string{"quarantine_id": qe.ID.String()}).WriteJSON(w)
+	case errors.Is(err, sensorresult.ErrFull):
+		h.logger.Warn(msg + ": quarantine full")
+		apierror.New(http.StatusUnprocessableEntity, "RESULTS_QUARANTINE_FULL",
+			"This sensor's role may not send results without a command assigned to it, and the results quarantine is full: the report was refused.").WriteJSON(w)
+	case errors.As(err, &de) && de.Code == ingest.CodeCommandNotFound:
+		// Fixed messages only: the sensor-supplied parts are not logged.
+		h.logger.Warn(msg + ": command not found")
+		apierror.New(http.StatusNotFound, ingest.CodeCommandNotFound, de.Message).WriteJSON(w)
+	case errors.As(err, &de) && de.Code == ingest.CodeToolNotPermitted:
+		h.logger.Warn(msg + ": tool not permitted")
+		apierror.New(http.StatusUnprocessableEntity, ingest.CodeToolNotPermitted, de.Message).WriteJSON(w)
 	case errors.As(err, &de) && de.Code == ingest.CodePayloadTooLarge:
 		h.logger.Warn(msg, logAttrs...)
 		apierror.New(http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", de.Message).WriteJSON(w)
@@ -1500,9 +1567,15 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	binding, ok := h.bindRequest(w, r, agt)
+	if !ok {
+		return
+	}
+
 	// Ingest the converted CTIS report
 	input := ingest.Input{
-		Report: report,
+		Report:  report,
+		Options: ingest.Options{Binding: binding, Route: "scan"},
 	}
 
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
@@ -1511,17 +1584,7 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := IngestResponse{
-		ScanID:          output.ReportID,
-		AssetsCreated:   output.AssetsCreated,
-		AssetsUpdated:   output.AssetsUpdated,
-		FindingsCreated: output.FindingsCreated,
-		FindingsUpdated: output.FindingsUpdated,
-		FindingsSkipped: output.FindingsSkipped,
-		CVEsCreated:     output.CVEsCreated,
-		CVEsUpdated:     output.CVEsUpdated,
-		Errors:          output.Errors,
-	}
+	resp := newIngestResponse(output)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1587,6 +1650,17 @@ func (h *IngestHandler) enqueueAsync(w http.ResponseWriter, r *http.Request, agt
 		return
 	}
 
+	// The unsolicited gate (RFC-040 §5.3) runs before queuing: a report the
+	// tenant quarantines is stored for review and never queued.
+	if h.ingestService == nil {
+		apierror.InternalServerError("ingest is not configured").WriteJSON(w)
+		return
+	}
+	if err := h.ingestService.AdmitQueued(ctx, agt, report); err != nil {
+		h.writeIngestError(w, "CTIS ingestion refused", err)
+		return
+	}
+
 	job := ingestjob.NewJob(tenantID, &agt.ID, report.Metadata.ID, report.Metadata.SourceType, bodyBytes)
 	stored, created, err := h.ingestJobRepo.Enqueue(ctx, job)
 	if err != nil {
@@ -1642,7 +1716,9 @@ func (h *IngestHandler) GetIngestJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	job, err := h.ingestJobRepo.GetByID(r.Context(), *agt.TenantID, id)
-	if err != nil {
+	// A sensor reads only the jobs it queued (RFC-040 §5.3); another
+	// sensor's job is not found.
+	if err != nil || job.SensorID() == nil || *job.SensorID() != agt.ID {
 		apierror.NotFound("ingest job").WriteJSON(w)
 		return
 	}
