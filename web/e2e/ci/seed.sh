@@ -88,11 +88,13 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v1/agent/ing
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
 log "a scan with a run in progress"
-# A heartbeat brings e2e-sensor online so the trigger is accepted. Nothing
-# claims the job, so the run stays in progress for 10-scan-detail-runs.
+# A heartbeat brings e2e-sensor online so the trigger is accepted. It reports
+# nuclei as installed: dispatch only counts tools a sensor has reported, not
+# the ones declared on it (#824). Nothing claims the job, so the run stays in
+# progress for 10-scan-detail-runs.
 code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v1/agent/heartbeat" \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
-  -d '{"status":"online","scanners":["nuclei"]}')
+  -d '{"status":"online","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}]}')
 [[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
