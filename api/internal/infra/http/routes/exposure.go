@@ -1,11 +1,17 @@
 package routes
 
 import (
+	"time"
+
+	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
+
+// commentReactionsPerMinute caps reaction add/remove requests per user.
+const commentReactionsPerMinute = 60
 
 // registerExposureRoutes registers exposure event management endpoints.
 // Exposures are tenant-scoped attack surface changes.
@@ -325,8 +331,22 @@ func registerVulnerabilityRoutes(
 	router.Group("/api/v1/findings/{id}/comments", func(r Router) {
 		r.GET("/", h.ListComments, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.AddComment, middleware.Require(permission.FindingsWrite))
-		r.PUT("/{commentId}", h.UpdateComment, middleware.Require(permission.FindingsWrite))
-		r.DELETE("/{commentId}", h.DeleteComment, middleware.Require(permission.FindingsWrite))
+		r.PUT("/{comment_id}", h.UpdateComment, middleware.Require(permission.FindingsWrite))
+		r.DELETE("/{comment_id}", h.DeleteComment, middleware.Require(permission.FindingsWrite))
+	}, tenantMiddlewares...)
+
+	// Emoji reactions on finding comments. Same permission as posting a
+	// comment; the service also requires read access to the comment's finding
+	// (data scope, pentest campaign membership). Rate limited per user.
+	reactionRL := middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled:         true,
+		RequestsPerSec:  commentReactionsPerMinute / 60.0,
+		Burst:           commentReactionsPerMinute,
+		CleanupInterval: 5 * time.Minute,
+	}, nil)
+	router.Group("/api/v1/comments/{comment_id}/reactions", func(r Router) {
+		r.POST("/", h.AddCommentReaction, middleware.Require(permission.FindingsWrite), reactionRL.UserMiddleware())
+		r.DELETE("/{emoji}", h.RemoveCommentReaction, middleware.Require(permission.FindingsWrite), reactionRL.UserMiddleware())
 	}, tenantMiddlewares...)
 
 	// Finding approval routes - tenant from JWT token

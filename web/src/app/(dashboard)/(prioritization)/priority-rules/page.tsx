@@ -5,7 +5,7 @@ import { Scale } from 'lucide-react'
 import { useHasPermission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import useSWR from 'swr'
 import { Main } from '@/components/layout'
@@ -241,22 +241,26 @@ export default function PriorityRulesPage() {
     }))
   }
 
-  async function toggleActive(rule: PriorityRule, nextActive: boolean) {
-    try {
-      await put(`/api/v1/priority-rules/${rule.id}`, {
-        name: rule.name,
-        description: rule.description ?? '',
-        priority_class: rule.priority_class,
-        conditions: rule.conditions,
-        evaluation_order: rule.evaluation_order,
-        is_active: nextActive,
-      })
-      await mutate()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update rule'
-      toast.error(message)
-    }
-  }
+  // useCallback so the columns memo can depend on it; mutate is stable (SWR).
+  const toggleActive = useCallback(
+    async (rule: PriorityRule, nextActive: boolean) => {
+      try {
+        await put(`/api/v1/priority-rules/${rule.id}`, {
+          name: rule.name,
+          description: rule.description ?? '',
+          priority_class: rule.priority_class,
+          conditions: rule.conditions,
+          evaluation_order: rule.evaluation_order,
+          is_active: nextActive,
+        })
+        await mutate()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to update rule'
+        toast.error(message)
+      }
+    },
+    [mutate]
+  )
 
   async function handleSave() {
     if (!form.name.trim()) {
@@ -442,8 +446,7 @@ export default function PriorityRulesPage() {
         },
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [toggleActive]
   )
 
   function renderValueInput(c: Condition, idx: number) {

@@ -477,43 +477,36 @@ func (r *CommandRepository) selectQuery() string {
 func (r *CommandRepository) buildWhereClause(filter command.Filter) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, filter.TenantID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if filter.SensorID != nil {
-		conditions = append(conditions, fmt.Sprintf("sensor_id = $%d", argIndex))
 		args = append(args, filter.SensorID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("sensor_id = $%d", len(args)))
 	}
 
 	if filter.Type != nil {
-		conditions = append(conditions, fmt.Sprintf("type = $%d", argIndex))
 		args = append(args, string(*filter.Type))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("type = $%d", len(args)))
 	}
 
 	if filter.Status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, string(*filter.Status))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
 	}
 
 	if filter.Priority != nil {
-		conditions = append(conditions, fmt.Sprintf("priority = $%d", argIndex))
 		args = append(args, string(*filter.Priority))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("priority = $%d", len(args)))
 	}
 
 	// Platform job filters (v3.2)
 	if filter.IsPlatformJob != nil {
-		conditions = append(conditions, fmt.Sprintf("is_platform_job = $%d", argIndex))
 		args = append(args, *filter.IsPlatformJob)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("is_platform_job = $%d", len(args)))
 	}
 
 	// OSS Edition: PlatformSensorID filter not supported
@@ -1214,26 +1207,22 @@ func (r *CommandRepository) ListPlatformJobsAdmin(ctx context.Context, sensorID,
 	var result pagination.Result[*command.Command]
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	conditions = append(conditions, "is_platform_job = TRUE")
 
 	if sensorID != nil {
-		conditions = append(conditions, fmt.Sprintf("platform_sensor_id = $%d", argIndex))
 		args = append(args, sensorID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("platform_sensor_id = $%d", len(args)))
 	}
 
 	if tenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, tenantID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, string(*status))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
 	}
 
 	whereClause := strings.Join(conditions, " AND ")

@@ -6,11 +6,9 @@ Tests all major API flows to ensure migrations and code are working correctly.
 
 import requests
 import json
-import time
 import sys
 import uuid
-from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict
 
 # Configuration
 BASE_URL = "http://localhost:8080"
@@ -117,7 +115,7 @@ def api_request(method: str, endpoint: str, data: Optional[Dict] = None,
                 try:
                     error_detail = resp.json()
                     log_error(f"  Error: {json.dumps(error_detail, indent=2)}")
-                except:
+                except ValueError:
                     log_error(f"  Response: {resp.text[:500]}")
             return None
     except Exception as e:
@@ -235,7 +233,7 @@ def test_auth_create_first_team():
             log_error(f"POST /auth/create-first-team - Expected 201, got {resp.status_code}")
             try:
                 log_error(f"  Error: {json.dumps(resp.json(), indent=2)}")
-            except:
+            except ValueError:
                 log_error(f"  Response: {resp.text[:500]}")
             return False
     except Exception as e:

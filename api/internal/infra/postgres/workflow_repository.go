@@ -249,24 +249,20 @@ func (r *WorkflowRepository) selectQuery() string {
 func (r *WorkflowRepository) buildWhereClause(filter workflow.WorkflowFilter) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, filter.TenantID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if filter.IsActive != nil {
-		conditions = append(conditions, fmt.Sprintf("is_active = $%d", argIndex))
 		args = append(args, *filter.IsActive)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("is_active = $%d", len(args)))
 	}
 
 	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", len(args), len(args)))
 	}
 
 	if len(conditions) == 0 {
