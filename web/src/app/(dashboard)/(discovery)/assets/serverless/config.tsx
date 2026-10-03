@@ -4,6 +4,8 @@ import { Badge } from '@/components/ui/badge'
 import { Cpu, CheckCircle, AlertTriangle, Shield, Zap, Network } from 'lucide-react'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import { toStringArray } from '@/features/assets/lib/property-utils'
+import { yesNoUnknown } from '@/features/assets/lib/honest-values'
+import { UnknownChip } from '@/features/assets/components/service-cells'
 
 const runtimeColors: Record<string, string> = {
   nodejs: 'bg-green-500/10 text-green-500',
@@ -58,7 +60,8 @@ export const serverlessConfig: AssetPageConfig = {
       accessorKey: 'metadata.cloud_provider',
       header: 'Provider',
       cell: ({ row }) => {
-        const provider = (row.original.metadata.cloud_provider as string) || 'aws'
+        const provider = row.original.metadata.cloud_provider as string | undefined
+        if (!provider) return <UnknownChip>Unknown</UnknownChip>
         return (
           <Badge variant="secondary" className={providerColors[provider]}>
             {provider.toUpperCase()}
@@ -259,7 +262,10 @@ export const serverlessConfig: AssetPageConfig = {
         },
         {
           label: 'Environment Variables',
-          getValue: (asset) => String(asset.metadata.function_env_vars || 0),
+          getValue: (asset) =>
+            typeof asset.metadata.function_env_vars === 'number'
+              ? String(asset.metadata.function_env_vars)
+              : '-',
         },
       ],
     },
@@ -347,7 +353,7 @@ export const serverlessConfig: AssetPageConfig = {
     { header: 'Provider', accessor: (a) => (a.metadata.cloud_provider as string) || '' },
     { header: 'Memory (MB)', accessor: (a) => (a.metadata.function_memory as number) || '' },
     { header: 'Timeout (s)', accessor: (a) => (a.metadata.function_timeout as number) || '' },
-    { header: 'VPC Enabled', accessor: (a) => (a.metadata.function_vpc_enabled ? 'Yes' : 'No') },
+    { header: 'VPC Enabled', accessor: (a) => yesNoUnknown(a.metadata.function_vpc_enabled) },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Risk Score', accessor: (a) => a.riskScore },
     { header: 'Findings', accessor: (a) => a.findingCount },

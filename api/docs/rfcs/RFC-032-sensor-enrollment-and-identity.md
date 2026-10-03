@@ -15,6 +15,12 @@
 > [RFC-031](RFC-031-managed-sensor-updates.md) (signed images; platform
 > compromise). Where this RFC and RFC-023 §4b differ, this RFC is the more
 > specific decision and RFC-023 is amended by reference.
+> Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
+> treats Phases 1–2 of this RFC as its P0 dependency (signed jobs and the
+> object checks bind to the per-sensor key) and records the owner decisions
+> of 2026-10-03 (§5.2 there): `octs_` interim sensor key and `octe_`
+> enrollment token, and the bearer-key sunset 90 days after Phases 1–2 ship
+> instead of 2027-04-01.
 >
 > Owner's question (2026-10-02): today an administrator pre-creates a sensor
 > in the UI (name, role, tool chips), receives a long-lived `rda_…` key shown

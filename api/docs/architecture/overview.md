@@ -333,6 +333,7 @@ Hexagonal / Ports & Adapters
 - [Notification System](notification-system.md)
 - [Scan Orchestration](scan-orchestration.md)
 - [Scan Zones](scan-zones.md)
+- [Sensor ↔ Platform Trust](sensor-platform-trust.md)
 - [Audit Hash Chain](audit-hash-chain.md)
 - [CTEM-ID Catalog](ctem-id-catalog.md)
 - [Certificate-Transparency Monitoring](certificate-transparency-monitoring.md)

@@ -5,7 +5,7 @@
  * Automatically injects auth headers and handles errors
  */
 
-import { useAuthStore } from '@/stores/auth-store'
+import { endSessionAndSignIn, useAuthStore } from '@/stores/auth-store'
 import type { ApiError, ApiRequestOptions, ApiResponse } from './types'
 import { ApiClientError } from './error-handler'
 import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip-not-allowed'
@@ -195,9 +195,11 @@ function redirectToLoginOnce(): void {
   useAuthStore.getState().clearAuth()
 
   // Delay redirect slightly to allow other in-flight requests to see the lock
-  // This prevents multiple simultaneous 401 responses from racing
+  // This prevents multiple simultaneous 401 responses from racing. The
+  // session cookies are cleared before /login loads (see endSessionAndSignIn),
+  // and the user comes back to this page after signing in.
   setTimeout(() => {
-    window.location.href = '/login'
+    endSessionAndSignIn()
   }, 100)
 }
 

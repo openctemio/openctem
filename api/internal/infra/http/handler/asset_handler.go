@@ -1455,7 +1455,8 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	countByFields := parseQueryArray(query.Get("count_by"))
 
 	// Use service method with SQL aggregation for efficient stats
-	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter, subTypeFilter, countByFields...)
+	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID,
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), typesFilter, tagsFilter, subTypeFilter, countByFields...)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1515,14 +1516,16 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetFacets returns distinct property keys and their values for faceted filtering.
-// Scoped to tenant + optional type filter. Returns top 20 values per key.
+// Scoped to tenant, the caller's data scope (as the list) and an optional
+// type filter. Returns top 20 values per key.
 func (h *AssetHandler) GetFacets(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 	types := parseQueryArray(query.Get("types"))
 	subType := query.Get("sub_type")
 
-	facets, err := h.service.GetPropertyFacets(r.Context(), tenantID, types, subType)
+	facets, err := h.service.GetPropertyFacets(r.Context(), tenantID,
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), types, subType)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

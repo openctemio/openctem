@@ -3,7 +3,28 @@
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import { Badge } from '@/components/ui/badge'
 import { Globe, AlertTriangle, Shield } from 'lucide-react'
-import { toStringArray } from '@/features/assets/lib/property-utils'
+import {
+  cnames,
+  dnsRecordTypes,
+  domainExpiry,
+  ipAddresses,
+  nameservers,
+  registrar,
+} from '@/features/assets/lib/service-facts'
+import {
+  ChipMono,
+  ChipRow,
+  FactChip,
+  OverflowChips,
+  UnknownChip,
+} from '@/features/assets/components/service-cells'
+
+// DNS facts come from `domain.dns_records[]` (dnsx via ingest) or the flat
+// keys the collector path writes (`resolved_ips`, `cname_target`,
+// `dns_record_types`); registration from `domain.{registrar,expires_at}` or
+// the form's `registrar` / `expiry_date`. All read through service-facts.
+
+const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
 
 export const domainsConfig: AssetPageConfig = {
   type: 'domain',
@@ -38,41 +59,25 @@ export const domainsConfig: AssetPageConfig = {
     },
     {
       id: 'dnsInfo',
-      header: 'DNS Info',
+      header: 'DNS',
       cell: ({ row }) => {
-        const meta = row.original.metadata as Record<string, unknown>
-        const recordTypes = toStringArray(meta.dns_record_types ?? meta.record_type)
-        const resolvedIps = toStringArray(meta.resolved_ips ?? meta.resolved_ip)
-        const cnameTarget = (meta.cname_target as string) || ''
-        const registrar = (meta.registrar as string) || ''
-
-        // For root domains: show registrar if available
-        if (row.original.type === 'domain' && registrar) {
-          return <span className="text-sm">{registrar}</span>
+        const ips = ipAddresses(row.original)
+        const targets = cnames(row.original)
+        if (ips.length === 0 && targets.length === 0) {
+          const reg = registrar(row.original)
+          if (row.original.type === 'domain' && reg)
+            return (
+              <span className="block max-w-[200px] truncate text-sm" title={reg}>
+                {reg}
+              </span>
+            )
+          return <UnknownChip>Not resolved</UnknownChip>
         }
-
-        if (recordTypes.length === 0 && resolvedIps.length === 0 && !cnameTarget) {
-          return <span className="text-muted-foreground">-</span>
-        }
-
         return (
-          <div className="flex items-center gap-1.5 max-w-[200px]">
-            {recordTypes[0] && (
-              <Badge variant="outline" className="text-xs font-mono px-1 py-0">
-                {recordTypes[0]}
-              </Badge>
-            )}
-            {resolvedIps[0] && (
-              <span className="text-xs font-mono text-muted-foreground truncate">
-                {resolvedIps[0]}
-              </span>
-            )}
-            {cnameTarget && resolvedIps.length === 0 && (
-              <span className="text-xs font-mono text-muted-foreground truncate">
-                {cnameTarget}
-              </span>
-            )}
-          </div>
+          <ChipRow className="max-w-[260px]">
+            <OverflowChips label="CNAME" values={targets} />
+            <OverflowChips label="IP" values={ips} />
+          </ChipRow>
         )
       },
     },
@@ -168,29 +173,25 @@ export const domainsConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Registrar',
-          getValue: (asset) =>
-            ((asset.metadata as Record<string, unknown>).registrar as string) || '-',
+          getValue: (asset) => registrar(asset) ?? unknownText(),
         },
         {
           label: 'Expiry Date',
-          getValue: (asset) => {
-            const d = (asset.metadata as Record<string, unknown>).expiry_date as string
-            return d ? new Date(d).toLocaleDateString() : '-'
-          },
+          getValue: (asset) => domainExpiry(asset)?.toLocaleDateString() ?? unknownText(),
         },
         {
           label: 'Root Domain',
           getValue: (asset) =>
-            ((asset.metadata as Record<string, unknown>).root_domain as string) || '-',
+            ((asset.metadata as Record<string, unknown>).root_domain as string) || unknownText(),
         },
         {
           label: 'Collector',
           getValue: (asset) => {
             const meta = asset.metadata as Record<string, unknown>
             const type = (meta.collector_type as string) || ''
-            const source = (meta.collector_source as string) || ''
-            if (!type && !source) return '-'
-            return `${type}${source ? ` (${source})` : ''}`
+            const source = (meta.collector_source as string) || (meta.source as string) || ''
+            if (!type && !source) return unknownText()
+            return type ? `${type}${source ? ` (${source})` : ''}` : source
           },
         },
       ],
@@ -201,34 +202,32 @@ export const domainsConfig: AssetPageConfig = {
         {
           label: 'Record Types',
           getValue: (asset) => {
-            const meta = asset.metadata as Record<string, unknown>
-            const types = toStringArray(meta.dns_record_types ?? meta.record_type)
-            if (types.length === 0) return '-'
+            const types = dnsRecordTypes(asset)
+            if (types.length === 0) return unknownText('Not collected')
             return (
-              <div className="flex flex-wrap gap-1">
+              <ChipRow>
                 {types.map((t) => (
-                  <Badge key={t} variant="outline" className="text-xs font-mono">
-                    {t}
-                  </Badge>
+                  <FactChip key={t} tone="muted">
+                    <ChipMono>{t}</ChipMono>
+                  </FactChip>
                 ))}
-              </div>
+              </ChipRow>
             )
           },
         },
         {
           label: 'Resolved IPs',
           getValue: (asset) => {
-            const meta = asset.metadata as Record<string, unknown>
-            const ipList = toStringArray(meta.resolved_ips ?? meta.resolved_ip)
-            if (ipList.length === 0) return '-'
+            const ipList = ipAddresses(asset)
+            if (ipList.length === 0) return unknownText('None recorded')
             return (
-              <div className="flex flex-wrap gap-1">
+              <ChipRow>
                 {ipList.map((ip) => (
-                  <Badge key={ip} variant="secondary" className="text-xs font-mono">
-                    {ip}
-                  </Badge>
+                  <FactChip key={ip} tone="muted">
+                    <ChipMono>{ip}</ChipMono>
+                  </FactChip>
                 ))}
-              </div>
+              </ChipRow>
             )
           },
           fullWidth: true,
@@ -236,11 +235,33 @@ export const domainsConfig: AssetPageConfig = {
         {
           label: 'CNAME Target',
           getValue: (asset) => {
-            const target = (asset.metadata as Record<string, unknown>).cname_target as string
-            return target ? (
-              <code className="text-xs bg-muted px-2 py-0.5 rounded">{target}</code>
-            ) : (
-              '-'
+            const targets = cnames(asset)
+            if (targets.length === 0) return unknownText('None recorded')
+            return (
+              <ChipRow>
+                {targets.map((t) => (
+                  <FactChip key={t} tone="muted">
+                    <ChipMono>{t}</ChipMono>
+                  </FactChip>
+                ))}
+              </ChipRow>
+            )
+          },
+          fullWidth: true,
+        },
+        {
+          label: 'Nameservers',
+          getValue: (asset) => {
+            const ns = nameservers(asset)
+            if (ns.length === 0) return unknownText('None recorded')
+            return (
+              <ChipRow>
+                {ns.map((n) => (
+                  <FactChip key={n} tone="muted">
+                    <ChipMono>{n}</ChipMono>
+                  </FactChip>
+                ))}
+              </ChipRow>
             )
           },
           fullWidth: true,
@@ -252,14 +273,10 @@ export const domainsConfig: AssetPageConfig = {
   exportFields: [
     { header: 'Name', accessor: (a) => a.name },
     { header: 'Type', accessor: (a) => (a.type === 'domain' ? 'Root' : 'Subdomain') },
-    {
-      header: 'Registrar',
-      accessor: (a) => ((a.metadata as Record<string, unknown>).registrar as string) || '',
-    },
-    {
-      header: 'Expiry Date',
-      accessor: (a) => ((a.metadata as Record<string, unknown>).expiry_date as string) || '',
-    },
+    { header: 'Registrar', accessor: (a) => registrar(a) ?? '' },
+    { header: 'Expiry Date', accessor: (a) => domainExpiry(a)?.toISOString().slice(0, 10) ?? '' },
+    { header: 'IP addresses', accessor: (a) => ipAddresses(a).join(';') },
+    { header: 'CNAME', accessor: (a) => cnames(a).join(';') },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Risk Score', accessor: (a) => a.riskScore },
     { header: 'Findings', accessor: (a) => a.findingCount },

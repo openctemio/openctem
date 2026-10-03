@@ -75,6 +75,7 @@ import {
   type GroupFinding,
 } from '@/features/asset-groups'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
+import { IssuesChip } from '@/features/assets/components/service-cells'
 
 const criticalityColors: Record<string, string> = CRITICALITY_BADGE_SOFT
 
@@ -291,16 +292,13 @@ function AssetGroupDetailContent({ params }: PageProps) {
       {
         accessorKey: 'findingCount',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
-        cell: ({ row }) => (
-          <span
-            className={cn(
-              'tabular-nums',
-              row.original.findingCount > 0 && 'font-medium text-warning'
-            )}
-          >
-            {row.original.findingCount}
-          </span>
-        ),
+        // The shared "N issues found" chip, linking to the asset's findings.
+        cell: ({ row }) =>
+          row.original.findingCount > 0 ? (
+            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
+          ) : (
+            <span className="text-muted-foreground tabular-nums">0</span>
+          ),
       },
       {
         accessorKey: 'lastSeen',
