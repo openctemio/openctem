@@ -9,7 +9,11 @@ import (
 // TestSSOEnforcementDecision exhaustively exercises the pure enforcement
 // decision that both ExchangeToken and RefreshToken delegate to. This is the
 // security-critical truth table: fail-closed for password non-owners, but
-// break-glass-safe (owner + federated always pass).
+// break-glass-safe (owner + federated always pass). The method passed in is the
+// session's method as seen by the tenant (Session.AuthMethodFor), so "sso" /
+// "saml" here means "issued by this tenant's own IdP"; a session from another
+// organization's IdP or social OAuth arrives as password (see
+// tests/unit/auth_federated_issuer_test.go).
 func TestSSOEnforcementDecision(t *testing.T) {
 	cases := []struct {
 		name        string

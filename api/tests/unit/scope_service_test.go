@@ -865,6 +865,155 @@ func TestScopeServiceApproveExclusion_RequesterCannotSelfApprove(t *testing.T) {
 	}
 }
 
+// A new exclusion is a request. Until someone other than the requester
+// approves it, it suppresses nothing: not scan target selection, not scope
+// checks. Approval puts it into effect; a rejected one never takes effect.
+func TestScopeServiceExclusion_PendingUntilApproved(t *testing.T) {
+	ctx := context.Background()
+	svc, tr, _, _, _ := newTestScopeService()
+	tenantID := shared.NewID()
+	target, _ := scopedom.NewTarget(tenantID, scopedom.TargetTypeDomain, "*.example.com", "", "user1")
+	tr.targets[target.ID().String()] = target
+	assetID := shared.NewID()
+	candidates := []scope.ExclusionCandidate{{ID: assetID, Values: []string{"prod.example.com"}}}
+
+	excluded := func(t *testing.T) bool {
+		t.Helper()
+		set, err := svc.ExcludedTargets(ctx, tenantID.String(), candidates)
+		if err != nil {
+			t.Fatalf("ExcludedTargets: %v", err)
+		}
+		res, err := svc.CheckScope(ctx, tenantID.String(), "domain", "prod.example.com")
+		if err != nil {
+			t.Fatalf("CheckScope: %v", err)
+		}
+		if set[assetID] != res.Excluded {
+			t.Fatalf("scan filter (%v) and scope check (%v) disagree", set[assetID], res.Excluded)
+		}
+		if fe := svc.FilterExcludedTargets(ctx, tenantID.String(), candidates); fe[assetID] != set[assetID] {
+			t.Fatalf("FilterExcludedTargets (%v) and ExcludedTargets (%v) disagree", fe[assetID], set[assetID])
+		}
+		return set[assetID]
+	}
+
+	member := shared.NewID().String()
+	exc, err := svc.CreateExclusion(ctx, scope.CreateExclusionInput{
+		TenantID: tenantID.String(), ExclusionType: "domain", Pattern: "prod.example.com",
+		Reason: "noisy", CreatedBy: member,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if exc.Status() != scopedom.StatusPending || exc.IsApproved() {
+		t.Fatalf("new exclusion: status %s approved %v, want pending and unapproved", exc.Status(), exc.IsApproved())
+	}
+	if excluded(t) {
+		t.Fatal("a pending exclusion suppressed scanning")
+	}
+	if active, _ := svc.ListActiveExclusions(ctx, tenantID.String()); len(active) != 0 {
+		t.Fatalf("ListActiveExclusions returned %d pending exclusions", len(active))
+	}
+
+	// The requester cannot approve their own exclusion.
+	if _, err := svc.ApproveExclusion(ctx, exc.ID().String(), tenantID.String(), member); !errors.Is(err, scopedom.ErrExclusionSelfApproval) {
+		t.Fatalf("self-approval: got %v", err)
+	}
+	if excluded(t) {
+		t.Fatal("a refused self-approval put the exclusion into effect")
+	}
+
+	admin := shared.NewID().String()
+	if _, err := svc.ApproveExclusion(ctx, exc.ID().String(), tenantID.String(), admin); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if !excluded(t) {
+		t.Fatal("an approved exclusion is not applied")
+	}
+	if _, err := svc.ApproveExclusion(ctx, exc.ID().String(), tenantID.String(), admin); !errors.Is(err, scopedom.ErrExclusionNotPending) {
+		t.Fatalf("second approval: got %v, want ErrExclusionNotPending", err)
+	}
+	if _, err := svc.RejectExclusion(ctx, exc.ID().String(), tenantID.String(), admin); !errors.Is(err, scopedom.ErrExclusionNotPending) {
+		t.Fatalf("reject an approved exclusion: got %v, want ErrExclusionNotPending", err)
+	}
+}
+
+func TestScopeServiceExclusion_RejectedNeverApplies(t *testing.T) {
+	ctx := context.Background()
+	svc, _, er, _, _ := newTestScopeService()
+	tenantID := shared.NewID()
+	exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "prod.example.com", "noisy", nil, "member1")
+	er.exclusions[exc.ID().String()] = exc
+	candidates := []scope.ExclusionCandidate{{ID: shared.NewID(), Values: []string{"prod.example.com"}}}
+
+	rejected, err := svc.RejectExclusion(ctx, exc.ID().String(), tenantID.String(), "admin1")
+	if err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	if rejected.Status() != scopedom.StatusRejected || rejected.RejectedBy() != "admin1" || rejected.RejectedAt() == nil {
+		t.Fatalf("rejected: status %s by %q at %v", rejected.Status(), rejected.RejectedBy(), rejected.RejectedAt())
+	}
+	id, tid := exc.ID().String(), tenantID.String()
+	for name, try := range map[string]func() error{
+		"approve": func() error {
+			_, err := svc.ApproveExclusion(ctx, id, tid, "admin2")
+			return err
+		},
+		"activate": func() error {
+			_, err := svc.ActivateExclusion(ctx, id, tid)
+			return err
+		},
+		"deactivate": func() error {
+			_, err := svc.DeactivateExclusion(ctx, id, tid)
+			return err
+		},
+		"reject": func() error {
+			_, err := svc.RejectExclusion(ctx, id, tid, "admin2")
+			return err
+		},
+	} {
+		if err := try(); err == nil || !errors.Is(err, shared.ErrConflict) {
+			t.Fatalf("%s a rejected exclusion: got %v, want a conflict", name, err)
+		}
+	}
+	set, err := svc.ExcludedTargets(ctx, tenantID.String(), candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set) != 0 {
+		t.Fatal("a rejected exclusion suppressed scanning")
+	}
+}
+
+// An approval covers the window that was approved: extending it with
+// scope:write alone sends the exclusion back for review.
+func TestScopeServiceExclusion_ExtendingAnApprovedWindowNeedsReapproval(t *testing.T) {
+	ctx := context.Background()
+	svc, _, er, _, _ := newTestScopeService()
+	tenantID := shared.NewID()
+	week := time.Now().Add(7 * 24 * time.Hour)
+	exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "prod.example.com", "window", &week, "member1")
+	_ = exc.Approve("admin1")
+	er.exclusions[exc.ID().String()] = exc
+
+	day := time.Now().Add(24 * time.Hour)
+	got, err := svc.UpdateExclusion(ctx, exc.ID().String(), tenantID.String(), scope.UpdateExclusionInput{ExpiresAt: &day})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.IsActive() {
+		t.Fatal("shortening an approved window dropped the approval")
+	}
+
+	year := time.Now().Add(365 * 24 * time.Hour)
+	got, err = svc.UpdateExclusion(ctx, exc.ID().String(), tenantID.String(), scope.UpdateExclusionInput{ExpiresAt: &year})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.IsActive() || got.IsApproved() || got.Status() != scopedom.StatusPending {
+		t.Fatalf("extended window: status %s approved %v, want pending and unapproved", got.Status(), got.IsApproved())
+	}
+}
+
 // TestScopeServiceActivateDeactivateExclusion tests exclusion status changes.
 //
 // Run with: go test -v ./tests/unit -run TestScopeServiceActivateDeactivateExclusion
@@ -873,6 +1022,20 @@ func TestScopeServiceActivateDeactivateExclusion(t *testing.T) {
 	tenantID := shared.NewID()
 	exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
 	er.exclusions[exc.ID().String()] = exc
+
+	t.Run("PendingCannotBeActivated", func(t *testing.T) {
+		_, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), tenantID.String())
+		if !errors.Is(err, scopedom.ErrExclusionNotApproved) {
+			t.Fatalf("activate pending: got %v, want ErrExclusionNotApproved", err)
+		}
+		if exc.Status() != scopedom.StatusPending {
+			t.Fatalf("status = %s, want pending", exc.Status())
+		}
+	})
+
+	if err := exc.Approve("admin1"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
 
 	t.Run("Deactivate", func(t *testing.T) {
 		result, err := svc.DeactivateExclusion(context.Background(), exc.ID().String(), tenantID.String())
@@ -1231,6 +1394,7 @@ func TestScopeServiceCheckScope(t *testing.T) {
 		tr.targets[target.ID().String()] = target
 
 		exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "internal.example.com", "Internal", nil, "user1")
+		_ = exc.Approve("admin1")
 		er.exclusions[exc.ID().String()] = exc
 
 		result, err := svc.CheckScope(context.Background(), tenantID.String(), "domain", "internal.example.com")

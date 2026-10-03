@@ -292,6 +292,10 @@ const (
 	ScopeRead   Permission = "attack_surface:scope:read"
 	ScopeWrite  Permission = "attack_surface:scope:write"
 	ScopeDelete Permission = "attack_surface:scope:delete"
+	// ScopeExclusionsApprove approves or rejects a pending scope exclusion.
+	// An exclusion suppresses scanning, so scope:write only requests one;
+	// owners and admins hold this by default.
+	ScopeExclusionsApprove Permission = "attack_surface:scope:exclusions:approve"
 )
 
 // =============================================================================
@@ -478,7 +482,7 @@ func AllPermissions() []Permission {
 		SLARead, SLAWrite, SLADelete,
 
 		// Attack Surface module
-		ScopeRead, ScopeWrite, ScopeDelete,
+		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove,
 
 		// Validation module (legacy)
 		ValidationRead, ValidationWrite, PentestRead, PentestWrite,

@@ -19,13 +19,22 @@ const maxResolvedTargets = 10000
 
 // listTargetScanners are the scanners whose executors on deployed sensors read
 // the full `targets` list from the payload (nuclei via the vulnscan executor,
-// the Tenable bridge). Every other scanner reads only the single `target`
-// field, so a run of such a scanner gets one command per target, zoned or not
-// (RFC-030 B4; zones did this already).
+// the Tenable bridge, the recon tools through the SDK's recon scanner, which
+// runs the tool on each target and reports one CTIS report). Every other
+// scanner reads only the single `target` field, so a run of such a scanner
+// gets one command per target, zoned or not (RFC-030 B4; zones did this
+// already).
 var listTargetScanners = map[string]bool{
 	"nuclei":  true,
 	"tenable": true,
 	"nessus":  true,
+	// The recon tools (api RFC-036 EASM discovery). No sensor ran them before
+	// the SDK's recon scanner, which takes a list, so none reads only `target`.
+	"subfinder": true,
+	"dnsx":      true,
+	"naabu":     true,
+	"httpx":     true,
+	"katana":    true,
 }
 
 func scannerAcceptsTargetList(scanner string) bool {

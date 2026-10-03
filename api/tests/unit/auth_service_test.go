@@ -2423,8 +2423,10 @@ func TestAuthService_ExchangeToken_SSOEnforcement(t *testing.T) {
 			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "member"},
 		}
 		rt, sessID := loginPassword(t, svc, deps, "ssouser@acme.com")
-		// Simulate a federated session by flipping the stored session's method.
+		// Simulate a session from THIS tenant's IdP by flipping the stored
+		// session's method and recording the tenant as its issuer.
 		deps.sessionRepo.sessions[sessID].SetAuthMethod(session.AuthMethodSSO)
+		deps.sessionRepo.sessions[sessID].SetIDPTenant(tn.ID())
 
 		if _, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
 			RefreshToken: rt, TenantID: tn.ID().String(),
