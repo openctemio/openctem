@@ -1,0 +1,92 @@
+# Endpoint builders that name no registered API route, frozen on 2026-10-03
+# (RFC-041 §7, checked by endpoints-target-routes.test.ts against
+# api/api/openapi/routes.txt).
+#
+# SHRINK-ONLY: a new builder without a route fails, and so does a line here
+# that now matches a route or no longer exists. Most entries are builders no
+# component calls (old project/component/runner/remediation/analytics/report
+# modules); remove the builder, or point it at a real route, and delete the
+# line.
+#
+# Format: <module>.<export>.<builder>
+endpoints.componentEndpoints.create
+endpoints.componentEndpoints.delete
+endpoints.componentEndpoints.get
+endpoints.componentEndpoints.list
+endpoints.componentEndpoints.listByProject
+endpoints.componentEndpoints.update
+endpoints.components.create
+endpoints.components.delete
+endpoints.components.get
+endpoints.components.list
+endpoints.components.listByProject
+endpoints.components.update
+endpoints.projectEndpoints.create
+endpoints.projectEndpoints.delete
+endpoints.projectEndpoints.get
+endpoints.projectEndpoints.list
+endpoints.projectEndpoints.update
+endpoints.projects.create
+endpoints.projects.delete
+endpoints.projects.get
+endpoints.projects.list
+endpoints.projects.update
+endpoints.sensorEndpoints.stats
+endpoints.sensors.stats
+endpoints.toolStatsEndpoints.execution
+endpoints.toolStats.execution
+endpoints.userEndpoints.create
+endpoints.userEndpoints.delete
+endpoints.userEndpoints.get
+endpoints.userEndpoints.list
+endpoints.userEndpoints.update
+endpoints.users.create
+endpoints.users.delete
+endpoints.users.get
+endpoints.users.list
+endpoints.users.update
+security-endpoints.analyticsEndpoints.compliance
+security-endpoints.analyticsEndpoints.coverage
+security-endpoints.analyticsEndpoints.dashboard
+security-endpoints.analyticsEndpoints.executive
+security-endpoints.analyticsEndpoints.findingTrend
+security-endpoints.analyticsEndpoints.mttr
+security-endpoints.analyticsEndpoints.riskTrend
+security-endpoints.assetEndpoints.scans
+security-endpoints.componentEndpoints.byEcosystem
+security-endpoints.componentEndpoints.ecosystemStats
+security-endpoints.componentEndpoints.licenseStats
+security-endpoints.componentEndpoints.sources
+security-endpoints.findingEndpoints.bySeverity
+security-endpoints.findingEndpoints.history
+security-endpoints.remediationEndpoints.assign
+security-endpoints.remediationEndpoints.create
+security-endpoints.remediationEndpoints.delete
+security-endpoints.remediationEndpoints.get
+security-endpoints.remediationEndpoints.list
+security-endpoints.remediationEndpoints.overdue
+security-endpoints.remediationEndpoints.priority
+security-endpoints.remediationEndpoints.stats
+security-endpoints.remediationEndpoints.update
+security-endpoints.remediationEndpoints.updateStatus
+security-endpoints.reportEndpoints.download
+security-endpoints.reportEndpoints.generate
+security-endpoints.reportEndpoints.get
+security-endpoints.reportEndpoints.list
+security-endpoints.reportEndpoints.scheduled
+security-endpoints.reportEndpoints.scheduleReport
+security-endpoints.reportEndpoints.templates
+security-endpoints.runnerEndpoints.create
+security-endpoints.runnerEndpoints.delete
+security-endpoints.runnerEndpoints.download
+security-endpoints.runnerEndpoints.generateToken
+security-endpoints.runnerEndpoints.get
+security-endpoints.runnerEndpoints.list
+security-endpoints.runnerEndpoints.scans
+security-endpoints.runnerEndpoints.stats
+security-endpoints.runnerEndpoints.status
+security-endpoints.runnerEndpoints.update
+security-endpoints.scanEndpoints.findings
+security-endpoints.scanEndpoints.logs
+security-endpoints.scanEndpoints.results
+security-endpoints.scanEndpoints.stop
