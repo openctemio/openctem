@@ -70,6 +70,8 @@ export interface ScanConfig {
   id: string
   tenant_id: string
   name: string
+  /** An unsaved quick scan: not listed as a configuration until saved. */
+  ad_hoc?: boolean
   description?: string
   asset_group_id?: string // Legacy single asset group
   asset_group_ids?: string[] // Multiple asset groups

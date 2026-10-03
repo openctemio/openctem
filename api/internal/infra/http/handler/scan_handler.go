@@ -111,6 +111,11 @@ type CloneScanRequest struct {
 	Name string `json:"name" validate:"required,min=1,max=200"`
 }
 
+// SaveScanRequest names an ad-hoc quick scan that becomes a configuration.
+type SaveScanRequest struct {
+	Name string `json:"name" validate:"required,min=1,max=200"`
+}
+
 // BulkActionRequest represents the request body for bulk scan operations.
 type BulkActionRequest struct {
 	ScanIDs []string `json:"scan_ids" validate:"required,min=1,max=100,dive,uuid"`
@@ -138,10 +143,12 @@ type QuickScanRequest struct {
 // QuickScanResponse represents the response for quick scan.
 type QuickScanResponse struct {
 	PipelineRunID string `json:"pipeline_run_id"`
-	ScanID        string `json:"scan_id"`
-	AssetGroupID  string `json:"asset_group_id"`
-	Status        string `json:"status"`
-	TargetCount   int    `json:"target_count"`
+	// ScanID is the run's scan: ad hoc (unsaved) until POST /scans/{id}/save.
+	ScanID string `json:"scan_id"`
+	// AssetGroupID is always empty: quick scans no longer create an asset group.
+	AssetGroupID string `json:"asset_group_id"`
+	Status       string `json:"status"`
+	TargetCount  int    `json:"target_count"`
 }
 
 // CreateScanResponse wraps scan detail with optional compatibility warning.
@@ -199,16 +206,18 @@ type ScanDetailResponse struct {
 	MaxRetries            int                        `json:"max_retries"`
 	RetryBackoffSeconds   int                        `json:"retry_backoff_seconds"`
 	Status                string                     `json:"status"`
-	LastRunID             *string                    `json:"last_run_id,omitempty"`
-	LastRunAt             *string                    `json:"last_run_at,omitempty"`
-	LastRunStatus         string                     `json:"last_run_status,omitempty"`
-	TotalRuns             int                        `json:"total_runs"`
-	SuccessfulRuns        int                        `json:"successful_runs"`
-	FailedRuns            int                        `json:"failed_runs"`
-	CreatedBy             *string                    `json:"created_by,omitempty"`
-	CreatedByName         *string                    `json:"created_by_name,omitempty"`
-	CreatedAt             string                     `json:"created_at"`
-	UpdatedAt             string                     `json:"updated_at"`
+	// AdHoc: an unsaved quick scan (not listed as a configuration until saved).
+	AdHoc          bool    `json:"ad_hoc"`
+	LastRunID      *string `json:"last_run_id,omitempty"`
+	LastRunAt      *string `json:"last_run_at,omitempty"`
+	LastRunStatus  string  `json:"last_run_status,omitempty"`
+	TotalRuns      int     `json:"total_runs"`
+	SuccessfulRuns int     `json:"successful_runs"`
+	FailedRuns     int     `json:"failed_runs"`
+	CreatedBy      *string `json:"created_by,omitempty"`
+	CreatedByName  *string `json:"created_by_name,omitempty"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 // ScanStatsResponse represents the response for scan statistics.
@@ -400,6 +409,7 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Param        schedule_type   query     string  false  "Filter by schedule type"
 // @Param        status          query     string  false  "Filter by status"
 // @Param        search          query     string  false  "Search by name"
+// @Param        include_ad_hoc  query     bool    false  "Also list unsaved quick scans (ad_hoc)"
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        per_page        query     int     false  "Items per page" default(20)
 // @Success      200  {object}  ListResponse[ScanDetailResponse]
@@ -419,6 +429,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 		Status:       r.URL.Query().Get("status"),
 		Tags:         parseQueryArray(r.URL.Query().Get("tags")),
 		Search:       r.URL.Query().Get("search"),
+		IncludeAdHoc: r.URL.Query().Get("include_ad_hoc") == "true",
 		Page:         parseQueryInt(r.URL.Query().Get("page"), 1),
 		PerPage:      parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
@@ -925,6 +936,45 @@ func (h *ScanHandler) CloneScan(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), s))
 }
 
+// SaveScan handles POST /api/v1/scans/{id}/save
+// @Summary      Save a quick scan as a configuration
+// @Description  Turns an ad-hoc quick scan into a saved scan configuration with the given name ("Save as scan"). Its runs stay attached. Refused for a scan that is already a configuration.
+// @Tags         Scans
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string          true  "Quick scan ID"
+// @Param        request  body      SaveScanRequest true  "Configuration name"
+// @Success      200  {object}  ScanDetailResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scans/{id}/save [post]
+func (h *ScanHandler) SaveScan(w http.ResponseWriter, r *http.Request) {
+	scanID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	var req SaveScanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	s, err := h.service.SaveQuickScan(r.Context(), tenantID, scanID, req.Name)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), s))
+}
+
 // --- Scan Runs Handlers ---
 
 // ListScanRuns handles GET /api/v1/scans/{id}/runs
@@ -1205,6 +1255,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		MaxRetries:            s.MaxRetries,
 		RetryBackoffSeconds:   s.RetryBackoffSeconds,
 		Status:                string(s.Status),
+		AdHoc:                 s.AdHoc,
 		LastRunStatus:         s.LastRunStatus,
 		TotalRuns:             s.TotalRuns,
 		SuccessfulRuns:        s.SuccessfulRuns,

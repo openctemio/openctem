@@ -175,12 +175,11 @@ type RunRepository interface {
 	// Returns RetryCandidate records (run + retry config) for the controller to process.
 	ListPendingRetries(ctx context.Context, limit int) ([]RetryCandidate, error)
 
-	// ResetRetryClaim clears the retry_dispatched_at marker on a failed run so it
-	// becomes eligible for ListPendingRetries again. It is the compensating action
-	// for a dispatch that was claimed but did NOT create a new run (a transient
-	// failure). Without it, a single transient dispatch failure would leave the
-	// claim set forever and the scan would never auto-retry.
-	ResetRetryClaim(ctx context.Context, runID shared.ID) error
+	// ReleaseFailedRetryDispatch releases the claim of a retry whose dispatch
+	// failed without creating a run, and spends the attempt (retry_attempt+1),
+	// so a dispatch that keeps failing runs out of budget instead of retrying
+	// every backoff interval forever.
+	ReleaseFailedRetryDispatch(ctx context.Context, runID shared.ID) error
 }
 
 // RetryCandidate represents a failed pipeline run eligible for retry.
@@ -240,7 +239,10 @@ type StepRunRepository interface {
 	// UpdateStatus updates step run status.
 	UpdateStatus(ctx context.Context, id shared.ID, status StepRunStatus, errorMessage, errorCode string) error
 
-	// AssignSensor assigns a sensor and command to a step run.
+	// AssignSensor records that a sensor started the step run with the
+	// command: running, started_at, sensor and command. Only a step run that
+	// is still pending or queued changes, so a start reported after the step
+	// finished never reopens it.
 	AssignSensor(ctx context.Context, id shared.ID, sensorID, commandID shared.ID) error
 
 	// Complete marks a step run as completed.
@@ -252,4 +254,16 @@ type StepRunRepository interface {
 	// GetStatsByTenant returns aggregated step run statistics for a tenant in a single query.
 	// This is optimized to avoid N+1 queries when fetching stats.
 	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (RunStats, error)
+}
+
+// UnclaimedRunAborter ends runs whose work no sensor ever picked up (D8).
+// Optional extension of RunRepository, asserted by the timeout controller.
+type UnclaimedRunAborter interface {
+	// AbortUnclaimedRuns fails every active run all of whose commands are
+	// still pending and were never handed to a sensor, once the run is older
+	// than scheduledAfter (trigger_type 'schedule') or interactiveAfter
+	// (anything else), or than its scan's timeout if that is shorter. The run,
+	// its open steps (error code NO_SENSOR, never retried) and its commands
+	// fail with the reason, and the scan records the failure.
+	AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error)
 }

@@ -179,3 +179,47 @@ func TestJobRecoveryController_ReportsOnlyItsOwnWork(t *testing.T) {
 		t.Fatalf("processed count = %d, want %d (an inflated count means a foreign expiry path is still counted here)", got, want)
 	}
 }
+
+// exhaustingCommandRepo also implements command.ExhaustedFailer.
+type exhaustingCommandRepo struct {
+	recordingCommandRepo
+	exhausted []*command.Command
+}
+
+func (r *exhaustingCommandRepo) FailExhaustedCommandsReturning(context.Context, int) ([]*command.Command, error) {
+	return r.exhausted, nil
+}
+
+type stepFailure struct{ runID, stepKey, msg, code string }
+
+type recordingSteps struct{ got []stepFailure }
+
+func (s *recordingSteps) OnStepFailed(_ context.Context, runID, stepKey, msg, code string) error {
+	s.got = append(s.got, stepFailure{runID, stepKey, msg, code})
+	return nil
+}
+
+// A poison command (dispatch attempts exhausted) used to be failed by a raw
+// UPDATE that told nobody: its run hung until the run timeout and then said
+// "no result reported before timeout". Now its step fails with the reason.
+func TestJobRecovery_ExhaustedCommandFailsItsPipelineStep(t *testing.T) {
+	runID := shared.NewID().String()
+	repo := &exhaustingCommandRepo{exhausted: []*command.Command{
+		{ID: shared.NewID(), DispatchAttempts: 3,
+			Payload: []byte(`{"pipeline_run_id":"` + runID + `","step_key":"quick_scan"}`)},
+		{ID: shared.NewID(), DispatchAttempts: 3, Payload: []byte(`{"kind":"not a pipeline command"}`)},
+	}}
+	steps := &recordingSteps{}
+	c := NewJobRecoveryController(repo, &JobRecoveryControllerConfig{Logger: logger.NewNop()})
+	c.SetStepFailureNotifier(steps)
+
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(steps.got) != 1 {
+		t.Fatalf("pipeline notified %d times, want 1 (the pipeline command only)", len(steps.got))
+	}
+	if got := steps.got[0]; got.runID != runID || got.stepKey != "quick_scan" || got.code != "COMMAND_EXHAUSTED" {
+		t.Fatalf("notified %+v, want run %s step quick_scan code COMMAND_EXHAUSTED", got, runID)
+	}
+}

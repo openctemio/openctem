@@ -86,6 +86,10 @@ jobs:
       - name: Upload Trivy scan results
         if: ${{ !cancelled() && hashFiles('trivy-web.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v4
+        # The merge queue deletes its temporary gh-readonly-queue branch when a group
+        # is rebuilt; an upload still in flight then fails with ref not found. The scan
+        # result above already ran; only the upload is tolerated in merge_group.
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
         with:
           sarif_file: 'trivy-web.sarif'
           category: trivy-web
@@ -152,6 +156,10 @@ jobs:
           severity: 'CRITICAL,HIGH'
       - name: Upload Trivy Docker scan results
         uses: github/codeql-action/upload-sarif@v4
+        # The merge queue deletes its temporary gh-readonly-queue branch when a group
+        # is rebuilt; an upload still in flight then fails with ref not found. The scan
+        # result above already ran; only the upload is tolerated in merge_group.
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
         with:
           sarif_file: 'trivy-docker-web.sarif'
           category: docker-web

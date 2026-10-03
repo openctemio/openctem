@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -208,15 +209,21 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		return err
 	}
 
-	completedSteps := make(map[string]bool)
+	// A dependency gates a step only by SUCCEEDING. Every terminal step used
+	// to count as "completed" here, so a step whose dependency had failed
+	// (or been skipped, or timed out) was queued anyway.
+	succeededSteps := make(map[string]bool)
 	runningSteps := 0
 	for _, sr := range stepRuns {
 		if sr.IsComplete() {
-			completedSteps[sr.StepKey] = true
+			if sr.IsSuccess() {
+				succeededSteps[sr.StepKey] = true
+			}
 		} else if sr.IsRunning() || sr.IsQueued() {
 			runningSteps++
 		}
 	}
+	completedSteps := succeededSteps
 
 	// Get max parallel steps from template settings (default 3)
 	maxParallel := template.Settings.MaxParallelSteps
@@ -435,6 +442,47 @@ func (s *Service) calculatePipelineInitialPriority(cmdPriority command.CommandPr
 	}
 }
 
+// refreshStepRuns reloads the run's step runs from the database. Two final
+// steps of a workflow can finish at the same moment: each handler loaded the
+// run before the other's step was saved, saw the other step still running,
+// and neither finished the run, which then hung until the run timeout. Every
+// step write is committed before this read, so the later of two concurrent
+// handlers always sees both steps done (and finishRun lets only one of them
+// record the outcome).
+func (s *Service) refreshStepRuns(ctx context.Context, run *pipeline.Run) {
+	fresh, err := s.stepRunRepo.GetByPipelineRunID(ctx, run.ID)
+	if err != nil {
+		s.logger.Error("failed to reload step runs; settling from the loaded copy",
+			"run_id", run.ID.String(), "error", err)
+		return
+	}
+	run.StepRuns = fresh
+}
+
+// skipBlockedSteps skips every pending step whose dependency finished without
+// succeeding, transitively, so a failed step does not leave its dependents
+// pending forever (the run could then never complete).
+func (s *Service) skipBlockedSteps(ctx context.Context, run *pipeline.Run, template *pipeline.Template) {
+	for changed := true; changed; {
+		changed = false
+		for _, step := range template.Steps {
+			sr := run.GetStepRun(step.StepKey)
+			if sr == nil || !sr.IsPending() {
+				continue
+			}
+			dep := step.BlockedByDependency(run)
+			if dep == "" {
+				continue
+			}
+			sr.Skip(fmt.Sprintf("dependency %q did not succeed", dep))
+			if err := s.stepRunRepo.Update(ctx, sr); err != nil {
+				s.logger.Error("failed to skip blocked step", "step_key", step.StepKey, "error", err)
+			}
+			changed = true
+		}
+	}
+}
+
 // recordScanRun writes a pipeline run's terminal outcome back onto the scan that
 // spawned it, so the scan's own last_run_at/last_run_status/counters stop
 // reading "never run" after a run that just finished. No-op for workflow runs
@@ -448,6 +496,48 @@ func (s *Service) recordScanRun(ctx context.Context, run *pipeline.Run, status s
 		s.logger.Warn("failed to record run outcome on scan",
 			"scan_id", run.ScanID.String(), "run_id", run.ID.String(), "status", status, "error", err)
 	}
+}
+
+// finishRun moves the run to a terminal status. It reports whether THIS call
+// made the transition: the repository refuses to move a run that already
+// finished, so when two callers race (parallel final steps, a completion
+// against a cancel or the timeout reaper) exactly one of them records the
+// outcome on the scan, in metrics and in the audit log.
+func (s *Service) finishRun(ctx context.Context, run *pipeline.Run, status pipeline.RunStatus, message string) bool {
+	err := s.runRepo.UpdateStatus(ctx, run.ID, status, message)
+	if errors.Is(err, pipeline.ErrRunAlreadyFinished) {
+		s.logger.Info("run already finished; not recording it again",
+			"run_id", run.ID.String(), "status", string(status))
+		return false
+	}
+	if err != nil {
+		s.logger.Error("failed to update run status", "run_id", run.ID.String(), "status", string(status), "error", err)
+		return false
+	}
+	metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
+	metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), string(status)).Inc()
+	s.recordScanRun(ctx, run, string(status))
+	return true
+}
+
+// OnStepStarted is called when a sensor starts the command of a step. The
+// step run becomes running, with started_at and the sensor, so a run shows
+// which step is executing and how long each step took. Before this nothing
+// called it: a step went from queued straight to completed and its
+// started_at stayed empty.
+func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sensorID, commandID shared.ID) error {
+	rid, err := shared.IDFromString(runID)
+	if err != nil {
+		return err
+	}
+	stepRun, err := s.stepRunRepo.GetByStepKey(ctx, rid, stepKey)
+	if err != nil {
+		return err
+	}
+	if stepRun == nil {
+		return nil
+	}
+	return s.stepRunRepo.AssignSensor(ctx, stepRun.ID, sensorID, commandID)
 }
 
 // OnStepCompleted is called when a sensor reports step completion.
@@ -506,6 +596,8 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 	if err != nil {
 		return err
 	}
+	s.refreshStepRuns(ctx, run)
+	s.skipBlockedSteps(ctx, run, template)
 
 	// Update run statistics.
 	//
@@ -523,8 +615,6 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 
 	// Check if pipeline is complete
 	if completed+failed+skipped >= run.TotalSteps {
-		metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
-
 		// Evaluate Quality Gate if configured
 		qgResult := s.evaluateQualityGate(ctx, run)
 		if qgResult != nil {
@@ -536,12 +626,9 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 		}
 
 		if failed > 0 {
-			// FIXED: Don't silently suppress errors - log them instead
-			if err := s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusFailed, "Pipeline completed with failures"); err != nil {
-				s.logger.Error("failed to update run status to failed", "run_id", run.ID.String(), "error", err)
+			if !s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline completed with failures") {
+				return nil
 			}
-			metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), "failed").Inc()
-			s.recordScanRun(ctx, run, "failed")
 			// Audit log: pipeline failed
 			s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 				NewFailureEvent(audit.ActionPipelineRunFailed, audit.ResourceTypePipelineRun, run.ID.String(),
@@ -552,12 +639,9 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 					WithMetadata("total_findings", findings).
 					WithMetadata("quality_gate_passed", qgResult == nil || qgResult.Passed))
 		} else {
-			// FIXED: Don't silently suppress errors - log them instead
-			if err := s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusCompleted, ""); err != nil {
-				s.logger.Error("failed to update run status to completed", "run_id", run.ID.String(), "error", err)
+			if !s.finishRun(ctx, run, pipeline.RunStatusCompleted, "") {
+				return nil
 			}
-			metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), "completed").Inc()
-			s.recordScanRun(ctx, run, "completed")
 			if s.runCompleted != nil {
 				run.Status = pipeline.RunStatusCompleted
 				run.TotalFindings = findings
@@ -622,8 +706,14 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipeline.StepRun, errorMessage, errorCode string, allowRetry bool) error {
 	if stepRun != nil {
 		stepKey := stepRun.StepKey
+		// A failure a retry cannot fix (no such scanner on the sensor, target
+		// refused, nothing to scan, no sensor) is recorded with its class and
+		// never retried (D7): it used to be retried up to max_retries with
+		// the same result, and then reported as a generic failure.
+		code, retryable := pipeline.ClassifyStepFailure(errorCode, errorMessage)
+		errorCode = code
 		// Check if retry is possible
-		if allowRetry && stepRun.CanRetry() {
+		if allowRetry && retryable && stepRun.CanRetry() {
 			stepRun.PrepareRetry()
 			// FIXED: Don't silently suppress errors - log them instead
 			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
@@ -651,6 +741,14 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepKey, "failed").Inc()
 	}
 
+	// Get template to check fail_fast setting
+	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
+	if err != nil {
+		return err
+	}
+	s.refreshStepRuns(ctx, run)
+	s.skipBlockedSteps(ctx, run, template)
+
 	// Update run statistics
 	completed, failed, skipped, findings := s.calculateRunStats(run)
 	// FIXED: Don't silently suppress errors - log them instead
@@ -658,33 +756,15 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
 	}
 
-	// Get template to check fail_fast setting
-	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
-	if err != nil {
-		return err
-	}
-
 	// If fail_fast, mark run as failed
 	if template.Settings.FailFast {
-		metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
-		metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), "failed").Inc()
-		// FIXED: Don't silently suppress errors - log them instead
-		if err := s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusFailed, "Pipeline failed: "+errorMessage); err != nil {
-			s.logger.Error("failed to update run status to failed (fail_fast)", "run_id", run.ID.String(), "error", err)
-		}
-		s.recordScanRun(ctx, run, "failed")
+		s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline failed: "+errorMessage)
 		return nil
 	}
 
 	// Check if pipeline is complete
 	if completed+failed+skipped >= run.TotalSteps {
-		metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
-		metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), "failed").Inc()
-		// FIXED: Don't silently suppress errors - log them instead
-		if err := s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusFailed, "Pipeline completed with failures"); err != nil {
-			s.logger.Error("failed to update run status to failed (complete)", "run_id", run.ID.String(), "error", err)
-		}
-		s.recordScanRun(ctx, run, "failed")
+		s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline completed with failures")
 		return nil
 	}
 
@@ -855,27 +935,8 @@ func (s *Service) evaluateQualityGate(ctx context.Context, run *pipeline.Run) *s
 }
 
 // evaluateCondition evaluates a step's condition.
-func (s *Service) evaluateCondition(ctx context.Context, step *pipeline.Step, run *pipeline.Run, template *pipeline.Template) bool {
-	switch step.Condition.Type {
-	case pipeline.ConditionTypeAlways:
-		return true
-	case pipeline.ConditionTypeNever:
-		return false
-	case pipeline.ConditionTypeAssetType:
-		// Check if asset type matches
-		assetType, ok := run.Context["asset_type"].(string)
-		return ok && assetType == step.Condition.Value
-	case pipeline.ConditionTypeExpression:
-		// Expression evaluation not yet supported — always passes.
-		// Phase 2: add CEL or expr-lang evaluator for dynamic conditions.
-		return true
-	case pipeline.ConditionTypeStepResult:
-		// Check previous step result
-		prevStepRun := run.GetStepRun(step.Condition.Value)
-		return prevStepRun != nil && prevStepRun.IsSuccess()
-	default:
-		return true
-	}
+func (s *Service) evaluateCondition(_ context.Context, step *pipeline.Step, run *pipeline.Run, _ *pipeline.Template) bool {
+	return step.ConditionMet(run)
 }
 
 // GetRun retrieves a pipeline run by ID.
@@ -958,10 +1019,20 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 		return shared.NewDomainError("INVALID_STATE", "pipeline run is already complete", shared.ErrValidation)
 	}
 
-	run.Cancel()
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	// Through the guarded status transition, not a full-row write of the copy
+	// read above: if the run finished in the meantime the cancel is refused
+	// instead of turning a completed run into a canceled one (and counting it
+	// on the scan a second time).
+	err = s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusCanceled, "Canceled by user")
+	if errors.Is(err, pipeline.ErrRunAlreadyFinished) {
+		return shared.NewDomainError("INVALID_STATE", "pipeline run is already complete", shared.ErrValidation)
+	}
+	if err != nil {
 		return err
 	}
+	run.Cancel()
+	metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
+	metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), string(pipeline.RunStatusCanceled)).Inc()
 	s.recordScanRun(ctx, run, string(pipeline.RunStatusCanceled))
 
 	// Cancel all in-flight commands belonging to this run so sensors stop work.

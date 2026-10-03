@@ -417,18 +417,31 @@ var (
 	_ sensor.InstanceObserver = (*SensorRepository)(nil)
 )
 
-// UpdateKeyExpiry sets only the inline API-key expiry. The status = 'active'
-// guard means it is a no-op for a concurrently disabled/revoked sensor, so it can
-// never revive one — unlike a full-row Update that would rewrite status.
-func (r *SensorRepository) UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error {
+// RetireInlineKey brings the inline key's expiry forward to at, only while
+// the inline key's stored hash is one of keyHashes (an admin regeneration in
+// the meantime installs another key's hash and is left alone) and only when that moves
+// the expiry earlier. It writes key_expires_at alone, so it cannot revive a
+// revoked sensor or put back a replaced key.
+func (r *SensorRepository) RetireInlineKey(ctx context.Context, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
+	return retireInlineKey(ctx, r.db, id, keyHashes, at)
+}
+
+// retireInlineKey is RetireInlineKey on exec (the pool or a transaction).
+func retireInlineKey(ctx context.Context, exec executor, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
 	query := `
 		UPDATE sensors
-		SET key_expires_at = $2,
+		SET key_expires_at = $3,
 		    updated_at = NOW()
-		WHERE id = $1 AND status = 'active'
+		WHERE id = $1
+		  AND api_key_hash = ANY($2)
+		  AND (key_expires_at IS NULL OR key_expires_at > $3)
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), nullTime(expiresAt))
-	return err
+	res, err := exec.ExecContext(ctx, query, id.String(), pq.Array(keyHashes), at)
+	if err != nil {
+		return false, fmt.Errorf("retire inline sensor key: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // UpdateHeartbeat writes only the heartbeat-owned columns. Unlike Update it
@@ -551,6 +564,12 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 // write is guarded by status = 'active' so a self-renewal racing an admin
 // revoke cannot install a fresh key on a revoked sensor.
 func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	return updateInlineKey(ctx, r.db, r.value(), id, hash, prefix, expiresAt, requireActive)
+}
+
+// updateInlineKey is UpdateAPIKey on exec (the pool or a transaction),
+// stamping pepperID as the key's pepper.
+func updateInlineKey(ctx context.Context, exec executor, pepperID sql.NullString, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
 	query := `
 		UPDATE sensors
 		SET api_key_hash = $2,
@@ -563,7 +582,7 @@ func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash,
 	if requireActive {
 		query += " AND status = 'active'"
 	}
-	result, err := r.db.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt), r.value())
+	result, err := exec.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt), pepperID)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor api key: %w", err)
 	}

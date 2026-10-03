@@ -499,6 +499,8 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 	// Side effects run on the real transition only, never on a replay.
 	if !res.Replayed {
 		switch t {
+		case command.TransitionStart:
+			h.commands.triggerPipelineStarted(r.Context(), res.Command)
 		case command.TransitionComplete:
 			h.commands.triggerPipelineProgression(r.Context(), res.Command)
 			h.commands.triggerValidationEvidence(res.Command)
@@ -719,7 +721,8 @@ func (h *SensorControlV2Handler) RenewKey(w http.ResponseWriter, r *http.Request
 	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &ignored) {
 		return
 	}
-	key, expiresAt, err := h.ingest.sensorService.RenewAPIKey(r.Context(), s)
+	// The identity says which key was presented; renewal retires that key.
+	key, expiresAt, err := h.ingest.sensorService.RenewAPIKey(r.Context(), sensorIdentityFromContext(r.Context()))
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) {
 			h.logger.Debug("sensor key renewal refused", "sensor_id", s.ID.String(), "error", err)

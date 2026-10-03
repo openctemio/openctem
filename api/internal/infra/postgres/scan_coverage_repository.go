@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -177,6 +178,99 @@ func (r *ScanCoverageRepository) MarkDispatched(ctx context.Context, rec scancov
 		pq.Array(rec.AssetIDs), rec.TenantID.String(), sessionID, cmdID,
 	); err != nil {
 		return fmt.Errorf("mark dispatched: %w", err)
+	}
+	return nil
+}
+
+// coverageSeen renders each candidate's planned cursor for the claim SQL: the
+// RFC 3339 timestamp, or NULL for a never-dispatched asset.
+func coverageSeen(batch []scancoverage.Candidate) (ids []string, seen []sql.NullString) {
+	ids = make([]string, len(batch))
+	seen = make([]sql.NullString, len(batch))
+	for i, c := range batch {
+		ids[i] = c.AssetID
+		if c.LastScannedAt != nil {
+			seen[i] = sql.NullString{String: c.LastScannedAt.UTC().Format(time.RFC3339Nano), Valid: true}
+		}
+	}
+	return ids, seen
+}
+
+// ClaimBatch claims a planned batch: a never-dispatched asset gets a cursor row
+// (INSERT .. ON CONFLICT DO NOTHING), a dispatched one has its cursor moved
+// only if it still holds the value the caller planned with. A replica racing
+// for the same asset blocks on the row (or the key), re-checks, and loses. It
+// returns the asset ids this caller won.
+func (r *ScanCoverageRepository) ClaimBatch(ctx context.Context, tenantID shared.ID, batch []scancoverage.Candidate, at time.Time) ([]string, error) {
+	if len(batch) == 0 {
+		return nil, nil
+	}
+	ids, seen := coverageSeen(batch)
+	const query = `
+		WITH want AS (
+			SELECT w.asset_id, w.seen
+			FROM unnest($2::uuid[], $3::timestamptz[]) AS w(asset_id, seen)
+		), ins AS (
+			INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at)
+			SELECT w.asset_id, $1, $4 FROM want w WHERE w.seen IS NULL
+			ON CONFLICT (asset_id) DO NOTHING
+			RETURNING asset_id
+		), upd AS (
+			UPDATE scan_coverage_state s
+			SET last_dispatched_at = $4, updated_at = now()
+			FROM want w
+			WHERE s.asset_id = w.asset_id AND s.tenant_id = $1
+			  AND w.seen IS NOT NULL AND s.last_dispatched_at = w.seen
+			RETURNING s.asset_id
+		)
+		SELECT asset_id::text FROM ins
+		UNION ALL
+		SELECT asset_id::text FROM upd`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(ids), pq.Array(seen), at)
+	if err != nil {
+		return nil, fmt.Errorf("claim coverage batch: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	claimed := make([]string, 0, len(batch))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan claimed asset: %w", err)
+		}
+		claimed = append(claimed, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate claimed assets: %w", err)
+	}
+	return claimed, nil
+}
+
+// ReleaseBatch undoes a claim after a failed dispatch: cursors that still hold
+// the claim time go back to what the caller planned with (rows the claim
+// created are removed). A cursor someone else has since moved is left alone.
+func (r *ScanCoverageRepository) ReleaseBatch(ctx context.Context, tenantID shared.ID, batch []scancoverage.Candidate, at time.Time) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	ids, seen := coverageSeen(batch)
+	const query = `
+		WITH want AS (
+			SELECT w.asset_id, w.seen
+			FROM unnest($2::uuid[], $3::timestamptz[]) AS w(asset_id, seen)
+		), del AS (
+			DELETE FROM scan_coverage_state s
+			USING want w
+			WHERE s.asset_id = w.asset_id AND s.tenant_id = $1
+			  AND w.seen IS NULL AND s.last_dispatched_at = $4
+			RETURNING s.asset_id
+		)
+		UPDATE scan_coverage_state s
+		SET last_dispatched_at = w.seen, updated_at = now()
+		FROM want w
+		WHERE s.asset_id = w.asset_id AND s.tenant_id = $1
+		  AND w.seen IS NOT NULL AND s.last_dispatched_at = $4`
+	if _, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(ids), pq.Array(seen), at); err != nil {
+		return fmt.Errorf("release coverage claim: %w", err)
 	}
 	return nil
 }

@@ -77,20 +77,31 @@ export function useSystemPermissionSets() {
 }
 
 /**
+ * GET /permission-sets/{id} returns the set itself. The hook used to read
+ * `data.permission_set`, which the API never sends, so the drawer always
+ * said "Permission set not found". The wrapped shape is still accepted.
+ */
+export function unwrapPermissionSet(
+  data: PermissionSetWithDetails | { permission_set: PermissionSetWithDetails } | undefined
+): PermissionSetWithDetails | null {
+  if (!data) return null
+  if ('permission_set' in data) return data.permission_set ?? null
+  return 'id' in data ? data : null
+}
+
+/**
  * Fetch a single permission set with full details
  */
 export function usePermissionSet(permissionSetId: string | null) {
-  const { data, error, isLoading, mutate } = useSWR<{ permission_set: PermissionSetWithDetails }>(
-    permissionSetId ? `${API_BASE}/${permissionSetId}` : null,
-    fetcher,
-    {
-      revalidateOnFocus: false,
-      dedupingInterval: 30000,
-    }
-  )
+  const { data, error, isLoading, mutate } = useSWR<
+    PermissionSetWithDetails | { permission_set: PermissionSetWithDetails }
+  >(permissionSetId ? `${API_BASE}/${permissionSetId}` : null, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30000,
+  })
 
   return {
-    permissionSet: data?.permission_set || null,
+    permissionSet: unwrapPermissionSet(data),
     isLoading,
     isError: !!error,
     error,

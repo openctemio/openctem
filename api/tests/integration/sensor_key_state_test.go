@@ -78,7 +78,11 @@ func (f *keyStateFixture) createRenewedSensor(name string) (*sensor.Sensor, stri
 	if err != nil {
 		f.t.Fatalf("create sensor: %v", err)
 	}
-	newKey, exp, err := f.svc.RenewAPIKey(f.ctx, out.Sensor)
+	ident, err := f.svc.AuthenticateIdentity(f.ctx, out.APIKey)
+	if err != nil {
+		f.t.Fatalf("authenticate: %v", err)
+	}
+	newKey, exp, err := f.svc.RenewAPIKey(f.ctx, ident)
 	if err != nil {
 		f.t.Fatalf("renew: %v", err)
 	}
