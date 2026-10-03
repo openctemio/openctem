@@ -190,12 +190,8 @@ func (m *mockScanRepo) UpdateStatusByAssetGroupID(_ context.Context, _ shared.ID
 	return nil
 }
 
-func (m *mockScanRepo) TryLockScanForScheduler(_ context.Context, _ shared.ID) (bool, error) {
+func (m *mockScanRepo) ClaimScheduledRun(_ context.Context, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
-}
-
-func (m *mockScanRepo) UnlockScanForScheduler(_ context.Context, _ shared.ID) error {
-	return nil
 }
 
 // addScan is a helper to insert a scan into the mock.
@@ -2338,6 +2334,77 @@ func TestScanService_TriggerScan_CollectorToolRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "asset collector") {
 		t.Errorf("err = %v, want it to name the asset collector", err)
+	}
+}
+
+// Overlap policy for scheduled runs (D4): a scheduled occurrence while the
+// previous run is still active is skipped, not stacked (up to 3 concurrent
+// runs of the same scan used to pile up).
+func TestScanService_TriggerScan_ScheduledSkipsWhileRunning(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "Overlap", scan.ScanTypeSingle)
+	deps.runRepo.activeByScanCount = 1
+
+	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+		TriggerType: pipeline.TriggerTypeSchedule, SkipIfRunning: true,
+	})
+	if !errors.Is(err, scanservice.ErrScanRunInProgress) {
+		t.Fatalf("err = %v, want ErrScanRunInProgress", err)
+	}
+
+	// A manual trigger is not subject to the overlap policy.
+	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	}); err != nil {
+		t.Fatalf("manual trigger: %v", err)
+	}
+}
+
+// Every run used to be recorded as trigger_type 'manual', scheduled ones too.
+func TestScanService_TriggerScan_RecordsTriggerType(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "Trigger type", scan.ScanTypeSingle)
+
+	run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.TriggerType != pipeline.TriggerTypeSchedule {
+		t.Fatalf("trigger_type = %s, want schedule", run.TriggerType)
+	}
+	run, err = svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.TriggerType != pipeline.TriggerTypeManual {
+		t.Fatalf("trigger_type = %s, want manual", run.TriggerType)
+	}
+}
+
+// UpdateScan skipped the checks CreateScan runs: an unparseable cron or an
+// unknown timezone was saved and then quietly honored as "every 24h" / UTC.
+func TestScanService_UpdateScan_RefusesUnhonorableSchedule(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	s := createTestScanInRepo(deps, tenantID, "Bad schedule", scan.ScanTypeSingle)
+	at := time.Date(0, 1, 1, 3, 0, 0, 0, time.UTC)
+	cases := []scanservice.UpdateScanInput{
+		{TenantID: tenantID.String(), ScanID: s.ID.String(), ScheduleType: "crontab", ScheduleCron: "61 * * * *"},
+		{TenantID: tenantID.String(), ScanID: s.ID.String(), ScheduleType: "daily", ScheduleTime: &at, Timezone: "Mars/Olympus_Mons"},
+	}
+	for _, in := range cases {
+		if _, err := svc.UpdateScan(context.Background(), in); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("UpdateScan(%s %q tz=%q): err = %v, want validation error", in.ScheduleType, in.ScheduleCron, in.Timezone, err)
+		}
 	}
 }
 
