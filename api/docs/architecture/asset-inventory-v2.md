@@ -4,8 +4,9 @@ This page is the working reference for how the inventory is modelled,
 queried, grouped, excluded and automated. The decisions and their reasons
 are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
 
-- **Status: planned.** Nothing on this page is built yet unless a section
-  says so.
+- **Status: planned.** RFC-042 was accepted on 2026-10-03, with owner
+  decisions D1–D21 as recommended. Nothing on this page is built yet
+  unless a section says so. P0 ships as the seven slices in RFC-042 §9.1.
 - Update each section from "planned" to "shipped" in the PR that lands
   it.
 - The UI design is in `web/docs/ui/pd-inspired-inventory-integrations-2026-10.md`.

@@ -1,6 +1,7 @@
 # RFC-042 — Asset Inventory v2: services as rows, observations over time, one query language, labels, dynamic groups, policies and screenshots
 
-> Status: **Proposed** (2026-10-03).
+> Status: **Accepted** (2026-10-03; owner decisions D1–D21 approved as
+> recommended, §12). Implementation starts with the P0 slices in §9.1.
 > Scope: api (data model, query compiler, facets, groups, policy engine,
 > target gate, screenshots store, rollups) + web (inventory pages; the UI
 > design is in a companion document) + sensor (screenshot capture, HTTP/TLS
@@ -2481,6 +2482,38 @@ P0 can start now in parallel with RFC-036 P1. Services are useful as soon
 as httpx data arrives, which depends on RFC-036 P0 E2. P1's observation
 table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
 
+### 9.1 P0 work breakdown
+
+P0 ships as seven PR slices to `develop`, in order. Each slice merges on
+its own and leaves `develop` working. Migration numbers are taken at
+implementation time, after the ones open PRs reserve (000273–000281).
+Every slice that adds a table referencing `assets` also updates
+`asset_merge_plan.go`, which the coverage test enforces.
+
+| # | Slice | Depends on | Migrations | Scope |
+|---|---|---|---|---|
+| 1 | **Type registry** | — | `asset_types.class` and `asset_types.lens`, seeded from the YAML; `assets.asset_class` and `assets.asset_lens` columns with a batched backfill from `asset_type`, an index, and the trigger that keeps them in sync | `api/configs/asset-types.yaml` covering all 37 types in 16 classes and 8 lenses (§6.3.2–6.3.3); `make generate-asset-types` (Go + TS); `asset-types-drift` CI check; `GET /api/v1/asset-types`; attribute validation on write, with unknown keys quarantined (§6.3.3); `category.go` generated |
+| 2 | **Services** | 1 (class `service`) | `asset_services` new columns, the key change to `(tenant_id, asset_id, port, transport)`, and indexes created `CONCURRENTLY` (§6.4.1–6.4.3); `assets` DNS columns and `apex_domain`; `findings.service_id` and its partial index | ingest upserts `host:port` rows (`UpsertBatch`'s first caller) instead of `service`-type assets, behind the `inventory.v2_ingest` setting; counters on finding transitions; resumable backfill jobs (§6.8); `GET /services` gains the new fields; ctis `http` block + TLS fields; no more tech-to-tags copying; the sdk-go httpx parser keeps all fields |
+| 3 | **OQL, facets, group-by** | 1, 2 | `inventory_facet_counts`; trigram and GIN indexes from §6.4.3 not created in slice 2 | `internal/app/oql`: parser, field registry generated from the core plus the type registry, compiler that injects tenant and data scope and binds every value, limits and timeouts, `Explain`, fuzz tests; `q` on `/assets` and `/services`; `/services/facets` and the v2 `/assets/facets` (data scope fixes F10); `/services/groups`; `/oql/validate`; exports (`/services/exports`, `/assets/exports`); EXPLAIN guard tests and the 100k fixture |
+| 4 | **Saved filters, dynamic groups, bulk labels** | 3 | `saved_filters`; `asset_groups` gains `kind`, `subject`, `query`, `oql_version`, `origin`, `cadence`, run fields and counts; `asset_group_service_members`; `labels`, `label_assignments`; `system_labels` arrays | saved-filter CRUD; dynamic-group create/preview, with dispatch-time expansion handed to slice 5; `/labels`; `/label-assignments/preview` and apply by selector (`q` or ids), async above 1,000; bulk status by `q` |
+| 5 | **Target gate** | 1, 3 (selectors), 4 (dynamic groups) | none required (exclusion model changes are P1) | `scope.Gate`, extracted from `resolveScanTargets` and checking archived, attribution, exclusions by name, aliases and resolved IPs, tier, type via the registry's `scannable_by`, and caps; used by scan trigger, `POST /pipelines/runs` targets, pipeline hops, quick scans and the coverage dispatcher; `POST /scans/preview` with `preview_token`; `POST /scans` with `selection`. The RFC-030 claim-time re-check lands here as a call site if RFC-030 claim is merged; otherwise it is a P1 item |
+| 6 | **Web lenses** | 1, 3; uses 4–5 when present | none | inventory shell with lens tabs from `/asset-types`; **All assets** (core columns + type-aware cell); **External surface** (service cards, OQL bar, facet counts, group-by, per-group export and scan with preview); the closed renderer set; saved views; bulk label bar as one call; old `/assets/<type>` URLs redirect where a lens covers them. Follows the companion UI doc |
+| 7 | **Technology catalog** | 2 | `technology_categories`, `technologies`, `service_technologies`; `asset_services.technology_ids` | `openctem-admin catalog import webappanalyzer --tag`, plus `NOTICE` attribution; name/version split and slug resolution in ingest; `version_key` comparisons in OQL (`tech.version<3.5`); `/technologies` endpoints and the icon route; tech facet and group-by switch from the raw array to catalog ids |
+
+**Order and parallelism:**
+
+- 1 → 2 → 3 is the spine.
+- 7 can start after 2, in parallel with 3.
+- 4 follows 3, and 5 follows 4.
+- 6 can start on mocked endpoints after 1 and ships after 3. Its lenses
+  light up group-by, scan and saved views as 4 and 5 land.
+
+**Acceptance per slice:**
+
+- Each slice carries its share of the P0 acceptance list in §9.
+- Slice 3 owns the §7 performance targets.
+- Slice 5 owns the gate test matrix (T12).
+
 ## 10. Where OpenCTEM will beat PD
 
 | | PD | OpenCTEM v2 |
@@ -2515,6 +2548,10 @@ table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
 | Separate tag and label systems | Scope and assignment rules depend on tags; keeping tags as custom labels avoids breaking them |
 
 ## 12. Owner decisions (recommendations in bold)
+
+> **Approved 2026-10-03.** The owner approved D1–D21 **as recommended**.
+> The bold recommendation in each row below is now the decision. The
+> other options are kept as a record of what was considered.
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
