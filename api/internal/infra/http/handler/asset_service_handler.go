@@ -22,6 +22,27 @@ type AssetServiceHandler struct {
 	assetRepo asset.Repository
 	validator *validator.Validator
 	logger    *logger.Logger
+	dataScope DataScopeEnforcer
+}
+
+// SetDataScope wires the Layer 2 data scope: a scoped member sees and
+// changes only services of assets in their scope. Returns h for chaining.
+func (h *AssetServiceHandler) SetDataScope(e DataScopeEnforcer) *AssetServiceHandler {
+	h.dataScope = e
+	return h
+}
+
+// getInScope loads a service and hides it (ErrNotFound) when its asset is
+// outside the caller's data scope.
+func (h *AssetServiceHandler) getInScope(r *http.Request, tenantID, serviceID shared.ID) (*asset.AssetService, error) {
+	svc, err := h.repo.GetByID(r.Context(), tenantID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	if !assetInDataScope(r.Context(), h.dataScope, tenantID, svc.AssetID()) {
+		return nil, shared.ErrNotFound
+	}
+	return svc, nil
 }
 
 // NewAssetServiceHandler creates a new asset service handler.
@@ -335,7 +356,7 @@ func (h *AssetServiceHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	svc, err := h.repo.GetByID(ctx, tenantID, serviceID)
+	svc, err := h.getInScope(r, tenantID, serviceID)
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			apierror.NotFound("Service").WriteJSON(w)
@@ -392,7 +413,7 @@ func (h *AssetServiceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	svc, err := h.repo.GetByID(ctx, tenantID, serviceID)
+	svc, err := h.getInScope(r, tenantID, serviceID)
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			apierror.NotFound("Service").WriteJSON(w)
@@ -488,6 +509,16 @@ func (h *AssetServiceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, err := h.getInScope(r, tenantID, serviceID); err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			apierror.NotFound("Service").WriteJSON(w)
+			return
+		}
+		h.logger.Error("failed to get service for delete", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
 	if err := h.repo.Delete(ctx, tenantID, serviceID); err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			apierror.NotFound("Service").WriteJSON(w)
@@ -576,6 +607,13 @@ func (h *AssetServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 		opts.SortOrder = v
 	}
 
+	opts.Scope, err = resolveDataScope(ctx, h.dataScope, tenantID)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
 	services, total, err := h.repo.List(ctx, tenantID, opts)
 	if err != nil {
 		h.logger.Error("failed to list services", "error", err)
@@ -650,6 +688,13 @@ func (h *AssetServiceHandler) ListPublic(w http.ResponseWriter, r *http.Request)
 		opts.Limit = maxLimit
 	}
 
+	opts.Scope, err = resolveDataScope(ctx, h.dataScope, tenantID)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
 	services, total, err := h.repo.List(ctx, tenantID, opts)
 	if err != nil {
 		h.logger.Error("failed to list public services", "error", err)
@@ -691,28 +736,35 @@ func (h *AssetServiceHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	total, err := h.repo.CountByTenant(ctx, tenantID)
+	scope, err := resolveDataScope(ctx, h.dataScope, tenantID)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	total, err := h.repo.CountByTenant(ctx, tenantID, scope)
 	if err != nil {
 		h.logger.Error("failed to count services", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
 
-	publicCount, err := h.repo.CountPublic(ctx, tenantID)
+	publicCount, err := h.repo.CountPublic(ctx, tenantID, scope)
 	if err != nil {
 		h.logger.Error("failed to count public services", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
 
-	typeCounts, err := h.repo.GetServiceTypeCounts(ctx, tenantID)
+	typeCounts, err := h.repo.GetServiceTypeCounts(ctx, tenantID, scope)
 	if err != nil {
 		h.logger.Error("failed to get type counts", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
 
-	portCounts, err := h.repo.GetPortCounts(ctx, tenantID, 10)
+	portCounts, err := h.repo.GetPortCounts(ctx, tenantID, 10, scope)
 	if err != nil {
 		h.logger.Error("failed to get port counts", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

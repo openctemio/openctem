@@ -290,6 +290,8 @@ func (h *RelationshipSuggestionHandler) handleServiceError(w http.ResponseWriter
 		apierror.Conflict("Suggestion already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden(err.Error()).WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
