@@ -46,6 +46,7 @@ import {
   NOTIFICATION_TYPE_ICONS,
   NOTIFICATION_TYPE_LABELS,
 } from '@/features/notifications/lib/notification-types'
+import { safeHref } from '@/lib/safe-href'
 
 const severityColors: Record<string, string> = { ...SEVERITY_TEXT_COLORS }
 
@@ -129,10 +130,13 @@ function NotificationRow({
     !notification.is_read && 'border-primary/20 bg-primary/5'
   )
 
-  if (notification.url) {
+  // The target comes from the server; a stored javascript:/data: value must
+  // not become a link.
+  const href = safeHref(notification.url)
+  if (href) {
     return (
       <Link
-        href={notification.url}
+        href={href}
         className={cn(rowClassName, 'block')}
         onClick={handleMarkAsRead}
         aria-label={ariaLabel}

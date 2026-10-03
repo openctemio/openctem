@@ -33,6 +33,9 @@ export default async function RootLayout({
   const h = await headers()
   const locale = h.get('x-locale') ?? defaultLocale
   const dir = getDirFromLocale(locale)
+  // Per-request CSP nonce from src/proxy.ts, for the inline script next-themes
+  // writes (the policy has no 'unsafe-inline').
+  const nonce = h.get('x-nonce') ?? undefined
   return (
     <html lang={locale} dir={dir} suppressHydrationWarning>
       <body
@@ -40,7 +43,7 @@ export default async function RootLayout({
         className="antialiased"
         suppressHydrationWarning
       >
-        <Providers dir={dir} locale={locale}>
+        <Providers dir={dir} locale={locale} nonce={nonce}>
           {children}
         </Providers>
         {/* Page-wide navigation progress bar, shown while a nav link waits for

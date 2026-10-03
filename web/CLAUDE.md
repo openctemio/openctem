@@ -166,6 +166,10 @@ All state-changing requests from the browser must carry an `X-CSRF-Token` header
 
 Rendered markdown (notes, finding descriptions, etc.) goes through `src/lib/sanitize-markdown.ts`. Every preview spreads `markdownPreviewSecurityProps` onto `MDEditor.Markdown` (and the editor's `previewOptions`): a `rehypeRewrite` pass plus a `rehypeSanitiseTree` plugin that runs after `rehype-attr`, because `rehype-attr` (enabled by @uiw/react-markdown-preview) adds attributes from `<!--rehype:...-->` comments after the rewrite hook. It neutralises `<script>/<iframe>/<object>/<embed>/<style>/<link>/<meta>/<base>/<form>`, svg/math and form controls, keeps only allowlisted attributes (no `style`, `on*`, `name`, `target`), keeps only the pipeline's own classes (`language-*`, `anchor`, ...), prefixes ids with `user-content-`, and rewrites non-http(s)/mailto/relative URLs to `#`. Do not disable it or render markdown without those props. If you need a new tag, attribute or class, extend the allowlist in that file and add a test in `sanitize-markdown.test.ts` / `src/components/ui/markdown-preview-xss.test.tsx`.
 
+### Data-driven links, images and CSP (RFC-040)
+
+Any `href`/`src` whose value comes from data (finding references, evidence URIs, asset or repository URLs, notification targets, avatars, tool logos) goes through `src/lib/safe-href.ts`: `<SafeExternalLink>` for external links, `safeHref()` for Next `<Link>`/`asChild` cases, `safeImageSrc()` for images. Never write a raw `href={finding.x}`. `src/lib/__tests__/raw-href-guard.test.ts` fails on one; only navigation config and constants may be added to its `REVIEWED` list. The CSP is set per request with a script nonce in `src/proxy.ts` (`src/lib/middleware/csp.ts`), with no `'unsafe-inline'` for scripts: do not add inline `<script>` without the nonce from the `x-nonce` request header. `proxy.ts` must stay in `src/` (next to `app/`), or Next.js does not load it.
+
 ## Sensors (formerly "agents") — RFC-023
 
 The customer-side runtimes are **sensors**: route `/sensors` (Discovery → Sensors,

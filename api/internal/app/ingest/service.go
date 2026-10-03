@@ -279,6 +279,14 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if err := s.validator.ValidateReport(report); err != nil {
 		return nil, err
 	}
+	// Cap sensor-supplied text before anything is stored or fingerprinted:
+	// an oversized value is cut with a marker, the finding still lands
+	// (RFC-040 §5.4).
+	if n := capReportText(report); n > 0 {
+		s.logger.Warn("ingest: capped oversized finding text",
+			"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(),
+			"report_id", sanitizeIngestLogField(report.Metadata.ID), "values_capped", n)
+	}
 
 	// report.Metadata.ID and SourceType come from the CTIS payload
 	// submitted by the sensor. A compromised/malicious sensor can
