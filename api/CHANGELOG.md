@@ -5,6 +5,39 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Security: custom template trust (RFC-038 §6.12)
+
+- **Custom templates reach sensors only in a signed manifest.** Every
+  command poll signs one DSSE envelope per command (Ed25519 over the exact
+  bytes) listing the tenant, the polling sensor, the command, a 1-hour
+  expiry and the SHA-256 of every template; templates are validated again
+  first, and a set that fails is sent unsigned so the sensor refuses it.
+  Keys are per tenant, derived from `APP_TEMPLATE_SIGNING_KEY` (new;
+  unset: derived from `APP_ENCRYPTION_KEY`). New
+  `GET /api/v1/scanner-templates/signing-key` returns the tenant's public
+  key to pin on its sensors (`SENSOR_TEMPLATE_SIGNING_KEYS`). **Upgrade
+  note:** sensors on the matching sdk-go refuse custom templates until the
+  key is pinned; scans without custom templates are unaffected.
+- **More nuclei protocols refused at upload.** The `file` protocol (reads
+  the sensor's disk) and self-contained templates are refused like `code`,
+  `javascript` and `headless` already were, with an error naming the
+  protocol.
+
+### Fixed
+
+- **A pipeline step's settings reach the sensor.** Step commands carried
+  the step's config as `step_config`, which no sensor reads, so every step
+  ran with its tool's defaults (a naabu step with `ports: "80"` scanned the
+  top 100 ports). The payload now carries it as `config`, the key the
+  sensor SDK reads. Needs sensor with sdk-go per-scan settings (naabu:
+  `ports`, `top_ports`, `exclude_ports`, `rate`, `retries`; nuclei: `tags`,
+  `exclude_tags`, `severity`). Saving a step now checks these keys against
+  the sensor's rules (`INVALID_STEP_SETTING`): a port list that is not one,
+  a flag-like tag, an intrusive tag (`dos`, `fuzz`, `fuzzing`,
+  `intrusive`), ports together with top_ports. `allow_interactsh` is refused
+  on a pipeline step. A stored step with such a value fails when its run
+  queues it, with the reason.
+
 ### Changed (behaviour change)
 
 - **Organizations are created by the platform administrator by default.**

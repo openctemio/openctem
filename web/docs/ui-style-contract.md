@@ -5,6 +5,11 @@ deviation needs a reason written next to it in code. The Findings page
 (`src/app/(dashboard)/findings/page.tsx`) is the reference implementation of a
 list page.
 
+Decisions D14–D16 (approved 2026-10-03) added density, default sort, saved
+views, "Scroll all", the batch-bar rule, server facets, honest dashboard
+tiles and the three empty-state kinds. Background:
+`docs/ui/pd-inspired-inventory-integrations-2026-10.md` §10.
+
 ## 1. Page anatomy
 
 Every page, top to bottom:
@@ -28,7 +33,10 @@ Every page, top to bottom:
      `src/config/section-tabs.ts` and pass it as the sidebar item's `sections`:
      the sidebar shows ONE row for the section (active on every tab's route), the
      command palette lists each tab. Never a third sidebar level for them.
-4. **Content blocks** separated by `mt-5` (or `space-y-5` / `gap-5`).
+4. **Sidebar**: the main sidebar collapses and its width can be resized
+   (persisted per user, between 13rem and 20rem). Its links are the same in
+   every organization. Settings and the admin console keep their own rail.
+5. **Content blocks** separated by `mt-5` (or `space-y-5` / `gap-5`).
 
 ## 2. Headline numbers
 
@@ -42,6 +50,15 @@ Every page, top to bottom:
 - A share of capacity (job slots in use, quota spent) is the shared `<Meter>`
   (`role="meter"`, a label saying what it measures), in a metric's `detail`,
   a `DetailStat` or a row. Not a hand-made bar.
+- Every number on a dashboard opens the list it counts, with the same filter
+  (not the unfiltered page).
+- A number that cannot be computed shows "Not enough data" and what is
+  missing, never 0 or a perfect score.
+- No cross-customer or industry benchmarks: a self-hosted platform has no
+  honest population to compare with. Compare with the tenant's own trend or
+  target.
+- Graph analytics (attack paths, exposure chains) lead with a ranked list of
+  choke points (paths × critical assets); the graph is one click away.
 - Colour a number only when it is a problem **and** greater than zero
   (`tone="danger"` / `text-destructive`). A zero is never coloured.
 
@@ -51,6 +68,11 @@ Every page, top to bottom:
 - Do **not** wrap `<DataTable>` in a `<Card>` — it draws its own border.
 - Toolbar: search on the left, secondary actions (refresh, export) on the right,
   via `toolbarStart` / `toolbarEnd`. Filters:
+  - Facet values and counts come from the server for the current query.
+    Dimensions list their top values with counts; measures (risk score,
+    CVSS, EPSS, age) use a range slider. A value count is shown only when it
+    is computed with every **other** active filter applied; otherwise show
+    no count.
   - ≥ 3 filter dimensions → `<FacetFilterPanel>` in a floating sticky card
     (see Findings), toggled from the toolbar, closed by default.
   - 1–2 dimensions → dropdown buttons in the toolbar.
@@ -78,6 +100,27 @@ Every page, top to bottom:
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with
   `id: 'actions'` (both are pinned automatically).
+- **Density** (D14): `compact` (32px rows) or `comfortable` (40px). Single-line
+  lists (findings, scans, sensors, single-line asset lists) default to
+  compact; lists with multi-line rows (service rows, grouped cards on phones)
+  use comfortable. The user switches it from the table's view menu; it is a
+  per-user preference, not URL state.
+- **Default sort**: every sortable table has exactly one column sorted by
+  default, shown by its arrow. A newly clicked column sorts ascending;
+  clicking it again toggles the direction.
+- **Pagination**: page sizes 25 / 50 / 100. A list that can exceed 10k rows
+  may offer **"Scroll all"** (D16), which virtualizes rows
+  (`@tanstack/react-virtual` inside `DataTable`) over keyset (cursor) pages
+  from the API. It ships only after the list's API has cursor pagination, and
+  it never loads the whole set. The page-size view stays the default.
+- **Bulk actions**: while rows are selected, the `BulkActionBar` is the only
+  place to act on them. Row `⋯` menus are disabled, and the bar always has
+  Clear (Escape works too). Bulk endpoints accept IDs or the list's filter.
+- **Saved views** (D15): a view stores filter, sort, grouping, columns and
+  density for one page, personal or shared with a team. A view never changes
+  data. It is **not** a group: dynamic groups are scan and policy targets and
+  live under Assets › Groups; views are lenses and live in the toolbar's view
+  menu. The UI never offers one in place of the other.
 
 ### Grouped lists
 
@@ -177,8 +220,16 @@ load.
   without the next page, the clicked row shows a moving bar and the window a
   top progress bar. Sidebar links use `SidebarLink`, which prefetches on hover
   or focus rather than on render.
-- **Empty**: the shared `<EmptyState>` (icon, title, one-line description,
-  optional action). No ad-hoc "No X found" text.
+- **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
+  next step, optional primary action, optional secondary link such as docs).
+  Three kinds, each worded for its case:
+  - **no data yet** (first use): the setup action;
+  - **no results** (filters active): "Clear filters";
+  - **not enough data** (a metric cannot be computed): what is missing.
+    Never a zero or a perfect score in its place.
+
+  No ad-hoc "No X found" text.
+
 - **Error**: `<Alert variant="destructive">` with what failed and a retry.
 - Gated / coming-soon pages use the existing shared components.
 

@@ -693,8 +693,14 @@ type SensorConfig struct {
 	// Default: 1 minute.
 	HealthCheckInterval time.Duration
 
-	// Enabled controls whether sensor health checking is enabled.
-	// Default: true.
+	// Enabled turns on the legacy sensor health checker (jobs.SensorHealthChecker,
+	// WORKER_HEALTH_CHECK_ENABLED). Default: false. The sensor health controller
+	// (internal/infra/controller/sensor_health.go, RFC-035 §5.6) owns liveness:
+	// it applies the late/stale/offline ladder and holds convictions during its
+	// startup grace and while the platform itself is slow. The legacy checker
+	// knows none of that and sweeps the moment the API starts, so with it on an
+	// API restart convicted every sensor that could not heartbeat while the API
+	// was down. Keep it off unless the health controller is not running.
 	Enabled bool
 
 	// SCMSyncInterval is how often the scheduled SCM repository/branch sync runs.
@@ -824,6 +830,14 @@ type EncryptionConfig struct {
 	// tokens issued under the old key have been rotated.
 	// Env var: APP_ENCRYPTION_KEY_PREVIOUS (comma-separated)
 	PreviousKeys []string
+
+	// TemplateSigningKey is the 32-byte master secret each tenant's custom
+	// template signing key is derived from (Ed25519; sensors pin the
+	// tenant's public key). Same formats as Key. Empty: derived from Key,
+	// so rotating Key also rotates every tenant's template key and sensors
+	// must pin the new one; set it to rotate them independently.
+	// Env var: APP_TEMPLATE_SIGNING_KEY
+	TemplateSigningKey string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1111,7 +1125,7 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: WorkerConfig{
-			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
+			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
 			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
@@ -1136,6 +1150,8 @@ func Load() (*Config, error) {
 			KeyFormat:      getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
 			AllowPlaintext: getEnvBool("APP_ALLOW_PLAINTEXT_CREDENTIALS", false),
 			PreviousKeys:   getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
+			// Read as is: a leading or trailing space is a malformed key.
+			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 		},
 		Webhooks: WebhooksConfig{
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
@@ -1370,6 +1386,16 @@ func (c *Config) validateLog() error {
 
 // validateEncryption validates encryption configuration.
 func (c *Config) validateEncryption() error {
+	if k := c.Encryption.TemplateSigningKey; k != "" {
+		if _, err := crypto.ParseKey(k, ""); err != nil {
+			// Never echo the key itself.
+			return fmt.Errorf("APP_TEMPLATE_SIGNING_KEY is not a valid key (expected 32 raw, 64 hex or 44 base64 characters); generate one with `openssl rand -hex 32`")
+		}
+		if k == c.Encryption.Key {
+			return fmt.Errorf("APP_TEMPLATE_SIGNING_KEY must differ from APP_ENCRYPTION_KEY (leave it unset to derive it)")
+		}
+	}
+
 	// Encryption key is optional only in development. Any other APP_ENV
 	// (production, staging, preview, etc.) stores real tenant credentials
 	// and MUST have a key — otherwise integration tokens sit in plaintext.

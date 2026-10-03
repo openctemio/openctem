@@ -42,6 +42,7 @@ import type { Remediation, RemediationStepStatus, FindingDetail } from '../../ty
 import { CodeHighlighter } from './code-highlighter'
 import { MobilizationBriefCard } from './mobilization-brief-card'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 interface RemediationTabProps {
   remediation: Remediation
@@ -605,15 +606,13 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
             <ul className="space-y-2">
               {remediationReferences.map((ref, index) => (
                 <li key={index}>
-                  <a
+                  <SafeExternalLink
                     href={ref}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-blue-400 hover:underline break-all"
                   >
                     <ExternalLink className="h-3 w-3 shrink-0" />
                     {ref}
-                  </a>
+                  </SafeExternalLink>
                 </li>
               ))}
             </ul>

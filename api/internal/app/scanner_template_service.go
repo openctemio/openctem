@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"github.com/openctemio/openctem/api/internal/app/template"
@@ -18,7 +19,16 @@ type ScannerTemplateService struct {
 	signingSecret string
 	logger        *logger.Logger
 	quota         scannertemplate.TemplateQuota
+	// keys signs custom templates for sensors (SigningKey shows a tenant
+	// its public key); nil when no key is configured.
+	keys *scannertemplate.Keyring
 }
+
+// ErrTemplateSigningDisabled is returned by SigningKey when the platform has
+// no template-signing key (no APP_TEMPLATE_SIGNING_KEY or
+// APP_ENCRYPTION_KEY): custom templates are then sent unsigned and sensors
+// refuse them.
+var ErrTemplateSigningDisabled = errors.New("custom template signing is not configured on this platform")
 
 // NewScannerTemplateService creates a new ScannerTemplateService.
 func NewScannerTemplateService(repo scannertemplate.Repository, signingSecret string, log *logger.Logger) *ScannerTemplateService {
@@ -28,6 +38,41 @@ func NewScannerTemplateService(repo scannertemplate.Repository, signingSecret st
 		logger:        log.With("service", "scanner_template"),
 		quota:         scannertemplate.DefaultQuota(),
 	}
+}
+
+// SetSigningKeys sets the keyring custom templates are signed with for
+// sensors.
+func (s *ScannerTemplateService) SetSigningKeys(k *scannertemplate.Keyring) {
+	s.keys = k
+}
+
+// TemplateSigningKey is a tenant's template-signing public key, to pin on
+// the tenant's sensors (SENSOR_TEMPLATE_SIGNING_KEYS).
+type TemplateSigningKey struct {
+	Algorithm string `json:"algorithm"`
+	KeyID     string `json:"key_id"`
+	PublicKey string `json:"public_key"` // base64 (standard)
+	SensorEnv string `json:"sensor_env"` // the sensor setting it goes in
+}
+
+// SigningKey returns tenantID's template-signing public key.
+func (s *ScannerTemplateService) SigningKey(tenantID string) (*TemplateSigningKey, error) {
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	if s.keys == nil {
+		return nil, ErrTemplateSigningDisabled
+	}
+	pub, id, err := s.keys.PublicKey(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return &TemplateSigningKey{
+		Algorithm: "ed25519",
+		KeyID:     id,
+		PublicKey: base64.StdEncoding.EncodeToString(pub),
+		SensorEnv: "SENSOR_TEMPLATE_SIGNING_KEYS",
+	}, nil
 }
 
 // SetQuota sets custom quota limits for the service.
