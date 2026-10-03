@@ -1,6 +1,6 @@
 # RFC-039 — Continuous retest with regression reopen
 
-> Status: **Proposed** (2026-10-03).
+> Status: **Proposed** (2026-10-03, #866; Phase 1 implementation #867).
 > Scope: api (retest service, scheduler, ingest regression path, routes) + web
 > (Retest now, last-retest status). No sensor or sdk-go change in Phase 1.
 > Builds on [RFC-011](RFC-011-validation-engine-dispatch.md) /
