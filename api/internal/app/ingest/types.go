@@ -4,6 +4,7 @@ package ingest
 import (
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -24,8 +25,9 @@ const (
 	// MaxPropertiesPerAsset is the maximum number of properties per asset.
 	MaxPropertiesPerAsset = 100
 
-	// MaxTagsPerAsset is the maximum number of tags per asset.
-	MaxTagsPerAsset = 50
+	// MaxTagsPerAsset is the maximum number of tags per asset: the one limit
+	// the domain, the API and the web share.
+	MaxTagsPerAsset = asset.MaxTagsPerAsset
 
 	// MaxErrorsToReturn limits the number of errors returned in the response.
 	MaxErrorsToReturn = 100
