@@ -74,6 +74,10 @@ a sensor reaches internal segments it cannot route to directly:
   list of equivalent paths into one segment, chosen by the administrator.
   They are not pools for spreading load or source addresses, and the design
   has no random or round-robin selection.
+  The sensor also caps how hard nuclei hits a target, whatever the platform
+  asks: `SENSOR_NUCLEI_MAX_RATE_LIMIT`, `_CONCURRENCY` and `_BULK_SIZE`
+  are ceilings a scan can only go below, and rate-limit flags are refused
+  in extra args ([RFC-038 §6.12](RFC-038-sensor-tool-settings.md)).
 - **No anonymity, no public proxy lists, no Tor.** The proxies are the
   customer's own infrastructure.
 - **No VPN or overlay network.** WireGuard, IPsec or Tailscale between the
@@ -576,6 +580,7 @@ value. The API refuses to return them, as it does for integration credentials.
 | A platform-supplied URL reaches a private or metadata address through a proxy (SSRF) | With a proxy, Go's `DialContext` connects to the **proxy**. The guard in `guardedTransport` would then check the proxy's address, not the target's. A proxy-aware `SafeHTTPClient` (G2 fix) therefore checks the **request URL** in its `Proxy` function: it resolves locally and refuses blocked addresses (`ValidateURL`) before it returns the proxy, and the dialer checks the proxy's address with the API-destination policy. If the target does not resolve locally, the guard refuses it (fail closed). Only fixed upstream hostnames compiled into the SDK (GitHub, the semgrep registry, the KEV/EPSS feeds) may skip local resolution, because the platform cannot choose them. |
 | A tampered command sends tool traffic or credentials to an attacker's proxy | Commands carry only a profile id and revision (§6.3). Endpoints come from the authenticated policy, credentials are sealed to the claiming sensor, and the sensor operator can veto (§6.4). Signed jobs (RFC-023 P3) close the rest. |
 | A malicious job sets its own proxy | Unchanged: `-proxy` and similar flags are refused in user-supplied arguments (F6), and the SDK removes the proxy variables from a proxied tool's environment. |
+| A pushed template or job turns on code execution on the sensor | Custom templates arrive in a signed, command-bound manifest the sensor verifies against a pinned tenant key, code/file/headless/JS templates are refused at upload and on the sensor, and `-code`, `-file`, `-headless`, `-esc`, `-dut` and the short `-p` proxy flag are refused in extra args ([RFC-038 §6.12](RFC-038-sensor-tool-settings.md)). |
 | TLS-inspecting proxy on the scan path | Not supported on the scan path. Inspection would change what the scanner sees, and its findings would describe the proxy. The CA bundle on a profile is for trusting an `https://` **proxy endpoint** only. It is never added to the tools' trust, and tools keep verifying targets as they do today. TLS-inspecting proxies on the control channel are supported through `SENSOR_CA_CERT_FILE` (F2). |
 | Credential leak | §6.6: write-only, sealed per command, held in forwarder memory only, never in argv, logs or the outbox. |
 | Silent changes | Every change is audited (below), changes `config_version`, and is visible on the zone. |
