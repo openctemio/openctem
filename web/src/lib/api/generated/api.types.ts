@@ -13039,6 +13039,131 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/{id}/retests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * A finding's retests
+     * @description The finding's retest history, newest first (RFC-039).
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Max items (1-100, default 20) */
+          limit?: number
+        }
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingRetestListResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Retest a finding now
+     * @description Re-runs the nuclei template that produced the finding against its own target, with a reachability probe of the same target (RFC-039). The result is applied asynchronously: fixed resolves the finding, still present keeps it (or reopens a resolved one), and an unreachable target is "unknown" and changes nothing. Requires findings:verify; out-of-scope findings are 404.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Accepted */
+        202: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingRetestResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/{id}/severity': {
     parameters: {
       query?: never
@@ -17089,6 +17214,109 @@ export interface paths {
       }
     }
     put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/settings/retest': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get auto-retest settings
+     * @description The tenant's auto-retest settings (RFC-039). auto_enabled is false until an admin turns it on; zero interval/cap mean the defaults (24 h, 200 per day).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update auto-retest settings
+     * @description Turns auto-retest on or off and sets its interval (6–168 h) and daily cap (1–2000). Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Auto-retest settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     post?: never
     delete?: never
     options?: never
@@ -33140,6 +33368,19 @@ export interface components {
       /** @description For cross-account */
       role_arn?: string
     }
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings': {
+      auto_enabled?: boolean
+      /**
+       * @description DailyCap bounds the auto retests queued for the tenant per 24 h.
+       *     0 = DefaultRetestDailyCap.
+       */
+      daily_cap?: number
+      /**
+       * @description IntervalHours is how often each eligible finding is retested.
+       *     0 = DefaultRetestIntervalHours.
+       */
+      interval_hours?: number
+    }
     'github_com_openctemio_openctem_api_pkg_domain_tenant.RiskLevelConfig': {
       critical_min?: number
       high_min?: number
@@ -35345,6 +35586,25 @@ export interface components {
       web3_swc_id?: string
       web3_tx_hash?: string
       work_item_uris?: string[]
+    }
+    'internal_infra_http_handler.FindingRetestListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.FindingRetestResponse'][]
+    }
+    'internal_infra_http_handler.FindingRetestResponse': {
+      completed_at?: string
+      created_at?: string
+      deadline_at?: string
+      finding_id?: string
+      id?: string
+      outcome?: string
+      prior_status?: string
+      reason?: string
+      requested_by?: string
+      result_status?: string
+      status?: string
+      target?: string
+      template_id?: string
+      trigger?: string
     }
     'internal_infra_http_handler.FindingSeverityResponse': {
       critical?: number

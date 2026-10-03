@@ -87,6 +87,10 @@ var networkAddressableTypes = map[asset.AssetType]bool{
 	asset.AssetTypeHost:           true,
 }
 
+// IsNetworkAddressable reports whether an asset of type t has a network
+// address a sensor can probe (exported for the retest service, RFC-039).
+func IsNetworkAddressable(t asset.AssetType) bool { return isNetworkAddressable(t) }
+
 // isNetworkAddressable reports whether a safe-check reachability probe can
 // meaningfully target an asset of the given type.
 func isNetworkAddressable(t asset.AssetType) bool {

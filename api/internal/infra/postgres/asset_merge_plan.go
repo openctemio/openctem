@@ -57,6 +57,9 @@ var assetMergeRefs = []mergeRef{
 	{table: "threat_model_threats", column: "entry_point_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "hop_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "target_asset_id", tenantCol: "tenant_id"},
+	// A retest's asset follows its finding (RFC-039): the per-asset in-flight
+	// cap counts by asset_id.
+	{table: "finding_retests", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
