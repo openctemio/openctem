@@ -29,6 +29,8 @@ import type { ToolCategory } from '@/lib/api/tool-category-types'
 import { getCategoryNameById, getCategoryDisplayNameById } from '@/lib/api/tool-category-hooks'
 import { ToolCategoryIcon, getCategoryBadgeColor } from './tool-category-icon'
 import { INSTALL_METHOD_DISPLAY_NAMES } from '@/lib/api/tool-types'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { safeHref, safeImageSrc } from '@/lib/safe-href'
 
 interface ToolCardProps {
   tool: Tool
@@ -77,7 +79,7 @@ export function ToolCard({
               {tool.logo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={tool.logo_url}
+                  src={safeImageSrc(tool.logo_url)}
                   alt={tool.display_name}
                   className="h-10 w-10 rounded-lg object-contain"
                 />
@@ -138,20 +140,20 @@ export function ToolCard({
                   Check Update
                 </DropdownMenuItem>
               )}
-              {tool.github_url && (
+              {safeHref(tool.github_url) && (
                 <DropdownMenuItem asChild>
-                  <a href={tool.github_url} target="_blank" rel="noopener noreferrer">
+                  <SafeExternalLink href={tool.github_url}>
                     <Github className="me-2 h-4 w-4" />
                     GitHub
-                  </a>
+                  </SafeExternalLink>
                 </DropdownMenuItem>
               )}
-              {tool.docs_url && (
+              {safeHref(tool.docs_url) && (
                 <DropdownMenuItem asChild>
-                  <a href={tool.docs_url} target="_blank" rel="noopener noreferrer">
+                  <SafeExternalLink href={tool.docs_url}>
                     <ExternalLink className="me-2 h-4 w-4" />
                     Documentation
-                  </a>
+                  </SafeExternalLink>
                 </DropdownMenuItem>
               )}
               {/* Only show activate/deactivate for custom tools (not read-only) */}

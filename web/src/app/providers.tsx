@@ -20,10 +20,13 @@ export function Providers({
   children,
   dir,
   locale,
+  nonce,
 }: {
   children: React.ReactNode
   dir: 'ltr' | 'rtl'
   locale: string
+  /** CSP nonce for the theme script (see src/proxy.ts). */
+  nonce?: string
 }) {
   // Initialize Web Vitals reporting (lazy load to avoid bundling optional dependencies)
   useEffect(() => {
@@ -38,7 +41,13 @@ export function Providers({
   }, [])
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+      nonce={nonce}
+    >
       <SWRProvider>
         <DirectionProvider dir={dir}>
           <I18nProvider locale={locale}>{children}</I18nProvider>

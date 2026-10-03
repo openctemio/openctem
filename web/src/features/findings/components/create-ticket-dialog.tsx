@@ -24,6 +24,7 @@ import {
 import { ExternalLink } from 'lucide-react'
 import { useCreateFindingTicketApi } from '../api/use-findings-api'
 import { useJiraProjectsApi } from '@/features/integrations/api/use-integrations-api'
+import { safeHref } from '@/lib/safe-href'
 
 interface CreateTicketDialogProps {
   findingId: string
@@ -59,7 +60,7 @@ export function CreateTicketDialog({
       })
       // Only offer "Open" for a real http(s) ticket URL (guard against a
       // javascript:/data: URL slipping through to window.open).
-      const safeUrl = /^https?:\/\//i.test(info.ticket_url ?? '') ? info.ticket_url : ''
+      const safeUrl = safeHref(info.ticket_url, { allowRelative: false })
       toast.success(`Created ${info.ticket_key}`, {
         description: 'Jira ticket linked to this finding.',
         action: safeUrl

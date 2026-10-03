@@ -13,6 +13,7 @@ import { User, Mail, Phone, Save, Loader2, AlertCircle, Check } from 'lucide-rea
 import { toast } from 'sonner'
 import { useProfile, useUpdateProfile } from '@/features/account'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { safeImageSrc } from '@/lib/safe-href'
 
 export default function ProfilePage() {
   const { profile, isLoading, isError, error, mutate } = useProfile()
@@ -108,7 +109,7 @@ export default function ProfilePage() {
                 one, otherwise initials. There is no picture upload. */}
             <div className="flex flex-col items-center">
               <Avatar className="h-24 w-24 ring-2 ring-border">
-                <AvatarImage src={profile?.avatar_url} alt="" />
+                <AvatarImage src={safeImageSrc(profile?.avatar_url)} alt="" />
                 <AvatarFallback className="bg-primary/10 text-2xl">{initials}</AvatarFallback>
               </Avatar>
             </div>

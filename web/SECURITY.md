@@ -237,23 +237,43 @@ Configured in `next.config.ts`, applied to all routes via `/:path*`:
 
 ### 4.2 Content Security Policy
 
-| Directive         | Value                                                 | Notes                                   |
-| ----------------- | ----------------------------------------------------- | --------------------------------------- |
-| `default-src`     | `'self'`                                              | Baseline restriction                    |
-| `script-src`      | `'self' 'unsafe-eval' 'unsafe-inline'`                | Required by Next.js compiler            |
-| `style-src`       | `'self' 'unsafe-inline' https://fonts.googleapis.com` | Tailwind CSS + Google Fonts             |
-| `style-src-elem`  | `'self' 'unsafe-inline' https://fonts.googleapis.com` | Google Fonts stylesheets                |
-| `img-src`         | `'self' data: https:`                                 | Allows HTTPS images for avatars/uploads |
-| `font-src`        | `'self' data: https://fonts.gstatic.com`              | Google Fonts files                      |
-| `connect-src`     | `'self' https://*.openctem.io wss://*.openctem.io`    | API + WebSocket connections             |
-| `frame-ancestors` | `'none'`                                              | Double protection with X-Frame-Options  |
-| `base-uri`        | `'self'`                                              | Prevents base tag injection             |
-| `form-action`     | `'self'`                                              | Restricts form submission targets       |
+Set per request by `src/proxy.ts` (built in `src/lib/middleware/csp.ts`) with a
+fresh 128-bit script nonce. Next.js reads the nonce from the request's policy
+and stamps it on its own scripts; the root layout passes it to next-themes.
+Every page is rendered per request (the root layout reads `headers()`), so no
+static HTML carries a stale nonce.
+
+| Directive         | Value                                                     | Notes                                                          |
+| ----------------- | --------------------------------------------------------- | -------------------------------------------------------------- |
+| `default-src`     | `'self'`                                                  | Baseline restriction                                           |
+| `script-src`      | `'self' 'nonce-<per request>' 'strict-dynamic'`           | No `'unsafe-inline'`; `'unsafe-eval'` added only by `next dev` |
+| `style-src`       | `'self' 'unsafe-inline' https://fonts.googleapis.com`     | Tailwind, React `style={}`, Radix, sonner                      |
+| `style-src-elem`  | `'self' 'unsafe-inline' https://fonts.googleapis.com`     | Google Fonts stylesheets                                       |
+| `img-src`         | `'self' data: https:`                                     | Tool logos and SCM avatars from arbitrary hosts                |
+| `font-src`        | `'self' data: https://fonts.gstatic.com`                  | Google Fonts files                                             |
+| `connect-src`     | `'self'` + origins from `NEXT_PUBLIC_APP_URL` / WS config | API + WebSocket connections                                    |
+| `object-src`      | `'none'`                                                  | No plugins                                                     |
+| `frame-src`       | `'none'`                                                  | The app embeds no frames                                       |
+| `frame-ancestors` | `'none'`                                                  | Double protection with X-Frame-Options                         |
+| `base-uri`        | `'self'`                                                  | Prevents base tag injection                                    |
+| `form-action`     | `'self'`                                                  | Restricts form submission targets                              |
 
 **Known trade-offs:**
 
-- `unsafe-eval` and `unsafe-inline` in `script-src` are required by the Next.js compiler. Mitigated by strict `frame-ancestors 'none'` and `base-uri 'self'`. Nonce-based CSP should be explored in future versions.
-- `img-src https:` allows images from any HTTPS source (needed for user avatars and external content).
+- `style-src 'unsafe-inline'`: inline `style` attributes cannot carry a nonce. CSS cannot run script.
+- `img-src https:` allows images from any HTTPS source (tool logos, SCM avatars). Narrowing it needs an image proxy. The URLs go through `safeImageSrc` (section 4.3).
+- zod 4 probes `new Function('')` once to decide whether to JIT; the probe is caught and reported as a `script-src` eval violation in the console. Harmless.
+
+### 4.3 Data-driven links and images (RFC-040)
+
+Scanner references, evidence URIs, asset URLs, notification targets and
+integration hosts are attacker-influenced (a hostile scan target or sensor).
+Every data-driven `href` and `src` goes through `src/lib/safe-href.ts`:
+
+- `<SafeExternalLink href={…}>` (`src/components/safe-external-link.tsx`) for external links: `http`/`https` and same-origin paths only, `target="_blank"`, `rel="noopener noreferrer nofollow"`; a refused URL renders as plain text.
+- `safeHref(url)` where a component needs the string (Next `<Link>`, `asChild` menus); `safeImageSrc(url)` for images (adds base64 raster `data:` and same-origin `blob:`); `safeInternalHref(path)` for server-supplied in-app paths.
+- Refused: `javascript:`, `data:`, `vbscript:`, `file:`, `blob:` and every other scheme, in any case, with embedded tabs/newlines or leading control characters, entity- or percent-encoded, protocol-relative `//host` and `/\host`, bidi/zero-width characters, over 4096 characters.
+- `src/lib/__tests__/raw-href-guard.test.ts` parses every `.tsx` file and fails on an `href={…}`/`src={…}` that is not provably safe; reviewed navigation config is listed there with a reason.
 
 ---
 
@@ -461,14 +481,13 @@ The API error handler (`src/lib/api/error-handler.ts`) maps backend errors to us
 
 | Item                              | Status      | Rationale                                                                                     |
 | --------------------------------- | ----------- | --------------------------------------------------------------------------------------------- |
-| CSP `unsafe-eval`/`unsafe-inline` | Required    | Next.js compiler dependency. Mitigated by `frame-ancestors 'none'` and `base-uri 'self'`.     |
 | WebSocket token in URL query      | Accepted    | WebSocket API cannot send custom headers. Token scoped to same session via httpOnly endpoint. |
 | Password policy (8 chars minimum) | Intentional | Backend enforces additional policies. Client-side strength meter provides guidance.           |
 | `img-src https:` wildcard         | Accepted    | Required for user avatars and external content.                                               |
 
 ### Hardening Roadmap
 
-- [ ] Nonce-based CSP to eliminate `unsafe-inline`/`unsafe-eval`
+- [x] Nonce-based CSP to eliminate `unsafe-inline`/`unsafe-eval` from `script-src` (RFC-040)
 - [ ] Environment-conditional CSP `connect-src` (strip localhost in production)
 - [ ] Upgrade CSRF token generation to `crypto.randomBytes()`
 - [ ] Client-side rate limiting for login attempts (config exists at `SECURITY_CONFIG.MAX_LOGIN_ATTEMPTS: 5` but not yet enforced)
