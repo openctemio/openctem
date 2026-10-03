@@ -86,7 +86,7 @@ func (m *MockFindingRepository) GetStats(ctx context.Context, tenantID shared.ID
 func (m *MockFindingRepository) BatchCountByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]int64, error) {
 	return nil, nil
 }
-func (m *MockFindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID string) (int64, error) {
+func (m *MockFindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, _ string) (int64, error) {
 	return 0, nil
 }
 func (m *MockFindingRepository) CountBySeverity(ctx context.Context, tenantID shared.ID) (vulnerability.SeverityCounts, error) {

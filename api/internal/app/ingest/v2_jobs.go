@@ -131,6 +131,19 @@ func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.R
 			Pointer: "", Code: protov2.CodeProcessingFailed, Detail: protov2.DetailProcessingFailed}}}
 		return o, p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, o, nil)
 	}
+	if rep.CommandID == nil {
+		// A report without a command (RFC-040 §5.3): quarantined or applied
+		// with the unsolicited limits, decided here once per segment.
+		if o, held, err := p.service.admitV2Segment(ctx, p.provenance(rep, seq, job), report); err != nil {
+			return ingestreport.SegmentOutcome{}, err
+		} else if held {
+			if err := p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, o, nil); err != nil {
+				return ingestreport.SegmentOutcome{}, err
+			}
+			observeItems(o)
+			return o, nil
+		}
+	}
 	res, err := p.service.IngestV2Segment(ctx, p.provenance(rep, seq, job), report)
 	if err != nil {
 		return ingestreport.SegmentOutcome{}, fmt.Errorf("v2: ingest segment: %w", err)

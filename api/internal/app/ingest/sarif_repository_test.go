@@ -126,12 +126,12 @@ func TestIngestSARIF_RefusesLogWithoutRepository(t *testing.T) {
 	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
 	s := &Service{logger: logger.NewNop()}
 
-	_, err := s.IngestSARIF(context.Background(), agt, sarifLog(``), SARIFRepository{})
+	_, err := s.IngestSARIF(context.Background(), agt, sarifLog(``), SARIFRepository{}, Binding{})
 	if !errors.Is(err, ErrSARIFNoRepository) || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("err = %v, want ErrSARIFNoRepository", err)
 	}
 
-	_, err = s.IngestSARIF(context.Background(), agt, sarifLog(``), SARIFRepository{Branch: "main\r\nforged"})
+	_, err = s.IngestSARIF(context.Background(), agt, sarifLog(``), SARIFRepository{Branch: "main\r\nforged"}, Binding{})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("control characters in branch accepted: %v", err)
 	}

@@ -125,7 +125,7 @@ func (m *MockFindingRepoForLifecycle) ExistsByFingerprint(ctx context.Context, t
 func (m *MockFindingRepoForLifecycle) CheckFingerprintsExist(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error) {
 	return make(map[string]bool), nil
 }
-func (m *MockFindingRepoForLifecycle) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID string) (int64, error) {
+func (m *MockFindingRepoForLifecycle) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, _ string) (int64, error) {
 	return 0, nil
 }
 func (m *MockFindingRepoForLifecycle) UpdateSnippetBatchByFingerprints(ctx context.Context, tenantID shared.ID, snippets map[string]string) (int64, error) {
