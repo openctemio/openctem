@@ -66,7 +66,7 @@ re-ingested: it gets the evidence row only and keeps its standing (an asset
 with no attribution record is a legacy, confirmed asset).
 
 Attribution lives in `asset_attributions` and `easm_evidence` (migration
-000313); see [easm.md](easm.md#4-attribution). Scans skip asset-group members
+000324); see [easm.md](easm.md#4-attribution). Scans skip asset-group members
 that are not confirmed, so nothing found passively under an unverified
 domain is touched by a sensor until a person confirms it (`PUT
 /api/v1/assets/{id}/attribution`, audited).
