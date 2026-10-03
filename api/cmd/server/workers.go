@@ -291,7 +291,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		scancoverage.NewDispatcher(repos.Command),
 		&controller.CoverageSchedulerConfig{
 			Interval: 5 * time.Minute,
-			Logger:   log.With("controller", "coverage-scheduler"),
+			// Each batch passes a scan trigger's target checks (RFC-042 F16).
+			Gate:   svc.Scan,
+			Logger: log.With("controller", "coverage-scheduler"),
 		},
 	))
 
@@ -308,6 +310,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.Module, // ModuleGuard: skip tenants without the reports module
 			controller.ReportSchedulerConfig{Interval: time.Minute},
 			log,
+		))
+	}
+
+	// Continuous retest (RFC-039): settle stale retests and serve due
+	// auto-retest ticks. Auto-retest is per tenant and off by default
+	// (settings.retest.auto_enabled); each tick is claimed by compare-and-set,
+	// so every replica can run this controller without double-firing.
+	if svc.Retest != nil {
+		w.ControllerManager.Register(controller.NewRetestScheduler(
+			svc.Retest, repos.FindingRetest, time.Minute, log,
 		))
 	}
 
@@ -409,6 +421,21 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Interval:    cfg.Worker.CertMonitorInterval,
 				Logger:      log.With("controller", "cert-monitor"),
 				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
+			},
+		))
+	}
+
+	// EASM DNS-only checks — daily, fail-open, passive (RFC-036 P1): dangling
+	// CNAME/NS and email posture of the tenant's own domains. Disable with
+	// EASM_DNS_CHECKS_ENABLED=false.
+	if svc.EASMDNS != nil {
+		w.ControllerManager.Register(controller.NewEASMDNSController(
+			svc.EASMDNS,
+			repos.Tenant,
+			&controller.EASMDNSControllerConfig{
+				Interval:    cfg.Worker.EASMDNSInterval,
+				Logger:      log.With("controller", "easm-dns-checks"),
+				ModuleGuard: svc.Module,
 			},
 		))
 	}

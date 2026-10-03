@@ -377,26 +377,39 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Lock the scan config row to serialize concurrent triggers for the same scan
-	// This prevents race conditions where multiple triggers check limits simultaneously
+	// Serialize concurrent triggers and count the active runs they compete
+	// with: per scan config for a scan's run; per pipeline for a run started
+	// directly (POST /pipelines/runs, the trigger_pipeline action), which has
+	// no scan. Dereferencing the nil scan id made every direct start panic.
 	lockQuery := `SELECT id FROM scans WHERE id = $1 FOR UPDATE`
-	if _, err := tx.ExecContext(ctx, lockQuery, run.ScanID.String()); err != nil {
-		return fmt.Errorf("failed to lock scan config: %w", err)
-	}
-
-	// Count active runs for this scan (no FOR UPDATE needed - we already hold lock on scans row)
-	var scanActiveCount int
-	scanCountQuery := `
+	countQuery := `
 		SELECT COUNT(*) FROM pipeline_runs
 		WHERE scan_id = $1 AND status IN ('pending', 'running')
 	`
-	if err := tx.QueryRowContext(ctx, scanCountQuery, run.ScanID.String()).Scan(&scanActiveCount); err != nil {
-		return fmt.Errorf("failed to count active runs for scan: %w", err)
+	lockID, limitMsg := "", "maximum concurrent runs (%d) reached for this scan config"
+	if run.ScanID != nil {
+		lockID = run.ScanID.String()
+	} else {
+		lockQuery = `SELECT id FROM pipeline_templates WHERE id = $1 FOR UPDATE`
+		countQuery = `
+			SELECT COUNT(*) FROM pipeline_runs
+			WHERE pipeline_id = $1 AND scan_id IS NULL AND status IN ('pending', 'running')
+		`
+		lockID, limitMsg = run.PipelineID.String(), "maximum concurrent runs (%d) reached for this pipeline"
 	}
-	if scanActiveCount >= maxPerScan {
+	if _, err := tx.ExecContext(ctx, lockQuery, lockID); err != nil {
+		return fmt.Errorf("failed to lock run owner: %w", err)
+	}
+
+	// Count active runs (no FOR UPDATE needed - we already hold the lock above)
+	var ownerActiveCount int
+	if err := tx.QueryRowContext(ctx, countQuery, lockID).Scan(&ownerActiveCount); err != nil {
+		return fmt.Errorf("failed to count active runs: %w", err)
+	}
+	if ownerActiveCount >= maxPerScan {
 		return shared.NewDomainError(
 			"MAX_CONCURRENT_RUNS",
-			fmt.Sprintf("maximum concurrent runs (%d) reached for this scan config", maxPerScan),
+			fmt.Sprintf(limitMsg, maxPerScan),
 			shared.ErrValidation,
 		)
 	}

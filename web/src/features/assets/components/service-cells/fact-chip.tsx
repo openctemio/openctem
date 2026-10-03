@@ -6,13 +6,15 @@ import { cn } from '@/lib/utils'
  * tone has its dark-mode value (ui-style-contract §6).
  *
  * - `neutral`: a recorded value (a technology, a label);
- * - `muted`: context (IP, CNAME, "+N");
- * - `success` / `info` / `warning` / `destructive`: a status with meaning;
- * - `unknown`: dashed, for a fact that was not collected. Never shown as a
- *   healthy value.
+ * - `muted`: context (IP, CNAME, "+N") and known negatives ("No TLS");
+ * - `success` / `info` / `warning` / `destructive`: a status with meaning.
+ *
+ * There is no chip for a fact that was not collected. Lists render nothing
+ * for it (an empty cell shows `EmptyCell`), and the drawer names it once in
+ * `NotCollectedNote` (ui-style-contract §7, "Unknown facts").
  */
 export type FactChipTone =
-  'neutral' | 'muted' | 'label' | 'success' | 'info' | 'warning' | 'destructive' | 'unknown'
+  'neutral' | 'muted' | 'label' | 'success' | 'info' | 'warning' | 'destructive'
 
 const TONES: Record<FactChipTone, string> = {
   neutral: 'border-border bg-card text-foreground',
@@ -22,7 +24,6 @@ const TONES: Record<FactChipTone, string> = {
   info: 'border-transparent bg-info/15 text-info',
   warning: 'border-transparent bg-warning/15 text-warning',
   destructive: 'border-transparent bg-destructive/15 text-destructive',
-  unknown: 'border-dashed border-border bg-transparent text-muted-foreground',
 }
 
 export const factChipBase =
@@ -40,19 +41,6 @@ export function FactChip({ tone = 'neutral', className, ...props }: FactChipProp
       className={cn(factChipBase, TONES[tone], className)}
       {...props}
     />
-  )
-}
-
-/** The explicit "we do not know" chip: "Unknown", "Not collected", … */
-export function UnknownChip({
-  children = 'Unknown',
-  className,
-  ...props
-}: Omit<FactChipProps, 'tone'>) {
-  return (
-    <FactChip tone="unknown" className={className} {...props}>
-      {children}
-    </FactChip>
   )
 }
 

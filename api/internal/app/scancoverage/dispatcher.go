@@ -34,6 +34,9 @@ type DispatchTenableInput struct {
 	Engine string
 	// TemplateUUID optionally overrides the runner's default Nessus template.
 	TemplateUUID string
+	// ScanZoneID is the scan zone the targets route to, or nil. A zoned
+	// command is claimable only by that zone's sensors.
+	ScanZoneID *shared.ID
 }
 
 // Dispatcher creates Tenable scan commands routed to a tenable-capable runner.
@@ -85,6 +88,9 @@ func (d *Dispatcher) DispatchTenableScan(ctx context.Context, in DispatchTenable
 	}
 	if in.SensorID != nil && !in.SensorID.IsZero() {
 		cmd.SensorID = in.SensorID // C3: pin a specific runner
+	}
+	if in.ScanZoneID != nil {
+		cmd.SetScanZone(*in.ScanZoneID)
 	}
 
 	if err := d.commands.Create(ctx, cmd); err != nil {

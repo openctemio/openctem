@@ -46,6 +46,16 @@ func openSLADB(t *testing.T) *sql.DB {
 	return db
 }
 
+// sameMicrosecond reports whether stored is want as Postgres keeps it: a
+// timestamptz has microseconds and the value is rounded to them, half to
+// even (.684999968 is stored as .685000, .0970745 as .097074). Truncating
+// both sides to milliseconds, as these tests did, fails whenever that
+// rounding crosses a millisecond.
+func sameMicrosecond(stored, want time.Time) bool {
+	d := stored.Sub(want)
+	return d >= -500*time.Nanosecond && d <= 500*time.Nanosecond && stored.Equal(stored.Truncate(time.Microsecond))
+}
+
 // A finding created with a future deadline must come back with that deadline
 // stored (not NULL) and sla_status = on_track. Before the fix the deadline read
 // back NULL and the status defaulted to not_applicable.
@@ -99,10 +109,7 @@ func TestCreate_PersistsSLADeadline(t *testing.T) {
 	if got.SLADeadline() == nil {
 		t.Fatal("sla_deadline read back nil — reconstruct discarded the persisted value")
 	}
-	// Postgres keeps microseconds and rounds to them; truncating both
-	// sides to milliseconds failed whenever rounding crossed a millisecond
-	// (.684999968 is stored as .685000).
-	if !got.SLADeadline().Equal(deadline.Round(time.Microsecond)) {
+	if !sameMicrosecond(*got.SLADeadline(), deadline) {
 		t.Errorf("sla_deadline round-trip: got %v, want %v", got.SLADeadline(), deadline)
 	}
 	if got.SLAStatus() != vulnerability.SLAStatusOnTrack {
@@ -251,7 +258,7 @@ func TestEnrichBatch_PreservesSLADeadline(t *testing.T) {
 	if got.SLADeadline() == nil {
 		t.Fatal("re-ingest enrichment wiped the persisted sla_deadline")
 	}
-	if !got.SLADeadline().Equal(deadline.Round(time.Microsecond)) { // see TestCreate_PersistsSLADeadline
+	if !sameMicrosecond(*got.SLADeadline(), deadline) {
 		t.Errorf("sla_deadline after enrich: got %v, want %v", got.SLADeadline(), deadline)
 	}
 	// Enrichment still applied its own data.

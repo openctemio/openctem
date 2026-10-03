@@ -187,6 +187,7 @@ type Repositories struct {
 	VerifiedDomain *postgres.VerifiedDomainRepository
 	CTMonitorState *postgres.CTMonitorStateRepository
 	Attribution    *postgres.AttributionRepository
+	EASMDNS        *postgres.EASMDNSRepository
 	EASMSummary    *postgres.EASMSummaryRepository
 
 	// KEV Escalation
@@ -216,6 +217,7 @@ type Repositories struct {
 
 	// Validation evidence (CTEM Stage-4, migration 000178)
 	ValidationEvidence *postgres.ValidationEvidenceRepository
+	FindingRetest      *postgres.FindingRetestRepository
 
 	// Runtime-telemetry reads for Stage-4 detection correlation
 	// (migration 000203)
@@ -414,6 +416,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),
+		EASMDNS:          postgres.NewEASMDNSRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 
 		// KEV Escalation
@@ -437,6 +440,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Validation evidence (CTEM Stage-4, migration 000178).
 		ValidationEvidence: postgres.NewValidationEvidenceRepository(db),
+		FindingRetest:      postgres.NewFindingRetestRepository(db),
 
 		// Runtime-telemetry reads for detection correlation (migration 000203).
 		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),
