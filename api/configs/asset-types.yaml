@@ -813,12 +813,14 @@ types:
     card: identity
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
-  - type: service_account
+  # `type: service_account` is the asset type name; the GCP-key secret rule
+  # matches it, hence the nosemgrep markers below.
+  - type: service_account  # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account
     label: Service Account
     plural: Service Accounts
     icon: user-check
     class: identity
-    alias_of: { type: identity, sub_type: service_account }
+    alias_of: { type: identity, sub_type: service_account }  # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account
     legacy_category: identity
     identity_keys: [cloud_id, attr.account_id, name]
     attributes:
