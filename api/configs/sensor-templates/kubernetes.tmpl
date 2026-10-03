@@ -4,7 +4,17 @@
 # configs/sensor-templates/kubernetes.tmpl on the API host to change it.
 #
 # Apply in the namespace the sensor should run in:
+{{- if isDaemon .Sensor}}
+#   1. Store the sensor-local policy (the "Local policy" tab, saved as
+#      sensor-policy.yaml), reviewed by the owner of the scanned network. The
+#      sensor refuses every job outside it; without it the pod does not start.
+#      Keep write access to this ConfigMap with the network owner:
+#        kubectl create configmap {{$slug}}-policy -n <namespace> --from-file=sensor-policy.yaml
+#   2. kubectl apply -n <namespace> -f {{$slug}}.yaml
+#   Kill switch: set "kill_switch: true" in the ConfigMap and restart the pod.
+{{- else}}
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
+{{- end}}
 {{- if not .APIKey}}
 # Replace octs_... below with the sensor's API key first (it is shown once,
 # when the sensor is created or its key is rotated).
@@ -92,11 +102,22 @@ spec:
         app.kubernetes.io/instance: {{$slug}}
     spec:
       securityContext:
-        # The image runs as uid/gid 999; this lets it write its volumes.
+        # The image runs as uid/gid 999; fsGroup lets it write its volumes.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
         fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: sensor
           image: {{.Image}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              # Add NET_RAW only for naabu SYN scans.
+              drop: ["ALL"]
           env:
             - name: API_URL
               value: {{yamlQuote .BaseURL}}
@@ -109,6 +130,12 @@ spec:
             - name: SENSOR_TOOLS
               value: {{yamlQuote .}}
 {{- end}}
+            - name: SENSOR_LOCAL_POLICY
+              value: /etc/openctem/policy/sensor-policy.yaml
+{{- if .Policy.AllowPrivate}}
+            - name: SENSOR_ALLOW_PRIVATE_TARGETS
+              value: "1"
+{{- end}}
 {{- if .CACert}}
             - name: SSL_CERT_DIR
               value: /etc/openctem/certs
@@ -120,6 +147,20 @@ spec:
               mountPath: /var/lib/openctem/state
             - name: content
               mountPath: /var/lib/openctem/content
+            - name: policy
+              mountPath: /etc/openctem/policy
+              readOnly: true
+            # Writable scratch directories (the root filesystem is read-only).
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /home/openctem
+            - name: scan
+              mountPath: /scan
+            - name: cache
+              mountPath: /cache
+            - name: config
+              mountPath: /config
 {{- if .CACert}}
             - name: ca
               mountPath: /etc/openctem/certs
@@ -135,6 +176,20 @@ spec:
         - name: content
           persistentVolumeClaim:
             claimName: {{$slug}}-content
+        - name: policy
+          configMap:
+            name: {{$slug}}-policy
+            defaultMode: 0444
+        - name: tmp
+          emptyDir: {}
+        - name: home
+          emptyDir: {}
+        - name: scan
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+        - name: config
+          emptyDir: {}
 {{- if .CACert}}
         - name: ca
           secret:

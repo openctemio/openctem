@@ -204,6 +204,13 @@ type Sensor struct {
 	ManifestAt     *time.Time
 	ManifestSource string
 
+	// LocalPolicy is the sensor-local policy the sensor last reported
+	// (RFC-040 §5.7, local_policy.go), and LocalPolicyReportedAt when. nil
+	// when it never reported one (an SDK before RFC-040, protocol v1).
+	// Display and dispatch-narrowing data only: enforcement is the sensor's.
+	LocalPolicy           *LocalPolicyReport
+	LocalPolicyReportedAt *time.Time
+
 	// Metadata and configuration
 	Labels   map[string]interface{}
 	Config   map[string]interface{}

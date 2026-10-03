@@ -95,6 +95,25 @@ jobs:
           base="$(bash ../.github/scripts/effective-base.sh web "origin/${{ github.base_ref }}")"
           bash scripts/check-palette-drift.sh "$base"
 
+      # The endpoint check reads the API's route manifest, generated from the
+      # router here rather than committed (a committed copy went stale whenever
+      # two route-adding pull requests were queued together).
+      - name: Setup Go (route manifest)
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Generate the API route manifest
+        working-directory: api
+        env:
+          GOWORK: 'off'
+          UPDATE_ROUTE_MANIFEST: '1'
+        run: |
+          go test ./tools/lint/openapicontract/ -run '^TestWriteRouteManifest$' -count=1
+          test -s api/openapi/routes.txt
+
       - name: Run tests
         run: npm test -- --run --coverage --passWithNoTests
 

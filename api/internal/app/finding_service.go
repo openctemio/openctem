@@ -25,6 +25,8 @@ type (
 	BulkGuardConfig                 = finding.BulkGuardConfig
 
 	AddCommentInput               = finding.AddCommentInput
+	AddFindingCommentInput        = finding.AddFindingCommentInput
+	CommentReactionInput          = finding.CommentReactionInput
 	AddEvidenceInput              = finding.AddEvidenceInput
 	AddStatusChangeCommentInput   = finding.AddStatusChangeCommentInput
 	EvidenceStore                 = finding.EvidenceStore

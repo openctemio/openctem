@@ -91,12 +91,13 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
   })
 
   // Re-seed the form whenever the target policy (or open state) changes.
+  // react-hook-form's reset is stable across renders, so it adds no re-runs.
+  const { reset } = form
   useEffect(() => {
     if (open) {
-      form.reset(policy ? toFormData(policy) : DEFAULT_SLA_FORM)
+      reset(policy ? toFormData(policy) : DEFAULT_SLA_FORM)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, policy])
+  }, [open, policy, reset])
 
   const { trigger: createPolicy, isMutating: isCreating } = useCreateSlaPolicy()
   const { trigger: updatePolicy, isMutating: isUpdating } = useUpdateSlaPolicy()

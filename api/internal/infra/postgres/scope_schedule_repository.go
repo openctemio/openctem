@@ -437,18 +437,15 @@ func (r *ScopeScheduleRepository) ListDue(ctx context.Context) ([]*scope.Schedul
 func (r *ScopeScheduleRepository) Count(ctx context.Context, filter scope.ScheduleFilter) (int64, error) {
 	var conditions []string
 	var args []any
-	argNum := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argNum))
 		args = append(args, *filter.TenantID)
-		argNum++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if filter.Enabled != nil {
-		conditions = append(conditions, fmt.Sprintf("enabled = $%d", argNum))
 		args = append(args, *filter.Enabled)
-		argNum++
+		conditions = append(conditions, fmt.Sprintf("enabled = $%d", len(args)))
 	}
 
 	whereClause := ""

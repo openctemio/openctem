@@ -122,10 +122,22 @@ func validateName(name string) error {
 	return nil
 }
 
-// NewAsset creates a new Asset entity.
+// NewAsset creates a new Asset entity with no sub-type.
+//
+// When the asset has a sub-type, use NewAssetWithSubType: the name is the
+// asset's identity and is normalized by (type, sub-type), so creating with
+// one key and looking up with another stores names no lookup ever finds
+// (an http_service URL used to be stored as "https:::host").
 func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset, error) {
+	return NewAssetWithSubType(name, assetType, "", criticality)
+}
+
+// NewAssetWithSubType creates a new Asset entity whose name is normalized with
+// the same (type, sub-type) pair that lookups use, and records the sub-type.
+// See docs/rfcs/RFC-043-deduplication-and-identity.md section 10.
+func NewAssetWithSubType(name string, assetType AssetType, subType string, criticality Criticality) (*Asset, error) {
 	// Normalize name to canonical form (RFC-001: Asset Identity Resolution)
-	name = NormalizeName(name, assetType, "")
+	name = NormalizeName(name, assetType, subType)
 	if err := validateName(name); err != nil {
 		return nil, err
 	}
@@ -137,7 +149,7 @@ func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset
 	}
 
 	now := time.Now().UTC()
-	return &Asset{
+	a := &Asset{
 		id:           shared.NewID(),
 		name:         name,
 		assetType:    assetType,
@@ -154,7 +166,9 @@ func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset
 		lastSeen:     now,
 		createdAt:    now,
 		updatedAt:    now,
-	}, nil
+	}
+	a.subType = subType
+	return a, nil
 }
 
 // NewAssetWithTenant creates a new Asset entity with tenant.

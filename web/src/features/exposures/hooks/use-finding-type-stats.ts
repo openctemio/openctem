@@ -173,10 +173,10 @@ export function useFindingTypeStats(
     }
   )
 
-  // sourcesKey (not the array) so a fresh array literal each render does not
-  // recompute.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const stats = useMemo(() => toFindingTypeStats(data, sources), [data, sourcesKey])
+  // Rebuild the list from sourcesKey so a fresh array literal from the caller
+  // each render does not recompute the stats.
+  const stableSources = useMemo(() => (sourcesKey ? sourcesKey.split(',') : []), [sourcesKey])
+  const stats = useMemo(() => toFindingTypeStats(data, stableSources), [data, stableSources])
 
   return {
     stats,
