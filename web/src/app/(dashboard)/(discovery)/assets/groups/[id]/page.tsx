@@ -74,6 +74,7 @@ import {
   type GroupAsset,
   type GroupFinding,
 } from '@/features/asset-groups'
+import { groupMemberHref } from '@/features/asset-groups/lib/member-link'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { IssuesChip } from '@/features/assets/components/service-cells'
 
@@ -185,28 +186,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
     group ? `asset-group-${group.name}` : 'asset-group'
   )
 
-  // Helper function to get asset detail URL based on type
-  const getAssetDetailUrl = useCallback((type: string, assetId: string) => {
-    const typeRoutes: Record<string, string> = {
-      repository: `/assets/repositories/${assetId}`,
-      domain: `/assets/domains/${assetId}`,
-      host: `/assets/hosts/${assetId}`,
-      cloud: `/assets/cloud/${assetId}`,
-      website: `/assets/websites/${assetId}`,
-      service: `/assets/services/${assetId}`,
-      api: `/assets/apis/${assetId}`,
-      database: `/assets/databases/${assetId}`,
-      container: `/assets/containers/${assetId}`,
-      serverless: `/assets/serverless/${assetId}`,
-      mobile: `/assets/mobile/${assetId}`,
-      certificate: `/assets/certificates/${assetId}`,
-      network: `/assets/networks/${assetId}`,
-      storage: `/assets/storage/${assetId}`,
-      compute: `/assets/compute/${assetId}`,
-    }
-    return typeRoutes[type.toLowerCase()] || `/assets/${assetId}`
-  }, [])
-
   const assetsByType = useMemo(() => {
     const counts: Record<string, number> = {}
     safeAssets.forEach((a) => {
@@ -317,7 +296,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={() => router.push(getAssetDetailUrl(row.original.type, row.original.id))}
+            onClick={() => router.push(groupMemberHref(row.original.id))}
             aria-label={`Open ${row.original.name}`}
             title="View asset details"
           >
@@ -326,7 +305,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
         ),
       },
     ],
-    [router, getAssetDetailUrl]
+    [router]
   )
 
   const findingColumns = useMemo<ColumnDef<GroupFinding>[]>(
@@ -885,7 +864,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
               onSelectionChange={(rows) => setSelectedAssets(rows.map((a) => a.id))}
               resetSelectionKey={selectionEpoch}
               showSelectionCount={false}
-              onRowClick={(a) => router.push(getAssetDetailUrl(a.type, a.id))}
+              onRowClick={(a) => router.push(groupMemberHref(a.id))}
               toolbarEnd={
                 <>
                   {selectedAssets.length > 0 && (
