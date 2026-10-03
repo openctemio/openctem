@@ -119,7 +119,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		return nil, err
 	}
 	for _, r := range rejected {
-		out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason})
+		out.Refused = append(out.Refused, RefusedTarget(r))
 	}
 	ok := make(map[string]bool, len(accepted))
 	for _, a := range accepted {
