@@ -92,6 +92,10 @@ var assetMergeRefs = []mergeRef{
 	// evidence, and the kept row keeps the earliest first sighting.
 	{table: "easm_evidence", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"rule", "source"}}}},
+	// DNS-check rotation state (RFC-036): the kept asset's own state wins;
+	// a merged asset's state for a check the kept one never ran moves.
+	{table: "easm_dns_check_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"check_kind"}}}},
 }
 
 // assetMergeEdgeRefs are directed edges between two assets. An edge between
