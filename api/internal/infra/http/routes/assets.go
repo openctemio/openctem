@@ -235,7 +235,10 @@ func registerScopeRoutes(
 		// Write operations
 		r.POST("/", h.CreateExclusion, middleware.Require(permission.ScopeWrite))
 		r.PUT("/{id}", h.UpdateExclusion, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeWrite))
+		// Approval is a separate permission (owner/admin by default): a new
+		// exclusion is pending and suppresses nothing until approved.
+		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeExclusionsApprove))
+		r.POST("/{id}/reject", h.RejectExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		r.POST("/{id}/activate", h.ActivateExclusion, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite))
 

@@ -65,9 +65,14 @@ type ScopeExclusionResponse struct {
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
 	ApprovedBy    string     `json:"approved_by,omitempty"`
 	ApprovedAt    *time.Time `json:"approved_at,omitempty"`
-	CreatedBy     string     `json:"created_by,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	RejectedBy    string     `json:"rejected_by,omitempty"`
+	RejectedAt    *time.Time `json:"rejected_at,omitempty"`
+	// InEffect is true only for an approved, active, unexpired exclusion —
+	// the ones scans actually skip.
+	InEffect  bool      `json:"in_effect"`
+	CreatedBy string    `json:"created_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ScanScheduleResponse represents a scan schedule in API responses.
@@ -248,6 +253,9 @@ func toScopeExclusionResponse(e *scopedom.Exclusion) ScopeExclusionResponse {
 		ExpiresAt:     e.ExpiresAt(),
 		ApprovedBy:    e.ApprovedBy(),
 		ApprovedAt:    e.ApprovedAt(),
+		RejectedBy:    e.RejectedBy(),
+		RejectedAt:    e.RejectedAt(),
+		InEffect:      e.IsActive(),
 		CreatedBy:     e.CreatedBy(),
 		CreatedAt:     e.CreatedAt(),
 		UpdatedAt:     e.UpdatedAt(),
@@ -322,6 +330,12 @@ func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, scopedom.ErrExclusionSelfApproval):
 		apierror.Forbidden("You cannot approve a scope exclusion you requested").WriteJSON(w)
+	case errors.Is(err, scopedom.ErrExclusionNotPending):
+		apierror.Conflict("Scope exclusion is not awaiting approval").WriteJSON(w)
+	case errors.Is(err, scopedom.ErrExclusionNotApproved):
+		apierror.Conflict("Scope exclusion has not been approved").WriteJSON(w)
+	case errors.Is(err, scopedom.ErrExclusionRejected):
+		apierror.Conflict("Scope exclusion was rejected").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden("Access denied").WriteJSON(w)
 	default:
@@ -666,7 +680,7 @@ func (h *ScopeHandler) ListExclusions(w http.ResponseWriter, r *http.Request) {
 
 // CreateExclusion handles POST /api/v1/scope/exclusions
 // @Summary      Create scope exclusion
-// @Description  Create a new scope exclusion
+// @Description  Create a scope exclusion. It is created pending and does not affect scanning until another user approves it (attack_surface:scope:exclusions:approve).
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -810,7 +824,7 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 
 // ApproveExclusion handles POST /api/v1/scope/exclusions/{id}/approve
 // @Summary      Approve scope exclusion
-// @Description  Approve a scope exclusion, marking it as reviewed and authorized
+// @Description  Approve a pending scope exclusion; it takes effect immediately. Requires attack_surface:scope:exclusions:approve. The requester cannot approve their own exclusion.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -819,6 +833,7 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error "The caller requested this exclusion (separation of duties)"
 // @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error "Already approved, or rejected"
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /scope/exclusions/{id}/approve [post]
@@ -837,9 +852,38 @@ func (h *ScopeHandler) ApproveExclusion(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
 }
 
+// RejectExclusion handles POST /api/v1/scope/exclusions/{id}/reject
+// @Summary      Reject scope exclusion
+// @Description  Reject a pending scope exclusion; it never takes effect. Requires attack_surface:scope:exclusions:approve.
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Exclusion ID"
+// @Success      200  {object}  ScopeExclusionResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error "Not awaiting approval"
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/exclusions/{id}/reject [post]
+func (h *ScopeHandler) RejectExclusion(w http.ResponseWriter, r *http.Request) {
+	exclusionID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+
+	exclusion, err := h.service.RejectExclusion(r.Context(), exclusionID, tenantID, userID)
+	if err != nil {
+		h.handleServiceError(w, "Scope exclusion", err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
+}
+
 // ActivateExclusion handles POST /api/v1/scope/exclusions/{id}/activate
 // @Summary      Activate scope exclusion
-// @Description  Activate a scope exclusion
+// @Description  Put an approved scope exclusion back into effect. A pending or rejected exclusion cannot be activated (409).
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -849,6 +893,7 @@ func (h *ScopeHandler) ApproveExclusion(w http.ResponseWriter, r *http.Request) 
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
+// @Failure      409  {object}  apierror.Error "Not approved, or rejected"
 // @Router       /scope/exclusions/{id}/activate [post]
 func (h *ScopeHandler) ActivateExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")

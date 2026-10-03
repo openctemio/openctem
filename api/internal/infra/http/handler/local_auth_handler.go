@@ -1235,7 +1235,7 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Unauthorized("Invalid verification code").WriteJSON(w)
 	case errors.Is(err, app.ErrMFAEnrollmentRequired):
 		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
-			"This organization requires two-factor authentication. Sign in again to set it up.").WriteJSON(w)
+			"This organization requires two-factor authentication. Sign in again to complete it.").WriteJSON(w)
 	case errors.Is(err, app.ErrMFANotSupported):
 		apierror.BadRequest("Two-factor authentication for this account is managed by your identity provider").WriteJSON(w)
 	case errors.Is(err, app.ErrMFAAlreadyEnabled):
