@@ -27,7 +27,12 @@ import {
   MetricStrip,
   PageHeader,
   RunStatusBadge,
-  SheetBody,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
 } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -36,13 +41,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from '@/components/ui/sheet'
 import {
   Dialog,
   DialogContent,
@@ -82,6 +80,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { Can, Permission } from '@/lib/permissions'
 import { get, put, csrfFetch } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -1196,104 +1195,101 @@ export default function WorkflowsPage() {
       </Main>
 
       {/* Workflow Detail Sheet */}
-      <Sheet open={!!selectedWorkflow} onOpenChange={() => setSelectedWorkflow(null)}>
-        <SheetContent className="sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              <WorkflowIcon className="h-5 w-5" />
-              {selectedWorkflow?.name}
-            </SheetTitle>
-            <SheetDescription>{selectedWorkflow?.description || 'No description'}</SheetDescription>
-          </SheetHeader>
-          <SheetBody>
-            {selectedWorkflow && (
-              <div className="mt-6 space-y-6">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={selectedWorkflow.is_active ? 'default' : 'secondary'}>
-                    {selectedWorkflow.is_active ? 'Active' : 'Inactive'}
-                  </Badge>
-                  <Badge variant="outline">{selectedWorkflow.total_runs} runs</Badge>
-                  <Badge variant="outline">
-                    {selectedWorkflow.total_runs > 0
-                      ? Math.round(
-                          (selectedWorkflow.successful_runs / selectedWorkflow.total_runs) * 100
-                        )
-                      : 0}
-                    % success
-                  </Badge>
-                </div>
+      {selectedWorkflow &&
+        (() => {
+          const wf = selectedWorkflow
+          const successRate =
+            wf.total_runs > 0 ? Math.round((wf.successful_runs / wf.total_runs) * 100) : 0
+          const actions = getActionNames(wf)
+          return (
+            <DetailSheet
+              open
+              onOpenChange={(open) => !open && setSelectedWorkflow(null)}
+              width="lg"
+              header={
+                <DetailHeader
+                  title={wf.name}
+                  badges={
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-xs',
+                        wf.is_active && 'border-success/30 bg-success/10 text-success'
+                      )}
+                    >
+                      {wf.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  }
+                  meta={[getTriggerDisplay(wf)]}
+                  actions={
+                    <>
+                      <WorkflowRunButton workflow={wf} size="sm" />
+                      <Can permission={Permission.WorkflowsWrite} mode="disable">
+                        <Button size="sm" variant="outline" onClick={() => handleEditInBuilder(wf)}>
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </Button>
+                      </Can>
+                    </>
+                  }
+                  onClose={() => setSelectedWorkflow(null)}
+                />
+              }
+            >
+              <div className="space-y-5">
+                <DetailStatGrid aria-label="Runs">
+                  <DetailStat label="Total runs" value={wf.total_runs} />
+                  <DetailStat
+                    label="Success rate"
+                    value={`${successRate}%`}
+                    tone={wf.total_runs > 0 && successRate < 50 ? 'warning' : 'default'}
+                  />
+                </DetailStatGrid>
 
-                <Separator />
+                <DetailSections>
+                  <DetailSection title="Description">
+                    <p className="text-sm text-muted-foreground">
+                      {wf.description || 'No description'}
+                    </p>
+                  </DetailSection>
 
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Trigger</Label>
-                  <div className="flex items-center gap-2 p-3 rounded-lg border">
-                    <Zap className="h-4 w-4 text-muted-foreground" />
-                    <span>{getTriggerDisplay(selectedWorkflow)}</span>
-                  </div>
-                </div>
+                  <DetailSection title="Trigger" icon={Zap}>
+                    <p className="text-sm">{getTriggerDisplay(wf)}</p>
+                  </DetailSection>
 
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Actions</Label>
-                  <div className="space-y-2">
-                    {getActionNames(selectedWorkflow).length > 0 ? (
-                      getActionNames(selectedWorkflow).map((action, idx) => (
-                        <div key={idx} className="flex items-center gap-2 p-3 rounded-lg border">
-                          <Play className="h-4 w-4 text-muted-foreground" />
-                          <span>{action}</span>
-                        </div>
-                      ))
+                  <DetailSection title="Actions" icon={Play} count={actions.length}>
+                    {actions.length > 0 ? (
+                      <ol className="divide-y rounded-lg border">
+                        {actions.map((action, idx) => (
+                          <li key={idx} className="flex items-center gap-2 px-3 py-2 text-sm">
+                            <span className="w-5 text-xs text-muted-foreground tabular-nums">
+                              {idx + 1}
+                            </span>
+                            <span className="min-w-0 break-words">{action}</span>
+                          </li>
+                        ))}
+                      </ol>
                     ) : (
                       <p className="text-sm text-muted-foreground">No actions configured</p>
                     )}
-                  </div>
-                </div>
+                  </DetailSection>
 
-                {selectedWorkflow.tags && selectedWorkflow.tags.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-muted-foreground">Tags</Label>
-                    <div className="flex flex-wrap gap-1">
-                      {selectedWorkflow.tags.map((tag, idx) => (
-                        <Badge key={idx} variant="outline">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <Separator />
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-lg border p-4 text-center">
-                    <p className="text-2xl font-bold tabular-nums">{selectedWorkflow.total_runs}</p>
-                    <p className="text-xs text-muted-foreground">Total runs</p>
-                  </div>
-                  <div className="rounded-lg border p-4 text-center">
-                    <p className="text-2xl font-bold tabular-nums">
-                      {selectedWorkflow.total_runs > 0
-                        ? Math.round(
-                            (selectedWorkflow.successful_runs / selectedWorkflow.total_runs) * 100
-                          )
-                        : 0}
-                      %
-                    </p>
-                    <p className="text-xs text-muted-foreground">Success rate</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <WorkflowRunButton workflow={selectedWorkflow} className="flex-1" />
-                  <Button variant="outline" onClick={() => handleEditInBuilder(selectedWorkflow)}>
-                    <Pencil className="me-2 h-4 w-4" />
-                    Edit
-                  </Button>
-                </div>
+                  {wf.tags && wf.tags.length > 0 && (
+                    <DetailSection title="Tags" count={wf.tags.length}>
+                      <div className="flex flex-wrap gap-1.5">
+                        {wf.tags.map((tag, idx) => (
+                          <Badge key={idx} variant="outline">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </DetailSection>
+                  )}
+                </DetailSections>
               </div>
-            )}
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
+            </DetailSheet>
+          )
+        })()}
 
       {/* Create Workflow Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -1392,7 +1388,15 @@ export default function WorkflowsPage() {
 }
 
 // Separate component for the run button in the sheet
-function WorkflowRunButton({ workflow, className }: { workflow: Workflow; className?: string }) {
+function WorkflowRunButton({
+  workflow,
+  className,
+  size,
+}: {
+  workflow: Workflow
+  className?: string
+  size?: 'sm' | 'default'
+}) {
   const { trigger, isMutating } = useTriggerWorkflow(workflow.id)
 
   const handleRun = async () => {
@@ -1406,8 +1410,8 @@ function WorkflowRunButton({ workflow, className }: { workflow: Workflow; classN
   }
 
   return (
-    <Button className={className} onClick={handleRun} disabled={isMutating}>
-      <Play className="me-2 h-4 w-4" />
+    <Button className={className} size={size} onClick={handleRun} disabled={isMutating}>
+      <Play className="h-4 w-4" />
       {isMutating ? 'Running...' : 'Run now'}
     </Button>
   )

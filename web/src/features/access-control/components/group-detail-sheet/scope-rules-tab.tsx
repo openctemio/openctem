@@ -184,7 +184,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
   }, [reconcileGroup, mutate])
 
   return (
-    <div className="mt-4">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-medium">Scope Rules ({scopeRules.length})</h4>
         <div className="flex items-center gap-2">
@@ -260,9 +260,9 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
               <div className="flex items-center gap-3 min-w-0">
                 <div className="p-2 rounded-lg bg-muted">
                   {rule.rule_type === 'tag_match' ? (
-                    <Tag className="h-4 w-4 text-blue-500" />
+                    <Tag className="h-4 w-4 text-muted-foreground" />
                   ) : (
-                    <Layers className="h-4 w-4 text-purple-500" />
+                    <Layers className="h-4 w-4 text-muted-foreground" />
                   )}
                 </div>
                 <div className="min-w-0">
@@ -341,7 +341,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-red-500">Delete Scope Rule</DialogTitle>
+            <DialogTitle>Delete Scope Rule</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete &quot;{deleteConfirm?.name}&quot;? Auto-assigned
               assets from this rule will be removed from the team.
@@ -395,8 +395,8 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
                   <p className="text-2xl font-bold">{previewResult.already_assigned}</p>
                   <p className="text-xs text-muted-foreground">Already Assigned</p>
                 </div>
-                <div className="p-3 rounded-lg bg-green-500/10">
-                  <p className="text-2xl font-bold text-green-600">{previewResult.would_add}</p>
+                <div className="p-3 rounded-lg bg-success/10">
+                  <p className="text-2xl font-bold text-success">{previewResult.would_add}</p>
                   <p className="text-xs text-muted-foreground">Would Add</p>
                 </div>
               </div>

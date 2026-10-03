@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { breadcrumbLabel } from './breadcrumb-labels'
 import { breadcrumbHasPage, isIdSegment } from './breadcrumb-routes'
 import { NavPendingHint } from './sidebar-link'
+import { useBreadcrumbTitleFor } from './breadcrumb-title'
 
 interface BreadcrumbNavProps {
   /** Override the auto-generated page title */
@@ -28,6 +29,7 @@ interface BreadcrumbNavProps {
 
 export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: BreadcrumbNavProps) {
   const pathname = usePathname()
+  const pageNamedItself = useBreadcrumbTitleFor(pathname)
 
   // Split pathname and filter empty strings
   const segments = pathname.split('/').filter(Boolean)
@@ -51,8 +53,8 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
       detailPageLabel = idSegment.slice(0, 8) + '...'
     }
   }
-  if (pageTitle && detailPageLabel !== null) {
-    detailPageLabel = pageTitle
+  if (detailPageLabel !== null && (pageTitle || pageNamedItself)) {
+    detailPageLabel = pageTitle || pageNamedItself
   }
 
   // If all segments were IDs, show at least home

@@ -27,16 +27,20 @@ import (
 // from the admin console is stored as a pending change, the organization's
 // owners are told, and nothing changes until one of them approves it.
 //
-// Bootstrap: an organization with no active owner yet (the administrator is
-// still setting it up) has nobody to approve, so a change to it applies
-// directly. Once the organization has an owner, every later change waits.
+// Bootstrap: an organization with no owner yet (the administrator is still
+// setting it up) has nobody to approve, so a change to it applies directly.
+// Once the organization has an owner, every later change waits, including
+// while all its owners are suspended: a suspended owner still owns the
+// organization (RFC-022 revision 7), and applying directly then would let an
+// administrator suspend the owners and install their own identity provider.
+// The change waits for an owner restored or recovered.
 //
 // Deleting a SAML config or an identity provider still applies directly: it
 // removes a way in rather than adding one.
 
 // SSOChangeOwners answers who owns an organization.
 type SSOChangeOwners interface {
-	HasActiveOwner(ctx context.Context, tenantID shared.ID) (bool, error)
+	OwnerPresence(ctx context.Context, tenantID shared.ID) (tenantdom.OwnerPresence, error)
 	ListActiveOwners(ctx context.Context, tenantID shared.ID) ([]ssochange.OwnerContact, error)
 	IsActiveOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 }
@@ -139,11 +143,11 @@ type IdPUpdatePayload struct {
 // needsApproval reports whether the organization has an owner who must
 // approve the change. Without one (bootstrap) the change applies directly.
 func (s *SSOChangeService) needsApproval(ctx context.Context, tenantID shared.ID) (bool, error) {
-	has, err := s.owners.HasActiveOwner(ctx, tenantID)
+	presence, err := s.owners.OwnerPresence(ctx, tenantID)
 	if err != nil {
 		return false, fmt.Errorf("check organization owner: %w", err)
 	}
-	return has, nil
+	return presence.Any, nil
 }
 
 // SubmitSAML proposes the organization's SAML configuration.

@@ -621,7 +621,7 @@ and certificates are never logged — an IdP update records
 | `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin |
 | `POST /api/v1/admin/tenants` | **ops_admin+** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
-| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no active owner, nothing else (409 otherwise). Audited in `admin_audit_logs` and the organization's audit log |
+| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
 | `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/changes` | any admin (what is waiting for the owner) |
@@ -629,7 +629,7 @@ and certificates are never logged — an IdP update records
 **First-owner bootstrap** (owner decision 2026-10-02, RFC-022 revision 5).
 The platform administrator belongs to no organization and cannot put a person
 of its choosing into one: `POST /admin/tenants/{tenantId}/users` creates only
-the first owner of an organization that has no active owner (checked and
+the first owner of an organization that has no owner, active or suspended (checked and
 inserted in one transaction under a per-organization advisory lock, so two
 requests cannot create two owners), and answers 409 once an owner exists — the
 owner and its administrators add users themselves. The account is created
@@ -643,8 +643,17 @@ organization can invite them yet. The same delivery rule applies to the owner
 created with `POST /admin/tenants`. Each is written to the organization's audit
 log (`user.created`, `bootstrap_owner: true`, actor `platform-admin:<email>`).
 
+**Owner recovery** (RFC-022 revision 7). A suspended owner still owns the
+organization, so the bootstrap is refused. When every owner is suspended, a
+**super_admin** may send `"recovery": true` to create a new owner. Other
+console roles get 403, an active owner means 409, and an organization that
+cannot send email gets 400. The link is emailed only, never returned. It is
+audited as `organization.owner_recovery` (admin log, high, refusals included)
+and as `user.created` with `owner_recovery: true` at critical severity in the
+organization's log.
+
 **SSO changes wait for an owner** (owner decision 2026-10-02, RFC-022
-revision 7). A platform administrator who could set an organization's SAML
+revision 8). A platform administrator who could set an organization's SAML
 certificate or OIDC client could sign in as any of its members, so on an
 organization that has an active owner those writes are stored in
 `sso_pending_changes` and the live config is untouched until an owner decides:

@@ -189,6 +189,29 @@ func (r *ReportScheduleRepository) ListDue(ctx context.Context, now time.Time) (
 	return items, nil
 }
 
+// ClaimDue claims one due slot of a schedule for this caller. It moves
+// next_run_at from the value the caller listed (seen) to next, and succeeds only
+// if next_run_at still holds seen. Every API replica runs the report scheduler
+// and lists the same due rows; a concurrent claim blocks on the row lock, then
+// re-reads next_run_at, finds it moved, and matches no row. So exactly one
+// replica delivers each slot, and no lock is held while the report renders and
+// is emailed.
+func (r *ReportScheduleRepository) ClaimDue(ctx context.Context, id shared.ID, seen *time.Time, next time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE report_schedules
+		SET next_run_at = $3, updated_at = now()
+		WHERE id = $1 AND is_active = true AND next_run_at IS NOT DISTINCT FROM $2`,
+		id.String(), seen, next)
+	if err != nil {
+		return false, fmt.Errorf("claim report schedule: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("claim report schedule: %w", err)
+	}
+	return n == 1, nil
+}
+
 type reportScanner interface {
 	Scan(dest ...any) error
 }

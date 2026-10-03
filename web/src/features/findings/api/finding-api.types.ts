@@ -83,6 +83,50 @@ export interface ApiDataFlow {
 // API Response Types
 // ============================================
 
+/** The package an SCA finding is about, as embedded in GET /findings/{id}. */
+export interface ApiFindingComponent {
+  id: string
+  name: string
+  version: string
+  ecosystem: string
+  purl?: string
+  license?: string
+  /** The version to upgrade to: the smallest fix above the installed one, same major line first. */
+  fixed_in?: string
+  /** How the asset uses it; absent when unknown. */
+  dependency_type?: string
+  manifest_file?: string
+  depth?: number
+}
+
+/** The CVE record embedded in GET /findings/{id}. */
+export interface ApiFindingVulnerability {
+  id: string
+  cve_id: string
+  title?: string
+  description?: string
+  severity?: string
+  cvss_score?: number
+  cvss_vector?: string
+  epss_score?: number
+  /** 0–100 */
+  epss_percentile?: number
+  exploit_available: boolean
+  exploit_maturity?: string
+  cisa_kev?: {
+    date_added: string
+    due_date: string
+    ransomware_use?: string
+    notes?: string
+    is_past_due: boolean
+  }
+  fixed_versions?: string[]
+  remediation?: string
+  references?: { type: string; url: string }[]
+  published_at?: string
+  modified_at?: string
+}
+
 /**
  * Finding entity from API
  */
@@ -96,9 +140,17 @@ export interface ApiFinding {
     name: string
     type: string
     web_url?: string
+    /** Single-finding response only. */
+    criticality?: string
+    exposure?: string
+    is_internet_accessible?: boolean
   }
   branch_id?: string
   component_id?: string
+  /** The affected package (single-finding response only). */
+  component?: ApiFindingComponent
+  /** The CVE record the finding is an instance of (single-finding response only). */
+  vulnerability?: ApiFindingVulnerability
   source: FindingSource
   tool_name: string
   tool_version?: string
@@ -198,6 +250,8 @@ export interface ApiFinding {
   priority_class_override?: boolean
   is_reachable?: boolean // reachable from attack entry points
   reachable_from_count?: number
+  is_internet_accessible?: boolean // the finding's asset is reachable from the internet
+  verified_at?: string
 
   // Security context
   exposure_vector?: string // network/local/adjacent/physical

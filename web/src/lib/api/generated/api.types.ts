@@ -1555,7 +1555,7 @@ export interface paths {
     put?: never
     /**
      * Create the first owner of an organization (platform admin)
-     * @description Bootstrap only: creates the owner of an organization that has no active owner, and nothing else (409 when it has one: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log.
+     * @description Bootstrap only: creates the owner of an organization that has no owner, and nothing else (409 when it has one, active or suspended: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log. With "recovery": true (super admin only, 403 otherwise) it creates a new owner of an organization whose owners are all suspended (409 while any owner is active); the link is then emailed only and never returned (400 when the organization cannot send email), and the action is audited as organization.owner_recovery in the admin audit log and at critical severity in the organization's audit log.
      */
     post: {
       parameters: {
@@ -1585,6 +1585,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Owner recovery by an administrator who is not a super admin */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -19538,6 +19547,8 @@ export interface paths {
           status?: string
           /** @description Search by name */
           search?: string
+          /** @description Also list unsaved quick scans (ad_hoc) */
+          include_ad_hoc?: boolean
           /** @description Page number */
           page?: number
           /** @description Items per page */
@@ -20453,6 +20464,89 @@ export interface paths {
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scans/{id}/save': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Save a quick scan as a configuration
+     * @description Turns an ad-hoc quick scan into a saved scan configuration with the given name ("Save as scan"). Its runs stay attached. Refused for a scan that is already a configuration.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Quick scan ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Configuration name */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.SaveScanRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanDetailResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -31930,10 +32024,16 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Heartbeat': {
       /**
        * @description Actions are typed control directives from a closed set: pause,
-       *     resume, drain, rotate_key, update. Never free-form text.
+       *     resume, drain, rotate_key, update, cancel. Never free-form text.
        */
       actions?: string[]
       agent_id?: string
+      /**
+       * @description CancelCommandIDs are commands the sensor listed as running that it
+       *     must stop (canceled, timed out, re-queued, held elsewhere); sent with
+       *     the cancel action. Only for a sensor that reports its running list.
+       */
+      cancel_command_ids?: string[]
       /**
        * @description ConfigVersion is an opaque digest of what the platform governs about
        *     the sensor; it changes when that changes. Sent to doorbell-aware
@@ -32088,6 +32188,12 @@ export interface components {
     'internal_infra_http_handler.AdminCreateOrgUserRequest': {
       email: string
       name?: string
+      /**
+       * @description Recovery creates a new owner for an organization whose owners are all
+       *     suspended. Super admin only; the set-password link is emailed and
+       *     never returned; refused while any owner is active.
+       */
+      recovery?: boolean
       /** @enum {string} */
       role?: 'owner'
     }
@@ -35220,7 +35326,12 @@ export interface components {
       summary?: string
       target_id?: string
     }
+    'internal_infra_http_handler.SaveScanRequest': {
+      name: string
+    }
     'internal_infra_http_handler.ScanDetailResponse': {
+      /** @description AdHoc: an unsaved quick scan (not listed as a configuration until saved). */
+      ad_hoc?: boolean
       /** @description Primary asset group (legacy) */
       asset_group_id?: string
       /** @description Multiple asset groups */

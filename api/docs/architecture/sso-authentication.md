@@ -82,7 +82,7 @@ required" guard. The owner break-glass at login is unchanged. The
 `sso_enabled` / `sso_provider` / `sso_config_url` security fields were removed:
 they were written but never read by the login path.
 
-### Changes wait for an owner of the organization (RFC-022 revision 7)
+### Changes wait for an owner of the organization (RFC-022 revision 8)
 
 The platform administrator configures SSO, but cannot change who can sign in to
 an organization that already has an owner. A SAML config save

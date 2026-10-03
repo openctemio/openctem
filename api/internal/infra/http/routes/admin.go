@@ -67,7 +67,7 @@ func registerAdminRoutes(
 	// refresh-token cookie names the user, /session opens a pending console
 	// session and /mfa completes it. They share the tenant login's rate limits.
 	if h.AdminAuth != nil || h.AdminConsole != nil {
-		consoleRL := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+		consoleRL := newAuthRateLimiter("console")
 		loginRL := consoleRL.LoginMiddleware()
 		authed := h.AdminAuthMiddleware.Authenticate
 

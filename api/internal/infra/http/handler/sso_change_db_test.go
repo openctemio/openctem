@@ -346,6 +346,25 @@ func TestAdminSSOChange_RequiresOwnerApproval_DB(t *testing.T) {
 		}
 	})
 
+	// A suspended owner still owns the organization (RFC-022 revision 7). If the
+	// change applied directly while every owner is suspended, an administrator
+	// could suspend the owners and install their own identity provider.
+	t.Run("organization whose owners are all suspended: the change waits", func(t *testing.T) {
+		org := newOrg()
+		owner := addMember(org, "owner")
+		if _, err := raw.Exec(`UPDATE tenant_members SET status = 'suspended' WHERE tenant_id = $1 AND user_id = $2`,
+			org.String(), owner.ID().String()); err != nil {
+			t.Fatalf("suspend owner: %v", err)
+		}
+		code, body := putSAML(org, testCertPEM(t, "suspended-owner"))
+		if code != http.StatusAccepted {
+			t.Fatalf("status %d (%v), want 202: a suspended owner must still approve", code, body)
+		}
+		if liveCert(org) != "" {
+			t.Fatal("the SAML config was applied while the organization's owners are suspended")
+		}
+	})
+
 	t.Run("a newer submission supersedes the older one", func(t *testing.T) {
 		org := newOrg()
 		owner := addMember(org, "owner")

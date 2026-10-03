@@ -20,13 +20,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { Main } from '@/components/layout'
 import {
   DataTable,
@@ -35,6 +28,12 @@ import {
   MetricStrip,
   PageHeader,
   SeverityBadge,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
 } from '@/features/shared'
 import type { MetricStripItem } from '@/features/shared'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
@@ -1010,122 +1009,97 @@ function ExposureDetailSheet({ exposure, open, onOpenChange, onAction }: Exposur
   const state = EXPOSURE_STATE_BADGE[exposure.state]
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-xl overflow-y-auto p-0">
-        {/* Header with severity indicator */}
-        <div className="border-b px-6 pb-4 pt-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-2">
-                <SeverityBadge severity={exposure.severity} />
-                {state && <Badge variant={state.variant}>{state.label}</Badge>}
-              </div>
-              <SheetHeader className="p-0 space-y-1">
-                <SheetTitle className="text-start text-lg leading-tight">
-                  {exposure.title}
-                </SheetTitle>
-                <SheetDescription className="text-start">
-                  {exposure.event_type.replace(/_/g, ' ')} from {exposure.source}
-                </SheetDescription>
-              </SheetHeader>
-            </div>
-          </div>
-
-          {/* Quick Actions - prominent at top */}
-          {exposure.state === 'active' && (
-            <div className="flex flex-wrap gap-2 mt-4">
-              <Button size="sm" onClick={() => onAction('resolve')}>
-                <ShieldCheck className="me-1.5 h-4 w-4" />
-                Resolve
-              </Button>
-              <GatedButton
-                size="sm"
-                variant="outline"
-                allowed={canApprove}
-                reason={APPROVE_REQUIRED_REASON}
-                onClick={() => onAction('accept')}
-              >
-                <Shield className="me-1.5 h-4 w-4" />
-                Accept risk
-              </GatedButton>
-              <GatedButton
-                size="sm"
-                variant="outline"
-                allowed={canApprove}
-                reason={APPROVE_REQUIRED_REASON}
-                onClick={() => onAction('false_positive')}
-              >
-                <ShieldX className="me-1.5 h-4 w-4" />
-                False positive
-              </GatedButton>
-            </div>
-          )}
-          {exposure.state !== 'active' && (
-            <div className="mt-4">
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      header={
+        <DetailHeader
+          title={exposure.title}
+          badges={
+            <>
+              <SeverityBadge severity={exposure.severity} />
+              {state && <Badge variant={state.variant}>{state.label}</Badge>}
+            </>
+          }
+          meta={[`${exposure.event_type.replace(/_/g, ' ')} from ${exposure.source}`]}
+          actions={
+            exposure.state === 'active' ? (
+              <>
+                <Button size="sm" onClick={() => onAction('resolve')}>
+                  <ShieldCheck className="h-4 w-4" />
+                  Resolve
+                </Button>
+                <GatedButton
+                  size="sm"
+                  variant="outline"
+                  allowed={canApprove}
+                  reason={APPROVE_REQUIRED_REASON}
+                  onClick={() => onAction('accept')}
+                >
+                  <Shield className="h-4 w-4" />
+                  Accept risk
+                </GatedButton>
+              </>
+            ) : (
               <Button size="sm" variant="outline" onClick={() => onAction('reactivate')}>
-                <Activity className="me-1.5 h-4 w-4" />
+                <Activity className="h-4 w-4" />
                 Reactivate
               </Button>
-            </div>
-          )}
-        </div>
+            )
+          }
+          // False positive needs the same approve permission as Accept risk;
+          // without it the outline Accept risk button explains why.
+          menu={
+            exposure.state === 'active' && canApprove
+              ? [
+                  {
+                    label: 'Mark false positive',
+                    icon: ShieldX,
+                    onSelect: () => onAction('false_positive'),
+                  },
+                ]
+              : undefined
+          }
+          onClose={() => onOpenChange(false)}
+        />
+      }
+    >
+      <DetailSections>
+        {exposure.description && (
+          <DetailSection title="Description">
+            <p className="text-sm text-muted-foreground">{exposure.description}</p>
+          </DetailSection>
+        )}
 
-        <div className="px-6 py-6 space-y-6">
-          {/* Description */}
-          {exposure.description && (
-            <div className="rounded-lg border p-4 bg-muted/30">
-              <p className="text-sm">{exposure.description}</p>
-            </div>
-          )}
+        {/* Security context: read-time CTEM enrichment (api #483): effective
+            criticality, KEV, EPSS and attack-path reachability. Renders only
+            when the API returns at least one signal. */}
+        <ExposureSecurityContext exposure={exposure} />
 
-          {/* Security context — read-time CTEM enrichment (api #483): effective
-              criticality, KEV, EPSS and attack-path reachability. Renders only
-              when the API returns at least one signal. */}
-          <ExposureSecurityContext exposure={exposure} />
-
-          {/* Timeline Card */}
-          <div className="rounded-lg border">
-            <div className="px-4 py-3 border-b bg-muted/30">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Timeline</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 divide-x">
-              <div className="p-4">
-                <span className="text-xs text-muted-foreground">First seen</span>
-                <p className="text-sm font-medium mt-1">{formatRelative(exposure.first_seen_at)}</p>
-              </div>
-              <div className="p-4">
-                <span className="text-xs text-muted-foreground">Last seen</span>
-                <p className="text-sm font-medium mt-1">{formatRelative(exposure.last_seen_at)}</p>
-              </div>
-            </div>
+        <DetailSection title="Timeline" icon={Clock}>
+          <DetailFieldGrid>
+            <DetailField label="First seen">{formatRelative(exposure.first_seen_at)}</DetailField>
+            <DetailField label="Last seen">{formatRelative(exposure.last_seen_at)}</DetailField>
             {exposure.resolved_at && (
-              <div className="border-t p-4">
-                <span className="text-xs text-muted-foreground">Resolved</span>
-                <p className="mt-1 text-sm font-medium">{formatRelative(exposure.resolved_at)}</p>
-              </div>
+              <DetailField label="Resolved">{formatRelative(exposure.resolved_at)}</DetailField>
             )}
-          </div>
+          </DetailFieldGrid>
+        </DetailSection>
 
-          {/* Details */}
-          {exposure.details && Object.keys(exposure.details).length > 0 && (
-            <ExposureDetailsView
-              details={exposure.details}
-              secretsRevealed={secretsRevealed}
-              onToggleSecrets={() => setSecretsRevealed(!secretsRevealed)}
-              leakedCredentialId={
-                exposure.event_type === 'credential_leaked' ? exposure.id : undefined
-              }
-            />
-          )}
+        {exposure.details && Object.keys(exposure.details).length > 0 && (
+          <ExposureDetailsView
+            details={exposure.details}
+            secretsRevealed={secretsRevealed}
+            onToggleSecrets={() => setSecretsRevealed(!secretsRevealed)}
+            leakedCredentialId={
+              exposure.event_type === 'credential_leaked' ? exposure.id : undefined
+            }
+          />
+        )}
 
-          {/* State History */}
-          <StateHistorySection history={history} isLoading={historyLoading} />
-        </div>
-      </SheetContent>
-    </Sheet>
+        <StateHistorySection history={history} isLoading={historyLoading} />
+      </DetailSections>
+    </DetailSheet>
   )
 }
 

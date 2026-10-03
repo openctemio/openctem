@@ -33,11 +33,10 @@ export interface PermissionSet {
 /**
  * Permission item within a permission set
  */
+/** One entry of a set, as GET /permission-sets/{id} returns it. */
 export interface PermissionItem {
-  id: string
-  permission_set_id: string
-  permission: string
-  created_at: string
+  permission_id: string
+  modification_type: 'add' | 'remove'
 }
 
 /**

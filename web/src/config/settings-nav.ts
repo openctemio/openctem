@@ -231,7 +231,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         // Owners approve or reject SSO changes the platform administrator
-        // proposed (RFC-022 revision 7); the page tells admins it is owner only.
+        // proposed (RFC-022 revision 8); the page tells admins it is owner only.
         id: 'sso-approvals',
         title: 'SSO approvals',
         description: 'Approve or reject sign-in changes proposed by the platform administrator.',

@@ -168,22 +168,26 @@ func registerTenantRoutes(
 		r.DELETE("/", h.Delete, middleware.RequireTeamOwner())
 	}, tenantMiddlewares...)
 
-	// Invitation routes - mixed public and authenticated
+	// Invitation routes - mixed public and authenticated. The token in the
+	// path is the credential, so every route is rate limited per IP, in the
+	// shared auth store (its own "invitation" budget, 20/min: the UI makes a
+	// preview + accept per invitation, and users behind one NAT share an IP).
+	invitationRL := newAuthRateLimiter("invitation").TokenExchangeMiddleware()
 	router.Group("/api/v1/invitations", func(r Router) {
 		// Public: preview invitation without auth (for better UX)
-		r.GET("/{token}/preview", h.GetInvitationPreview)
+		r.GET("/{token}/preview", h.GetInvitationPreview, invitationRL)
 
 		// Public: decline invitation (token is authorization)
-		r.POST("/{token}/decline", h.DeclineInvitation)
+		r.POST("/{token}/decline", h.DeclineInvitation, invitationRL)
 
 		// Public: accept invitation with refresh token (for users without tenant)
 		// This is for users who were invited but don't have a tenant yet (only refresh token)
 		if localAuth != nil {
-			r.POST("/{token}/accept-with-refresh", localAuth.AcceptInvitationWithRefresh)
+			r.POST("/{token}/accept-with-refresh", localAuth.AcceptInvitationWithRefresh, invitationRL)
 		}
 
 		// Authenticated: full invitation details and accept
-		r.GET("/{token}", ChainFunc(h.GetInvitation, baseMiddlewares...).ServeHTTP)
-		r.POST("/{token}/accept", ChainFunc(h.AcceptInvitation, baseMiddlewares...).ServeHTTP)
+		r.GET("/{token}", ChainFunc(h.GetInvitation, append(append([]Middleware{}, baseMiddlewares...), invitationRL)...).ServeHTTP)
+		r.POST("/{token}/accept", ChainFunc(h.AcceptInvitation, append(append([]Middleware{}, baseMiddlewares...), invitationRL)...).ServeHTTP)
 	})
 }
