@@ -83,7 +83,7 @@ func TestAuthenticateIdentity_RowKeyCarriesItsOwnExpiry(t *testing.T) {
 	svc.SetKeyTTL(2 * time.Hour)
 	svc.SetAPIKeyRepository(newMockSensorAPIKeyRepo())
 
-	renewed, expiresAt, err := svc.RenewAPIKey(context.Background(), out.Sensor)
+	renewed, expiresAt, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: out.Sensor})
 	if err != nil || expiresAt == nil {
 		t.Fatalf("renew: key expiry %v, err %v", expiresAt, err)
 	}

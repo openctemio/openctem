@@ -156,10 +156,13 @@ type Repository interface {
 	// Update updates a sensor.
 	Update(ctx context.Context, sensor *Sensor) error
 
-	// UpdateKeyExpiry sets only the inline API-key expiry, guarded by
-	// status = 'active' so it cannot revive a concurrently-revoked sensor.
-	// A nil expiresAt clears the expiry (never expires).
-	UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error
+	// RetireInlineKey brings the inline API key's expiry forward to at, and
+	// only while the inline key's stored hash is one of keyHashes: a key an
+	// administrator regenerated in the meantime is left alone. It never
+	// extends an expiry (an inline key that already expires before at is
+	// unchanged) and writes nothing but key_expires_at, so it cannot revive a
+	// revoked sensor. Returns whether a row changed.
+	RetireInlineKey(ctx context.Context, id shared.ID, keyHashes []string, at time.Time) (bool, error)
 
 	// UpdateHeartbeat persists ONLY the liveness/metric columns a sensor
 	// heartbeat owns (version, hostname, metrics, load score, last_seen_at,
@@ -298,6 +301,13 @@ type APIKeyRepository interface {
 
 	// CountActiveBySensorID counts active keys for a sensor.
 	CountActiveBySensorID(ctx context.Context, sensorID shared.ID) (int, error)
+
+	// RetireKeys brings the expiry of the sensor's active keys forward to at.
+	// With newest set, only keys created before that key (by created_at, then
+	// id) are retired, so the newest of two concurrent renewals survives;
+	// with newest nil every active key is. It never extends an expiry and
+	// writes nothing but expires_at. Returns how many keys changed.
+	RetireKeys(ctx context.Context, sensorID shared.ID, newest *shared.ID, at time.Time) (int64, error)
 }
 
 // KeyUseRecorder is implemented by a sensor repository that records where
