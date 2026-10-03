@@ -19,7 +19,7 @@ Permissions are included in the access token and checked using `middleware.Requi
 of truth is `permission.AllPermissions()` in
 `pkg/domain/permission/permission.go`; `permission.IsValid()` /
 `ParsePermission()` validate against it. As of this writing it defines
-**168 permissions**, grouped by module. Rather than hand-mirror all 168 (which
+**169 permissions**, grouped by module. Rather than hand-mirror all 169 (which
 would drift), the table below lists the module groups and the count each
 contributes — derive the exact strings from `AllPermissions()`.
 
@@ -33,7 +33,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Team | 23 | `team:*`, `members:*`, `groups:*`, `roles:*`, `permission_sets:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
-| Attack Surface | 3 | `scope:read/write/delete` |
+| Attack Surface | 4 | `scope:read/write/delete`, `scope:exclusions:approve` |
 | Validation (legacy) | 4 | `validation:read/write`, `pentest:read/write` |
 | Pentest (granular) | 11 | `pentest_campaigns:*`, `pentest_findings:*`, `pentest_retests:*`, `pentest_templates:*`, `pentest_reports:write` |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
@@ -41,7 +41,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
-| **Total** | **168** | |
+| **Total** | **169** | |
 
 > There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and
 > no `/api/v1/projects/*` routes; the resource hierarchy is
@@ -188,9 +188,38 @@ Details: [api-keys.md](./api-keys.md).
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
 
-`POST /api/v1/scope/exclusions/{id}/approve` is gated on `scope:write`, and the
-service refuses an approval by the user who requested the exclusion
-(`created_by`) with 403 — the same separation of duties as finding approvals.
+An exclusion stops scans from touching whatever it matches, so it is a
+two-person control:
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/scope/exclusions` · `/{id}` | `attack_surface:scope:read` |
+| `POST /api/v1/scope/exclusions` · `PUT /{id}` · `POST /{id}/activate` · `/{id}/deactivate` | `attack_surface:scope:write` |
+| `POST /api/v1/scope/exclusions/{id}/approve` · `/{id}/reject` | `attack_surface:scope:exclusions:approve` (owner, admin) |
+| `DELETE /api/v1/scope/exclusions/{id}` · `POST /bulk/delete` | `attack_surface:scope:delete` |
+
+- A new exclusion is created `pending` and is applied nowhere — not to scan
+  target selection, not to `POST /scope/check`, not to coverage — until it is
+  approved. Only an approved, `active`, unexpired exclusion is in effect
+  (`in_effect: true` in the response); every consumer reads exclusions through
+  `ExclusionRepository.ListActive`, which filters on exactly that.
+- `scope:write` (held by members) only requests an exclusion.
+  `attack_surface:scope:exclusions:approve` is granted to the owner and admin
+  system roles (migration 000267); custom roles get it only when a tenant adds
+  it.
+- The requester (`created_by`) cannot approve their own exclusion, even when
+  they hold the approve permission: 403, the same separation of duties as
+  finding approvals.
+- `reject` moves a pending exclusion to `rejected`; it can then be deleted but
+  never approved or activated (409).
+- `activate` only works on an approved exclusion (409 otherwise), so it cannot
+  be used to skip the approval.
+- Extending the window of an approved exclusion (a later `expires_at`, or
+  removing it) sends it back to `pending`; shortening it keeps the approval.
+- Exclusions that were `active` before migration 000267 were marked approved
+  (`approved_by = 'system:pre-approval-grandfathered'` where none was recorded)
+  so they stay in effect; inactive and expired ones need an approval to come
+  back.
 
 #### Scan zones (`/api/v1/scan-zones`, RFC-023)
 
@@ -327,6 +356,19 @@ the billing page in the UI.
 > document (`execProtocolKey`), so JSON, flow-style YAML, escaped or
 > differently-cased keys cannot hide them.
 
+#### Scans and commands: secret-looking config values
+
+| Endpoint | Permission Required | `scanner_config` secrets |
+|----------|---------------------|--------------------------|
+| `GET /api/v1/scans` · `/{id}` · `/{id}/export` | `scans:read` | masked (`********`) unless the caller has `scans:write` |
+| `GET /api/v1/commands` · `/{id}` | `commands:read` | `payload` masked the same way unless the caller has `scans:write` |
+| `PUT /api/v1/scans/{id}` | `scans:write` | a `********` where the stored value would be masked keeps the stored value |
+
+> Masked values are exactly those listed in `scanner_config_warnings`
+> (`pkg/domain/scan/config_secrets.go`, `config_redact.go`). Owners and
+> admins pass `scans:write` through the usual bypass. Sensor command claims
+> are not user responses and carry the real values.
+
 #### Vulnerabilities (`/api/v1/vulnerabilities`) - Global
 
 | Endpoint | Permission Required |
@@ -432,6 +474,29 @@ cannot fingerprint the build. Release images stamp it with `-ldflags` from the
 tag; the dev container's air build stamps `<highest tag>-dev`; an unstamped
 binary reads the checkout's `.git` (`pkg/version`).
 
+### Real-time WebSocket (`/api/v1/auth/ws-token`, `/api/v1/ws`)
+
+A WebSocket ticket opens the tenant's real-time stream, so it is held to the
+same tenant gates as any JWT-tenant route.
+
+| Endpoint | Required Auth |
+|----------|---------------|
+| `GET /api/v1/auth/ws-token` | JWT session (no `oct_` keys) + tenant chain: SSO enforcement, organization IP allowlist, `RequireTenant`, active membership (`wsTokenMiddlewares`) |
+| `GET /api/v1/ws/?ticket=…` | Single-use ticket (Redis `GETDEL`, 30 s), bound to the user + tenant it was issued for; **active membership re-checked at upgrade** (`WSTicketAuth`) |
+
+- A suspended member, a user who is not a member of the token's tenant, a
+  caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`) and a
+  password session in an SSO-enforced tenant get no ticket.
+- A member suspended or removed between issue and upgrade gets 403 on the
+  upgrade. The upgrade does not re-run the IP allowlist (the ticket is
+  single-use and lives 30 s).
+- Without Redis (no ticket service) `/ws` falls back to a short-lived JWT and
+  the full `buildTokenTenantMiddlewares` chain.
+- After the upgrade, every channel subscription is authorized by
+  `websocket.Hub.defaultAuthorize` against the connection's user and tenant
+  (own `user:{tenant}:{user}` only, own `tenant:{id}` only, permission +
+  data scope for `finding:`/`triage:`, `scans:read` for `scan:`).
+
 ### Platform Admin Routes (`/api/v1/admin/*`)
 
 Platform admin routes are for OpenCTEM operators, NOT tenant users. They
@@ -469,6 +534,8 @@ Authorization is enforced at the **route layer** in
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+| `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
+| `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` | **super_admin** + a fresh console TOTP code in the body (step-up; a wrong code counts toward lockout). Refused 409 when a break is unexplained or the chain changed since the reviewed classification. Audited high in `admin_audit_logs` and as `audit.chain_rebaselined` in the organization's log |
 
 > The admin roster (`/admin/users`) is super_admin-only for reads as well as
 > writes: it exposes admin emails and last-used IPs, so listing
@@ -1012,7 +1079,11 @@ Tenable.sc's RBAC.
    role `SetUserRoles` drops): nobody may take away a role they could not have
    granted, so a delegated role manager cannot strip admin from an administrator;
    only an owner may change an owner's roles, and the tenant's owner keeps the
-   owner role. The handler-level check
+   owner role. **Deleting a custom role has the same ceiling** (`DeleteRole`,
+   owner decision 2026-10-02): `DELETE /api/v1/roles/{id}` needs
+   `team:roles:delete` *and* every permission (and full data access) the role
+   carries, so an administrator cannot delete an owner-built role holding
+   owner-only permissions (403); owners may delete any custom role. The handler-level check
    (`assertCanGrantPermissions`) lets administrators through, so the service is
    the enforcement point. SCIM mappings, SSO/SAML JIT and the membership-role
    update can never produce `owner`.

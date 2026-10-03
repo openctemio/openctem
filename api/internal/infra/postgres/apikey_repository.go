@@ -17,6 +17,7 @@ import (
 // APIKeyRepository is the PostgreSQL implementation of apikey.Repository.
 type APIKeyRepository struct {
 	db *DB
+	tokenPepper
 }
 
 // NewAPIKeyRepository creates a new APIKeyRepository.
@@ -32,9 +33,9 @@ func (r *APIKeyRepository) Create(ctx context.Context, key *apikey.APIKey) error
 		INSERT INTO api_keys (
 			id, tenant_id, user_id, name, description,
 			key_hash, key_prefix, scopes, rate_limit,
-			status, expires_at, created_by, created_at, updated_at
+			status, expires_at, created_by, created_at, updated_at, key_pepper_id
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		)
 	`
 
@@ -63,6 +64,7 @@ func (r *APIKeyRepository) Create(ctx context.Context, key *apikey.APIKey) error
 		createdBy,
 		key.CreatedAt(),
 		key.UpdatedAt(),
+		r.value(),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -430,4 +432,17 @@ func (r *APIKeyRepository) reconstruct(
 		expAt, luAt, luIP, useCount,
 		cbID, createdAt, updatedAt, revAt, revBy,
 	), nil
+}
+
+// RehashKey replaces the stored hash of an oct_ API key made with an earlier pepper
+// by its hash under the current pepper, only while the stored hash is still
+// oldHash. Reports whether the row changed.
+func (r *APIKeyRepository) RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	return r.rehash(ctx, r.db, apiKeyTokens, id, oldHash, newHash)
+}
+
+// CountKeysNotUnderPepper counts active tokens not hashed with the current
+// pepper (they still need APP_ENCRYPTION_KEY_PREVIOUS).
+func (r *APIKeyRepository) CountKeysNotUnderPepper(ctx context.Context) (int, error) {
+	return r.countNotCurrent(ctx, r.db, apiKeyTokens)
 }

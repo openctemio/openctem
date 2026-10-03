@@ -96,6 +96,14 @@ func (m *MockComponentRepository) GetExistingDependencyByComponentID(ctx context
 	return args.Get(0).(*component.AssetDependency), args.Error(1)
 }
 
+func (m *MockComponentRepository) GetAssetDependency(ctx context.Context, tenantID, assetID, componentID shared.ID) (*component.AssetDependency, error) {
+	args := m.Called(ctx, tenantID, assetID, componentID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*component.AssetDependency), args.Error(1)
+}
+
 func (m *MockComponentRepository) UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error {
 	args := m.Called(ctx, id, parentID, depth)
 	return args.Error(0)

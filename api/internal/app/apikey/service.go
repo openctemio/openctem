@@ -82,6 +82,28 @@ func (s *Service) SetLegacyPeppers(peppers ...string) {
 	}
 }
 
+// KeyRehasher is implemented by a repository that can replace a key hash
+// made with an earlier pepper (compare-and-swap on the old hash) and count
+// the active keys still hashed with one.
+type KeyRehasher interface {
+	RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error)
+	CountKeysNotUnderPepper(ctx context.Context) (int, error)
+}
+
+// rehash stores newHash in place of oldHash. Best effort: a failure leaves
+// the key verifying under the earlier pepper and is logged, never fatal.
+func (s *Service) rehash(ctx context.Context, id shared.ID, oldHash, newHash string) {
+	r, ok := s.repo.(KeyRehasher)
+	if !ok {
+		return
+	}
+	if changed, err := r.RehashKey(ctx, id, oldHash, newHash); err != nil {
+		s.logger.Warn("api key re-hash under the current pepper failed", "key_id", id.String(), "error", err)
+	} else if changed {
+		s.logger.Info("api key re-hashed under the current pepper", "key_id", id.String())
+	}
+}
+
 // SetMembershipChecker wires the membership gate used by Authenticate for
 // user-scoped keys. When unset, key validity is decoupled from member lifecycle
 // (acceptable only in tests) — always wire it in production.
@@ -237,24 +259,32 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 
-	key, err := s.repo.GetByHash(ctx, crypto.HashTokenPeppered(rawKey, s.pepper))
-	// Keys hashed under an earlier pepper (a rotated encryption key) keep
-	// working while it is listed as previous.
+	// Candidate stored hashes, current pepper first: earlier peppers (a
+	// rotated encryption key, APP_ENCRYPTION_KEY_PREVIOUS) and, when a pepper
+	// is set, the plain SHA-256 of keys from before any pepper.
+	candidates := []string{crypto.HashTokenPeppered(rawKey, s.pepper)}
 	for _, p := range s.legacy {
-		if err == nil || !errors.Is(err, shared.ErrNotFound) {
+		candidates = append(candidates, crypto.HashTokenPeppered(rawKey, p))
+	}
+	if s.pepper != "" {
+		candidates = append(candidates, crypto.HashToken(rawKey))
+	}
+	var (
+		key     *apikeydom.APIKey
+		err     = shared.ErrNotFound
+		matched string
+	)
+	for _, h := range candidates {
+		if key, err = s.repo.GetByHash(ctx, h); err == nil {
+			matched = h
 			break
 		}
-		key, err = s.repo.GetByHash(ctx, crypto.HashTokenPeppered(rawKey, p))
+		if !errors.Is(err, shared.ErrNotFound) {
+			break
+		}
 	}
 	if err != nil {
-		// Legacy rows (pre-pepper) stored a plain SHA-256 hash; retry with it
-		// so old keys keep working after the pepper was introduced.
-		if s.pepper != "" && errors.Is(err, shared.ErrNotFound) {
-			key, err = s.repo.GetByHash(ctx, crypto.HashToken(rawKey))
-		}
-		if err != nil {
-			return nil, apikeydom.ErrAPIKeyNotFound
-		}
+		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 
 	// IsActive covers both status (revoked/expired) and expiry timestamp.
@@ -273,6 +303,12 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 				"key_id", key.ID().String(), "error", errString(mErr))
 			return nil, apikeydom.ErrAPIKeyNotFound
 		}
+	}
+
+	// A key that matched an earlier hash is re-hashed with the current
+	// pepper, so it stops depending on APP_ENCRYPTION_KEY_PREVIOUS.
+	if matched != candidates[0] {
+		s.rehash(ctx, key.ID(), matched, candidates[0])
 	}
 
 	// Best-effort usage telemetry — a failure here must never fail auth.

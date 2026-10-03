@@ -46,7 +46,12 @@ import {
 } from '@/features/shared'
 import { useNow } from '@/hooks/use-now'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
-import { useSensor, useSensorCommands, SENSOR_REFRESH_MS } from '@/lib/api/sensor-hooks'
+import {
+  useSensor,
+  useSensorCommands,
+  useSensorHeartbeatHistory,
+  SENSOR_REFRESH_MS,
+} from '@/lib/api/sensor-hooks'
 import type { Sensor, SensorCommand } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -55,7 +60,7 @@ import { cn } from '@/lib/utils'
 
 import { SensorActivity, SensorRecentActivity } from './sensor-activity'
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
-import { SensorControlSection } from './sensor-control-section'
+import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
 import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
@@ -760,6 +765,10 @@ export function SensorDetailSheet({
   const { data: live } = useSensor(open && sensorProp ? sensorProp.id : null, {
     refreshInterval: SENSOR_REFRESH_MS,
   })
+  // The Control channel sparkline (RFC-035): the last 24 h of heartbeats.
+  const { data: heartbeatHistory } = useSensorHeartbeatHistory(
+    open && sensorProp ? sensorProp.id : null
+  )
   const now = useNow()
   const router = useRouter()
   const canWrite = useHasPermission(Permission.SensorsWrite)
@@ -903,7 +912,9 @@ export function SensorDetailSheet({
             {(sensor.content?.length ?? 0) > 0 && (
               <SensorContentSection sensor={sensor} now={now} canManage={canWrite} />
             )}
-            {sensor.control && <SensorControlSection sensor={sensor} now={now} />}
+            {(sensor.control || hasHeartbeatHistory(heartbeatHistory)) && (
+              <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
+            )}
             <SensorRecentActivity sensorId={sensor.id} onAll={() => setTab('activity')} />
             <ConnectionAndIdentity
               sensor={sensor}

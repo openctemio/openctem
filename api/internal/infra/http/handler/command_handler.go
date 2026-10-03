@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
 
 	"github.com/go-chi/chi/v5"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -47,6 +49,7 @@ type CommandHandler struct {
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
 	simFinalizer     simulationRunFinalizer
+	coverage         commandCoverageEvaluator
 	validator        *validator.Validator
 	logger           *logger.Logger
 }
@@ -77,6 +80,32 @@ func (h *CommandHandler) SetSimulationFinalizer(svc simulationRunFinalizer) {
 	h.simFinalizer = svc
 }
 
+// commandCoverageEvaluator runs coverage-scoped auto-resolve for a completed
+// scan command (ingest.Service).
+type commandCoverageEvaluator interface {
+	EvaluateCommandCoverage(ctx context.Context, tenantID, commandID shared.ID) ingest.CoverageOutcome
+}
+
+// SetCoverageEvaluator wires coverage-scoped auto-resolve, evaluated when a
+// scan command completes (and again when its last report is finalized).
+func (h *CommandHandler) SetCoverageEvaluator(svc commandCoverageEvaluator) {
+	h.coverage = svc
+}
+
+// triggerCoverageAutoResolve evaluates a completed scan command's coverage in
+// the background; it never delays the sensor's completion response.
+func (h *CommandHandler) triggerCoverageAutoResolve(cmd *commanddom.Command) {
+	if h.coverage == nil || cmd == nil || cmd.Type != commanddom.CommandTypeScan {
+		return
+	}
+	tenantID, commandID := cmd.TenantID, cmd.ID
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		h.coverage.EvaluateCommandCoverage(ctx, tenantID, commandID)
+	}()
+}
+
 // CommandResponse represents a command in API responses.
 type CommandResponse struct {
 	ID             string          `json:"id"`
@@ -93,6 +122,20 @@ type CommandResponse struct {
 	StartedAt      *time.Time      `json:"started_at,omitempty"`
 	CompletedAt    *time.Time      `json:"completed_at,omitempty"`
 	Result         json.RawMessage `json:"result,omitempty"`
+}
+
+// commandResponseFor converts a command for a user-facing response. The
+// payload of a scan command embeds the scan's scanner_config (as
+// scanner_config, config and context.scanner_config), so a caller who may not
+// see those values on the scan itself (canSeeScanConfigSecrets) gets the
+// payload with secret-looking values masked. Sensors are served by Poll and
+// the claim paths, which never go through here.
+func commandResponseFor(ctx context.Context, c *commanddom.Command) CommandResponse {
+	resp := toCommandResponse(c)
+	if !canSeeScanConfigSecrets(ctx) {
+		resp.Payload = scan.RedactPayloadSecrets(resp.Payload)
+	}
+	return resp
 }
 
 // toCommandResponse converts a domain command to API response.
@@ -199,7 +242,7 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
 }
 
 // validateInlineScanTemplates rejects a scan command that embeds custom scanner
@@ -301,7 +344,7 @@ func (h *CommandHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
 }
 
 // List handles GET /api/v1/commands
@@ -342,7 +385,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	commands := make([]CommandResponse, len(result.Data))
 	for i, c := range result.Data {
-		commands[i] = toCommandResponse(c)
+		commands[i] = commandResponseFor(r.Context(), c)
 	}
 
 	resp := ListResponse[CommandResponse]{
@@ -524,6 +567,9 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 
 	// Finalize a running attack-simulation from a completed safe-check (RFC-012).
 	h.triggerSimulationFinalize(cmd)
+
+	// Coverage-scoped auto-resolve of the scan's non-repository findings.
+	h.triggerCoverageAutoResolve(cmd)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
@@ -858,7 +904,7 @@ func (h *CommandHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
 }
 
 // Delete handles DELETE /api/v1/commands/{id}

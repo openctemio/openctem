@@ -77,6 +77,49 @@ type SensorService struct {
 	// leases renews the leases of the commands a heartbeating sensor holds
 	// (RFC-035 D6); nil renews nothing.
 	leases commanddom.LeaseRenewer
+	// cancels finds the commands a heartbeating sensor must stop
+	// (cancel_command_ids). Optional; nil sends none.
+	cancels commanddom.CancelFinder
+	// history keeps the per-sensor heartbeat history (the Control channel
+	// sparkline) and gaps observes each heartbeat's gap (metrics); nil
+	// records nothing.
+	history sensordom.HeartbeatHistoryRepository
+	gaps    HeartbeatGapObserver
+}
+
+// HeartbeatGapObserver receives the gap of every heartbeat that had a
+// previous one, with the interval the sensor followed: a metrics sink.
+type HeartbeatGapObserver interface {
+	ObserveHeartbeatGap(gap, interval time.Duration)
+}
+
+// SetHeartbeatHistory wires the heartbeat history (one bucketed write per
+// heartbeat of a tenant sensor). Optional.
+func (s *SensorService) SetHeartbeatHistory(r sensordom.HeartbeatHistoryRepository) {
+	s.history = r
+}
+
+// SetHeartbeatGapObserver wires the heartbeat gap metric. Optional.
+func (s *SensorService) SetHeartbeatGapObserver(o HeartbeatGapObserver) {
+	s.gaps = o
+}
+
+// HeartbeatHistory returns the last window (at most a day) of a tenant
+// sensor's heartbeat history, oldest first; empty when none is kept. The
+// sensor is looked up in the tenant first: another tenant's sensor is not
+// found.
+func (s *SensorService) HeartbeatHistory(ctx context.Context, tenantID, sensorID string, window time.Duration) ([]sensordom.HeartbeatBucket, error) {
+	a, err := s.GetSensor(ctx, tenantID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	if s.history == nil || a.TenantID == nil {
+		return []sensordom.HeartbeatBucket{}, nil
+	}
+	if window <= 0 || window > sensordom.MaxHeartbeatHistoryWindow {
+		window = sensordom.MaxHeartbeatHistoryWindow
+	}
+	return s.history.HeartbeatHistory(ctx, *a.TenantID, a.ID, s.now().Add(-window))
 }
 
 // SetLeaseRenewer wires command lease renewal into the heartbeat: every
@@ -85,6 +128,39 @@ type SensorService struct {
 // report one (an SDK without the load report). Optional.
 func (s *SensorService) SetLeaseRenewer(r commanddom.LeaseRenewer) {
 	s.leases = r
+}
+
+// SetCancelFinder wires the cancel signal into the heartbeat: the answer
+// lists the commands the sensor reports holding but must stop (canceled,
+// timed out, re-queued, held elsewhere), as cancel_command_ids. Optional.
+func (s *SensorService) SetCancelFinder(f commanddom.CancelFinder) {
+	s.cancels = f
+}
+
+// MaxCancelCommandIDs bounds cancel_command_ids in a heartbeat answer
+// (sdk-go reads at most 256).
+const MaxCancelCommandIDs = 256
+
+// CommandsToCancel returns the commands among running (the heartbeat's
+// running list, untrusted) that sensor a must stop. Best effort: nil when
+// nothing is wired, nothing is reported, or the lookup fails (logged), so
+// the heartbeat never fails because of it.
+func (s *SensorService) CommandsToCancel(ctx context.Context, a *sensordom.Sensor, running []string) []string {
+	if s.cancels == nil || a == nil || a.TenantID == nil || len(running) == 0 {
+		return nil
+	}
+	if len(running) > maxRenewedCommands {
+		running = running[:maxRenewedCommands]
+	}
+	ids, err := s.cancels.CommandsToCancel(ctx, *a.TenantID, a.ID, running)
+	if err != nil {
+		s.logger.Warn("commands to cancel not looked up", "sensor_id", a.ID.String(), "error", err)
+		return nil
+	}
+	if len(ids) > MaxCancelCommandIDs {
+		ids = ids[:MaxCancelCommandIDs]
+	}
+	return ids
 }
 
 // SetEventRepository wires the sensor activity store: heartbeat diffs and
@@ -187,6 +263,31 @@ func (s *SensorService) candidateHashes(apiKey string) []string {
 		out = append(out, crypto.HashToken(apiKey))
 	}
 	return slices.Compact(out)
+}
+
+// KeyRehasher is implemented by a key store that can replace a key hash made
+// with an earlier pepper (compare-and-swap on the old hash) and count the
+// active keys still hashed with one.
+type KeyRehasher interface {
+	RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error)
+	CountKeysNotUnderPepper(ctx context.Context) (int, error)
+}
+
+// rehashKey stores a key's hash under the current pepper in place of the
+// earlier hash it matched, so the key stops depending on an old pepper
+// (APP_ENCRYPTION_KEY_PREVIOUS, SENSOR_KEY_PEPPER_PREVIOUS) or on the plain
+// SHA-256 of keys from before any pepper. Best effort and never fatal: the
+// key keeps verifying under the old hash if the write fails.
+func (s *SensorService) rehashKey(ctx context.Context, store any, kind string, id shared.ID, oldHash, newHash string) {
+	r, ok := store.(KeyRehasher)
+	if !ok {
+		return
+	}
+	if changed, err := r.RehashKey(ctx, id, oldHash, newHash); err != nil {
+		s.logger.Warn("sensor key re-hash under the current pepper failed", "kind", kind, "id", id.String(), "error", err)
+	} else if changed {
+		s.logger.Info("sensor key re-hashed under the current pepper", "kind", kind, "id", id.String())
+	}
 }
 
 // SetKeyTTL configures how long a self-renewed API key stays valid. Zero (the
@@ -671,6 +772,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 
 	s.observeInstance(ctx, a, data.InstanceID, data.Hostname, now)
 	s.renewLeases(ctx, a, data)
+	s.observeHeartbeat(ctx, a, data, now)
 
 	// Record a connect event only on an offline/unknown/error -> online
 	// transition. A late or stale sensor never stopped being connected: its
@@ -705,6 +807,10 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 			if e, ok := sensordom.OnlineEvent(a, now); ok {
 				events = append(events, e)
 			}
+		} else if e, ok := sensordom.RecoveredEvent(a, now); ok {
+			// The heartbeat came after its deadline had made the sensor
+			// late, stale or offline: one entry per recovery.
+			events = append(events, e)
 		}
 		for _, e := range sensordom.DiffHeartbeat(a, sensordom.HeartbeatObservation{
 			At: now, Version: version, Protocol: data.Protocol, StartedAt: startedAt, Report: report, Build: build,
@@ -727,6 +833,30 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	}
 
 	return nil
+}
+
+// observeHeartbeat feeds the heartbeat's gap (since the previous heartbeat,
+// from the stored deadline: polls do not shorten it) to the metric and the
+// tenant sensor's heartbeat history. Best effort: failures are logged.
+func (s *SensorService) observeHeartbeat(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData, now time.Time) {
+	var gap time.Duration
+	if prev := a.PreviousHeartbeatAt(); prev != nil && now.After(*prev) {
+		gap = now.Sub(*prev)
+	}
+	interval := a.HeartbeatInterval
+	if gap > 0 && s.gaps != nil {
+		s.gaps.ObserveHeartbeatGap(gap, interval)
+	}
+	if s.history == nil || a.TenantID == nil {
+		return
+	}
+	sample := sensordom.HeartbeatSample{TenantID: *a.TenantID, SensorID: a.ID, At: now, Gap: gap, Interval: interval}
+	if c := data.Control; c != nil {
+		sample.LagMillis, sample.Failures = c.LagMillis, c.Failures
+	}
+	if err := s.history.RecordHeartbeat(ctx, sample); err != nil {
+		s.logger.Warn("heartbeat history not recorded", "sensor_id", a.ID.String(), "error", err)
+	}
 }
 
 // maxRenewedCommands bounds the running list a heartbeat renews.
@@ -1203,11 +1333,13 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 	// case (a key stored under the current pepper) is one query.
 	hashes := s.candidateHashes(apiKey)
 	var (
-		a   *sensordom.Sensor
-		err = shared.ErrNotFound
+		a       *sensordom.Sensor
+		err     = shared.ErrNotFound
+		matched string
 	)
 	for _, h := range hashes {
 		if a, err = s.repo.GetByAPIKeyHash(ctx, h); err == nil {
+			matched = h
 			break
 		}
 	}
@@ -1235,6 +1367,9 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "api key expired", shared.ErrUnauthorized)
 	}
 
+	if matched != hashes[0] {
+		s.rehashKey(ctx, s.repo, "inline", a.ID, matched, hashes[0])
+	}
 	if !paused {
 		s.recordKeyUseAsync(a, clientIP, nil)
 	}
@@ -1301,11 +1436,13 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 	}
 
 	var (
-		key *sensordom.APIKey
-		err = shared.ErrNotFound
+		key     *sensordom.APIKey
+		err     = shared.ErrNotFound
+		matched string
 	)
 	for _, h := range hashes {
 		if key, err = s.apiKeyRepo.GetByHash(ctx, h); err == nil {
+			matched = h
 			break
 		}
 	}
@@ -1320,6 +1457,9 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 	paused, err := checkSensorStatus(a, allowPaused)
 	if err != nil {
 		return SensorIdentity{}, err
+	}
+	if matched != hashes[0] {
+		s.rehashKey(ctx, s.apiKeyRepo, "row", key.ID, matched, hashes[0])
 	}
 	if paused {
 		return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, Paused: true}, nil

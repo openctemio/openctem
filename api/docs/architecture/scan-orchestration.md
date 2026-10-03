@@ -127,6 +127,30 @@ func (r *AgentRepository) FindAvailableWithTool(ctx, tenantID, tool string) (*Ag
 > `health = 'online' AND last_seen_at IS NOT NULL AND current_jobs <
 > max_concurrent_jobs` and load-balances by `current_jobs ASC, total_scans ASC`.
 
+### Step commands name their scanner
+
+A pipeline or workflow step becomes a `scan` command whose payload names the
+step's tool twice: `scanner` (what the sensor SDK runs, `ScanCommandPayload`)
+and `preferred_tool` (read by the platform's tool gate, which offers the
+command only to a sensor whose effective tools include it). Direct run targets
+are copied to the top-level `targets`. Before api RFC-036 P0 only
+`preferred_tool` was sent, and every step failed on the sensor with
+`scanner not found: `. `required_capabilities` is the step's capability list;
+the queue-time step check requires it to be a subset of the tool's catalog
+capabilities, and the poll offers the command only to a sensor that
+advertises all of them.
+
+The recon tools (subfinder, dnsx, naabu, httpx, katana) ship in the sensor's
+full and platform images and take a target list, so a run of one of them is
+one command with every target, like nuclei.
+
+**System presets** (migration 000061, fixed by 000270): every step of an
+active preset names a shipped tool with catalog capabilities
+(`TestPresetPipelines_UseShippedTools`). "Web Vulnerability Scan" and "API
+Security Testing" are inactive: their tools (dalfox, sqlmap, kiterunner,
+ffuf) are not shipped and they are intrusive, which RFC-036 O3 keeps opt-in.
+Steps still do not pass outputs to the next step (RFC-036 E6, P3).
+
 ### 4. Command Execution
 
 ```

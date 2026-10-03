@@ -18,7 +18,7 @@ export interface GitMetadata {
   /**
    * Highest vX.Y.Z tag in the repository. Not "the tag HEAD descends from":
    * release tags live on release branches, so on develop the highest tag is
-   * the honest base for "<tag>-dev".
+   * the honest base for "<tag>-dev+<commit>".
    */
   latestTag?: string
 }

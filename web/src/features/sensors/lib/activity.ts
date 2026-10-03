@@ -9,6 +9,7 @@ import {
   DatabaseZap,
   FileText,
   Gauge,
+  HeartPulse,
   KeyRound,
   Package,
   Pencil,
@@ -181,6 +182,30 @@ export function describeSensorActivity(
         details: seen
           ? [t('sensors.activity.lastHeartbeat', 'Last heartbeat {time}', { time: seen })]
           : [],
+      }
+    }
+    case 'heartbeat_recovered': {
+      const was = str(d.was)
+      const wasLabel =
+        was === 'stale'
+          ? t('sensors.activity.wasStale', 'stale')
+          : was === 'offline'
+            ? t('sensors.activity.wasOffline', 'offline')
+            : t('sensors.activity.wasLate', 'late')
+      return {
+        icon: HeartPulse,
+        tone: 'success',
+        title: t('sensors.activity.heartbeatRecovered', 'Heartbeats back on time (was {state})', {
+          state: wasLabel,
+        }),
+        details:
+          typeof d.gap_seconds === 'number'
+            ? [
+                t('sensors.activity.heartbeatGap', 'No heartbeat for {duration}', {
+                  duration: formatDurationShort(d.gap_seconds),
+                }),
+              ]
+            : [],
       }
     }
     case 'restarted': {

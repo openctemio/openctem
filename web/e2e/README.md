@@ -182,18 +182,30 @@ giving teams with seed data the full coverage.
 
 ## CI integration
 
-When wiring this into CI, the recommended invocation is:
+`.github/workflows/web-e2e.yml` runs the suite on pull requests and in the
+merge queue when `web/` (or a shared file) changed — the routing is
+`.github/scripts/changed.sh`, so an API-only change does not start it. It is
+not a required check yet.
+
+The job builds the production images (API, web, admin-cli) with the Actions
+layer cache, generates the stack's secrets (`e2e/ci/make-env.sh`), starts `e2e/ci/compose.yml` (Postgres, Redis, migrations, API
+with `RATE_LIMIT_READ_PER_MIN=3000`, web), seeds a tenant with
+`e2e/ci/seed.sh` (owner, assets, two sensors, 15 findings, a remediation
+task) and runs `npm run e2e` with `CI=true`. On failure it uploads
+`playwright-report/`, `test-results/` and the API and web logs.
+
+The same stack runs locally (move the ports if 3000/8080 are taken):
 
 ```bash
-CI=true \
-E2E_BASE_URL=http://ui:3000 \
-E2E_API_BASE_URL=http://api:8080 \
-E2E_USER_EMAIL=$E2E_SEED_USER \
-E2E_USER_PASSWORD=$E2E_SEED_PASSWORD \
-E2E_TENANT_SLUG=$E2E_SEED_TENANT \
-npm run e2e
+docker build -t local/openctem-api:e2e --target production api
+docker build -t local/admin-cli:e2e -f api/Dockerfile.admin-cli api
+docker build -t local/openctem-web:e2e web
+bash web/e2e/ci/make-env.sh        # web/e2e/ci/.env: random secrets (git-ignored)
+docker compose -f web/e2e/ci/compose.yml up -d --wait
+(set -a; . web/e2e/ci/.env; bash web/e2e/ci/seed.sh) > web/e2e/.env
+cd web && CI=true npm run e2e
 ```
 
-The `CI=true` env enables retries, single-worker mode, and the GitHub
-reporter. Upload `playwright-report/` and `test-results/` as artifacts
-so failures can be inspected with screenshots and traces.
+No password or secret is written in the repository. `make-env.sh` generates
+every one per run (the workflow masks them in the log); `e2e/ci/.env.example`
+lists the variable names.

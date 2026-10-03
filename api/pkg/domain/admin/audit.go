@@ -241,6 +241,7 @@ func redactSensitiveFields(body map[string]interface{}) map[string]interface{} {
 		"authorization", "auth_token", "authToken",
 		"private_key", "privateKey", "access_token", "accessToken",
 		"refresh_token", "refreshToken", "client_secret", "clientSecret",
+		"totp_code", "totpCode",
 	}
 
 	redactFields(result, sensitiveFields)

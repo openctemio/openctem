@@ -525,6 +525,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Heartbeat history retention: buckets past 48 h (RFC-035, the Control
+	// channel sparkline reads 24 h).
+	if repos.SensorHeartbeatHistory != nil {
+		w.ControllerManager.Register(controller.NewHeartbeatHistoryRetentionController(
+			repos.SensorHeartbeatHistory, log.With("controller", "sensor-heartbeat-history-retention")))
+	}
+
 	// Platform job queue priority rebalancing. Without this the platform
 	// command queue stays strictly FIFO and a noisy tenant can starve
 	// quieter ones. Runs every 60 s — cheap SQL update, safe default.
