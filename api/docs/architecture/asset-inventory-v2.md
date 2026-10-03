@@ -25,6 +25,36 @@ are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
 5. The **target gate** (`scope.Gate`) decides whether anything may be
    probed. Every dispatch path calls it.
 
+## Three layers: source record, link, canonical row
+
+| Layer | Asset | Service |
+|---|---|---|
+| Per-source record | `asset_sources` (`contributed_data`, run tag) | `service_sources` |
+| Correlation link | `asset_sources.linked_by` / `linked_run_id` (view `asset_links`) + RFC-028 `asset_identifiers` | through the asset |
+| Canonical row | `assets` | `asset_services` |
+
+**At ingest.** Ingest upserts the source record and matches inline on
+strong keys only (an RFC-028 strong identifier or an exact name).
+
+**The correlation job.** It is single-flight per tenant and scan zone,
+and runs after scan runs (5-minute debounce) and nightly. It:
+
+1. proposes windowed hostname and IP matches to dedup review (the IP
+   window defaults to 3 days);
+2. recomputes preferred fields with RFC-003 source priority;
+3. writes the snapshot used by the rollups.
+
+**The zone boundary.** Private addresses (RFC 1918, ULA, CGNAT) are keyed
+by (zone, address), so two zones never merge `10.0.0.5`. Public addresses
+and names correlate tenant-wide.
+
+**Merge and split.** Merge is `ApproveAndMerge`. Split is
+`POST /api/v1/assets/{asset_id}/split`. Both are audited.
+
+**Gone.** "Gone" is decided only inside the targets, ports and zone a
+completed run covered. A gone service becomes `closed` and a gone asset
+`stale`; neither is ever deleted.
+
 ## Tables
 
 | Table | Purpose | Phase |
@@ -43,6 +73,7 @@ are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
 | `inventory_change` | Transactional outbox of inventory changes (`origin`, `chain_depth`) | P1 |
 | `inventory_observations` | Change-only facet history (shared with RFC-036 P4) | P1 |
 | `inventory_daily_rollups` | Trends; 400 days daily, then monthly | P1 |
+| `service_sources`; `asset_sources` (+ `tenant_id`, `last_seen_run_id`, `linked_by`, `linked_at`, `linked_run_id`); view `asset_links` | Per-source records and correlation links | P1 |
 | `scope_exclusions` (+ `applies_to`, `pattern_kind`, `effect`, `exclusion_kind`) | One exclusion model | P1 |
 | `service_screenshots`, `screenshot_phash_bands` | Re-encoded captures and similarity index | P2 |
 | `discovery_edges` | Lineage for candidates, assets and services | P3 |
@@ -63,6 +94,10 @@ tech:jquery tech.version<3.5  technology and version compare
 tls.expires<30d               relative time (from now)
 first_seen>-7d                within the last 7 days
 (title:*jenkins* OR tech:jenkins) is.public:true
+title="Sign In"               exact, case-sensitive (":" is fuzzy)
+tls.issuer:*                  field is non-empty
+services:(port:22 AND banner:*OpenSSH_7*)   one service must match all
+source:nessus port:3389       restrict to one source's records
 ```
 
 - Juxtaposition means AND. `OR`, `NOT` and parentheses work as usual.

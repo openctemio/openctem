@@ -80,6 +80,15 @@ applies ownership, exclusions, lifecycle and budgets at dispatch time.**
    asset, new or closed port, certificate expiring or changed, technology
    added, removed or upgraded, title or status changed. These feed alerts,
    policies and daily rollups for the trend charts.
+10. **Source records, correlation and the canonical row stay separate**,
+    following the industry practice in §4.1:
+    - per-source records live in `asset_sources` and a new
+      `service_sources`;
+    - a single-flight correlation job per tenant and zone joins them,
+      with deterministic, time-windowed keys and the zone as a hard
+      boundary for private addresses;
+    - it then recomputes the preferred fields of the canonical row.
+    Manual merge and split are both audited.
 
 | | Today (verified 2026-10-03, `develop` d547a60) | With this RFC |
 |---|---|---|
@@ -320,10 +329,42 @@ pipeline step (§6.13). It closes the gaps in the table above.
 
 ### 4.1 Industry practice (runZero, Axonius, Wiz, Censys)
 
-> **Pending research 08** (asset inventory system design: runZero,
-> Axonius, the Wiz security graph, Censys ASM). The coordinator fills in
-> this section when that research lands. Each point it adds should say
-> whether it confirms or changes a decision in §6 or §12.
+Source: research 08, "asset inventory / CAASM / exposure graph system
+design" (2026-10-03). It has 10 findings, each verified against vendor or
+project documentation (runZero, Axonius, Cartography, Censys, Defender
+EASM, one Tenable marketing page). Each row says where the finding lands
+in this RFC.
+
+| # | Industry practice | Evidence | Where it lands here |
+|---|---|---|---|
+| I1 | **Three layers.** Per-source records, then a correlation link, then a canonical asset whose "preferred" fields are recomputed from its linked records. Queries can target either the canonical view or one source (Axonius ALL vs ENT scope; runZero adds per-source attributes) | runZero integrations-inbound; Axonius query wizard and aggregation settings (3-0; the normalisation claim 2-1) | §6.3.5. OpenCTEM already has the per-source layer: `asset_sources.contributed_data` (`000014_data_sources.up.sql:52-69`) and RFC-003 source priority (`api/internal/app/ingest/priority_gate.go`). This RFC adds `service_sources`, an `asset_links` view of correlation decisions, the preferred-field recompute, and an OQL `source:` scope |
+| I2 | **Deterministic identity keys in a fixed order.** runZero: MAC, then IP within a 3-day window, then hostname. A manual merge exists as the fallback | runZero (3-0) | RFC-028 already matches strong id → name → windowed hostname → windowed IP and never auto-merges. §6.3.5 adds a **split** action with audit, next to merge |
+| I3 | **Correlation is a scheduled, single-flight batch job** after ingest, followed by a history snapshot (Axonius discovery cycle; Tenable "lake then correlate") | Axonius (3-0); Tenable (marketing) | §6.3.5. Ingest keeps an inline strong-key match, because findings need an asset id immediately. A single-flight job per tenant and zone runs the windowed matches, recomputes preferred fields and writes the rollup snapshot (D15) |
+| I4 | **Correlation never crosses a hard network boundary** (runZero sites) | runZero (3-0) | §6.3.5. Identity keys for private addresses include the scan zone (D16). Public addresses correlate tenant-wide. The tenant is always a hard boundary |
+| I5 | **Change detection without full event sourcing.** Rows carry a run tag and `first_seen`. Stale rows are cleaned up only within the scope that was synced. Assets a scan missed are marked offline, never deleted (Cartography, runZero) | Cartography, runZero (3-0) | §6.15. `last_seen_run_id` on assets, services and source records. "Closed" and "offline" are evaluated only for the targets and zone the run covered. Attribute-level diffs come from the observation hashes, which the research says run tags alone do not give |
+| I6 | **Connectors are get → transform → load → scoped cleanup**, with retries in the framework; cleanup never runs after a failed fetch (Cartography) | Cartography (3-0, one project) | §6.8. A connector interface for RFC-036 P5 cloud sources and imports |
+| I7 | **Rules + Facts with mandatory `identity_fields`.** A generated issue keeps a stable identity across runs (Cartography) | Cartography (3-0) | §6.14.2. Every policy effect, digest and any future exposure-raising action declares identity fields: `(policy_id, subject_id[, port])`, never volatile values |
+| I8 | **A field/operator/value query grammar** with typed operators, exact vs fuzzy matching, a non-empty test, and **grouping so that several conditions must match the same nested service** (CenQL `host.services: (…)`; runZero `=` exact) | Censys, runZero (3-0) | §6.4. OQL adds `=` exact vs `:` fuzzy, `field:*` non-empty, and `services:( … )` same-service grouping compiled to one `EXISTS`. CenQL's regex operator `=~` is deliberately **not** copied (ReDoS, T8) |
+| I9 | **Defender EASM's five states** (approved, dependency, monitor only, candidate, requires investigation). Ownership and discovery confidence are better stored as two fields | Defender EASM (3-0) | RFC-036 states, and #835 stores `state` and `confidence` separately. OQL exposes both (`attribution`, `attribution.confidence`) |
+
+**What research 08 did not verify.** It has no verified evidence on:
+
+- storage engines: Postgres JSONB/GIN, materialised facet tables,
+  ClickHouse, OpenSearch, or a graph database;
+- Wiz;
+- multi-tenant storage isolation;
+- retention and its cost.
+
+So these choices in this RFC are **our own reasoning**, not industry
+evidence:
+
+- Postgres with typed columns and per-tenant snapshot tables (§6.3.3,
+  §6.5);
+- the 100k/1M performance targets (§7);
+- the retention periods, beyond RFC-036 O7;
+- revisiting a search engine only above 5M services per tenant (§11).
+
+The P0 performance tests are what validate them.
 
 ## 5. Trust and threat model
 
@@ -505,6 +546,64 @@ things keep this cheap:
   move with their asset, and their `service_id` is remapped to the
   surviving service by `(port, transport)`.
 
+#### 6.3.5 Source records, correlation and identity (industry practice I1–I4)
+
+Three layers, built mostly from parts that already exist:
+
+| Layer | Asset | Service | Status |
+|---|---|---|---|
+| 1. Per-source record (raw, one per source or connector instance) | `asset_sources` (`contributed_data`, `first_seen_at`, `last_seen_at`, `confidence`, `is_primary`), exists since 000014 | **new** `service_sources(tenant_id, service_id, source_type, source_id, contributed jsonb, first_seen, last_seen, last_seen_run_id)` | add `last_seen_run_id` and `tenant_id` to `asset_sources` |
+| 2. Correlation link (which records were joined, by which key, and who decided) | implicit today: `asset_sources.asset_id` + RFC-028 `asset_identifiers` | same, through the service's asset | **new** columns on `asset_sources`: `linked_by` (`strong_id`/`name`/`hostname_window`/`ip_window`/`manual_merge`), `linked_at`, `linked_run_id`. The view `asset_links` exposes them |
+| 3. Canonical row with preferred fields | `assets` | `asset_services` | preferred fields recomputed from layer 1 with RFC-003 priority (`priority_gate.go`); last-writer-wins remains only where no priority is configured |
+
+**Ingest stays fast.**
+
+- Ingest upserts the source record and the canonical row.
+- It does an **inline strong-key match only**: an RFC-028 strong
+  identifier or an exact canonical name. Findings in the same report need
+  an asset id at once, which is why the strong-key match cannot wait for
+  the batch job.
+
+**The correlation job runs after ingest.**
+
+- Scope: single-flight per tenant and scan zone. It is leased, so two
+  runs never overlap (research 02 finding 6).
+- It runs after each completed scan run, debounced 5 minutes, and nightly.
+- Steps:
+  1. **Windowed matches.** It runs RFC-028's hostname and IP matches.
+     These still only *propose* a merge to the dedup review queue; they
+     never merge automatically.
+  2. **Preferred fields.** It recomputes the preferred fields of every
+     asset and service touched since the last run.
+  3. **Snapshot.** It writes the change rows for rollups (§6.16).
+
+**Key order.** The deterministic key order stays RFC-028's (strong id,
+then exact name, then hostname in a window, then IP in a window). The IP
+window is explicit and expires (default 3 days, the runZero value), so a
+reused cloud or DHCP address does not join two machines.
+
+**The zone boundary (I4).** Identity keys for **private** addresses
+(RFC 1918, ULA, CGNAT) include the scan zone id. `10.0.0.5` seen from
+zone A and from zone B are therefore two assets. Public addresses and DNS
+names correlate tenant-wide. The tenant is always a hard boundary (D16).
+
+**Manual merge and split, both audited.**
+
+- Merge is today's `ApproveAndMerge`.
+- Split is new: `POST /api/v1/assets/{asset_id}/split` with
+  `{source_record_ids[]}`. It moves the chosen source records, with their
+  findings and services, to a new asset. This uses the merge plan in
+  reverse, for the tables keyed by source.
+- `split` is not in RFC-041's closed verb list. It is proposed as an
+  addition in this RFC's review (D17), and the fallback is
+  `POST /api/v1/asset-splits` as a resource.
+
+**Source scope in queries (I1).** `source:<source_type>[/<source_id>]` in
+OQL restricts a query to records from that source, using
+`contributed_data` for source-specific fields. The default scope is the
+canonical layer. Facets can be asked for per source:
+`facets?source=nessus`.
+
 ### 6.4 OQL: the inventory query language
 
 #### 6.4.1 Grammar
@@ -514,8 +613,9 @@ query    = [ or_expr ] ;
 or_expr  = and_expr { "OR" and_expr } ;
 and_expr = unary { [ "AND" ] unary } ;            (* juxtaposition = AND *)
 unary    = [ "NOT" | "-" ] primary ;
-primary  = "(" or_expr ")" | clause | text ;
-clause   = field op value_list ;
+primary  = "(" or_expr ")" | group | clause | text ;
+group    = "services" ":" "(" or_expr ")" ;           (* same-service grouping, asset queries *)
+clause   = field op value_list | field ":*" ;          (* ":*" = field is non-empty *)
 op       = ":" | "=" | "!=" | ">" | ">=" | "<" | "<=" ;
 value_list = value { "," value } ;                 (* comma = any-of *)
 value    = quoted | bare | number | duration | cidr | "null" ;
@@ -523,9 +623,23 @@ duration = [ "-" ] digits ( "m" | "h" | "d" | "w" ) ;   (* relative to now *)
 text     = quoted | bare ;                         (* free text → search *)
 ```
 
-- `:` means *equals* for enums and numbers, *matches* for strings, where
-  `*` is a wildcard (`host:*.staging.acme.com`, `title:*admin*`), and
-  *contains* for CIDRs (`ip:10.0.0.0/8`).
+- `:` means:
+  - *equals* for enums and numbers;
+  - *matches* for strings: case-insensitive and fuzzy, where `*` is a
+    wildcard (`host:*.staging.acme.com`, `title:*admin*`);
+  - *contains* for CIDRs (`ip:10.0.0.0/8`).
+- `=` is **exact, case-sensitive** for strings: `title="Sign In"`. This
+  is the CenQL and runZero split between fuzzy `:` and exact `=` (I8).
+- `field:*` means the field is present and non-empty, for example
+  `screenshot:*` or `tls.issuer:*`.
+- **Same-service grouping (I8).** On an asset query, `port:22 scheme:ssh`
+  could be satisfied by two different services of the host.
+  `services:(port:22 AND banner:*OpenSSH_7*)` requires one service to
+  match every condition inside the parentheses. It compiles to a single
+  `EXISTS (SELECT 1 FROM asset_services s WHERE s.asset_id = a.id AND
+  <all inner clauses on s>)`. Service fields used **outside** a group
+  each get their own `EXISTS`. `Explain()` says which one applies.
+- CenQL's regex operator `=~` is deliberately not offered (T8).
 - Keywords are case-insensitive. Values are case-insensitive for host,
   label and technology names.
 - Examples:
@@ -946,6 +1060,21 @@ through the RFC-033 manifest only when it ships them. When they are
 absent, the same columns are filled from httpx's `-tls-grab`/`-cdn`/`-asn`
 output, which covers the needed fields.
 
+**Connectors (I6).** Cloud connectors (RFC-036 P5) and imports implement
+one Go interface in `internal/app/connector`:
+
+- `Fetch(ctx, instance) (raw, error)`: pure I/O, no retries, and it fails
+  loudly;
+- `Map(raw) ([]ctis.Asset, error)`: schema mapping;
+- `Load(ctx, run, assets)`: idempotent upsert through ingest, stamped
+  with the run;
+- `ScopedCleanup(ctx, run)`: marks stale only the records of **this
+  tenant, connector instance and account** that this run did not see.
+
+The framework owns retries, rate limits, scheduling, credentials
+(per-tenant `ListByProvider`, RFC-006) and the rule that `ScopedCleanup`
+is skipped when any earlier step failed.
+
 **Lineage.** RFC-036 puts `discovery_path` on candidates. Graph-cut
 exclusions (§6.12) also need lineage for assets that are **already in the
 inventory**, so this RFC adds one edge table for both:
@@ -1332,6 +1461,25 @@ Two log tables go with it:
 
 There is **no `delete` action** (§2.1).
 
+**Identity fields (I7).** Every effect has a declared, stable identity
+made only of non-volatile fields:
+
+| What | Identity |
+|---|---|
+| A label assignment | `(label_id, subject_type, subject_id)` |
+| An archive | `(policy_id, subject_id)` |
+| A digest line | `(policy_id, subject_id, change_kind)` |
+| A pending exclusion | `(policy_id, normalised pattern)` |
+| A scan request | `(policy_id, canonical selection hash, hour bucket)` |
+
+Re-running a policy on the same facts therefore produces the same
+identities, so effects deduplicate and nothing comes back as "new" every
+run. A future action that raises exposures or findings must declare its
+`identity_fields` in the same way, for example `(policy_id, asset_id,
+port)`. The fingerprint is built from those fields only, never from
+titles, counts or timestamps. This avoids the stale-fingerprint class of
+bug seen in the asset-merge dedup fix.
+
 #### 6.14.3 Lifecycle
 
 1. **Draft.** The author saves the policy; it is disabled.
@@ -1444,6 +1592,15 @@ inventory_observations(id, tenant_id, subject_type asset|service, subject_id,
   subject's `last_seen`.
 - **Changed hash:** insert a row, update the typed columns on the subject,
   set `last_changed_at`, and write the `inventory_change` (§6.14.4).
+- **Run tags (I5).** Assets, services and source records carry
+  `last_seen_run_id`. "New" means `first_seen` falls within this run.
+  "Gone" is decided **only inside the scope the run covered**: the run's
+  resolved targets, ports and zone, recorded on `scan_run_targets`. For
+  example, a service the run did not see on a host it did scan, on a
+  port range it did scan. A run that failed or was cancelled part-way
+  marks nothing gone, the Cartography rule that cleanup never follows a
+  failed fetch. Gone means `state = closed` for a service and `stale`
+  for an asset, through the lifecycle worker. It never means a delete.
 
 **Change kinds** (derived from the facet diff):
 
@@ -1596,6 +1753,7 @@ under `attack_surface` (RFC-036 O10).
 | `POST /api/v1/assets/bulk/reactivate`, `POST /api/v1/services/bulk/reactivate` (`selection: {ids \| q \| policy_run_id}`) — restore archived subjects | `assets:write` | P1 |
 | `POST /api/v1/assets/bulk/status` gains `selection.q` (bulk status by filter, PD parity); `POST /api/v1/services/bulk/status` | `assets:write`; archive also needs a preview token like scans | P0 |
 | `POST /api/v1/scope/exclusions/preview` | `attack_surface:scope:read` | P1 |
+| `POST /api/v1/assets/{asset_id}/split` (`{source_record_ids[]}`; D17) and `GET /api/v1/assets/{asset_id}/sources` (layer-1 records with `linked_by`) | `assets:write` / `assets:read` | P1 |
 | `GET /api/v1/inventory/changes` (`q`, `kinds`, `from`, `to`, `cursor`) | `assets:read` | P1 |
 | `GET /api/v1/inventory/trends` | `assets:read` | P1 |
 | `GET /api/v1/services/{service_id}/observations` (`facet`, `cursor`) | `assets:read` | P1 |
@@ -1682,7 +1840,8 @@ All migrations are additive, in this order:
    `service_technologies`, `labels`, `label_assignments`,
    `saved_filters`, `inventory_facet_counts`, `inventory_daily_rollups`,
    then (later phases) `asset_policies*`, `inventory_observations`,
-   `inventory_change`, `discovery_edges`, `service_screenshots`,
+   `inventory_change`, `service_sources`, `discovery_edges`,
+   `service_screenshots`,
    `screenshot_phash_bands` and `content_releases`.
 3. `findings.service_id`.
 4. `asset_groups` columns.
@@ -1800,6 +1959,11 @@ P0 adds no permissions; it reuses `assets:*`, `assets:groups:*`,
 - `scope_exclusions` `applies_to`/`pattern_kind`/`effect`/`exclusion_kind`,
   plus the `*.x` rewrite;
 - `asset_services` `archived_reason`;
+- `service_sources`;
+- `asset_sources` gains `tenant_id`, `last_seen_run_id`, `linked_by`,
+  `linked_at` and `linked_run_id`, plus the `asset_links` view;
+- `last_seen_run_id` on assets and services;
+- the zone id in RFC-028 identity keys for private addresses (D16);
 - the `assets:policies:*` permissions.
 
 **API:**
@@ -1813,7 +1977,13 @@ P0 adds no permissions; it reuses `assets:*`, `assets:groups:*`,
 - exclusions at ingest and in CT discovery;
 - the gate at RFC-030 claim time;
 - trends and changes endpoints;
-- the "affected services" metric.
+- the "affected services" metric;
+- the correlation job (single-flight per tenant and zone, §6.3.5):
+  windowed match proposals, the preferred-field recompute and the
+  snapshot;
+- gone detection limited to the run's scope;
+- asset split (D17), with audit;
+- the OQL `source:` scope and `facets?source=`.
 
 **Sensor:** none. The sensor-side scope check (RFC-023 D7/D8) still
 applies after resolution; claim-time gating is on the API.
@@ -1944,7 +2114,9 @@ table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
 |---|---|
 | Keep services as assets of type `service` | Every inventory count, dashboard and scope rule would mix hosts and ports. Services have different identity (host + port) and different lifecycle (they close and reopen). The services table already exists and is FK-safe in the merge plan |
 | Facets over `assets.properties` JSONB (today) | Full JSONB expansion per request; no typing; cannot be indexed per value at 100k+ (F10) |
-| Elasticsearch / OpenSearch for search and facets | Another stateful service to run, secure and keep consistent per tenant; Postgres with typed columns, trigram and GIN meets §7 at the target sizes. Revisit above 5M services per tenant |
+| Elasticsearch / OpenSearch for search and facets | Another stateful service to run, secure and keep consistent per tenant; Postgres with typed columns, trigram and GIN should meet §7 at the target sizes. Revisit above 5M services per tenant. **This is our own reasoning:** research 08 found no verified evidence comparing storage engines, so the P0 performance tests decide |
+| ClickHouse for observations / Neo4j for lineage | Same reasoning, also unverified by research 08. Observations are change-only and small; lineage depth is capped at 8 and fits a recursive CTE. Revisit if the P1/P3 tests miss §7 |
+| Probabilistic (ML) record merging | Research 08 "avoid": opaque merges cannot be explained or reversed. RFC-028's deterministic order + review stays |
 | Materialised views for facets | `REFRESH MATERIALIZED VIEW` is all-tenants and heavy; a per-tenant table refreshed on change is cheaper and states `as_of` |
 | Lucene / KQL-compatible syntax | Bigger grammar, regex and fuzzy operators we would have to refuse; OQL keeps PD/GitHub-search-like ergonomics with a typed registry |
 | Policies as workflows | Workflows are per event, per finding, without preview, apply-to-existing or caps (§6.14.6) |
@@ -1971,6 +2143,9 @@ table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
 | **D12** | Excluded names at ingest from tenant-triggered scans | create archived / drop | **Create archived with reason** (visible decision); discovery-source names are dropped and counted |
 | **D13** | Subsidiaries (acquisitions) source | tenant-entered list + tenant-key integrations / scraped databases | **Tenant-entered list and tenant-key integrations only**; never auto-confirm from it |
 | **D14** | Policy ceilings | 50 enabled policies; 10k effects/hour; archive cap min(100, 5 %) | **As stated**, admin-console adjustable per tenant |
+| **D15** | Where correlation runs (I3) | (a) all inline at ingest (today); (b) all in a batch job; (c) inline strong-key match + single-flight batch job per tenant and zone for windowed matches, preferred fields and the snapshot | **(c).** Findings need an asset id at ingest time; everything fuzzy or expensive moves to the batch job, which can be re-run and audited |
+| **D16** | Zone boundary for identity (I4) | private addresses keyed by (zone, address) / tenant-wide | **(zone, address) for RFC 1918/ULA/CGNAT; tenant-wide for public addresses and DNS names.** Two zones with overlapping 10.0.0.0/8 stay two assets |
+| **D17** | Manual split | add `split` to RFC-041's verb list (`POST /assets/{asset_id}/split`) / model it as a resource (`POST /asset-splits`) | **Add the verb.** It is the audited inverse of the existing merge; the resource form is the fallback if RFC-041 keeps the list closed |
 
 ## 13. Sources
 
@@ -1996,6 +2171,12 @@ table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
     policies;
   - `02-scan-orchestration-ha`: transactional outbox, `SKIP LOCKED`
     claims, at-least-once delivery;
+  - `08-inventory-system-design`: per-source records → correlation →
+    canonical rows; deterministic, windowed identity keys; single-flight
+    correlation; zone boundaries; run-tag change detection with scoped
+    cleanup; Fetch/Map/Load/ScopedCleanup connectors; identity fields;
+    CenQL/runZero query grammar; Defender EASM states (runZero, Axonius,
+    Cartography, Censys, Microsoft docs);
   - `06-projectdiscovery-ux`: dynamic groups as saved filters over the
     parent discovery, bulk label and status by filter, rules-based
     asynchronous auto-labels, asynchronous headless-Chrome screenshots;
