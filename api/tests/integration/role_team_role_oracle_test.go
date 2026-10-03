@@ -414,6 +414,10 @@ func TestTeamRoleOracle_MigrationRepairsExistingRows(t *testing.T) {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
+	// The migration alters roles and replaces v_user_effective_role, which
+	// other packages read concurrently; lock both before any DDL so it
+	// cannot deadlock with them.
+	testdb.LockForDDL(t, f.ctx, tx, "roles", "v_user_effective_role")
 	txExec(`ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_custom_slug_not_reserved`)
 	txExec(`ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_custom_level_below_admin`)
 
