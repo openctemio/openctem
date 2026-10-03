@@ -1661,14 +1661,11 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	// normalization); the caller reports that as an error of this one asset.
 	// It used to truncate at 1024 bytes, which still overflowed
 	// assets.name varchar(255) and failed the whole report's upsert.
-	newAsset, err := asset.NewAsset(name, coreType, criticality)
+	// Create with the sub-type so the stored name is normalized with the same
+	// (type, sub-type) key the lookup above used (RFC-043 section 10).
+	newAsset, err := asset.NewAssetWithSubType(name, coreType, subType, criticality)
 	if err != nil {
 		return nil, err
-	}
-
-	// Set sub_type from TypeAliases or from properties
-	if subType != "" {
-		newAsset.SetSubType(subType)
 	}
 
 	newAsset.SetTenantID(tenantID)

@@ -324,8 +324,11 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		}
 	}
 
-	// Normalize name before lookup so it matches existing normalized assets (RFC-001)
-	normalizedName := assetdom.NormalizeName(input.Name, assetType, "")
+	// Normalize name before lookup so it matches existing normalized assets
+	// (RFC-001). The sub-type is part of the identity key (RFC-043 section 10):
+	// normalize, look up and create with the same (type, sub-type).
+	promotedSubType, _ := input.Properties["__promoted_sub_type"].(string)
+	normalizedName := assetdom.NormalizeName(input.Name, assetType, promotedSubType)
 	if normalizedName != "" {
 		input.Name = normalizedName
 	}
@@ -348,7 +351,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		return s.mergeAndUpdateExisting(ctx, correlated, input, assetType, criticality, tenantID)
 	}
 
-	a, err := assetdom.NewAsset(input.Name, assetType, criticality)
+	a, err := assetdom.NewAssetWithSubType(input.Name, assetType, promotedSubType, criticality)
 	if err != nil {
 		return nil, err
 	}
