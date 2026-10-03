@@ -31,7 +31,9 @@ The `mfa_token`:
 Wrong codes increment `users.failed_login_attempts`. After `AUTH_MAX_LOGIN_ATTEMPTS`
 the account is locked for `AUTH_LOCKOUT_DURATION`, the same lockout as wrong
 passwords. The counter is reset only after the second step succeeds. The
-`/auth/mfa/*` routes share the login rate limiter (5/min per IP).
+`/auth/mfa/*` routes have their own rate-limit buckets (10/min per challenge,
+30/min per IP), counted in Redis so every API replica shares them (see
+[Authentication rate limits](../redis-production-guide.md#authentication-rate-limits)).
 
 ## Self-service API (`/api/v1/users/me/...`)
 

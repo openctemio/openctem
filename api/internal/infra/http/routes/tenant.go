@@ -21,6 +21,7 @@ func registerTenantRoutes(
 	tenantRepo tenant.Repository,
 	membershipReader middleware.MembershipReader,
 	localAuth *handler.LocalAuthHandler,
+	ssoChanges *handler.SSOChangeHandler,
 ) {
 	if membershipReader == nil {
 		membershipReader = tenantRepo
@@ -64,6 +65,17 @@ func registerTenantRoutes(
 	// The organization's IP allowlist, for the organization in the URL.
 	if ipAllowlistMiddleware != nil {
 		tenantMiddlewares = append(tenantMiddlewares, ipAllowlistMiddleware)
+	}
+	// Per-request SSO enforcement for the organization in the URL, with the
+	// caller's role there (RequireMembership above puts it in the context).
+	// The token-tenant chains run the same gate through buildBaseMiddlewares;
+	// this chain does not use that builder, so it adds the gate here.
+	if ssoEnforcementMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, ssoEnforcementMiddleware)
+	}
+	// The per-user read budget of the token-tenant chains.
+	if readRateLimitMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, readRateLimitMiddleware)
 	}
 
 	router.Group("/api/v1/tenants/{tenant}", func(r Router) {
@@ -154,26 +166,39 @@ func registerTenantRoutes(
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())
 		r.PATCH("/settings/api", h.UpdateAPISettings, middleware.RequireTeamOwner())
 
+		// SSO changes a platform administrator proposed for this organization
+		// (RFC-022). Owner only: approving one installs who can sign in.
+		// The service re-checks ownership in the database.
+		if ssoChanges != nil {
+			r.GET("/settings/sso/changes", ssoChanges.OwnerList, middleware.RequireTeamOwner())
+			r.POST("/settings/sso/changes/{changeId}/approve", ssoChanges.Approve, middleware.RequireTeamOwner())
+			r.POST("/settings/sso/changes/{changeId}/reject", ssoChanges.Reject, middleware.RequireTeamOwner())
+		}
+
 		// Owner-only operations
 		r.DELETE("/", h.Delete, middleware.RequireTeamOwner())
 	}, tenantMiddlewares...)
 
-	// Invitation routes - mixed public and authenticated
+	// Invitation routes - mixed public and authenticated. The token in the
+	// path is the credential, so every route is rate limited per IP, in the
+	// shared auth store (its own "invitation" budget, 20/min: the UI makes a
+	// preview + accept per invitation, and users behind one NAT share an IP).
+	invitationRL := newAuthRateLimiter("invitation").TokenExchangeMiddleware()
 	router.Group("/api/v1/invitations", func(r Router) {
 		// Public: preview invitation without auth (for better UX)
-		r.GET("/{token}/preview", h.GetInvitationPreview)
+		r.GET("/{token}/preview", h.GetInvitationPreview, invitationRL)
 
 		// Public: decline invitation (token is authorization)
-		r.POST("/{token}/decline", h.DeclineInvitation)
+		r.POST("/{token}/decline", h.DeclineInvitation, invitationRL)
 
 		// Public: accept invitation with refresh token (for users without tenant)
 		// This is for users who were invited but don't have a tenant yet (only refresh token)
 		if localAuth != nil {
-			r.POST("/{token}/accept-with-refresh", localAuth.AcceptInvitationWithRefresh)
+			r.POST("/{token}/accept-with-refresh", localAuth.AcceptInvitationWithRefresh, invitationRL)
 		}
 
 		// Authenticated: full invitation details and accept
-		r.GET("/{token}", ChainFunc(h.GetInvitation, baseMiddlewares...).ServeHTTP)
-		r.POST("/{token}/accept", ChainFunc(h.AcceptInvitation, baseMiddlewares...).ServeHTTP)
+		r.GET("/{token}", ChainFunc(h.GetInvitation, append(append([]Middleware{}, baseMiddlewares...), invitationRL)...).ServeHTTP)
+		r.POST("/{token}/accept", ChainFunc(h.AcceptInvitation, append(append([]Middleware{}, baseMiddlewares...), invitationRL)...).ServeHTTP)
 	})
 }

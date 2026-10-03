@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -68,7 +69,7 @@ type sensorSvcMockRepo struct {
 	getByAPIKeyHashCalls  int
 	listCalls             int
 	updateCalls           int
-	updateKeyExpiryCalls  int
+	retireInlineKeyCalls  int
 	updateHeartbeatCalls  int
 	updateAPIKeyCalls     int
 	deleteCalls           int
@@ -204,19 +205,21 @@ func (m *sensorSvcMockRepo) Update(_ context.Context, a *sensor.Sensor) error {
 	return nil
 }
 
-func (m *sensorSvcMockRepo) UpdateKeyExpiry(_ context.Context, id shared.ID, expiresAt *time.Time) error {
+func (m *sensorSvcMockRepo) RetireInlineKey(_ context.Context, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.updateKeyExpiryCalls++
+	m.retireInlineKeyCalls++
 	if m.updateErr != nil {
-		return m.updateErr
+		return false, m.updateErr
 	}
 	a, ok := m.sensors[id.String()]
-	if !ok || !a.Status.CanAuthenticate() { // status='active' guard
-		return nil
+	// Hash guard + never extend, as the SQL.
+	if !ok || !slices.Contains(keyHashes, a.APIKeyHash) || (a.InlineKeyExpiresAt != nil && !a.InlineKeyExpiresAt.After(at)) {
+		return false, nil
 	}
-	a.InlineKeyExpiresAt = expiresAt
-	return nil
+	t := at
+	a.InlineKeyExpiresAt = &t
+	return true, nil
 }
 
 func (m *sensorSvcMockRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb sensor.HeartbeatUpdate) (bool, error) {
@@ -1251,7 +1254,7 @@ func TestSensorService_RenewAPIKey_Success(t *testing.T) {
 	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeRunner)
 	oldHash := a.APIKeyHash
 
-	newKey, _, err := svc.RenewAPIKey(context.Background(), a)
+	newKey, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1272,7 +1275,7 @@ func TestSensorService_RenewAPIKey_PlatformSensor(t *testing.T) {
 	a.TenantID = nil
 	a.IsPlatformSensor = true
 
-	newKey, _, err := svc.RenewAPIKey(context.Background(), a)
+	newKey, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a})
 	if err != nil {
 		t.Fatalf("expected no error for platform sensor renewal, got %v", err)
 	}
@@ -1285,7 +1288,7 @@ func TestSensorService_RenewAPIKey_NilSensor(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
 
-	_, _, err := svc.RenewAPIKey(context.Background(), nil)
+	_, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{})
 	if err == nil {
 		t.Fatal("expected error for nil sensor")
 	}
@@ -1304,7 +1307,7 @@ func TestSensorService_RenewAPIKey_RevokedSensor(t *testing.T) {
 	a.Revoke("compromised")
 	repo.sensors[a.ID.String()] = a
 
-	_, _, err := svc.RenewAPIKey(context.Background(), a)
+	_, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a})
 	if err == nil {
 		t.Fatal("expected error for revoked sensor")
 	}
@@ -1329,7 +1332,7 @@ func TestSensorService_RenewAPIKey_OldKeyStopsWorking(t *testing.T) {
 	}
 	oldKey := out.APIKey
 
-	newKey, _, err := svc.RenewAPIKey(context.Background(), out.Sensor)
+	newKey, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: out.Sensor})
 	if err != nil {
 		t.Fatalf("renew failed: %v", err)
 	}
@@ -1352,7 +1355,7 @@ func TestSensorService_RenewAPIKey_UpdateError(t *testing.T) {
 	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeRunner)
 	repo.updateErr = errors.New("update failed")
 
-	_, _, err := svc.RenewAPIKey(context.Background(), a)
+	_, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a})
 	if err == nil {
 		t.Fatal("expected error when repo.Update fails")
 	}
@@ -1388,7 +1391,7 @@ func TestSensorService_RenewAPIKey_NoTTL_NeverExpires(t *testing.T) {
 	tenantID := shared.NewID()
 	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeRunner)
 
-	_, expiresAt, err := svc.RenewAPIKey(context.Background(), a)
+	_, expiresAt, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a})
 	if err != nil {
 		t.Fatalf("renew failed: %v", err)
 	}
@@ -1410,7 +1413,7 @@ func TestSensorService_RenewAPIKey_WithTTL_SetsExpiry(t *testing.T) {
 	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeRunner)
 
 	before := time.Now()
-	_, expiresAt, err := svc.RenewAPIKey(context.Background(), a)
+	_, expiresAt, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a})
 	if err != nil {
 		t.Fatalf("renew failed: %v", err)
 	}
@@ -2342,15 +2345,43 @@ func TestSensorService_NilAuditService_DoesNotPanic(t *testing.T) {
 // Tests: multi-key store (RFC-014 Phase 3 rotation overlap)
 // ============================================================================
 
-// mockSensorAPIKeyRepo is an in-memory sensor.APIKeyRepository for the overlap tests.
+// mockSensorAPIKeyRepo is an in-memory sensor.APIKeyRepository for the overlap
+// tests. Its rotations write the inline key through sensors, the sensor
+// repository the service uses, as the SQL writes both tables in one
+// transaction.
 type mockSensorAPIKeyRepo struct {
 	mu        sync.Mutex
 	byID      map[string]*sensor.APIKey
 	createErr error
+	sensors   sensor.Repository
+
+	// sensorLocks models the per-sensor lock RotateKey and ReplaceInlineKey
+	// take (a row lock on the sensor): rotations of one sensor never
+	// interleave.
+	sensorLocks sync.Map // sensor id -> *sync.Mutex
+
+	// beforeRotate, when set, runs at the start of RotateKey and
+	// ReplaceInlineKey, before the lock: whatever it does lands between a
+	// renewal's authentication and its rotation.
+	beforeRotate func()
 }
 
-func newMockSensorAPIKeyRepo() *mockSensorAPIKeyRepo {
-	return &mockSensorAPIKeyRepo{byID: make(map[string]*sensor.APIKey)}
+func (m *mockSensorAPIKeyRepo) runBeforeRotate() {
+	if hook := m.beforeRotate; hook != nil {
+		m.beforeRotate = nil
+		hook()
+	}
+}
+
+func newMockSensorAPIKeyRepo(sensors sensor.Repository) *mockSensorAPIKeyRepo {
+	return &mockSensorAPIKeyRepo{byID: make(map[string]*sensor.APIKey), sensors: sensors}
+}
+
+func (m *mockSensorAPIKeyRepo) lockSensor(id shared.ID) func() {
+	l, _ := m.sensorLocks.LoadOrStore(id.String(), &sync.Mutex{})
+	mu := l.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func (m *mockSensorAPIKeyRepo) Create(_ context.Context, k *sensor.APIKey) error {
@@ -2439,11 +2470,151 @@ func (m *mockSensorAPIKeyRepo) CountActiveBySensorID(_ context.Context, sensorID
 	return n, nil
 }
 
+// retireKeys mirrors retireSensorKeys: active, non-revoked keys of the
+// sensor other than except, expiry only brought forward. It returns the
+// previous expiries so a failed rotation can be rolled back.
+func (m *mockSensorAPIKeyRepo) retireKeys(sensorID shared.ID, except *shared.ID, at time.Time) map[string]*time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	prev := map[string]*time.Time{}
+	for id, k := range m.byID {
+		if k.SensorID != sensorID || !k.IsActive || k.RevokedAt != nil || (except != nil && k.ID == *except) {
+			continue
+		}
+		if k.ExpiresAt != nil && !k.ExpiresAt.After(at) {
+			continue
+		}
+		prev[id] = k.ExpiresAt
+		t := at
+		k.ExpiresAt = &t
+	}
+	return prev
+}
+
+func (m *mockSensorAPIKeyRepo) restore(prev map[string]*time.Time, drop *shared.ID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, exp := range prev {
+		if k, ok := m.byID[id]; ok {
+			k.ExpiresAt = exp
+		}
+	}
+	if drop != nil {
+		delete(m.byID, drop.String())
+	}
+}
+
+// lockedState mirrors lockSensorKeys: the sensor's status and inline key as
+// read under the sensor's lock.
+func (m *mockSensorAPIKeyRepo) lockedState(ctx context.Context, sensorID shared.ID) (sensor.SensorStatus, string, *time.Time, error) {
+	a, err := m.sensors.GetByID(ctx, sensorID)
+	if err != nil {
+		return "", "", nil, sensor.ErrSensorNotFound
+	}
+	return a.Status, a.APIKeyHash, a.InlineKeyExpiresAt, nil
+}
+
+// checkPresented mirrors checkPresentedKey: under the lock, the presented
+// key row must still be the sensor's, active, unrevoked and unexpired, or
+// the inline hash still the presented key's and unexpired.
+func (m *mockSensorAPIKeyRepo) checkPresented(sensorID shared.ID, inlineHash string, inlineExpires *time.Time, p sensor.PresentedKey) error {
+	if p.KeyID == nil {
+		if inlineHash == "" || !slices.Contains(p.InlineKeyHashes, inlineHash) {
+			return sensor.ErrPresentedKeyInvalid
+		}
+		if inlineExpires != nil && !inlineExpires.After(p.At) {
+			return sensor.ErrPresentedKeyInvalid
+		}
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k, ok := m.byID[p.KeyID.String()]
+	if !ok || k.SensorID != sensorID || !k.IsActive || k.RevokedAt != nil ||
+		(k.ExpiresAt != nil && !k.ExpiresAt.After(p.At)) {
+		return sensor.ErrPresentedKeyInvalid
+	}
+	return nil
+}
+
+// RotateKey mirrors the SQL transaction: under the sensor's lock, re-check
+// the sensor's status and the presented key, issue the key, retire every
+// other active key, retire the inline key by hash; a failure undoes it all.
+func (m *mockSensorAPIKeyRepo) RotateKey(ctx context.Context, key *sensor.APIKey, presented sensor.PresentedKey, inlineKeyHashes []string, retireAt time.Time) error {
+	m.runBeforeRotate()
+	defer m.lockSensor(key.SensorID)()
+	status, inlineHash, inlineExpires, err := m.lockedState(ctx, key.SensorID)
+	if err != nil {
+		return err
+	}
+	switch status {
+	case sensor.SensorStatusActive:
+	case sensor.SensorStatusRevoked:
+		return sensor.ErrSensorRevoked
+	default:
+		return sensor.ErrSensorDisabled
+	}
+	if err := m.checkPresented(key.SensorID, inlineHash, inlineExpires, presented); err != nil {
+		return err
+	}
+	if err := m.Create(ctx, key); err != nil {
+		return err
+	}
+	prev := m.retireKeys(key.SensorID, &key.ID, retireAt)
+	if len(inlineKeyHashes) > 0 && m.sensors != nil {
+		if _, err := m.sensors.RetireInlineKey(ctx, key.SensorID, inlineKeyHashes, retireAt); err != nil {
+			m.restore(prev, &key.ID)
+			return err
+		}
+	}
+	return nil
+}
+
+// ReplaceInlineKey mirrors the SQL transaction: under the sensor's lock,
+// re-check the presented key, replace the inline key (active sensors only),
+// then retire every key row.
+func (m *mockSensorAPIKeyRepo) ReplaceInlineKey(ctx context.Context, sensorID shared.ID, presented sensor.PresentedKey, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error) {
+	m.runBeforeRotate()
+	defer m.lockSensor(sensorID)()
+	status, inlineHash, inlineExpires, err := m.lockedState(ctx, sensorID)
+	if err != nil || status != sensor.SensorStatusActive {
+		return false, nil
+	}
+	if err := m.checkPresented(sensorID, inlineHash, inlineExpires, presented); err != nil {
+		return false, err
+	}
+	updated, err := m.sensors.UpdateAPIKey(ctx, sensorID, hash, prefix, expiresAt, true)
+	if err != nil || !updated {
+		return false, err
+	}
+	m.retireKeys(sensorID, nil, retireAt)
+	return true, nil
+}
+
+// RegenerateKey mirrors the SQL transaction: under the sensor's lock,
+// install the inline key (no expiry, any status) and revoke every active key
+// row.
+func (m *mockSensorAPIKeyRepo) RegenerateKey(ctx context.Context, sensorID shared.ID, hash, prefix, reason string) (bool, error) {
+	defer m.lockSensor(sensorID)()
+	updated, err := m.sensors.UpdateAPIKey(ctx, sensorID, hash, prefix, nil, false)
+	if err != nil || !updated {
+		return false, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range m.byID {
+		if k.SensorID == sensorID && k.IsActive {
+			k.Revoke(reason)
+		}
+	}
+	return true, nil
+}
+
 // Renew under a TTL with the multi-key store issues a NEW key row that
 // authenticates, while the old inline key keeps working during the overlap.
 func TestSensorService_RenewAPIKey_Overlap(t *testing.T) {
 	repo := newSensorSvcMockRepo()
-	keyRepo := newMockSensorAPIKeyRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
 	svc := newSensorSvcTestService(repo)
 	svc.SetKeyTTL(1 * time.Hour)
 	svc.SetAPIKeyRepository(keyRepo)
@@ -2457,7 +2628,7 @@ func TestSensorService_RenewAPIKey_Overlap(t *testing.T) {
 	}
 	oldKey := out.APIKey
 
-	newKey, exp, err := svc.RenewAPIKey(context.Background(), out.Sensor)
+	newKey, exp, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: out.Sensor})
 	if err != nil {
 		t.Fatalf("renew: %v", err)
 	}
@@ -2478,14 +2649,14 @@ func TestSensorService_RenewAPIKey_Overlap(t *testing.T) {
 	}
 }
 
-// Regression (RFC-014 defect): the inline bootstrap key must be retired exactly
-// ONCE, on the first overlap renewal. A prior guard (!IsKeyExpired) re-ran the
-// retirement on every renewal that landed before the grace lapsed, pushing the
-// grace forward and keeping the original static key alive forever under short
-// TTLs. The fix guards on KeyExpiresAt == nil.
+// Regression (RFC-014 defect): the inline bootstrap key's retirement must not
+// be pushed forward by later renewals. A prior guard (!IsKeyExpired) re-ran
+// the retirement on every renewal that landed before the grace lapsed and
+// kept the original static key alive forever under short TTLs. Retirement
+// now only ever brings an expiry earlier.
 func TestSensorService_RenewAPIKey_Overlap_RetiresInlineKeyOnce(t *testing.T) {
 	repo := newSensorSvcMockRepo()
-	keyRepo := newMockSensorAPIKeyRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
 	svc := newSensorSvcTestService(repo)
 	svc.SetKeyTTL(1 * time.Hour)
 	svc.SetAPIKeyRepository(keyRepo)
@@ -2499,19 +2670,23 @@ func TestSensorService_RenewAPIKey_Overlap_RetiresInlineKeyOnce(t *testing.T) {
 	}
 
 	// Renew several times, each before the grace would lapse.
+	var first time.Time
 	for i := 0; i < 3; i++ {
-		if _, _, err := svc.RenewAPIKey(context.Background(), out.Sensor); err != nil {
+		if _, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: out.Sensor}); err != nil {
 			t.Fatalf("renew %d: %v", i, err)
 		}
+		if i == 0 {
+			first = *repo.sensors[out.Sensor.ID.String()].InlineKeyExpiresAt
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
 
-	// The inline key must have been retired exactly once (not re-extended).
-	if repo.updateKeyExpiryCalls != 1 {
-		t.Errorf("expected inline key retired exactly once, got %d UpdateKeyExpiry calls", repo.updateKeyExpiryCalls)
-	}
 	stored := repo.sensors[out.Sensor.ID.String()]
 	if stored.InlineKeyExpiresAt == nil {
 		t.Fatal("expected inline key to have an expiry after overlap renewal")
+	}
+	if !stored.InlineKeyExpiresAt.Equal(first) {
+		t.Errorf("inline retirement re-extended: first %v, now %v", first, *stored.InlineKeyExpiresAt)
 	}
 	// And the retirement grace is bounded (≤ ~15m out), not pushed to a full TTL.
 	if time.Until(*stored.InlineKeyExpiresAt) > 20*time.Minute {
@@ -2519,10 +2694,254 @@ func TestSensorService_RenewAPIKey_Overlap_RetiresInlineKeyOnce(t *testing.T) {
 	}
 }
 
+// ---- Renewal retires the presented key ----
+
+// defaultRenewGrace is SENSOR_KEY_RENEW_GRACE's default.
+const defaultRenewGrace = 15 * time.Minute
+
+// renewFixture is a sensor under rotation overlap (1 day TTL), with its
+// bootstrap (inline) key.
+type renewFixture struct {
+	t       *testing.T
+	repo    *sensorSvcMockRepo
+	keyRepo *mockSensorAPIKeyRepo
+	svc     *app.SensorService
+	sensor  *sensor.Sensor
+	inline  string
+}
+
+func newRenewFixture(t *testing.T) *renewFixture {
+	t.Helper()
+	repo := newSensorSvcMockRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
+	svc := newSensorSvcTestService(repo)
+	svc.SetKeyTTL(24 * time.Hour)
+	svc.SetAPIKeyRepository(keyRepo)
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: shared.NewID().String(), Name: "renew-sensor", Type: "runner",
+	})
+	if err != nil {
+		t.Fatalf("create sensor: %v", err)
+	}
+	return &renewFixture{t: t, repo: repo, keyRepo: keyRepo, svc: svc, sensor: out.Sensor, inline: out.APIKey}
+}
+
+// renew authenticates with key, as the HTTP layer does, and renews with
+// that identity.
+func (f *renewFixture) renew(key string) string {
+	f.t.Helper()
+	id, err := f.svc.AuthenticateIdentity(context.Background(), key)
+	if err != nil {
+		f.t.Fatalf("authenticate before renew: %v", err)
+	}
+	next, _, err := f.svc.RenewAPIKey(context.Background(), id)
+	if err != nil {
+		f.t.Fatalf("renew: %v", err)
+	}
+	return next
+}
+
+func (f *renewFixture) works(key string) bool {
+	_, err := f.svc.AuthenticateIdentity(context.Background(), key)
+	return err == nil
+}
+
+// longLived counts the credentials that still authenticate an hour from now.
+func (f *renewFixture) longLived() int {
+	horizon := time.Now().Add(time.Hour)
+	n := 0
+	f.keyRepo.mu.Lock()
+	for _, k := range f.keyRepo.byID {
+		if k.SensorID == f.sensor.ID && k.IsActive && (k.ExpiresAt == nil || k.ExpiresAt.After(horizon)) {
+			n++
+		}
+	}
+	f.keyRepo.mu.Unlock()
+	f.repo.mu.Lock()
+	if a := f.repo.sensors[f.sensor.ID.String()]; a.InlineKeyExpiresAt == nil || a.InlineKeyExpiresAt.After(horizon) {
+		n++
+	}
+	f.repo.mu.Unlock()
+	return n
+}
+
+// The key a sensor renewed with keeps working through the grace (in-flight
+// requests) and stops after it; the new key works.
+func TestSensorService_RenewAPIKey_PresentedKeyExpiresAfterGrace(t *testing.T) {
+	f := newRenewFixture(t)
+	f.svc.SetRenewGrace(30 * time.Millisecond)
+
+	k1 := f.renew(f.inline)
+	if !f.works(k1) {
+		t.Fatal("the new key must authenticate")
+	}
+	if !f.works(f.inline) {
+		t.Fatal("the presented key must keep working within the grace")
+	}
+	k2 := f.renew(k1) // presented: a sensor_api_keys row
+	if !f.works(k1) {
+		t.Fatal("the presented row key must keep working within the grace")
+	}
+
+	time.Sleep(60 * time.Millisecond)
+	if f.works(f.inline) {
+		t.Error("the inline key renewed away still authenticates after the grace")
+	}
+	if f.works(k1) {
+		t.Error("the row key renewed away still authenticates after the grace")
+	}
+	if !f.works(k2) {
+		t.Error("the latest key must keep working")
+	}
+}
+
+// The default grace is 15 minutes, and the presented key is capped to it —
+// not left valid until its own (one day) expiry.
+func TestSensorService_RenewAPIKey_PresentedRowCappedToGrace(t *testing.T) {
+	f := newRenewFixture(t)
+	k1 := f.renew(f.inline)
+	id1, err := f.svc.AuthenticateIdentity(context.Background(), k1)
+	if err != nil || id1.KeyID == nil {
+		t.Fatalf("k1 must authenticate as a key row: %v", err)
+	}
+	f.renew(k1)
+	got, _ := f.keyRepo.GetByID(context.Background(), *id1.KeyID)
+	if got.ExpiresAt == nil || time.Until(*got.ExpiresAt) > defaultRenewGrace+time.Minute {
+		t.Fatalf("presented key expires at %v, want within the %v grace", got.ExpiresAt, defaultRenewGrace)
+	}
+}
+
+// A stolen key cannot fork the credential: renewing twice with the same key
+// (the sensor and whoever copied it) leaves one long-lived key, the latest.
+func TestSensorService_RenewAPIKey_TwiceWithSameKey_OneSuccessor(t *testing.T) {
+	f := newRenewFixture(t)
+	f.svc.SetRenewGrace(30 * time.Millisecond)
+
+	attacker := f.renew(f.inline)
+	legit := f.renew(f.inline) // still within the grace
+	if n := f.longLived(); n != 1 {
+		t.Fatalf("%d long-lived credentials after two renewals with one key, want 1", n)
+	}
+	time.Sleep(60 * time.Millisecond)
+	if f.works(attacker) {
+		t.Error("the earlier successor still authenticates after the grace")
+	}
+	if !f.works(legit) {
+		t.Error("the latest successor must keep working")
+	}
+}
+
+// Renewing with key K2 retires K2 and keeps the new key: the presented
+// credential is identified, not guessed.
+func TestSensorService_RenewAPIKey_RetiresWhatWasPresented(t *testing.T) {
+	f := newRenewFixture(t)
+	k1 := f.renew(f.inline)
+	inlineExp := *f.repo.sensors[f.sensor.ID.String()].InlineKeyExpiresAt
+
+	id1, _ := f.svc.AuthenticateIdentity(context.Background(), k1)
+	k2 := f.renew(k1)
+	id2, err := f.svc.AuthenticateIdentity(context.Background(), k2)
+	if err != nil || id2.KeyID == nil {
+		t.Fatalf("k2 must authenticate as a key row: %v", err)
+	}
+	r1, _ := f.keyRepo.GetByID(context.Background(), *id1.KeyID)
+	r2, _ := f.keyRepo.GetByID(context.Background(), *id2.KeyID)
+	if r1.ExpiresAt == nil || time.Until(*r1.ExpiresAt) > defaultRenewGrace+time.Minute {
+		t.Errorf("presented key K1 not retired: expires %v", r1.ExpiresAt)
+	}
+	if r2.ExpiresAt == nil || time.Until(*r2.ExpiresAt) < 23*time.Hour {
+		t.Errorf("new key K2 was retired: expires %v", r2.ExpiresAt)
+	}
+	if got := *f.repo.sensors[f.sensor.ID.String()].InlineKeyExpiresAt; !got.Equal(inlineExp) {
+		t.Errorf("the inline key's retirement moved from %v to %v", inlineExp, got)
+	}
+	if n := f.longLived(); n != 1 {
+		t.Errorf("%d long-lived credentials, want 1", n)
+	}
+}
+
+// An admin regeneration landing between authentication and renewal installs
+// another inline key. The renewal, presenting the replaced key, is refused,
+// and the regenerated key is neither cut short nor replaced.
+func TestSensorService_RenewAPIKey_DoesNotRetireAdminRegeneratedKey(t *testing.T) {
+	f := newRenewFixture(t)
+	id, err := f.svc.AuthenticateIdentity(context.Background(), f.inline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminKey, err := f.svc.RegenerateAPIKey(context.Background(), f.sensor.TenantID.String(), f.sensor.ID.String(), nil)
+	if err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	if _, _, err := f.svc.RenewAPIKey(context.Background(), id); !errors.Is(err, shared.ErrUnauthorized) {
+		t.Fatalf("renew with the replaced key: err = %v, want unauthorized", err)
+	}
+	if exp := f.repo.sensors[f.sensor.ID.String()].InlineKeyExpiresAt; exp != nil {
+		t.Errorf("the admin-regenerated inline key was given an expiry %v", exp)
+	}
+	if !f.works(adminKey) {
+		t.Error("the admin-regenerated key must keep working")
+	}
+}
+
+// Without a TTL the renewal replaces the inline key; key rows issued earlier
+// under a TTL (the presented one among them) are retired too.
+func TestSensorService_RenewAPIKey_NoTTL_RetiresKeyRows(t *testing.T) {
+	f := newRenewFixture(t)
+	k1 := f.renew(f.inline)
+	f.svc.SetKeyTTL(0)
+	f.svc.SetRenewGrace(0)
+	k2 := f.renew(k1)
+	if f.works(k1) {
+		t.Error("the presented key row still authenticates after a no-TTL renewal")
+	}
+	if !f.works(k2) {
+		t.Error("the new inline key must authenticate")
+	}
+}
+
+// Concurrent renewals with one presented key end with one long-lived key.
+func TestSensorService_RenewAPIKey_Concurrent_OneSuccessor(t *testing.T) {
+	f := newRenewFixture(t)
+	id, err := f.svc.AuthenticateIdentity(context.Background(), f.inline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 16
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, _, err := f.svc.RenewAPIKey(context.Background(), id); err != nil {
+				t.Errorf("renew: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := f.longLived(); got != 1 {
+		t.Fatalf("%d concurrent renewals left %d long-lived credentials, want 1", n, got)
+	}
+}
+
+// A renewal whose retirement write fails is refused: the sensor keeps its old
+// key and retries, rather than hold a new key while the old one lives on.
+func TestSensorService_RenewAPIKey_RetireFailureFailsRenewal(t *testing.T) {
+	f := newRenewFixture(t)
+	id, err := f.svc.AuthenticateIdentity(context.Background(), f.inline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.repo.updateErr = errors.New("db down")
+	if _, _, err := f.svc.RenewAPIKey(context.Background(), id); err == nil {
+		t.Fatal("expected the renewal to fail when the presented key cannot be retired")
+	}
+}
+
 // An expired key row does not authenticate.
 func TestSensorService_AuthenticateByAPIKey_ExpiredKeyRow(t *testing.T) {
 	repo := newSensorSvcMockRepo()
-	keyRepo := newMockSensorAPIKeyRepo()
+	keyRepo := newMockSensorAPIKeyRepo(repo)
 	svc := newSensorSvcTestService(repo)
 	svc.SetAPIKeyRepository(keyRepo)
 	tenantID := shared.NewID()

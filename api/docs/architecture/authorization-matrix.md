@@ -135,6 +135,18 @@ Details: [api-keys.md](./api-keys.md).
 | `PUT /api/v1/assets/{id}` | `assets:write` |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` |
 
+#### Business units (`/api/v1/business-units`)
+
+| Endpoint | Gate |
+|----------|------|
+| `GET /api/v1/business-units` · `/{id}` | `assets:read` |
+| `POST /api/v1/business-units` · `PUT /{id}` · `POST/DELETE /{id}/assets[/{assetId}]` | `assets:write` |
+| `DELETE /api/v1/business-units/{id}` | **owner/admin only** (`RequireAdmin`, plus `assets:write`) |
+
+> Deleting a business unit drops its asset links and detaches its child units
+> for the whole organization, so it is owner/admin only (owner decision
+> 2026-10-02); members keep creating, editing and linking assets.
+
 #### Components (`/api/v1/components`)
 
 | Endpoint | Permission Required |
@@ -410,7 +422,7 @@ These routes require the tenant ID in the URL path and use database-based member
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/tenants/{tenant}/members` | Team viewer+ |
+| `GET /api/v1/tenants/{tenant}/members` | Team viewer+; **emails, last sign-in and second-factor status only for owner/admin** (others get ids, names, avatars, roles; `search` matches names only) |
 | `GET /api/v1/tenants/{tenant}/invitations` | Team viewer+ |
 | `PATCH /api/v1/tenants/{tenant}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
@@ -621,14 +633,15 @@ and certificates are never logged — an IdP update records
 | `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin |
 | `POST /api/v1/admin/tenants` | **ops_admin+** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
-| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no active owner, nothing else (409 otherwise). Audited in `admin_audit_logs` and the organization's audit log |
+| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
-| `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited) |
+| `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
+| `GET /api/v1/admin/tenants/{tenantId}/sso/changes` | any admin (what is waiting for the owner) |
 
 **First-owner bootstrap** (owner decision 2026-10-02, RFC-022 revision 5).
 The platform administrator belongs to no organization and cannot put a person
 of its choosing into one: `POST /admin/tenants/{tenantId}/users` creates only
-the first owner of an organization that has no active owner (checked and
+the first owner of an organization that has no owner, active or suspended (checked and
 inserted in one transaction under a per-organization advisory lock, so two
 requests cannot create two owners), and answers 409 once an owner exists — the
 owner and its administrators add users themselves. The account is created
@@ -641,6 +654,37 @@ returned once: there is no other way to reach the new owner, and nobody in the
 organization can invite them yet. The same delivery rule applies to the owner
 created with `POST /admin/tenants`. Each is written to the organization's audit
 log (`user.created`, `bootstrap_owner: true`, actor `platform-admin:<email>`).
+
+**Owner recovery** (RFC-022 revision 7). A suspended owner still owns the
+organization, so the bootstrap is refused. When every owner is suspended, a
+**super_admin** may send `"recovery": true` to create a new owner. Other
+console roles get 403, an active owner means 409, and an organization that
+cannot send email gets 400. The link is emailed only, never returned. It is
+audited as `organization.owner_recovery` (admin log, high, refusals included)
+and as `user.created` with `owner_recovery: true` at critical severity in the
+organization's log.
+
+**SSO changes wait for an owner** (owner decision 2026-10-02, RFC-022
+revision 8). A platform administrator who could set an organization's SAML
+certificate or OIDC client could sign in as any of its members, so on an
+organization that has an active owner those writes are stored in
+`sso_pending_changes` and the live config is untouched until an owner decides:
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/tenants/{t}/settings/sso/changes` | **owner** (`RequireTeamOwner`) |
+| `POST /api/v1/tenants/{t}/settings/sso/changes/{id}/approve` | **owner** (`RequireTeamOwner` + the service re-checks active ownership in the database); applies the change and marks it approved in one transaction; audited `sso.change_approved` |
+| `POST /api/v1/tenants/{t}/settings/sso/changes/{id}/reject` | **owner** (same gates); audited `sso.change_rejected` |
+
+Administrators, members and viewers of the organization get 403; an owner of
+another organization gets 404 (the change is looked up in the caller's
+organization) or 403 (naming the other organization fails the ownership
+check). An expired change (7 days) answers 410; one already decided or
+superseded by a newer submission answers 409. Every active owner is notified
+in-app (`sso_change_pending`) and by email when SMTP is configured, without
+secrets. **Bootstrap exception:** an organization with no active owner gets the
+change applied directly. Deletes, SSO enforcement and verified domains are not
+gated (none adds a way in).
 
 **Tenant-side counterparts:**
 - `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.
@@ -1092,8 +1136,14 @@ Tenable.sc's RBAC.
    and keys, the audit log, billing, and other users' API keys are owner/admin
    only; peer administrators, audit-chain rebaseline and SCIM token mint/revoke
    are owner only; the platform administrator only bootstraps an
-   organization's first owner. Members and viewers keep the member list
-   (emails included) and `sensors:read`. Role diff (migration `000246`):
+   organization's first owner. Members and viewers keep the member list and
+   `sensors:read`. **Member emails are owner/admin only** (owner decision
+   2026-10-02, superseding the earlier "emails stay visible"): the member list
+   (`GET /api/v1/tenants/{tenant}/members?include=user`) omits `email` and
+   `last_login_at` for anyone else and its `search` matches names only, so a
+   search cannot confirm an address; ids, names and avatars stay for the
+   assignee and owner pickers. Business-unit delete is owner/admin only.
+   Role diff (migration `000246`):
 
    | Role | Removed |
    |------|---------|
@@ -1117,6 +1167,24 @@ Tenable.sc's RBAC.
     | Role | Removed |
     |------|---------|
     | member | `scans:templates:write`, `scans:sources:write` |
+
+11. **Scan commands are owner/admin only and scoped (RFC-040 Q5 (c), owner
+    decision 2026-10-03).** `POST /api/v1/commands` with `type: "scan"`
+    makes a sensor scan whatever the payload names, so it is refused (403)
+    for anyone but owners and administrators, although members keep
+    `commands:write` for the other command types. For an administrator the
+    payload's `target`/`targets` go through the checks of a scan trigger
+    (`scan.Service.GateCommandPayload`): the target validator with the
+    private-range policy (internal addresses only inside a scan zone), active
+    scope exclusions (a failed lookup refuses, fail closed), and zone routing
+    (all targets in one zone, nothing uncovered, a pinned sensor assigned to
+    that zone; the command is stamped with the zone). Any refused target
+    refuses the whole command (400) instead of being dropped, targets nested
+    in `config`, `scanner_config`, `context` or `step_config` are refused,
+    and the stored payload carries the checked list. Every attempt is
+    audited as `command.created`: `success` with sensor, zone and targets, or
+    `denied` with the reason. Without the gate wired, scan commands answer
+    500 (fail closed).
 
 ### Known, deliberate gaps (do not "fix" without a decision)
 

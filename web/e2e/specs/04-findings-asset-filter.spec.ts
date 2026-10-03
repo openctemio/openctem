@@ -30,40 +30,43 @@ test.describe('Findings asset-id filter', () => {
   })
 
   test('findings filtered by assetId honour the filter', async ({ page }) => {
-    // Step 1: find an asset to filter by. We use the asset list as a
-    // proxy and grab the URL of the first row's link.
+    // Step 1: find an asset with findings to filter by. Asset rows open a
+    // sheet and carry no /assets/<id> link, so the id comes from the list
+    // response the page loads (scraping links picked up "/assets/changes"
+    // and skipped this test on every run).
+    type Asset = { id: string; finding_count?: number }
+    const assetsRes = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === '/api/v1/assets' && r.ok(),
+      { timeout: 30_000 }
+    )
     await page.goto('/assets')
-    await page.waitForLoadState('networkidle')
+    const assets = ((await (await assetsRes).json()) as { data?: Asset[] }).data ?? []
+    const asset = assets.find((a) => (a.finding_count ?? 0) > 0)
+    test.skip(!asset, 'No asset with findings — seed findings to enable this test')
+    const assetId = asset!.id
 
-    const firstAssetLink = page.locator('a[href*="/assets/"]').first()
-    if (!(await firstAssetLink.isVisible().catch(() => false))) {
-      test.skip(true, 'No asset links found — seed assets to enable this test')
-      return
-    }
-
-    const href = await firstAssetLink.getAttribute('href')
-    const match = href?.match(/\/assets\/([0-9a-f-]{16,})/i)
-    if (!match) {
-      test.skip(true, `Could not extract asset id from href "${href}"`)
-      return
-    }
-    const assetId = match[1]
-
-    // Step 2: open findings with the asset filter.
+    // Step 2: open findings with the asset filter; the list request must
+    // carry it to the API.
+    const findingsRes = page.waitForResponse(
+      (r) => {
+        const u = new URL(r.url())
+        return u.pathname === '/api/v1/findings' && u.searchParams.get('asset_id') === assetId
+      },
+      { timeout: 30_000 }
+    )
     await page.goto(`/findings?assetId=${assetId}`)
-    await page.waitForLoadState('networkidle')
+    const res = await findingsRes
+    expect(res.ok()).toBeTruthy()
+    const findings = ((await res.json()) as { data?: Array<{ asset_id: string }> }).data ?? []
 
     // Step 3: the URL must still carry the filter (proves the route
     // didn't strip it on a client-side navigation).
     expect(page.url()).toContain(`assetId=${assetId}`)
 
-    // Step 4: there should be either filtered rows OR a clear empty
-    // state — never the unfiltered total. We assert by counting rows
-    // and making sure the count is finite. (The summary-vs-table
-    // mismatch regression check requires DOM hooks for both numbers
-    // — see TODO below.)
-    const tableOrEmpty = page.getByRole('table').or(page.getByText(/no findings/i))
-    await expect(tableOrEmpty.first()).toBeVisible({ timeout: 15_000 })
+    // Step 4: only this asset's findings come back, and the table shows them.
+    expect(findings.length).toBeGreaterThan(0)
+    expect(findings.every((f) => f.asset_id === assetId)).toBeTruthy()
+    await expect(page.getByRole('table').first()).toBeVisible({ timeout: 15_000 })
   })
 
   // TODO: Regression assertion for "summary count != filtered count" bug.

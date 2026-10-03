@@ -150,6 +150,11 @@ jobs:
       - name: Security Gates (sensor vocabulary guard)
         run: go test ./tools/lint/sensorvocab/... -count=1
 
+      # RFC-041: every route belongs to one plane and follows the API
+      # conventions; today's violations are a shrink-only baseline.
+      - name: Route Style (planes and conventions)
+        run: go test ./tools/lint/routestyle/... ./internal/infra/http/routes/plane/... -count=1
+
       - name: OpenAPI Contract
         run: bash scripts/check-openapi.sh
 

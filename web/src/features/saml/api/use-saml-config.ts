@@ -12,6 +12,7 @@ import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { adminFetch, AdminApiError } from '@/features/admin-console/api/admin-client'
 import type { SamlConfig } from '../types/saml.types'
+import type { SSOChange } from '@/features/sso-approvals/api/use-sso-changes'
 
 const path = (tenantId: string) => `/tenants/${tenantId}/sso/saml`
 
@@ -30,11 +31,24 @@ export function useSamlConfig(tenantId: string | null) {
   )
 }
 
+/**
+ * Saving answers 200 with the config when the organization has no owner yet,
+ * otherwise 202 with an SSO change waiting for an owner's approval (RFC-022).
+ */
 export function useSaveSamlConfig(tenantId: string | null) {
   return useSWRMutation(
     tenantId ? path(tenantId) : null,
     async (p: string, { arg }: { arg: SamlConfig }) =>
-      adminFetch<SamlConfig>(p, { method: 'PUT', body: arg })
+      adminFetch<SamlConfig | SSOChange>(p, { method: 'PUT', body: arg })
+  )
+}
+
+/** SSO changes of the organization waiting for an owner's approval. */
+export function usePendingSSOChanges(tenantId: string | null) {
+  return useSWR<{ changes: SSOChange[] }>(
+    tenantId ? `/tenants/${tenantId}/sso/changes` : null,
+    (p: string) => adminFetch<{ changes: SSOChange[] }>(p),
+    { shouldRetryOnError: false, revalidateOnFocus: false }
   )
 }
 

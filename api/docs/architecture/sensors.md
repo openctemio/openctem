@@ -163,6 +163,10 @@ expiring key on its first start, and one that does not keeps it. A sensor
 that renewed while the TTL was off recorded its key as non-expiring and keeps
 it until the key is regenerated (no `rotate_key` is rung for keys without an
 expiry: sensors that cannot renew would log it on every heartbeat).
+`SENSOR_KEY_RENEW_GRACE` (default 15m) is how long the key a sensor renewed
+with keeps working after the renewal; every other key the sensor held stops
+at the same moment, so a renewal leaves one long-lived key (see
+[agent-identity.md](agent-identity.md#renewal-retires-the-presented-key)).
 
 ### What a sensor does with it
 
@@ -594,11 +598,36 @@ with the server-stamped provenance (tenant from the key, sensor, command,
 zone from the command, protocol, media type, user agent, receive time), and
 one RFC-005 `ingest_jobs` row per segment plus one for the commit.
 
+**Text caps on every ingest path** (v1 CTIS, v2 segments, SARIF and the
+other converted formats; `internal/app/ingest/text_caps.go`, RFC-040 §5.4).
+Before anything is stored or fingerprinted, `Service.Ingest` cuts oversized
+finding text to a cap, ending it with `…[truncated]`, and makes it valid
+UTF-8: title and rule name 500 characters (their column size), category 255,
+message 8 Ki, description 32 Ki, evidence 64 Ki, snippets and remediation
+text 16 Ki, misconfiguration expected/actual/cause/query 4 Ki. Lists are cut
+to a count and each item to a length: references 100 × 2 Ki (finding and
+remediation), tags 50 × 100, vulnerability classes and subcategories
+50 × 200, remediation steps 50 × 2 Ki. A cut never refuses the report or
+the finding (a title over 500 characters used to fail that finding); the
+number of capped values is logged per report.
+
 ### Processing
 
 The ingest worker runs v2 jobs whatever `INGEST_MODE` is
-(`internal/app/ingest/v2_jobs.go`, `v2.go`). Each segment runs through the
-v1 pipeline with the v2 options:
+(`internal/app/ingest/v2_jobs.go`, `v2.go`).
+
+**The sensor is re-read before a queued job runs** (v1 async jobs and v2
+segment and commit jobs; `internal/app/ingest/queued_sensor.go`, RFC-040
+§5.2). The sensor was authenticated when the report was accepted, but it may
+have been revoked, disabled or deleted while the report waited. Its work is
+then dropped: nothing is ingested, a v2 report goes to `failed`, the job
+completes (no retry) with `{"dropped": true, "reason": …}`, and the tenant's
+audit log gets an `ingest.failed` entry with result `denied`. A v1 job is
+ingested as the stored sensor, not as a minimal sensor rebuilt from the job.
+A failed lookup is retried; without a sensor repository every job fails
+(fail closed).
+
+Each segment runs through the v1 pipeline with the v2 options:
 
 - **No fallback asset.** A finding binds to the asset its `asset_ref` names
   in its own segment, or to the segment's only asset when it names none.
@@ -748,7 +777,8 @@ only narrow it:
   (`max_concurrent_jobs`), the administrator's `max_concurrent_jobs` and the
   reported slots (`capacity.slots_total`, see "Load, capacity and release")
   that is set (RFC-033 §6.1)
-- not reported (old SDK): the administrator's values, unchanged
+- not reported (old SDK): the administrator's values, unchanged, except that
+  **dispatch sends such a sensor no tool**: a declared tool is unverified (see below)
 
 Storage (migration 000253): `reported_tools` (jsonb), `reported_tool_names`,
 `reported_capabilities`, `reported_max_jobs`, `reported_os`, `reported_arch`,
@@ -765,8 +795,14 @@ methods agree across a matrix of inputs.
 
 RFC-030's tool gate on the command poll, the claim, the doorbell count and
 the zone predicate (`sensorDispatchTools` in `command_repository.go`) reads
-`effective_tools`. A command that names a tool reaches only sensors whose
-effective tools include it.
+the sensor's **verified** tools: `effective_tools` when the sensor reported
+its tools, none when it never did. The selector, `FindAvailableWithTool`,
+`HasSensorForTool` (the trigger's availability check) and
+`GetAvailableToolsForTenant` use the same expression. A command that names a
+tool reaches only sensors whose own probe found it installed; a tool the
+administrator merely declared on a sensor that never reported gets no work
+(it used to, and failed with "scanner not found"). Tool-less and
+capability-scoped commands are unaffected.
 
 **Capacity vs slots** (Kubernetes' `capacity` vs `allocatable`). The reported
 `max_concurrent_jobs` is the sensor **operator's ceiling** (`SENSOR_MAX_JOBS`),
@@ -1146,17 +1182,51 @@ inside it. Use one zone per segment (scan-zones.md).
 ## Tool settings (RFC-038, proposed)
 
 > Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
-> **proposed, nothing shipped yet.**
+> **proposed; per-scan settings for naabu and nuclei shipped** (below).
 
-Today a tool's options are not managed by the platform: the sensor's
-wrappers take them from host env vars or code, and the SDK copies only
-`allow_interactsh` and `exclude` from a command's `config` into
-`core.ScanOptions`; other `scanner_config` / scan-profile `options` keys
-are ignored. The design: each tool declares a typed settings schema,
+**Per-scan settings (shipped).** A scan command's settings travel in the
+payload key `config` (`pipeline.PayloadKeyConfig`), the key the SDK reads
+(`ScanCommandPayload.Config`). Pipeline steps used to send them as
+`step_config`, which no sensor reads, so every step ran with its tool's
+defaults. On the sensor, the SDK's executor resolves the keys the tool's
+settings schema declares (scope `scan`) into `core.ScanOptions.Settings`
+and fails the command on any value the schema refuses; other keys are
+reported in the command result's `ignored_config_keys`. The sensor declares:
+
+| Tool | Keys | Notes |
+|---|---|---|
+| naabu | `ports`, `top_ports`, `exclude_ports`, `rate`, `retries` | port lists only (`80,443,8000-8100`, `top-100`, `top-1000`, `full`); `rate` only lowers the sensor's rate |
+| nuclei | `tags`, `exclude_tags`, `severity` | `dos`, `fuzz`, `fuzzing`, `intrusive` refused as tags; `exclude_tags` adds to the sensor's |
+
+The api checks the same rules when a step is saved
+(`SecurityValidator.ValidateStepConfig` -> `pipeline.NormalizeStepConfig`,
+error code `INVALID_STEP_SETTING`) and normalizes values at dispatch
+(comma-separated lists to arrays, numeric strings to numbers, tags
+lowercased). `allow_interactsh` is refused on a pipeline step. The sensor
+stays the authority: `pipeline.NormalizeStepConfig` mirrors its schemas until
+the platform stores the schemas sensors report (RFC-038 P2).
+
+Otherwise a tool's options are not managed by the platform: the sensor's
+wrappers take them from host env vars or code. The design: each tool declares a typed settings schema,
 registered by digest in the manifest; admins edit a generated form on the
 sensor's page; the api validates and audits, then pushes a signed,
 versioned settings document that the sensor re-validates, stores and
 applies from the next job, reporting the applied version.
+
+The SDK also reads `rate_limit`, `concurrency` and `bulk_size` from a
+command's `config` (whole numbers; anything else fails the command); the
+sensor caps them at its `SENSOR_NUCLEI_MAX_*` ceilings.
+
+## Custom template trust (RFC-038 §6.12)
+
+> Design and threat model: [RFC-038 §6.12](../rfcs/RFC-038-sensor-tool-settings.md).
+
+| Step | Where | What |
+|---|---|---|
+| Upload | `internal/app/template/validator.go` (`NucleiValidator`) | refuses `code`, `javascript`, `headless`, `file` and self-contained templates on the parsed document |
+| Delivery | `command.Service.Poll` → `template.PayloadSigner` | re-validates the command's templates and adds `custom_templates_envelope`: a DSSE envelope over a manifest bound to tenant, polling sensor, command and a 1 h expiry, listing every template's SHA-256; the stored command is unchanged |
+| Keys | `scannertemplate.Keyring`, `initTemplateKeyring` | per-tenant Ed25519 via HKDF from `APP_TEMPLATE_SIGNING_KEY` (or derived from `APP_ENCRYPTION_KEY`); `GET /api/v1/scanner-templates/signing-key` shows the public key |
+| Sensor | sdk-go `core.TemplateVerifier`; sensor `nuclei.CheckCustomTemplates` | verifies before parsing against `SENSOR_TEMPLATE_SIGNING_KEYS`, fails closed; custom templates run in their own nuclei run with `-exclude-type code,file,headless,javascript`, the sensor's own templates with `-disable-unsigned-templates` |
 
 ## Control plane under load (RFC-035)
 

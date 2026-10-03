@@ -11,10 +11,8 @@ import type {
   KEVEntry,
   KEVStats,
   CVEEnrichment,
-  BulkEnrichmentResponse,
   ThreatIntelSource,
   SetSyncEnabledRequest,
-  EnrichCVEsRequest,
   ThreatIntelStats,
 } from '@/lib/api/threatintel-types'
 
@@ -302,15 +300,6 @@ export function useKEVStats(tenantId: string | null) {
  */
 export async function enrichCVE(cveId: string): Promise<CVEEnrichment> {
   return get<CVEEnrichment>(threatIntelEndpoints.enrichCVE(cveId))
-}
-
-/**
- * Bulk enrich multiple CVEs
- */
-export async function enrichCVEs(cveIds: string[]): Promise<BulkEnrichmentResponse> {
-  return post<BulkEnrichmentResponse>(threatIntelEndpoints.enrichCVEs(), {
-    cve_ids: cveIds,
-  } as EnrichCVEsRequest)
 }
 
 // ============================================

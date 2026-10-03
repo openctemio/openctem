@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
 	"github.com/go-chi/chi/v5"
 
@@ -20,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
@@ -43,9 +46,18 @@ type simulationRunFinalizer interface {
 	FinalizeRun(ctx context.Context, tenantID, runID shared.ID, outcome, summary string) error
 }
 
+// scanCommandGate checks the targets of a user-issued scan command the way a
+// scan trigger does (exclusions, zones, private-range policy). Implemented by
+// *scan.Service.
+type scanCommandGate interface {
+	GateCommandPayload(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, payload json.RawMessage) (*scanapp.GatedCommand, error)
+}
+
 // CommandHandler handles command-related HTTP requests.
 type CommandHandler struct {
 	service          *command.Service
+	scanGate         scanCommandGate
+	audit            *app.AuditService
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
 	simFinalizer     simulationRunFinalizer
@@ -61,6 +73,20 @@ func NewCommandHandler(svc *command.Service, v *validator.Validator, log *logger
 		validator: v,
 		logger:    log,
 	}
+}
+
+// SetAuditService records commands a user issues, cancels or deletes through
+// the API in the tenant's audit log. A command makes a sensor run something on
+// the tenant's network; the sensor's own poll/ack/complete calls are not
+// audited here.
+func (h *CommandHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
+}
+
+// SetScanCommandGate wires the target checks for scan commands. Without it
+// every scan command is refused (fail closed).
+func (h *CommandHandler) SetScanCommandGate(g scanCommandGate) {
+	h.scanGate = g
 }
 
 // SetPipelineService sets the pipeline service for triggering pipeline progression.
@@ -180,13 +206,14 @@ type UpdateCommandStatusRequest struct {
 
 // Create handles POST /api/v1/commands
 // @Summary      Create command
-// @Description  Create a new command to be executed by a sensor
+// @Description  Create a new command to be executed by a sensor. A `scan` command needs an owner or administrator, and its `target`/`targets` get the checks of a scan trigger (scope exclusions, scan zones, private-range policy); a refused target answers 400.
 // @Tags         Commands
 // @Accept       json
 // @Produce      json
 // @Param        body  body      CreateCommandRequest  true  "Command data"
 // @Success      201   {object}  CommandResponse
 // @Failure      400   {object}  apierror.Error
+// @Failure      403   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /commands [post]
@@ -226,23 +253,115 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tenantID := middleware.GetTenantID(r.Context())
-
-	cmd, err := h.service.Create(r.Context(), command.CreateInput{
+	input := command.CreateInput{
 		TenantID:  tenantID,
 		SensorID:  req.SensorID,
 		Type:      req.Type,
 		Priority:  req.Priority,
 		Payload:   req.Payload,
 		ExpiresIn: req.ExpiresIn,
-	})
+	}
+
+	// A scan command makes a sensor scan whatever it names (RFC-040 Q5 (c)):
+	// only owners and administrators may send one, and its targets go
+	// through the checks of a scan trigger: scope exclusions, scan zones and
+	// the private-range policy.
+	var targets []string
+	if req.Type == string(commanddom.CommandTypeScan) {
+		gated, ok := h.gateScanCommand(w, r, tenantID, &input)
+		if !ok {
+			return
+		}
+		input.Payload = gated.Payload
+		input.ScanZoneID = gated.ScanZoneID
+		targets = gated.Targets
+	}
+
+	cmd, err := h.service.Create(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
+	event := app.NewSuccessEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, cmd.ID.String()).
+		WithResourceName(string(cmd.Type)).
+		WithMessage("Command " + string(cmd.Type) + " created")
+	if cmd.SensorID != nil {
+		event = event.WithMetadata("sensor_id", cmd.SensorID.String())
+	}
+	if cmd.ScanZoneID != nil {
+		event = event.WithMetadata("scan_zone_id", cmd.ScanZoneID.String())
+	}
+	if len(targets) > 0 {
+		event = event.WithMetadata("targets", auditTargetList(targets))
+	}
+	logRequestChange(h.audit, h.logger, r, event)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
+}
+
+// maxAuditedTargets bounds the target list copied into one audit entry.
+const maxAuditedTargets = 50
+
+func auditTargetList(targets []string) []string {
+	if len(targets) <= maxAuditedTargets {
+		return targets
+	}
+	out := append([]string(nil), targets[:maxAuditedTargets]...)
+	return append(out, fmt.Sprintf("... and %d more", len(targets)-maxAuditedTargets))
+}
+
+// gateScanCommand applies the owner/admin rule and the scan target checks to
+// a scan command. A refusal is answered and audited here; ok is false then.
+func (h *CommandHandler) gateScanCommand(w http.ResponseWriter, r *http.Request, tenantID string, input *command.CreateInput) (*scanapp.GatedCommand, bool) {
+	deny := func(reason string) {
+		event := app.NewDeniedEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, "", reason).
+			WithResourceName(input.Type).
+			WithMessage("Scan command refused: " + reason)
+		if input.SensorID != "" {
+			event = event.WithMetadata("sensor_id", input.SensorID)
+		}
+		logRequestChange(h.audit, h.logger, r, event)
+	}
+
+	if !middleware.IsAdmin(r.Context()) {
+		deny("only owners and administrators can send scan commands")
+		apierror.Forbidden("Only owners and administrators can send scan commands; members start scans through Scans").WriteJSON(w)
+		return nil, false
+	}
+	if h.scanGate == nil {
+		h.logger.Error("scan command refused: scan target checks are not wired")
+		apierror.InternalServerError("Scan commands are unavailable").WriteJSON(w)
+		return nil, false
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("Invalid tenant").WriteJSON(w)
+		return nil, false
+	}
+	var sensorID *shared.ID
+	if input.SensorID != "" {
+		id, err := shared.IDFromString(input.SensorID)
+		if err != nil {
+			apierror.BadRequest("Invalid sensor_id").WriteJSON(w)
+			return nil, false
+		}
+		sensorID = &id
+	}
+
+	gated, err := h.scanGate.GateCommandPayload(r.Context(), tid, sensorID, input.Payload)
+	if err != nil {
+		if errors.Is(err, shared.ErrValidation) {
+			deny(err.Error())
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return nil, false
+		}
+		h.handleServiceError(w, err)
+		return nil, false
+	}
+	return gated, true
 }
 
 // validateInlineScanTemplates rejects a scan command that embeds custom scanner
@@ -512,6 +631,8 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.triggerPipelineStarted(r.Context(), cmd)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
@@ -742,6 +863,27 @@ func parseOptionalID(s string) shared.ID {
 	return id
 }
 
+// triggerPipelineStarted marks the command's pipeline step as running. It runs
+// in the request, before the sensor gets its answer: the sensor reports the
+// result only after that, so the start is recorded before the asynchronous
+// completion can be. Best-effort: a failure is logged and the start stands.
+func (h *CommandHandler) triggerPipelineStarted(ctx context.Context, cmd *commanddom.Command) {
+	if h.pipelineService == nil || cmd == nil || cmd.SensorID == nil {
+		return
+	}
+	var payload pipelinedom.StepCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || !payload.IsRoutable() {
+		return
+	}
+	if err := h.pipelineService.OnStepStarted(ctx, payload.PipelineRunID, payload.StepKey, *cmd.SensorID, cmd.ID); err != nil {
+		h.logger.Warn("failed to mark pipeline step started",
+			"pipeline_run_id", payload.PipelineRunID,
+			"step_key", payload.StepKey,
+			"error", err,
+		)
+	}
+}
+
 // triggerPipelineProgression triggers pipeline progression when a command completes.
 // It extracts pipeline info from the command payload and calls OnStepCompleted.
 func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *commanddom.Command) {
@@ -902,6 +1044,10 @@ func (h *CommandHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r,
+		app.NewSuccessEvent(audit.ActionCommandCanceled, audit.ResourceTypeCommand, cmd.ID.String()).
+			WithResourceName(string(cmd.Type)).
+			WithMessage("Command "+string(cmd.Type)+" canceled"))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
@@ -928,6 +1074,9 @@ func (h *CommandHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r,
+		app.NewSuccessEvent(audit.ActionCommandDeleted, audit.ResourceTypeCommand, commandID).
+			WithMessage("Command deleted"))
 
 	w.WriteHeader(http.StatusNoContent)
 }

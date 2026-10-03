@@ -101,6 +101,13 @@ func (g *SSOEnforcementGate) Invalidate(tenantID string) {
 //   - Any other (non-owner, non-federated) session is rejected when its token's
 //     tenant enforces SSO.
 //
+// On a route that names its organization in the URL (/api/v1/tenants/{tenant},
+// after TenantContext and RequireMembership), the gate governs THAT
+// organization: its enforcement flag, and the caller's membership role there.
+// The token's auth_method and role describe the organization the token was
+// minted for, so when the URL names a different one the session counts as a
+// password session and the token's role is ignored.
+//
 // Both cheap exits (federated / owner) skip the tenant lookup entirely, so the
 // common case costs nothing. Must run AFTER UnifiedAuth (needs the local claims).
 // A request without local JWT claims (e.g. OIDC/Keycloak provider, or no tenant
@@ -121,6 +128,18 @@ func (g *SSOEnforcementGate) Enforce(next http.Handler) http.Handler {
 		}
 
 		tenantID := claims.TenantID
+		role := claims.Role
+		// Empty auth_method is treated as "password" (fail-safe) by AuthMethodFromString.
+		method := sessiondom.AuthMethodFromString(claims.AuthMethod)
+		if urlTenant := GetTeamID(r.Context()); !urlTenant.IsZero() {
+			if urlTenant.String() != claims.TenantID {
+				// auth_method is minted per organization: federated for the
+				// token's organization says nothing about this one's IdP.
+				method = sessiondom.AuthMethodPassword
+			}
+			tenantID = urlTenant.String()
+			role = string(GetTeamRole(r.Context()))
+		}
 		if tenantID == "" {
 			// Global/non-tenant token — enforcement is per-tenant only.
 			next.ServeHTTP(w, r)
@@ -129,9 +148,7 @@ func (g *SSOEnforcementGate) Enforce(next http.Handler) http.Handler {
 
 		// Cheap exits mirror AuthService.enforceSSOPolicy: federated sessions and
 		// owners never trip enforcement, so skip the tenant lookup for them.
-		// Empty auth_method is treated as "password" (fail-safe) by AuthMethodFromString.
-		method := sessiondom.AuthMethodFromString(claims.AuthMethod)
-		if method.IsFederated() || claims.Role == string(tenantdom.RoleOwner) {
+		if method.IsFederated() || role == string(tenantdom.RoleOwner) {
 			next.ServeHTTP(w, r)
 			return
 		}

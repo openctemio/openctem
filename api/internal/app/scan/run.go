@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -145,13 +144,16 @@ type QuickScanInput struct {
 type QuickScanResult struct {
 	PipelineRunID string `json:"pipeline_run_id"`
 	ScanID        string `json:"scan_id"`
-	AssetGroupID  string `json:"asset_group_id"`
-	Status        string `json:"status"`
-	TargetCount   int    `json:"target_count"`
+	// AssetGroupID is always empty now: quick scans create no asset group.
+	// Kept so older clients that read it do not break.
+	AssetGroupID string `json:"asset_group_id"`
+	Status       string `json:"status"`
+	TargetCount  int    `json:"target_count"`
 }
 
-// QuickScan performs an immediate scan on provided targets.
-// It creates an ephemeral asset group and scan, then triggers immediately.
+// QuickScan performs an immediate scan on provided targets: it creates an ad-hoc
+// scan (no asset group, hidden from the Configurations list) and triggers it.
+// SaveQuickScan turns it into a saved configuration.
 func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickScanResult, error) {
 	s.logger.Info("quick scan requested", "tenant_id", input.TenantID, "target_count", len(input.Targets))
 
@@ -210,31 +212,17 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		}
 	}
 
-	// Create ephemeral asset group
+	// The scan the run belongs to. It is ad hoc (owner decision D10): not a
+	// configuration, hidden from the Configurations list until someone saves
+	// it (SaveQuickScan). No asset group is created: the targets live on the
+	// scan, which both trigger paths read.
 	timestamp := time.Now().Format("20060102-150405")
-	assetGroupName := fmt.Sprintf("quick-scan-%s", timestamp)
-
-	ag, err := assetgroup.NewAssetGroupWithTenant(
-		tenantID,
-		assetGroupName,
-		assetgroup.EnvironmentProduction, // Default for quick scan
-		assetgroup.CriticalityMedium,     // Default for quick scan
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create asset group: %w", err)
-	}
-	ag.UpdateDescription(fmt.Sprintf("Auto-created for quick scan with %d targets", len(input.Targets)))
-
-	if err := s.assetGroupRepo.Create(ctx, ag); err != nil {
-		return nil, fmt.Errorf("failed to create asset group: %w", err)
-	}
-
-	// Create ephemeral scan
 	scanName := fmt.Sprintf("Quick Scan - %s", timestamp)
-	sc, err := scan.NewScan(tenantID, scanName, ag.ID(), scanType)
+	sc, err := scan.NewScan(tenantID, scanName, shared.ID{}, scanType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scan: %w", err)
 	}
+	sc.AdHoc = true
 
 	sc.Description = fmt.Sprintf("Quick scan of %d targets", len(input.Targets))
 
@@ -298,10 +286,27 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	return &QuickScanResult{
 		PipelineRunID: run.ID.String(),
 		ScanID:        sc.ID.String(),
-		AssetGroupID:  ag.ID().String(),
 		Status:        string(run.Status),
 		TargetCount:   len(input.Targets),
 	}, nil
+}
+
+// SaveQuickScan turns an ad-hoc quick scan into a saved configuration named
+// name ("Save as scan"). Its runs stay attached; it then appears in the
+// Configurations list and can be edited and scheduled like any other.
+func (s *Service) SaveQuickScan(ctx context.Context, tenantID, scanID, name string) (*scan.Scan, error) {
+	sc, err := s.GetScan(ctx, tenantID, scanID)
+	if err != nil {
+		return nil, err
+	}
+	if err := sc.SaveAsConfiguration(name); err != nil {
+		return nil, err
+	}
+	if err := s.scanRepo.Update(ctx, sc); err != nil {
+		return nil, err
+	}
+	s.logger.Info("quick scan saved as configuration", "scan_id", sc.ID.String(), "tenant_id", tenantID)
+	return sc, nil
 }
 
 // =============================================================================
@@ -445,6 +450,9 @@ func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, 
 	}
 
 	// Trigger a new run via the standard trigger path, with retry attempt in context
+	// The new run is created with its retry_attempt. Setting it afterwards
+	// with a full-row update raced the run itself: a run that already finished
+	// was not updated, kept retry_attempt 0, and the retry budget never ran out.
 	run, err := s.TriggerScan(ctx, TriggerScanExecInput{
 		TenantID: tenantID.String(),
 		ScanID:   scanID.String(),
@@ -453,18 +461,10 @@ func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, 
 			"retry_attempt": retryAttempt,
 			"retried_at":    time.Now().Unix(),
 		},
+		RetryAttempt: retryAttempt,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to trigger retry: %w", err)
-	}
-
-	// Persist retry_attempt on the new run (TriggerScan creates it via pipeline)
-	// The trigger path doesn't currently set RetryAttempt, so we update it here.
-	if run != nil {
-		run.RetryAttempt = retryAttempt
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			s.logger.Warn("failed to persist retry_attempt on retried run", "run_id", run.ID.String(), "error", err)
-		}
 	}
 
 	s.logger.Info("scan retry triggered",

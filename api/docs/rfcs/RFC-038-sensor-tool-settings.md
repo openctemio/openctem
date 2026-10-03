@@ -435,6 +435,101 @@ or URLs, custom templates (api#773, admin-only), output paths, resolvers,
 headless browser, scan credentials (RFC-032 E10), free-form extra args.
 These are either platform-controlled per job or security boundaries.
 
+### 6.12 Custom template trust (implemented 2026-10-03)
+
+Custom templates are not settings (§6.11), but they reach the sensor the
+same way settings will, so they get the delivery guarantees first. This
+follows research/03-sensor-signed-config (DSSE, exact bytes, tenant and
+sensor binding, expiry, one manifest per set, sensor-side capability
+fence) and research/01b R3 (nuclei template trust).
+
+**Upload (api).** `NucleiValidator` refuses, on the parsed document (any
+YAML or JSON spelling, any key case), templates that use the `code` or
+`javascript` protocol (run code on the sensor), `headless` (drives a
+browser) or `file` (reads the sensor's disk), and self-contained templates
+(carry their own targets). The error names the protocol, e.g.
+`code: the "code" protocol runs code on the scanner and is not allowed in
+custom templates`. Same validator for create, update, template-source sync
+and inline command templates. Uploading stays admin-only (api#773).
+
+**Delivery (api).** Every poll (`command.Service.Poll`, v1 and v2) re-signs
+the custom templates of each command it returns, on a copy (the stored
+command never changes): `template.PayloadSigner` validates every template
+again and seals one manifest of the set:
+
+```json
+{"kind": "openctem.template-manifest/v1",
+ "tenant_id": "<command tenant>", "sensor_id": "<polling sensor>",
+ "command_id": "<command>", "issued_at": "…", "expires_at": "<issued + 1h>",
+ "templates": [{"id": "…", "name": "…", "template_type": "nuclei",
+                "sha256": "<hex of the decoded content>"}]}
+```
+
+in a DSSE envelope (`custom_templates_envelope`: `payloadType`
+`application/vnd.openctem.template-manifest+json`, `payload` = the exact
+signed bytes, `signatures[{keyid, sig}]`, Ed25519 over the DSSE v1
+pre-authentication encoding). JSON is never canonicalised: the sensor
+checks the bytes it received. If any template fails validation the set is
+sent with no manifest and the sensor refuses the command. A manifest the
+payload already carried is always dropped.
+
+**Keys.** One Ed25519 key per tenant, derived with HKDF-SHA256 from a
+32-byte master: `APP_TEMPLATE_SIGNING_KEY`, or (unset) a value derived
+from `APP_ENCRYPTION_KEY` with its own HKDF label. A tenant admin reads the
+public key at `GET /api/v1/scanner-templates/signing-key`
+(`scanner_templates:read`; it is public) and pins it on the tenant's
+sensors in `SENSOR_TEMPLATE_SIGNING_KEYS` (several keys, comma-separated,
+for a rotation). A tenant's key never verifies another tenant's manifest.
+
+**Sensor (sdk-go `core.TemplateVerifier`, sensor nuclei wrapper).** Before
+anything is written: verify the envelope signature over the exact payload
+bytes with a pinned key, then parse (unknown fields refused) and refuse
+another payload type or kind, another command, another sensor (when
+`SENSOR_ID` is set), an expired manifest or one issued in the future (5
+minutes skew), and any template changed, added, held back or reordered.
+No pinned key or no manifest: the command fails (fail closed). The sensor
+then checks the templates itself (`CheckCustomTemplates`: no code,
+javascript, file, headless or self-contained) and runs them in their own
+nuclei run with `-exclude-type code,file,headless,javascript`, never
+`-code`, `-file`, `-headless` or `-esc`; the sensor's own (ProjectDiscovery
+signed) templates run separately and always with
+`-disable-unsigned-templates`. These flags, `-dut=false` included, are
+refused in extra args (`core.DangerousToolFlags`): no pushed content can
+switch them on, and the server has no "force" bypass.
+
+**Rate limits (RFC-034 §2.1).** A scan command may ask for lower
+`rate_limit`, `concurrency` and `bulk_size` (whole numbers); the sensor
+caps them at `SENSOR_NUCLEI_MAX_RATE_LIMIT` / `_CONCURRENCY` /
+`_BULK_SIZE` (default 150 / 25 / 25) and always passes `-rate-limit`,
+`-c`, `-bs`. Rate-limit flags in extra args are refused
+(`core.RateLimitToolFlags`).
+
+| Threat | Control | Residual |
+|---|---|---|
+| Malicious tenant admin uploads a code/file/headless/JS template | refused at upload and at every delivery; the sensor re-checks and nuclei excludes the types | a template using only allowed protocols (http, dns, network, ssl, websocket, whois) still sends what its author wrote to in-scope targets: that is what a custom template is |
+| Compromised API (or its signing key) pushes templates | the sensor's own fence holds: no code, file, headless, JS or self-contained templates, no `-code`; targets still pass the sensor's SSRF guard; rate ceilings hold | it can sign any allowed-protocol template for its tenants' sensors until the key is rotated and re-pinned |
+| Write to the DB or command queue (SQL injection, stolen DB creds) | delivery re-validates and signs only what passes; a forged or stale envelope is dropped | same as above for allowed protocols |
+| MITM on the control channel | Ed25519 over the exact bytes with a key pinned out of band; command/sensor binding; expiry | none for template content; a MITM can still drop commands |
+| Replay of a captured command to another sensor or later | manifest bound to command and (with `SENSOR_ID`) sensor; 1 h expiry | replay to the same sensor within the hour re-runs an approved set |
+| Tenant raises the rate limit to DoS a target | ceilings on the sensor, typed values only, rate flags refused in extra args | an operator who owns the sensor sets the ceiling |
+
+**Follow-ups (not built yet).**
+
+1. Monotonic `version` with a persisted floor for persistent sets (the
+   settings document of §6.6 and any cached template set). Per-command
+   manifests use command binding and expiry instead, because commands run
+   concurrently and arrive out of order.
+2. TUF-style key hierarchy: an offline threshold root that delegates to the
+   online signing key and can revoke it (go-tuf v2), replacing out-of-band
+   pinning and manual rotation; RFC-032's enrollment-pinned job-signing root
+   is the natural home.
+3. Sensor identity from RFC-032 enrollment, so every sensor (not only those
+   with `SENSOR_ID`) checks the `sensor_id` binding.
+4. A sensor-local enable switch (Wazuh-style) for any future high-risk
+   capability (headless, DAST) rather than code-level defaults.
+5. A key-rotation runbook and a UI field showing the key to pin; reporting
+   template-verification failures as a distinct command error code.
+
 ## 7. Compatibility
 
 - Additive on every wire: new manifest field, new endpoints, new heartbeat

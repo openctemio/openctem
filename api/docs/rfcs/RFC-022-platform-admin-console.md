@@ -14,6 +14,14 @@
 > **Revision 6** (2026-10-02): organizations are created by the platform
 > administrator by default, and the installer creates the first one (see
 > [Revision 6](#revision-6-admin-only-organization-creation-and-the-first-organization)).
+> **Revision 7** (2026-10-02): a suspended owner still blocks the first-owner
+> bootstrap; a super admin's explicit owner recovery is the only exception (see
+> [Revision 7](#revision-7-suspended-owners-and-owner-recovery)).
+
+> **Revision 8** (2026-10-02): an organization's SAML / identity-provider
+> change made in the console waits for an owner of the organization (see
+> [Revision 8](#revision-8-sso-changes-wait-for-an-owner)).
+
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*, modeled on Tenable Security Center,
 > where the system administrator is an account with a system-level role and a
@@ -282,7 +290,8 @@ the system administrator manages organizations but cannot see their data.
 Owner decision, implemented here:
 
 - **Bootstrap only.** `POST /admin/tenants/{tenantId}/users` creates the first
-  owner of an organization that has **no active owner**, and nothing else. An
+  owner of an organization that has **no owner** (active or suspended, since
+  [revision 7](#revision-7-suspended-owners-and-owner-recovery)), and nothing else. An
   organization with an owner answers **409** ("its owner and administrators
   invite or create users themselves"). The request takes `email` and `name`;
   `role` may be omitted, anything but `owner` is a 400. The no-owner check and
@@ -354,6 +363,88 @@ changes the temporary password and enrolls TOTP in `/admin` → the owner sets a
 password through the link → the owner adds users; the administrator configures
 the organization's SSO in the console.
 
+## Revision 7: suspended owners and owner recovery
+
+Revision 5 counted only **active** owners, so an organization whose owner was
+suspended looked owner-less: an `ops_admin` could create a new owner for an
+organization full of data and, without SMTP, receive its set-password link,
+which is the takeover revision 5 set out to prevent. Owner decision
+2026-10-02, implemented here:
+
+- **Any owner blocks the bootstrap.** An owner membership (by the `owner`
+  label or the system owner role), active **or suspended**, makes
+  `POST /admin/tenants/{tenantId}/users` answer 409. The check and the insert
+  stay in one transaction under the per-organization advisory lock.
+- **Explicit owner recovery.** When every owner is suspended nobody can
+  manage the organization, so the same endpoint takes `"recovery": true`:
+  - **super_admin only.** Any other console role gets 403. The route itself
+    stays ops_admin+, and the handler checks the role for a recovery request.
+  - **Only while no owner is active.** An active owner answers 409, with or
+    without the flag.
+  - **Email only.** The set-password link is emailed and **never** returned,
+    even when no SMTP is configured: the request is then refused with 400
+    before anything is created (configure SMTP first). A failed send is
+    reported as `email_failed` and the new owner uses forgot-password. The
+    administrator therefore never holds a credential for an organization that
+    has data.
+  - **Audited twice.** The admin audit row is written as
+    `organization.owner_recovery` at high severity, including refused
+    attempts. The organization's audit log gets `user.created` at **critical**
+    severity with `owner_recovery: true`, by actor `platform-admin:<email>`.
+- The suspended owners are left as they are. The new owner (or an
+  administrator they appoint) decides whether to reactivate or remove them.
+
+Still not provided: ownership transfer, or recovery for an organization whose
+owner is active but unreachable. Those need the owner's own action.
+
+## Revision 8: SSO changes wait for an owner
+
+Owner decision 2026-10-02. The organization's SAML configuration and OIDC
+identity providers decide who can sign in to it. A platform administrator who
+could change them directly could install their own IdP signing certificate (or
+their own OIDC client with auto-provisioning) and sign in as any member of the
+organization. So the console only **proposes** such a change:
+
+- **What waits.** `PUT /admin/tenants/{id}/sso/saml`,
+  `POST /admin/tenants/{id}/sso/identity-providers` and
+  `PUT /admin/tenants/{id}/sso/identity-providers/{idpId}` answer **202** with
+  the stored change (`sso_pending_changes`, migration 000273). The live config
+  is untouched. The request is validated first (certificate, roles, domains,
+  provider type), so a bad config is refused at once with 400, and a second
+  provider of the same type with 409.
+- **What does not wait.** Deleting a SAML config or an identity provider, SSO
+  enforcement and verified domains apply directly: none of them adds a way to
+  sign in as someone.
+- **Bootstrap.** An organization with **no active owner** has nobody to
+  approve, so a change to it applies directly (200/201), as before. This is the
+  same "no owner yet" test as the revision 5 first-owner rule; once the first
+  owner exists, every later SAML/IdP change waits.
+- **Who is told.** Every active owner gets an in-app notification
+  (`sso_change_pending`, severity high) and, when system SMTP is configured, a
+  security email. Both describe the change (IdP entity, sign-in URL, the
+  certificate's SHA-256, client ID, auto-provision) and never a secret.
+- **Deciding.** Owner only:
+  `GET /tenants/{t}/settings/sso/changes`,
+  `POST /tenants/{t}/settings/sso/changes/{id}/approve|reject`
+  (`RequireTeamOwner`, and the service re-checks in the database that the
+  caller is an active owner of that organization). Approval marks the row
+  approved and writes the live config **in one transaction**, so two owners
+  approving at once apply it once, and a failed write leaves it pending.
+  Rejection discards it. Both are written to the organization's audit log
+  (`sso.change_approved` / `sso.change_rejected`, severity high); the
+  submission is `sso.change_requested`, actor `platform-admin:<email>`.
+- **Lifetime.** A change expires after **7 days** (410 on approve). A newer
+  submission for the same SAML config / provider supersedes the older one
+  (409 on approve), so an owner never applies a stale proposal.
+- **Secrets.** An OIDC client secret is stored encrypted (same key as
+  `tenant_identity_providers`), separate from the payload, never returned, and
+  cleared when the change is decided.
+- **Console.** The SAML and identity-provider forms report "submitted for
+  approval" and the organization's SSO tab lists what is pending
+  (`GET /admin/tenants/{id}/sso/changes`). Owners decide on
+  Settings › SSO approvals (`/settings/sso-approvals`), linked from the
+  notification.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
@@ -394,6 +485,9 @@ the organization's SSO in the console.
   attacker could otherwise pre-register an administrator's email, own its
   password, and enroll their own TOTP on first use (found in the 2026-10-01
   review).
+- The console cannot change who can sign in to an organization that has an
+  owner: SAML and identity-provider changes wait for an owner's approval
+  (revision 7).
 - The console checks on every request that the linked account can still sign
   in, so suspending the account ends console access at once.
 - Administrators change their own password in the console

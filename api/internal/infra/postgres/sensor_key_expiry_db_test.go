@@ -99,26 +99,62 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 		t.Errorf("expected nil KeyExpiresAt after SetAPIKey, got %v", got3.InlineKeyExpiresAt)
 	}
 
-	// UpdateKeyExpiry on an ACTIVE sensor sets the column.
-	guardExp := time.Now().Add(30 * time.Minute).Truncate(time.Microsecond)
-	if err := repo.UpdateKeyExpiry(ctx, a.ID, &guardExp); err != nil {
-		t.Fatalf("UpdateKeyExpiry (active): %v", err)
-	}
-	if got, _ := repo.GetByID(ctx, a.ID); got.InlineKeyExpiresAt == nil || !got.InlineKeyExpiresAt.Equal(guardExp) {
-		t.Errorf("expected UpdateKeyExpiry to set expiry on active sensor, got %v", got.InlineKeyExpiresAt)
+	expiry := func() *time.Time {
+		t.Helper()
+		got, err := repo.GetByID(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		return got.InlineKeyExpiresAt
 	}
 
-	// Status guard: once the sensor is revoked, UpdateKeyExpiry is a no-op — it
-	// must never rewrite a revoked sensor's key (DEFECT 2 fix).
+	// RetireInlineKey is guarded by the presented key's hashes: a key
+	// regenerated since authentication (another hash) is left alone; any one
+	// of the hashes matching (the key was re-hashed onto a new pepper) is
+	// enough.
+	grace := time.Now().Add(30 * time.Minute).Truncate(time.Microsecond)
+	if ok, err := repo.RetireInlineKey(ctx, a.ID, []string{"hash-keyexp-2", "hash-keyexp-1"}, grace); err != nil || ok {
+		t.Fatalf("RetireInlineKey (stale hash): ok=%v err=%v, want a no-op", ok, err)
+	}
+	if e := expiry(); e != nil {
+		t.Errorf("stale-hash retirement changed the expiry to %v", e)
+	}
+
+	// The current hash with no expiry: the expiry is set.
+	if ok, err := repo.RetireInlineKey(ctx, a.ID, []string{"hash-keyexp-x", "hash-keyexp-3"}, grace); err != nil || !ok {
+		t.Fatalf("RetireInlineKey (current): ok=%v err=%v", ok, err)
+	}
+	if e := expiry(); e == nil || !e.Equal(grace) {
+		t.Errorf("expected expiry %v, got %v", grace, e)
+	}
+
+	// Never extended: a later moment is a no-op.
+	later := grace.Add(time.Hour)
+	if ok, err := repo.RetireInlineKey(ctx, a.ID, []string{"hash-keyexp-3"}, later); err != nil || ok {
+		t.Fatalf("RetireInlineKey (later): ok=%v err=%v, want a no-op", ok, err)
+	}
+	if e := expiry(); e == nil || !e.Equal(grace) {
+		t.Errorf("retirement extended the expiry: %v, want %v", e, grace)
+	}
+
+	// Brought forward: an earlier moment applies, and it touches nothing but
+	// the expiry — a revoked sensor stays revoked.
 	if _, err := db.ExecContext(ctx, `UPDATE sensors SET status = 'revoked' WHERE id = $1`, a.ID.String()); err != nil {
 		t.Fatalf("revoke sensor: %v", err)
 	}
-	future := time.Now().Add(99 * time.Hour).Truncate(time.Microsecond)
-	if err := repo.UpdateKeyExpiry(ctx, a.ID, &future); err != nil {
-		t.Fatalf("UpdateKeyExpiry (revoked): %v", err)
+	earlier := grace.Add(-10 * time.Minute)
+	if ok, err := repo.RetireInlineKey(ctx, a.ID, []string{"hash-keyexp-3"}, earlier); err != nil || !ok {
+		t.Fatalf("RetireInlineKey (earlier): ok=%v err=%v", ok, err)
 	}
-	if got, _ := repo.GetByID(ctx, a.ID); got.InlineKeyExpiresAt == nil || got.InlineKeyExpiresAt.Equal(future) {
-		t.Errorf("status guard failed: revoked sensor's key_expires_at was rewritten to %v", got.InlineKeyExpiresAt)
+	got4, err := repo.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got4.InlineKeyExpiresAt == nil || !got4.InlineKeyExpiresAt.Equal(earlier) {
+		t.Errorf("expected expiry brought forward to %v, got %v", earlier, got4.InlineKeyExpiresAt)
+	}
+	if got4.Status != sensor.SensorStatusRevoked {
+		t.Errorf("retirement changed the status to %q", got4.Status)
 	}
 }
 

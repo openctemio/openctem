@@ -65,21 +65,21 @@ export function AssetsTab({
   const getAssetIcon = (type: string) => {
     switch (type.toLowerCase()) {
       case 'domain':
-        return <Globe className="h-4 w-4 text-blue-500" />
+        return <Globe className="h-4 w-4 text-muted-foreground" />
       case 'repository':
-        return <Database className="h-4 w-4 text-purple-500" />
+        return <Database className="h-4 w-4 text-muted-foreground" />
       case 'host':
-        return <Server className="h-4 w-4 text-green-500" />
+        return <Server className="h-4 w-4 text-muted-foreground" />
       case 'cloud':
-        return <Cloud className="h-4 w-4 text-orange-500" />
+        return <Cloud className="h-4 w-4 text-muted-foreground" />
       default:
-        return <Box className="h-4 w-4 text-gray-500" />
+        return <Box className="h-4 w-4 text-muted-foreground" />
     }
   }
 
   return (
-    <div className="mt-4">
-      <div className="flex items-center justify-between mb-4">
+    <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-sm font-medium">Assigned Assets ({totalCount})</h4>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={onBulkAddAssets}>
@@ -122,13 +122,15 @@ export function AssetsTab({
               key={item.id}
               className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
             >
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-muted">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="shrink-0 rounded-lg bg-muted p-2">
                   {getAssetIcon(item.asset?.type || 'unknown')}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-sm">{item.asset?.name || 'Unknown Asset'}</p>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium break-all">
+                      {item.asset?.name || 'Unknown Asset'}
+                    </p>
                     <Badge variant="outline" className="text-xs capitalize">
                       {item.ownership_type} Owner
                     </Badge>

@@ -263,3 +263,38 @@ func (s *Step) Clone() *Step {
 
 	return clone
 }
+
+// ConditionMet reports whether the step's condition allows it to run in run.
+// One implementation for every scheduler (the pipeline service and a scan's
+// workflow trigger); the scan path used to ignore conditions entirely.
+// Expression conditions are not evaluated yet and pass.
+func (s *Step) ConditionMet(run *Run) bool {
+	switch s.Condition.Type {
+	case ConditionTypeAlways:
+		return true
+	case ConditionTypeNever:
+		return false
+	case ConditionTypeAssetType:
+		assetType, ok := run.Context["asset_type"].(string)
+		return ok && assetType == s.Condition.Value
+	case ConditionTypeExpression:
+		return true
+	case ConditionTypeStepResult:
+		prev := run.GetStepRun(s.Condition.Value)
+		return prev != nil && prev.IsSuccess()
+	default:
+		return true
+	}
+}
+
+// BlockedByDependency returns the first dependency of the step that finished
+// without succeeding (failed, skipped, timed out, canceled), or "". Such a
+// step can never run: its dependency will not succeed any more.
+func (s *Step) BlockedByDependency(run *Run) string {
+	for _, dep := range s.DependsOn {
+		if sr := run.GetStepRun(dep); sr != nil && sr.IsComplete() && !sr.IsSuccess() {
+			return dep
+		}
+	}
+	return ""
+}

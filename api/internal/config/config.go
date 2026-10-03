@@ -192,6 +192,13 @@ type SensorConfigConfig struct {
 	// administrator creates or regenerates never expires, and a sensor that
 	// does not renew keeps its key.
 	KeyTTL time.Duration
+	// KeyRenewGrace is how long the key a sensor renewed with keeps
+	// authenticating after the renewal, for requests already in flight;
+	// every other key the sensor held is cut to the same moment, so a
+	// renewal leaves one long-lived key and a copied key cannot renew a
+	// parallel line of its own. SENSOR_KEY_RENEW_GRACE, default
+	// DefaultSensorKeyRenewGrace (15 minutes); "0" retires it at once.
+	KeyRenewGrace time.Duration
 	// KeyPepper is the secret the sensor API-key hash (HMAC-SHA256) is keyed
 	// with: SENSOR_KEY_PEPPER. Empty (the default) derives it from
 	// APP_ENCRYPTION_KEY with HKDF, so the MAC key is never the encryption
@@ -284,6 +291,10 @@ type SensorConfigConfig struct {
 // keep the renewed key on a persistent volume, and the sensor renews on its
 // own only when that volume persists (RFC-032 Phase 0).
 const DefaultSensorKeyTTL = 90 * 24 * time.Hour
+
+// DefaultSensorKeyRenewGrace is how long a renewed-away sensor key keeps
+// working when SENSOR_KEY_RENEW_GRACE is not set.
+const DefaultSensorKeyRenewGrace = 15 * time.Minute
 
 // Sensor and SDK release defaults. They are copied from versions.yaml at the
 // repository root by .github/scripts/release/sync-versions.sh, and CI fails
@@ -682,8 +693,14 @@ type SensorConfig struct {
 	// Default: 1 minute.
 	HealthCheckInterval time.Duration
 
-	// Enabled controls whether sensor health checking is enabled.
-	// Default: true.
+	// Enabled turns on the legacy sensor health checker (jobs.SensorHealthChecker,
+	// WORKER_HEALTH_CHECK_ENABLED). Default: false. The sensor health controller
+	// (internal/infra/controller/sensor_health.go, RFC-035 §5.6) owns liveness:
+	// it applies the late/stale/offline ladder and holds convictions during its
+	// startup grace and while the platform itself is slow. The legacy checker
+	// knows none of that and sweeps the moment the API starts, so with it on an
+	// API restart convicted every sensor that could not heartbeat while the API
+	// was down. Keep it off unless the health controller is not running.
 	Enabled bool
 
 	// SCMSyncInterval is how often the scheduled SCM repository/branch sync runs.
@@ -813,6 +830,14 @@ type EncryptionConfig struct {
 	// tokens issued under the old key have been rotated.
 	// Env var: APP_ENCRYPTION_KEY_PREVIOUS (comma-separated)
 	PreviousKeys []string
+
+	// TemplateSigningKey is the 32-byte master secret each tenant's custom
+	// template signing key is derived from (Ed25519; sensors pin the
+	// tenant's public key). Same formats as Key. Empty: derived from Key,
+	// so rotating Key also rotates every tenant's template key and sensors
+	// must pin the new one; set it to rotate them independently.
+	// Env var: APP_TEMPLATE_SIGNING_KEY
+	TemplateSigningKey string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -921,6 +946,7 @@ func Load() (*Config, error) {
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
+			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
 			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
 
@@ -1099,7 +1125,7 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: WorkerConfig{
-			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
+			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
 			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
@@ -1124,6 +1150,8 @@ func Load() (*Config, error) {
 			KeyFormat:      getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
 			AllowPlaintext: getEnvBool("APP_ALLOW_PLAINTEXT_CREDENTIALS", false),
 			PreviousKeys:   getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
+			// Read as is: a leading or trailing space is a malformed key.
+			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 		},
 		Webhooks: WebhooksConfig{
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
@@ -1358,6 +1386,16 @@ func (c *Config) validateLog() error {
 
 // validateEncryption validates encryption configuration.
 func (c *Config) validateEncryption() error {
+	if k := c.Encryption.TemplateSigningKey; k != "" {
+		if _, err := crypto.ParseKey(k, ""); err != nil {
+			// Never echo the key itself.
+			return fmt.Errorf("APP_TEMPLATE_SIGNING_KEY is not a valid key (expected 32 raw, 64 hex or 44 base64 characters); generate one with `openssl rand -hex 32`")
+		}
+		if k == c.Encryption.Key {
+			return fmt.Errorf("APP_TEMPLATE_SIGNING_KEY must differ from APP_ENCRYPTION_KEY (leave it unset to derive it)")
+		}
+	}
+
 	// Encryption key is optional only in development. Any other APP_ENV
 	// (production, staging, preview, etc.) stores real tenant credentials
 	// and MUST have a key — otherwise integration tokens sit in plaintext.
@@ -1654,15 +1692,24 @@ func (c *Config) validateProductionRedis() error {
 
 // DSN returns the database connection string.
 func (c *DatabaseConfig) DSN() string {
+	// Values are quoted: unquoted, an empty password swallowed the next
+	// key ("password= dbname=x" sets the password to "dbname=x"), and a
+	// space or backslash in a value broke or changed it.
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode,
+		dsnQuote(c.Host), c.Port, dsnQuote(c.User), dsnQuote(c.Password), dsnQuote(c.Name), dsnQuote(c.SSLMode),
 	)
 	if !c.JITEnabled {
 		// lib/pq forwards unknown keys as session startup parameters.
 		dsn += " jit=off"
 	}
 	return dsn
+}
+
+// dsnQuote quotes a libpq key/value connection-string value: single quotes
+// around it, with backslash and single quote escaped by a backslash.
+func dsnQuote(v string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
 }
 
 // Addr returns the Redis address.

@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -19,8 +20,22 @@ import (
 // ScanProfileHandler handles HTTP requests for scan profiles.
 type ScanProfileHandler struct {
 	service   *app.ScanProfileService
+	audit     *app.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
+}
+
+// SetAuditService records scan profile changes in the tenant's audit log. A
+// profile decides which tools run, how hard, and the quality gate that can
+// fail a CI pipeline, so who changed it matters.
+func (h *ScanProfileHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
+}
+
+func scanProfileAuditEvent(action audit.Action, p *scanprofile.ScanProfile, message string) app.AuditEvent {
+	return app.NewSuccessEvent(action, audit.ResourceTypeScanProfile, p.ID.String()).
+		WithResourceName(p.Name).
+		WithMessage(message)
 }
 
 // NewScanProfileHandler creates a new ScanProfileHandler.
@@ -222,6 +237,8 @@ func (h *ScanProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileCreated, profile,
+		"Scan profile "+profile.Name+" created"))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -398,6 +415,8 @@ func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileUpdated, profile,
+		"Scan profile "+profile.Name+" updated"))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
@@ -425,6 +444,9 @@ func (h *ScanProfileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r,
+		app.NewSuccessEvent(audit.ActionScanProfileDeleted, audit.ResourceTypeScanProfile, profileID).
+			WithMessage("Scan profile deleted"))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -451,6 +473,8 @@ func (h *ScanProfileHandler) SetDefault(w http.ResponseWriter, r *http.Request) 
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileDefaultSet, profile,
+		"Scan profile "+profile.Name+" set as the default"))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
@@ -499,6 +523,8 @@ func (h *ScanProfileHandler) Clone(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileCloned, profile,
+		"Scan profile "+profile.Name+" cloned from "+profileID))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -551,6 +577,8 @@ func (h *ScanProfileHandler) UpdateQualityGate(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileQualityGateUpdated, profile,
+		"Quality gate of scan profile "+profile.Name+" updated"))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScanProfileResponse(profile))

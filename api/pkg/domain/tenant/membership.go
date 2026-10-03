@@ -13,10 +13,35 @@ import (
 var ErrPlatformAdminMembership = fmt.Errorf("%w: platform administrators cannot be members of an organization; use a separate account", shared.ErrConflict)
 
 // ErrOrganizationHasOwner is returned when a platform administrator tries to
-// create the first owner of an organization that already has an active owner.
-// The platform administrator only bootstraps organizations; once an owner
-// exists, the owner and its administrators add people themselves.
+// create the first owner of an organization that already has an owner, active
+// or suspended (or, for an owner recovery, an active one). The platform
+// administrator only bootstraps organizations; once an owner exists, the owner
+// and its administrators add people themselves.
 var ErrOrganizationHasOwner = fmt.Errorf("%w: this organization already has an owner; its owner and administrators invite or create users themselves", shared.ErrConflict)
+
+// OwnerPresence is whether an organization has owners (by membership label or
+// the system owner role), and whether any of them is active.
+type OwnerPresence struct {
+	// Any is true when the organization has at least one owner, active or
+	// suspended.
+	Any bool
+	// Active is true when at least one owner is active.
+	Active bool
+}
+
+// AllSuspended is true when the organization has owners and none is active.
+func (p OwnerPresence) AllSuspended() bool { return p.Any && !p.Active }
+
+// BlocksBootstrap reports whether a platform administrator may NOT create an
+// owner. Without recovery any owner blocks it, suspended included: the
+// organization and its data belong to that owner. With recovery (a super
+// admin's explicit owner recovery) only an active owner blocks it.
+func (p OwnerPresence) BlocksBootstrap(recovery bool) bool {
+	if recovery {
+		return p.Active
+	}
+	return p.Any
+}
 
 // MemberStatus represents the lifecycle state of a membership.
 type MemberStatus string

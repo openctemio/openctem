@@ -18,6 +18,9 @@ type Filter struct {
 	Status       *Status
 	Tags         []string
 	Search       string
+	// ExcludeAdHoc leaves out quick scans that were never saved (Scan.AdHoc):
+	// the Configurations list shows saved configurations only.
+	ExcludeAdHoc bool
 }
 
 // Stats represents aggregated statistics for scans.
@@ -87,7 +90,13 @@ type Repository interface {
 	// UpdateNextRunAt updates the next run time for a scan.
 	UpdateNextRunAt(ctx context.Context, id shared.ID, nextRunAt *time.Time) error
 
-	// RecordRun records a run result for a scan.
+	// RecordRunStarted records a newly created run as the scan's last run
+	// (status 'running') without rewriting the rest of the scan row and without
+	// touching the counters.
+	RecordRunStarted(ctx context.Context, id shared.ID, runID shared.ID) error
+
+	// RecordRun records a run's terminal outcome and counts the run.
+	// last_run_status follows only while runID is still the scan's latest run.
 	RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error
 
 	// RecordTriggerFailure records that a scheduled trigger failed BEFORE any
@@ -120,12 +129,8 @@ type Repository interface {
 
 	// Distributed Locking (for multi-instance schedulers)
 
-	// TryLockScanForScheduler attempts to acquire a session-level advisory lock
-	// for the given scan ID. Returns true if the lock was acquired, false if
-	// another instance already holds it. The lock must be released with
-	// UnlockScanForScheduler when the trigger completes.
-	TryLockScanForScheduler(ctx context.Context, id shared.ID) (bool, error)
-
-	// UnlockScanForScheduler releases a previously acquired scheduler lock for the given scan ID.
-	UnlockScanForScheduler(ctx context.Context, id shared.ID) error
+	// ClaimScheduledRun atomically moves next_run_at from dueAt to next if it
+	// still equals dueAt and the scan is active. It returns true for exactly
+	// one caller per due occurrence, across replicas.
+	ClaimScheduledRun(ctx context.Context, id shared.ID, dueAt time.Time, next *time.Time) (bool, error)
 }

@@ -89,9 +89,9 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
-			created_by, created_at, updated_at, scan_zone_id
+			created_by, created_at, updated_at, scan_zone_id, ad_hoc
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -131,6 +131,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		s.CreatedAt,
 		s.UpdatedAt,
 		nullableIDString(s.ScanZoneID),
+		s.AdHoc,
 	)
 
 	if err != nil {
@@ -261,7 +262,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
-		    updated_at = $26, scan_zone_id = $28
+		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -294,6 +295,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		s.UpdatedAt,
 		s.TenantID.String(), // $27 — tenant scope: never update another tenant's scan
 		nullableIDString(s.ScanZoneID),
+		s.AdHoc, // $29
 	)
 
 	if err != nil {
@@ -407,21 +409,44 @@ func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, id shared.ID, next
 	return nil
 }
 
-// RecordRun records a run result for a scan.
+// RecordRunStarted records a newly created run as the scan's last run, with
+// status 'running'. One narrow UPDATE: the trigger path used to write the
+// whole scan row back from the copy it read before dispatching, which undid
+// any edit made meanwhile (a pause, a config change) and never stored the
+// 'running' status anyway. Counters are not touched here; RecordRun counts
+// the run when it finishes.
+func (r *ScanRepository) RecordRunStarted(ctx context.Context, id shared.ID, runID shared.ID) error {
+	const query = `
+		UPDATE scans
+		SET last_run_id = $2,
+		    last_run_at = NOW(),
+		    last_run_status = 'running',
+		    updated_at = NOW()
+		WHERE id = $1
+	`
+	if _, err := r.db.ExecContext(ctx, query, id.String(), runID.String()); err != nil {
+		return fmt.Errorf("failed to record run start: %w", err)
+	}
+	return nil
+}
+
+// RecordRun records a run's terminal outcome on its scan and counts the run.
+// last_run_status follows only while this run is still the scan's latest: an
+// older run finishing late must not relabel a newer one that is running.
 func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error {
 	var successIncrement, failedIncrement int
 	switch status {
 	case "completed", "success":
 		successIncrement = 1
-	case "failed", "error":
+	case "failed", "error", "timeout":
 		failedIncrement = 1
 	}
 
 	query := `
 		UPDATE scans
-		SET last_run_id = $2,
-		    last_run_at = NOW(),
-		    last_run_status = $3,
+		SET last_run_status = CASE WHEN last_run_id IS NULL OR last_run_id = $2 THEN $3 ELSE last_run_status END,
+		    last_run_id = COALESCE(last_run_id, $2),
+		    last_run_at = CASE WHEN last_run_id IS NULL THEN NOW() ELSE last_run_at END,
 		    total_runs = total_runs + 1,
 		    successful_runs = successful_runs + $4,
 		    failed_runs = failed_runs + $5,
@@ -469,7 +494,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 			COUNT(*) FILTER (WHERE status = 'paused') as paused,
 			COUNT(*) FILTER (WHERE status = 'disabled') as disabled
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 	`
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
 		&stats.Total, &stats.Active, &stats.Paused, &stats.Disabled,
@@ -482,7 +507,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 	scheduleQuery := `
 		SELECT schedule_type, COUNT(*)
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 		GROUP BY schedule_type
 	`
 	scheduleRows, err := r.db.QueryContext(ctx, scheduleQuery, tenantID.String())
@@ -507,7 +532,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 	scanTypeQuery := `
 		SELECT scan_type, COUNT(*)
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 		GROUP BY scan_type
 	`
 	scanTypeRows, err := r.db.QueryContext(ctx, scanTypeQuery, tenantID.String())
@@ -597,57 +622,29 @@ func (r *ScanRepository) UpdateStatusByAssetGroupID(ctx context.Context, assetGr
 	return nil
 }
 
-// scanSchedulerLockNamespace is a constant used as the first key in 2-arg
-// pg_advisory_lock to namespace scan scheduler locks. Picked to be unlikely
-// to collide with other application locks.
-const scanSchedulerLockNamespace int32 = 0x5343414e // "SCAN" in ASCII
-
-// TryLockScanForScheduler attempts to acquire a session-level advisory lock for the given scan ID.
-// Uses pg_try_advisory_lock(int4, int4) — the first arg namespaces this lock to the scan scheduler,
-// the second arg is a 32-bit hash of the scan UUID.
-func (r *ScanRepository) TryLockScanForScheduler(ctx context.Context, id shared.ID) (bool, error) {
-	key := scanIDLockKey(id)
-	var acquired bool
-	err := r.db.QueryRowContext(ctx,
-		"SELECT pg_try_advisory_lock($1, $2)",
-		scanSchedulerLockNamespace, key,
-	).Scan(&acquired)
+// ClaimScheduledRun claims one due occurrence of a scheduled scan: it moves
+// next_run_at from dueAt to next, and only if next_run_at still equals dueAt
+// and the scan is still active. Exactly one scheduler (on any replica) wins a
+// given occurrence; the losers see false and skip it.
+//
+// This replaces a session-level pg_try_advisory_lock taken through the
+// connection pool. Lock and unlock ran on whatever pooled connection each
+// statement got: the unlock usually hit a different session, released nothing
+// (its result was ignored), and the lock stayed held by the first session
+// until that connection closed — from then on every attempt to schedule that
+// scan, on every replica, saw "locked by another instance" and skipped it.
+func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, id shared.ID, dueAt time.Time, next *time.Time) (bool, error) {
+	const query = `
+		UPDATE scans
+		SET next_run_at = $3, updated_at = NOW()
+		WHERE id = $1 AND next_run_at = $2 AND status = 'active'
+	`
+	res, err := r.db.ExecContext(ctx, query, id.String(), dueAt, next)
 	if err != nil {
-		return false, fmt.Errorf("failed to try advisory lock for scan %s: %w", id.String(), err)
+		return false, fmt.Errorf("failed to claim scheduled run for scan %s: %w", id.String(), err)
 	}
-	return acquired, nil
-}
-
-// UnlockScanForScheduler releases a previously acquired session-level scheduler lock.
-func (r *ScanRepository) UnlockScanForScheduler(ctx context.Context, id shared.ID) error {
-	key := scanIDLockKey(id)
-	var released bool
-	err := r.db.QueryRowContext(ctx,
-		"SELECT pg_advisory_unlock($1, $2)",
-		scanSchedulerLockNamespace, key,
-	).Scan(&released)
-	if err != nil {
-		return fmt.Errorf("failed to release advisory lock for scan %s: %w", id.String(), err)
-	}
-	return nil
-}
-
-// scanIDLockKey converts a scan UUID to a deterministic int32 key for advisory locks.
-// Uses FNV-1a 32-bit hash of the UUID string. Collisions are rare and only cause
-// brief serialization (the worst case is two unrelated scans waiting for each other,
-// which is acceptable since each trigger is fast).
-func scanIDLockKey(id shared.ID) int32 {
-	const (
-		fnvOffsetBasis uint32 = 2166136261
-		fnvPrime       uint32 = 16777619
-	)
-	h := fnvOffsetBasis
-	s := id.String()
-	for i := 0; i < len(s); i++ {
-		h ^= uint32(s[i])
-		h *= fnvPrime
-	}
-	return int32(h) //nolint:gosec // intentional truncation for advisory lock key
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
 // selectQuery returns the base SELECT query.
@@ -661,7 +658,7 @@ func (r *ScanRepository) selectQuery() string {
 		       max_retries, retry_backoff_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
-		       created_by, created_at, updated_at, scan_zone_id
+		       created_by, created_at, updated_at, scan_zone_id, ad_hoc
 		FROM scans
 	`
 }
@@ -739,6 +736,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.CreatedAt,
 		&s.UpdatedAt,
 		&scanZoneID,
+		&s.AdHoc,
 	)
 	if err != nil {
 		return nil, err
@@ -868,6 +866,10 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 		conditions = append(conditions, fmt.Sprintf("tags && $%d", argIndex))
 		args = append(args, pq.Array(filter.Tags))
 		argIndex++
+	}
+
+	if filter.ExcludeAdHoc {
+		conditions = append(conditions, "ad_hoc = false")
 	}
 
 	if filter.Search != "" {

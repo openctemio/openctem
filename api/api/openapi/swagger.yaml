@@ -792,6 +792,10 @@ definitions:
       path:
         description: File path where this dependency is defined
         type: string
+      properties:
+        allOf:
+        - $ref: '#/definitions/ctis.Properties'
+        description: Custom properties
       purl:
         description: Package URL (PURL)
         type: string
@@ -1920,11 +1924,20 @@ definitions:
     type: object
   ctis.Suppression:
     properties:
+      expires_at:
+        description: When the suppression stops applying. Empty means it does not
+          expire.
+        type: string
       justification:
         description: Justification for suppression
         type: string
       kind:
         description: 'Suppression kind: in_source, external'
+        type: string
+      reason:
+        description: |-
+          Short reason code or phrase, e.g. "false_positive", "test_code",
+          "risk_accepted".
         type: string
       status:
         description: 'Suppression status: accepted, under_review, rejected'
@@ -2566,6 +2579,19 @@ definitions:
       last_activity_at:
         type: string
       user_agent:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app.TemplateSigningKey:
+    properties:
+      algorithm:
+        type: string
+      key_id:
+        type: string
+      public_key:
+        description: base64 (standard)
+        type: string
+      sensor_env:
+        description: the sensor setting it goes in
         type: string
     type: object
   github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class:
@@ -3893,12 +3919,20 @@ definitions:
       actions:
         description: |-
           Actions are typed control directives from a closed set: pause,
-          resume, drain, rotate_key, update. Never free-form text.
+          resume, drain, rotate_key, update, cancel. Never free-form text.
         items:
           type: string
         type: array
       agent_id:
         type: string
+      cancel_command_ids:
+        description: |-
+          CancelCommandIDs are commands the sensor listed as running that it
+          must stop (canceled, timed out, re-queued, held elsewhere); sent with
+          the cancel action. Only for a sensor that reports its running list.
+        items:
+          type: string
+        type: array
       config_version:
         description: |-
           ConfigVersion is an opaque digest of what the platform governs about
@@ -4180,6 +4214,12 @@ definitions:
       name:
         maxLength: 255
         type: string
+      recovery:
+        description: |-
+          Recovery creates a new owner for an organization whose owners are all
+          suspended. Super admin only; the set-password link is emailed and
+          never returned; refused while any owner is active.
+        type: boolean
       role:
         enum:
         - owner
@@ -5054,7 +5094,7 @@ definitions:
         example: 47
         type: integer
       exposed_services_change:
-        example: -3
+        example: 3
         type: integer
       exposed_services_list:
         description: Top exposed services
@@ -5074,8 +5114,14 @@ definitions:
         example: 303
         type: integer
       total_assets_change:
-        description: Trends (week-over-week changes)
+        description: |-
+          Trends: what is new in the last trend_window_days days. Counts, never
+          negative: assets added; public assets added or newly made public; the
+          same limited to critical/high criticality.
         example: 12
+        type: integer
+      trend_window_days:
+        example: 7
         type: integer
     type: object
   internal_infra_http_handler.AttackerProfileResponse:
@@ -10380,8 +10426,70 @@ definitions:
     required:
     - private_key
     type: object
+  internal_infra_http_handler.SSOChangeListResponse:
+    properties:
+      changes:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SSOChangeResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.SSOChangeResponse:
+    properties:
+      certificate_sha256:
+        description: |-
+          CertificateSHA256 identifies the IdP signing certificate a SAML change
+          installs; compare it with the certificate your IdP shows.
+        type: string
+      created_at:
+        type: string
+      decided_at:
+        type: string
+      decided_by:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      kind:
+        enum:
+        - saml_config
+        - idp_create
+        - idp_update
+        type: string
+      payload:
+        description: Payload is the proposed configuration.
+        type: object
+      requested_by:
+        type: string
+      status:
+        enum:
+        - pending
+        - approved
+        - rejected
+        - expired
+        - superseded
+        type: string
+      summary:
+        description: Summary is a one-line description of the change.
+        type: string
+      target_id:
+        type: string
+    type: object
+  internal_infra_http_handler.SaveScanRequest:
+    properties:
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
+      ad_hoc:
+        description: 'AdHoc: an unsaved quick scan (not listed as a configuration
+          until saved).'
+        type: boolean
       asset_group_id:
         description: Primary asset group (legacy)
         type: string
@@ -13912,6 +14020,33 @@ paths:
       summary: Rebaseline an organization's audit chain (platform admin)
       tags:
       - Admin Organizations
+  /admin/tenants/{tenantId}/sso/changes:
+    get:
+      description: Platform admin console (RFC-022). SAML and identity-provider changes
+        submitted here wait for an owner of the organization. Pending, unexpired changes
+        by default; status=all includes decided ones.
+      parameters:
+      - description: Organization ID
+        in: path
+        name: tenantId
+        required: true
+        type: string
+      - description: pending (default) or all
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SSOChangeListResponse'
+      security:
+      - BearerAuth: []
+      summary: List an organization's SSO changes awaiting owner approval
+      tags:
+      - Admin Organization SSO
   /admin/tenants/{tenantId}/sso/enforcement:
     get:
       parameters:
@@ -13985,7 +14120,10 @@ paths:
       - Admin Organization SSO
     post:
       description: 'Platform admin console (RFC-022): runs against the organization
-        in the path.'
+        in the path. When the organization has an owner, the provider is stored as
+        a pending change (202, SSOChangeResponse) and is created only after an owner
+        approves it; an organization without an owner yet gets it created directly
+        (201).'
       parameters:
       - description: Organization ID
         in: path
@@ -14047,7 +14185,10 @@ paths:
       - Admin Organization SSO
     put:
       description: 'Platform admin console (RFC-022): runs against the organization
-        in the path.'
+        in the path. When the organization has an owner, the update is stored as a
+        pending change (202, SSOChangeResponse) and is applied only after an owner
+        approves it; an organization without an owner yet gets it applied directly
+        (200).'
       parameters:
       - description: Organization ID
         in: path
@@ -14104,7 +14245,9 @@ paths:
       - Admin Organization SSO
     put:
       description: 'Platform admin console (RFC-022): runs against the organization
-        in the path.'
+        in the path. When the organization has an owner, the change is stored as pending
+        (202, SSOChangeResponse) and takes effect only after an owner approves it;
+        an organization without an owner yet gets it applied directly (200).'
       parameters:
       - description: Organization ID
         in: path
@@ -14228,11 +14371,16 @@ paths:
       consumes:
       - application/json
       description: 'Bootstrap only: creates the owner of an organization that has
-        no active owner, and nothing else (409 when it has one: its owner and administrators
-        add users themselves). The one-time set-password link is emailed when the
-        organization can send email and is then never returned; only when email cannot
-        be sent is setup_token returned, once. Written to the organization''s audit
-        log.'
+        no owner, and nothing else (409 when it has one, active or suspended: its
+        owner and administrators add users themselves). The one-time set-password
+        link is emailed when the organization can send email and is then never returned;
+        only when email cannot be sent is setup_token returned, once. Written to the
+        organization''s audit log. With "recovery": true (super admin only, 403 otherwise)
+        it creates a new owner of an organization whose owners are all suspended (409
+        while any owner is active); the link is then emailed only and never returned
+        (400 when the organization cannot send email), and the action is audited as
+        organization.owner_recovery in the admin audit log and at critical severity
+        in the organization''s audit log.'
       parameters:
       - description: Organization ID
         in: path
@@ -14254,6 +14402,10 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Owner recovery by an administrator who is not a super admin
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "409":
@@ -14429,8 +14581,8 @@ paths:
   /admin/version:
     get:
       description: 'The running API build: release tag (or "<tag>-dev+<commit>" on
-        a development build), short commit, build time and channel (release, rc
-        or dev).'
+        a development build), short commit, build time and channel (release, rc or
+        dev).'
       produces:
       - application/json
       responses:
@@ -17922,7 +18074,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new command to be executed by a sensor
+      description: Create a new command to be executed by a sensor. A `scan` command
+        needs an owner or administrator, and its `target`/`targets` get the checks
+        of a scan trigger (scope exclusions, scan zones, private-range policy); a
+        refused target answers 400.
       parameters:
       - description: Command data
         in: body
@@ -17939,6 +18094,10 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.CommandResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":
@@ -24465,6 +24624,27 @@ paths:
       summary: Download template content
       tags:
       - Scanner Templates
+  /scanner-templates/signing-key:
+    get:
+      description: The Ed25519 public key custom templates of this tenant are signed
+        with when they are sent to a sensor. Pin it on the tenant's sensors (SENSOR_TEMPLATE_SIGNING_KEYS);
+        sensors refuse custom templates without a valid signature.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.TemplateSigningKey'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get the tenant's template-signing public key
+      tags:
+      - Scanner Templates
   /scanner-templates/usage:
     get:
       description: Get the current template usage and quota limits for the tenant
@@ -24554,6 +24734,10 @@ paths:
         in: query
         name: search
         type: string
+      - description: Also list unsaved quick scans (ad_hoc)
+        in: query
+        name: include_ad_hoc
+        type: boolean
       - default: 1
         description: Page number
         in: query
@@ -25063,6 +25247,53 @@ paths:
       security:
       - BearerAuth: []
       summary: Get latest scan run
+      tags:
+      - Scans
+  /scans/{id}/save:
+    post:
+      consumes:
+      - application/json
+      description: Turns an ad-hoc quick scan into a saved scan configuration with
+        the given name ("Save as scan"). Its runs stay attached. Refused for a scan
+        that is already a configuration.
+      parameters:
+      - description: Quick scan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Configuration name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SaveScanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Save a quick scan as a configuration
       tags:
       - Scans
   /scans/{id}/trigger:
@@ -29193,6 +29424,123 @@ paths:
       summary: Set the data scope of members without an access group
       tags:
       - Tenants
+  /tenants/{tenant}/settings/sso/changes:
+    get:
+      description: Owner only. SAML and identity-provider changes a platform administrator
+        proposed for this organization; none takes effect until an owner approves
+        it. Pending, unexpired changes by default; status=all includes decided ones.
+      parameters:
+      - description: Tenant ID or slug
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: pending (default) or all
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SSOChangeListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List SSO changes awaiting your approval
+      tags:
+      - Tenants
+  /tenants/{tenant}/settings/sso/changes/{changeId}/approve:
+    post:
+      description: Owner only. Applies the proposed SAML or identity-provider change
+        to this organization's live configuration.
+      parameters:
+      - description: Tenant ID or slug
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: SSO change ID
+        in: path
+        name: changeId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SSOChangeResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Approve an SSO change
+      tags:
+      - Tenants
+  /tenants/{tenant}/settings/sso/changes/{changeId}/reject:
+    post:
+      description: Owner only. Discards the proposed change; the live configuration
+        is unchanged.
+      parameters:
+      - description: Tenant ID or slug
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: SSO change ID
+        in: path
+        name: changeId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SSOChangeResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reject an SSO change
+      tags:
+      - Tenants
   /tenants/{tenant}/users:
     post:
       consumes:
@@ -30106,8 +30454,8 @@ paths:
   /version:
     get:
       description: 'The running API build: release tag (or "<tag>-dev+<commit>" on
-        a development build), short commit, build time and channel (release, rc
-        or dev).'
+        a development build), short commit, build time and channel (release, rc or
+        dev).'
       produces:
       - application/json
       responses:

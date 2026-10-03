@@ -536,8 +536,11 @@ type ListScansInput struct {
 	Status       string   `json:"status" validate:"omitempty,oneof=active paused disabled"`
 	Tags         []string `json:"tags"`
 	Search       string   `json:"search" validate:"max=255"`
-	Page         int      `json:"page"`
-	PerPage      int      `json:"per_page"`
+	// IncludeAdHoc also lists unsaved quick scans (Scan.AdHoc); by default the
+	// list holds saved configurations only.
+	IncludeAdHoc bool `json:"include_ad_hoc"`
+	Page         int  `json:"page"`
+	PerPage      int  `json:"per_page"`
 }
 
 // ListScans lists scans with filters.
@@ -548,9 +551,10 @@ func (s *Service) ListScans(ctx context.Context, input ListScansInput) (paginati
 	}
 
 	filter := scan.Filter{
-		TenantID: &tenantID,
-		Tags:     input.Tags,
-		Search:   input.Search,
+		TenantID:     &tenantID,
+		Tags:         input.Tags,
+		Search:       input.Search,
+		ExcludeAdHoc: !input.IncludeAdHoc,
 	}
 
 	if input.AssetGroupID != "" {
@@ -683,8 +687,15 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		}
 	}
 
-	// Update schedule if provided
+	// Update schedule if provided. SetSchedule refuses what the scheduler
+	// cannot honor (unparseable cron, unknown timezone); the security check
+	// on the cron string is the one CreateScan runs, which updates skipped.
 	if input.ScheduleType != "" {
+		if input.ScheduleCron != "" && s.securityValidator != nil {
+			if err := s.securityValidator.ValidateCronExpression(input.ScheduleCron); err != nil {
+				return nil, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+			}
+		}
 		scheduleType := scan.ScheduleType(input.ScheduleType)
 		timezone := input.Timezone
 		if timezone == "" {

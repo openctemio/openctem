@@ -40,6 +40,9 @@ type mockScanRepo struct {
 	statsErr         error
 	listByPipelineID []*scan.Scan
 	listByPipelineE  error
+
+	updateCalls int         // full-row Update calls
+	startedRuns []shared.ID // RecordRunStarted calls
 }
 
 func newMockScanRepo() *mockScanRepo {
@@ -104,6 +107,7 @@ func (m *mockScanRepo) List(_ context.Context, _ scan.Filter, page pagination.Pa
 }
 
 func (m *mockScanRepo) Update(_ context.Context, s *scan.Scan) error {
+	m.updateCalls++
 	if m.updateErr != nil {
 		return m.updateErr
 	}
@@ -144,6 +148,11 @@ func (m *mockScanRepo) UpdateNextRunAt(_ context.Context, _ shared.ID, _ *time.T
 	return nil
 }
 
+func (m *mockScanRepo) RecordRunStarted(_ context.Context, _ shared.ID, runID shared.ID) error {
+	m.startedRuns = append(m.startedRuns, runID)
+	return nil
+}
+
 func (m *mockScanRepo) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
@@ -181,12 +190,8 @@ func (m *mockScanRepo) UpdateStatusByAssetGroupID(_ context.Context, _ shared.ID
 	return nil
 }
 
-func (m *mockScanRepo) TryLockScanForScheduler(_ context.Context, _ shared.ID) (bool, error) {
+func (m *mockScanRepo) ClaimScheduledRun(_ context.Context, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
-}
-
-func (m *mockScanRepo) UnlockScanForScheduler(_ context.Context, _ shared.ID) error {
-	return nil
 }
 
 // addScan is a helper to insert a scan into the mock.
@@ -415,7 +420,7 @@ func (m *mockRunRepo) MarkTimedOutRuns(_ context.Context) (int64, error) {
 func (m *mockRunRepo) ListPendingRetries(_ context.Context, _ int) ([]pipeline.RetryCandidate, error) {
 	return nil, nil
 }
-func (m *mockRunRepo) ResetRetryClaim(_ context.Context, _ shared.ID) error {
+func (m *mockRunRepo) ReleaseFailedRetryDispatch(_ context.Context, _ shared.ID) error {
 	return nil
 }
 
@@ -823,11 +828,13 @@ func (m *mockSecurityValidator) ValidateCronExpression(_ string) error {
 // =============================================================================
 
 type mockAuditService struct {
-	events []scanservice.AuditEvent
+	events   []scanservice.AuditEvent
+	contexts []scanservice.AuditContext
 }
 
-func (m *mockAuditService) LogEvent(_ context.Context, _ scanservice.AuditContext, event scanservice.AuditEvent) error {
+func (m *mockAuditService) LogEvent(_ context.Context, actx scanservice.AuditContext, event scanservice.AuditEvent) error {
 	m.events = append(m.events, event)
+	m.contexts = append(m.contexts, actx)
 	return nil
 }
 
@@ -1647,6 +1654,31 @@ func TestScanService_TriggerScan_SingleScanner_Success(t *testing.T) {
 	}
 }
 
+// Triggering used to write the whole scan row back from the copy it read
+// before dispatching: a pause or config edit saved while the trigger ran was
+// silently undone. The trigger now records the run with one narrow call and
+// never rewrites the scan.
+func TestScanService_TriggerScan_DoesNotRewriteTheScanRow(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "No clobber", scan.ScanTypeSingle)
+	before := deps.scanRepo.updateCalls
+
+	run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	})
+	if err != nil {
+		t.Fatalf("TriggerScan: %v", err)
+	}
+	if got := deps.scanRepo.updateCalls - before; got != 0 {
+		t.Errorf("TriggerScan rewrote the scan row %d time(s); it must not (stale copy clobbers concurrent edits)", got)
+	}
+	if len(deps.scanRepo.startedRuns) != 1 || deps.scanRepo.startedRuns[0] != run.ID {
+		t.Errorf("RecordRunStarted calls = %v, want exactly [%s]", deps.scanRepo.startedRuns, run.ID)
+	}
+}
+
 func TestScanService_TriggerScan_ScanNotFound(t *testing.T) {
 	svc, _ := newTestScanService()
 	tenantID := shared.NewID()
@@ -2302,5 +2334,106 @@ func TestScanService_TriggerScan_CollectorToolRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "asset collector") {
 		t.Errorf("err = %v, want it to name the asset collector", err)
+	}
+}
+
+// Overlap policy for scheduled runs (D4): a scheduled occurrence while the
+// previous run is still active is skipped, not stacked (up to 3 concurrent
+// runs of the same scan used to pile up).
+func TestScanService_TriggerScan_ScheduledSkipsWhileRunning(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "Overlap", scan.ScanTypeSingle)
+	deps.runRepo.activeByScanCount = 1
+
+	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+		TriggerType: pipeline.TriggerTypeSchedule, SkipIfRunning: true,
+	})
+	if !errors.Is(err, scanservice.ErrScanRunInProgress) {
+		t.Fatalf("err = %v, want ErrScanRunInProgress", err)
+	}
+
+	// A manual trigger is not subject to the overlap policy.
+	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	}); err != nil {
+		t.Fatalf("manual trigger: %v", err)
+	}
+}
+
+// Every run used to be recorded as trigger_type 'manual', scheduled ones too.
+func TestScanService_TriggerScan_RecordsTriggerType(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "Trigger type", scan.ScanTypeSingle)
+
+	run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.TriggerType != pipeline.TriggerTypeSchedule {
+		t.Fatalf("trigger_type = %s, want schedule", run.TriggerType)
+	}
+	run, err = svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.TriggerType != pipeline.TriggerTypeManual {
+		t.Fatalf("trigger_type = %s, want manual", run.TriggerType)
+	}
+}
+
+// UpdateScan skipped the checks CreateScan runs: an unparseable cron or an
+// unknown timezone was saved and then quietly honored as "every 24h" / UTC.
+func TestScanService_UpdateScan_RefusesUnhonorableSchedule(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	s := createTestScanInRepo(deps, tenantID, "Bad schedule", scan.ScanTypeSingle)
+	at := time.Date(0, 1, 1, 3, 0, 0, 0, time.UTC)
+	cases := []scanservice.UpdateScanInput{
+		{TenantID: tenantID.String(), ScanID: s.ID.String(), ScheduleType: "crontab", ScheduleCron: "61 * * * *"},
+		{TenantID: tenantID.String(), ScanID: s.ID.String(), ScheduleType: "daily", ScheduleTime: &at, Timezone: "Mars/Olympus_Mons"},
+	}
+	for _, in := range cases {
+		if _, err := svc.UpdateScan(context.Background(), in); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("UpdateScan(%s %q tz=%q): err = %v, want validation error", in.ScheduleType, in.ScheduleCron, in.Timezone, err)
+		}
+	}
+}
+
+// A workflow run started only steps with step_order == 1: independent steps
+// numbered otherwise never started (the run hung until the run timeout), and
+// a "never" condition on a first step was ignored.
+func TestScanService_TriggerScan_Workflow_StartsByDependencyGraph(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	s := createTestScanInRepo(deps, tenantID, "Graph start", scan.ScanTypeWorkflow)
+	pipelineID := *s.PipelineID
+	deps.toolRepo.addTool("nuclei", true)
+	deps.toolRepo.addTool("httpx", true)
+	deps.stepRepo.steps[pipelineID.String()] = []*pipeline.Step{
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "probe", StepOrder: 2, Tool: "httpx"},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "vulns", StepOrder: 3, Tool: "nuclei"},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "off", StepOrder: 4, Tool: "nuclei",
+			Condition: pipeline.NeverCondition()},
+		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "after", StepOrder: 5, Tool: "nuclei",
+			DependsOn: []string{"probe"}},
+	}
+	before := len(deps.commandRepo.commands)
+
+	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(deps.commandRepo.commands) - before; got != 2 {
+		t.Fatalf("queued %d step command(s), want 2 (the two independent steps; not the 'never' one, not the dependent)", got)
 	}
 }

@@ -41,6 +41,7 @@ interface AttackSurfaceStatsResponse {
   total_assets_change: number
   exposed_services_change: number
   critical_exposures_change: number
+  trend_window_days?: number
   asset_breakdown: AssetTypeBreakdownResponse[]
   exposed_services_list: ExposedServiceResponse[]
   recent_changes: AssetChangeResponse[]
@@ -79,9 +80,13 @@ export interface AttackSurfaceStats {
   exposedServices: number
   criticalExposures: number
   riskScore: number
+  /** Assets added in the last `trendWindowDays` days (never negative). */
   totalAssetsChange: number
+  /** Public assets added, or newly made public, in the window. */
   exposedServicesChange: number
+  /** The same, limited to critical/high criticality. */
   criticalExposuresChange: number
+  trendWindowDays: number
   assetBreakdown: AssetTypeBreakdown[]
   exposedServicesList: ExposedService[]
   recentChanges: AssetChange[]
@@ -100,6 +105,7 @@ function transformResponse(data: AttackSurfaceStatsResponse): AttackSurfaceStats
     totalAssetsChange: data.total_assets_change,
     exposedServicesChange: data.exposed_services_change,
     criticalExposuresChange: data.critical_exposures_change,
+    trendWindowDays: data.trend_window_days ?? 7,
     assetBreakdown:
       data.asset_breakdown?.map((item) => ({
         type: item.type,

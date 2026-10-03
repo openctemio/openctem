@@ -933,17 +933,14 @@ func (s *CredentialImportService) ListByIdentity(
 	}
 
 	// Get all matching credentials (limit to reasonable number for grouping)
-	listOpts := exposure.NewListOptions()
-	pag := pagination.New(1, 1000) // Get up to 1000 for grouping
-
-	result, err := s.exposureRepo.List(ctx, filter, listOpts, pag)
+	events, err := s.listCredentialEvents(ctx, filter, maxCredentialsForGrouping)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list credentials: %w", err)
 	}
 
 	// Group by identity (aggregate only, don't load individual exposures)
 	identityMap := make(map[string]*IdentityExposure)
-	for _, event := range result.Data {
+	for _, event := range events {
 		item := s.toCredentialItem(event)
 		identity, identityType := s.extractIdentity(item)
 		if identity == "" {
@@ -1075,6 +1072,33 @@ func (s *CredentialImportService) GetRelatedCredentials(
 	return items, nil
 }
 
+// maxCredentialsForGrouping bounds how many leaked-credential exposures the
+// identity views read and group in memory.
+const maxCredentialsForGrouping = 1000
+
+// listCredentialEvents reads up to max exposures matching filter, page by
+// page. Both identity views asked for one page of 1000, which pagination
+// clamps to 100: a tenant with more than 100 leaked credentials saw only the
+// identities among the first 100, and an identity's own exposures past them
+// were missing.
+func (s *CredentialImportService) listCredentialEvents(ctx context.Context, filter exposure.Filter, maxRows int) ([]*exposure.ExposureEvent, error) {
+	var out []*exposure.ExposureEvent
+	for pageNum := 1; len(out) < maxRows; pageNum++ {
+		res, err := s.exposureRepo.List(ctx, filter, exposure.NewListOptions(), pagination.New(pageNum, 100))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, res.Data...)
+		if len(res.Data) == 0 || int64(len(out)) >= res.Total {
+			break
+		}
+	}
+	if len(out) > maxRows {
+		out = out[:maxRows]
+	}
+	return out, nil
+}
+
 // GetExposuresForIdentity gets all credential exposures for a specific identity (lazy loading).
 func (s *CredentialImportService) GetExposuresForIdentity(
 	ctx context.Context,
@@ -1088,18 +1112,15 @@ func (s *CredentialImportService) GetExposuresForIdentity(
 		WithTenantID(tenantID).
 		WithEventTypes(exposure.EventTypeCredentialLeaked)
 
-	listOpts := exposure.NewListOptions()
 	// Fetch more records to filter client-side
-	pag := pagination.New(1, 1000)
-
-	result, err := s.exposureRepo.List(ctx, filter, listOpts, pag)
+	events, err := s.listCredentialEvents(ctx, filter, maxCredentialsForGrouping)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find credentials for identity: %w", err)
 	}
 
 	// Filter to exact identity matches
 	allMatches := make([]CredentialItem, 0)
-	for _, event := range result.Data {
+	for _, event := range events {
 		item := s.toCredentialItem(event)
 		itemIdentity, _ := s.extractIdentity(item)
 		if itemIdentity == "" {

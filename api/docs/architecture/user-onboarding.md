@@ -10,7 +10,8 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 |-----|-------------|------|
 | Organization admin creates the user | `POST /api/v1/tenants/{tenant}/users` | owner/admin of the organization |
 | New set-password link for a pending account | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | owner/admin; account unused and in this organization only |
-| Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner — see [First owner](#first-owner-platform-administrator) |
+| Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner, active or suspended — see [First owner](#first-owner-platform-administrator) |
+| Platform admin recovers an organization whose owners are all suspended | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/{token}/accept` | owner/admin to invite; the token + matching email to accept |
@@ -22,9 +23,9 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 The platform administrator only bootstraps organizations (owner decision
 2026-10-02, RFC-022 revision 5). `POST /api/v1/admin/tenants/{tenantId}/users`
 with `{"email": "...", "name": "..."}` (`role` may be omitted; anything but
-`owner` is a 400) creates the owner of an organization that has no active
-owner, and answers 409 otherwise: from then on the owner and its administrators
-invite or create users. The account has no password until the owner sets one
+`owner` is a 400) creates the owner of an organization that has no owner, and
+answers 409 otherwise, also when the only owner is **suspended**: from then on
+the owner and its administrators invite or create users. The account has no password until the owner sets one
 through the one-time link. The link is emailed when the organization can send
 email (tenant or system SMTP) and is then never in the response
 (`email_failed: true` if the send failed — the owner uses forgot-password);
@@ -32,6 +33,16 @@ only when email cannot be sent is `setup_token` returned, once. The creation is
 written to the organization's audit log as `user.created` by
 `platform-admin:<email>`. The owner created with `POST /api/v1/admin/tenants`
 follows the same delivery rule.
+
+**Owner recovery.** When every owner of an organization is suspended, a
+super admin can send `{"email": "...", "name": "...", "recovery": true}` to the
+same endpoint to create a new owner (RFC-022 revision 7). It is refused with
+403 for any other console role, with 409 while any owner is active, and with
+400 when the organization cannot send email: the recovery link is **only
+emailed, never returned**. The suspended owners are left as they are. The
+request is audited as `organization.owner_recovery` in `admin_audit_logs` (high
+severity, refusals included) and as `user.created` with `owner_recovery: true`
+at critical severity in the organization's audit log.
 
 ### Administrator-created accounts
 

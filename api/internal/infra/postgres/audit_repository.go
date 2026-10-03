@@ -659,6 +659,45 @@ func (r *AuditRepository) AppendChainEntry(ctx context.Context, e audit.ChainEnt
 	return nil
 }
 
+// AppendNextChainEntry extends a tenant's chain by one entry atomically
+// across API replicas: in one transaction it takes a per-tenant advisory
+// lock, reads the chain tail, lets build compute the entry from it and
+// inserts it. Two writers (in the same process or on different replicas)
+// can therefore never both extend the same prev_hash and fork the chain.
+func (r *AuditRepository) AppendNextChainEntry(ctx context.Context, tenantID shared.ID, build func(prevHash string) audit.ChainEntry) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin chain append: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx,
+		`SELECT pg_advisory_xact_lock(hashtext('audit_log_chain'), hashtext($1))`, tenantID.String()); err != nil {
+		return fmt.Errorf("lock chain: %w", err)
+	}
+	var prev string
+	err = tx.QueryRowContext(ctx, `
+		SELECT hash FROM audit_log_chain
+		 WHERE tenant_id = $1
+		 ORDER BY chain_position DESC
+		 LIMIT 1`, tenantID.String()).Scan(&prev)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("latest chain hash: %w", err)
+	}
+	e := build(prev)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO audit_log_chain (audit_log_id, tenant_id, prev_hash, hash)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (audit_log_id) DO NOTHING`,
+		e.AuditLogID.String(), tenantID.String(), e.PrevHash, e.Hash); err != nil {
+		return fmt.Errorf("append chain entry: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit chain append: %w", err)
+	}
+	return nil
+}
+
 // ApplyChainRebaseline records a rebaseline, archives the old and new hashes of
 // every rewritten entry, and overwrites them — all in one transaction, so a
 // failure part-way leaves the chain exactly as it was and nothing archived.

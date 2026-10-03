@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -54,6 +55,11 @@ type Scan struct {
 	// Retry config - automatic retry of failed runs with exponential backoff
 	MaxRetries          int // 0 = no retry, max 10
 	RetryBackoffSeconds int // Initial backoff (default 60s), actual delay is backoff * 2^attempt
+
+	// AdHoc marks a quick scan that was run without being saved: it exists so
+	// its runs have a scan to belong to, but it is not a configuration (the
+	// list hides it) until someone saves it (SaveAsConfiguration).
+	AdHoc bool
 
 	// Status
 	Status Status
@@ -242,12 +248,26 @@ func (s *Scan) SetSchedule(scheduleType ScheduleType, cron string, day *int, t *
 		if cron == "" {
 			return shared.NewDomainError("VALIDATION", "cron expression is required for crontab schedule", shared.ErrValidation)
 		}
+		// Parse with the parser the scheduler uses. An expression it cannot
+		// parse used to be stored and then quietly run every 24 hours.
+		if _, err := cronParser.Parse(cron); err != nil {
+			return shared.NewDomainError("VALIDATION", "cannot parse cron expression: "+err.Error(), shared.ErrValidation)
+		}
 	default:
 		return shared.NewDomainError("VALIDATION", "invalid schedule_type", shared.ErrValidation)
+	}
+	// A cron expression only drives a crontab schedule; keeping one on a
+	// daily/weekly/monthly scan stored (and showed) a schedule nothing honored.
+	if scheduleType != ScheduleCrontab {
+		cron = ""
 	}
 
 	if timezone == "" {
 		timezone = "UTC"
+	}
+	// An unknown zone used to be stored and then silently evaluated as UTC.
+	if _, err := time.LoadLocation(timezone); err != nil {
+		return shared.NewDomainError("VALIDATION", "unknown timezone: "+timezone, shared.ErrValidation)
 	}
 
 	s.ScheduleType = scheduleType
@@ -299,15 +319,15 @@ func (s *Scan) calculateNextRun() *time.Time {
 	case ScheduleMonthly:
 		next = nextAtDayOfMonth(now, s.ScheduleDay, s.ScheduleTime)
 	case ScheduleCrontab:
-		// Parse cron expression with timezone-aware schedule
-		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		schedule, parseErr := parser.Parse(s.ScheduleCron)
+		// Parse cron expression with timezone-aware schedule. SetSchedule
+		// refuses an unparseable expression; one stored before that check gets
+		// no next run (the scheduler reports it at startup as inert) instead
+		// of the old silent "every 24 hours from now".
+		schedule, parseErr := cronParser.Parse(s.ScheduleCron)
 		if parseErr != nil {
-			// Fallback to 24 hours if parsing fails
-			next = now.Add(24 * time.Hour)
-		} else {
-			next = schedule.Next(now)
+			return nil
 		}
+		next = schedule.Next(now)
 	default:
 		return nil
 	}
@@ -332,12 +352,30 @@ func nextAtTimeOfDay(now time.Time, t *time.Time, _ int) time.Time {
 	return candidate
 }
 
+// cronParser is the one cron dialect: 5 fields, as validated on save and
+// evaluated by the scheduler.
+var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
 // nextAtWeekday returns the next occurrence of the given weekday at the given time-of-day.
+//
+// A weekly schedule without a day (stored before SetSchedule required one)
+// keeps a 7-day period anchored on today's time slot. It used to take the
+// next slot (tomorrow once today's had passed) plus 7 days: triggered at its
+// slot, the next run was 8 days later, so the scan ran every 8 days and its
+// weekday drifted forward each week.
 func nextAtWeekday(now time.Time, dayOfWeek *int, t *time.Time) time.Time {
-	candidate := nextAtTimeOfDay(now, t, 0)
 	if dayOfWeek == nil {
-		return candidate.AddDate(0, 0, 7)
+		hour, minute := 0, 0
+		if t != nil {
+			hour, minute = t.Hour(), t.Minute()
+		}
+		today := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+		if today.After(now) {
+			return today
+		}
+		return today.AddDate(0, 0, 7)
 	}
+	candidate := nextAtTimeOfDay(now, t, 0)
 	target := time.Weekday(*dayOfWeek)
 	for candidate.Weekday() != target {
 		candidate = candidate.AddDate(0, 0, 1)
@@ -641,6 +679,23 @@ func (s *Scan) IsDueForExecution(now time.Time) bool {
 		return false
 	}
 	return now.After(*s.NextRunAt) || now.Equal(*s.NextRunAt)
+}
+
+// SaveAsConfiguration turns an ad-hoc quick scan into a saved configuration
+// under name: it then shows in the Configurations list and can be scheduled
+// like any other. Its runs stay attached.
+func (s *Scan) SaveAsConfiguration(name string) error {
+	if !s.AdHoc {
+		return shared.NewDomainError("VALIDATION", "scan is already a saved configuration", shared.ErrValidation)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return shared.NewDomainError("VALIDATION", "name is required", shared.ErrValidation)
+	}
+	s.Name = name
+	s.AdHoc = false
+	s.UpdatedAt = time.Now()
+	return nil
 }
 
 // Clone creates a copy of the scan with a new ID.

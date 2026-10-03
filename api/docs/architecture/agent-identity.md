@@ -43,8 +43,64 @@ REVOKE   Status = revoked  → auth short-circuits immediately        [shipped]
 | **Agent self-renew** (Phase 1a) | `POST /api/v1/agent/renew` (agent API-key auth) → `AgentService.RenewAPIKey` | agent rotates its **own** key; works for tenant **and** platform agents; TOCTOU-safe (re-reads status by id) |
 | **Key expiry** (Phase 1b) | `agents.key_expires_at` (migration `000185`), `Agent.IsKeyExpired()`, enforced in `AuthenticateByAPIKey` | **NULL = never expires** (default + all legacy rows) |
 | Configurable key TTL | `AGENT_KEY_TTL` env → `AgentService.SetKeyTTL` | **default `0` = disabled**; only self-renew honors it |
-| **Rotation overlap** (Phase 3) | `AgentAPIKeyRepository` over the `agent_api_keys` table; auth accepts the inline key **or** an active/valid key row | self-renew under a TTL issues the new key as a row so the superseded key stays valid during overlap; inline bootstrap key retired after a 15-min grace; per-key `use_count`/`last_used` audit |
+| **Rotation overlap** (Phase 3) | `AgentAPIKeyRepository` over the `agent_api_keys` table; auth accepts the inline key **or** an active/valid key row | self-renew under a TTL issues the new key as a row; the key the sensor renewed **with** (inline or row) and every other key it still held stop after `SENSOR_KEY_RENEW_GRACE` (default 15 min), so a renewal leaves one long-lived key (see *Renewal retires the presented key*); per-key `use_count`/`last_used` audit |
 | Agent auto-renew (Phase 2, SDK) | `sdk-go` `KeyRenewManager` + agent `-key-autorenew` flag | renews at ~½ TTL, swaps both clients, persists to the creds file; *pending the sdk-go v0.5.0 release |
+
+### Renewal retires the presented key
+
+A renewal has exactly one successor. Authentication records which credential
+the sensor presented (`SensorIdentity.KeyID`: a `sensor_api_keys` row, or nil
+for the inline key on the sensor row), and both renew routes
+(`POST /api/v1/agent/renew`, `POST /api/v2/sensor/keys`) pass that identity to
+`RenewAPIKey`. It issues the new key and, in the same transaction:
+
+- caps `expires_at` of every other active key row of the sensor at
+  now + `SENSOR_KEY_RENEW_GRACE`;
+- caps the inline key's `key_expires_at` the same way, guarded by the hash
+  that was presented (or read), so an admin regeneration landing in between is
+  not cut short.
+
+That transaction (`SensorAPIKeyRepository.RotateKey`) first locks the sensor
+row (`SELECT … FOR NO KEY UPDATE`), so renewals of one sensor run one after
+another and the last one holds the only long-lived key. Done as separate
+writes, concurrent renewals interleaved: each retired only the keys that
+existed when it ran, and a superseded key could stay valid until its own
+expiry. The lock is a row lock released with the transaction, never a
+session advisory lock on a pooled connection.
+
+The retirements only bring an expiry earlier, never extend one, and touch
+nothing but the expiry columns, so a concurrent admin revoke or regeneration is
+not undone. A failure rolls the whole renewal back (the sensor keeps its old
+key and retries). Without a TTL the renewal replaces the inline key at once and
+caps any key rows the same way, under the same lock
+(`SensorAPIKeyRepository.ReplaceInlineKey`).
+
+The admin hard rotation takes the same lock. `RegenerateAPIKey` installs the
+new inline key and revokes every key row in one transaction
+(`SensorAPIKeyRepository.RegenerateKey`). Before writing anything, a renewal
+re-checks under the lock that its authentication still holds:
+
+- the sensor is still `active` (refused with 403 otherwise);
+- the presented credential is still valid: the presented key row is still the
+  sensor's, active, unrevoked and unexpired, or the sensor's inline hash is
+  still the presented key's and unexpired (refused with 401 otherwise).
+
+A refused renewal writes nothing and is audited as
+`sensor.key_renewal_refused` (severity high). Without the re-check, a renewal
+that authenticated with the old key just before a regeneration could mint its
+row after the regeneration had revoked the rows, and a key the administrator
+killed (after a suspected leak, say) was renewed into a valid one. Now a
+renewal racing a regeneration either commits first, and the regeneration
+revokes its key, or runs after it and is refused. Either way the regenerated
+key is the only valid credential.
+
+What this buys: a copied `rda_` key can no longer renew itself a parallel line
+of long-lived keys. Whoever renews last holds the only long-lived key, and the
+other holder is locked out after the grace and has to be re-enrolled, which an
+administrator sees. Two concurrent renewals with the same key also end with one
+long-lived key: "older than the new row" means the newer row is never capped by
+the older renewal. `SENSOR_KEY_RENEW_GRACE=0` retires the presented key at once
+(in-flight requests made with it then fail).
 
 ### Enabling short-lived credentials (`AGENT_KEY_TTL`)
 

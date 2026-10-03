@@ -95,6 +95,10 @@ func (m *mockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ *
 	return nil
 }
 
+func (m *mockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID) error {
+	return nil
+}
+
 func (m *mockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
@@ -123,12 +127,8 @@ func (m *mockScanRepository) UpdateStatusByAssetGroupID(_ context.Context, _ sha
 	return nil
 }
 
-func (m *mockScanRepository) TryLockScanForScheduler(_ context.Context, _ shared.ID) (bool, error) {
+func (m *mockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
-}
-
-func (m *mockScanRepository) UnlockScanForScheduler(_ context.Context, _ shared.ID) error {
-	return nil
 }
 
 // addScan is a test helper to insert a scan into the mock repository.

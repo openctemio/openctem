@@ -67,7 +67,7 @@ func registerAdminRoutes(
 	// refresh-token cookie names the user, /session opens a pending console
 	// session and /mfa completes it. They share the tenant login's rate limits.
 	if h.AdminAuth != nil || h.AdminConsole != nil {
-		consoleRL := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+		consoleRL := newAuthRateLimiter("console")
 		loginRL := consoleRL.LoginMiddleware()
 		authed := h.AdminAuthMiddleware.Authenticate
 
@@ -162,6 +162,12 @@ func registerAdminRoutes(
 				r.GET("/{tenantId}/sso/saml", h.SAML.GetConfig, read...)
 				r.PUT("/{tenantId}/sso/saml", h.SAML.SetConfig, write("organization.saml_update")...)
 				r.DELETE("/{tenantId}/sso/saml", h.SAML.DeleteConfig, write("organization.saml_delete")...)
+			}
+			// SAML and identity-provider creates/updates from here wait for an
+			// owner of the organization (unless it has no owner yet); the
+			// admin sees what is pending.
+			if h.SSOChange != nil {
+				r.GET("/{tenantId}/sso/changes", h.SSOChange.AdminList, read...)
 			}
 			if h.SSO != nil {
 				r.GET("/{tenantId}/sso/identity-providers", h.SSO.ListProviders, read...)

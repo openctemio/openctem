@@ -21,6 +21,7 @@ import (
 // the finalization, which runs exactly once.
 type V2JobProcessor struct {
 	service *Service
+	sensors queuedSensorChecker // nil refuses every job (fail closed)
 	reports ingestreport.Repository
 	jobs    ingestjob.V2Repository
 	limits  protov2.Limits
@@ -34,7 +35,7 @@ func NewV2JobProcessor(svc *Service, reports ingestreport.Repository, jobs inges
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &V2JobProcessor{service: svc, reports: reports, jobs: jobs, limits: limits, guard: guard,
+	return &V2JobProcessor{service: svc, sensors: svc, reports: reports, jobs: jobs, limits: limits, guard: guard,
 		logger: log.With("component", "ingest-v2"), now: time.Now}
 }
 
@@ -63,6 +64,22 @@ func (p *V2JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byt
 		// Finalized already (its payloads may be gone): a late retry of one
 		// of its jobs has nothing left to do.
 		return json.Marshal(result)
+	}
+	// The sensor may have been revoked, disabled or deleted while the
+	// report waited in the queue (RFC-040 §5.2): its work is dropped, the
+	// report fails so the sensor sees it, and nothing is retried.
+	if p.sensors == nil {
+		return nil, errors.New("v2 processor: sensor status check is not configured")
+	}
+	_, dropped, err := p.sensors.QueuedWorkSensor(ctx, rep.TenantID, &rep.SensorID, rep.ReportID)
+	if err != nil {
+		return nil, err
+	}
+	if dropped != nil {
+		if err := p.reports.MarkFailed(ctx, rep.ID); err != nil {
+			return nil, fmt.Errorf("v2 processor: fail report of a dropped sensor: %w", err)
+		}
+		return json.Marshal(dropped)
 	}
 
 	if !seg.IsCommit() {
