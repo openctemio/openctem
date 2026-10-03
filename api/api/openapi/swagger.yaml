@@ -4061,6 +4061,25 @@ definitions:
     required:
     - asset_ids
     type: object
+  internal_infra_http_handler.AddCommentReactionRequest:
+    properties:
+      emoji:
+        description: Emoji is a single emoji sequence (max 32 bytes).
+        example: "\U0001F440"
+        type: string
+    type: object
+  internal_infra_http_handler.AddCommentRequest:
+    properties:
+      content:
+        maxLength: 10000
+        minLength: 1
+        type: string
+      is_internal:
+        description: IsInternal keeps the comment inside the organization.
+        type: boolean
+    required:
+    - content
+    type: object
   internal_infra_http_handler.AddGroupMemberRequest:
     properties:
       role:
@@ -5860,6 +5879,34 @@ definitions:
       type:
         type: string
     type: object
+  internal_infra_http_handler.CommentReactionSummary:
+    properties:
+      count:
+        type: integer
+      emoji:
+        type: string
+      reacted_by_me:
+        type: boolean
+      sample_users:
+        description: SampleUsers holds up to five reactors, earliest first.
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CommentReactionUser'
+        type: array
+    type: object
+  internal_infra_http_handler.CommentReactionUser:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_infra_http_handler.CommentReactionsResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CommentReactionSummary'
+        type: array
+    type: object
   internal_infra_http_handler.ComponentResponse:
     properties:
       asset_id:
@@ -7617,6 +7664,52 @@ definitions:
       id:
         type: string
       name:
+        type: string
+    type: object
+  internal_infra_http_handler.FindingCommentListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.FindingCommentResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.FindingCommentResponse:
+    properties:
+      author_email:
+        type: string
+      author_id:
+        type: string
+      author_name:
+        type: string
+      content:
+        type: string
+      created_at:
+        type: string
+      edited:
+        description: |-
+          Edited is true when the comment was changed after it was posted
+          (updated_at more than a second after created_at).
+        type: boolean
+      finding_id:
+        type: string
+      id:
+        type: string
+      is_internal:
+        description: IsInternal marks an organization-only comment.
+        type: boolean
+      is_status_change:
+        type: boolean
+      new_status:
+        type: string
+      old_status:
+        type: string
+      reactions:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CommentReactionSummary'
+        type: array
+      updated_at:
         type: string
     type: object
   internal_infra_http_handler.FindingComponentInfo:
@@ -12544,6 +12637,15 @@ definitions:
         items:
           type: integer
         type: array
+    type: object
+  internal_infra_http_handler.UpdateCommentRequest:
+    properties:
+      content:
+        maxLength: 10000
+        minLength: 1
+        type: string
+    required:
+    - content
     type: object
   internal_infra_http_handler.UpdateComponentRequest:
     properties:
@@ -18207,6 +18309,98 @@ paths:
       summary: Cancel command
       tags:
       - Commands
+  /comments/{comment_id}/reactions:
+    post:
+      consumes:
+      - application/json
+      description: Adds the caller's emoji reaction. Adding a reaction the caller
+        already has changes nothing. A comment holds at most 20 different emoji and
+        10 reactions per person. Returns the comment's reactions, ordered by each
+        emoji's first use.
+      parameters:
+      - description: Comment ID
+        in: path
+        name: comment_id
+        required: true
+        type: string
+      - description: Reaction
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AddCommentReactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CommentReactionsResponse'
+        "400":
+          description: Not a single emoji, or a reaction limit reached
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: React to a finding comment
+      tags:
+      - Findings
+  /comments/{comment_id}/reactions/{emoji}:
+    delete:
+      description: Removes the caller's reaction (the emoji is path-escaped). An organization
+        admin or owner may pass user_id to remove another member's reaction; only
+        that moderation is audited. Returns the comment's reactions.
+      parameters:
+      - description: Comment ID
+        in: path
+        name: comment_id
+        required: true
+        type: string
+      - description: Emoji, path-escaped
+        in: path
+        name: emoji
+        required: true
+        type: string
+      - description: Remove this member's reaction (admin/owner only)
+        in: query
+        name: user_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CommentReactionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove a reaction from a finding comment
+      tags:
+      - Findings
   /components:
     get:
       description: Retrieves a paginated list of components for the current tenant
@@ -20567,6 +20761,149 @@ paths:
       security:
       - BearerAuth: []
       summary: Classify finding
+      tags:
+      - Findings
+  /findings/{id}/comments:
+    get:
+      description: Comments on a finding, oldest first, each with its aggregated emoji
+        reactions.
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingCommentListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List finding comments
+      tags:
+      - Findings
+    post:
+      consumes:
+      - application/json
+      description: 'Posts a comment. is_internal keeps it inside the organization:
+        it is never sent to an integration, ticket or external notifier.'
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Comment
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AddCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingCommentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Add a finding comment
+      tags:
+      - Findings
+  /findings/{id}/comments/{comment_id}:
+    delete:
+      description: Only the author can delete.
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Comment ID
+        in: path
+        name: comment_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete a finding comment
+      tags:
+      - Findings
+    put:
+      consumes:
+      - application/json
+      description: Only the author can edit. The response carries edited=true and
+        the comment's reactions.
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Comment ID
+        in: path
+        name: comment_id
+        required: true
+        type: string
+      - description: New content
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingCommentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Edit a finding comment
       tags:
       - Findings
   /findings/{id}/dataflows:

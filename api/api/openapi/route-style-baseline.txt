@@ -21,7 +21,6 @@ R3 DELETE /api/v1/business-units/{id}/assets/{assetId}
 R3 DELETE /api/v1/commands/{id}
 R3 DELETE /api/v1/compliance/findings/{findingId}/controls/{mappingId}
 R3 DELETE /api/v1/ctem-cycles/{id}/profiles/{profileId}
-R3 DELETE /api/v1/findings/{id}/comments/{commentId}
 R3 DELETE /api/v1/findings/{id}/evidence/notes/{noteId}
 R3 DELETE /api/v1/groups/{groupId}
 R3 DELETE /api/v1/groups/{groupId}/assets/{assetId}
@@ -126,7 +125,6 @@ R3 PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement
 R3 PUT /api/v1/admin/tenants/{tenantId}/sso/identity-providers/{id}
 R3 PUT /api/v1/admin/tenants/{tenantId}/sso/saml
 R3 PUT /api/v1/assets/{id}/owners/{ownerId}
-R3 PUT /api/v1/findings/{id}/comments/{commentId}
 R3 PUT /api/v1/groups/{groupId}
 R3 PUT /api/v1/groups/{groupId}/assets/{assetId}
 R3 PUT /api/v1/groups/{groupId}/members/{userId}

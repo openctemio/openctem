@@ -8311,6 +8311,163 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/comments/{comment_id}/reactions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * React to a finding comment
+     * @description Adds the caller's emoji reaction. Adding a reaction the caller already has changes nothing. A comment holds at most 20 different emoji and 10 reactions per person. Returns the comment's reactions, ordered by each emoji's first use.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      /** @description Reaction */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AddCommentReactionRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CommentReactionsResponse']
+          }
+        }
+        /** @description Not a single emoji, or a reaction limit reached */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/comments/{comment_id}/reactions/{emoji}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove a reaction from a finding comment
+     * @description Removes the caller's reaction (the emoji is path-escaped). An organization admin or owner may pass user_id to remove another member's reaction; only that moderation is audited. Returns the comment's reactions.
+     */
+    delete: {
+      parameters: {
+        query?: {
+          /** @description Remove this member's reaction (admin/owner only) */
+          user_id?: string
+        }
+        header?: never
+        path: {
+          /** @description Comment ID */
+          comment_id: string
+          /** @description Emoji, path-escaped */
+          emoji: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CommentReactionsResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/components': {
     parameters: {
       query?: never
@@ -12397,6 +12554,235 @@ export interface paths {
         }
       }
     }
+    trace?: never
+  }
+  '/findings/{id}/comments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List finding comments
+     * @description Comments on a finding, oldest first, each with its aggregated emoji reactions.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Add a finding comment
+     * @description Posts a comment. is_internal keeps it inside the organization: it is never sent to an integration, ticket or external notifier.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Comment */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AddCommentRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/findings/{id}/comments/{comment_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    /**
+     * Edit a finding comment
+     * @description Only the author can edit. The response carries edited=true and the comment's reactions.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      /** @description New content */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateCommentRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Delete a finding comment
+     * @description Only the author can delete.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/findings/{id}/dataflows': {
@@ -32174,6 +32560,18 @@ export interface components {
     'internal_infra_http_handler.AddAssetsRequest': {
       asset_ids: string[]
     }
+    'internal_infra_http_handler.AddCommentReactionRequest': {
+      /**
+       * @description Emoji is a single emoji sequence (max 32 bytes).
+       * @example 👀
+       */
+      emoji?: string
+    }
+    'internal_infra_http_handler.AddCommentRequest': {
+      content: string
+      /** @description IsInternal keeps the comment inside the organization. */
+      is_internal?: boolean
+    }
     'internal_infra_http_handler.AddGroupMemberRequest': {
       /** @enum {string} */
       role: 'owner' | 'lead' | 'member'
@@ -33097,6 +33495,20 @@ export interface components {
       tenant_id?: string
       type?: string
     }
+    'internal_infra_http_handler.CommentReactionSummary': {
+      count?: number
+      emoji?: string
+      reacted_by_me?: boolean
+      /** @description SampleUsers holds up to five reactors, earliest first. */
+      sample_users?: components['schemas']['internal_infra_http_handler.CommentReactionUser'][]
+    }
+    'internal_infra_http_handler.CommentReactionUser': {
+      id?: string
+      name?: string
+    }
+    'internal_infra_http_handler.CommentReactionsResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CommentReactionSummary'][]
+    }
     'internal_infra_http_handler.ComponentResponse': {
       asset_id?: string
       created_at?: string
@@ -33858,6 +34270,31 @@ export interface components {
       email?: string
       id?: string
       name?: string
+    }
+    'internal_infra_http_handler.FindingCommentListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.FindingCommentResponse'][]
+      total?: number
+    }
+    'internal_infra_http_handler.FindingCommentResponse': {
+      author_email?: string
+      author_id?: string
+      author_name?: string
+      content?: string
+      created_at?: string
+      /**
+       * @description Edited is true when the comment was changed after it was posted
+       *     (updated_at more than a second after created_at).
+       */
+      edited?: boolean
+      finding_id?: string
+      id?: string
+      /** @description IsInternal marks an organization-only comment. */
+      is_internal?: boolean
+      is_status_change?: boolean
+      new_status?: string
+      old_status?: string
+      reactions?: components['schemas']['internal_infra_http_handler.CommentReactionSummary'][]
+      updated_at?: string
     }
     'internal_infra_http_handler.FindingComponentInfo': {
       /**
@@ -36584,6 +37021,9 @@ export interface components {
     'internal_infra_http_handler.UpdateCommandStatusRequest': {
       error_message?: string
       result?: number[]
+    }
+    'internal_infra_http_handler.UpdateCommentRequest': {
+      content: string
     }
     'internal_infra_http_handler.UpdateComponentRequest': {
       dependency_type?: string
