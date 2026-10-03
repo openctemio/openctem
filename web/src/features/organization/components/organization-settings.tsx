@@ -368,6 +368,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     ip_whitelist: '',
     allowed_domains: '',
     email_verification_mode: 'auto' as 'auto' | 'always' | 'never',
+    require_sensor_local_policy_for_private_targets: false,
   })
 
   const [brandingForm, setBrandingForm] = useState({
@@ -405,6 +406,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
         allowed_domains: (settings.security.allowed_domains || []).join('\n'),
         email_verification_mode:
           (settings.security.email_verification_mode as 'auto' | 'always' | 'never') || 'auto',
+        require_sensor_local_policy_for_private_targets:
+          settings.security.require_sensor_local_policy_for_private_targets || false,
       })
       setBrandingForm({
         primary_color: settings.branding.primary_color || '#3B82F6',
@@ -520,6 +523,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
         ip_whitelist: ipWhitelist,
         allowed_domains: allowedDomains,
         email_verification_mode: securityForm.email_verification_mode,
+        require_sensor_local_policy_for_private_targets:
+          securityForm.require_sensor_local_policy_for_private_targets,
       })
       if (result) {
         mutate(result)
@@ -626,6 +631,36 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                     checked={securityForm.mfa_required}
                     onCheckedChange={(checked) =>
                       setSecurityForm({ ...securityForm, mfa_required: checked })
+                    }
+                    disabled={!canManageSecurityAndAPI}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="tenant-private-targets-local-policy">
+                      Private targets need a sensor-local policy
+                    </Label>
+                    <p
+                      className="text-sm text-muted-foreground"
+                      id="tenant-private-targets-local-policy-desc"
+                    >
+                      Jobs that scan private addresses (RFC 1918, internal domains) go only to
+                      sensors whose network owner installed a local policy. Other sensors leave them
+                      for one that has it.
+                    </p>
+                  </div>
+                  <Switch
+                    id="tenant-private-targets-local-policy"
+                    aria-describedby="tenant-private-targets-local-policy-desc"
+                    checked={securityForm.require_sensor_local_policy_for_private_targets}
+                    onCheckedChange={(checked) =>
+                      setSecurityForm({
+                        ...securityForm,
+                        require_sensor_local_policy_for_private_targets: checked,
+                      })
                     }
                     disabled={!canManageSecurityAndAPI}
                   />

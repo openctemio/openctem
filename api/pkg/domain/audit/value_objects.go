@@ -148,6 +148,11 @@ const (
 	// ActionSensorIdentityCloned records the platform seeing two live sensor
 	// processes use the same key (RFC-032 Phase 0 clone detection).
 	ActionSensorIdentityCloned Action = "sensor.identity_cloned"
+	// ActionSensorJobRefusedByLocalPolicy records a sensor refusing a job
+	// because the local policy its network owner installed forbids it
+	// (RFC-040 §5.7, detection A11): the platform asked for something the
+	// owner does not allow.
+	ActionSensorJobRefusedByLocalPolicy Action = "sensor.job_refused_local_policy"
 	// ActionSensorContentRefreshRequested records an administrator asking a
 	// sensor (or the fleet) to refresh its scanner content (RFC-031).
 	ActionSensorContentRefreshRequested Action = "sensor.content_refresh_requested"
@@ -413,7 +418,7 @@ func (a Action) IsValid() bool {
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
@@ -514,7 +519,7 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,

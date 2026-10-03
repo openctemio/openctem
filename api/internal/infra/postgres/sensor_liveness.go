@@ -224,3 +224,58 @@ func (r *SensorRepository) convictOffline(ctx context.Context, from []sensor.Sen
 	}
 	return r.applyLiveness(ctx, sensor.SensorHealthOffline, due, from)
 }
+
+// localPolicyArg is the reported_local_policy parameter: NULL (keep the
+// stored one) or the report as JSON.
+func localPolicyArg(r *sensor.LocalPolicyReport) (sql.NullString, error) {
+	if r == nil {
+		return sql.NullString{}, nil
+	}
+	raw, err := json.Marshal(r)
+	if err != nil {
+		return sql.NullString{}, fmt.Errorf("failed to marshal local policy report: %w", err)
+	}
+	return sql.NullString{String: string(raw), Valid: true}, nil
+}
+
+// scanLocalPolicy reads the stored local policy report; nil when none (or
+// unreadable).
+func scanLocalPolicy(id shared.ID, raw []byte, at sql.NullTime) (*sensor.LocalPolicyReport, *time.Time) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var r sensor.LocalPolicyReport
+	if err := json.Unmarshal(raw, &r); err != nil {
+		log.Printf("[DEBUG] failed to unmarshal sensor local policy report (id=%s): %v", id, err)
+		return nil, nil
+	}
+	var t *time.Time
+	if at.Valid {
+		t = &at.Time
+	}
+	return &r, t
+}
+
+// UpdateLocalPolicy stores a sensor's local policy report (RFC-040 §5.7)
+// outside a heartbeat: the one its manifest carried. Only an active sensor
+// of the tenant is written; it reports whether a row was.
+func (r *SensorRepository) UpdateLocalPolicy(ctx context.Context, tenantID *shared.ID, id shared.ID, rep *sensor.LocalPolicyReport) (bool, error) {
+	arg, err := localPolicyArg(rep)
+	if err != nil || !arg.Valid {
+		return false, err
+	}
+	var tenant sql.NullString
+	if tenantID != nil {
+		tenant = sql.NullString{String: tenantID.String(), Valid: true}
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE sensors
+		SET reported_local_policy = $3::jsonb, local_policy_reported_at = NOW()
+		WHERE id = $1 AND tenant_id IS NOT DISTINCT FROM $2::uuid AND status = 'active'`,
+		id.String(), tenant, arg)
+	if err != nil {
+		return false, fmt.Errorf("failed to update sensor local policy: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}

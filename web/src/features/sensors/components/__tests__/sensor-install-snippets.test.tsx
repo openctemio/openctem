@@ -10,6 +10,7 @@ const templates = {
   compose: 'services:\n  sensor:\n    image: ghcr.io/openctemio/sensor:v0.4.2\n',
   kubernetes: 'apiVersion: v1\nkind: Secret\n',
   helm: 'helm upgrade openctem openctem/openctem --reuse-values \\\n  --set sensor.enabled=true\n',
+  policy: 'apiVersion: openctem.io/sensor-policy/v1\ntargets:\n  allow:\n    - "10.20.0.0/16"\n',
   yaml: 'sensor:\n  name: dmz\n',
   env: "export API_URL='https://x'\n",
   cli: './openctemio-sensor -daemon\n',
@@ -35,6 +36,7 @@ describe('availableFormats', () => {
       'compose',
       'kubernetes',
       'helm',
+      'policy',
       'yaml',
       'env',
       'cli',
@@ -48,6 +50,16 @@ describe('availableFormats', () => {
 })
 
 describe('SensorInstallSnippets', () => {
+  it('offers the sensor-local policy as a downloadable file for the network owner', async () => {
+    mockFetch(templates)
+    const user = userEvent.setup()
+    render(<SensorInstallSnippets sensorId="11111111-1111-4111-8111-111111111111" />)
+    await user.click(await screen.findByRole('tab', { name: 'Local policy' }))
+    expect(await screen.findByText(/openctem\.io\/sensor-policy\/v1/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download sensor-policy.yaml' })).toBeInTheDocument()
+    expect(screen.getByText(/the platform cannot change it/)).toBeInTheDocument()
+  })
+
   it('sends a just-issued key in a header (never the URL) and renders the commands', async () => {
     const fetchFn = mockFetch(templates)
     render(

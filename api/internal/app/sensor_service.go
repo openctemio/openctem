@@ -37,9 +37,11 @@ var (
 	NewSensorConfigTemplateService = sensor.NewSensorConfigTemplateService
 	// LoadSensorCACertificate reads the platform CA for the install snippets.
 	LoadSensorCACertificate = sensor.LoadCACertificate
-	ErrNoSensorAvailable    = sensor.ErrNoSensorAvailable
-	NewDoorbell             = sensor.NewDoorbell
-	DefaultDoorbellConfig   = sensor.DefaultDoorbellConfig
+	// PolicyFromZones prefills the sensor-local policy template (RFC-040).
+	PolicyFromZones       = sensor.PolicyFromZones
+	ErrNoSensorAvailable  = sensor.ErrNoSensorAvailable
+	NewDoorbell           = sensor.NewDoorbell
+	DefaultDoorbellConfig = sensor.DefaultDoorbellConfig
 	// Sensor manifest (RFC-033).
 	ErrManifestUnavailable    = sensor.ErrManifestUnavailable
 	ErrManifestSensorInactive = sensor.ErrManifestSensorInactive
