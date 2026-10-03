@@ -25,6 +25,11 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Fixed
 
+- **A finding's occurrence count grows with every sighting** (RFC-043 P0).
+  Re-ingesting an existing finding wrote back the count it had loaded before
+  the merge, so `occurrence_count` stayed at 1 however often a scan saw the
+  finding, and concurrent ingests overwrote each other. The update now adds
+  one to the stored value in SQL.
 - **Asset stats and facets respect data scope.** `GET /api/v1/assets/stats`
   and `GET /api/v1/assets/facets` counted every asset of the organization,
   so a member restricted to some assets (access groups) could read totals,

@@ -4002,6 +4002,14 @@ func buildBatchEnrichQuery(rowCount int) string {
 		}
 		col := enrichColumnDefs[i].name
 		sb.WriteString(col)
+		if col == "occurrence_count" {
+			// A re-sighting counts one, computed from the row being updated.
+			// Writing back the value loaded before the merge (d.occurrence_count)
+			// never moved the counter, and two concurrent ingests would each
+			// write the same stale value (RFC-043 B10).
+			sb.WriteString(" = f.occurrence_count + 1")
+			continue
+		}
 		sb.WriteString(" = d.")
 		sb.WriteString(col)
 	}
