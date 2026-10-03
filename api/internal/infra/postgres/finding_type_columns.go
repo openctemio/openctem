@@ -12,7 +12,7 @@ import (
 
 // The type-specific columns of the findings table: finding_type, the
 // secret_*, compliance_*, web3_* and misconfig_* columns (migration 000012)
-// and the type_details JSONB document (migration 000272).
+// and the type_details JSONB document (migration 000274).
 //
 // Until these were added here, no insert, update or select of the finding
 // repository named them. Ingest set them on the entity and the API returned
