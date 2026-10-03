@@ -815,36 +815,30 @@ func (r *PipelineRunRepository) selectQuery() string {
 func (r *PipelineRunRepository) buildWhereClause(filter pipeline.RunFilter) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, filter.TenantID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if filter.PipelineID != nil {
-		conditions = append(conditions, fmt.Sprintf("pipeline_id = $%d", argIndex))
 		args = append(args, filter.PipelineID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("pipeline_id = $%d", len(args)))
 	}
 
 	if filter.AssetID != nil {
-		conditions = append(conditions, fmt.Sprintf("asset_id = $%d", argIndex))
 		args = append(args, filter.AssetID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("asset_id = $%d", len(args)))
 	}
 
 	if filter.Status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, string(*filter.Status))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
 	}
 
 	if filter.TriggerType != nil {
-		conditions = append(conditions, fmt.Sprintf("trigger_type = $%d", argIndex))
 		args = append(args, string(*filter.TriggerType))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("trigger_type = $%d", len(args)))
 	}
 
 	if len(conditions) == 0 {
@@ -1286,18 +1280,15 @@ func (r *StepRunRepository) List(ctx context.Context, filter pipeline.StepRunFil
 	query := r.selectQuery()
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.PipelineRunID != nil {
-		conditions = append(conditions, fmt.Sprintf("pipeline_run_id = $%d", argIndex))
 		args = append(args, filter.PipelineRunID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("pipeline_run_id = $%d", len(args)))
 	}
 
 	if filter.Status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, string(*filter.Status))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
 	}
 
 	if len(conditions) > 0 {

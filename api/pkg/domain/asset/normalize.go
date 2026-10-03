@@ -22,6 +22,25 @@ func NormalizeName(name string, assetType AssetType, subType string) string {
 		return ""
 	}
 
+	// A legacy/alias type (http_service, s3_bucket, compute, ...) is a core
+	// type plus a sub-type. Callers that pass the alias type (the manual API,
+	// CSV import) must get the same name as ingest, which resolves the alias
+	// first and normalizes by (core type, sub-type).
+	if core, st := ResolveTypeAlias(assetType); core != assetType {
+		assetType = core
+		if subType == "" {
+			subType = st
+		}
+	}
+
+	// Cloud resource identifiers (AWS ARNs, Azure resource ids, GCP resource
+	// names) are identifiers, not DNS names, whatever type they arrive under.
+	// The DNS/host normalizer cut them at the first "/" and merged distinct
+	// resources (two EC2 instances became one asset).
+	if id, ok := normalizeCloudResourceID(name); ok {
+		return id
+	}
+
 	switch assetType {
 	case AssetTypeDomain, AssetTypeSubdomain:
 		return normalizeDNSName(name)
@@ -456,4 +475,47 @@ func stripPort(name string) string {
 		return host
 	}
 	return name
+}
+
+// ─── Cloud resource identifiers ───────────────────────────────────────
+
+// normalizeCloudResourceID recognizes a cloud provider resource identifier and
+// returns its canonical form:
+//   - AWS ARN ("arn:partition:service:region:account:resource"): kept as is.
+//     Resource names in ARNs are case-sensitive (S3 keys, IAM paths, Lambda
+//     names), so only the fixed "arn:" prefix is lower-cased.
+//   - Azure resource id ("/subscriptions/<id>/resourceGroups/..."): lower-cased.
+//     Azure Resource Manager treats resource ids case-insensitively, and the
+//     same id is reported with different casing by different APIs.
+//   - GCP full resource name ("//compute.googleapis.com/projects/...") or a
+//     relative name ("projects/<p>/zones|regions|locations|global/..."): kept
+//     as is (GCP names are lower-case by construction, ids are case-sensitive).
+//
+// It returns ok=false for anything else.
+func normalizeCloudResourceID(name string) (string, bool) {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasPrefix(lower, "arn:") && strings.Count(name, ":") >= 5:
+		return "arn:" + name[len("arn:"):], true
+	case strings.HasPrefix(lower, "/subscriptions/") && strings.Contains(lower, "/providers/"):
+		return strings.TrimRight(lower, "/"), true
+	case strings.HasPrefix(name, "//") && strings.Contains(name, ".googleapis.com/"):
+		return strings.TrimRight(name, "/"), true
+	case isGCPRelativeResourceName(name):
+		return strings.TrimRight(name, "/"), true
+	}
+	return "", false
+}
+
+// isGCPRelativeResourceName matches "projects/<p>/{zones,regions,locations,global}/...".
+func isGCPRelativeResourceName(name string) bool {
+	parts := strings.Split(name, "/")
+	if len(parts) < 4 || parts[0] != "projects" || parts[1] == "" {
+		return false
+	}
+	switch parts[2] {
+	case "zones", "regions", "locations", "global":
+		return true
+	}
+	return false
 }

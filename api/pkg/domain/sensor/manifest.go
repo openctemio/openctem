@@ -85,6 +85,9 @@ type Manifest struct {
 	Concurrency  *ManifestConcurrency `json:"concurrency,omitempty"`
 	Capabilities []string             `json:"capabilities,omitempty"`
 	Tools        []ManifestTool       `json:"tools"`
+	// LocalPolicy is the sensor-local policy report (RFC-040 §5.7), sent
+	// by SDKs that see "local_policy" on hello; sanitized when stored.
+	LocalPolicy *LocalPolicyReport `json:"local_policy,omitempty"`
 }
 
 // ManifestBuild is the sensor binary.
@@ -194,7 +197,7 @@ func ManifestDigest(raw []byte) (string, error) {
 // manifestMembers are the top-level members of schema 1.
 var manifestMembers = map[string]bool{
 	"schema": true, "sensor": true, "sdk": true, "platform": true, "resources": true,
-	"concurrency": true, "capabilities": true, "tools": true,
+	"concurrency": true, "capabilities": true, "tools": true, "local_policy": true,
 }
 
 // ParseManifest decodes a manifest leniently: unknown top-level members are
@@ -283,6 +286,10 @@ func (m Manifest) CapabilityInput() CapabilityReportInput {
 // ignored.
 func (m Manifest) Sanitized(rep CapabilityReport, now time.Time) (Manifest, []ManifestIgnored) {
 	out := Manifest{Schema: ManifestSchema, Tools: []ManifestTool{}}
+	if lp := SanitizeLocalPolicyReport(m.LocalPolicy); lp != nil {
+		lp.KillSwitch = false // live state: the heartbeat's, never the manifest's
+		out.LocalPolicy = lp
+	}
 	var ignored []ManifestIgnored
 	ignore := func(path, value, reason string) {
 		if len(ignored) < MaxManifestIgnored {

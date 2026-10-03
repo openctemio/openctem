@@ -422,8 +422,35 @@ func (s *FindingActivityService) RecordCommentAdded(
 	commentID, content string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
+	return s.recordCommentAdded(ctx, tenantID, findingID, actorID, commentID, content, source, nil)
+}
+
+// RecordCommentAddedWithVisibility is RecordCommentAdded that also records
+// whether the comment is internal (organization-only) as changes.is_internal.
+func (s *FindingActivityService) RecordCommentAddedWithVisibility(
+	ctx context.Context,
+	tenantID, findingID string,
+	actorID *string,
+	commentID, content string,
+	source string,
+	isInternal bool,
+) (*vulnerability.FindingActivity, error) {
+	return s.recordCommentAdded(ctx, tenantID, findingID, actorID, commentID, content, source, &isInternal)
+}
+
+func (s *FindingActivityService) recordCommentAdded(
+	ctx context.Context,
+	tenantID, findingID string,
+	actorID *string,
+	commentID, content string,
+	source string,
+	isInternal *bool,
+) (*vulnerability.FindingActivity, error) {
 	changes := map[string]any{
 		"comment_id": commentID,
+	}
+	if isInternal != nil {
+		changes["is_internal"] = *isInternal
 	}
 	if content != "" {
 		// Store full content for display in activity feed
@@ -634,6 +661,22 @@ func (s *FindingActivityService) resolveActorInfo(ctx context.Context, actorID *
 	}
 
 	return &str, name, email
+}
+
+// BroadcastCommentReactionsUpdated tells subscribers of finding:{id} that a
+// comment's reactions changed. The event names the comment only (no user
+// data); clients refetch the comment's reactions. A no-op when real-time
+// updates are not wired.
+func (s *FindingActivityService) BroadcastCommentReactionsUpdated(tenantID, findingID, commentID shared.ID) {
+	if s == nil || s.broadcaster == nil {
+		return
+	}
+	event := map[string]any{
+		"type":       "reactions_updated",
+		"comment_id": commentID.String(),
+		"finding_id": findingID.String(),
+	}
+	s.broadcaster.BroadcastActivity(fmt.Sprintf("finding:%s", findingID.String()), event, tenantID.String())
 }
 
 // broadcastActivityEvent sends a real-time WebSocket event for a finding activity.

@@ -31,6 +31,7 @@ import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { useCapabilityMetadata } from '@/lib/api'
 import type { ToolWithConfig } from '@/lib/api/tool-types'
 import { safeImageSrc } from '@/lib/safe-href'
+import Image from 'next/image'
 
 // Map Lucide icon names from database to actual components
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -325,6 +326,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                       const Icon = getIconForTool(tool)
                       const iconBg = getColorForTool(tool)
                       const isAvailable = toolWithConfig.is_available
+                      const logoSrc = safeImageSrc(tool.logo_url)
 
                       return (
                         <div
@@ -343,11 +345,15 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                               : `${tool.display_name || tool.name} - No sensor available`
                           }
                         >
-                          {tool.logo_url ? (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                              src={safeImageSrc(tool.logo_url)}
+                          {logoSrc ? (
+                            // unoptimized: the logo URL is tenant/remote data; it must not
+                            // be fetched through the Next image optimizer (no remotePatterns).
+                            <Image
+                              src={logoSrc}
                               alt={tool.display_name}
+                              width={32}
+                              height={32}
+                              unoptimized
                               className={cn(
                                 'h-8 w-8 rounded-lg object-contain bg-white p-0.5',
                                 !isAvailable && 'grayscale'

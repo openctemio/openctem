@@ -6,6 +6,8 @@ import (
 	"net/netip"
 	"regexp"
 	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 // =============================================================================
@@ -355,28 +357,58 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 	}
 }
 
+// matchDomain is the domain test for scope targets and exclusions alike:
+//
+//   - "example.com" matches only example.com;
+//   - "*.example.com" matches every subdomain of example.com, at any depth,
+//     and NOT example.com itself (the usual certificate/DNS meaning; the
+//     apex needs its own "example.com" entry);
+//   - "**.example.com" means the same as "*.example.com".
+//
+// Both sides are compared case-insensitively, without a trailing dot, and in
+// their IDNA ASCII form, so "*.bücher.example" matches
+// "shop.xn--bcher-kva.example" and the other way round. A value may itself be
+// a wildcard pattern (CheckPatternOverlaps compares patterns): "*.a.x.com" is
+// inside "*.x.com".
 func matchDomain(pattern, domain string) bool {
-	pattern = strings.ToLower(pattern)
-	domain = strings.ToLower(domain)
-
-	// Exact match
-	if pattern == domain {
-		return true
+	pWild, p := splitDomainWildcard(pattern)
+	dWild, d := splitDomainWildcard(domain)
+	if p == "" || d == "" {
+		return false
 	}
-
-	// Wildcard match: *.example.com
-	if strings.HasPrefix(pattern, "*.") {
-		suffix := pattern[2:]
-		return strings.HasSuffix(domain, "."+suffix) || domain == suffix
+	if !pWild {
+		return !dWild && d == p
 	}
-
-	// Double wildcard: **.example.com (matches any subdomain depth)
-	if strings.HasPrefix(pattern, "**.") {
-		suffix := pattern[3:]
-		return strings.HasSuffix(domain, "."+suffix) || domain == suffix
+	if dWild && d == p {
+		return true // "*.x" vs "*.x" / "**.x": the same set
 	}
+	return strings.HasSuffix(d, "."+p)
+}
 
-	return false
+// domainIDNA converts a name to its ASCII (punycode) form for comparison.
+// Lenient on purpose: underscores (_dmarc.example.com) and other non-LDH
+// labels stay as they are instead of failing the conversion.
+var domainIDNA = idna.New(idna.MapForLookup(), idna.StrictDomainName(false))
+
+// splitDomainWildcard strips a leading "*." or "**." label and normalises the
+// rest: trimmed, lowercased, one trailing dot dropped, IDNA ASCII form (the
+// lowercased text when the conversion fails).
+func splitDomainWildcard(s string) (wildcard bool, name string) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch {
+	case strings.HasPrefix(s, "**."):
+		wildcard, s = true, s[3:]
+	case strings.HasPrefix(s, "*."):
+		wildcard, s = true, s[2:]
+	}
+	s = strings.TrimSuffix(s, ".")
+	if s == "" {
+		return wildcard, ""
+	}
+	if a, err := domainIDNA.ToASCII(s); err == nil && a != "" {
+		s = strings.ToLower(a)
+	}
+	return wildcard, s
 }
 
 // ipSet is a contiguous, inclusive address range of one family: a single

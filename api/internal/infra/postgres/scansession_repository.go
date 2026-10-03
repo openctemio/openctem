@@ -429,66 +429,55 @@ func (r *ScanSessionRepository) selectQuery() string {
 func (r *ScanSessionRepository) buildWhereClause(filter scansession.Filter) (string, []interface{}) {
 	var conditions []string
 	var args []interface{}
-	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
 		args = append(args, filter.TenantID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if filter.SensorID != nil {
-		conditions = append(conditions, fmt.Sprintf("sensor_id = $%d", argIndex))
 		args = append(args, filter.SensorID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("sensor_id = $%d", len(args)))
 	}
 
 	if filter.AssetID != nil {
-		conditions = append(conditions, fmt.Sprintf("asset_id = $%d", argIndex))
 		args = append(args, filter.AssetID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("asset_id = $%d", len(args)))
 	}
 
 	if filter.ScannerName != "" {
-		conditions = append(conditions, fmt.Sprintf("scanner_name = $%d", argIndex))
 		args = append(args, filter.ScannerName)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("scanner_name = $%d", len(args)))
 	}
 
 	if filter.AssetType != "" {
-		conditions = append(conditions, fmt.Sprintf("asset_type = $%d", argIndex))
 		args = append(args, filter.AssetType)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("asset_type = $%d", len(args)))
 	}
 
 	if filter.AssetValue != "" {
-		conditions = append(conditions, fmt.Sprintf("asset_value = $%d", argIndex))
 		args = append(args, filter.AssetValue)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("asset_value = $%d", len(args)))
 	}
 
 	if filter.Branch != "" {
-		conditions = append(conditions, fmt.Sprintf("branch = $%d", argIndex))
 		args = append(args, filter.Branch)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("branch = $%d", len(args)))
 	}
 
 	if filter.Status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, string(*filter.Status))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
 	}
 
 	if filter.Since != nil {
-		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", argIndex))
 		args = append(args, *filter.Since)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", len(args)))
 	}
 
 	if filter.Until != nil {
-		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", argIndex))
 		args = append(args, *filter.Until)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", len(args)))
 	}
 
 	return strings.Join(conditions, " AND "), args
