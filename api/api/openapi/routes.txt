@@ -28,6 +28,7 @@ POST /api/v1/admin/tenants
 GET /api/v1/admin/tenants/{}
 GET /api/v1/admin/tenants/{}/audit-chain
 POST /api/v1/admin/tenants/{}/audit-chain/rebaseline
+GET /api/v1/admin/tenants/{}/sso/changes
 GET /api/v1/admin/tenants/{}/sso/enforcement
 PUT /api/v1/admin/tenants/{}/sso/enforcement
 GET /api/v1/admin/tenants/{}/sso/identity-providers
@@ -618,6 +619,7 @@ DELETE /api/v1/scan-zones/{}/sensors/{}
 PUT /api/v1/scan-zones/{}/sensors/{}
 GET /api/v1/scanner-templates
 POST /api/v1/scanner-templates
+GET /api/v1/scanner-templates/signing-key
 GET /api/v1/scanner-templates/usage
 POST /api/v1/scanner-templates/validate
 DELETE /api/v1/scanner-templates/{}
@@ -814,6 +816,9 @@ GET /api/v1/tenants/{}/settings/risk-scoring/presets
 POST /api/v1/tenants/{}/settings/risk-scoring/preview
 POST /api/v1/tenants/{}/settings/risk-scoring/recalculate
 PATCH /api/v1/tenants/{}/settings/security
+GET /api/v1/tenants/{}/settings/sso/changes
+POST /api/v1/tenants/{}/settings/sso/changes/{}/approve
+POST /api/v1/tenants/{}/settings/sso/changes/{}/reject
 POST /api/v1/tenants/{}/users
 POST /api/v1/tenants/{}/users/{}/setup-link
 GET /api/v1/threat-actors
