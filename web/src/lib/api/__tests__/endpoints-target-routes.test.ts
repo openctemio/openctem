@@ -6,13 +6,15 @@
  * noticed because no check compared the two. This calls every builder in the
  * endpoint modules with placeholder arguments and matches the path it returns
  * against api/api/openapi/routes.txt, the generated list of every registered
- * operation (kept current by the API's openapicontract test).
+ * operation. The file is not committed: Web CI writes it from the router, and
+ * locally `cd api && UPDATE_ROUTE_MANIFEST=1 go test
+ * ./tools/lint/openapicontract/ -run RouteManifest` does.
  *
  * Builders that point at no route today are frozen in
  * endpoint-route-baseline.txt. The baseline only shrinks: a new builder without
  * a route fails, and so does a baseline line that now has one.
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -22,6 +24,13 @@ import * as securityEndpoints from '../security-endpoints'
 const here = resolve(__dirname)
 const manifestPath = resolve(here, '../../../../../api/api/openapi/routes.txt')
 const baselinePath = resolve(here, 'endpoint-route-baseline.txt')
+
+if (!existsSync(manifestPath)) {
+  throw new Error(
+    'api/api/openapi/routes.txt is missing. Generate it from the router: ' +
+      'cd api && UPDATE_ROUTE_MANIFEST=1 go test ./tools/lint/openapicontract/ -run RouteManifest'
+  )
+}
 
 function lines(path: string): string[] {
   return readFileSync(path, 'utf8')
