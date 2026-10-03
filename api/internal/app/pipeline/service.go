@@ -286,10 +286,32 @@ func NewService(
 	return s
 }
 
-// logAudit logs an audit event if audit service is configured.
+type auditActorKey struct{}
+
+// WithAuditActor returns ctx carrying the id of the user making the request.
+// The service's audit entries name that user when the call itself passes no
+// actor: template update and delete, step add, update and delete, and run
+// cancel take none, so their entries had an empty actor.
+func WithAuditActor(ctx context.Context, actorID string) context.Context {
+	if actorID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, auditActorKey{}, actorID)
+}
+
+func auditActorFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(auditActorKey{}).(string)
+	return v
+}
+
+// logAudit logs an audit event if audit service is configured. An explicit
+// actor in actx wins; otherwise the request's actor from ctx is used.
 func (s *Service) logAudit(ctx context.Context, actx AuditContext, event AuditEvent) {
 	if s.auditService == nil {
 		return
+	}
+	if actx.ActorID == "" {
+		actx.ActorID = auditActorFromContext(ctx)
 	}
 	if err := s.auditService.LogEvent(ctx, actx, event); err != nil {
 		s.logger.Error("failed to log audit event", "error", err, "action", event.Action)

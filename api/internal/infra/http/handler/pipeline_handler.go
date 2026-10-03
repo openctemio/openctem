@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -343,7 +344,7 @@ func (h *PipelineHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	template, err := h.service.CreateTemplate(r.Context(), input)
+	template, err := h.service.CreateTemplate(pipelineAuditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -352,11 +353,11 @@ func (h *PipelineHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 	steps := make([]*pipeline.Step, 0, len(stepInputs))
 	for _, stepInput := range stepInputs {
 		stepInput.TemplateID = template.ID.String()
-		step, err := h.service.AddStep(r.Context(), stepInput)
+		step, err := h.service.AddStep(pipelineAuditCtx(r), stepInput)
 		if err != nil {
 			// A step can still fail past validation (e.g. a duplicate step_key).
 			// Remove the half-built template rather than leave it behind.
-			if delErr := h.service.DeleteTemplate(r.Context(), tenantID, template.ID.String()); delErr != nil {
+			if delErr := h.service.DeleteTemplate(pipelineAuditCtx(r), tenantID, template.ID.String()); delErr != nil {
 				h.logger.Error("failed to remove pipeline template after a step was rejected",
 					"template_id", template.ID.String(), "error", delErr)
 			}
@@ -479,7 +480,7 @@ func (h *PipelineHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 		UIEndPosition:   toUIPosition(req.UIEndPosition),
 	}
 
-	template, err := h.service.UpdateTemplate(r.Context(), input)
+	template, err := h.service.UpdateTemplate(pipelineAuditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -524,7 +525,7 @@ func (h *PipelineHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 		}
 
 		// Now safe to delete existing steps (validation passed)
-		if err := h.service.DeleteStepsByPipelineID(r.Context(), tenantID, templateID); err != nil {
+		if err := h.service.DeleteStepsByPipelineID(pipelineAuditCtx(r), tenantID, templateID); err != nil {
 			// Ignore not found errors - there may be no existing steps
 			if !errors.Is(err, shared.ErrNotFound) {
 				h.handleServiceError(w, err)
@@ -535,7 +536,7 @@ func (h *PipelineHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 		// Add new steps (validation already passed, these should succeed)
 		steps := make([]*pipeline.Step, 0, len(stepInputs))
 		for _, stepInput := range stepInputs {
-			step, err := h.service.AddStep(r.Context(), stepInput)
+			step, err := h.service.AddStep(pipelineAuditCtx(r), stepInput)
 			if err != nil {
 				// This shouldn't happen since we validated, but handle it gracefully
 				h.logger.Error("step creation failed after validation",
@@ -562,7 +563,7 @@ func (h *PipelineHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request)
 	templateID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	if err := h.service.DeleteTemplate(r.Context(), tenantID, templateID); err != nil {
+	if err := h.service.DeleteTemplate(pipelineAuditCtx(r), tenantID, templateID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -582,7 +583,7 @@ func (h *PipelineHandler) ActivateTemplate(w http.ResponseWriter, r *http.Reques
 		IsActive:   &isActive,
 	}
 
-	template, err := h.service.UpdateTemplate(r.Context(), input)
+	template, err := h.service.UpdateTemplate(pipelineAuditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -604,7 +605,7 @@ func (h *PipelineHandler) DeactivateTemplate(w http.ResponseWriter, r *http.Requ
 		IsActive:   &isActive,
 	}
 
-	template, err := h.service.UpdateTemplate(r.Context(), input)
+	template, err := h.service.UpdateTemplate(pipelineAuditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -643,7 +644,7 @@ func (h *PipelineHandler) CloneTemplate(w http.ResponseWriter, r *http.Request) 
 		ClonedBy:   userID,
 	}
 
-	template, err := h.service.CloneTemplate(r.Context(), input)
+	template, err := h.service.CloneTemplate(pipelineAuditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -693,7 +694,7 @@ func (h *PipelineHandler) AddStep(w http.ResponseWriter, r *http.Request) {
 		input.UIPositionY = &req.UIPosition.Y
 	}
 
-	step, err := h.service.AddStep(r.Context(), input)
+	step, err := h.service.AddStep(pipelineAuditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -766,7 +767,7 @@ func (h *PipelineHandler) UpdateStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	step, err := h.service.UpdateStep(r.Context(), stepID, input)
+	step, err := h.service.UpdateStep(pipelineAuditCtx(r), stepID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -789,7 +790,7 @@ func (h *PipelineHandler) DeleteStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteStep(r.Context(), tenantID, stepID); err != nil {
+	if err := h.service.DeleteStep(pipelineAuditCtx(r), tenantID, stepID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -824,7 +825,7 @@ func (h *PipelineHandler) TriggerRun(w http.ResponseWriter, r *http.Request) {
 		Context:     req.Context,
 	}
 
-	run, err := h.service.TriggerPipeline(r.Context(), input)
+	run, err := h.service.TriggerPipeline(pipelineAuditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -900,7 +901,7 @@ func (h *PipelineHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	if err := h.service.CancelRun(r.Context(), tenantID, runID); err != nil {
+	if err := h.service.CancelRun(pipelineAuditCtx(r), tenantID, runID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1316,4 +1317,10 @@ func (h *PipelineHandler) handleStepError(w http.ResponseWriter, err error) {
 		h.logger.Error("step service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// pipelineAuditCtx is the request context carrying the caller as the pipeline
+// service's audit actor (see pipelinesvc.WithAuditActor).
+func pipelineAuditCtx(r *http.Request) context.Context {
+	return pipelinesvc.WithAuditActor(r.Context(), middleware.GetUserID(r.Context()))
 }
