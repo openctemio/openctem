@@ -393,6 +393,8 @@ GET /api/v1/findings/{}/priority-explanation
 PATCH /api/v1/findings/{}/remediation
 POST /api/v1/findings/{}/remediation/steps
 POST /api/v1/findings/{}/request-verification
+GET /api/v1/findings/{}/retests
+POST /api/v1/findings/{}/retests
 PATCH /api/v1/findings/{}/severity
 PATCH /api/v1/findings/{}/status
 PUT /api/v1/findings/{}/tags
@@ -487,6 +489,8 @@ PUT /api/v1/notifications/preferences
 POST /api/v1/notifications/read-all
 GET /api/v1/notifications/unread-count
 PATCH /api/v1/notifications/{}/read
+GET /api/v1/organization/settings/retest
+PUT /api/v1/organization/settings/retest
 GET /api/v1/pentest/campaigns
 POST /api/v1/pentest/campaigns
 DELETE /api/v1/pentest/campaigns/{}
