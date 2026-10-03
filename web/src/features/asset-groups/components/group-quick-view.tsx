@@ -73,7 +73,7 @@ function QuickViewAssets({ groupId, onRefresh }: { groupId: string; onRefresh?: 
           variant="ghost"
           size="sm"
           className="h-7 text-xs"
-          onClick={() => router.push(`/asset-groups/${groupId}?tab=assets`)}
+          onClick={() => router.push(`/assets/groups/${groupId}?tab=assets`)}
         >
           Manage all
           <ExternalLink className="ms-1 h-3 w-3" />
@@ -178,7 +178,7 @@ export function GroupQuickView({
       label: 'Copy link',
       icon: LinkIcon,
       onSelect: () => {
-        copyToClipboard(`${window.location.origin}/asset-groups/${group.id}`)
+        copyToClipboard(`${window.location.origin}/assets/groups/${group.id}`)
         toast.success('Link copied to clipboard')
       },
     },
@@ -239,7 +239,7 @@ export function GroupQuickView({
                   variant="outline"
                   onClick={() => {
                     onClose()
-                    router.push(`/asset-groups/${group.id}`)
+                    router.push(`/assets/groups/${group.id}`)
                   }}
                 >
                   <ExternalLink className="h-4 w-4" />

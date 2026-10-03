@@ -473,7 +473,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
             <p className="text-muted-foreground mb-4">
               The asset group you&apos;re looking for doesn&apos;t exist.
             </p>
-            <Button onClick={() => router.push('/asset-groups')}>
+            <Button onClick={() => router.push('/assets/groups')}>
               <ArrowLeft className="me-2 h-4 w-4" />
               Back to Groups
             </Button>
@@ -527,7 +527,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
     try {
       await deleteGroup()
       setDeleteDialogOpen(false)
-      router.push('/asset-groups')
+      router.push('/assets/groups')
     } catch {
       // Error already handled by hook with toast
     }
@@ -586,7 +586,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
           variant="ghost"
           size="sm"
           className="-ms-2 mb-2"
-          onClick={() => router.push('/asset-groups')}
+          onClick={() => router.push('/assets/groups')}
         >
           <ArrowLeft className="me-2 h-4 w-4" />
           Back to asset groups

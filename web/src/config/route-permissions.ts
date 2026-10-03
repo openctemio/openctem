@@ -141,14 +141,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.AttackSurface,
   },
-  '/asset-groups': {
-    permission: Permission.AssetGroupsRead,
-    module: Module.Assets,
-  },
-  '/asset-groups/**': {
-    permission: Permission.AssetGroupsRead,
-    module: Module.Assets,
-  },
   '/business-units': {
     permission: Permission.AssetsRead,
     module: Module.BusinessUnits,
@@ -201,10 +193,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.ThreatModel,
   },
-  '/relationships/**': {
-    permission: Permission.AssetsRead,
-    module: Module.Relationships,
-  },
 
   // ========================================
   // Discovery Phase - Assets (Module: assets)
@@ -216,6 +204,29 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/assets/**': {
     permission: Permission.AssetsRead,
     module: Module.Assets,
+  },
+  // The Assets tabs live under /assets, but Groups and Suggestions keep their
+  // own guard, not the inventory's. Each needs both entries: the exact one for
+  // the page itself (a ** pattern needs a further segment), and the ** one,
+  // which beats the shorter /assets/** (longest pattern wins).
+  // Asset groups: their own permission (assets:groups:read).
+  '/assets/groups': {
+    permission: Permission.AssetGroupsRead,
+    module: Module.Assets,
+  },
+  '/assets/groups/**': {
+    permission: Permission.AssetGroupsRead,
+    module: Module.Assets,
+  },
+  // Relationship suggestions are the Suggestions tab of Assets, gated on their
+  // own module: turning `relationships` off must still hide them.
+  '/assets/suggestions': {
+    permission: Permission.AssetsRead,
+    module: Module.Relationships,
+  },
+  '/assets/suggestions/**': {
+    permission: Permission.AssetsRead,
+    module: Module.Relationships,
   },
   '/settings/scanning/credentials': {
     // API enforces scans:secret_store:read (SecretStoreRead), not

@@ -93,7 +93,7 @@ Risk scoring and prioritization lean heavily on *business context*. Set it here:
 - **Crown Jewels** (`/crown-jewels`) — designate your most valuable assets. Click
   **Add Crown Jewel**, search for the asset, add **Business Impact Notes**, and
   **Designate** it. These get extra weight everywhere risk is ranked.
-- **Asset Groups** (`/asset-groups`) — organize assets for reporting and
+- **Asset Groups** (`/assets/groups`) — organize assets for reporting and
   data-scoping. **New Group** (name, environment, criticality), then **Add Assets
   to '{group}'** with the asset picker. Groups also drive the access-control
   "Teams" feature (see [Team & Access](02-team-and-access.md#teams-data-scope-groups-and-assignment-rules)).
@@ -112,7 +112,7 @@ Risk scoring and prioritization lean heavily on *business context*. Set it here:
   about (motivation, capability), which informs threat modeling and prioritization.
 - **Threat Model** (`/threat-model`) — continuous threat modeling that maps how
   those attackers could reach your crown jewels.
-- **Relationships** (`/relationships/suggestions`) — review and confirm suggested
+- **Relationships** (`/assets/suggestions`) — review and confirm suggested
   connections between assets, enriching the graph that attack-path analysis uses.
 
 ## Compliance
