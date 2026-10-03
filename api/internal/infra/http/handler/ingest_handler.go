@@ -136,15 +136,18 @@ func NewIngestHandler(
 
 // IngestResponse represents the response from ingestion.
 type IngestResponse struct {
-	ScanID          string   `json:"scan_id"`
-	AssetsCreated   int      `json:"assets_created"`
-	AssetsUpdated   int      `json:"assets_updated"`
-	FindingsCreated int      `json:"findings_created"`
-	FindingsUpdated int      `json:"findings_updated"`
-	FindingsSkipped int      `json:"findings_skipped"`
-	CVEsCreated     int      `json:"cves_created"`
-	CVEsUpdated     int      `json:"cves_updated"`
-	Errors          []string `json:"errors,omitempty"`
+	ScanID          string `json:"scan_id"`
+	AssetsCreated   int    `json:"assets_created"`
+	AssetsUpdated   int    `json:"assets_updated"`
+	FindingsCreated int    `json:"findings_created"`
+	FindingsUpdated int    `json:"findings_updated"`
+	FindingsSkipped int    `json:"findings_skipped"`
+	CVEsCreated     int    `json:"cves_created"`
+	CVEsUpdated     int    `json:"cves_updated"`
+	// AssetsSkippedExcluded counts new assets not added because they match
+	// an active scope exclusion; their findings are in findings_skipped.
+	AssetsSkippedExcluded int      `json:"assets_skipped_excluded,omitempty"`
+	Errors                []string `json:"errors,omitempty"`
 }
 
 // CTISIngestRequest represents the request body for CTIS ingestion.
@@ -671,15 +674,16 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := IngestResponse{
-		ScanID:          output.ReportID,
-		AssetsCreated:   output.AssetsCreated,
-		AssetsUpdated:   output.AssetsUpdated,
-		FindingsCreated: output.FindingsCreated,
-		FindingsUpdated: output.FindingsUpdated,
-		FindingsSkipped: output.FindingsSkipped,
-		CVEsCreated:     output.CVEsCreated,
-		CVEsUpdated:     output.CVEsUpdated,
-		Errors:          output.Errors,
+		ScanID:                output.ReportID,
+		AssetsCreated:         output.AssetsCreated,
+		AssetsUpdated:         output.AssetsUpdated,
+		FindingsCreated:       output.FindingsCreated,
+		FindingsUpdated:       output.FindingsUpdated,
+		FindingsSkipped:       output.FindingsSkipped,
+		AssetsSkippedExcluded: output.AssetsSkippedExcluded,
+		CVEsCreated:           output.CVEsCreated,
+		CVEsUpdated:           output.CVEsUpdated,
+		Errors:                output.Errors,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -744,15 +748,16 @@ func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := IngestResponse{
-		ScanID:          output.ReportID,
-		AssetsCreated:   output.AssetsCreated,
-		AssetsUpdated:   output.AssetsUpdated,
-		FindingsCreated: output.FindingsCreated,
-		FindingsUpdated: output.FindingsUpdated,
-		FindingsSkipped: output.FindingsSkipped,
-		CVEsCreated:     output.CVEsCreated,
-		CVEsUpdated:     output.CVEsUpdated,
-		Errors:          output.Errors,
+		ScanID:                output.ReportID,
+		AssetsCreated:         output.AssetsCreated,
+		AssetsUpdated:         output.AssetsUpdated,
+		FindingsCreated:       output.FindingsCreated,
+		FindingsUpdated:       output.FindingsUpdated,
+		FindingsSkipped:       output.FindingsSkipped,
+		AssetsSkippedExcluded: output.AssetsSkippedExcluded,
+		CVEsCreated:           output.CVEsCreated,
+		CVEsUpdated:           output.CVEsUpdated,
+		Errors:                output.Errors,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -811,15 +816,16 @@ func (h *IngestHandler) IngestReconReport(w http.ResponseWriter, r *http.Request
 	}
 
 	resp := IngestResponse{
-		ScanID:          output.ReportID,
-		AssetsCreated:   output.AssetsCreated,
-		AssetsUpdated:   output.AssetsUpdated,
-		FindingsCreated: output.FindingsCreated,
-		FindingsUpdated: output.FindingsUpdated,
-		FindingsSkipped: output.FindingsSkipped,
-		CVEsCreated:     output.CVEsCreated,
-		CVEsUpdated:     output.CVEsUpdated,
-		Errors:          output.Errors,
+		ScanID:                output.ReportID,
+		AssetsCreated:         output.AssetsCreated,
+		AssetsUpdated:         output.AssetsUpdated,
+		FindingsCreated:       output.FindingsCreated,
+		FindingsUpdated:       output.FindingsUpdated,
+		FindingsSkipped:       output.FindingsSkipped,
+		AssetsSkippedExcluded: output.AssetsSkippedExcluded,
+		CVEsCreated:           output.CVEsCreated,
+		CVEsUpdated:           output.CVEsUpdated,
+		Errors:                output.Errors,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1508,15 +1514,16 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := IngestResponse{
-		ScanID:          output.ReportID,
-		AssetsCreated:   output.AssetsCreated,
-		AssetsUpdated:   output.AssetsUpdated,
-		FindingsCreated: output.FindingsCreated,
-		FindingsUpdated: output.FindingsUpdated,
-		FindingsSkipped: output.FindingsSkipped,
-		CVEsCreated:     output.CVEsCreated,
-		CVEsUpdated:     output.CVEsUpdated,
-		Errors:          output.Errors,
+		ScanID:                output.ReportID,
+		AssetsCreated:         output.AssetsCreated,
+		AssetsUpdated:         output.AssetsUpdated,
+		FindingsCreated:       output.FindingsCreated,
+		FindingsUpdated:       output.FindingsUpdated,
+		FindingsSkipped:       output.FindingsSkipped,
+		AssetsSkippedExcluded: output.AssetsSkippedExcluded,
+		CVEsCreated:           output.CVEsCreated,
+		CVEsUpdated:           output.CVEsUpdated,
+		Errors:                output.Errors,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

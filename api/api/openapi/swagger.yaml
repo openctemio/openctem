@@ -8646,6 +8646,11 @@ definitions:
     properties:
       assets_created:
         type: integer
+      assets_skipped_excluded:
+        description: |-
+          AssetsSkippedExcluded counts new assets not added because they match
+          an active scope exclusion; their findings are in findings_skipped.
+        type: integer
       assets_updated:
         type: integer
       cves_created:

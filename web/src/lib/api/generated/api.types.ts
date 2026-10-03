@@ -34427,6 +34427,11 @@ export interface components {
     }
     'internal_infra_http_handler.IngestResponse': {
       assets_created?: number
+      /**
+       * @description AssetsSkippedExcluded counts new assets not added because they match
+       *     an active scope exclusion; their findings are in findings_skipped.
+       */
+      assets_skipped_excluded?: number
       assets_updated?: number
       cves_created?: number
       cves_updated?: number

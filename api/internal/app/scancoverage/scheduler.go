@@ -2,9 +2,12 @@ package scancoverage
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -88,12 +91,25 @@ type CursorStore interface {
 	MarkDispatched(ctx context.Context, rec DispatchRecord) error
 }
 
+// TargetGate applies a scan trigger's target checks (private-range policy,
+// scope exclusions, scan zones) to a batch before it is dispatched.
+// Implemented by *scan.Service.
+type TargetGate interface {
+	ResolveDispatchTargets(ctx context.Context, in scanapp.DispatchTargetsInput) (*scanapp.DispatchTargets, error)
+}
+
+// errNoTargetGate refuses a dispatch when no gate is wired (fail closed).
+var errNoTargetGate = errors.New("coverage target gate is not configured; nothing dispatched")
+
 // SchedulerConfig configures the Scheduler.
 type SchedulerConfig struct {
 	// CandidateLimit caps how many candidates are loaded per tenant per cycle.
 	// Default: 5000.
 	CandidateLimit int
-	Logger         *logger.Logger
+	// Gate checks every batch before dispatch. Without it nothing is
+	// dispatched.
+	Gate   TargetGate
+	Logger *logger.Logger
 }
 
 // Scheduler performs one rotation pass over all tenants' coverage configs.
@@ -101,6 +117,7 @@ type Scheduler struct {
 	source     CoverageSource
 	dispatcher BatchDispatcher
 	store      CursorStore
+	gate       TargetGate
 	limit      int
 	logger     *logger.Logger
 }
@@ -124,6 +141,7 @@ func NewScheduler(source CoverageSource, dispatcher BatchDispatcher, store Curso
 		source:     source,
 		dispatcher: dispatcher,
 		store:      store,
+		gate:       cfg.Gate,
 		limit:      limit,
 		logger:     lg,
 	}
@@ -210,35 +228,47 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 		return false, nil
 	}
 
-	// 4. Claim the batch. Another replica that planned from the same view gets
-	// none (or only the rest) of these assets.
+	// 4. Gate the batch like a scan trigger: private-range policy, scope
+	// exclusions, scan zones (RFC-042 F16). A failed check dispatches and
+	// claims nothing (fail closed).
+	send, skipped, zoneID, err := s.gateBatch(ctx, cfg, batch)
+	if err != nil {
+		return false, err
+	}
+
+	// 5. Claim the batch. Another replica that planned from the same view gets
+	// none (or only the rest) of these assets. Skipped assets are claimed
+	// too, without a dispatch: their cursor moves, so they rotate to the back
+	// instead of holding the top of every batch; they are checked again on
+	// their next turn.
+	toClaim := append(append(make([]Candidate, 0, len(send)+len(skipped)), send...), skipped...)
 	claimAt := time.Now().UTC().Truncate(time.Microsecond)
-	claimedIDs, err := s.store.ClaimBatch(ctx, cfg.TenantID, batch, claimAt)
+	claimedIDs, err := s.store.ClaimBatch(ctx, cfg.TenantID, toClaim, claimAt)
 	if err != nil {
 		return false, fmt.Errorf("claim batch: %w", err)
 	}
-	if len(claimedIDs) < len(batch) {
-		won := make(map[string]bool, len(claimedIDs))
-		for _, id := range claimedIDs {
-			won[id] = true
-		}
-		kept := batch[:0:0]
-		ips = 0
-		for _, c := range batch {
-			if won[c.AssetID] {
-				kept = append(kept, c)
-				ips += CountIPs(c.Target)
-			}
-		}
-		s.logger.Debug("coverage batch partly claimed by another replica",
-			"tenant_id", cfg.TenantID.String(), "planned", len(batch), "claimed", len(kept))
-		batch = kept
+	won := make(map[string]bool, len(claimedIDs))
+	for _, id := range claimedIDs {
+		won[id] = true
 	}
+	kept := send[:0:0]
+	ips = 0
+	for _, c := range send {
+		if won[c.AssetID] {
+			kept = append(kept, c)
+			ips += CountIPs(c.Target)
+		}
+	}
+	if len(kept) < len(send) {
+		s.logger.Debug("coverage batch partly claimed by another replica",
+			"tenant_id", cfg.TenantID.String(), "planned", len(send), "claimed", len(kept))
+	}
+	batch = kept
 	if len(batch) == 0 {
 		return false, nil
 	}
 
-	// 5. Dispatch the batch to a runner.
+	// 6. Dispatch the batch to a runner.
 	targets := make([]string, 0, len(batch))
 	assetIDs := make([]string, 0, len(batch))
 	for _, c := range batch {
@@ -252,6 +282,7 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 		SensorID:     cfg.SensorID,
 		Engine:       cfg.Engine,
 		TemplateUUID: cfg.TemplateUUID,
+		ScanZoneID:   zoneID,
 	})
 	if err != nil {
 		if rerr := s.store.ReleaseBatch(ctx, cfg.TenantID, batch, claimAt); rerr != nil {
@@ -261,7 +292,7 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 		return false, fmt.Errorf("dispatch: %w", err)
 	}
 
-	// 6. Record the dispatch: advance the cursor + active-IP accounting. If this
+	// 7. Record the dispatch: advance the cursor + active-IP accounting. If this
 	// fails the batch is already in flight, so surface the error (the next cycle
 	// could otherwise re-pick the same assets).
 	if err := s.store.MarkDispatched(ctx, DispatchRecord{
@@ -283,4 +314,69 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 		"ips", ips,
 		"headroom", headroom)
 	return true, nil
+}
+
+// gateBatch runs the batch through the target gate and splits it into the
+// candidates to dispatch now, the ones skipped this rotation (excluded or
+// refused), and the zone the dispatched ones are in. A batch is one command,
+// so it stays in one zone: the zone of its first allowed candidate (the
+// highest priority); allowed candidates of another zone are left unclaimed
+// for a later cycle.
+func (s *Scheduler) gateBatch(ctx context.Context, cfg CoverageConfig, batch []Candidate) (send, skipped []Candidate, zoneID *shared.ID, err error) {
+	if s.gate == nil {
+		return nil, nil, nil, errNoTargetGate
+	}
+	targets := make([]string, 0, len(batch))
+	for _, c := range batch {
+		targets = append(targets, c.Target)
+	}
+	gated, err := s.gate.ResolveDispatchTargets(ctx, scanapp.DispatchTargetsInput{
+		TenantID: cfg.TenantID,
+		Targets:  targets,
+		SensorID: cfg.SensorID,
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("target gate: %w", err)
+	}
+
+	key := func(t string) string { return strings.ToLower(strings.TrimSpace(t)) }
+	allowed := make(map[string]string, len(gated.Allowed)) // key -> spelling the gate kept
+	for _, t := range gated.Allowed {
+		allowed[key(t)] = t
+	}
+	reasons := make(map[string]string, len(gated.Excluded)+len(gated.Refused))
+	for _, t := range gated.Excluded {
+		reasons[key(t)] = "matches an active scope exclusion"
+	}
+	for _, r := range gated.Refused {
+		reasons[key(r.Target)] = r.Reason
+	}
+
+	zoneKey, zoneSet := "", false
+	for _, c := range batch {
+		t, ok := allowed[key(c.Target)]
+		if !ok {
+			skipped = append(skipped, c)
+			s.logger.Info("coverage target skipped by the target gate",
+				"tenant_id", cfg.TenantID.String(), "asset_id", c.AssetID, "reason", reasons[key(c.Target)])
+			continue
+		}
+		z := gated.Zone(t)
+		k := ""
+		if z != nil {
+			k = z.ID.String()
+		}
+		if !zoneSet {
+			zoneKey, zoneSet = k, true
+			if z != nil {
+				id := z.ID
+				zoneID = &id
+			}
+		}
+		if k != zoneKey {
+			continue // another zone: left for a later cycle
+		}
+		send = append(send, c)
+	}
+	return send, skipped, zoneID, nil
 }
