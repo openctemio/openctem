@@ -895,13 +895,14 @@ func TestMFA_OrganizationPolicy(t *testing.T) {
 		}
 	})
 
-	t.Run("federated sessions are not double-prompted", func(t *testing.T) {
+	t.Run("sessions from the tenant's own IdP are not double-prompted", func(t *testing.T) {
 		h := newMFAHarness(t)
 		tn := newPolicyTenant(t, h.tenants, "fed-tenant", false)
 		h.tenants.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "member"}}
 		h.seedUser(t, "fed@example.com")
 		res := h.login(t, "fed@example.com")
 		h.sessions.sessions[res.SessionID].SetAuthMethod(session.AuthMethodSSO)
+		h.sessions.sessions[res.SessionID].SetIDPTenant(tn.ID()) // issued by this tenant's IdP
 		st := tn.TypedSettings()
 		st.Security.MFARequired = true
 		_ = tn.UpdateSettings(st)

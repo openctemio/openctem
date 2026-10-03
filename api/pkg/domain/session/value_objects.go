@@ -59,10 +59,13 @@ const (
 	// AuthMethodPassword marks a session created by a local email+password login.
 	AuthMethodPassword AuthMethod = "password"
 	// AuthMethodSSO marks a session created by a federated OIDC/OAuth flow
-	// (per-tenant identity provider or social OAuth). Exempt from SSO enforcement.
+	// (per-tenant identity provider or social OAuth). Exempt from SSO
+	// enforcement only for the organization whose IdP issued it
+	// (Session.FederatedFor); social OAuth is exempt nowhere.
 	AuthMethodSSO AuthMethod = "sso"
 	// AuthMethodSAML marks a session created by a validated SAML 2.0 assertion.
-	// Exempt from SSO enforcement (it IS an SSO login).
+	// Exempt from SSO enforcement only for the organization whose IdP issued it
+	// (Session.FederatedFor).
 	AuthMethodSAML AuthMethod = "saml"
 )
 
@@ -82,8 +85,10 @@ func (m AuthMethod) IsValid() bool {
 }
 
 // IsFederated reports whether the session was created by an external identity
-// provider (SSO/OAuth/SAML) rather than a local password. Federated sessions
-// satisfy per-tenant SSO enforcement; password sessions do not. An empty/unknown
+// provider (SSO/OAuth/SAML) rather than a local password. It says nothing about
+// WHICH identity provider: a policy exemption (SSO enforcement, 2FA requirement)
+// must use Session.FederatedFor(tenantID), which also checks that the session
+// was issued by that organization's own IdP. An empty/unknown
 // method is treated as NOT federated (fail-closed: an unmarked session must not
 // silently pass enforcement).
 func (m AuthMethod) IsFederated() bool {

@@ -27,7 +27,8 @@ func NewScopeExclusionRepository(db *DB) *ScopeExclusionRepository {
 
 const scopeExclusionSelectQuery = `
 	SELECT id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
-	       approved_by, approved_at, created_by, created_at, updated_at
+	       approved_by, approved_at, created_by, created_at, updated_at,
+	       rejected_by, rejected_at
 	FROM scope_exclusions
 `
 
@@ -45,11 +46,14 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		createdBy     sql.NullString
 		createdAt     sql.NullTime
 		updatedAt     sql.NullTime
+		rejectedBy    sql.NullString
+		rejectedAt    sql.NullTime
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &exclusionType, &pattern, &reason, &status, &expiresAt,
 		&approvedBy, &approvedAt, &createdBy, &createdAt, &updatedAt,
+		&rejectedBy, &rejectedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -68,7 +72,7 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		appAt = &approvedAt.Time
 	}
 
-	return scope.ReconstituteExclusion(
+	e := scope.ReconstituteExclusion(
 		eid,
 		tntID,
 		scope.ExclusionType(exclusionType),
@@ -81,7 +85,15 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		createdBy.String,
 		createdAt.Time,
 		updatedAt.Time,
-	), nil
+	)
+	if rejectedBy.Valid || rejectedAt.Valid {
+		var rejAt *time.Time
+		if rejectedAt.Valid {
+			rejAt = &rejectedAt.Time
+		}
+		e.SetRejection(rejectedBy.String, rejAt)
+	}
+	return e, nil
 }
 
 // Create persists a new scope exclusion.
@@ -89,8 +101,9 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 	query := `
 		INSERT INTO scope_exclusions (
 			id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
-			approved_by, approved_at, created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			approved_by, approved_at, created_by, created_at, updated_at,
+			rejected_by, rejected_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -106,6 +119,8 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		nullString(exclusion.CreatedBy()),
 		exclusion.CreatedAt(),
 		exclusion.UpdatedAt(),
+		nullString(exclusion.RejectedBy()),
+		nullTime(exclusion.RejectedAt()),
 	)
 
 	if err != nil {
@@ -143,7 +158,9 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 			expires_at = $4,
 			approved_by = $5,
 			approved_at = $6,
-			updated_at = $7
+			updated_at = $7,
+			rejected_by = $9,
+			rejected_at = $10
 		WHERE id = $1 AND tenant_id = $8
 	`
 
@@ -156,6 +173,8 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 		nullTime(exclusion.ApprovedAt()),
 		exclusion.UpdatedAt(),
 		exclusion.TenantID().String(),
+		nullString(exclusion.RejectedBy()),
+		nullTime(exclusion.RejectedAt()),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope exclusion: %w", err)
@@ -276,11 +295,15 @@ func (r *ScopeExclusionRepository) List(ctx context.Context, filter scope.Exclus
 	return pagination.NewResult(exclusions, total, page), nil
 }
 
-// ListActive retrieves all active scope exclusions for a tenant.
+// ListActive retrieves the scope exclusions in effect for a tenant: approved,
+// active and unexpired. Pending and rejected exclusions are never returned —
+// this is the single read every exclusion consumer (scan target filtering,
+// scope checks, coverage) goes through.
 func (r *ScopeExclusionRepository) ListActive(ctx context.Context, tenantID shared.ID) ([]*scope.Exclusion, error) {
 	query := scopeExclusionSelectQuery + `
 		WHERE tenant_id = $1
 		AND status = 'active'
+		AND approved_at IS NOT NULL
 		AND (expires_at IS NULL OR expires_at > NOW())
 		ORDER BY created_at DESC`
 

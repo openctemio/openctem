@@ -404,25 +404,7 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 		}
 	}
 
-	// Create command for the step with consistent field names for pipeline progression
-	payloadMap := map[string]any{
-		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
-		pipeline.PayloadKeyStepRunID:     stepRunID,
-		pipeline.PayloadKeyStepKey:       step.StepKey,
-		"step_id":                        step.ID.String(),
-		"step_config":                    step.Config,
-		"required_capabilities":          step.Capabilities,
-		"preferred_tool":                 step.Tool,
-		"timeout_seconds":                step.TimeoutSeconds,
-		"context":                        run.Context,
-	}
-	// Surface direct targets at the top level of the payload — sensor executors
-	// read job.Payload["targets"], not the nested run context. Without this a
-	// workflow driven by ad-hoc targets (QuickScan) would receive none.
-	if targets, ok := run.Context["targets"]; ok {
-		payloadMap["targets"] = targets
-	}
-	payload, _ := json.Marshal(payloadMap)
+	payload, _ := json.Marshal(workflowStepPayload(run, step, stepRunID))
 
 	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
 	if err != nil {
@@ -449,6 +431,36 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 	}
 
 	return nil
+}
+
+// workflowStepPayload is the command payload of one workflow step, with
+// consistent field names for pipeline progression.
+func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string) map[string]any {
+	payloadMap := map[string]any{
+		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
+		pipeline.PayloadKeyStepRunID:     stepRunID,
+		pipeline.PayloadKeyStepKey:       step.StepKey,
+		"step_id":                        step.ID.String(),
+		"step_config":                    step.Config,
+		"required_capabilities":          step.Capabilities,
+		"preferred_tool":                 step.Tool,
+		"timeout_seconds":                step.TimeoutSeconds,
+		"context":                        run.Context,
+	}
+	// The sensor SDK runs the scanner the payload names in `scanner`
+	// (ScanCommandPayload); without it every step failed on the sensor with
+	// "scanner not found: ". preferred_tool stays for the platform's tool
+	// gate and older readers.
+	if step.Tool != "" {
+		payloadMap["scanner"] = step.Tool
+	}
+	// Surface direct targets at the top level of the payload — sensor executors
+	// read job.Payload["targets"], not the nested run context. Without this a
+	// workflow driven by ad-hoc targets (QuickScan) would receive none.
+	if targets, ok := run.Context["targets"]; ok {
+		payloadMap["targets"] = targets
+	}
+	return payloadMap
 }
 
 // EmbeddedTemplate represents a template embedded in scan command payload.

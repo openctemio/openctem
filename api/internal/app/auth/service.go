@@ -55,9 +55,15 @@ var (
 // gate, factored out so it can be unit-tested exhaustively without any repo
 // wiring. It returns true when access MUST be denied.
 //
+// method is the session's method AS SEEN BY THIS TENANT
+// (Session.AuthMethodFor): federated only when the tenant's own identity
+// provider issued the session, password otherwise.
+//
 // Rules (fail-closed, but break-glass-safe):
-//   - Federated sessions (SSO/OAuth/SAML) ALWAYS pass — an SSO-enforced tenant
-//     must admit the very login method it requires. → never denied.
+//   - Sessions issued by this tenant's own IdP pass — an SSO-enforced tenant
+//     must admit the very login method it requires. → never denied. A session
+//     from another organization's IdP or from social OAuth arrives here as
+//     password and is handled like one.
 //   - The tenant OWNER is the break-glass exception and can always password-login
 //     so enabling enforcement can never lock every administrator out. → never
 //     denied.
@@ -798,13 +804,14 @@ type ExchangeTokenResult struct {
 // enforceSSOPolicy is the per-tenant SSO-enforcement gate. Both ExchangeToken
 // and RefreshToken call it right after resolving the caller's membership and
 // BEFORE minting a tenant-scoped access token — the single choke point through
-// which a password session must pass to gain access to a tenant. A federated
-// (SSO/OAuth/SAML) session and the tenant OWNER always pass (break-glass); a
-// password-authenticated non-owner is refused when the tenant enforces SSO.
+// which a password session must pass to gain access to a tenant. A session
+// issued by THIS tenant's own SAML/OIDC provider and the tenant OWNER always
+// pass (break-glass); any other non-owner session — password, social OAuth, or
+// another organization's IdP — is refused when the tenant enforces SSO.
 func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Session, tenantID, role string) error {
-	// Cheap exits: federated sessions and owners never trip enforcement, so skip
-	// the tenant lookup entirely for them.
-	if sess.AuthMethod().IsFederated() || role == string(tenantdom.RoleOwner) {
+	// Cheap exits: this tenant's own SSO sessions and owners never trip
+	// enforcement, so skip the tenant lookup entirely for them.
+	if sess.FederatedFor(tenantID) || role == string(tenantdom.RoleOwner) {
 		return nil
 	}
 	tid, err := shared.IDFromString(tenantID)
@@ -815,11 +822,11 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 	if err != nil {
 		return fmt.Errorf("failed to load tenant for SSO enforcement: %w", err)
 	}
-	if ssoEnforcementDenied(sess.AuthMethod(), role, t.TypedSettings().Security.SSOEnforced) {
+	if ssoEnforcementDenied(sess.AuthMethodFor(tenantID), role, t.TypedSettings().Security.SSOEnforced) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
-		s.logger.Warn("blocked password session from SSO-enforced tenant",
+		s.logger.Warn("blocked non-SSO session from SSO-enforced tenant",
 			"tenant_id", tid.String(), "user_id", sess.UserID().String())
 		return ErrSSORequired
 	}
@@ -1029,9 +1036,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, ErrTenantAccessDenied
 	}
 
-	// Per-tenant SSO enforcement (break-glass safe): a password session cannot
-	// mint a tenant-scoped token for an SSO-enforced tenant unless it is the
-	// owner. Federated (SSO/SAML) sessions always pass.
+	// Per-tenant SSO enforcement (break-glass safe): a session not issued by
+	// this tenant's own IdP cannot mint a tenant-scoped token for an
+	// SSO-enforced tenant unless it is the owner.
 	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
 		return nil, err
 	}
@@ -1060,7 +1067,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 			Role:       targetMembership.Role,
 		},
 		isAdminRole,
-		sess.AuthMethod().String(),
+		// The claim carries the method as seen by this tenant, so the
+		// per-request SSO gate decides exactly as token mint did.
+		sess.AuthMethodFor(targetMembership.TenantID).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1277,8 +1286,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	}
 
 	// Per-tenant SSO enforcement (break-glass safe): re-checked on every refresh
-	// so toggling sso_enforced on takes effect the next time a password session
-	// refreshes its tenant-scoped token. Federated sessions and the owner pass.
+	// so toggling sso_enforced on takes effect the next time a non-SSO session
+	// refreshes its tenant-scoped token. Sessions issued by this tenant's own
+	// IdP and the owner pass.
 	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
 		return nil, err
 	}
@@ -1333,7 +1343,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 			Role:       targetMembership.Role,
 		},
 		isRefreshAdminRole,
-		sess.AuthMethod().String(),
+		sess.AuthMethodFor(targetMembership.TenantID).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1751,7 +1761,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 			Role:       tenantdom.RoleOwner.String(),
 		},
 		true, // Owner is always admin - bypasses permission checks, keeps JWT small
-		sess.AuthMethod().String(),
+		sess.AuthMethodFor(newTenant.ID().String()).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1973,7 +1983,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 			Role:       membership.Role().String(),
 		},
 		isAdminRole,
-		sess.AuthMethod().String(),
+		sess.AuthMethodFor(t.ID().String()).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)

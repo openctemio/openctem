@@ -615,6 +615,22 @@ v1 pipeline with the v2 options:
   than `SENSOR_V2_BLINDING_MIN_FINDINGS` (100) and more than
   `SENSOR_V2_BLINDING_RATIO` (50 %) of the open findings of that tool on
   those assets; the status then says `auto_resolve: held`.
+- **Coverage-scoped auto-resolve (non-repository findings).** The commit
+  auto-resolve above only covers repository default branches, so a host or
+  web finding was never closed by a later scan. A scan command is evaluated
+  when it is `completed` AND every report filed under it is `completed`
+  (checked from both ends: command completion and report finalize). It
+  qualifies only if the command exited 0, every report has no rejected or
+  quarantined items and is not `partial`/`incremental`, all reports name one
+  tool the sensor declares, and the reports touched at least one asset. The
+  candidates are open findings of that tool on the touched assets, with no
+  branch, not reported by this run, and last seen by a v2 run of the same
+  scan profile (a v1 or imported sighting is never a candidate). The blinding
+  guard applies. `INGEST_COVERAGE_AUTO_RESOLVE` = `dry_run` (default: log,
+  `findings_coverage_auto_resolve_total{mode,result}` and an
+  `ingest.coverage_auto_resolve_dry_run` audit entry listing the findings, no
+  state change), `enforce` (closes them as `auto_fixed`/`scan_verified`,
+  audited as `ingest.coverage_auto_resolved`) or `off`.
 - An uncommitted report expires 60 minutes after its last segment; its
   upserts stay and it never resolves anything. A segment's outcome is stored
   under its number, so a retried segment is never counted twice. Payloads
@@ -640,6 +656,7 @@ v2 responses carry `OpenCTEM-Protocol: 2`.
 | `SENSOR_PROTOCOL_V2_RESULTS` | `true` | Mount `/api/v2/sensor`, process v2 jobs, advertise on the heartbeat. `false` unmounts it; v2 jobs already queued wait until it is on again. |
 | `SENSOR_V2_BLINDING_RATIO` | `0.5` | Blinding guard ratio. |
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | `100` | Blinding guard floor. |
+| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce`. |
 | `INGEST_MAX_PENDING_PER_TENANT` | `100` | Shared with v1: queue depth per tenant. |
 
 Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239
@@ -1125,6 +1142,21 @@ inside it. Use one zone per segment (scan-zones.md).
     `scan_zone.egress_changed`, `scan_zone.tool_egress_changed`. Credentials
     are never shown in the audit.
   - Permissions: `sensors:egress:read|write|delete`, admin and owner only.
+
+## Tool settings (RFC-038, proposed)
+
+> Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
+> **proposed, nothing shipped yet.**
+
+Today a tool's options are not managed by the platform: the sensor's
+wrappers take them from host env vars or code, and the SDK copies only
+`allow_interactsh` and `exclude` from a command's `config` into
+`core.ScanOptions`; other `scanner_config` / scan-profile `options` keys
+are ignored. The design: each tool declares a typed settings schema,
+registered by digest in the manifest; admins edit a generated form on the
+sensor's page; the api validates and audits, then pushes a signed,
+versioned settings document that the sensor re-validates, stores and
+applies from the next job, reporting the applied version.
 
 ## Control plane under load (RFC-035)
 

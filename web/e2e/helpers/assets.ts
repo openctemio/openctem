@@ -12,8 +12,8 @@ export async function openFirstAssetSheet(page: Page): Promise<Locator | null> {
   const row = await firstDataRow(page)
   if (!row) return null
   await row.click()
-  // The sheet is a dialog named after the asset type ("Domain details", ...).
-  const sheet = page.getByRole('dialog', { name: /details$/i })
+  // The drawer is the only dialog; its accessible name is the asset's name.
+  const sheet = page.getByRole('dialog')
   await expect(sheet).toBeVisible({ timeout: 15_000 })
   return sheet
 }
