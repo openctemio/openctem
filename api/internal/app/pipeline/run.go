@@ -209,15 +209,21 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		return err
 	}
 
-	completedSteps := make(map[string]bool)
+	// A dependency gates a step only by SUCCEEDING. Every terminal step used
+	// to count as "completed" here, so a step whose dependency had failed
+	// (or been skipped, or timed out) was queued anyway.
+	succeededSteps := make(map[string]bool)
 	runningSteps := 0
 	for _, sr := range stepRuns {
 		if sr.IsComplete() {
-			completedSteps[sr.StepKey] = true
+			if sr.IsSuccess() {
+				succeededSteps[sr.StepKey] = true
+			}
 		} else if sr.IsRunning() || sr.IsQueued() {
 			runningSteps++
 		}
 	}
+	completedSteps := succeededSteps
 
 	// Get max parallel steps from template settings (default 3)
 	maxParallel := template.Settings.MaxParallelSteps
@@ -436,6 +442,47 @@ func (s *Service) calculatePipelineInitialPriority(cmdPriority command.CommandPr
 	}
 }
 
+// refreshStepRuns reloads the run's step runs from the database. Two final
+// steps of a workflow can finish at the same moment: each handler loaded the
+// run before the other's step was saved, saw the other step still running,
+// and neither finished the run, which then hung until the run timeout. Every
+// step write is committed before this read, so the later of two concurrent
+// handlers always sees both steps done (and finishRun lets only one of them
+// record the outcome).
+func (s *Service) refreshStepRuns(ctx context.Context, run *pipeline.Run) {
+	fresh, err := s.stepRunRepo.GetByPipelineRunID(ctx, run.ID)
+	if err != nil {
+		s.logger.Error("failed to reload step runs; settling from the loaded copy",
+			"run_id", run.ID.String(), "error", err)
+		return
+	}
+	run.StepRuns = fresh
+}
+
+// skipBlockedSteps skips every pending step whose dependency finished without
+// succeeding, transitively, so a failed step does not leave its dependents
+// pending forever (the run could then never complete).
+func (s *Service) skipBlockedSteps(ctx context.Context, run *pipeline.Run, template *pipeline.Template) {
+	for changed := true; changed; {
+		changed = false
+		for _, step := range template.Steps {
+			sr := run.GetStepRun(step.StepKey)
+			if sr == nil || !sr.IsPending() {
+				continue
+			}
+			dep := step.BlockedByDependency(run)
+			if dep == "" {
+				continue
+			}
+			sr.Skip(fmt.Sprintf("dependency %q did not succeed", dep))
+			if err := s.stepRunRepo.Update(ctx, sr); err != nil {
+				s.logger.Error("failed to skip blocked step", "step_key", step.StepKey, "error", err)
+			}
+			changed = true
+		}
+	}
+}
+
 // recordScanRun writes a pipeline run's terminal outcome back onto the scan that
 // spawned it, so the scan's own last_run_at/last_run_status/counters stop
 // reading "never run" after a run that just finished. No-op for workflow runs
@@ -529,6 +576,8 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 	if err != nil {
 		return err
 	}
+	s.refreshStepRuns(ctx, run)
+	s.skipBlockedSteps(ctx, run, template)
 
 	// Update run statistics.
 	//
@@ -672,17 +721,19 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepKey, "failed").Inc()
 	}
 
+	// Get template to check fail_fast setting
+	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
+	if err != nil {
+		return err
+	}
+	s.refreshStepRuns(ctx, run)
+	s.skipBlockedSteps(ctx, run, template)
+
 	// Update run statistics
 	completed, failed, skipped, findings := s.calculateRunStats(run)
 	// FIXED: Don't silently suppress errors - log them instead
 	if err := s.runRepo.UpdateStats(ctx, run.ID, completed, failed, skipped, findings); err != nil {
 		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
-	}
-
-	// Get template to check fail_fast setting
-	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
-	if err != nil {
-		return err
 	}
 
 	// If fail_fast, mark run as failed
@@ -864,27 +915,8 @@ func (s *Service) evaluateQualityGate(ctx context.Context, run *pipeline.Run) *s
 }
 
 // evaluateCondition evaluates a step's condition.
-func (s *Service) evaluateCondition(ctx context.Context, step *pipeline.Step, run *pipeline.Run, template *pipeline.Template) bool {
-	switch step.Condition.Type {
-	case pipeline.ConditionTypeAlways:
-		return true
-	case pipeline.ConditionTypeNever:
-		return false
-	case pipeline.ConditionTypeAssetType:
-		// Check if asset type matches
-		assetType, ok := run.Context["asset_type"].(string)
-		return ok && assetType == step.Condition.Value
-	case pipeline.ConditionTypeExpression:
-		// Expression evaluation not yet supported — always passes.
-		// Phase 2: add CEL or expr-lang evaluator for dynamic conditions.
-		return true
-	case pipeline.ConditionTypeStepResult:
-		// Check previous step result
-		prevStepRun := run.GetStepRun(step.Condition.Value)
-		return prevStepRun != nil && prevStepRun.IsSuccess()
-	default:
-		return true
-	}
+func (s *Service) evaluateCondition(_ context.Context, step *pipeline.Step, run *pipeline.Run, _ *pipeline.Template) bool {
+	return step.ConditionMet(run)
 }
 
 // GetRun retrieves a pipeline run by ID.

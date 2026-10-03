@@ -258,3 +258,134 @@ func TestIssueFirstOwnerSetupLink_SMTPConfigured_NoToken(t *testing.T) {
 		t.Fatalf("without SMTP the link is returned once")
 	}
 }
+
+// suspendAll suspends every member of org.
+func (e *firstOwnerEnv) suspendAll(org string) {
+	e.t.Helper()
+	if _, err := e.db.Exec(`UPDATE tenant_members SET status='suspended' WHERE tenant_id=$1`, org); err != nil {
+		e.t.Fatalf("suspend: %v", err)
+	}
+}
+
+// An owner who is suspended still owns the organization: the platform
+// administrator used to be able to create a new owner (and, without SMTP,
+// receive its set-password link) for an organization with data, because only
+// ACTIVE owners counted.
+func TestCreateFirstOwner_SuspendedOwnerBlocksBootstrap(t *testing.T) {
+	e := newFirstOwnerEnv(t)
+	org := e.org()
+	svc := e.service(nil)
+	if _, err := svc.CreateFirstOwner(context.Background(), org, e.email(), "", platformAdminActor); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	e.suspendAll(org)
+
+	second := e.email()
+	_, err := svc.CreateFirstOwner(context.Background(), org, second, "", platformAdminActor)
+	if !errors.Is(err, tenantdom.ErrOrganizationHasOwner) {
+		t.Fatalf("suspended owner: err = %v, want ErrOrganizationHasOwner", err)
+	}
+	if n := e.count(`SELECT count(*) FROM users WHERE email=$1`, second); n != 0 {
+		t.Fatalf("a refused bootstrap left an account behind")
+	}
+}
+
+// A suspended member holding the system owner role (label not "owner") is an
+// owner too.
+func TestCreateFirstOwner_SuspendedOwnerByRoleBlocksBootstrap(t *testing.T) {
+	e := newFirstOwnerEnv(t)
+	org := e.org()
+	svc := e.service(nil)
+	u, err := svc.CreateAccount(context.Background(), e.email(), "Role owner")
+	if err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+	if _, err := e.db.Exec(`INSERT INTO tenant_members (id, user_id, tenant_id, role, status, joined_at)
+		VALUES ($1, $2, $3, 'admin', 'suspended', now())`, uuid.NewString(), u.ID().String(), org); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if _, err := e.db.Exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, '00000000-0000-0000-0000-000000000001')`,
+		u.ID().String(), org); err != nil {
+		t.Fatalf("seed owner role: %v", err)
+	}
+	_, err = svc.CreateFirstOwner(context.Background(), org, e.email(), "", platformAdminActor)
+	if !errors.Is(err, tenantdom.ErrOrganizationHasOwner) {
+		t.Fatalf("suspended owner by role: err = %v, want ErrOrganizationHasOwner", err)
+	}
+}
+
+func TestRecoverOwner_AllOwnersSuspended_EmailOnlyAndAudited(t *testing.T) {
+	e := newFirstOwnerEnv(t)
+	org := e.org()
+	if _, err := e.service(nil).CreateFirstOwner(context.Background(), org, e.email(), "", platformAdminActor); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	e.suspendAll(org)
+
+	mailer := &fakeSetupMailer{deliverable: true}
+	res, err := e.service(mailer).RecoverOwner(context.Background(), org, e.email(), "Recovered Owner", platformAdminActor)
+	if err != nil {
+		t.Fatalf("RecoverOwner: %v", err)
+	}
+	if res.SetupToken != "" || !res.EmailSent || mailer.sent != 1 {
+		t.Fatalf("recovery: token=%q sent=%v mails=%d, want emailed and never returned", res.SetupToken, res.EmailSent, mailer.sent)
+	}
+	uid := res.User.ID().String()
+	if n := e.count(`SELECT count(*) FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 AND role='owner' AND COALESCE(status,'active')='active'`, org, uid); n != 1 {
+		t.Fatalf("recovered owner membership rows = %d", n)
+	}
+	if n := e.count(`SELECT count(*) FROM audit_logs WHERE tenant_id=$1 AND action='user.created' AND resource_id=$2
+		AND actor_email='platform-admin:ops@platform.test' AND severity='critical'
+		AND metadata->>'owner_recovery' = 'true'`, org, uid); n != 1 {
+		t.Fatalf("organization audit rows for the recovery = %d, want 1", n)
+	}
+
+	// A failed send still never hands the link over.
+	org2 := e.org()
+	if _, err := e.service(nil).CreateFirstOwner(context.Background(), org2, e.email(), "", platformAdminActor); err != nil {
+		t.Fatalf("first (org2): %v", err)
+	}
+	e.suspendAll(org2)
+	res, err = e.service(&fakeSetupMailer{deliverable: true, fail: true}).RecoverOwner(context.Background(), org2, e.email(), "", platformAdminActor)
+	if err != nil {
+		t.Fatalf("RecoverOwner with failing SMTP: %v", err)
+	}
+	if res.SetupToken != "" || !res.EmailFailed {
+		t.Fatalf("failed send: token=%q failed=%v, want no token and email_failed", res.SetupToken, res.EmailFailed)
+	}
+}
+
+func TestRecoverOwner_RefusedWhileAnOwnerIsActive(t *testing.T) {
+	e := newFirstOwnerEnv(t)
+	org := e.org()
+	if _, err := e.service(nil).CreateFirstOwner(context.Background(), org, e.email(), "", platformAdminActor); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	second := e.email()
+	_, err := e.service(&fakeSetupMailer{deliverable: true}).RecoverOwner(context.Background(), org, second, "", platformAdminActor)
+	if !errors.Is(err, tenantdom.ErrOrganizationHasOwner) {
+		t.Fatalf("active owner: err = %v, want ErrOrganizationHasOwner", err)
+	}
+	if n := e.count(`SELECT count(*) FROM users WHERE email=$1`, second); n != 0 {
+		t.Fatalf("a refused recovery left an account behind")
+	}
+}
+
+func TestRecoverOwner_NoEmailDeliveryRefused(t *testing.T) {
+	e := newFirstOwnerEnv(t)
+	org := e.org()
+	if _, err := e.service(nil).CreateFirstOwner(context.Background(), org, e.email(), "", platformAdminActor); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	e.suspendAll(org)
+	second := e.email()
+	for _, m := range []tenantapp.AccountSetupMailer{nil, &fakeSetupMailer{deliverable: false}} {
+		_, err := e.service(m).RecoverOwner(context.Background(), org, second, "", platformAdminActor)
+		if !errors.Is(err, tenantapp.ErrOwnerRecoveryNeedsEmail) {
+			t.Fatalf("no SMTP: err = %v, want ErrOwnerRecoveryNeedsEmail", err)
+		}
+	}
+	if n := e.count(`SELECT count(*) FROM users WHERE email=$1`, second); n != 0 {
+		t.Fatalf("a refused recovery left an account behind")
+	}
+}

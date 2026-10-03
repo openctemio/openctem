@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -33,6 +34,18 @@ func (f *fakeCoverageRepo) ListCandidates(_ context.Context, _ shared.ID, _ int)
 func (f *fakeCoverageRepo) ActiveIPs(_ context.Context, _ shared.ID) (int, error) {
 	return f.active, nil
 }
+func (f *fakeCoverageRepo) ClaimBatch(_ context.Context, _ shared.ID, batch []scancoverage.Candidate, _ time.Time) ([]string, error) {
+	out := make([]string, 0, len(batch))
+	for _, c := range batch {
+		out = append(out, c.AssetID)
+	}
+	return out, nil
+}
+
+func (f *fakeCoverageRepo) ReleaseBatch(context.Context, shared.ID, []scancoverage.Candidate, time.Time) error {
+	return nil
+}
+
 func (f *fakeCoverageRepo) MarkDispatched(_ context.Context, rec scancoverage.DispatchRecord) error {
 	f.marked = append(f.marked, rec)
 	return nil

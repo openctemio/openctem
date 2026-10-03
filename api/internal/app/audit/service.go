@@ -546,16 +546,22 @@ func chainRow(e auditdom.ChainEntry, log *auditdom.AuditLog) chainclassify.Row {
 	}
 }
 
+// chainAppender is implemented by a repository that extends a chain
+// atomically across processes (read tail + insert under one per-tenant lock).
+type chainAppender interface {
+	AppendNextChainEntry(ctx context.Context, tenantID shared.ID, build func(prevHash string) auditdom.ChainEntry) error
+}
+
 // appendChainEntry computes the next hash in the per-tenant chain and
 // persists it. Safe to call with any audit_log; rows without a tenant
-// ID are skipped (the chain is per-tenant).
+// ID extend the system chain.
 //
-// Concurrency note: under multi-writer races two callers for the same
-// tenant can read the same prev_hash and both try to extend it. The
-// chainMu mutex serialises this within a single process; cross-replica
-// coordination would need a per-tenant advisory lock
-// (pg_advisory_xact_lock) and is not wired here because the current
-// deployment is single-replica.
+// Concurrency: two writers for the same tenant must never read the same
+// prev_hash and both extend it (that forks the chain and every later
+// verification fails). The Postgres repository reads the tail and inserts
+// under a per-tenant advisory transaction lock, which holds across API
+// replicas. chainMu only covers repositories without that capability
+// (tests), within one process.
 func (s *AuditService) appendChainEntry(ctx context.Context, log *auditdom.AuditLog) {
 	// Tenant-less events (every auth.login / auth.register / auth.failed —
 	// 86% of the trail on the live database) used to return here, which left
@@ -565,16 +571,6 @@ func (s *AuditService) appendChainEntry(ctx context.Context, log *auditdom.Audit
 	tid := auditdom.SystemChainTenantID
 	if tenantPtr := log.TenantID(); tenantPtr != nil {
 		tid = *tenantPtr
-	}
-
-	s.chainMu.Lock()
-	defer s.chainMu.Unlock()
-
-	prev, err := s.auditRepo.LatestChainHash(ctx, tid)
-	if err != nil {
-		s.logger.Warn("chain: failed to read prev hash; skipping entry",
-			"tenant_id", tid.String(), "error", err)
-		return
 	}
 
 	// Deterministic payload: scalar columns that uniquely identify
@@ -587,15 +583,33 @@ func (s *AuditService) appendChainEntry(ctx context.Context, log *auditdom.Audit
 		log.ResourceID(),
 		log.Result().String(),
 	)
-	hash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
-
-	entry := auditdom.ChainEntry{
-		AuditLogID: log.ID(),
-		TenantID:   tid,
-		PrevHash:   prev,
-		Hash:       hash,
+	build := func(prev string) auditdom.ChainEntry {
+		return auditdom.ChainEntry{
+			AuditLogID: log.ID(),
+			TenantID:   tid,
+			PrevHash:   prev,
+			Hash:       cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp()),
+		}
 	}
-	if err := s.auditRepo.AppendChainEntry(ctx, entry); err != nil {
+
+	if a, ok := s.auditRepo.(chainAppender); ok {
+		if err := a.AppendNextChainEntry(ctx, tid, build); err != nil {
+			s.logger.Warn("chain: append failed (audit log persisted, chain has a gap)",
+				"tenant_id", tid.String(), "audit_log_id", log.ID().String(), "error", err)
+		}
+		return
+	}
+
+	s.chainMu.Lock()
+	defer s.chainMu.Unlock()
+
+	prev, err := s.auditRepo.LatestChainHash(ctx, tid)
+	if err != nil {
+		s.logger.Warn("chain: failed to read prev hash; skipping entry",
+			"tenant_id", tid.String(), "error", err)
+		return
+	}
+	if err := s.auditRepo.AppendChainEntry(ctx, build(prev)); err != nil {
 		s.logger.Warn("chain: append failed (audit log persisted, chain has a gap)",
 			"tenant_id", tid.String(),
 			"audit_log_id", log.ID().String(),

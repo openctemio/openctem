@@ -13,7 +13,15 @@ import {
   MetricStrip,
   PageHeader,
   RunStatusBadge,
+  DetailCallout,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
 } from '@/features/shared'
+import { cn } from '@/lib/utils'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Select,
@@ -57,7 +65,6 @@ import {
   MoreHorizontal,
   Pencil,
   Copy,
-  Zap,
   AlertCircle,
   Cloud,
   Server,
@@ -738,229 +745,199 @@ export default function PipelinesPage() {
       </Sheet>
 
       {/* Pipeline Detail Sheet */}
-      <Sheet open={!!selectedPipeline} onOpenChange={() => setSelectedPipeline(null)}>
-        <SheetContent className="sm:max-w-md flex flex-col p-0">
-          {selectedPipeline && (
-            <>
-              {/* Header */}
-              <div className="px-6 pt-6 pb-4 border-b">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      {selectedPipeline.is_system_template ? (
-                        <Cloud className="h-5 w-5 shrink-0 text-muted-foreground" />
+      {selectedPipeline &&
+        (() => {
+          const pl = selectedPipeline
+          const isTemplate = pl.is_system_template
+          const editPipeline = () => {
+            handleOpenEditForm(pl)
+            setSelectedPipeline(null)
+          }
+          const pref = pl.settings?.sensor_preference || 'auto'
+          return (
+            <DetailSheet
+              open
+              onOpenChange={(open) => !open && setSelectedPipeline(null)}
+              width="md"
+              header={
+                <DetailHeader
+                  title={pl.name}
+                  badges={
+                    <>
+                      {isTemplate ? (
+                        <Badge variant="secondary" className="gap-1 text-xs">
+                          <Cloud className="h-3 w-3" />
+                          System template
+                        </Badge>
                       ) : (
-                        <Server className="h-5 w-5 shrink-0 text-muted-foreground" />
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'text-xs',
+                            pl.is_active && 'border-success/30 bg-success/10 text-success'
+                          )}
+                        >
+                          {pl.is_active ? 'Active' : 'Inactive'}
+                        </Badge>
                       )}
-                      <h2 className="text-lg font-semibold truncate">{selectedPipeline.name}</h2>
-                    </div>
-                    {selectedPipeline.description && (
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                        {selectedPipeline.description}
+                      <Badge variant="outline" className="text-xs">
+                        v{pl.version}
+                      </Badge>
+                    </>
+                  }
+                  meta={[
+                    pl.triggers.length > 0
+                      ? pl.triggers.map((t) => PIPELINE_TRIGGER_LABELS[t.type]).join(', ')
+                      : 'Manual',
+                  ]}
+                  actions={
+                    isTemplate ? (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            handleOpenCloneDialog(pl)
+                            setSelectedPipeline(null)
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add to my pipelines
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleTriggerPipeline(pl)}
+                          disabled={triggeringRun}
+                        >
+                          <Play className="h-4 w-4" />
+                          Run now
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => handleTriggerPipeline(pl)}
+                          disabled={triggeringRun || !pl.is_active}
+                        >
+                          <Play className="h-4 w-4" />
+                          Run now
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={editPipeline}
+                          disabled={loadingEdit}
+                        >
+                          {loadingEdit ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Pencil className="h-4 w-4" />
+                          )}
+                          Edit
+                        </Button>
+                      </>
+                    )
+                  }
+                  onClose={() => setSelectedPipeline(null)}
+                />
+              }
+            >
+              <div className="space-y-5">
+                {isTemplate && (
+                  <DetailCallout tone="info" icon={Cloud} title="Read-only system template">
+                    Use Add to my pipelines to create your own editable copy.
+                  </DetailCallout>
+                )}
+
+                <DetailSections>
+                  {pl.description && (
+                    <DetailSection title="Description">
+                      <p className="text-sm text-muted-foreground">{pl.description}</p>
+                    </DetailSection>
+                  )}
+
+                  <DetailSection
+                    title="Steps"
+                    count={loadingDetail ? undefined : (pl.steps?.length ?? 0)}
+                  >
+                    {loadingDetail ? (
+                      <div className="space-y-1.5" aria-hidden>
+                        <Skeleton className="h-11 w-full" />
+                        <Skeleton className="h-11 w-full" />
+                      </div>
+                    ) : pl.steps && pl.steps.length > 0 ? (
+                      <ol className="divide-y rounded-lg border">
+                        {pl.steps.map((step, idx) => (
+                          <li key={step.id} className="flex items-center gap-2 px-3 py-2">
+                            <span className="w-5 text-xs text-muted-foreground tabular-nums">
+                              {idx + 1}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm font-medium break-words">
+                                {step.name}
+                              </span>
+                              {step.tool && (
+                                <span className="text-xs text-muted-foreground">{step.tool}</span>
+                              )}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No steps configured.
+                        {!isTemplate && (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 ps-1"
+                            onClick={editPipeline}
+                          >
+                            Add steps
+                          </Button>
+                        )}
                       </p>
                     )}
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 mt-3">
-                  {selectedPipeline.is_system_template ? (
-                    <Badge variant="secondary" className="text-xs">
-                      <Cloud className="me-1 h-3 w-3" />
-                      System template
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant={selectedPipeline.is_active ? 'default' : 'secondary'}
-                      className="text-xs"
-                    >
-                      {selectedPipeline.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
+                  </DetailSection>
+
+                  <DetailSection title="Settings" icon={Settings}>
+                    <DetailFieldGrid>
+                      <DetailField label="Max parallel">
+                        {pl.settings?.max_parallel_steps || 3} steps
+                      </DetailField>
+                      <DetailField label="Timeout">
+                        {Math.round((pl.settings?.timeout_seconds || 3600) / 60)} min
+                      </DetailField>
+                      <DetailField label="Sensor">
+                        <span className="inline-flex items-center gap-1">
+                          {pref === 'platform' ? (
+                            <Cloud className="h-3.5 w-3.5 text-muted-foreground" />
+                          ) : pref === 'tenant' ? (
+                            <Server className="h-3.5 w-3.5 text-muted-foreground" />
+                          ) : null}
+                          {PIPELINE_SENSOR_PREFERENCE_LABELS[pref]}
+                        </span>
+                      </DetailField>
+                    </DetailFieldGrid>
+                  </DetailSection>
+
+                  {pl.tags && pl.tags.length > 0 && (
+                    <DetailSection title="Tags" count={pl.tags.length}>
+                      <div className="flex flex-wrap gap-1.5">
+                        {pl.tags.map((tag, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </DetailSection>
                   )}
-                  <Badge variant="secondary" className="text-xs">
-                    v{selectedPipeline.version}
-                  </Badge>
-                </div>
-                {selectedPipeline.is_system_template && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    This is a read-only system template. Use &quot;Add to my pipelines&quot; to
-                    create your own editable copy.
-                  </p>
-                )}
+                </DetailSections>
               </div>
-
-              {/* Content - scrollable */}
-              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-                {/* Quick Stats */}
-                <div className="flex items-center gap-4 text-sm">
-                  <div className="flex items-center gap-1.5">
-                    <Zap className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Trigger:</span>
-                    <span className="font-medium">
-                      {selectedPipeline.triggers.length > 0
-                        ? selectedPipeline.triggers
-                            .map((t) => PIPELINE_TRIGGER_LABELS[t.type])
-                            .join(', ')
-                        : 'Manual'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Steps Section */}
-                {loadingDetail ? (
-                  <div className="space-y-2">
-                    <span className="text-sm font-medium">Steps</span>
-                    <div className="space-y-1.5">
-                      <Skeleton className="h-12 w-full" />
-                      <Skeleton className="h-12 w-full" />
-                    </div>
-                  </div>
-                ) : selectedPipeline.steps && selectedPipeline.steps.length > 0 ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">
-                        Steps ({selectedPipeline.steps.length})
-                      </span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {selectedPipeline.steps.map((step, idx) => (
-                        <div
-                          key={step.id}
-                          className="flex items-center gap-2 p-2.5 rounded-md bg-muted/50"
-                        >
-                          <div className="flex items-center justify-center h-5 w-5 rounded-full bg-primary/10 text-primary text-xs font-medium">
-                            {idx + 1}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium truncate block">{step.name}</span>
-                            {step.tool && (
-                              <span className="text-xs text-muted-foreground">{step.tool}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-md bg-muted/50 p-4 text-center">
-                    <p className="text-sm text-muted-foreground">No steps configured</p>
-                    {!selectedPipeline.is_system_template && (
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="mt-1 h-auto p-0"
-                        onClick={() => {
-                          handleOpenEditForm(selectedPipeline)
-                          setSelectedPipeline(null)
-                        }}
-                      >
-                        Add steps →
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {/* Settings */}
-                <div className="rounded-md border p-3 space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Max parallel</span>
-                    <span className="font-medium">
-                      {selectedPipeline.settings?.max_parallel_steps || 3} steps
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Timeout</span>
-                    <span className="font-medium">
-                      {Math.round((selectedPipeline.settings?.timeout_seconds || 3600) / 60)} min
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Sensor</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {selectedPipeline.settings?.sensor_preference === 'platform' ? (
-                        <Cloud className="me-1 h-3 w-3" />
-                      ) : selectedPipeline.settings?.sensor_preference === 'tenant' ? (
-                        <Server className="me-1 h-3 w-3" />
-                      ) : (
-                        <Settings className="me-1 h-3 w-3" />
-                      )}
-                      {
-                        PIPELINE_SENSOR_PREFERENCE_LABELS[
-                          selectedPipeline.settings?.sensor_preference || 'auto'
-                        ]
-                      }
-                    </Badge>
-                  </div>
-                </div>
-
-                {/* Tags */}
-                {selectedPipeline.tags && selectedPipeline.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {selectedPipeline.tags.map((tag, idx) => (
-                      <Badge key={idx} variant="outline" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Footer Actions */}
-              <div className="px-6 py-4 border-t bg-muted/30 flex gap-2">
-                {selectedPipeline.is_system_template ? (
-                  <>
-                    {/* System Template: Show "Add to My Pipelines" as primary action */}
-                    <Button
-                      className="flex-1"
-                      onClick={() => {
-                        handleOpenCloneDialog(selectedPipeline)
-                        setSelectedPipeline(null)
-                      }}
-                    >
-                      <Plus className="me-2 h-4 w-4" />
-                      Add to my pipelines
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleTriggerPipeline(selectedPipeline)}
-                      disabled={triggeringRun}
-                      aria-label="Run now"
-                      title="Run now"
-                    >
-                      <Play className="h-4 w-4" />
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    {/* Tenant Pipeline: Show Run and Edit */}
-                    <Button
-                      className="flex-1"
-                      onClick={() => handleTriggerPipeline(selectedPipeline)}
-                      disabled={triggeringRun || !selectedPipeline.is_active}
-                    >
-                      <Play className="me-2 h-4 w-4" />
-                      Run now
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        handleOpenEditForm(selectedPipeline)
-                        setSelectedPipeline(null)
-                      }}
-                      disabled={loadingEdit}
-                    >
-                      {loadingEdit ? (
-                        <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Pencil className="me-2 h-4 w-4" />
-                      )}
-                      Edit
-                    </Button>
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+            </DetailSheet>
+          )
+        })()}
 
       {/* Clone Template Dialog */}
       <Dialog open={cloneDialogOpen} onOpenChange={handleCloseCloneDialog}>

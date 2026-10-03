@@ -7,8 +7,18 @@ package tenant
 // to put a person of its choosing into one: that would let it read the
 // organization's data through an account it controls. So the console may
 // create exactly one kind of organization user: the FIRST owner of an
-// organization that has no active owner. After that, the owner and its
+// organization that has no owner. An owner who is suspended still counts: the
+// organization and its data are theirs. After that, the owner and its
 // administrators add people themselves.
+//
+// Owner recovery is the one exception: when every owner is suspended (so
+// nobody can manage the organization), a super admin may create a new owner
+// with an explicit recovery request. It is refused while any owner is active,
+// written to the organization's audit log at critical severity (and to the
+// platform admin audit log by the route), and its set-password link goes by
+// email only: it is never returned, so the administrator cannot take over an
+// organization that has data. An organization that cannot send email cannot
+// be recovered this way.
 //
 // The owner's one-time set-password link:
 //   - is emailed when the organization can send email (tenant or system
@@ -38,9 +48,17 @@ import (
 // FirstOwnerStore checks for and creates an organization's first owner
 // atomically. Implemented by the postgres tenant repository.
 type FirstOwnerStore interface {
-	HasActiveOwner(ctx context.Context, tenantID shared.ID) (bool, error)
-	CreateFirstOwnerMembership(ctx context.Context, m *tenantdom.Membership) error
+	OwnerPresence(ctx context.Context, tenantID shared.ID) (tenantdom.OwnerPresence, error)
+	// CreateFirstOwnerMembership inserts the owner membership under a lock,
+	// returning tenantdom.ErrOrganizationHasOwner when an owner exists (with
+	// recovery: when an active owner exists).
+	CreateFirstOwnerMembership(ctx context.Context, m *tenantdom.Membership, recovery bool) error
 }
+
+// ErrOwnerRecoveryNeedsEmail is returned when an owner recovery is requested
+// for an organization that cannot send email: the recovery link is never
+// handed to the administrator.
+var ErrOwnerRecoveryNeedsEmail = fmt.Errorf("%w: owner recovery sends the set-password link by email only, and this organization cannot send email; configure SMTP first", shared.ErrValidation)
 
 func (s *UserProvisioningService) firstOwnerStore() (FirstOwnerStore, error) {
 	store, ok := s.tenants.(FirstOwnerStore)
@@ -51,11 +69,24 @@ func (s *UserProvisioningService) firstOwnerStore() (FirstOwnerStore, error) {
 }
 
 // CreateFirstOwner creates a password-less account for email and makes it the
-// owner of an organization that has no active owner. It returns
+// owner of an organization that has no owner, active or suspended. It returns
 // tenantdom.ErrOrganizationHasOwner when the organization already has one,
 // ErrAccountExists when the email already has an account, and
 // ErrEmailDomainNotAllowed when the organization restricts email domains.
 func (s *UserProvisioningService) CreateFirstOwner(ctx context.Context, tenantIDStr, email, name string, actx auditapp.AuditContext) (*ProvisionedUser, error) {
+	return s.createOwner(ctx, tenantIDStr, email, name, actx, false)
+}
+
+// RecoverOwner creates a new owner for an organization whose owners are all
+// suspended. The caller must have checked that the actor is a super admin.
+// It returns tenantdom.ErrOrganizationHasOwner while any owner is active, and
+// ErrOwnerRecoveryNeedsEmail when the organization cannot send email; the
+// set-password link is emailed and never returned.
+func (s *UserProvisioningService) RecoverOwner(ctx context.Context, tenantIDStr, email, name string, actx auditapp.AuditContext) (*ProvisionedUser, error) {
+	return s.createOwner(ctx, tenantIDStr, email, name, actx, true)
+}
+
+func (s *UserProvisioningService) createOwner(ctx context.Context, tenantIDStr, email, name string, actx auditapp.AuditContext, recovery bool) (*ProvisionedUser, error) {
 	store, err := s.firstOwnerStore()
 	if err != nil {
 		return nil, err
@@ -74,12 +105,15 @@ func (s *UserProvisioningService) CreateFirstOwner(ctx context.Context, tenantID
 	}
 	// Refuse early, before anything is created, when an owner exists. The
 	// insert below checks again under a lock.
-	hasOwner, err := store.HasActiveOwner(ctx, tenantID)
+	presence, err := store.OwnerPresence(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if hasOwner {
+	if presence.BlocksBootstrap(recovery) {
 		return nil, tenantdom.ErrOrganizationHasOwner
+	}
+	if recovery && (s.mailer == nil || !s.mailer.CanDeliverTo(ctx, tenantID.String())) {
+		return nil, ErrOwnerRecoveryNeedsEmail
 	}
 	if !t.TypedSettings().Security.EmailDomainAllowed(email) {
 		return nil, ErrEmailDomainNotAllowed
@@ -91,18 +125,62 @@ func (s *UserProvisioningService) CreateFirstOwner(ctx context.Context, tenantID
 	}
 	membership, err := tenantdom.NewOwnerMembership(u.ID(), tenantID)
 	if err == nil {
-		err = store.CreateFirstOwnerMembership(ctx, membership)
+		err = store.CreateFirstOwnerMembership(ctx, membership, recovery)
 	}
 	if err != nil {
 		s.discardAccount(ctx, u.ID())
 		return nil, err
 	}
 
-	result, err := s.issueFirstOwnerLink(ctx, t, u, actx, "Owner account created for %s by a platform administrator")
+	var result *ProvisionedUser
+	if recovery {
+		result, err = s.issueRecoveryOwnerLink(ctx, t, u, actx, presence)
+	} else {
+		result, err = s.issueFirstOwnerLink(ctx, t, u, actx, "Owner account created for %s by a platform administrator")
+	}
 	if err != nil {
 		return nil, err
 	}
 	result.Membership = membership
+	return result, nil
+}
+
+// issueRecoveryOwnerLink emails the recovered owner's set-password link (never
+// returning it, even when the send fails: the owner then uses forgot-password)
+// and writes the critical tenant audit event.
+func (s *UserProvisioningService) issueRecoveryOwnerLink(ctx context.Context, t *tenantdom.Tenant, u *userdom.User, actx auditapp.AuditContext, presence tenantdom.OwnerPresence) (*ProvisionedUser, error) {
+	token, err := password.GenerateResetToken()
+	if err != nil {
+		return nil, fmt.Errorf("generate setup token: %w", err)
+	}
+	expiresAt := s.now().Add(AccountSetupTTL)
+	u.SetPasswordResetToken(crypto.HashToken(token), expiresAt)
+	if err := s.users.Update(ctx, u); err != nil {
+		return nil, fmt.Errorf("store setup token: %w", err)
+	}
+
+	result := &ProvisionedUser{User: u, SetupExpiresAt: expiresAt}
+	tenantID := t.ID().String()
+	if s.mailer == nil {
+		result.EmailFailed = true
+	} else if err := s.mailer.SendAccountSetupEmail(ctx, tenantID, u.Email(), u.Name(), t.Name(), token, AccountSetupTTL); err != nil {
+		s.logger.Error("owner recovery setup email failed; link not returned (owner can use forgot-password)",
+			"tenant_id", tenantID, "user_id", u.ID().String())
+		result.EmailFailed = true
+	} else {
+		result.EmailSent = true
+	}
+
+	actx.TenantID = tenantID
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, u.ID().String()).
+		WithResourceName(u.Email()).
+		WithMessage(fmt.Sprintf("Owner recovery: owner account created for %s by a platform administrator because every owner of the organization is suspended", u.Email())).
+		WithMetadata("role", tenantdom.RoleOwner.String()).
+		WithMetadata("owner_recovery", true).
+		WithMetadata("suspended_owners_present", presence.AllSuspended()).
+		WithMetadata("setup_link_emailed", result.EmailSent).
+		WithMetadata("setup_link_returned", false).
+		WithSeverity(audit.SeverityCritical))
 	return result, nil
 }
 

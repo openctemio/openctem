@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -59,6 +60,24 @@ func (d *recordingDispatcher) DispatchTenableScan(_ context.Context, in Dispatch
 type recordingStore struct {
 	records []DispatchRecord
 	err     error
+	// lose lists asset ids another replica has already claimed.
+	lose     map[string]bool
+	released [][]Candidate
+}
+
+func (s *recordingStore) ClaimBatch(_ context.Context, _ shared.ID, batch []Candidate, _ time.Time) ([]string, error) {
+	out := make([]string, 0, len(batch))
+	for _, c := range batch {
+		if !s.lose[c.AssetID] {
+			out = append(out, c.AssetID)
+		}
+	}
+	return out, nil
+}
+
+func (s *recordingStore) ReleaseBatch(_ context.Context, _ shared.ID, batch []Candidate, _ time.Time) error {
+	s.released = append(s.released, batch)
+	return nil
 }
 
 func (s *recordingStore) MarkDispatched(_ context.Context, rec DispatchRecord) error {
@@ -355,5 +374,74 @@ func TestScheduler_DispatchErrorSurfacedPerTenant(t *testing.T) {
 	}
 	if len(store.records) != 0 {
 		t.Fatal("cursor must not advance when dispatch failed")
+	}
+}
+
+func claimTestSource(tenant shared.ID) *fakeSource {
+	return &fakeSource{
+		configs: []CoverageConfig{{
+			TenantID:     tenant,
+			Engine:       "nessus_pro",
+			Policy:       LicensePolicy{Mode: LicenseUnlimited},
+			DefaultBatch: 3,
+		}},
+		candidates: map[string][]Candidate{
+			tenant.String(): {
+				{AssetID: "a1", Target: "10.0.0.1", Criticality: "high"},
+				{AssetID: "a2", Target: "10.0.0.2", Criticality: "critical"},
+				{AssetID: "a3", Target: "10.0.0.3", Criticality: "low"},
+			},
+		},
+	}
+}
+
+// Assets another replica already claimed are neither dispatched nor recorded.
+func TestScheduler_DispatchesOnlyClaimedAssets(t *testing.T) {
+	tenant := shared.NewID()
+	disp := &recordingDispatcher{}
+	store := &recordingStore{lose: map[string]bool{"a2": true}}
+	if _, err := NewScheduler(claimTestSource(tenant), disp, store, nil).RunOnce(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(disp.calls) != 1 {
+		t.Fatalf("dispatcher called %d times, want 1", len(disp.calls))
+	}
+	for _, target := range disp.calls[0].Targets {
+		if target == "10.0.0.2" {
+			t.Fatalf("dispatched an asset another replica claimed: %v", disp.calls[0].Targets)
+		}
+	}
+	if len(store.records) != 1 || len(store.records[0].AssetIDs) != 2 {
+		t.Fatalf("recorded %+v, want the 2 claimed assets", store.records)
+	}
+}
+
+// When another replica claimed the whole batch, nothing is dispatched.
+func TestScheduler_WholeBatchClaimedElsewhere(t *testing.T) {
+	tenant := shared.NewID()
+	disp := &recordingDispatcher{}
+	store := &recordingStore{lose: map[string]bool{"a1": true, "a2": true, "a3": true}}
+	n, err := NewScheduler(claimTestSource(tenant), disp, store, nil).RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if n != 0 || len(disp.calls) != 0 || len(store.records) != 0 {
+		t.Fatalf("dispatched=%d calls=%d records=%d, want all 0", n, len(disp.calls), len(store.records))
+	}
+}
+
+// A failed dispatch releases the claim so the assets are picked next cycle.
+func TestScheduler_FailedDispatchReleasesClaim(t *testing.T) {
+	tenant := shared.NewID()
+	disp := &recordingDispatcher{err: errors.New("no runner")}
+	store := &recordingStore{}
+	if _, err := NewScheduler(claimTestSource(tenant), disp, store, nil).RunOnce(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(store.released) != 1 || len(store.released[0]) != 3 {
+		t.Fatalf("released %+v, want the 3 claimed assets", store.released)
+	}
+	if len(store.records) != 0 {
+		t.Fatalf("recorded a dispatch that failed: %+v", store.records)
 	}
 }

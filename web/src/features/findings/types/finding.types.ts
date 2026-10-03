@@ -358,6 +358,41 @@ export interface AffectedAsset {
   name: string
   url?: string
   criticality?: Severity
+  /** public | restricted | private | isolated | unknown (detail page only). */
+  exposure?: string
+  isInternetAccessible?: boolean
+}
+
+/** The package an SCA finding is about (detail page only). */
+export interface FindingComponent {
+  name: string
+  version: string
+  ecosystem: string
+  purl?: string
+  license?: string
+  /** The version to upgrade to, picked by the API. */
+  fixedIn?: string
+  /** direct | transitive | …; undefined when unknown. */
+  dependencyType?: string
+  manifestFile?: string
+}
+
+/** The CVE record the finding is an instance of (detail page only). */
+export interface FindingAdvisory {
+  cveId: string
+  title?: string
+  description?: string
+  cvss?: number
+  cvssVector?: string
+  epssScore?: number
+  /** 0–100 */
+  epssPercentile?: number
+  exploitAvailable: boolean
+  exploitMaturity?: string
+  kev?: { dateAdded: string; dueDate: string; ransomwareUse?: string; isPastDue: boolean }
+  fixedVersions: string[]
+  references: { type: string; url: string }[]
+  publishedAt?: string
 }
 
 // ============================================
@@ -714,6 +749,7 @@ export interface Finding {
   priorityClassOverride?: boolean
   isReachable?: boolean
   reachableFromCount?: number
+  isInternetAccessible?: boolean
 
   // Extended: Security Context
   exposureVector?: string // network/local/adjacent/physical
@@ -1043,6 +1079,13 @@ export interface MisconfigurationDetails {
 
 export interface FindingDetail extends Finding {
   activities: Activity[]
+  /** The affected package, for SCA / container findings. */
+  component?: FindingComponent
+  /** The CVE record, when the finding is an instance of one. */
+  advisory?: FindingAdvisory
+  /** The raw finding message (the title falls back to it). */
+  message?: string
+  commentsCount?: number
   similarFindings?: RelatedFinding[]
   linkedFindings?: RelatedFinding[]
   sameCveFindings?: RelatedFinding[]

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -248,7 +249,11 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 
 	// Schedule first runnable steps
-	if err := s.scheduleWorkflowSteps(ctx, run, steps); err != nil {
+	if err := s.scheduleWorkflowSteps(ctx, run, steps, template.Settings.MaxParallelSteps); err != nil {
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code == codeWorkflowCannotStart {
+			return nil, err // the run is already failed with the reason
+		}
 		s.logger.Warn("failed to schedule workflow steps", "error", err)
 	}
 
@@ -413,17 +418,72 @@ func (s *Service) createSingleScanStepRun(ctx context.Context, run *pipeline.Run
 	return stepRun
 }
 
-// scheduleWorkflowSteps schedules runnable workflow steps.
-func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *pipeline.Run, steps []*pipeline.Step) error {
-	for _, step := range steps {
-		if step.StepOrder == 1 {
-			// Queue first step
-			if err := s.queueWorkflowStep(ctx, run, step); err != nil {
-				return err
-			}
+// scheduleWorkflowSteps starts a new workflow run: every step without
+// dependencies whose condition holds is queued, up to the template's parallel
+// limit (the pipeline service starts the rest as dependencies succeed).
+//
+// It used to queue only steps with step_order == 1: a workflow whose
+// independent steps had other orders ran them one after another, a workflow
+// numbered from 0 or 2 never started at all (and hung until the run timeout),
+// and step conditions were ignored for the first step.
+func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *pipeline.Run, steps []*pipeline.Step, maxParallel int) error {
+	if maxParallel <= 0 {
+		maxParallel = 3
+	}
+	queued, roots := 0, 0
+	for _, step := range steps { // sorted by step_order
+		if len(step.DependsOn) > 0 {
+			continue
 		}
+		roots++
+		if !step.ConditionMet(run) {
+			s.skipWorkflowStep(ctx, run, step, "Condition not met")
+			continue
+		}
+		if queued >= maxParallel {
+			continue // started by the pipeline service as slots free up
+		}
+		if err := s.queueWorkflowStep(ctx, run, step); err != nil {
+			return err
+		}
+		queued++
+	}
+	if queued == 0 {
+		msg := "workflow has no step without dependencies; nothing can start"
+		if roots > 0 {
+			msg = "no step started: the condition of every first step was false"
+		}
+		run.Fail(msg)
+		if err := s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusFailed, msg); err != nil {
+			s.logger.Warn("failed to fail a run that cannot start", "run_id", run.ID.String(), "error", err)
+		}
+		return shared.NewDomainError(codeWorkflowCannotStart, msg, shared.ErrValidation)
 	}
 	return nil
+}
+
+// codeWorkflowCannotStart: a workflow run in which no step can start.
+const codeWorkflowCannotStart = "WORKFLOW_CANNOT_START"
+
+// skipWorkflowStep marks a step run skipped at trigger time.
+func (s *Service) skipWorkflowStep(ctx context.Context, run *pipeline.Run, step *pipeline.Step, reason string) {
+	stepRuns, err := s.stepRunRepo.GetByPipelineRunID(ctx, run.ID)
+	if err != nil {
+		s.logger.Warn("failed to load step runs", "run_id", run.ID.String(), "error", err)
+		return
+	}
+	for _, sr := range stepRuns {
+		if sr.StepID == step.ID {
+			sr.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, sr); err != nil {
+				s.logger.Warn("failed to skip step run", "step_key", step.StepKey, "error", err)
+			}
+			if inRun := run.GetStepRun(step.StepKey); inRun != nil {
+				inRun.Skip(reason)
+			}
+			return
+		}
+	}
 }
 
 // queueWorkflowStep queues a workflow step for execution.
