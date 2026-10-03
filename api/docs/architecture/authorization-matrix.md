@@ -1168,6 +1168,24 @@ Tenable.sc's RBAC.
     |------|---------|
     | member | `scans:templates:write`, `scans:sources:write` |
 
+11. **Scan commands are owner/admin only and scoped (RFC-040 Q5 (c), owner
+    decision 2026-10-03).** `POST /api/v1/commands` with `type: "scan"`
+    makes a sensor scan whatever the payload names, so it is refused (403)
+    for anyone but owners and administrators, although members keep
+    `commands:write` for the other command types. For an administrator the
+    payload's `target`/`targets` go through the checks of a scan trigger
+    (`scan.Service.GateCommandPayload`): the target validator with the
+    private-range policy (internal addresses only inside a scan zone), active
+    scope exclusions (a failed lookup refuses, fail closed), and zone routing
+    (all targets in one zone, nothing uncovered, a pinned sensor assigned to
+    that zone; the command is stamped with the zone). Any refused target
+    refuses the whole command (400) instead of being dropped, targets nested
+    in `config`, `scanner_config`, `context` or `step_config` are refused,
+    and the stored payload carries the checked list. Every attempt is
+    audited as `command.created`: `success` with sensor, zone and targets, or
+    `denied` with the reason. Without the gate wired, scan commands answer
+    500 (fail closed).
+
 ### Known, deliberate gaps (do not "fix" without a decision)
 
 - **Two admin oracles.** Permission-based `IsAdmin` (from the token) and live-DB
