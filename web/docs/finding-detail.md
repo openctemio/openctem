@@ -19,7 +19,8 @@ or switching tabs:
 | Who owns it, and by when?          | Properties rail: status, severity, assignee, SLA due date with days left or overdue |
 
 Everything else (description, code, request and response, identifiers, raw scanner
-metadata, activity) is one tab or one disclosure away.
+metadata) is one tab or one disclosure away; activity and comments are one click away
+in the activity panel.
 
 ## What the best tools do
 
@@ -77,11 +78,15 @@ Studied October 2026 from public docs:
 4. **The properties rail is the only place for state.** Status, severity, priority,
    assignee, SLA, asset, source, first and last seen, tickets, tags and ID each
    appear once. Rows without a value are hidden.
-5. **Activity is a tab, not a permanent column.** The old layout gave a third of the
-   width to a feed with one entry.
+5. **Activity is a panel, not a tab and not a permanent column.** The old layout
+   gave a third of the width to a feed with one entry; the Activity tab that
+   replaced it grew into a long scroll once people commented. The rail now ends
+   with an "Activity · N comments" summary that opens the shared ActivityPanel
+   (`docs/ui/activity-panel.md`); `?tab=activity` links open it too.
 6. **The page and the drawer share their parts,** so they cannot disagree:
    `toFindingDetail`, `useFindingTriage` (including the approval rule),
-   `FindingWhyItMatters`, `FindingFixCard` and `FindingProperties`.
+   `FindingWhyItMatters`, `FindingFixCard`, `FindingProperties` and
+   `FindingActivity` (the activity summary and panel, also in the pentest sheet).
 7. **No extra round trips.** `GET /findings/{id}` embeds the CVE record, the
    package and the asset context (api PR "the finding detail embeds its CVE record
    and affected package"). The priority score breakdown is fetched only when "How
@@ -113,9 +118,9 @@ cross-spawn ReDoS vulnerability                   │ Severity  [High (7.5) ▾]
 │ Upgrade cross-spawn 7.0.3 → 7.0.5             │      sits above "Why it matters",
 │ Transitive dependency · in package.json · npm │      with asset/dates folded)
 │ "overrides": { "cross-spawn": "^7.0.5" }  ⧉   │
-│ Also fixed in 6.0.6 (other release lines)     │
-└──────────────────────────────────────────────┘
-Overview | Evidence | Remediation | Attack path | Activity (n) | Related
+│ Also fixed in 6.0.6 (other release lines)     │   ┌ 💬 Activity · 3 comments ●  ┐
+└──────────────────────────────────────────────┘   │ Jamie: patched in 7.0.5 · 2h│
+Overview | Evidence | Remediation | Attack path | Related └─────────────────────────────┘
 ```
 
 The tab is kept in the URL (`?tab=`). Attack path appears only when the finding has

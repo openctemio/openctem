@@ -438,10 +438,24 @@ export interface ApiFindingComment {
   new_status?: FindingStatus
   created_at: string
   updated_at?: string
+  /** Tenant-only note: never sent to an integration. */
+  is_internal?: boolean
+  /** Edited after it was posted. */
+  edited?: boolean
+  /** Aggregated reactions, ordered by first use. */
+  reactions?: ApiCommentReaction[]
+}
+
+export interface ApiCommentReaction {
+  emoji: string
+  count: number
+  reacted_by_me: boolean
+  sample_users?: { id?: string; name: string }[]
 }
 
 export interface AddCommentInput {
   content: string
+  is_internal?: boolean
 }
 
 // ============================================

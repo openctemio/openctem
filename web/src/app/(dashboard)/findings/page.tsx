@@ -112,7 +112,7 @@ import type { Severity } from '@/features/shared/types'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { post, csrfFetch } from '@/lib/api/client'
+import { csrfFetch } from '@/lib/api/client'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
@@ -881,15 +881,6 @@ function FindingsContent() {
     mutateFindings()
     mutateStats()
   }, [mutateFindings, mutateStats])
-
-  const handleAddComment = async (findingId: string, comment: string) => {
-    try {
-      await post(`/api/v1/findings/${findingId}/comments`, { content: comment })
-      toast.success('Comment added')
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to add comment'))
-    }
-  }
 
   const handleDeleteClick = (finding: Finding) => {
     setFindingToDelete(finding)
@@ -2024,7 +2015,6 @@ function FindingsContent() {
         onStatusChange={refreshAfterDrawerChange}
         onSeverityChange={refreshAfterDrawerChange}
         onAssigneeChange={refreshAfterDrawerChange}
-        onAddComment={handleAddComment}
       />
 
       {/* Create Finding Dialog */}
