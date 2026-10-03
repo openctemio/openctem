@@ -40,8 +40,13 @@ type Repository interface {
 	// GetStats returns aggregated statistics for asset groups.
 	GetStats(ctx context.Context, tenantID shared.ID) (*Stats, error)
 
-	// AddAssets adds assets to a group.
-	AddAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) error
+	// AddAssets adds assets to a group. Only assets of the group's own
+	// tenant are written; it returns how many of assetIDs are such assets.
+	AddAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) (int, error)
+
+	// FilterTenantAssetIDs returns the subset of assetIDs that are assets of
+	// tenantID.
+	FilterTenantAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error)
 
 	// RemoveAssets removes assets from a group.
 	RemoveAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) error
