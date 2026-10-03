@@ -138,8 +138,9 @@ func (s *ScanSessionService) UpdateScanSession(ctx context.Context, agt *sensor.
 		return err
 	}
 
-	// Verify sensor owns this session
-	if session.SensorID != nil && !session.SensorID.Equals(agt.ID) {
+	// Verify the sensor owns this session. A session no sensor registered
+	// (created another way) is not any sensor's to update (RFC-040 §5.3).
+	if session.SensorID == nil || !session.SensorID.Equals(agt.ID) {
 		return shared.NewDomainError("FORBIDDEN", "scan session belongs to different sensor", shared.ErrForbidden)
 	}
 

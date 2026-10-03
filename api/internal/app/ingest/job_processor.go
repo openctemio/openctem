@@ -119,7 +119,11 @@ func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte,
 		return json.Marshal(dropped)
 	}
 
-	output, err := p.service.Ingest(ctx, agt, Input{Report: report})
+	// The accept side (IngestHandler.enqueueAsync) ran the unsolicited gate
+	// before queuing; a v1 report bound to a command is never queued (it is
+	// processed synchronously), so a queued report applies with the
+	// unsolicited limits.
+	output, err := p.service.Ingest(ctx, agt, Input{Report: report, Options: Options{Admitted: true, Route: "ctis"}})
 	if err != nil {
 		return nil, err
 	}

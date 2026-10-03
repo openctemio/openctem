@@ -214,7 +214,7 @@ func (m *mockFindingRepository) ExistsByFingerprint(_ context.Context, _ shared.
 func (m *mockFindingRepository) CheckFingerprintsExist(_ context.Context, _ shared.ID, _ []string) (map[string]bool, error) {
 	return nil, nil
 }
-func (m *mockFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _ string) (int64, error) {
+func (m *mockFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _, _ string) (int64, error) {
 	return 0, nil
 }
 func (m *mockFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Context, _ shared.ID, _ map[string]string) (int64, error) {

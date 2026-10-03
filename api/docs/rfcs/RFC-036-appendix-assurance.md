@@ -34,7 +34,7 @@ real third-party target).
 | U9 | Weak email posture (no SPF, `+all`/`?all`, too many SPF lookups, DMARC missing / `p=none` / test mode / no `rua`, MTA-STS/TLS-RPT missing) on a tenant domain is flagged; correct domains are not | P1 | `TestCheckEmail` (golden fixtures incl. a correct mail domain and a correct parked domain), `TestMonitorEmail_FlagsWeakAndResolvesFixed`; scratch e2e. DKIM is *not* checked (no selector brute force) | tested |
 | U9a | The daily light checks of O9 run for every tenant with the attack-surface module once enabled (`EASM_DNS_CHECKS_ENABLED`, off by default until the scans P1 work lands) | P1 | `TestEASMDNSController_Reconcile`; scratch e2e | tested |
 | U10 | Every discovered asset says how and why it is attributed to the tenant (seed, technique, evidence, confidence) | P1 | *planned* | planned |
-| U11 | The EASM overview shows the surface, what is new since the last cycle and the top risks, with numbers equal to the list counts | P1 | *planned* | planned |
+| U11 | The EASM overview shows the surface, what is new since the last cycle and the top risks, with numbers equal to the list counts | P1 | API: `TestEASMSummaryRepository`, `TestSummary_Build`; scratch e2e (summary subdomain/domain/exposure counts equal `GET /assets?types=` and `GET /exposures` totals). Web page: *planned* | API tested |
 
 ## 2. Edge cases
 
@@ -97,6 +97,8 @@ and the platform itself against hostile data from external sources.
 | T-22 | Resolver flooding / one tenant starving others | One limiter for all tenants (`EASM_DNS_QPS`), per-query timeout, per-tenant cap and budget | `TestQuery_RateLimited`, `TestMonitorTenant_LockedAndBudget` |
 | T-23 | Cross-tenant: one tenant's DNS state or resolution touches another's exposures | All queries and updates carry `tenant_id`; state written only for the tenant's own asset | `TestEASMDNSRepository`; scratch e2e (tenant B isolated) |
 | T-24 | Licence of the vendored fingerprint list | CC BY 4.0, attribution and source commit in `fingerprints/NOTICE.md` | `TestFingerprints_Load` (structure) |
+| T-12 | The overview leaks assets outside a member's data scope, or another tenant's | Every asset-bound count and the top-risk list are narrowed to `user_accessible_assets` for a scoped member (unassigned exposures are hidden from them); all queries are tenant-scoped; the route sits behind the `attack_surface` module | `TestEASMSummaryRepository` (scoped member sees only its asset; other tenant's rows never counted); scratch e2e (other tenant's summary is 0) |
+| E-36 | An asset a person marked as not ours (`rejected`) still has open exposures | Counted under attribution "rejected" only: excluded from the surface counts, new-asset windows, open exposures and top risks of the overview | `TestEASMSummaryRepository` |
 | T-11 | Privilege: a read-only user changes attribution | `PUT` requires `assets:write` and passes the asset's data scope check | route registration (`assets:write`), `TestAssetAttributionHandler_Decide` (out-of-scope → 404) |
 | T-7 | A tenant disables the attack-surface module but its domains are still sent to third parties | The controller skips tenants with `attack_surface` disabled | existing controller module-guard tests |
 | T-8 | Disclosure of the tenant's domains to third-party sources | Only crt.sh and Cert Spotter (O1 free sources) receive domain names, over HTTPS by default; paid sources need tenant keys (P5). Recorded as a data-source decision in RFC-036 §12 | documented; no test |

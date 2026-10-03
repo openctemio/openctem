@@ -177,6 +177,19 @@ through the normal ingest path, so there is still one asset-creation path (the
 concern RFC-019 §6 raised). Assets created by tenant-triggered scans keep the
 current behaviour and get evidence stamped on them.
 
+## 4a. Overview API (built, P1)
+
+`GET /api/v1/easm/summary` (assets:read, `attack_surface` module, data scope)
+answers the overview in one call: surface assets by type (`domain`,
+`subdomain`, `ip_address`, `certificate`) and internet-facing services;
+attribution counts (legacy assets without a record count as confirmed and are
+also reported separately) with the age of the oldest review item; assets first
+seen in the last 7 and 30 days and since the latest CTEM cycle was activated
+(absent when there is no cycle, never a misleading 0); open external exposures
+by severity and type; the ten most severe open external exposures; and CT
+monitoring freshness (`ct_monitor_state`). Code: `internal/app/easm`,
+`internal/infra/postgres/easm_summary_repository.go`.
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and

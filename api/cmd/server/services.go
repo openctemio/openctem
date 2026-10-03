@@ -66,6 +66,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -1478,6 +1479,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// serial, MAC, SCM repository ID) before name and IP; conflicts go to
 	// the same review queue.
 	s.Ingest.SetIdentityStore(repos.AssetIdentifier, repos.AssetDedup)
+	// Result binding (RFC-040 §5.3): reports name the command they belong
+	// to; reports without one are applied with limits, or quarantined per the
+	// tenant's policy.
+	s.Ingest.SetCommandReader(repos.Command)
+	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)

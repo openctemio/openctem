@@ -104,7 +104,10 @@ type Repositories struct {
 	Command                *postgres.CommandRepository
 	// SensorContentPolicy is the tenant scanner content policy (RFC-031).
 	SensorContentPolicy *postgres.SensorContentPolicyRepository
-	IngestJob           *postgres.IngestJobRepository
+	// SensorResult is the policy and quarantine for sensor results without a
+	// command (RFC-040 §5.3).
+	SensorResult *postgres.SensorResultRepository
+	IngestJob    *postgres.IngestJobRepository
 	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
 	IngestReport *postgres.IngestReportRepository
 
@@ -185,6 +188,7 @@ type Repositories struct {
 	CTMonitorState *postgres.CTMonitorStateRepository
 	Attribution    *postgres.AttributionRepository
 	EASMDNS        *postgres.EASMDNSRepository
+	EASMSummary    *postgres.EASMSummaryRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -335,6 +339,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
 		Command:                postgres.NewCommandRepository(db),
 		SensorContentPolicy:    postgres.NewSensorContentPolicyRepository(db),
+		SensorResult:           postgres.NewSensorResultRepository(db),
 		IngestJob:              postgres.NewIngestJobRepository(db),
 		IngestReport:           postgres.NewIngestReportRepository(db),
 
@@ -411,6 +416,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
+		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

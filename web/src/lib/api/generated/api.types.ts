@@ -11163,6 +11163,63 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/easm/summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * EASM overview
+     * @description The external attack surface in one call: surface assets by type and internet-facing services, attribution (confirmed, awaiting review and the age of the oldest review item, dependency, monitor only, rejected), assets first seen in the last 7/30 days and since the latest CTEM cycle started, open external exposures by severity and type, the top open risks, and how fresh the Certificate-Transparency monitoring is. Narrowed to the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Summary']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/exposures': {
     parameters: {
       query?: never
@@ -25191,6 +25248,326 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensors/quarantined-results': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List quarantined sensor results
+     * @description Reports that named no command, from a sensor whose role may not push results on its own, held for review (newest first). The payload is not included; GET one item for a preview.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description pending, accepted or discarded (default: every status) */
+          status?: string
+          /** @description Only this sensor's reports */
+          sensor_id?: string
+          /** @description Page number */
+          page?: number
+          /** @description Items per page (max 100) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_QuarantinedResultResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/quarantined-results/{qid}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a quarantined sensor report
+     * @description One quarantined report with a preview of its assets and findings (at most 100 of each).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Quarantine item ID */
+          qid: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.QuarantinedResultDetailResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/quarantined-results/{qid}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Accept a quarantined sensor report
+     * @description Apply the report as a person's decision: it may change the existing assets it names and reopen findings, but never auto-resolves anything. Applied once; a second accept or an accept after a discard is 409. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Quarantine item ID */
+          qid: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AcceptQuarantinedResultResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/quarantined-results/{qid}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Discard a quarantined sensor report
+     * @description Drop the report without applying it; its payload is deleted. 409 when it was already reviewed. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Quarantine item ID */
+          qid: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/result-policy': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get the policy for sensor results without a command
+     * @description What happens to a report that names no command (RFC-040 §5.3). Collector and CI runner sensors may always push results on their own; they are applied with limits (no change to existing assets, no reopening of findings a person resolved). For every other role the mode decides: warn applies them with the same limits and audits them, quarantine holds them for review. Tenants created before this policy existed are on warn; new tenants default to quarantine.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorResultPolicyResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update the policy for sensor results without a command
+     * @description Set the mode (warn or quarantine) and whether advisory validation evidence is accepted. Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Policy */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateSensorResultPolicyRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorResultPolicyResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors/stats': {
     parameters: {
       query?: never
@@ -31901,6 +32278,64 @@ export interface components {
       offset_ns?: number
       position?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock': {
+      candidate?: number
+      confirmed?: number
+      dependency?: number
+      legacy?: number
+      monitor_only?: number
+      needs_review?: number
+      rejected?: number
+      review_oldest_since?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock': {
+      by_severity?: {
+        [key: string]: number
+      }
+      by_type?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.TypeCount'][]
+      open?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock': {
+      ct_domains_watched?: number
+      ct_failing?: number
+      ct_never_succeeded?: number
+      ct_oldest_success?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.NewBlock': {
+      cycle_start?: string
+      last_7_days?: number
+      last_30_days?: number
+      since_cycle?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.Risk': {
+      asset_id?: string
+      asset_name?: string
+      id?: string
+      last_seen?: string
+      severity?: string
+      title?: string
+      type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.Summary': {
+      attribution?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock']
+      exposures?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock']
+      generated_at?: string
+      monitoring?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock']
+      new?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.NewBlock']
+      surface?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock']
+      top_risks?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Risk'][]
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock': {
+      by_type?: {
+        [key: string]: number
+      }
+      exposed_services?: number
+      total?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.TypeCount': {
+      count?: number
+      type?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput': {
       /**
        * @description BaseBranchKnown is false when the base branch has no scan history yet
@@ -32881,6 +33316,14 @@ export interface components {
     'internal_infra_http_handler.AWSRoleDataRequest': {
       external_id?: string
       role_arn: string
+    }
+    'internal_infra_http_handler.AcceptQuarantinedResultResponse': {
+      assets_created?: number
+      assets_updated?: number
+      errors?: string[]
+      findings_auto_reopened?: number
+      findings_created?: number
+      findings_updated?: number
     }
     'internal_infra_http_handler.ActivityItem': {
       description?: string
@@ -35252,14 +35695,36 @@ export interface components {
     }
     'internal_infra_http_handler.IngestResponse': {
       assets_created?: number
+      /**
+       * @description AssetsLimited counts existing assets the report matched but was not
+       *     allowed to change, because no command covering them stood behind it.
+       */
+      assets_limited?: number
       assets_updated?: number
+      /**
+       * @description Binding is "command" when the report named a command assigned to this
+       *     sensor (X-OpenCTEM-Command-ID), "unsolicited" otherwise (RFC-040 §5.3).
+       */
+      binding?: string
       cves_created?: number
       cves_updated?: number
       errors?: string[]
       findings_created?: number
       findings_skipped?: number
       findings_updated?: number
+      /**
+       * @description ReopensWithheld counts findings a person had resolved that the report
+       *     saw again but was not allowed to reopen.
+       */
+      reopens_withheld?: number
       scan_id?: string
+      /**
+       * @description UnsolicitedWarned: this sensor's role may not send results without a
+       *     command; the report was applied only because the tenant's policy is
+       *     "warn". Under "quarantine" it is held for review (422
+       *     RESULTS_QUARANTINED).
+       */
+      unsolicited_warned?: boolean
     }
     /** @description Integration details including provider info and status */
     'internal_infra_http_handler.IntegrationResponse': {
@@ -35472,6 +35937,14 @@ export interface components {
     }
     'internal_infra_http_handler.ListResponse-internal_infra_http_handler_IntegrationResponse': {
       data?: components['schemas']['internal_infra_http_handler.IntegrationResponse'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.ListResponse-internal_infra_http_handler_QuarantinedResultResponse': {
+      data?: components['schemas']['internal_infra_http_handler.QuarantinedResultResponse'][]
       links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
       page?: number
       per_page?: number
@@ -35928,6 +36401,80 @@ export interface components {
       counts?: components['schemas']['internal_infra_http_handler.FindingCountsResponse']
       passed?: boolean
       reason?: string
+    }
+    'internal_infra_http_handler.QuarantinePreview': {
+      assets?: components['schemas']['internal_infra_http_handler.QuarantinePreviewAsset'][]
+      assets_omitted?: number
+      findings?: components['schemas']['internal_infra_http_handler.QuarantinePreviewFinding'][]
+      findings_omitted?: number
+    }
+    'internal_infra_http_handler.QuarantinePreviewAsset': {
+      ref?: string
+      type?: string
+      value?: string
+    }
+    'internal_infra_http_handler.QuarantinePreviewFinding': {
+      asset_ref?: string
+      rule_id?: string
+      severity?: string
+      title?: string
+    }
+    'internal_infra_http_handler.QuarantinedResultDetailResponse': {
+      assets_count?: number
+      created_at?: string
+      findings_count?: number
+      id?: string
+      payload_size?: number
+      /**
+       * @description Preview lists the report's assets and findings (at most 100 of each);
+       *     absent once the report was discarded.
+       */
+      preview?: components['schemas']['internal_infra_http_handler.QuarantinePreview']
+      /** @enum {string} */
+      protocol?: 'v1' | 'v2'
+      /** @enum {string} */
+      reason?: 'no_command'
+      report_id?: string
+      /** @description Result is what applying an accepted report did. */
+      result?: {
+        [key: string]: unknown
+      }
+      reviewed_at?: string
+      reviewed_by?: string
+      route?: string
+      segment?: number
+      sensor_id?: string
+      sensor_name?: string
+      sensor_type?: string
+      /** @enum {string} */
+      status?: 'pending' | 'accepted' | 'discarded'
+      tool_name?: string
+    }
+    'internal_infra_http_handler.QuarantinedResultResponse': {
+      assets_count?: number
+      created_at?: string
+      findings_count?: number
+      id?: string
+      payload_size?: number
+      /** @enum {string} */
+      protocol?: 'v1' | 'v2'
+      /** @enum {string} */
+      reason?: 'no_command'
+      report_id?: string
+      /** @description Result is what applying an accepted report did. */
+      result?: {
+        [key: string]: unknown
+      }
+      reviewed_at?: string
+      reviewed_by?: string
+      route?: string
+      segment?: number
+      sensor_id?: string
+      sensor_name?: string
+      sensor_type?: string
+      /** @enum {string} */
+      status?: 'pending' | 'accepted' | 'discarded'
+      tool_name?: string
     }
     'internal_infra_http_handler.ReconIngestRequest': {
       dns_records?: components['schemas']['internal_infra_http_handler.DNSRecordResult'][]
@@ -36942,6 +37489,27 @@ export interface components {
        */
       version_status?: 'latest' | 'update_available' | 'unsupported' | 'unknown'
     }
+    'internal_infra_http_handler.SensorResultPolicyResponse': {
+      /**
+       * @description AllowAdvisoryEvidence accepts validation evidence without the validate
+       *     command assigned to the sensor (recorded as advisory, never changes the
+       *     finding).
+       */
+      allow_advisory_evidence?: boolean
+      /** @description DefaultMode is the mode of a tenant that never set one. */
+      default_mode?: string
+      /**
+       * @description Mode is what happens to a report that names no command from a sensor
+       *     whose role may not push results on its own (every role but collector
+       *     and runner): "warn" applies it with limits and audits it, "quarantine"
+       *     holds it for review.
+       * @enum {string}
+       */
+      mode?: 'warn' | 'quarantine'
+      /** @description UpdatedAt / UpdatedBy are null while the tenant uses the defaults. */
+      updated_at?: string
+      updated_by?: string
+    }
     'internal_infra_http_handler.SensorRevokeRequest': {
       reason?: string
     }
@@ -37690,6 +38258,11 @@ export interface components {
        */
       status?: 'active' | 'disabled' | 'revoked'
       tools?: string[]
+    }
+    'internal_infra_http_handler.UpdateSensorResultPolicyRequest': {
+      allow_advisory_evidence?: boolean
+      /** @enum {string} */
+      mode?: 'warn' | 'quarantine'
     }
     'internal_infra_http_handler.UpdateSeverityRequest': {
       severity: string

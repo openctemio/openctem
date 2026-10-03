@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -196,6 +197,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Direct evidence submissions change a finding only when they cite the
 	// validate command assigned to the submitting sensor; otherwise advisory.
 	validationHandler.SetCommandLookup(repos.Command)
+	// Evidence without a command is refused unless the tenant's sensor result
+	// policy allows advisory evidence (RFC-040 §5.3).
+	validationHandler.SetEvidencePolicy(svc.Ingest)
 
 	// Per-tenant module route gating (module-coupling plan Phase 1). Fail-open:
 	// only an explicitly-disabled non-core module is blocked. Wired back into the
@@ -253,6 +257,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		EASM:          handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -298,6 +303,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Command:          commandHandler,
 		Sensor:           sensorHandler,
 		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		Ingest:           ingestHandler,
 		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, log),

@@ -257,6 +257,7 @@ func registerSensorManagementRoutes(
 	router Router,
 	h *handler.SensorHandler,
 	content *handler.SensorContentHandler,
+	results *handler.SensorResultHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -278,6 +279,18 @@ func registerSensorManagementRoutes(
 			r.PUT("/content-policy", content.UpdatePolicy, middleware.Require(permission.SensorsWrite))
 			r.POST("/content/refresh", content.RefreshFleet, middleware.Require(permission.SensorsWrite))
 			r.POST("/{id}/content/refresh", content.RefreshSensor, middleware.Require(permission.SensorsWrite))
+		}
+		// Results without a command (RFC-040 §5.3): the tenant policy and
+		// the quarantine review. Accepting applies sensor data to the
+		// inventory and discarding drops it, so both, like the policy, need
+		// sensors:write (owners and administrators). Before /{id}.
+		if results != nil {
+			r.GET("/result-policy", results.GetPolicy, middleware.Require(permission.SensorsRead))
+			r.PUT("/result-policy", results.UpdatePolicy, middleware.Require(permission.SensorsWrite))
+			r.GET("/quarantined-results", results.List, middleware.Require(permission.SensorsRead))
+			r.GET("/quarantined-results/{qid}", results.Get, middleware.Require(permission.SensorsRead))
+			r.POST("/quarantined-results/{qid}/approve", results.Accept, middleware.Require(permission.SensorsWrite))
+			r.POST("/quarantined-results/{qid}/reject", results.Discard, middleware.Require(permission.SensorsWrite))
 		}
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead))

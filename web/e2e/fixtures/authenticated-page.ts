@@ -47,21 +47,14 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
         `.auth/worker-${workerInfo.parallelIndex}.json`
       )
       fs.mkdirSync(path.dirname(file), { recursive: true })
-      // The API allows 5 sign-ins a minute per address. Several workers plus
-      // the login spec can exceed that, so a refused sign-in waits for the
-      // window to pass and tries again instead of failing every test.
-      for (let attempt = 1; ; attempt++) {
-        const context = await browser.newContext({ baseURL: workerInfo.project.use.baseURL })
-        try {
-          await loginAs(await context.newPage(), result.config)
-          await context.storageState({ path: file })
-          break
-        } catch (err) {
-          if (attempt >= 4) throw err
-          await new Promise((resolve) => setTimeout(resolve, 20_000))
-        } finally {
-          await context.close()
-        }
+      // loginAs waits out the API's sign-in limit (5 a minute per address)
+      // when the login spec and the other workers have used it up.
+      const context = await browser.newContext({ baseURL: workerInfo.project.use.baseURL })
+      try {
+        await loginAs(await context.newPage(), result.config)
+        await context.storageState({ path: file })
+      } finally {
+        await context.close()
       }
       await use(file)
     },

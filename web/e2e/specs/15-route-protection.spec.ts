@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { getE2EConfig } from '../helpers/env'
+import { submitSignIn } from '../helpers/auth'
 
 /**
  * Server-side route protection and locale in src/proxy.ts.
@@ -61,9 +62,9 @@ test('a signed-out deep link goes to /login?next= and comes back after sign-in',
   await page.waitForLoadState('networkidle')
   await page.getByLabel('Email').fill(cfg.config.userEmail)
   await page.getByLabel('Password', { exact: true }).fill(cfg.config.userPassword)
-  await page.getByRole('button', { name: 'Sign in' }).click()
-
-  await page.waitForURL((url) => url.pathname === '/settings/members', { timeout: 30_000 })
+  // The suite's earlier sign-ins can use up the API's per-address limit; the
+  // helper waits that out on the 429 instead of timing out.
+  await submitSignIn(page, (url) => url.pathname === '/settings/members')
   expect(new URL(page.url()).searchParams.get('e2e')).toBe('deep-link')
 })
 
