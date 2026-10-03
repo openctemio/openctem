@@ -21,7 +21,7 @@
 --                                   the one with most findings, then earliest.
 --   reason 'normalization_rename'   one garbled asset, no duplicate: rename it
 --                                   to evidence.proposed_name (merge set empty).
---   reason 'normalization_truncated_arn'
+--   reason 'normalization_cut_arn'
 --                                   an ARN cut at the resource type; the
 --                                   resource ids are lost and the asset may
 --                                   hold several resources' findings. Flag only.
@@ -90,7 +90,7 @@ INSERT INTO asset_dedup_review (
 SELECT a.tenant_id, a.name, a.asset_type,
        a.id, a.name, COALESCE(fc.cnt, 0)::int,
        '{}', '{}', 0,
-       'pending', 'normalization_truncated_arn',
+       'pending', 'normalization_cut_arn',
        jsonb_build_object(
            'stored_name', a.name,
            'cause', 'ARN cut at the first "/" by the DNS normalizer; resource ids are lost and this asset may hold findings of several resources (RFC-043 section 10)')

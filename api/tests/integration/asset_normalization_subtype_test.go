@@ -141,7 +141,7 @@ func TestMigration000294_QueuesReviewsForGarbledNames(t *testing.T) {
 	if s := got["normalization_rename"]; s.keep != single || s.proposed != "http://shop.example.com:8080" || len(s.merge) != 0 {
 		t.Errorf("rename review = %+v, want keep %s proposed http://shop.example.com:8080", s, single)
 	}
-	if a := got["normalization_truncated_arn"]; a.keep != arn {
+	if a := got["normalization_cut_arn"]; a.keep != arn {
 		t.Errorf("truncated ARN review = %+v, want keep %s", a, arn)
 	}
 
