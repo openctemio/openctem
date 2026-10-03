@@ -43,7 +43,12 @@ others see. A hostile or compromised sensor, or just a buggy one, could:
   fill-blanks merge and the OR on `exploit_available` are gone.
 - **Feed propagation**: after every EPSS or KEV sync,
   `ThreatIntelRepository.PropagateToVulnerabilityCatalog` copies the feeds onto
-  the catalog. Only rows that differ are written.
+  the catalog. Only rows that differ are written. A CVE that CISA removed
+  from KEV is pruned from `kev_catalog` by the next sync (at most 25 removals
+  and 2 % of the catalog per sync; a larger drop is treated as a bad feed and
+  skipped), and the propagation then clears its KEV columns and
+  `exploit_available`. The findings reconciliation clears `is_in_kev` and
+  `kev_due_date` on its findings, on every status; severity is not lowered.
 - **Tenant API**: `POST /api/v1/vulnerabilities` and
   `PUT/DELETE /api/v1/vulnerabilities/{id}` answer **403** for every tenant
   role. An organization's admin used to be able to edit or delete a CVE that

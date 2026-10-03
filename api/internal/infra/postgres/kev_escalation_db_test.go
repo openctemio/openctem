@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -145,4 +145,70 @@ func shortSuffix(id shared.ID) string {
 		return "000000"
 	}
 	return string(out)
+}
+
+// TestEscalateKEVFindings_UnflagsCVEThatLeftKEV: a CVE CISA removed from KEV
+// (the sync prunes it from kev_catalog) must stop being flagged on findings.
+// Before the fix the flag was only ever set false→true, so a removed CVE kept
+// is_in_kev=true and its KEV due date forever, on every status.
+func TestEscalateKEVFindings_UnflagsCVEThatLeftKEV(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB execution check")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	tenantID := seedTestTenant(ctx, t, db)
+	assetID := seedTestAsset(ctx, t, db, tenantID)
+
+	stillKEV := "CVE-2098-" + shortSuffix(tenantID)
+	seedKEVCatalog(ctx, t, db, stillKEV)
+	leftKEV := "CVE-2097-" + shortSuffix(tenantID) // never in kev_catalog
+
+	keep := seedKEVTestFinding(ctx, t, db, tenantID, assetID, "critical", "new", stillKEV, true)
+	openGone := seedKEVTestFinding(ctx, t, db, tenantID, assetID, "critical", "new", leftKEV, true)
+	resolvedGone := seedKEVTestFinding(ctx, t, db, tenantID, assetID, "critical", "resolved", leftKEV, true)
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET kev_due_date = CURRENT_DATE WHERE id = ANY($1)`,
+		pq.Array([]string{keep.String(), openGone.String(), resolvedGone.String()})); err != nil {
+		t.Fatalf("set due dates: %v", err)
+	}
+
+	res, err := NewKEVEscalator(&DB{DB: db}).EscalateKEVFindings(ctx)
+	if err != nil {
+		t.Fatalf("EscalateKEVFindings: %v", err)
+	}
+
+	hasDue := func(id shared.ID) bool {
+		var due sql.NullTime
+		if err := db.QueryRowContext(ctx, `SELECT kev_due_date FROM findings WHERE id = $1`, id.String()).Scan(&due); err != nil {
+			t.Fatalf("read due: %v", err)
+		}
+		return due.Valid
+	}
+	if _, kev := readFinding(ctx, t, db, keep); !kev || !hasDue(keep) {
+		t.Errorf("finding still in KEV: is_in_kev=%v due=%v, want true/true", kev, hasDue(keep))
+	}
+	for name, id := range map[string]shared.ID{"open": openGone, "resolved": resolvedGone} {
+		sev, kev := readFinding(ctx, t, db, id)
+		if kev || hasDue(id) {
+			t.Errorf("%s finding whose CVE left KEV: is_in_kev=%v due=%v, want false/false", name, kev, hasDue(id))
+		}
+		if sev != "critical" {
+			t.Errorf("%s finding: severity=%q, want critical (never lowered)", name, sev)
+		}
+	}
+	if res.Unflagged < 2 {
+		t.Errorf("Unflagged=%d, want >= 2", res.Unflagged)
+	}
+	if !containsTenant(res.Tenants, tenantID) {
+		t.Errorf("touched tenants %v does not include %s", res.Tenants, tenantID)
+	}
 }
