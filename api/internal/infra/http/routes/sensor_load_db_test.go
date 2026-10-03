@@ -57,7 +57,7 @@ func (h *ctlHarness) pollIDs(s ctlSensor, path string) []string {
 func TestSensorLoad_HeartbeatReportIsStoredAndNarrowsCapacity(t *testing.T) {
 	h := newCtlHarness(t)
 	ctx := context.Background()
-	s := h.newLimitedSensor(h.tenantID, "loaded", []string{"semgrep"}, nil, 4)
+	s := h.newVerifiedSensor(h.tenantID, "loaded", []string{"semgrep"}, nil, 4)
 	h.heartbeatV2(s, map[string]any{
 		"status": "running",
 		"resources": map[string]any{"cpu_cores": 2.5, "cpu_used_pct": 340, "mem_total_bytes": 4 << 30,
@@ -123,7 +123,7 @@ func TestSensorLoad_HeartbeatReportIsStoredAndNarrowsCapacity(t *testing.T) {
 func TestSensorLoad_PollOffersAtMostFreeSlots(t *testing.T) {
 	h := newCtlHarness(t)
 	ctx := context.Background()
-	s := h.newLimitedSensor(h.tenantID, "two-slots", []string{"semgrep"}, nil, 2)
+	s := h.newVerifiedSensor(h.tenantID, "two-slots", []string{"semgrep"}, nil, 2)
 	h.heartbeatV2(s, map[string]any{"status": "running"})
 	for range 6 {
 		h.scanCommand(h.tenantID, "semgrep")
@@ -165,8 +165,8 @@ func TestSensorLoad_PollOffersAtMostFreeSlots(t *testing.T) {
 func TestSensorLoad_ReleaseReturnsTheCommandToTheQueue(t *testing.T) {
 	h := newCtlHarness(t)
 	ctx := context.Background()
-	a := h.newLimitedSensor(h.tenantID, "draining", []string{"semgrep"}, nil, 2)
-	b := h.newLimitedSensor(h.tenantID, "other", []string{"semgrep"}, nil, 2)
+	a := h.newVerifiedSensor(h.tenantID, "draining", []string{"semgrep"}, nil, 2)
+	b := h.newVerifiedSensor(h.tenantID, "other", []string{"semgrep"}, nil, 2)
 	id := h.scanCommand(h.tenantID, "semgrep")
 
 	resp, raw := h.call(a.key, http.MethodPost, "/api/v2/sensor/commands/"+id+"/claim", map[string]any{})
@@ -236,9 +236,9 @@ func TestSensorLoad_SelectionUsesReportedFreeSlots(t *testing.T) {
 	ctx := context.Background()
 	tenant := h.newTenant()
 	tid := shared.MustIDFromString(tenant)
-	full := h.newLimitedSensor(tenant, "full", []string{"semgrep"}, nil, 4)
-	slow := h.newLimitedSensor(tenant, "slow", []string{"semgrep"}, nil, 4)
-	fast := h.newLimitedSensor(tenant, "fast", []string{"semgrep"}, nil, 4)
+	full := h.newVerifiedSensor(tenant, "full", []string{"semgrep"}, nil, 4)
+	slow := h.newVerifiedSensor(tenant, "slow", []string{"semgrep"}, nil, 4)
+	fast := h.newVerifiedSensor(tenant, "fast", []string{"semgrep"}, nil, 4)
 	report := func(s ctlSensor, free int, perMin float64) {
 		h.heartbeatV2(s, map[string]any{"status": "running", "capacity": map[string]any{
 			"slots_total": 4, "slots_free": free, "active_jobs": 4 - free,

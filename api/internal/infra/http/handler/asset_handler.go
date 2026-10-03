@@ -342,7 +342,7 @@ type CreateAssetRequest struct {
 	Scope       string         `json:"scope" validate:"omitempty,scope"`
 	Exposure    string         `json:"exposure" validate:"omitempty,exposure"`
 	Description string         `json:"description" validate:"max=1000"`
-	Tags        []string       `json:"tags" validate:"max=20,dive,max=50"`
+	Tags        []string       `json:"tags" validate:"max=50,dive,max=50"`
 	OwnerRef    string         `json:"owner_ref" validate:"max=500"`
 	Properties  map[string]any `json:"properties,omitempty"`
 }
@@ -355,7 +355,7 @@ type UpdateAssetRequest struct {
 	Exposure    *string        `json:"exposure" validate:"omitempty,exposure"`
 	Description *string        `json:"description" validate:"omitempty,max=1000"`
 	OwnerRef    *string        `json:"owner_ref" validate:"omitempty,max=500"`
-	Tags        []string       `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	Tags        []string       `json:"tags" validate:"omitempty,max=50,dive,max=50"`
 	Properties  map[string]any `json:"properties,omitempty"`
 
 	// CTEM Scoping: CIA impact rating (low | moderate | high). Empty string clears.
@@ -900,7 +900,7 @@ type CreateRepositoryAssetRequest struct {
 	Criticality string   `json:"criticality" validate:"required,criticality"`
 	Scope       string   `json:"scope" validate:"omitempty,scope"`
 	Exposure    string   `json:"exposure" validate:"omitempty,exposure"`
-	Tags        []string `json:"tags" validate:"max=20,dive,max=50"`
+	Tags        []string `json:"tags" validate:"max=50,dive,max=50"`
 	// SCM connection info
 	Provider        string `json:"provider" validate:"omitempty"`
 	ExternalID      string `json:"external_id" validate:"omitempty,max=255"`

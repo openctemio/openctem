@@ -2365,6 +2365,18 @@ type mockSensorAPIKeyRepo struct {
 	// take (a row lock on the sensor): rotations of one sensor never
 	// interleave.
 	sensorLocks sync.Map // sensor id -> *sync.Mutex
+
+	// beforeRotate, when set, runs at the start of RotateKey and
+	// ReplaceInlineKey, before the lock: whatever it does lands between a
+	// renewal's authentication and its rotation.
+	beforeRotate func()
+}
+
+func (m *mockSensorAPIKeyRepo) runBeforeRotate() {
+	if hook := m.beforeRotate; hook != nil {
+		m.beforeRotate = nil
+		hook()
+	}
 }
 
 func newMockSensorAPIKeyRepo(sensors sensor.Repository) *mockSensorAPIKeyRepo {
@@ -2498,11 +2510,59 @@ func (m *mockSensorAPIKeyRepo) restore(prev map[string]*time.Time, drop *shared.
 	}
 }
 
-// RotateKey mirrors the SQL transaction: under the sensor's lock, issue the
-// key, retire every other active key, retire the inline key by hash; a
-// failure undoes it all.
-func (m *mockSensorAPIKeyRepo) RotateKey(ctx context.Context, key *sensor.APIKey, inlineKeyHashes []string, retireAt time.Time) error {
+// lockedState mirrors lockSensorKeys: the sensor's status and inline key as
+// read under the sensor's lock.
+func (m *mockSensorAPIKeyRepo) lockedState(ctx context.Context, sensorID shared.ID) (sensor.SensorStatus, string, *time.Time, error) {
+	a, err := m.sensors.GetByID(ctx, sensorID)
+	if err != nil {
+		return "", "", nil, sensor.ErrSensorNotFound
+	}
+	return a.Status, a.APIKeyHash, a.InlineKeyExpiresAt, nil
+}
+
+// checkPresented mirrors checkPresentedKey: under the lock, the presented
+// key row must still be the sensor's, active, unrevoked and unexpired, or
+// the inline hash still the presented key's and unexpired.
+func (m *mockSensorAPIKeyRepo) checkPresented(sensorID shared.ID, inlineHash string, inlineExpires *time.Time, p sensor.PresentedKey) error {
+	if p.KeyID == nil {
+		if inlineHash == "" || !slices.Contains(p.InlineKeyHashes, inlineHash) {
+			return sensor.ErrPresentedKeyInvalid
+		}
+		if inlineExpires != nil && !inlineExpires.After(p.At) {
+			return sensor.ErrPresentedKeyInvalid
+		}
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k, ok := m.byID[p.KeyID.String()]
+	if !ok || k.SensorID != sensorID || !k.IsActive || k.RevokedAt != nil ||
+		(k.ExpiresAt != nil && !k.ExpiresAt.After(p.At)) {
+		return sensor.ErrPresentedKeyInvalid
+	}
+	return nil
+}
+
+// RotateKey mirrors the SQL transaction: under the sensor's lock, re-check
+// the sensor's status and the presented key, issue the key, retire every
+// other active key, retire the inline key by hash; a failure undoes it all.
+func (m *mockSensorAPIKeyRepo) RotateKey(ctx context.Context, key *sensor.APIKey, presented sensor.PresentedKey, inlineKeyHashes []string, retireAt time.Time) error {
+	m.runBeforeRotate()
 	defer m.lockSensor(key.SensorID)()
+	status, inlineHash, inlineExpires, err := m.lockedState(ctx, key.SensorID)
+	if err != nil {
+		return err
+	}
+	switch status {
+	case sensor.SensorStatusActive:
+	case sensor.SensorStatusRevoked:
+		return sensor.ErrSensorRevoked
+	default:
+		return sensor.ErrSensorDisabled
+	}
+	if err := m.checkPresented(key.SensorID, inlineHash, inlineExpires, presented); err != nil {
+		return err
+	}
 	if err := m.Create(ctx, key); err != nil {
 		return err
 	}
@@ -2517,14 +2577,42 @@ func (m *mockSensorAPIKeyRepo) RotateKey(ctx context.Context, key *sensor.APIKey
 }
 
 // ReplaceInlineKey mirrors the SQL transaction: under the sensor's lock,
-// replace the inline key (active sensors only), then retire every key row.
-func (m *mockSensorAPIKeyRepo) ReplaceInlineKey(ctx context.Context, sensorID shared.ID, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error) {
+// re-check the presented key, replace the inline key (active sensors only),
+// then retire every key row.
+func (m *mockSensorAPIKeyRepo) ReplaceInlineKey(ctx context.Context, sensorID shared.ID, presented sensor.PresentedKey, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error) {
+	m.runBeforeRotate()
 	defer m.lockSensor(sensorID)()
+	status, inlineHash, inlineExpires, err := m.lockedState(ctx, sensorID)
+	if err != nil || status != sensor.SensorStatusActive {
+		return false, nil
+	}
+	if err := m.checkPresented(sensorID, inlineHash, inlineExpires, presented); err != nil {
+		return false, err
+	}
 	updated, err := m.sensors.UpdateAPIKey(ctx, sensorID, hash, prefix, expiresAt, true)
 	if err != nil || !updated {
 		return false, err
 	}
 	m.retireKeys(sensorID, nil, retireAt)
+	return true, nil
+}
+
+// RegenerateKey mirrors the SQL transaction: under the sensor's lock,
+// install the inline key (no expiry, any status) and revoke every active key
+// row.
+func (m *mockSensorAPIKeyRepo) RegenerateKey(ctx context.Context, sensorID shared.ID, hash, prefix, reason string) (bool, error) {
+	defer m.lockSensor(sensorID)()
+	updated, err := m.sensors.UpdateAPIKey(ctx, sensorID, hash, prefix, nil, false)
+	if err != nil || !updated {
+		return false, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range m.byID {
+		if k.SensorID == sensorID && k.IsActive {
+			k.Revoke(reason)
+		}
+	}
 	return true, nil
 }
 
@@ -2779,7 +2867,8 @@ func TestSensorService_RenewAPIKey_RetiresWhatWasPresented(t *testing.T) {
 }
 
 // An admin regeneration landing between authentication and renewal installs
-// another inline key; retiring the presented inline key must not cut it short.
+// another inline key. The renewal, presenting the replaced key, is refused,
+// and the regenerated key is neither cut short nor replaced.
 func TestSensorService_RenewAPIKey_DoesNotRetireAdminRegeneratedKey(t *testing.T) {
 	f := newRenewFixture(t)
 	id, err := f.svc.AuthenticateIdentity(context.Background(), f.inline)
@@ -2790,8 +2879,8 @@ func TestSensorService_RenewAPIKey_DoesNotRetireAdminRegeneratedKey(t *testing.T
 	if err != nil {
 		t.Fatalf("regenerate: %v", err)
 	}
-	if _, _, err := f.svc.RenewAPIKey(context.Background(), id); err != nil {
-		t.Fatalf("renew: %v", err)
+	if _, _, err := f.svc.RenewAPIKey(context.Background(), id); !errors.Is(err, shared.ErrUnauthorized) {
+		t.Fatalf("renew with the replaced key: err = %v, want unauthorized", err)
 	}
 	if exp := f.repo.sensors[f.sensor.ID.String()].InlineKeyExpiresAt; exp != nil {
 		t.Errorf("the admin-regenerated inline key was given an expiry %v", exp)

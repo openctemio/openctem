@@ -76,6 +76,25 @@ key and retries). Without a TTL the renewal replaces the inline key at once and
 caps any key rows the same way, under the same lock
 (`SensorAPIKeyRepository.ReplaceInlineKey`).
 
+The admin hard rotation takes the same lock. `RegenerateAPIKey` installs the
+new inline key and revokes every key row in one transaction
+(`SensorAPIKeyRepository.RegenerateKey`). Before writing anything, a renewal
+re-checks under the lock that its authentication still holds:
+
+- the sensor is still `active` (refused with 403 otherwise);
+- the presented credential is still valid: the presented key row is still the
+  sensor's, active, unrevoked and unexpired, or the sensor's inline hash is
+  still the presented key's and unexpired (refused with 401 otherwise).
+
+A refused renewal writes nothing and is audited as
+`sensor.key_renewal_refused` (severity high). Without the re-check, a renewal
+that authenticated with the old key just before a regeneration could mint its
+row after the regeneration had revoked the rows, and a key the administrator
+killed (after a suspected leak, say) was renewed into a valid one. Now a
+renewal racing a regeneration either commits first, and the regeneration
+revokes its key, or runs after it and is refused. Either way the regenerated
+key is the only valid credential.
+
 What this buys: a copied `rda_` key can no longer renew itself a parallel line
 of long-lived keys. Whoever renews last holds the only long-lived key, and the
 other holder is locked out after the grace and has to be re-enrolled, which an

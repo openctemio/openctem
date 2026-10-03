@@ -45,6 +45,7 @@ import {
 import { AccessRestrictionsCard, isIpLockoutError, parseLines } from './access-restrictions-card'
 import { DeleteOrganization } from './delete-organization'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
+import { safeImageSrc } from '@/lib/safe-href'
 
 const STORAGE_FORM_ID = 'storage-config-form'
 
@@ -761,7 +762,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                       {/* Logo with Hover Upload */}
                       <div className="relative group">
                         <Avatar className="h-24 w-24 ring-2 ring-border">
-                          <AvatarImage src={brandingForm.logo_data || logoSrc || undefined} />
+                          <AvatarImage src={safeImageSrc(brandingForm.logo_data || logoSrc)} />
                           <AvatarFallback className="text-3xl bg-primary/10">
                             {currentTenant?.name?.charAt(0) || 'T'}
                           </AvatarFallback>
