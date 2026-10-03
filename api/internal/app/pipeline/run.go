@@ -637,8 +637,14 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipeline.StepRun, errorMessage, errorCode string, allowRetry bool) error {
 	if stepRun != nil {
 		stepKey := stepRun.StepKey
+		// A failure a retry cannot fix (no such scanner on the sensor, target
+		// refused, nothing to scan, no sensor) is recorded with its class and
+		// never retried (D7): it used to be retried up to max_retries with
+		// the same result, and then reported as a generic failure.
+		code, retryable := pipeline.ClassifyStepFailure(errorCode, errorMessage)
+		errorCode = code
 		// Check if retry is possible
-		if allowRetry && stepRun.CanRetry() {
+		if allowRetry && retryable && stepRun.CanRetry() {
 			stepRun.PrepareRetry()
 			// FIXED: Don't silently suppress errors - log them instead
 			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
