@@ -55,3 +55,6 @@ export {
 // Asset identity hooks (identifiers + renames)
 export { useAssetIdentifiers, useAssetRenames } from './use-asset-identity'
 export type { AssetRename } from './use-asset-identity'
+
+// Asset attribution (RFC-036): state, evidence and a person's decision
+export { useAssetAttribution, useDecideAttribution } from './use-asset-attribution'
