@@ -122,6 +122,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	commandHandler.SetPipelineService(svc.Pipeline)
 	commandHandler.SetAuditService(svc.Audit)
+	commandHandler.SetScanCommandGate(svc.Scan)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)

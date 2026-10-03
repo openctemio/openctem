@@ -58,6 +58,10 @@ type CreateInput struct {
 	Priority  string          `json:"priority" validate:"omitempty,oneof=low normal high critical"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
 	ExpiresIn int             `json:"expires_in,omitempty"` // Seconds until expiration
+	// ScanZoneID restricts the command to one scan zone's sensors. Set by
+	// the caller after it routed the command's targets (scan commands
+	// from POST /api/v1/commands go through scan.Service.GateCommandPayload).
+	ScanZoneID *shared.ID `json:"-"`
 }
 
 // Create creates a new command.
@@ -98,6 +102,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*commanddom.Co
 			}
 		}
 		cmd.SetSensorID(sensorID)
+	}
+	if input.ScanZoneID != nil && !input.ScanZoneID.IsZero() {
+		cmd.SetScanZone(*input.ScanZoneID)
 	}
 
 	if input.ExpiresIn > 0 {

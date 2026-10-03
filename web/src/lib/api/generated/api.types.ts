@@ -8017,7 +8017,7 @@ export interface paths {
     put?: never
     /**
      * Create command
-     * @description Create a new command to be executed by a sensor
+     * @description Create a new command to be executed by a sensor. A `scan` command needs an owner or administrator, and its `target`/`targets` get the checks of a scan trigger (scope exclusions, scan zones, private-range policy); a refused target answers 400.
      */
     post: {
       parameters: {
@@ -8044,6 +8044,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown
           }
