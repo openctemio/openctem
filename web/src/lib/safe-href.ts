@@ -23,7 +23,8 @@ const LINK_PROTOCOLS = new Set(['http:', 'https:'])
  * Bidi controls and invisible formatting characters. A URL that carries one
  * displays differently from where it points (Trojan Source), so it is refused.
  */
-const FORBIDDEN_CHARS_RE = /[\u0000-\u001f\u007f-\u009f؜​-‏‪-‮⁦-⁩﻿]/
+const FORBIDDEN_CHARS_RE =
+  /[\u0000-\u001f\u007f-\u009f\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/
 
 /** A leading scheme, e.g. `https:` or `javascript:`. */
 const SCHEME_RE = /^([a-z][a-z0-9+.-]*):/i
