@@ -1171,6 +1171,18 @@ func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContex
 	return s.LogEvent(ctx, actx, event)
 }
 
+// LogSensorKeyRenewalRefused records a sensor renewal refused because, by the
+// time it could rotate, the key it authenticated with had been revoked,
+// expired or regenerated, or the sensor disabled. Severity high: someone
+// still holds a key an administrator meant to kill.
+func (s *AuditService) LogSensorKeyRenewalRefused(ctx context.Context, actx AuditContext, sensorID, sensorName, reason string) error {
+	event := NewDeniedEvent(auditdom.ActionSensorKeyRenewalRefused, auditdom.ResourceTypeSensor, sensorID, reason).
+		WithResourceName(sensorName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Sensor '%s' key renewal refused: %s", sensorName, reason))
+	return s.LogEvent(ctx, actx, event)
+}
+
 // LogSensorIdentityCloned records that two live processes used the same
 // sensor key (clone detection). Severity high: the key has been copied or is
 // shared between replicas, and the administrator should regenerate it.

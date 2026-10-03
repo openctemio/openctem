@@ -21,7 +21,7 @@ import {
   type MetricStripItem,
 } from '@/features/shared'
 import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
-import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { Can, Permission, useHasPermission, usePermissions } from '@/lib/permissions'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Button } from '@/components/ui/button'
@@ -285,6 +285,12 @@ export default function BusinessUnitsPage() {
   }
   const [editUnit, setEditUnit] = useState<BusinessUnit | null>(null)
   const [deleteUnit, setDeleteUnit] = useState<BusinessUnit | null>(null)
+  // Deleting a business unit is owner/admin only (the API refuses others).
+  const { isAdmin } = usePermissions()
+  const canDeleteUnit = isAdmin()
+  const deleteUnitReason = canDeleteUnit
+    ? undefined
+    : 'Only an owner or administrator can delete a business unit'
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   // Filters and search live in the URL so a filtered view can be linked to.
   const [filterCriticality, setFilterCriticality] = useUrlFilter('criticality', 'all')
@@ -518,6 +524,8 @@ export default function BusinessUnitsPage() {
                   label: 'Delete',
                   icon: Trash2,
                   onClick: () => setDeleteUnit(unit),
+                  disabled: !canDeleteUnit,
+                  disabledReason: deleteUnitReason,
                   destructive: true,
                   separatorBefore: true,
                   permission: Permission.AssetsWrite,
@@ -831,7 +839,7 @@ export default function BusinessUnitsPage() {
                 ) : undefined
               }
               menu={
-                canWriteAssets
+                canDeleteUnit
                   ? [
                       {
                         label: 'Delete business unit',

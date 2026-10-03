@@ -38,6 +38,8 @@
 #   B. every documented path+method has a registered route  (no phantoms)
 #   C. every registered route is documented or listed in
 #      api/openapi/undocumented-routes.txt  (the debt is frozen, not growing)
+#   D. a documented operation names its path parameters as the router does,
+#      or is listed in api/openapi/param-name-drift.txt  (RFC-041; shrink-only)
 #
 # Set comparison is stable across swag's formatting quirks and is the thing a
 # generated client actually depends on.

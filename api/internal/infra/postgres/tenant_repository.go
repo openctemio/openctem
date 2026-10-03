@@ -664,7 +664,8 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 }
 
 // SearchMembersWithUserInfo searches members with filtering and pagination.
-// Search is case-insensitive and matches name or email.
+// Search is case-insensitive and matches name or email (name only when
+// filters.SearchNameOnly is set).
 // Uses COUNT(*) OVER() window function to get total count in a single query (optimization).
 func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenantID shared.ID, filters tenant.MemberSearchFilters) (*tenant.MemberSearchResult, error) {
 	// Build WHERE clause with optional search filter
@@ -675,7 +676,11 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 	// Add search filter if provided
 	if filters.Search != "" {
 		searchPattern := "%" + escapeLikePattern(filters.Search) + "%"
-		whereClause += fmt.Sprintf(" AND (LOWER(u.name) LIKE LOWER($%d) OR LOWER(u.email) LIKE LOWER($%d))", argIndex, argIndex)
+		if filters.SearchNameOnly {
+			whereClause += fmt.Sprintf(" AND LOWER(u.name) LIKE LOWER($%d)", argIndex)
+		} else {
+			whereClause += fmt.Sprintf(" AND (LOWER(u.name) LIKE LOWER($%d) OR LOWER(u.email) LIKE LOWER($%d))", argIndex, argIndex)
+		}
 		args = append(args, searchPattern)
 		argIndex++
 	}

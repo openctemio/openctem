@@ -96,6 +96,7 @@ const AUDIT_ICONS: Record<string, LucideIcon> = {
   'sensor.revoked': Ban,
   'sensor.key_regenerated': KeyRound,
   'sensor.key_renewed': KeyRound,
+  'sensor.key_renewal_refused': Ban,
   'sensor.connected': Wifi,
   'sensor.disconnected': WifiOff,
 }
@@ -109,6 +110,7 @@ const AUDIT_LABELS: Record<string, string> = {
   'sensor.revoked': 'Access revoked',
   'sensor.key_regenerated': 'API key rotated',
   'sensor.key_renewed': 'API key renewed',
+  'sensor.key_renewal_refused': 'API key renewal refused (the key was revoked)',
   'sensor.connected': 'Sensor connected',
   'sensor.disconnected': 'Sensor disconnected',
 }
