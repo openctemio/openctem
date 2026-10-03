@@ -17,7 +17,12 @@ import { safeHref } from '@/lib/safe-href'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
 import { httpStatusCode, redirectChain, tlsFacts } from '@/features/assets/lib/service-facts'
-import { HttpStatusChip, TlsSummary, UnknownChip } from '@/features/assets/components/service-cells'
+import {
+  EmptyCell,
+  HttpStatusChip,
+  TlsSummary,
+  tlsNotCollected,
+} from '@/features/assets/components/service-cells'
 
 // ============================================
 // Constants
@@ -78,7 +83,7 @@ export const apisConfig: AssetPageConfig = {
       header: 'Type',
       cell: ({ row }) => {
         const apiType = metaOf(row.original).api_type as string | undefined
-        if (!apiType) return <UnknownChip>Unknown</UnknownChip>
+        if (!apiType) return <EmptyCell />
         return (
           <div className="flex items-center gap-2">
             <div
@@ -96,7 +101,7 @@ export const apisConfig: AssetPageConfig = {
       header: 'Auth',
       cell: ({ row }) => {
         const auth = authType(row.original)
-        if (!auth) return <UnknownChip>Unknown</UnknownChip>
+        if (!auth) return <EmptyCell />
         return (
           <div className="flex items-center gap-1.5">
             <Lock className="h-3.5 w-3.5 text-muted-foreground" />
@@ -110,7 +115,7 @@ export const apisConfig: AssetPageConfig = {
       header: 'Endpoints',
       cell: ({ row }) => {
         const n = endpointCount(row.original)
-        if (n === null) return <UnknownChip>Unknown</UnknownChip>
+        if (n === null) return <EmptyCell />
         return <Badge variant="secondary">{n}</Badge>
       },
     },
@@ -118,20 +123,26 @@ export const apisConfig: AssetPageConfig = {
       id: 'http_status',
       header: 'Status',
       cell: ({ row }) => (
-        <HttpStatusChip status={httpStatusCode(row.original)} chain={redirectChain(row.original)} />
+        <HttpStatusChip
+          status={httpStatusCode(row.original)}
+          chain={redirectChain(row.original)}
+          fallback={<EmptyCell />}
+        />
       ),
     },
     {
       id: 'tls',
       header: 'TLS',
-      cell: ({ row }) => <TlsSummary facts={tlsFacts(row.original)} detail={false} />,
+      cell: ({ row }) => (
+        <TlsSummary facts={tlsFacts(row.original)} detail={false} fallback={<EmptyCell />} />
+      ),
     },
     {
       accessorKey: 'metadata.base_url',
       header: 'Base URL',
       cell: ({ row }) => {
         const url = metaOf(row.original).base_url as string
-        if (!url) return <span className="text-muted-foreground">-</span>
+        if (!url) return <EmptyCell />
         return (
           <span className="text-xs text-muted-foreground truncate max-w-[200px] block">{url}</span>
         )
@@ -364,7 +375,7 @@ export const apisConfig: AssetPageConfig = {
           // auth type is unknown, not "none".
           getValue: (asset) => {
             const auth = authType(asset)
-            if (!auth) return <span className="text-muted-foreground">Unknown</span>
+            if (!auth) return null
             return (
               <span className="flex items-center gap-1">
                 <Lock className="h-3.5 w-3.5" />
@@ -372,6 +383,7 @@ export const apisConfig: AssetPageConfig = {
               </span>
             )
           },
+          notCollected: 'authentication',
         },
         {
           label: 'Base URL',
@@ -390,13 +402,19 @@ export const apisConfig: AssetPageConfig = {
         },
         {
           label: 'HTTP status',
-          getValue: (asset) => (
-            <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} />
-          ),
+          getValue: (asset) =>
+            httpStatusCode(asset) === null ? null : (
+              <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} />
+            ),
+          notCollected: 'HTTP status',
         },
         {
           label: 'TLS',
-          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} explainMissing />,
+          getValue: (asset) =>
+            tlsFacts(asset).kind === 'not_collected' ? null : (
+              <TlsSummary facts={tlsFacts(asset)} />
+            ),
+          notCollected: (asset) => tlsNotCollected(tlsFacts(asset)),
         },
         {
           label: 'TLS Version',

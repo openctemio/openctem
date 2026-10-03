@@ -30,6 +30,11 @@ under an unverified parent. Names without an ICANN public suffix (`.local`,
 `.internal`, `.test`, bare `co.uk`) are dropped: they cannot have public
 certificates.
 
+Approved scope exclusions apply (RFC-042 F16): a watched name that matches
+one is not queried, and a host that matches one gets no exposure (no
+`subdomain_discovered`, no certificate expiry). A failed exclusion lookup
+skips the tenant's sweep for that run.
+
 Each run queries at most `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (default 50)
 domains per tenant, picked from `ct_monitor_state` (migration 000266):
 
