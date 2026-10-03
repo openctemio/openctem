@@ -130,7 +130,7 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		ScannerTemplate: handler.NewScannerTemplateHandler(
 			app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "authz-policy-template-signing-key-0123456789", log), v, log),
 		TemplateSource: handler.NewTemplateSourceHandler(templateapp.NewSourceService(postgres.NewTemplateSourceRepository(db), log), v, log),
-		Command:         commandHandler,
+		Command:        commandHandler,
 		Scope: handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
 			postgres.NewScopeExclusionRepository(db), postgres.NewScopeScheduleRepository(db),
 			postgres.NewAssetRepository(db), log), v, log),
