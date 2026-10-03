@@ -145,6 +145,13 @@ clear inside a job.
   `internal/app/sensor/doorbell.go:157-159`). Expiry is lazy (no expiry
   job); fleet health shows `key_expired` / `key_expiring`
   (`pkg/domain/sensor/fleet_health.go:54-55`); no notification is sent.
+- *Since this was written:* renewal retires the key that was presented
+  (inline or a key row) and every other key the sensor still held after
+  `SENSOR_KEY_RENEW_GRACE` (default 15 min), so a renewal has one successor
+  and a copied `rda_` key can no longer renew a parallel line of 90-day keys
+  ([agent-identity.md](../architecture/agent-identity.md#renewal-retires-the-presented-key)).
+  Before, the presented key stayed valid until its own expiry and only
+  already-expired rows were pruned.
 - **Auto-renewal is off on every install path.** The sensor renews only with
   `-key-autorenew` / `PLATFORM_KEY_AUTORENEW` (sensor `main.go:214,427`);
   the Helm chart defaults `keyAutoRenew: false` and documents why: the
@@ -689,7 +696,7 @@ The owner accepted every recommendation in the table above.
 | Renewal that survives a restart, then expiry by default | sdk-go, sensor, api snippets, helm | The SDK persists the renewed key in the state directory (`/var/lib/openctem/state`, 0600, atomic write) and prefers it over the configured key on start; every snippet and the chart mount that directory. Auto-renew is on in the sensor exactly when the state directory survives the container being recreated (a mounted, non-tmpfs volume; the chart decides explicitly because an `emptyDir` looks like a volume). The snippets and the chart also mount a separate content volume (`/var/lib/openctem/content`, the scanner content cache). **Only after that ships** does the API default change (#711): `SENSOR_KEY_TTL=2160h` (90 days), `rotate_key` rung at half-life (45 days before expiry). Only renewal applies the TTL: keys issued by an administrator keep no expiry until their sensor renews (a renewing sensor does on its first start), and a sensor that does not renew is never locked out. `rotate_key` is not rung for keys without an expiry: sensors that cannot renew would log it on every heartbeat. |
 | Dedicated key-hash pepper (G9) | api | `SENSOR_KEY_PEPPER`; when unset it is derived with HKDF-SHA256 from `APP_ENCRYPTION_KEY`, so the MAC key is never the encryption key. Hashes made with the old pepper keep verifying (dual lookup; also the derived pepper once `SENSOR_KEY_PEPPER` is set, and `SENSOR_KEY_PEPPER_PREVIOUS` for replacing an explicit one); new, regenerated and renewed keys are stored with the new pepper. Rolling the API back below this release makes keys issued after it unknown to the older server. The `oct_` user API keys and SCIM tokens still use `APP_ENCRYPTION_KEY` as their pepper (follow-up). |
 | Dead bootstrap and registration-token code (G4) | api, helm, sdk-go | Removed from the api and the chart (`mode: platform`) after a cross-repository search. In sdk-go the client is public API, so it is marked `Deprecated` rather than deleted (the SDK compatibility check allows additions only); it goes with the v1 sunset. |
-| Secret-looking `scanner_config` values (G7) | api + ui | A warning in the save response and a hint in the form; never blocks. |
+| Secret-looking `scanner_config` values (G7) | api + ui | A warning in the save response and a hint in the form; never blocks. The warned values are masked (`********`) for callers without `scans:write` on scan reads, scan export and command payloads; editors, owners and admins see them, sensors receive them, and saving the mask back keeps the stored value ([sensors.md](../architecture/sensors.md)). |
 | `rda_` in GitHub secret scanning | owner | Needs the GitHub partner program; steps in §10.3. |
 
 ### 10.3 Follow-up for the owner: GitHub secret scanning for `rda_` (and `ocse_`)

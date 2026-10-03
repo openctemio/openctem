@@ -1,8 +1,9 @@
 # External Attack Surface Management (EASM)
 
-> **Status: design (RFC-036 Proposed, 2026-10-02).** This document describes
-> how EASM works in OpenCTEM today and the architecture RFC-036 builds towards.
-> Each section marks what is **built**, what is **partial** and what is
+> **Status: design (RFC-036 Accepted 2026-10-02, owner decisions O1–O10 as
+> recommended; implementation in progress in the monorepo, P0 first).**
+> This document describes how EASM works in OpenCTEM today and the
+> architecture RFC-036 builds towards. Each section marks what is **built**, what is **partial** and what is
 > **planned**. The reasoning, the industry survey, the ranked gap list and the
 > phased plan are in
 > [RFC-036](../rfcs/RFC-036-easm.md). Update this page in the same PR whenever
@@ -164,9 +165,11 @@ current behaviour and get evidence stamped on them.
 
 ## 6. Known limits of what is built
 
-- The CT monitor queries only `domain`-type assets, at most 50 per tenant per
-  run, always the first 50 in list order. A tenant with more than 50 domains
-  never gets the rest queried. It needs a rotation cursor (RFC-036 P0).
+- ~~The CT monitor queries only the first 50 domain assets per tenant.~~
+  Fixed in RFC-036 P0: it watches domain assets, verified domains and domain
+  scope targets, rotates through all of them (`ct_monitor_state`), retries
+  crt.sh and falls back to Cert Spotter. See
+  [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md).
 - CT discoveries stay exposure events; nothing turns them into assets or
   candidates.
 - Sensor images ship no recon binaries. The recon executor is off by default

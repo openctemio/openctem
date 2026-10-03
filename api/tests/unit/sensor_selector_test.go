@@ -61,8 +61,8 @@ func (m *sensorSelMockSensorRepo) List(_ context.Context, _ sensor.Filter, _ pag
 	return pagination.Result[*sensor.Sensor]{}, nil
 }
 func (m *sensorSelMockSensorRepo) Update(_ context.Context, _ *sensor.Sensor) error { return nil }
-func (m *sensorSelMockSensorRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
-	return nil
+func (m *sensorSelMockSensorRepo) RetireInlineKey(_ context.Context, _ shared.ID, _ []string, _ time.Time) (bool, error) {
+	return false, nil
 }
 func (m *sensorSelMockSensorRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ sensor.HeartbeatUpdate) (bool, error) {
 	return true, nil

@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -54,6 +55,11 @@ type Scan struct {
 	// Retry config - automatic retry of failed runs with exponential backoff
 	MaxRetries          int // 0 = no retry, max 10
 	RetryBackoffSeconds int // Initial backoff (default 60s), actual delay is backoff * 2^attempt
+
+	// AdHoc marks a quick scan that was run without being saved: it exists so
+	// its runs have a scan to belong to, but it is not a configuration (the
+	// list hides it) until someone saves it (SaveAsConfiguration).
+	AdHoc bool
 
 	// Status
 	Status Status
@@ -641,6 +647,23 @@ func (s *Scan) IsDueForExecution(now time.Time) bool {
 		return false
 	}
 	return now.After(*s.NextRunAt) || now.Equal(*s.NextRunAt)
+}
+
+// SaveAsConfiguration turns an ad-hoc quick scan into a saved configuration
+// under name: it then shows in the Configurations list and can be scheduled
+// like any other. Its runs stay attached.
+func (s *Scan) SaveAsConfiguration(name string) error {
+	if !s.AdHoc {
+		return shared.NewDomainError("VALIDATION", "scan is already a saved configuration", shared.ErrValidation)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return shared.NewDomainError("VALIDATION", "name is required", shared.ErrValidation)
+	}
+	s.Name = name
+	s.AdHoc = false
+	s.UpdatedAt = time.Now()
+	return nil
 }
 
 // Clone creates a copy of the scan with a new ID.

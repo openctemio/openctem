@@ -8,10 +8,10 @@ import (
 )
 
 // registerAuthRoutes registers authentication endpoints based on provider.
-func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg AuthConfig, authMiddleware Middleware, log *logger.Logger) {
+func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg AuthConfig, authMiddleware, userSyncMiddleware Middleware, log *logger.Logger) {
 	// Create auth-specific rate limiter for brute-force protection
 	// SECURITY: These endpoints are critical attack vectors and need stricter limits
-	authRateLimiter := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+	authRateLimiter := newAuthRateLimiter("auth")
 	loginRL := authRateLimiter.LoginMiddleware()
 	registerRL := authRateLimiter.RegisterMiddleware()
 	passwordRL := authRateLimiter.PasswordMiddleware()
@@ -102,10 +102,11 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			logoutHandler := ChainFunc(h.LocalAuth.Logout, authMiddleware)
 			r.POST("/logout", logoutHandler.ServeHTTP)
 
-			// Protected: WebSocket token requires authentication
-			// This endpoint returns a short-lived token for WebSocket connections
-			// when cookies cannot be used (cross-origin development)
-			wsTokenHandler := ChainFunc(h.LocalAuth.GetWSToken, authMiddleware)
+			// Protected: WebSocket ticket for the token's tenant. The ticket
+			// opens the tenant's real-time stream, so it gets the tenant gates
+			// (SSO enforcement, IP allowlist, active membership) — a suspended
+			// member or a caller outside the allowlist gets no ticket.
+			wsTokenHandler := ChainFunc(h.LocalAuth.GetWSToken, wsTokenMiddlewares(authMiddleware, userSyncMiddleware)...)
 			r.GET("/ws-token", wsTokenHandler.ServeHTTP)
 		}
 
@@ -192,7 +193,7 @@ func registerUserRoutes(
 			// Two-factor authentication for the signed-in user. Code-checking
 			// calls are rate limited like the login and password endpoints;
 			// mutating calls also carry the CSRF check.
-			mfaRL := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+			mfaRL := newAuthRateLimiter("account-2fa")
 			codeRL := mfaRL.LoginMiddleware()
 			sensitiveRL := mfaRL.PasswordMiddleware()
 			withCSRF := func(rl Middleware) []Middleware {

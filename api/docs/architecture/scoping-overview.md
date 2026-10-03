@@ -57,7 +57,7 @@ One SQL statement (scalar subqueries over CTEs); no per-row calls.
 | `crown_jewels.with_owner` | Crown jewels with an owner under either owner model: `assets.owner_id` is set, or an `asset_owners` row names a user who is a member of the tenant or a group of the tenant (the inventory's `has_owner` test). |
 | `business_services.with_assets` | Services with at least one `business_service_assets` row whose asset belongs to the tenant. |
 | `assets.in_business_unit` | Assets with a `business_unit_assets` row for one of the tenant's units. A business unit set on an asset group is not counted (see the group-BU follow-up, C14). |
-| `boundary` | Every `scope_targets` / `scope_exclusions` row, whatever its status: the `total_targets` / `total_exclusions` of `GET /scope/stats`. |
+| `boundary` | Every `scope_targets` / `scope_exclusions` row, whatever its status (pending and rejected exclusions included): the `total_targets` / `total_exclusions` of `GET /scope/stats`. It counts the boundary as drawn, not what scans apply — only approved, active, unexpired exclusions are applied (see the scope exclusions section of `authorization-matrix.md`). |
 | `attacker_profiles.total` | The tenant's profiles, built-in (`is_default`) ones included: what `GET /attacker-profiles` lists. |
 | `threat_models.crown_jewels_covered` | Distinct crown jewels (as above) that a `crown_jewel`-scoped threat model points at through `scope_ref_id`. |
 | `cycles.total` | All of the tenant's cycles, any status. |

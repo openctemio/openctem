@@ -28,6 +28,10 @@ type TriggerScanExecInput struct {
 	ScanID      string         `json:"scan_id" validate:"required,uuid"`
 	TriggeredBy string         `json:"triggered_by" validate:"omitempty,uuid"`
 	Context     map[string]any `json:"context"`
+	// RetryAttempt is set by the retry controller: the new run is created
+	// with it, so the retry budget is enforced even when the run finishes
+	// before anything could update it afterwards.
+	RetryAttempt int `json:"-"`
 }
 
 // TriggerScan triggers a scan execution.
@@ -80,18 +84,21 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		run, err = s.triggerWorkflow(ctx, sc, input.TriggeredBy, input.Context)
+		run, err = s.triggerWorkflow(ctx, sc, input.TriggeredBy, input.Context, input.RetryAttempt)
 	} else {
-		run, err = s.triggerSingleScan(ctx, sc, input.TriggeredBy, input.Context)
+		run, err = s.triggerSingleScan(ctx, sc, input.TriggeredBy, input.Context, input.RetryAttempt)
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	// Record the run
-	sc.RecordRun(run.ID, string(run.Status))
-	if err := s.scanRepo.Update(ctx, sc); err != nil {
+	// Record the run on the scan with one narrow UPDATE. Writing the whole scan
+	// row back from the copy read above undid any edit made while the trigger
+	// ran (a pause, a config change), and never stored the run status anyway
+	// (the generic Update does not carry the run columns). The run is counted
+	// when it finishes (RecordRun / the timeout reaper).
+	if err := s.scanRepo.RecordRunStarted(ctx, sc.ID, run.ID); err != nil {
 		s.logger.Warn("failed to record run in scan", "error", err)
 	}
 
@@ -108,7 +115,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 }
 
 // triggerWorkflow triggers a workflow pipeline execution.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any) (*pipeline.Run, error) {
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
 	if sc.PipelineID == nil {
 		return nil, fmt.Errorf("%w: pipeline_id is required for workflow", shared.ErrValidation)
 	}
@@ -189,6 +196,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 		return nil, fmt.Errorf("failed to create pipeline run: %w", err)
 	}
 	run.SetTotalSteps(len(steps))
+	run.RetryAttempt = retryAttempt
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
 	if sc.ProfileID != nil {
 		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
@@ -227,7 +235,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 const QuickScanTemplateID = "00000000-0000-0000-0000-000000000001"
 
 // triggerSingleScan triggers a single scanner execution.
-func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any) (*pipeline.Run, error) {
+func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
 	// Build context
 	if runContext == nil {
 		runContext = make(map[string]any)
@@ -317,6 +325,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
 	run.SetTotalSteps(1)
+	run.RetryAttempt = retryAttempt
 	run.Start()
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
 	if sc.ProfileID != nil {
@@ -404,25 +413,7 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 		}
 	}
 
-	// Create command for the step with consistent field names for pipeline progression
-	payloadMap := map[string]any{
-		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
-		pipeline.PayloadKeyStepRunID:     stepRunID,
-		pipeline.PayloadKeyStepKey:       step.StepKey,
-		"step_id":                        step.ID.String(),
-		"step_config":                    step.Config,
-		"required_capabilities":          step.Capabilities,
-		"preferred_tool":                 step.Tool,
-		"timeout_seconds":                step.TimeoutSeconds,
-		"context":                        run.Context,
-	}
-	// Surface direct targets at the top level of the payload — sensor executors
-	// read job.Payload["targets"], not the nested run context. Without this a
-	// workflow driven by ad-hoc targets (QuickScan) would receive none.
-	if targets, ok := run.Context["targets"]; ok {
-		payloadMap["targets"] = targets
-	}
-	payload, _ := json.Marshal(payloadMap)
+	payload, _ := json.Marshal(workflowStepPayload(run, step, stepRunID))
 
 	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
 	if err != nil {
@@ -449,6 +440,36 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 	}
 
 	return nil
+}
+
+// workflowStepPayload is the command payload of one workflow step, with
+// consistent field names for pipeline progression.
+func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string) map[string]any {
+	payloadMap := map[string]any{
+		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
+		pipeline.PayloadKeyStepRunID:     stepRunID,
+		pipeline.PayloadKeyStepKey:       step.StepKey,
+		"step_id":                        step.ID.String(),
+		"step_config":                    step.Config,
+		"required_capabilities":          step.Capabilities,
+		"preferred_tool":                 step.Tool,
+		"timeout_seconds":                step.TimeoutSeconds,
+		"context":                        run.Context,
+	}
+	// The sensor SDK runs the scanner the payload names in `scanner`
+	// (ScanCommandPayload); without it every step failed on the sensor with
+	// "scanner not found: ". preferred_tool stays for the platform's tool
+	// gate and older readers.
+	if step.Tool != "" {
+		payloadMap["scanner"] = step.Tool
+	}
+	// Surface direct targets at the top level of the payload — sensor executors
+	// read job.Payload["targets"], not the nested run context. Without this a
+	// workflow driven by ad-hoc targets (QuickScan) would receive none.
+	if targets, ok := run.Context["targets"]; ok {
+		payloadMap["targets"] = targets
+	}
+	return payloadMap
 }
 
 // EmbeddedTemplate represents a template embedded in scan command payload.
@@ -999,22 +1020,28 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 // listGroupExclusionCandidates materializes an asset group's members into scope
 // exclusion candidates (id + name). Paginated to keep memory bounded.
 func (s *Service) listGroupExclusionCandidates(ctx context.Context, groupID shared.ID) ([]scope.ExclusionCandidate, error) {
-	const perPage = 500
+	// pagination.New clamps perPage to 100. This was 500 with a
+	// page*500 >= total stop, so after the first (clamped) page of 100 the
+	// loop believed it had read everything: a scan of a group with 101-500
+	// assets silently scanned only the first 100. Stop on rows read instead.
+	const perPage = 100
 	page := pagination.New(1, perPage)
 	candidates := make([]scope.ExclusionCandidate, 0)
+	read := 0
 
 	for {
 		res, err := s.assetGroupRepo.GetGroupAssets(ctx, groupID, page, nil)
 		if err != nil {
 			return nil, err
 		}
+		read += len(res.Data)
 		for _, ga := range res.Data {
 			candidates = append(candidates, scope.ExclusionCandidate{
 				ID:     ga.ID,
 				Values: []string{ga.Name},
 			})
 		}
-		if len(res.Data) == 0 || int64(page.Page*perPage) >= res.Total {
+		if len(res.Data) == 0 || int64(read) >= res.Total {
 			break
 		}
 		page.Page++

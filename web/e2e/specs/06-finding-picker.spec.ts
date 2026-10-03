@@ -28,8 +28,8 @@ test.describe('Remediation — findings picker', () => {
     await firstRow!.click()
     const drawer = page.getByRole('dialog')
     await expect(drawer).toBeVisible()
-    // "Linked Findings (N)" is a styled <p>, not a semantic heading.
-    await expect(drawer.getByText(/Linked Findings/i)).toBeVisible()
+    // The task drawer's "Linked findings" section heading.
+    await expect(drawer.getByRole('heading', { name: /Linked findings/i })).toBeVisible()
 
     // Enter the inline picker.
     await drawer.getByRole('button', { name: /Manage/i }).click()
@@ -105,7 +105,7 @@ test.describe('Remediation — findings picker', () => {
 
     // Leave the picker → back to task details.
     await drawer.getByRole('button', { name: 'Done' }).click()
-    await expect(drawer.getByText(/Linked Findings/i)).toBeVisible()
+    await expect(drawer.getByRole('heading', { name: /Linked findings/i })).toBeVisible()
     await expect(pickerHeading).toBeHidden()
   })
 })

@@ -127,6 +127,12 @@ type IngestConfig struct {
 	// SENSOR_V2_BLINDING_MIN_FINDINGS (100).
 	V2BlindingRatio       float64
 	V2BlindingMinFindings int
+
+	// CoverageAutoResolve is the mode of coverage-scoped auto-resolve for
+	// non-repository findings: "off", "dry_run" (default: log, metric and a
+	// "would resolve" audit entry, no state change) or "enforce".
+	// INGEST_COVERAGE_AUTO_RESOLVE.
+	CoverageAutoResolve string
 }
 
 // AsyncEnabled reports whether async ingest mode is on.
@@ -186,6 +192,13 @@ type SensorConfigConfig struct {
 	// administrator creates or regenerates never expires, and a sensor that
 	// does not renew keeps its key.
 	KeyTTL time.Duration
+	// KeyRenewGrace is how long the key a sensor renewed with keeps
+	// authenticating after the renewal, for requests already in flight;
+	// every other key the sensor held is cut to the same moment, so a
+	// renewal leaves one long-lived key and a copied key cannot renew a
+	// parallel line of its own. SENSOR_KEY_RENEW_GRACE, default
+	// DefaultSensorKeyRenewGrace (15 minutes); "0" retires it at once.
+	KeyRenewGrace time.Duration
 	// KeyPepper is the secret the sensor API-key hash (HMAC-SHA256) is keyed
 	// with: SENSOR_KEY_PEPPER. Empty (the default) derives it from
 	// APP_ENCRYPTION_KEY with HKDF, so the MAC key is never the encryption
@@ -278,6 +291,10 @@ type SensorConfigConfig struct {
 // keep the renewed key on a persistent volume, and the sensor renews on its
 // own only when that volume persists (RFC-032 Phase 0).
 const DefaultSensorKeyTTL = 90 * 24 * time.Hour
+
+// DefaultSensorKeyRenewGrace is how long a renewed-away sensor key keeps
+// working when SENSOR_KEY_RENEW_GRACE is not set.
+const DefaultSensorKeyRenewGrace = 15 * time.Minute
 
 // Sensor and SDK release defaults. They are copied from versions.yaml at the
 // repository root by .github/scripts/release/sync-versions.sh, and CI fails
@@ -707,6 +724,16 @@ type SensorConfig struct {
 	// Defaults to 24h (daily), matching the threat-intel / CTEM-ID refreshes.
 	CertMonitorInterval time.Duration
 
+	// CertMonitorMaxDomainsPerRun caps how many domains of one tenant a sweep
+	// queries; the rest rotate in on later runs, oldest-queried first.
+	// CERT_MONITOR_MAX_DOMAINS_PER_RUN, default 50.
+	CertMonitorMaxDomainsPerRun int
+
+	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
+	// (free tier), when crt.sh still fails after its retries. Set
+	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
+	CertMonitorCertSpotterURL string
+
 	// LoadBalancing holds configuration for sensor load balancing weights.
 	LoadBalancing LoadBalancingConfig
 }
@@ -905,6 +932,7 @@ func Load() (*Config, error) {
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
+			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
 			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
 
@@ -1083,14 +1111,16 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: WorkerConfig{
-			Enabled:                getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
-			HeartbeatTimeout:       getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:    getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
-			SCMSyncInterval:        getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:          getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			CertMonitorEnabled:     getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorFeedBaseURL: getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
-			CertMonitorInterval:    getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
+			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
+			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
+			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
+			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
+			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
@@ -1118,6 +1148,7 @@ func Load() (*Config, error) {
 			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
+			CoverageAutoResolve:   getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
 		},
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.

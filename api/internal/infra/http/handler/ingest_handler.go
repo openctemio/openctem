@@ -899,6 +899,11 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if ids := h.commandsToCancel(r.Context(), agt, &req); len(ids) > 0 {
+		resp.CancelCommandIDs = ids
+		resp.Actions = append(resp.Actions, protov2.ActionCancel)
+	}
+
 	// Discovery of v2 results (RFC-026 WP-A7, RFC-023 C3): only for a sensor
 	// that asked, so a deployed v1 sensor's response is unchanged.
 	if h.v2Advertised && protov2.HasFeature(r.Header.Values(legacyv1.HeaderSensorFeatures), protov2.FeatureResultsV2) {
@@ -906,6 +911,17 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// commandsToCancel is what the heartbeat tells the sensor to stop: the
+// commands in its running list it no longer holds (canceled, timed out,
+// re-queued, held elsewhere). Only a sensor that reports its running list
+// (it sends the queue) gets any; the lookup never fails the heartbeat.
+func (h *IngestHandler) commandsToCancel(ctx context.Context, s *sensor.Sensor, req *HeartbeatRequest) []string {
+	if req == nil || req.Queue == nil || len(req.Running) == 0 {
+		return nil
+	}
+	return h.sensorService.CommandsToCancel(ctx, s, req.Running)
 }
 
 // RenewKeyResponse is returned by the sensor self-renew endpoint. The new key is
@@ -936,7 +952,8 @@ func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newKey, expiresAt, err := h.sensorService.RenewAPIKey(r.Context(), agt)
+	// The identity says which key was presented; renewal retires that key.
+	newKey, expiresAt, err := h.sensorService.RenewAPIKey(r.Context(), sensorIdentityFromContext(r.Context()))
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) {
 			// Disabled/revoked in the auth→renew window. Generic message; log specifics.

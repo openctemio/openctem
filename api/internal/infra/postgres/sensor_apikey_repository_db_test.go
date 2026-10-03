@@ -109,3 +109,133 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 		t.Errorf("expected N+1 to still resolve, got %v", err)
 	}
 }
+
+// RetireKeys is the write that makes a renewal retire what it supersedes.
+// Against the real schema: only active, non-revoked keys of the sensor older
+// than the new key are capped; a newer key (a concurrent renewal) and other
+// sensors' keys are not; an expiry is never extended. Skipped unless
+// DATABASE_URL is set.
+func TestSensorAPIKeyRepository_RetireKeys(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping schema-level check")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	tenantID := shared.NewID()
+	if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
+		tenantID.String(), "sensor-retire-test", "srt-"+tenantID.String()[:8]); err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
+
+	sensorRepo := NewSensorRepository(&DB{DB: db})
+	newSensor := func(name, hash string) shared.ID {
+		s, err := sensordom.NewSensor(tenantID, name, sensordom.SensorTypeRunner, "", nil, nil, sensordom.ExecutionModeStandalone)
+		if err != nil {
+			t.Fatalf("new sensor: %v", err)
+		}
+		s.SetAPIKey(hash, "rda_"+name[:4])
+		if err := sensorRepo.Create(ctx, s); err != nil {
+			t.Fatalf("create sensor: %v", err)
+		}
+		return s.ID
+	}
+	sid := newSensor("srt-a", "inline-a")
+	other := newSensor("srt-b", "inline-b")
+
+	repo := NewSensorAPIKeyRepository(&DB{DB: db})
+	created := time.Now().Add(-time.Hour)
+	key := func(sensorID shared.ID, name string, exp *time.Time) *sensordom.APIKey {
+		k, _ := sensordom.NewAPIKey(sensorID, name, sensordom.RunnerScopes())
+		k.SetKeyHash("hash-"+name, "rda_"+(name + "________")[:8])
+		if exp != nil {
+			k.SetExpiration(*exp)
+		}
+		created = created.Add(time.Minute) // strictly increasing created_at
+		k.CreatedAt = created
+		if err := repo.Create(ctx, k); err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		return k
+	}
+	at := time.Now().Add(15 * time.Minute).Truncate(time.Microsecond)
+	long := time.Now().Add(90 * 24 * time.Hour).Truncate(time.Microsecond)
+	soon := time.Now().Add(5 * time.Minute).Truncate(time.Microsecond)
+
+	never := key(sid, "never", nil)
+	longK := key(sid, "long", &long)
+	soonK := key(sid, "soon", &soon)
+	revoked := key(sid, "revoked", &long)
+	if err := repo.Revoke(ctx, revoked.ID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	successor := key(sid, "successor", &long)
+	newer := key(sid, "newer", &long) // a concurrent renewal that finished later
+	otherK := key(other, "other", &long)
+
+	n, err := repo.RetireKeys(ctx, sid, &successor.ID, at)
+	if err != nil {
+		t.Fatalf("RetireKeys: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("retired %d keys, want 2 (never, long)", n)
+	}
+	expiry := func(id shared.ID) *time.Time {
+		k, err := repo.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		return k.ExpiresAt
+	}
+	for _, c := range []struct {
+		name string
+		id   shared.ID
+		want *time.Time
+	}{
+		{"never-expiring older key", never.ID, &at},
+		{"long-lived older key", longK.ID, &at},
+		{"older key already expiring sooner (not extended)", soonK.ID, &soon},
+		{"revoked key (untouched)", revoked.ID, &long},
+		{"the successor itself", successor.ID, &long},
+		{"a newer key (concurrent renewal)", newer.ID, &long},
+		{"another sensor's key", otherK.ID, &long},
+	} {
+		got := expiry(c.id)
+		if got == nil || !got.Equal(*c.want) {
+			t.Errorf("%s: expires_at = %v, want %v", c.name, got, *c.want)
+		}
+	}
+
+	// The newer renewal's own RetireKeys caps the earlier successor: of two
+	// concurrent renewals exactly one key stays long-lived.
+	if _, err := repo.RetireKeys(ctx, sid, &newer.ID, at); err != nil {
+		t.Fatal(err)
+	}
+	if got := expiry(successor.ID); got == nil || !got.Equal(at) {
+		t.Errorf("older successor: expires_at = %v, want %v", got, at)
+	}
+	if got := expiry(newer.ID); got == nil || !got.Equal(long) {
+		t.Errorf("newest successor: expires_at = %v, want %v", got, long)
+	}
+
+	// Without a successor (the inline key was replaced) every active key of
+	// the sensor is capped; other sensors are not.
+	if _, err := repo.RetireKeys(ctx, sid, nil, at); err != nil {
+		t.Fatal(err)
+	}
+	if got := expiry(newer.ID); got == nil || !got.Equal(at) {
+		t.Errorf("newest key without successor: expires_at = %v, want %v", got, at)
+	}
+	if got := expiry(otherK.ID); got == nil || !got.Equal(long) {
+		t.Errorf("another sensor's key changed: %v", got)
+	}
+}

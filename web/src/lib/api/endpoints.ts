@@ -1850,6 +1850,11 @@ export const scanEndpoints = {
    */
   clone: (scanId: string) => `${API_BASE.SCANS}/${scanId}/clone`,
 
+  /**
+   * Save an unsaved quick scan as a configuration ("Save as scan")
+   */
+  save: (scanId: string) => `${API_BASE.SCANS}/${scanId}/save`,
+
   // ============================================
   // BULK OPERATIONS
   // ============================================

@@ -4180,6 +4180,12 @@ definitions:
       name:
         maxLength: 255
         type: string
+      recovery:
+        description: |-
+          Recovery creates a new owner for an organization whose owners are all
+          suspended. Super admin only; the set-password link is emailed and
+          never returned; refused while any owner is active.
+        type: boolean
       role:
         enum:
         - owner
@@ -10376,8 +10382,21 @@ definitions:
     required:
     - private_key
     type: object
+  internal_infra_http_handler.SaveScanRequest:
+    properties:
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
+      ad_hoc:
+        description: 'AdHoc: an unsaved quick scan (not listed as a configuration
+          until saved).'
+        type: boolean
       asset_group_id:
         description: Primary asset group (legacy)
         type: string
@@ -10827,9 +10846,18 @@ definitions:
         type: string
       id:
         type: string
+      in_effect:
+        description: |-
+          InEffect is true only for an approved, active, unexpired exclusion —
+          the ones scans actually skip.
+        type: boolean
       pattern:
         type: string
       reason:
+        type: string
+      rejected_at:
+        type: string
+      rejected_by:
         type: string
       status:
         type: string
@@ -14215,11 +14243,16 @@ paths:
       consumes:
       - application/json
       description: 'Bootstrap only: creates the owner of an organization that has
-        no active owner, and nothing else (409 when it has one: its owner and administrators
-        add users themselves). The one-time set-password link is emailed when the
-        organization can send email and is then never returned; only when email cannot
-        be sent is setup_token returned, once. Written to the organization''s audit
-        log.'
+        no owner, and nothing else (409 when it has one, active or suspended: its
+        owner and administrators add users themselves). The one-time set-password
+        link is emailed when the organization can send email and is then never returned;
+        only when email cannot be sent is setup_token returned, once. Written to the
+        organization''s audit log. With "recovery": true (super admin only, 403 otherwise)
+        it creates a new owner of an organization whose owners are all suspended (409
+        while any owner is active); the link is then emailed only and never returned
+        (400 when the organization cannot send email), and the action is audited as
+        organization.owner_recovery in the admin audit log and at critical severity
+        in the organization''s audit log.'
       parameters:
       - description: Organization ID
         in: path
@@ -14241,6 +14274,10 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Owner recovery by an administrator who is not a super admin
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "409":
@@ -14416,8 +14453,8 @@ paths:
   /admin/version:
     get:
       description: 'The running API build: release tag (or "<tag>-dev+<commit>" on
-        a development build), short commit, build time and channel (release, rc
-        or dev).'
+        a development build), short commit, build time and channel (release, rc or
+        dev).'
       produces:
       - application/json
       responses:
@@ -24541,6 +24578,10 @@ paths:
         in: query
         name: search
         type: string
+      - description: Also list unsaved quick scans (ad_hoc)
+        in: query
+        name: include_ad_hoc
+        type: boolean
       - default: 1
         description: Page number
         in: query
@@ -25052,6 +25093,53 @@ paths:
       summary: Get latest scan run
       tags:
       - Scans
+  /scans/{id}/save:
+    post:
+      consumes:
+      - application/json
+      description: Turns an ad-hoc quick scan into a saved scan configuration with
+        the given name ("Save as scan"). Its runs stay attached. Refused for a scan
+        that is already a configuration.
+      parameters:
+      - description: Quick scan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Configuration name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SaveScanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Save a quick scan as a configuration
+      tags:
+      - Scans
   /scans/{id}/trigger:
     post:
       consumes:
@@ -25412,7 +25500,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new scope exclusion
+      description: Create a scope exclusion. It is created pending and does not affect
+        scanning until another user approves it (attack_surface:scope:exclusions:approve).
       parameters:
       - description: Scope exclusion data
         in: body
@@ -25555,7 +25644,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Activate a scope exclusion
+      description: Put an approved scope exclusion back into effect. A pending or
+        rejected exclusion cannot be activated (409).
       parameters:
       - description: Exclusion ID
         in: path
@@ -25577,6 +25667,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Not approved, or rejected
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":
           description: Internal Server Error
           schema:
@@ -25590,7 +25684,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Approve a scope exclusion, marking it as reviewed and authorized
+      description: Approve a pending scope exclusion; it takes effect immediately.
+        Requires attack_surface:scope:exclusions:approve. The requester cannot approve
+        their own exclusion.
       parameters:
       - description: Exclusion ID
         in: path
@@ -25614,6 +25710,10 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Already approved, or rejected
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":
@@ -25658,6 +25758,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Deactivate scope exclusion
+      tags:
+      - Scope
+  /scope/exclusions/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      description: Reject a pending scope exclusion; it never takes effect. Requires
+        attack_surface:scope:exclusions:approve.
+      parameters:
+      - description: Exclusion ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Not awaiting approval
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reject scope exclusion
       tags:
       - Scope
   /scope/exclusions/bulk/delete:
@@ -30041,8 +30181,8 @@ paths:
   /version:
     get:
       description: 'The running API build: release tag (or "<tag>-dev+<commit>" on
-        a development build), short commit, build time and channel (release, rc
-        or dev).'
+        a development build), short commit, build time and channel (release, rc or
+        dev).'
       produces:
       - application/json
       responses:

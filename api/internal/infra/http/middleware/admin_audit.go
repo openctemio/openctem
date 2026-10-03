@@ -103,8 +103,15 @@ func (m *AuditMiddleware) AuditLog(action, resourceType, resourceIDParam string)
 			// Set response status
 			builder.Response(wrappedWriter.statusCode)
 
+			if created.high {
+				builder.High()
+			}
+
 			// Build and save audit log
 			auditLog := builder.Build()
+			if created.action != "" {
+				auditLog.Action = created.action
+			}
 
 			// Save audit log asynchronously to not block the response.
 			// Detach from request ctx (audit must outlive the request)
@@ -311,6 +318,20 @@ type auditResourceKey struct{}
 type auditCreatedResource struct {
 	id   *shared.ID
 	name string
+	// action, when set, replaces the route's action (SetAuditAction).
+	action string
+	high   bool
+}
+
+// SetAuditAction replaces the route's audit action for the current request,
+// for a route whose request body selects a more sensitive operation (the
+// first-owner route with recovery=true is organization.owner_recovery). high
+// marks the row high severity. A no-op outside an audited request.
+func SetAuditAction(ctx context.Context, action string, high bool) {
+	if c, ok := ctx.Value(auditResourceKey{}).(*auditCreatedResource); ok && action != "" {
+		c.action = action
+		c.high = c.high || high
+	}
 }
 
 // SetAuditResource records the id (and a display name) of the resource the

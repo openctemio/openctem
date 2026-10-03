@@ -152,6 +152,17 @@ func (t *Target) Deactivate() {
 // =============================================================================
 
 // Exclusion represents an exclusion from scope for security scanning.
+//
+// Lifecycle (an exclusion suppresses scanning, so it is a two-person control):
+//
+//	pending --Approve--> active <--Activate/Deactivate--> inactive
+//	   |                   |
+//	   +--Reject--> rejected    +--(expires_at passes)--> expired
+//
+// NewExclusion creates a PENDING exclusion. It is not applied anywhere (scan
+// target filtering, scope matching, coverage) until a user other than the
+// requester, holding attack_surface:scope:exclusions:approve, approves it.
+// Only an approved, active, unexpired exclusion is in effect (IsActive).
 type Exclusion struct {
 	id            shared.ID
 	tenantID      shared.ID
@@ -162,12 +173,14 @@ type Exclusion struct {
 	expiresAt     *time.Time
 	approvedBy    string
 	approvedAt    *time.Time
+	rejectedBy    string
+	rejectedAt    *time.Time
 	createdBy     string
 	createdAt     time.Time
 	updatedAt     time.Time
 }
 
-// NewExclusion creates a new scope exclusion.
+// NewExclusion creates a new scope exclusion awaiting approval.
 func NewExclusion(
 	tenantID shared.ID,
 	exclusionType ExclusionType,
@@ -195,7 +208,7 @@ func NewExclusion(
 		exclusionType: exclusionType,
 		pattern:       pattern,
 		reason:        reason,
-		status:        StatusActive,
+		status:        StatusPending,
 		expiresAt:     expiresAt,
 		createdBy:     createdBy,
 		createdAt:     now,
@@ -234,6 +247,12 @@ func ReconstituteExclusion(
 	}
 }
 
+// SetRejection restores the reviewer and time of a rejection from persistence.
+func (e *Exclusion) SetRejection(rejectedBy string, rejectedAt *time.Time) {
+	e.rejectedBy = rejectedBy
+	e.rejectedAt = rejectedAt
+}
+
 // Getters
 func (e *Exclusion) ID() shared.ID                { return e.id }
 func (e *Exclusion) TenantID() shared.ID          { return e.tenantID }
@@ -244,13 +263,16 @@ func (e *Exclusion) Status() Status               { return e.status }
 func (e *Exclusion) ExpiresAt() *time.Time        { return e.expiresAt }
 func (e *Exclusion) ApprovedBy() string           { return e.approvedBy }
 func (e *Exclusion) ApprovedAt() *time.Time       { return e.approvedAt }
+func (e *Exclusion) RejectedBy() string           { return e.rejectedBy }
+func (e *Exclusion) RejectedAt() *time.Time       { return e.rejectedAt }
 func (e *Exclusion) CreatedBy() string            { return e.createdBy }
 func (e *Exclusion) CreatedAt() time.Time         { return e.createdAt }
 func (e *Exclusion) UpdatedAt() time.Time         { return e.updatedAt }
 
-// IsActive returns true if the exclusion is active and not expired.
+// IsActive returns true if the exclusion is in effect: approved, active and
+// not expired. A pending or rejected exclusion is never in effect.
 func (e *Exclusion) IsActive() bool {
-	if e.status != StatusActive {
+	if e.status != StatusActive || !e.IsApproved() {
 		return false
 	}
 	if e.expiresAt != nil && time.Now().After(*e.expiresAt) {
@@ -264,6 +286,11 @@ func (e *Exclusion) IsApproved() bool {
 	return e.approvedBy != "" && e.approvedAt != nil
 }
 
+// IsPending returns true if the exclusion is waiting for review.
+func (e *Exclusion) IsPending() bool {
+	return e.status == StatusPending
+}
+
 // Matches checks if a value matches this exclusion's pattern.
 func (e *Exclusion) Matches(value string) bool {
 	return MatchesExclusionPattern(e.exclusionType, e.pattern, value)
@@ -275,17 +302,46 @@ func (e *Exclusion) UpdateReason(reason string) {
 	e.updatedAt = time.Now()
 }
 
+// UpdateExpiresAt changes the exclusion window. An approval covers the window
+// that was approved: extending it (a later date, or removing the expiry) on
+// an approved exclusion sends it back to pending for a fresh review, so
+// scope:write cannot turn a short approved exclusion into a permanent one.
+// Shortening the window keeps the approval.
 func (e *Exclusion) UpdateExpiresAt(expiresAt *time.Time) {
+	if e.IsApproved() && extendsWindow(e.expiresAt, expiresAt) {
+		e.approvedBy = ""
+		e.approvedAt = nil
+		e.status = StatusPending
+	}
 	e.expiresAt = expiresAt
 	e.updatedAt = time.Now()
 }
 
-// Approve records that approvedBy reviewed and authorized the exclusion. The
-// user who requested the exclusion cannot approve it (separation of duties,
-// as for finding status approvals).
+// extendsWindow reports whether next ends later than prev (nil = never).
+func extendsWindow(prev, next *time.Time) bool {
+	switch {
+	case prev == nil:
+		return false // already unbounded; nothing to extend
+	case next == nil:
+		return true
+	default:
+		return next.After(*prev)
+	}
+}
+
+// Approve records that approvedBy reviewed and authorized the exclusion and
+// puts it into effect. The user who requested the exclusion cannot approve it
+// (separation of duties, as for finding status approvals). Only an exclusion
+// that is not yet approved and not rejected can be approved.
 func (e *Exclusion) Approve(approvedBy string) error {
 	if approvedBy == "" {
 		return fmt.Errorf("%w: approver is required", shared.ErrValidation)
+	}
+	if e.status == StatusRejected {
+		return ErrExclusionRejected
+	}
+	if e.IsApproved() {
+		return ErrExclusionNotPending
 	}
 	if e.createdBy != "" && approvedBy == e.createdBy {
 		return ErrExclusionSelfApproval
@@ -293,18 +349,54 @@ func (e *Exclusion) Approve(approvedBy string) error {
 	now := time.Now()
 	e.approvedBy = approvedBy
 	e.approvedAt = &now
+	e.status = StatusActive
 	e.updatedAt = now
 	return nil
 }
 
-func (e *Exclusion) Activate() {
-	e.status = StatusActive
-	e.updatedAt = time.Now()
+// Reject records that rejectedBy declined the exclusion. A rejected exclusion
+// never takes effect; only a pending one can be rejected.
+func (e *Exclusion) Reject(rejectedBy string) error {
+	if rejectedBy == "" {
+		return fmt.Errorf("%w: reviewer is required", shared.ErrValidation)
+	}
+	if e.status != StatusPending {
+		return ErrExclusionNotPending
+	}
+	now := time.Now()
+	e.rejectedBy = rejectedBy
+	e.rejectedAt = &now
+	e.status = StatusRejected
+	e.updatedAt = now
+	return nil
 }
 
-func (e *Exclusion) Deactivate() {
+// Activate puts an approved exclusion back into effect. An exclusion nobody
+// approved (pending) or a rejected one cannot be activated.
+func (e *Exclusion) Activate() error {
+	if e.status == StatusRejected {
+		return ErrExclusionRejected
+	}
+	if !e.IsApproved() {
+		return ErrExclusionNotApproved
+	}
+	e.status = StatusActive
+	e.updatedAt = time.Now()
+	return nil
+}
+
+// Deactivate takes an approved exclusion out of effect. Pending and rejected
+// exclusions are not in effect; they are reviewed or deleted instead.
+func (e *Exclusion) Deactivate() error {
+	if e.status == StatusRejected {
+		return ErrExclusionRejected
+	}
+	if e.status == StatusPending {
+		return ErrExclusionNotApproved
+	}
 	e.status = StatusInactive
 	e.updatedAt = time.Now()
+	return nil
 }
 
 func (e *Exclusion) MarkExpired() {

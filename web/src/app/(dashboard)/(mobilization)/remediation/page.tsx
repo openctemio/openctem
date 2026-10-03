@@ -18,10 +18,19 @@ import {
   DataTableRowActions,
   SectionTabs,
   type RowAction,
-  DangerZone,
-  DangerZoneItem,
   FilterPanelToggle,
   FilterSheet,
+  DetailCallout,
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+  type DetailMenuItem,
 } from '@/features/shared'
 import { REMEDIATION_SECTION_TABS } from '@/config/section-tabs'
 import { Button } from '@/components/ui/button'
@@ -30,7 +39,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Progress } from '@/components/ui/progress'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { format } from 'date-fns'
@@ -55,7 +63,6 @@ import {
   Save,
   Ban,
   ExternalLink,
-  Clock,
   Hash,
   AlertCircle,
   ChevronRight,
@@ -77,7 +84,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Select,
   SelectContent,
@@ -88,12 +94,10 @@ import {
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { sanitizeExternalUrl } from '@/lib/utils'
-import { Can, Permission } from '@/lib/permissions'
+import { Permission, useHasPermission } from '@/lib/permissions'
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '@/features/remediation'
 import {
   useRemediationCampaigns,
@@ -1423,18 +1427,9 @@ function TaskDetailSheet({
   const [dueOpen, setDueOpen] = useState(false)
   const [startOpen, setStartOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
+  const canDelete = useHasPermission(Permission.RemediationWrite)
 
-  if (!task) {
-    return (
-      <Sheet open={false}>
-        <SheetContent>
-          <VisuallyHidden>
-            <SheetTitle>Task</SheetTitle>
-          </VisuallyHidden>
-        </SheetContent>
-      </Sheet>
-    )
-  }
+  if (!task) return null
 
   const overdue = checkOverdue(task)
   const due = daysUntil(task.dueDate)
@@ -1463,95 +1458,34 @@ function TaskDetailSheet({
             ? 50
             : 0
 
+  const linked = task.findingIds ?? []
+  const menu: DetailMenuItem[] = [
+    { label: 'Open campaign', icon: ChevronRight, onSelect: () => onOpenCampaign(task) },
+    { label: 'Copy link', icon: ExternalLink, onSelect: () => onCopyLink(task.id) },
+    { label: 'Copy ID', icon: Hash, onSelect: () => onCopyId(task.id) },
+  ]
+  if (canDelete) {
+    menu.push({
+      label: 'Delete task',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => onDelete(task),
+    })
+  }
+
   return (
-    <Sheet open onOpenChange={() => onClose()}>
-      <SheetContent
-        className="sm:max-w-lg p-0 overflow-y-auto [&>button]:hidden"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <VisuallyHidden>
-          <SheetTitle>Task Details</SheetTitle>
-        </VisuallyHidden>
-
-        {/* Findings picker: an INLINE view that replaces the drawer body (not an
-            overlay/portal/fixed panel) so it touch-scrolls via the Sheet's own
-            overflow-y-auto. The details below are hidden while it's open. */}
-        {manageOpen && (
-          <FindingPickerPanel
-            onClose={() => setManageOpen(false)}
-            selectedIds={task.findingIds ?? []}
-            onToggle={(findingId, next) =>
-              onPatch(task, {
-                finding_filter: {
-                  finding_ids: next
-                    ? [...(task.findingIds ?? []), findingId]
-                    : (task.findingIds ?? []).filter((id) => id !== findingId),
-                },
-              })
-            }
-            findingCampaigns={findingCampaigns}
-            currentCampaignId={task.id}
-            memberNameById={memberNameById}
-          />
-        )}
-
-        <div className={manageOpen ? 'hidden' : undefined}>
-          {/* ── Header ── */}
-          <div className="p-5 border-b bg-muted/30">
-            {/* Toolbar: title left, actions right */}
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-muted-foreground">Task details</p>
-              <div className="flex items-center gap-0.5 shrink-0">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => onCopyId(task.id)}
-                    >
-                      <Hash className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Copy ID</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => onCopyLink(task.id)}
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Copy link</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => onOpenCampaign(task)}
-                    >
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Open campaign</TooltipContent>
-                </Tooltip>
-                <Separator orientation="vertical" className="h-4 mx-1" />
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Title (click to edit inline) */}
-            {editingTitle ? (
+    <DetailSheet
+      open
+      onOpenChange={(open) => !open && onClose()}
+      width="lg"
+      header={
+        <DetailHeader
+          title={
+            editingTitle ? (
               <Input
                 autoFocus
+                aria-label="Task title"
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
                 onBlur={saveTitle}
@@ -1562,27 +1496,28 @@ function TaskDetailSheet({
                     setEditingTitle(false)
                   }
                 }}
-                className="h-7 text-base font-semibold"
+                className="h-8 text-base font-semibold"
               />
             ) : (
-              <h2
-                className="text-base font-semibold leading-tight cursor-text rounded px-1 -mx-1 hover:bg-muted/50"
+              // Click to rename (inline, Jira-style).
+              <span
+                className="-mx-1 cursor-text rounded px-1 hover:bg-muted/50"
+                title="Click to rename"
                 onClick={() => {
                   setTitleDraft(task.title)
                   setEditingTitle(true)
                 }}
               >
                 {task.title}
-              </h2>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">{task.findingTitle}</p>
-
-            {/* Badges */}
-            <div className="flex flex-wrap items-center gap-1.5 mt-3">
+              </span>
+            )
+          }
+          badges={
+            <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Badge
-                    className={`${priorityColors[task.priority]} text-xs h-5 cursor-pointer`}
+                    className={`${priorityColors[task.priority]} h-5 cursor-pointer text-xs`}
                     title="Change priority"
                   >
                     {TASK_PRIORITY_LABELS[task.priority]}
@@ -1596,140 +1531,182 @@ function TaskDetailSheet({
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Badge variant={statusVariants[task.status]} className="text-xs h-5">
+              <Badge variant={statusVariants[task.status]} className="h-5 text-xs">
                 {TASK_STATUS_LABELS[task.status]}
               </Badge>
               <SeverityBadge severity={task.severity} />
-              {overdue && (
-                <Badge variant="destructive" className="text-xs h-5">
-                  <AlertCircle className="me-1 h-3 w-3" />
-                  Overdue
-                </Badge>
-              )}
-            </div>
-          </div>
+            </>
+          }
+          meta={[task.findingTitle]}
+          actions={
+            actions.length > 0 ? (
+              <>
+                {actions.map(({ action, label, icon: Icon }, i) => (
+                  <Button
+                    key={action}
+                    variant={i === 0 ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => onAction(action, task)}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Button>
+                ))}
+              </>
+            ) : undefined
+          }
+          menu={menu}
+          onClose={onClose}
+        />
+      }
+    >
+      {/* Findings picker: an INLINE view that replaces the drawer body (not an
+          overlay/portal/fixed panel) so it touch-scrolls in the drawer's own
+          scrolling body. The details are hidden while it is open. */}
+      {manageOpen ? (
+        <FindingPickerPanel
+          onClose={() => setManageOpen(false)}
+          selectedIds={linked}
+          onToggle={(findingId, next) =>
+            onPatch(task, {
+              finding_filter: {
+                finding_ids: next
+                  ? [...linked, findingId]
+                  : linked.filter((id) => id !== findingId),
+              },
+            })
+          }
+          findingCampaigns={findingCampaigns}
+          currentCampaignId={task.id}
+          memberNameById={memberNameById}
+        />
+      ) : (
+        <div className="space-y-5">
+          {overdue && due && (
+            <DetailCallout tone="destructive" icon={AlertCircle} title={`${due.days}d overdue`}>
+              Due {safeFormatDate(task.dueDate, { month: 'short', day: 'numeric' }) ?? '—'}. Change
+              the due date below or move the task forward.
+            </DetailCallout>
+          )}
 
-          {/* ── Content ── */}
-          <div className="p-5 space-y-4">
-            {/* Key info grid */}
-            <div className="grid grid-cols-2 gap-3">
-              <InfoCard
-                icon={<UserPlus className="h-3.5 w-3.5 text-muted-foreground" />}
-                label="Assignee"
-              >
-                {/* Inline edit (Jira-style): pick a member → PATCH assigned_to. */}
-                <AssigneeSelect
-                  variant="ghost"
-                  showFullName
-                  placeholder="Assign"
-                  value={
-                    task.assigneeId
-                      ? { id: task.assigneeId, name: task.assigneeName || 'Assigned' }
-                      : null
-                  }
-                  onChange={(user) => onPatch(task, { assigned_to: user?.id ?? '' })}
-                />
-              </InfoCard>
+          <DetailStatGrid aria-label="Key numbers">
+            <DetailStat
+              label="Progress"
+              value={`${taskProgress}%`}
+              meter={{ value: taskProgress, max: 100, label: 'Task progress' }}
+            />
+            <DetailStat label="Linked findings" value={linked.length} />
+            {due && task.status !== 'completed' && (
+              <DetailStat
+                label={due.overdue ? 'Overdue' : 'Due in'}
+                value={`${due.days}d`}
+                tone={due.overdue ? 'destructive' : 'default'}
+              />
+            )}
+          </DetailStatGrid>
 
-              <InfoCard
-                icon={<Play className="h-3.5 w-3.5 text-muted-foreground" />}
-                label="Start Date"
-              >
-                <Popover open={startOpen} onOpenChange={setStartOpen}>
-                  <PopoverTrigger asChild>
-                    <button className="text-start rounded px-1 -mx-1 hover:bg-muted/50">
-                      <span className="text-sm font-medium">
-                        {safeFormatDate(task.startDate, { month: 'short', day: 'numeric' }) ??
-                          'Auto on start'}
-                      </span>
-                      {!task.startDate && (
-                        <span className="text-[11px] text-muted-foreground block">
-                          set when work begins
-                        </span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={task.startDate ? new Date(task.startDate) : undefined}
-                      onSelect={(date) => {
-                        setStartOpen(false)
-                        if (date) onPatch(task, { start_date: date.toISOString() })
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </InfoCard>
-
-              <InfoCard
-                icon={
-                  <Calendar
-                    className={`h-3.5 w-3.5 ${overdue ? 'text-destructive' : 'text-muted-foreground'}`}
-                  />
-                }
-                label="Due date"
-              >
-                <Popover open={dueOpen} onOpenChange={setDueOpen}>
-                  <PopoverTrigger asChild>
-                    <button className="text-start rounded px-1 -mx-1 hover:bg-muted/50">
-                      <span className={`text-sm font-medium ${overdue ? 'text-destructive' : ''}`}>
-                        {safeFormatDate(task.dueDate, { month: 'short', day: 'numeric' }) ??
-                          'Set date'}
-                      </span>
-                      {due && task.status !== 'completed' && (
-                        <span
-                          className={`text-[11px] block ${due.overdue ? 'text-destructive' : 'text-muted-foreground'}`}
-                        >
-                          {due.overdue ? `${due.days}d overdue` : `${due.days}d remaining`}
-                        </span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={task.dueDate ? new Date(task.dueDate) : undefined}
-                      onSelect={(date) => {
-                        setDueOpen(false)
-                        onPatch(task, { due_date: date ? date.toISOString() : null })
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </InfoCard>
-
-              {/* Validator (assigned_team) — the person who verifies the fix. Shown
-                once the task is in validation, so the fixer and the verifier are
-                explicitly different people (segregation of duties). */}
-              {task.status === 'review' && (
-                <InfoCard
-                  icon={<CheckCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                  label="Validator"
-                >
+          <DetailSections>
+            <DetailSection title="Assignment">
+              <DetailFieldGrid>
+                <DetailField label="Assignee">
+                  {/* Inline edit (Jira-style): pick a member → PATCH assigned_to. */}
                   <AssigneeSelect
                     variant="ghost"
                     showFullName
-                    placeholder="Assign validator"
+                    placeholder="Assign"
                     value={
-                      task.validatorId
-                        ? { id: task.validatorId, name: task.validatorName || 'Assigned' }
+                      task.assigneeId
+                        ? { id: task.assigneeId, name: task.assigneeName || 'Assigned' }
                         : null
                     }
-                    onChange={(user) => onPatch(task, { assigned_team: user?.id ?? '' })}
+                    onChange={(user) => onPatch(task, { assigned_to: user?.id ?? '' })}
                   />
-                </InfoCard>
-              )}
-            </div>
+                </DetailField>
+                {/* Validator (assigned_team) verifies the fix; shown once the task
+                    is in validation so fixer and verifier are different people. */}
+                {task.status === 'review' && (
+                  <DetailField label="Validator">
+                    <AssigneeSelect
+                      variant="ghost"
+                      showFullName
+                      placeholder="Assign validator"
+                      value={
+                        task.validatorId
+                          ? { id: task.validatorId, name: task.validatorName || 'Assigned' }
+                          : null
+                      }
+                      onChange={(user) => onPatch(task, { assigned_team: user?.id ?? '' })}
+                    />
+                  </DetailField>
+                )}
+                <DetailField label="Start date">
+                  <Popover open={startOpen} onOpenChange={setStartOpen}>
+                    <PopoverTrigger asChild>
+                      <button className="-mx-1 rounded px-1 text-start hover:bg-muted/50">
+                        <span className="text-sm font-medium">
+                          {safeFormatDate(task.startDate, { month: 'short', day: 'numeric' }) ??
+                            'Auto on start'}
+                        </span>
+                        {!task.startDate && (
+                          <span className="block text-xs text-muted-foreground">
+                            set when work begins
+                          </span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={task.startDate ? new Date(task.startDate) : undefined}
+                        onSelect={(date) => {
+                          setStartOpen(false)
+                          if (date) onPatch(task, { start_date: date.toISOString() })
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </DetailField>
+                <DetailField label="Due date">
+                  <Popover open={dueOpen} onOpenChange={setDueOpen}>
+                    <PopoverTrigger asChild>
+                      <button className="-mx-1 rounded px-1 text-start hover:bg-muted/50">
+                        <span
+                          className={`text-sm font-medium ${overdue ? 'text-destructive' : ''}`}
+                        >
+                          {safeFormatDate(task.dueDate, { month: 'short', day: 'numeric' }) ??
+                            'Set date'}
+                        </span>
+                        {due && task.status !== 'completed' && (
+                          <span
+                            className={`block text-xs ${due.overdue ? 'text-destructive' : 'text-muted-foreground'}`}
+                          >
+                            {due.overdue ? `${due.days}d overdue` : `${due.days}d remaining`}
+                          </span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={task.dueDate ? new Date(task.dueDate) : undefined}
+                        onSelect={(date) => {
+                          setDueOpen(false)
+                          onPatch(task, { due_date: date ? date.toISOString() : null })
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
 
-            {/* Description (click to edit inline) */}
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Description</p>
+            <DetailSection title="Description">
               {editingDesc ? (
                 <Textarea
                   autoFocus
+                  aria-label="Description"
                   value={descDraft}
                   onChange={(e) => setDescDraft(e.target.value)}
                   onBlur={saveDesc}
@@ -1737,7 +1714,7 @@ function TaskDetailSheet({
                 />
               ) : (
                 <p
-                  className="text-sm leading-relaxed bg-muted/30 rounded-lg p-3 cursor-text hover:bg-muted/50"
+                  className="cursor-text rounded-lg bg-muted/30 p-3 text-sm leading-relaxed hover:bg-muted/50"
                   onClick={() => {
                     setDescDraft(task.description || '')
                     setEditingDesc(true)
@@ -1748,43 +1725,37 @@ function TaskDetailSheet({
                   )}
                 </p>
               )}
-            </div>
+            </DetailSection>
 
-            {/* Linked Findings — a task can cover many; view + manage inline */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Linked Findings ({task.findingIds?.length ?? 0})
-                </p>
-                {/* A standalone modal (not a Popover nested in the drawer Sheet) so the
-                  list scrolls reliably on touch — nested Radix portals broke iOS scroll. */}
+            <DetailSection
+              title="Linked findings"
+              count={linked.length}
+              actions={
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 text-xs"
+                  className="h-7 text-xs"
                   onClick={() => setManageOpen(true)}
                 >
-                  <Plus className="me-1 h-3 w-3" /> Manage
+                  <Plus className="h-3 w-3" /> Manage
                 </Button>
-              </div>
-              {(task.findingIds?.length ?? 0) === 0 ? (
-                <p className="text-xs text-muted-foreground">No findings linked yet.</p>
+              }
+            >
+              {linked.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No findings linked yet.</p>
               ) : (
-                <div className="space-y-1">
-                  {(task.findingIds ?? []).map((id) => {
+                <ul className="divide-y rounded-lg border">
+                  {linked.map((id) => {
                     const f = findings.find((x) => x.id === id)
                     return (
-                      <div
-                        key={id}
-                        className="flex items-center gap-2 rounded bg-muted/30 px-2 py-1 text-xs"
-                      >
+                      <li key={id} className="flex items-center gap-2 px-3 py-2 text-sm">
                         <div className="min-w-0 flex-1">
-                          <span className="block truncate">{f ? f.title || f.message : id}</span>
-                          <span className="text-muted-foreground flex items-center gap-2 truncate text-[10px]">
+                          <span className="block break-words">{f ? f.title || f.message : id}</span>
+                          <span className="flex items-center gap-2 text-xs text-muted-foreground">
                             {f?.asset?.name && <span className="truncate">{f.asset.name}</span>}
                             {f?.assigned_to ? (
                               <span className="flex shrink-0 items-center gap-0.5">
-                                <UserPlus className="h-2.5 w-2.5" />
+                                <UserPlus className="h-3 w-3" />
                                 {memberNameById.get(f.assigned_to) ||
                                   f.assigned_to_user?.name ||
                                   'Assigned'}
@@ -1792,119 +1763,44 @@ function TaskDetailSheet({
                             ) : null}
                           </span>
                         </div>
-                        <button
+                        <Button
                           type="button"
-                          className="text-muted-foreground hover:text-foreground"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground"
                           aria-label="Unlink finding"
                           onClick={() =>
                             onPatch(task, {
-                              finding_filter: {
-                                finding_ids: (task.findingIds ?? []).filter((x) => x !== id),
-                              },
+                              finding_filter: { finding_ids: linked.filter((x) => x !== id) },
                             })
                           }
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </li>
                     )
                   })}
-                </div>
+                </ul>
               )}
-            </div>
+            </DetailSection>
 
-            {/* Progress */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground">Progress</p>
-                <span className="text-xs font-medium tabular-nums">{taskProgress}%</span>
-              </div>
-              <Progress value={taskProgress} className="h-1.5" />
-            </div>
-
-            <Separator />
-
-            {/* Status Actions */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Actions</p>
-              <div className="flex flex-wrap gap-2">
-                {actions.map(({ action, label, icon: Icon, variant }) => (
-                  <Button
-                    key={action}
-                    variant={variant}
-                    size="sm"
-                    className="h-8"
-                    onClick={() => onAction(action, task)}
-                  >
-                    <Icon className="me-1.5 h-3.5 w-3.5" />
-                    {label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Metadata */}
-            <div className="grid grid-cols-2 gap-3">
-              <InfoCard
-                icon={<Hash className="h-3.5 w-3.5 text-muted-foreground" />}
-                label="Task ID"
-              >
-                <p className="font-mono text-[11px] truncate">{task.id}</p>
-              </InfoCard>
-              <InfoCard
-                icon={<Clock className="h-3.5 w-3.5 text-muted-foreground" />}
-                label="Created"
-              >
-                <p className="text-sm">
+            <DetailSection title="Details">
+              <DetailFieldGrid>
+                <DetailField label="Created">
                   {safeFormatDate(task.createdAt, { month: 'short', day: 'numeric' }) ?? '--'}
-                </p>
-                {task.createdAt && (
-                  <p className="text-[11px] text-muted-foreground">{timeAgo(task.createdAt)}</p>
-                )}
-              </InfoCard>
-            </div>
-
-            <Can permission={Permission.RemediationWrite}>
-              <DangerZone as="h3">
-                <DangerZoneItem
-                  title="Delete task"
-                  description="Permanently remove this task."
-                  action={
-                    <Button variant="destructive" size="sm" onClick={() => onDelete(task)}>
-                      <Trash2 className="me-1.5 h-3.5 w-3.5" />
-                      Delete
-                    </Button>
-                  }
-                />
-              </DangerZone>
-            </Can>
-          </div>
+                  {task.createdAt && (
+                    <span className="text-muted-foreground"> ({timeAgo(task.createdAt)})</span>
+                  )}
+                </DetailField>
+                <DetailField label="Task ID" full>
+                  <DetailCopyId id={task.id} label="Task ID" />
+                </DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
+          </DetailSections>
         </div>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
-/** Small info card used in detail sheet */
-function InfoCard({
-  icon,
-  label,
-  children,
-}: {
-  icon: React.ReactNode
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="rounded-lg border p-2.5 space-y-1">
-      <div className="flex items-center gap-1.5">
-        {icon}
-        <span className="text-[11px] text-muted-foreground">{label}</span>
-      </div>
-      <div>{children}</div>
-    </div>
+      )}
+    </DetailSheet>
   )
 }
 

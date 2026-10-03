@@ -536,8 +536,11 @@ type ListScansInput struct {
 	Status       string   `json:"status" validate:"omitempty,oneof=active paused disabled"`
 	Tags         []string `json:"tags"`
 	Search       string   `json:"search" validate:"max=255"`
-	Page         int      `json:"page"`
-	PerPage      int      `json:"per_page"`
+	// IncludeAdHoc also lists unsaved quick scans (Scan.AdHoc); by default the
+	// list holds saved configurations only.
+	IncludeAdHoc bool `json:"include_ad_hoc"`
+	Page         int  `json:"page"`
+	PerPage      int  `json:"per_page"`
 }
 
 // ListScans lists scans with filters.
@@ -548,9 +551,10 @@ func (s *Service) ListScans(ctx context.Context, input ListScansInput) (paginati
 	}
 
 	filter := scan.Filter{
-		TenantID: &tenantID,
-		Tags:     input.Tags,
-		Search:   input.Search,
+		TenantID:     &tenantID,
+		Tags:         input.Tags,
+		Search:       input.Search,
+		ExcludeAdHoc: !input.IncludeAdHoc,
 	}
 
 	if input.AssetGroupID != "" {
@@ -675,7 +679,10 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		if input.TargetsPerJob != nil {
 			targetsPerJob = *input.TargetsPerJob
 		}
-		if err := sc.SetSingleScanner(input.ScannerName, input.ScannerConfig, targetsPerJob); err != nil {
+		// A config saved back as it was shown masked keeps the stored
+		// secrets instead of storing the mask (scan.RedactConfigSecrets).
+		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
+		if err := sc.SetSingleScanner(input.ScannerName, cfg, targetsPerJob); err != nil {
 			return nil, err
 		}
 	}
