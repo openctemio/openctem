@@ -104,6 +104,11 @@ func (c *ceilingRepo) Update(_ context.Context, r *role.Role) error {
 	return nil
 }
 
+func (c *ceilingRepo) Delete(_ context.Context, id role.ID) error {
+	delete(c.roles, id.String())
+	return nil
+}
+
 func (c *ceilingRepo) has(uid role.ID, rid role.ID) bool {
 	for _, id := range c.sets[uid.String()] {
 		if id == rid {
@@ -243,4 +248,67 @@ func TestGrantCeiling_AllowedChanges(t *testing.T) {
 	// A system path (no actor) still cannot grant owner.
 	wantForbidden(t, "system grant of owner", f.svc.SetUserRoles(ctx,
 		app.SetUserRolesInput{TenantID: tid, UserID: f.member.String(), RoleIDs: []string{role.OwnerRoleID.String()}}, "", app.AuditContext{}))
+}
+
+// Deleting a custom role used to have no ceiling: an administrator (or any
+// holder of roles:delete) could remove a role the owner built with
+// permissions the administrator does not hold. Delete now uses the same
+// subset check as create and update.
+func TestGrantCeiling_RoleDelete(t *testing.T) {
+	t.Run("admin cannot delete a role carrying an owner-only permission", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		err := f.svc.DeleteRole(context.Background(), f.tenant.String(), f.analyst.ID().String(),
+			app.AuditContext{ActorID: f.admin.String()})
+		wantForbidden(t, "admin deletes analyst (team:delete)", err)
+		if _, ok := f.repo.roles[f.analyst.ID().String()]; !ok {
+			t.Fatal("the role was deleted despite the refusal")
+		}
+	})
+
+	t.Run("admin cannot delete a role with full data access when they lack it", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		// A delegated role manager: holds the role permissions but not full data access.
+		mgr := role.New(f.tenant, "role-mgr", "Role manager", "", 10, false, []string{"assets:read", "roles:delete"}, role.NewID())
+		wide := role.New(f.tenant, "wide", "Wide", "", 10, true, []string{"assets:read"}, role.NewID())
+		f.repo.roles[mgr.ID().String()] = mgr
+		f.repo.roles[wide.ID().String()] = wide
+		uid := role.NewID()
+		f.repo.sets[uid.String()] = []role.ID{mgr.ID()}
+		err := f.svc.DeleteRole(context.Background(), f.tenant.String(), wide.ID().String(),
+			app.AuditContext{ActorID: uid.String()})
+		wantForbidden(t, "manager deletes full-data role", err)
+	})
+
+	t.Run("admin may delete a role within their own permissions", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		within := role.New(f.tenant, "reader", "Reader", "", 10, false, []string{"assets:read"}, role.NewID())
+		f.repo.roles[within.ID().String()] = within
+		if err := f.svc.DeleteRole(context.Background(), f.tenant.String(), within.ID().String(),
+			app.AuditContext{ActorID: f.admin.String()}); err != nil {
+			t.Fatalf("admin deletes role within their set: %v", err)
+		}
+		if _, ok := f.repo.roles[within.ID().String()]; ok {
+			t.Fatal("the role was not deleted")
+		}
+	})
+
+	t.Run("owner may delete any custom role", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		if err := f.svc.DeleteRole(context.Background(), f.tenant.String(), f.analyst.ID().String(),
+			app.AuditContext{ActorID: f.owner.String()}); err != nil {
+			t.Fatalf("owner deletes analyst: %v", err)
+		}
+		if _, ok := f.repo.roles[f.analyst.ID().String()]; ok {
+			t.Fatal("the role was not deleted")
+		}
+	})
+
+	t.Run("another tenant's role still reads as not found", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		err := f.svc.DeleteRole(context.Background(), role.NewID().String(), f.analyst.ID().String(),
+			app.AuditContext{ActorID: f.owner.String()})
+		if !errors.Is(err, role.ErrRoleNotFound) {
+			t.Fatalf("cross-tenant delete: want not found, got %v", err)
+		}
+	})
 }

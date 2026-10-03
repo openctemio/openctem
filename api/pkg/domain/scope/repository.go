@@ -68,7 +68,8 @@ type ExclusionRepository interface {
 	// List retrieves scope exclusions with filtering and pagination.
 	List(ctx context.Context, filter ExclusionFilter, page pagination.Pagination) (pagination.Result[*Exclusion], error)
 
-	// ListActive retrieves all active scope exclusions for a tenant.
+	// ListActive retrieves the exclusions in effect for a tenant: approved,
+	// active and unexpired (never pending or rejected).
 	ListActive(ctx context.Context, tenantID shared.ID) ([]*Exclusion, error)
 
 	// Count returns the total number of scope exclusions matching the filter.

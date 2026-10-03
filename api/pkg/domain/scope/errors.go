@@ -21,6 +21,14 @@ var (
 	ErrReasonRequired         = fmt.Errorf("%w: reason is required for exclusion", shared.ErrValidation)
 	// ErrExclusionSelfApproval: the requester of an exclusion cannot approve it.
 	ErrExclusionSelfApproval = fmt.Errorf("%w: cannot approve a scope exclusion you requested", shared.ErrForbidden)
+	// ErrExclusionNotPending: approve/reject on an exclusion that is not
+	// awaiting review (already approved, or rejected).
+	ErrExclusionNotPending = fmt.Errorf("%w: scope exclusion is not awaiting approval", shared.ErrConflict)
+	// ErrExclusionNotApproved: activating an exclusion nobody approved.
+	ErrExclusionNotApproved = fmt.Errorf("%w: scope exclusion has not been approved", shared.ErrConflict)
+	// ErrExclusionRejected: the exclusion was rejected and cannot be changed
+	// back into effect; create a new request instead.
+	ErrExclusionRejected = fmt.Errorf("%w: scope exclusion was rejected", shared.ErrConflict)
 
 	// Schedule errors
 	ErrInvalidScanType       = fmt.Errorf("%w: invalid scan type", shared.ErrValidation)
