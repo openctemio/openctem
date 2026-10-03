@@ -134,28 +134,30 @@ func Reconstitute(
 
 // generateFingerprint creates a stable fingerprint for deduplication.
 func (e *ExposureEvent) generateFingerprint() string {
-	// Include key fields that define uniqueness
-	data := map[string]any{
-		"tenant_id":  e.tenantID.String(),
-		"event_type": e.eventType.String(),
-		"title":      e.title,
-		"source":     e.source,
-	}
-
-	// Include canonical asset if set
-
-	// Include native asset if set
+	var assetID string
 	if e.assetID != nil {
-		data["asset_id"] = e.assetID.String()
+		assetID = e.assetID.String()
 	}
+	return Fingerprint(e.tenantID.String(), e.eventType.String(), e.title, e.source, assetID, e.details)
+}
 
-	// Include key details that affect uniqueness
-	if e.details != nil {
-		// Include specific fields that define uniqueness
-		for _, key := range []string{"port", "protocol", "service", "path", "url", "bucket", "domain"} {
-			if v, ok := e.details[key]; ok {
-				data[key] = v
-			}
+// Fingerprint is the exposure-event identity: a hash of the tenant, event
+// type, title, source, asset (when set, "" otherwise) and the identifying
+// details (port, protocol, service, path, url, bucket, domain). A plain
+// function so an asset merge can re-key stored events for the kept asset.
+func Fingerprint(tenantID, eventType, title, source, assetID string, details map[string]any) string {
+	data := map[string]any{
+		"tenant_id":  tenantID,
+		"event_type": eventType,
+		"title":      title,
+		"source":     source,
+	}
+	if assetID != "" {
+		data["asset_id"] = assetID
+	}
+	for _, key := range []string{"port", "protocol", "service", "path", "url", "bucket", "domain"} {
+		if v, ok := details[key]; ok {
+			data[key] = v
 		}
 	}
 
