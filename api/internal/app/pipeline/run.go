@@ -296,23 +296,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		}
 	}
 
-	// Create command payload with step info
-	payload := map[string]any{
-		"pipeline_run_id":                   run.ID.String(),
-		"step_run_id":                       stepRun.ID.String(),
-		"step_id":                           step.ID.String(),
-		"step_key":                          step.StepKey,
-		"step_config":                       step.Config,
-		"required_capabilities":             step.Capabilities,
-		"preferred_tool":                    step.Tool,
-		"timeout_seconds":                   step.TimeoutSeconds,
-		"context":                           run.Context,
-		legacyv1.PayloadKeySensorPreference: string(settings.SensorPreference),
-	}
-
-	if run.AssetID != nil {
-		payload["asset_id"] = run.AssetID.String()
-	}
+	payload := stepCommandPayload(run, step, stepRun, settings)
 
 	// Final payload validation before sending to sensor
 	if s.securityValidator != nil {
@@ -1019,4 +1003,35 @@ func (s *Service) FailStepRun(ctx context.Context, stepRunID, errorMessage, erro
 	}
 
 	return s.stepRunRepo.UpdateStatus(ctx, srid, pipeline.StepRunStatusFailed, errorMessage, errorCode)
+}
+
+// stepCommandPayload is the command payload of one pipeline step.
+func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) map[string]any {
+	payload := map[string]any{
+		"pipeline_run_id":                   run.ID.String(),
+		"step_run_id":                       stepRun.ID.String(),
+		"step_id":                           step.ID.String(),
+		"step_key":                          step.StepKey,
+		"step_config":                       step.Config,
+		"required_capabilities":             step.Capabilities,
+		"preferred_tool":                    step.Tool,
+		"timeout_seconds":                   step.TimeoutSeconds,
+		"context":                           run.Context,
+		legacyv1.PayloadKeySensorPreference: string(settings.SensorPreference),
+	}
+	// The sensor SDK runs the scanner named in `scanner` (ScanCommandPayload);
+	// a step carrying only preferred_tool failed with "scanner not found: ".
+	if step.Tool != "" {
+		payload["scanner"] = step.Tool
+	}
+	// Step targets come from the run context (direct targets); the sensor
+	// reads them at the top level.
+	if targets, ok := run.Context["targets"]; ok {
+		payload["targets"] = targets
+	}
+
+	if run.AssetID != nil {
+		payload["asset_id"] = run.AssetID.String()
+	}
+	return payload
 }

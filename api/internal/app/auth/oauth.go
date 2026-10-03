@@ -830,8 +830,10 @@ func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*Ses
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
-	// Social OAuth is a federated login — stamp 'sso' so it is exempt from
-	// password-only per-tenant SSO enforcement.
+	// Social OAuth (GitHub/Google/personal Microsoft) is a federated login, so
+	// it is stamped 'sso', but no organization's identity provider issued it:
+	// no issuing tenant is recorded, so it is exempt from NO organization's SSO
+	// enforcement or 2FA requirement (Session.FederatedFor).
 	newSession.SetAuthMethod(sessiondom.AuthMethodSSO)
 
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
