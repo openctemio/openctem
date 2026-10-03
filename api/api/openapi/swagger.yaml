@@ -4309,6 +4309,12 @@ definitions:
       name:
         maxLength: 255
         type: string
+      recovery:
+        description: |-
+          Recovery creates a new owner for an organization whose owners are all
+          suspended. Super admin only; the set-password link is emailed and
+          never returned; refused while any owner is active.
+        type: boolean
       role:
         enum:
         - owner
@@ -10563,8 +10569,21 @@ definitions:
     required:
     - private_key
     type: object
+  internal_infra_http_handler.SaveScanRequest:
+    properties:
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
+      ad_hoc:
+        description: 'AdHoc: an unsaved quick scan (not listed as a configuration
+          until saved).'
+        type: boolean
       asset_group_id:
         description: Primary asset group (legacy)
         type: string
@@ -14411,11 +14430,16 @@ paths:
       consumes:
       - application/json
       description: 'Bootstrap only: creates the owner of an organization that has
-        no active owner, and nothing else (409 when it has one: its owner and administrators
-        add users themselves). The one-time set-password link is emailed when the
-        organization can send email and is then never returned; only when email cannot
-        be sent is setup_token returned, once. Written to the organization''s audit
-        log.'
+        no owner, and nothing else (409 when it has one, active or suspended: its
+        owner and administrators add users themselves). The one-time set-password
+        link is emailed when the organization can send email and is then never returned;
+        only when email cannot be sent is setup_token returned, once. Written to the
+        organization''s audit log. With "recovery": true (super admin only, 403 otherwise)
+        it creates a new owner of an organization whose owners are all suspended (409
+        while any owner is active); the link is then emailed only and never returned
+        (400 when the organization cannot send email), and the action is audited as
+        organization.owner_recovery in the admin audit log and at critical severity
+        in the organization''s audit log.'
       parameters:
       - description: Organization ID
         in: path
@@ -14437,6 +14461,10 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ProvisionedUserResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Owner recovery by an administrator who is not a super admin
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "409":
@@ -24845,6 +24873,10 @@ paths:
         in: query
         name: search
         type: string
+      - description: Also list unsaved quick scans (ad_hoc)
+        in: query
+        name: include_ad_hoc
+        type: boolean
       - default: 1
         description: Page number
         in: query
@@ -25354,6 +25386,53 @@ paths:
       security:
       - BearerAuth: []
       summary: Get latest scan run
+      tags:
+      - Scans
+  /scans/{id}/save:
+    post:
+      consumes:
+      - application/json
+      description: Turns an ad-hoc quick scan into a saved scan configuration with
+        the given name ("Save as scan"). Its runs stay attached. Refused for a scan
+        that is already a configuration.
+      parameters:
+      - description: Quick scan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Configuration name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SaveScanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Save a quick scan as a configuration
       tags:
       - Scans
   /scans/{id}/trigger:

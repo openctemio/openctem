@@ -127,7 +127,7 @@ func TestSensorKeyPepper_RenewedOverlapKey_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	renewed, exp, err := svc.RenewAPIKey(ctx, ident.Sensor)
+	renewed, exp, err := svc.RenewAPIKey(ctx, ident)
 	if err != nil || exp == nil {
 		t.Fatalf("renew: %v %v", err, exp)
 	}
@@ -216,7 +216,7 @@ func TestSensorKeyUse_MultiKeyRowGetsAddress_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	renewed, _, err := svc.RenewAPIKey(ctx, ident.Sensor)
+	renewed, _, err := svc.RenewAPIKey(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
 	}

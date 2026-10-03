@@ -55,6 +55,9 @@ func (s *ActorService) CreateActor(ctx context.Context, input CreateActorInput) 
 	actor.SetIntel(input.Sophistication, input.Motivation, input.CountryOfOrigin, input.MitreGroupID)
 	actor.SetTTPs(input.TTPs)
 	actor.SetTargeting(input.TargetIndustries, input.TargetRegions)
+	// Aliases and tags were accepted and then dropped on create.
+	actor.SetAliases(input.Aliases)
+	actor.SetTags(input.Tags)
 
 	if err := s.repo.Create(ctx, actor); err != nil {
 		return nil, fmt.Errorf("failed to create threat actor: %w", err)

@@ -710,7 +710,7 @@ export default function EcosystemsPage() {
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <Package className="h-4 w-4 text-blue-500" />
+                      <Package className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">Total</span>
                     </div>
                     <p className="mt-1 text-2xl font-bold">
@@ -722,15 +722,15 @@ export default function EcosystemsPage() {
                     onClick={() => setSecurityFilter('vulnerable')}
                     className={`rounded-lg border p-3 text-start transition-colors ${
                       securityFilter === 'vulnerable'
-                        ? 'border-red-500 bg-red-500/5'
+                        ? 'border-destructive bg-destructive/5'
                         : 'bg-card hover:bg-muted/50'
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <ShieldAlert className="h-4 w-4 text-red-500" />
+                      <ShieldAlert className="h-4 w-4 text-destructive" />
                       <span className="text-sm text-muted-foreground">Vulnerable</span>
                     </div>
-                    <p className="mt-1 text-2xl font-bold text-red-500">
+                    <p className="mt-1 text-2xl font-bold text-destructive">
                       {ecosystemComponentsData?.data?.filter(
                         (c) => (c.vulnerability_count ?? 0) > 0
                       ).length ?? 0}
@@ -740,15 +740,15 @@ export default function EcosystemsPage() {
                     onClick={() => setSecurityFilter('secure')}
                     className={`rounded-lg border p-3 text-start transition-colors ${
                       securityFilter === 'secure'
-                        ? 'border-green-500 bg-green-500/5'
+                        ? 'border-success bg-success/5'
                         : 'bg-card hover:bg-muted/50'
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <CheckCircle2 className="h-4 w-4 text-success" />
                       <span className="text-sm text-muted-foreground">Secure</span>
                     </div>
-                    <p className="mt-1 text-2xl font-bold text-green-500">
+                    <p className="mt-1 text-2xl font-bold text-success">
                       {ecosystemComponentsData?.data?.filter((c) => c.vulnerability_count === 0)
                         .length ?? 0}
                     </p>

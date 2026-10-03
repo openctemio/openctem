@@ -44,6 +44,8 @@ type integrationLister interface {
 type coverageRepo interface {
 	ListCandidates(ctx context.Context, tenantID shared.ID, limit int) ([]scancoverage.Candidate, error)
 	ActiveIPs(ctx context.Context, tenantID shared.ID) (int, error)
+	ClaimBatch(ctx context.Context, tenantID shared.ID, batch []scancoverage.Candidate, at time.Time) ([]string, error)
+	ReleaseBatch(ctx context.Context, tenantID shared.ID, batch []scancoverage.Candidate, at time.Time) error
 	MarkDispatched(ctx context.Context, rec scancoverage.DispatchRecord) error
 }
 
@@ -196,6 +198,16 @@ func (c *CoverageScheduler) ActiveIPs(ctx context.Context, tenantID shared.ID) (
 // =============================================================================
 // scancoverage.CursorStore implementation (delegated)
 // =============================================================================
+
+// ClaimBatch delegates to the coverage repository.
+func (c *CoverageScheduler) ClaimBatch(ctx context.Context, tenantID shared.ID, batch []scancoverage.Candidate, at time.Time) ([]string, error) {
+	return c.coverage.ClaimBatch(ctx, tenantID, batch, at)
+}
+
+// ReleaseBatch delegates to the coverage repository.
+func (c *CoverageScheduler) ReleaseBatch(ctx context.Context, tenantID shared.ID, batch []scancoverage.Candidate, at time.Time) error {
+	return c.coverage.ReleaseBatch(ctx, tenantID, batch, at)
+}
 
 // MarkDispatched delegates to the coverage repository.
 func (c *CoverageScheduler) MarkDispatched(ctx context.Context, rec scancoverage.DispatchRecord) error {

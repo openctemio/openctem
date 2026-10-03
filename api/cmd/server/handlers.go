@@ -437,6 +437,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// F-8: wire the single-use ticket redeemer when configured so the
 		// /ws route uses ticket auth instead of the JWT chain.
 		WSTicketRedeemer: svc.WSTicket,
+
+		// Login, MFA, password, SSO and invitation limits count in Redis so
+		// every replica spends one budget (in-memory fallback on a Redis error).
+		AuthRateLimitBackend: middleware.NewRedisAuthRateLimitBackend(deps.RedisClient, log),
 	}
 
 	// SSO handler (always initialized - uses DB-stored provider configs)

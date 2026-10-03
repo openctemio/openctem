@@ -1,178 +1,61 @@
 'use client'
 
-import { formatEpssScore } from '@/lib/epss'
-import { useState, useEffect, useCallback } from 'react'
+/**
+ * The findings list's quick view. Same answers as the detail page, shorter:
+ * what it is, why it matters, how to fix it, who owns it by when. It renders
+ * the page's own sections (FindingWhyItMatters, FindingFixCard,
+ * FindingProperties, useFindingTriage) so the drawer and the page cannot
+ * disagree about a finding or about the approval rules.
+ *
+ * Opens immediately with the list row's data, then fills in from
+ * GET /findings/{id} (package, advisory, asset criticality).
+ */
+
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { toast } from 'sonner'
-import { copyToClipboard } from '@/lib/clipboard'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from '@/components/ui/sheet'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { SheetDetailToolbar, DataTableRowActions } from '@/features/shared'
-import { Progress } from '@/components/ui/progress'
-import { Textarea } from '@/components/ui/textarea'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   ExternalLink,
   FileText,
-  Wrench,
-  AlertTriangle,
-  Server,
-  Eye,
-  Send,
-  Copy,
   Link2,
   MessageSquare,
-  Route,
-  LogIn,
-  ArrowRight,
+  Send,
   ShieldCheck,
-  ChevronDown,
-  AlertOctagon,
   Ticket,
-  ArrowUpRight,
 } from 'lucide-react'
-import { PriorityClassBadge } from './priority-class-badge'
-import { PriorityExplanationCard } from './detail/priority-explanation-card'
-import { isLinkableAssetId, assetDetailHref } from '../lib/asset-link'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import { copyToClipboard } from '@/lib/clipboard'
+import { DetailSection, DetailSections } from '@/features/shared/components/detail-sheet'
 import {
-  DATA_FLOW_LOCATION_CONFIG,
-  SEVERITY_CONFIG,
-  FINDING_STATUS_CONFIG,
-  APPROVAL_STATUS_CONFIG,
-  requiresApproval,
-} from '../types'
-import type { ApiApproval, ApprovalStatus } from '../types'
-import { CodeHighlighter } from './detail/code-highlighter'
-import type {
-  Finding,
-  FindingStatus,
-  FindingUser,
-  DataFlowLocation,
-  DataFlowLocationType,
-} from '../types'
-import type { Severity } from '@/features/shared/types'
-import {
-  useUpdateFindingStatusApi,
-  useUpdateFindingSeverityApi,
-  useAssignFindingApi,
-  useUnassignFindingApi,
-  invalidateFindingsCache,
-  useFindingApprovals,
-} from '../api/use-findings-api'
-import { AssigneeSelect } from './assignee-select'
-import { StatusSelect } from './status-select'
-import { SeveritySelect } from './severity-select'
-import { CreateTicketDialog } from './create-ticket-dialog'
-import { ApprovalDialog } from './approval-dialog'
+  DetailHeader,
+  DetailSheet,
+  type DetailMenuItem,
+} from '@/features/shared/components/detail-sheet-layout'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
-import { useTenant } from '@/context/tenant-provider'
-import { useMembers } from '@/features/organization/api/use-members'
-
-// Compact data flow location for drawer preview
-function DataFlowLocationCompact({
-  location,
-  type,
-}: {
-  location: DataFlowLocation
-  type: DataFlowLocationType
-}) {
-  const config = DATA_FLOW_LOCATION_CONFIG[type]
-  const Icon = type === 'source' ? LogIn : type === 'sink' ? AlertTriangle : ArrowRight
-
-  return (
-    <div className="flex items-start gap-2">
-      <div
-        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full ${config.bgColor}`}
-      >
-        <Icon className={`h-3 w-3 ${config.color}`} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <Badge className={`text-[10px] px-1.5 py-0 ${config.bgColor} ${config.color} border-0`}>
-            {config.label}
-          </Badge>
-          {location.label && (
-            <code className="text-muted-foreground text-[10px] bg-muted px-1 rounded truncate max-w-[100px]">
-              {location.label}
-            </code>
-          )}
-        </div>
-        {location.path && (
-          <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
-            {location.path}
-            {location.line && `:${location.line}`}
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// Skeleton component for loading state
-function DrawerSkeleton() {
-  return (
-    <div className="flex w-full flex-col p-0">
-      {/* Header Skeleton */}
-      <div className="space-y-3 border-b px-4 sm:px-6 py-4">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-6 w-full" />
-        <div className="flex gap-2">
-          <Skeleton className="h-5 w-20" />
-          <Skeleton className="h-5 w-16" />
-        </div>
-      </div>
-
-      {/* Quick Actions Skeleton */}
-      <div className="flex items-center gap-2 border-b px-3 sm:px-6 py-3 bg-muted/30">
-        <Skeleton className="h-8 w-24" />
-        <Skeleton className="h-8 w-20" />
-        <Skeleton className="h-8 w-28" />
-      </div>
-
-      {/* Content Skeleton */}
-      <div className="flex-1 space-y-5 p-6">
-        {/* Meta Info */}
-        <div className="grid grid-cols-2 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="space-y-1">
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-5 w-24" />
-            </div>
-          ))}
-        </div>
-
-        <Separator />
-
-        {/* Assets */}
-        <div className="space-y-3">
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-        </div>
-
-        <Separator />
-
-        {/* Description */}
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="h-20 w-full" />
-        </div>
-      </div>
-    </div>
-  )
-}
+import type { Severity } from '@/features/shared/types'
+import { useFindingApi, useFindingApprovals } from '../api/use-findings-api'
+import { useFindingTriage } from '../hooks/use-finding-triage'
+import { findingDescription, findingSourceLabel, toFindingDetail } from '../lib/finding-detail'
+import {
+  APPROVAL_STATUS_CONFIG,
+  FINDING_STATUS_CONFIG,
+  type ApiApproval,
+  type ApprovalStatus,
+  type Finding,
+  type FindingDetail,
+  type FindingStatus,
+  type FindingUser,
+} from '../types'
+import { AssigneeSelect } from './assignee-select'
+import { CreateTicketDialog } from './create-ticket-dialog'
+import { SeveritySelect } from './severity-select'
+import { StatusSelect } from './status-select'
+import { FindingWhyItMatters } from './detail/finding-why-it-matters'
+import { FindingFixCard } from './detail/finding-fix-card'
+import { FindingProperties } from './detail/finding-properties'
 
 interface FindingDetailDrawerProps {
   finding: Finding | null
@@ -186,6 +69,21 @@ interface FindingDetailDrawerProps {
   onAddComment?: (findingId: string, comment: string) => void
 }
 
+function DrawerBodySkeleton() {
+  return (
+    <div className="space-y-4" aria-busy>
+      <Skeleton className="h-28 w-full rounded-lg" />
+      <Skeleton className="h-20 w-full rounded-lg" />
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="grid grid-cols-[6.5rem_1fr] gap-3">
+          <Skeleton className="h-3.5 w-16" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function FindingDetailDrawer({
   finding,
   open,
@@ -197,900 +95,271 @@ export function FindingDetailDrawer({
   onAddComment,
 }: FindingDetailDrawerProps) {
   const router = useRouter()
-  const { currentTenant } = useTenant()
-  const [status, setStatus] = useState<FindingStatus | null>(null)
-  const [severity, setSeverity] = useState<Severity | null>(null)
-  const [assignee, setAssignee] = useState<FindingUser | null | undefined>(undefined)
-  const [comment, setComment] = useState('')
-  const [showCommentInput, setShowCommentInput] = useState(false)
-  const [showAllAssets, setShowAllAssets] = useState(false)
-  const [ticketOpen, setTicketOpen] = useState(false)
-  // The Jira "Create Ticket" action belongs to the (Phase-3 gated) integrations
-  // module; hide it (and skip its dialog fetch) when disabled. Fail-open on OSS.
   const integrationsEnabled = useModuleEnabled('integrations')
+  const [ticketOpen, setTicketOpen] = useState(false)
+  const [comment, setComment] = useState('')
+  const [composing, setComposing] = useState(false)
 
-  // Check if we need to fetch assignee info (name is empty but id exists)
-  const needsAssigneeFetch = open && finding?.assignee?.id && !finding?.assignee?.name
+  // The full record: package, advisory, asset criticality. Only while open.
+  const { data: api } = useFindingApi(open && finding ? finding.id : null)
+  const detail: FindingDetail | null =
+    api && finding && api.id === finding.id
+      ? toFindingDetail(api)
+      : finding
+        ? { ...finding, activities: [] }
+        : null
 
-  // Fetch members to get assignee info if needed
-  const { members: fetchedMembers } = useMembers(
-    needsAssigneeFetch ? currentTenant?.id : undefined,
-    { limit: 100 } // Fetch more to find the assigned user
-  )
-
-  // Find the assigned user from fetched members
-  const enrichedAssignee =
-    needsAssigneeFetch && finding?.assignee?.id
-      ? fetchedMembers.find((m) => m.user_id === finding.assignee?.id)
-      : null
-
-  // API mutation hooks
-  const { trigger: updateStatus, isMutating: isUpdatingStatus } = useUpdateFindingStatusApi(
-    finding?.id || ''
-  )
-  const { trigger: updateSeverity, isMutating: isUpdatingSeverity } = useUpdateFindingSeverityApi(
-    finding?.id || ''
-  )
-  const { trigger: assignUser, isMutating: isAssigning } = useAssignFindingApi(finding?.id || '')
-  const { trigger: unassignUser, isMutating: isUnassigning } = useUnassignFindingApi(
-    finding?.id || ''
-  )
-
-  // Fetch approval history
-  const shouldFetchApprovals =
-    open && finding?.id && (finding.status === 'false_positive' || finding.status === 'accepted')
-  const { data: findingApprovals } = useFindingApprovals(
-    shouldFetchApprovals ? finding?.id : undefined
-  )
-  const [approvalHistoryOpen, setApprovalHistoryOpen] = useState(false)
-
-  // Approval-required status changes (false_positive, accepted, accepted_risk)
-  // route through the same ApprovalDialog the full finding-detail page uses.
-  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false)
-  const [approvalTargetStatus, setApprovalTargetStatus] = useState<FindingStatus | null>(null)
-
-  // Reset local state when finding changes (drawer opens with new finding)
-  useEffect(() => {
-    if (finding) {
-      setStatus(null)
-      setSeverity(null)
-      setAssignee(undefined)
+  const triage = useFindingTriage(
+    detail ?? { id: '', status: 'new', severity: 'medium', assignee: undefined },
+    {
+      onStatusChange: (s) => finding && onStatusChange?.(finding.id, s),
+      onSeverityChange: (s) => finding && onSeverityChange?.(finding.id, s),
+      onAssigneeChange: (u) => finding && onAssigneeChange?.(finding.id, u),
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only reset on finding.id change, not other fields
-  }, [finding?.id])
+  )
 
-  // Keyboard shortcuts handler
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      // Only handle when drawer is open and not in input/textarea
-      if (!open || !finding) return
-      const target = e.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+  const { data: approvals } = useFindingApprovals(
+    open && finding && ['false_positive', 'accepted', 'accepted_risk'].includes(triage.status)
+      ? finding.id
+      : undefined
+  )
 
-      // Cmd/Ctrl + Enter: View full details
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+  const openPage = useCallback(
+    (tab?: string) => {
+      if (!finding) return
+      onOpenChange(false)
+      router.push(`/findings/${finding.id}${tab ? `?tab=${tab}` : ''}`)
+    },
+    [finding, onOpenChange, router]
+  )
+
+  // ⌘/Ctrl+Enter opens the full page; Esc closes the comment box first.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && t.tagName !== 'TEXTAREA') {
         e.preventDefault()
-        onOpenChange(false)
-        router.push(`/findings/${finding.id}`)
+        openPage()
       }
-      // Cmd/Ctrl + C: Toggle comment input
+      // ⌘/Ctrl+C toggles the comment box, unless text is selected (copy).
       if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
-        // Only if no text is selected (don't interfere with copy)
-        if (!window.getSelection()?.toString()) {
+        if (
+          t.tagName !== 'TEXTAREA' &&
+          t.tagName !== 'INPUT' &&
+          !window.getSelection()?.toString()
+        ) {
           e.preventDefault()
-          setShowCommentInput((prev) => !prev)
+          setComposing((v) => !v)
         }
       }
-      // Escape: Close drawer (handled by Sheet, but ensure comment input closes first)
-      if (e.key === 'Escape' && showCommentInput) {
+      if (e.key === 'Escape' && composing) {
         e.preventDefault()
         e.stopPropagation()
-        setShowCommentInput(false)
+        setComposing(false)
         setComment('')
       }
-    },
-    [open, finding, router, onOpenChange, showCommentInput]
-  )
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [open, composing, openPage])
 
   useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
-
-  if (!finding) return null
-
-  // Use local state if changed, otherwise use finding value
-  const currentStatus = status ?? finding.status
-  const currentSeverity = severity ?? finding.severity
-
-  // For assignee: use local state > enriched data from API > finding data
-  const baseAssignee = assignee !== undefined ? assignee : finding.assignee
-  const currentAssignee =
-    baseAssignee && enrichedAssignee && !baseAssignee.name
-      ? {
-          ...baseAssignee,
-          name: enrichedAssignee.name || '',
-          email: enrichedAssignee.email || '',
-        }
-      : baseAssignee
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
-  }
-
-  const handleStatusChange = async (newStatus: FindingStatus, skipUndo = false) => {
-    // Skip if selecting the same status
-    if (newStatus === currentStatus) {
-      return
-    }
-
-    // Approval-required statuses (false_positive, accepted, accepted_risk) can't
-    // be set directly — open the same ApprovalDialog the full page uses so the
-    // user submits a justified approval request instead of a silent no-op.
-    if (requiresApproval(newStatus)) {
-      setApprovalTargetStatus(newStatus)
-      setApprovalDialogOpen(true)
-      return
-    }
-
-    const previousStatus = currentStatus
-    // Optimistic update
-    setStatus(newStatus)
-
-    try {
-      await updateStatus({
-        status: newStatus,
-        resolution: newStatus === 'resolved' ? 'Resolved via UI' : undefined,
-      })
-      onStatusChange?.(finding.id, newStatus)
-      await invalidateFindingsCache()
-      toast.success(
-        `Status updated to ${FINDING_STATUS_CONFIG[newStatus].label}`,
-        skipUndo
-          ? { duration: 3000 }
-          : {
-              action: {
-                label: 'Undo',
-                onClick: () => handleStatusChange(previousStatus, true),
-              },
-              duration: 5000,
-            }
-      )
-    } catch (error) {
-      // Revert on error
-      setStatus(previousStatus)
-      toast.error(getErrorMessage(error, 'Failed to update status'))
-      console.error('Status update error:', error)
-    }
-  }
-
-  const handleSeverityChange = async (newSeverity: Severity, skipUndo = false) => {
-    // Skip if selecting the same severity
-    if (newSeverity === currentSeverity) {
-      return
-    }
-
-    const previousSeverity = currentSeverity
-    // Optimistic update
-    setSeverity(newSeverity)
-
-    try {
-      await updateSeverity({ severity: newSeverity })
-      onSeverityChange?.(finding.id, newSeverity)
-      await invalidateFindingsCache()
-      toast.success(
-        `Severity updated to ${SEVERITY_CONFIG[newSeverity].label}`,
-        skipUndo
-          ? { duration: 3000 }
-          : {
-              action: {
-                label: 'Undo',
-                onClick: () => handleSeverityChange(previousSeverity, true),
-              },
-              duration: 5000,
-            }
-      )
-    } catch (error) {
-      // Revert on error
-      setSeverity(previousSeverity)
-      toast.error(getErrorMessage(error, 'Failed to update severity'))
-      console.error('Severity update error:', error)
-    }
-  }
-
-  const handleAssigneeChange = async (user: FindingUser | null, skipUndo = false) => {
-    const previousAssignee = currentAssignee
-
-    // Skip if selecting the same assignee
-    if (user?.id === currentAssignee?.id) {
-      return
-    }
-
-    // Optimistic update
-    setAssignee(user)
-
-    try {
-      if (user) {
-        await assignUser({ user_id: user.id })
-        toast.success(
-          `Assigned to ${user.name}`,
-          skipUndo
-            ? { duration: 3000 }
-            : {
-                action: {
-                  label: 'Undo',
-                  onClick: () => handleAssigneeChange(previousAssignee ?? null, true),
-                },
-                duration: 5000,
-              }
-        )
-      } else {
-        await unassignUser()
-        toast.success(
-          'Unassigned successfully',
-          skipUndo
-            ? { duration: 3000 }
-            : {
-                action: {
-                  label: 'Undo',
-                  onClick: () => handleAssigneeChange(previousAssignee ?? null, true),
-                },
-                duration: 5000,
-              }
-        )
-      }
-      onAssigneeChange?.(finding.id, user)
-      await invalidateFindingsCache()
-    } catch (error) {
-      // Revert on error
-      setAssignee(previousAssignee)
-      toast.error(getErrorMessage(error, user ? 'Failed to assign' : 'Failed to unassign'))
-      console.error('Assignee update error:', error)
-    }
-  }
-
-  const handleAddComment = () => {
-    if (!comment.trim()) return
-    onAddComment?.(finding.id, comment)
+    setComposing(false)
     setComment('')
-    setShowCommentInput(false)
+  }, [finding?.id])
+
+  if (!finding || !detail) return null
+
+  const menu: DetailMenuItem[] = [
+    {
+      label: 'Copy link',
+      icon: Link2,
+      onSelect: () => {
+        void copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
+        toast.success('Link copied')
+      },
+    },
+    ...(integrationsEnabled
+      ? [{ label: 'Create ticket', icon: Ticket, onSelect: () => setTicketOpen(true) }]
+      : []),
+  ]
+
+  const sendComment = () => {
+    if (!comment.trim()) return
+    onAddComment?.(finding.id, comment.trim())
+    setComment('')
+    setComposing(false)
   }
 
-  const handleViewDetails = () => {
-    onOpenChange(false)
-    router.push(`/findings/${finding.id}`)
-  }
+  const asset = detail.assets[0]
+  const description = findingDescription(detail)
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          className="flex w-full flex-col p-0 sm:max-w-xl [&>button]:hidden"
-          onOpenAutoFocus={(e) => {
-            e.preventDefault()
-          }}
-        >
-          {/* Loading State */}
-          {isLoading && <DrawerSkeleton />}
-
-          {/* Content - only show when not loading and finding exists */}
-          {!isLoading && finding && (
-            <>
-              {/* Toolbar */}
-              <TooltipProvider>
-                <SheetDetailToolbar
-                  title="Finding Details"
-                  onClose={() => onOpenChange(false)}
-                  onCopyId={() => {
-                    copyToClipboard(finding.id)
-                    toast.success('Finding ID copied to clipboard')
-                  }}
-                  onOpenExternal={() => {
-                    router.push(`/findings/${finding.id}`)
-                  }}
-                  extraActions={[
-                    {
-                      label: 'Copy link',
-                      icon: Link2,
-                      onClick: () => {
-                        copyToClipboard(window.location.origin + `/findings/${finding.id}`)
-                        toast.success('Finding URL copied to clipboard')
-                      },
-                    },
-                  ]}
-                />
-              </TooltipProvider>
-
-              {/* Header */}
-              <SheetHeader className="space-y-3 border-b px-4 sm:px-6 pb-4 text-start">
-                {/* Title */}
-                <SheetTitle className="text-lg leading-snug">{finding.title}</SheetTitle>
-
-                {/* Risk signals — KEV / EPSS / CVSS / priority surfaced up top so the
-                  severity story reads at a glance, instead of CVSS being buried in
-                  the meta grid at the bottom with no exploit context. */}
-                {(finding.isInKev ||
-                  (finding.epssScore !== undefined && finding.epssScore > 0) ||
-                  finding.cvss !== undefined ||
-                  finding.priorityClass ||
-                  finding.cve ||
-                  finding.cwe) && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {finding.isInKev && (
-                      <Badge
-                        className="gap-1 bg-red-600 text-xs font-semibold text-white hover:bg-red-600"
-                        title={
-                          finding.kevDueDate
-                            ? `CISA KEV — remediate by ${formatDate(finding.kevDueDate)}`
-                            : 'CISA Known Exploited Vulnerability'
-                        }
-                      >
-                        <AlertOctagon className="h-3 w-3" />
-                        KEV
-                      </Badge>
-                    )}
-                    {finding.priorityClass && (
-                      <PriorityClassBadge
-                        priorityClass={finding.priorityClass}
-                        showTooltip={false}
-                      />
-                    )}
-                    {finding.cvss !== undefined && (
-                      <Badge variant="outline" className="font-mono text-xs">
-                        CVSS {finding.cvss}
-                      </Badge>
-                    )}
-                    {finding.epssScore !== undefined && finding.epssScore > 0 && (
-                      <Badge
-                        variant="outline"
-                        className="border-amber-500/40 font-mono text-xs text-amber-700 dark:text-amber-400"
-                        title="EPSS — probability of exploitation in the next 30 days"
-                      >
-                        EPSS {formatEpssScore(finding.epssScore)}
-                      </Badge>
-                    )}
-                    {finding.cve && (
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {finding.cve}
-                      </Badge>
-                    )}
-                    {finding.cwe && (
-                      <Badge variant="outline" className="text-xs">
-                        {finding.cwe}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-
-                <SheetDescription className="sr-only">
-                  Quick view and actions for finding
-                </SheetDescription>
-              </SheetHeader>
-
-              {/* Quick Actions Bar - no longer needs ms-auto for "..." button */}
-              <div className="flex items-center gap-1.5 sm:gap-2 border-b px-3 sm:px-6 py-3 bg-muted/30">
-                {/* Status Select */}
+      <DetailSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        width="xl"
+        header={
+          <DetailHeader
+            title={detail.title}
+            meta={[findingSourceLabel(detail.source), detail.cve, asset?.name]}
+            menu={menu}
+            onClose={() => onOpenChange(false)}
+            actions={
+              <>
                 <StatusSelect
-                  value={currentStatus}
-                  onChange={handleStatusChange}
-                  loading={isUpdatingStatus}
+                  value={triage.status}
+                  onChange={triage.changeStatus}
+                  loading={triage.statusBusy}
                   showCheck
-                  source={finding.source}
+                  source={detail.source}
                 />
-
-                {/* Severity Select */}
                 <SeveritySelect
-                  value={currentSeverity}
-                  onChange={handleSeverityChange}
-                  loading={isUpdatingSeverity}
+                  value={triage.severity}
+                  onChange={triage.changeSeverity}
+                  loading={triage.severityBusy}
+                  cvss={detail.cvss}
                   showCheck
                 />
-
-                {/* Assignee Select with Search */}
                 <AssigneeSelect
                   value={
-                    currentAssignee
+                    triage.assignee
                       ? {
-                          id: currentAssignee.id,
-                          name: currentAssignee.name,
-                          email: currentAssignee.email,
-                          role: currentAssignee.role,
+                          id: triage.assignee.id,
+                          name: triage.assignee.name,
+                          email: triage.assignee.email,
                         }
                       : null
                   }
-                  onChange={(user) => {
-                    if (user) {
-                      handleAssigneeChange({
-                        id: user.id,
-                        name: user.name,
-                        email: user.email || '',
-                        role: (user.role as FindingUser['role']) || 'analyst',
-                      })
-                    } else {
-                      handleAssigneeChange(null)
-                    }
-                  }}
-                  loading={isAssigning || isUnassigning}
+                  onChange={(u) =>
+                    triage.changeAssignee(
+                      u ? { id: u.id, name: u.name, email: u.email || '', role: 'analyst' } : null
+                    )
+                  }
+                  loading={triage.assigneeBusy}
                 />
+              </>
+            }
+          />
+        }
+      >
+        {isLoading ? (
+          <DrawerBodySkeleton />
+        ) : (
+          <div className="space-y-4">
+            <FindingWhyItMatters finding={detail} compact />
+            <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
+            <DetailSections>
+              <FindingProperties finding={detail} triage={triage} hideTriage />
 
-                {/* Overflow actions */}
-                {integrationsEnabled && (
-                  <div className="ms-auto">
-                    <DataTableRowActions
-                      label="More actions"
-                      actions={[
-                        {
-                          label: 'Create Jira Ticket',
-                          icon: Ticket,
-                          onClick: () => setTicketOpen(true),
-                        },
-                      ]}
-                    />
-                  </div>
-                )}
-              </div>
+              {description.text && (
+                <DetailSection title="Description" icon={FileText}>
+                  <p className="line-clamp-6 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                    {description.text}
+                  </p>
+                </DetailSection>
+              )}
 
-              {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto">
-                <div className="space-y-5 p-6">
-                  {/* Description */}
-                  <div className="space-y-2">
-                    <h4 className="flex items-center gap-2 text-sm font-semibold">
-                      <FileText className="h-4 w-4" />
-                      Description
-                    </h4>
-                    <p className="text-muted-foreground text-sm leading-relaxed">
-                      {finding.description}
-                    </p>
-                  </div>
-
-                  {/* Approval History - show if there are approvals or status requires approval */}
-                  {findingApprovals && findingApprovals.length > 0 && (
-                    <>
-                      <Separator />
-                      <Collapsible open={approvalHistoryOpen} onOpenChange={setApprovalHistoryOpen}>
-                        <CollapsibleTrigger className="flex w-full items-center justify-between">
-                          <h4 className="flex items-center gap-2 text-sm font-semibold">
-                            <ShieldCheck className="h-4 w-4" />
-                            Approval History
-                          </h4>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary" className="text-xs">
-                              {findingApprovals.length}
-                            </Badge>
-                            <ChevronDown
-                              className={`h-4 w-4 text-muted-foreground transition-transform ${
-                                approvalHistoryOpen ? 'rotate-180' : ''
-                              }`}
-                            />
-                          </div>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <div className="mt-3 space-y-2">
-                            {findingApprovals.map((approval: ApiApproval) => {
-                              const statusConfig =
-                                APPROVAL_STATUS_CONFIG[approval.status as ApprovalStatus]
-                              return (
-                                <div
-                                  key={approval.id}
-                                  className="rounded-md border p-2.5 text-xs space-y-1"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <Badge variant="outline" className="text-[10px]">
-                                      {statusConfig?.label ?? approval.status}
-                                    </Badge>
-                                    <span className="text-muted-foreground">
-                                      {new Date(approval.created_at).toLocaleDateString('en-US', {
-                                        month: 'short',
-                                        day: 'numeric',
-                                        year: 'numeric',
-                                      })}
-                                    </span>
-                                  </div>
-                                  <div className="text-muted-foreground">
-                                    Requested:{' '}
-                                    <span className="font-medium text-foreground">
-                                      {FINDING_STATUS_CONFIG[
-                                        approval.requested_status as FindingStatus
-                                      ]?.label ?? approval.requested_status}
-                                    </span>
-                                  </div>
-                                  {approval.justification && (
-                                    <p className="text-muted-foreground line-clamp-2">
-                                      {approval.justification}
-                                    </p>
-                                  )}
-                                  {approval.rejection_reason && (
-                                    <p className="text-red-500 line-clamp-2">
-                                      Reason: {approval.rejection_reason}
-                                    </p>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </>
-                  )}
-
-                  {/* Code Evidence - show if evidence exists or filePath exists */}
-                  {(finding.evidence.length > 0 || finding.filePath) && (
-                    <>
-                      <Separator />
-                      <div className="space-y-3">
+              {approvals && approvals.length > 0 && (
+                <DetailSection title="Approval history" icon={ShieldCheck} count={approvals.length}>
+                  <ul className="space-y-2">
+                    {approvals.map((a: ApiApproval) => (
+                      <li key={a.id} className="space-y-1 rounded-md border p-2.5 text-xs">
                         <div className="flex items-center justify-between">
-                          <h4 className="flex items-center gap-2 text-sm font-semibold">
-                            <Eye className="h-4 w-4" />
-                            Code Evidence
-                          </h4>
-                          {finding.evidence.length > 0 && (
-                            <Badge variant="secondary" className="text-xs">
-                              {finding.evidence.length}
-                            </Badge>
-                          )}
+                          <Badge variant="outline" className="text-[11px]">
+                            {APPROVAL_STATUS_CONFIG[a.status as ApprovalStatus]?.label ?? a.status}
+                          </Badge>
+                          <span className="text-muted-foreground">
+                            {new Date(a.created_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </span>
                         </div>
-
-                        {/* File path and line info */}
-                        {finding.filePath && (
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-md font-mono">
-                            <span className="truncate">{finding.filePath}</span>
-                            {finding.startLine && (
-                              <span className="shrink-0 text-foreground/70">
-                                :{finding.startLine}
-                                {finding.endLine &&
-                                  finding.endLine !== finding.startLine &&
-                                  `-${finding.endLine}`}
-                              </span>
-                            )}
-                          </div>
+                        <p className="text-muted-foreground">
+                          Requested:{' '}
+                          <span className="font-medium text-foreground">
+                            {FINDING_STATUS_CONFIG[a.requested_status as FindingStatus]?.label ??
+                              a.requested_status}
+                          </span>
+                        </p>
+                        {a.justification && (
+                          <p className="line-clamp-2 text-muted-foreground">{a.justification}</p>
                         )}
+                        {a.rejection_reason && (
+                          <p className="line-clamp-2 text-destructive">
+                            Reason: {a.rejection_reason}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </DetailSection>
+              )}
+            </DetailSections>
 
-                        {/* Code snippets with syntax highlighting */}
-                        <div className="space-y-2">
-                          {finding.evidence.slice(0, 2).map((ev) => (
-                            <div key={ev.id} className="rounded-md border overflow-hidden group">
-                              <div className="bg-muted/50 px-3 py-1.5 border-b flex items-center justify-between">
-                                <span className="text-xs font-medium truncate">{ev.title}</span>
-                                <div className="flex items-center gap-1">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-8 w-8 p-0 min-h-[32px] min-w-[32px]"
-                                    onClick={async (e) => {
-                                      e.preventDefault()
-                                      e.stopPropagation()
-                                      const textToCopy = ev.content || ''
-                                      if (!textToCopy) {
-                                        toast.error('No code content to copy')
-                                        return
-                                      }
-                                      const ok = await copyToClipboard(textToCopy)
-                                      if (ok) {
-                                        toast.success('Code copied to clipboard')
-                                      } else {
-                                        toast.error('Failed to copy code')
-                                      }
-                                    }}
-                                  >
-                                    <Copy className="h-4 w-4" />
-                                  </Button>
-                                  <span className="text-xs text-muted-foreground capitalize">
-                                    {ev.type}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="p-3 bg-muted/20 max-h-40 overflow-y-auto">
-                                <CodeHighlighter
-                                  code={ev.content}
-                                  filePath={finding.filePath}
-                                  showLineNumbers={!!finding.startLine}
-                                  startLine={finding.startLine || 1}
-                                  highlightLine={finding.startLine}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                          {finding.evidence.length > 2 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full text-xs h-7"
-                              onClick={handleViewDetails}
-                            >
-                              +{finding.evidence.length - 2} more evidence
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  <Separator />
-
-                  {/* Affected Assets */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="flex items-center gap-2 text-sm font-semibold">
-                        <Server className="h-4 w-4" />
-                        Affected Assets
-                      </h4>
-                      <Badge variant="secondary" className="text-xs">
-                        {finding.assets.length}
-                      </Badge>
-                    </div>
-                    <div className="space-y-2">
-                      {(showAllAssets ? finding.assets : finding.assets.slice(0, 3)).map(
-                        (asset) => (
-                          <div
-                            key={asset.id}
-                            className="flex items-center justify-between rounded-lg border p-2.5"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Badge variant="outline" className="text-xs capitalize shrink-0">
-                                {asset.type}
-                              </Badge>
-                              {isLinkableAssetId(asset.id) ? (
-                                <Link
-                                  href={assetDetailHref(asset.id)}
-                                  className="focus-visible:ring-ring inline-flex min-w-0 items-center gap-1 rounded text-sm hover:underline focus-visible:ring-2 focus-visible:outline-none"
-                                >
-                                  <span className="truncate">{asset.name}</span>
-                                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
-                                </Link>
-                              ) : (
-                                <span className="text-sm truncate">{asset.name}</span>
-                              )}
-                            </div>
-                            {asset.criticality && (
-                              <Badge
-                                className={`text-xs shrink-0 ${SEVERITY_CONFIG[asset.criticality].bgColor} ${SEVERITY_CONFIG[asset.criticality].textColor} border-0`}
-                              >
-                                {asset.criticality}
-                              </Badge>
-                            )}
-                          </div>
-                        )
-                      )}
-                      {finding.assets.length > 3 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="w-full text-xs h-7"
-                          onClick={() => setShowAllAssets((prev) => !prev)}
-                        >
-                          {showAllAssets
-                            ? 'Show less'
-                            : `+${finding.assets.length - 3} more assets`}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Why this priority — read-only classifier breakdown.
-                      Renders nothing (incl. its own separator) when unavailable. */}
-                  <PriorityExplanationCard findingId={finding.id} variant="drawer" />
-
-                  {/* Attack Path / Data Flow */}
-                  {finding.dataFlow &&
-                    ((finding.dataFlow.sources?.length ?? 0) > 0 ||
-                      (finding.dataFlow.intermediates?.length ?? 0) > 0 ||
-                      (finding.dataFlow.sinks?.length ?? 0) > 0) && (
-                      <>
-                        <Separator />
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <h4 className="flex items-center gap-2 text-sm font-semibold">
-                              <Route className="h-4 w-4" />
-                              Attack Path
-                            </h4>
-                            <Badge variant="secondary" className="text-xs">
-                              {(finding.dataFlow.sources?.length ?? 0) +
-                                (finding.dataFlow.intermediates?.length ?? 0) +
-                                (finding.dataFlow.sinks?.length ?? 0)}{' '}
-                              steps
-                            </Badge>
-                          </div>
-
-                          {/* Compact flow visualization */}
-                          <div className="space-y-2">
-                            {/* Sources */}
-                            {finding.dataFlow.sources?.map((loc, idx) => (
-                              <DataFlowLocationCompact
-                                key={`source-${idx}`}
-                                location={loc}
-                                type="source"
-                              />
-                            ))}
-
-                            {/* Intermediates - show max 2 */}
-                            {finding.dataFlow.intermediates?.slice(0, 2).map((loc, idx) => (
-                              <DataFlowLocationCompact
-                                key={`intermediate-${idx}`}
-                                location={loc}
-                                type="intermediate"
-                              />
-                            ))}
-                            {(finding.dataFlow.intermediates?.length ?? 0) > 2 && (
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground ps-6">
-                                <ArrowRight className="h-3 w-3" />+
-                                {(finding.dataFlow.intermediates?.length ?? 0) - 2} more steps
-                              </div>
-                            )}
-
-                            {/* Sinks */}
-                            {finding.dataFlow.sinks?.map((loc, idx) => (
-                              <DataFlowLocationCompact
-                                key={`sink-${idx}`}
-                                location={loc}
-                                type="sink"
-                              />
-                            ))}
-                          </div>
-
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full text-xs h-7"
-                            onClick={handleViewDetails}
-                          >
-                            View Full Attack Path
-                          </Button>
-                        </div>
-                      </>
-                    )}
-
-                  <Separator />
-
-                  {/* Remediation Progress */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="flex items-center gap-2 text-sm font-semibold">
-                        <Wrench className="h-4 w-4" />
-                        Remediation
-                      </h4>
-                      <span className="text-sm font-semibold">{finding.remediation.progress}%</span>
-                    </div>
-                    <Progress value={finding.remediation.progress} className="h-2" />
-                    <p className="text-muted-foreground text-xs line-clamp-2">
-                      {finding.remediation.description}
-                    </p>
-                    {finding.remediation.deadline && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
-                        <span className="text-muted-foreground">
-                          Due: {formatDate(finding.remediation.deadline)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tags */}
-                  {finding.tags && finding.tags.length > 0 && (
-                    <>
-                      <Separator />
-                      <div className="space-y-2">
-                        <h4 className="text-sm font-semibold">Tags</h4>
-                        <div className="flex flex-wrap gap-1.5">
-                          {finding.tags.map((tag) => (
-                            <Badge key={tag} variant="secondary" className="text-xs">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  <Separator />
-
-                  {/* Meta Info - 2x2 grid */}
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                    <div className="space-y-0.5">
-                      <p className="text-muted-foreground text-xs">CVSS Score</p>
-                      <p className="text-sm font-semibold font-mono">
-                        {finding.cvss !== undefined ? finding.cvss : '-'}
-                      </p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-muted-foreground text-xs">Source</p>
-                      <p className="text-sm capitalize">{finding.source}</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-muted-foreground text-xs">Discovered</p>
-                      <p className="text-sm">{formatDate(finding.discoveredAt)}</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-muted-foreground text-xs">Last Updated</p>
-                      <p className="text-sm">{formatDate(finding.updatedAt)}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer with Quick Comment & View Details */}
-              <div className="flex-shrink-0 border-t">
-                {/* Quick Comment */}
-                {showCommentInput ? (
-                  <div className="p-4 space-y-2 border-b">
-                    <Textarea
-                      placeholder="Add a quick comment..."
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
-                      className="min-h-[60px] resize-none text-sm"
-                      autoFocus
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setShowCommentInput(false)
-                          setComment('')
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button size="sm" onClick={handleAddComment} disabled={!comment.trim()}>
-                        <Send className="me-1.5 h-3 w-3" />
-                        Send
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="px-4 py-2 border-b">
+            <div className="space-y-2 border-t pt-4">
+              {composing ? (
+                <div className="space-y-2">
+                  <Textarea
+                    placeholder="Add a comment…"
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    className="min-h-[72px] resize-none text-sm"
+                    aria-label="Comment"
+                    autoFocus
+                  />
+                  <div className="flex justify-end gap-2">
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="w-full justify-start text-muted-foreground hover:text-foreground"
-                      onClick={() => setShowCommentInput(true)}
+                      onClick={() => {
+                        setComposing(false)
+                        setComment('')
+                      }}
                     >
-                      <MessageSquare className="me-2 h-4 w-4" />
-                      Add a comment...
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={sendComment} disabled={!comment.trim()}>
+                      <Send className="h-3.5 w-3.5" />
+                      Send
                     </Button>
                   </div>
-                )}
-
-                {/* View Details Button */}
-                <div className="p-4">
-                  <Button className="w-full" onClick={handleViewDetails}>
-                    <ExternalLink className="me-2 h-4 w-4" />
-                    View Full Details
-                  </Button>
                 </div>
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
-      {/* `finding` is non-null past the `if (!finding) return null` guard above.
-          Mounted only when the integrations module is enabled so its Jira-projects
-          fetch never fires for tenants without the module. */}
+              ) : (
+                onAddComment && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-muted-foreground"
+                    onClick={() => setComposing(true)}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    Add a comment…
+                  </Button>
+                )
+              )}
+              <Button className="w-full" onClick={() => openPage()}>
+                <ExternalLink className="h-4 w-4" />
+                Open full details
+              </Button>
+            </div>
+          </div>
+        )}
+      </DetailSheet>
+
       {integrationsEnabled && (
         <CreateTicketDialog
           findingId={finding.id}
-          findingTitle={finding.title}
+          findingTitle={detail.title}
           open={ticketOpen}
           onOpenChange={setTicketOpen}
         />
       )}
-      {/* Approval-required status changes reuse the same dialog + request-approval
-          mutation as the full finding-detail page. On success we refresh the
-          findings cache so pending-approval state is reflected. */}
-      {approvalTargetStatus && (
-        <ApprovalDialog
-          findingId={finding.id}
-          targetStatus={approvalTargetStatus}
-          open={approvalDialogOpen}
-          onOpenChange={setApprovalDialogOpen}
-          onSuccess={() => invalidateFindingsCache()}
-        />
-      )}
+      {triage.dialogs}
     </>
   )
 }
