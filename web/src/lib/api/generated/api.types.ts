@@ -4284,36 +4284,39 @@ export interface paths {
       cookie?: never
     }
     /**
-     * List asset types
-     * @description Retrieves a paginated list of system asset types. Asset types are read-only configuration. Use active_only=true to get all active types without pagination.
+     * Asset type registry
+     * @description Returns the asset type registry (RFC-042): every asset type with its class, lens, attribute schema, facets, group-by fields, row columns, card renderer, detail sections, allowed relationships and identity keys, plus the classes, lenses and the closed sets of sections and cards. The registry is generated from api/configs/asset-types.yaml and holds no tenant data. The response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages fields are the legacy asset_types rows (deprecated, kept for one release); the query parameters below filter only those.
      */
     get: {
       parameters: {
         query?: {
-          /** @description Return only active asset types (bypasses pagination) */
+          /** @description Legacy rows: only active asset types, without pagination */
           active_only?: boolean
-          /** @description Include category details in response */
+          /** @description Legacy rows: include category details */
           include_category?: boolean
-          /** @description Search by name or code */
+          /** @description Legacy rows: search by name or code */
           search?: string
-          /** @description Filter by category ID */
+          /** @description Legacy rows: filter by category ID */
           category_id?: string
-          /** @description Filter by exact code */
+          /** @description Legacy rows: filter by exact code */
           code?: string
-          /** @description Filter by system type */
+          /** @description Legacy rows: filter by system type */
           is_system?: boolean
-          /** @description Filter by scannable flag */
+          /** @description Legacy rows: filter by scannable flag */
           is_scannable?: boolean
-          /** @description Filter by discoverable flag */
+          /** @description Legacy rows: filter by discoverable flag */
           is_discoverable?: boolean
-          /** @description Sort field (e.g., 'name', '-display_order') */
+          /** @description Legacy rows: sort field (e.g., 'name', '-display_order') */
           sort?: string
-          /** @description Page number */
+          /** @description Legacy rows: page number */
           page?: number
-          /** @description Items per page */
+          /** @description Legacy rows: items per page */
           per_page?: number
         }
-        header?: never
+        header?: {
+          /** @description ETag from a previous response */
+          'If-None-Match'?: string
+        }
         path?: never
         cookie?: never
       }
@@ -4325,14 +4328,15 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              data?: components['schemas']['internal_infra_http_handler.AssetTypeResponse'][]
-              page?: number
-              per_page?: number
-              total?: number
-              total_pages?: number
-            }
+            'application/json': components['schemas']['internal_infra_http_handler.AssetTypeRegistryResponse']
           }
+        }
+        /** @description Not modified (If-None-Match matched the ETag) */
+        304: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
         }
         /** @description Bad Request */
         400: {
@@ -4458,6 +4462,7 @@ export interface paths {
     }
     /**
      * List asset type categories
+     * @deprecated
      * @description Retrieves a paginated list of asset type categories. Use active_only=true to get all active categories without pagination.
      */
     get: {
@@ -4539,6 +4544,7 @@ export interface paths {
     }
     /**
      * Get a category by ID
+     * @deprecated
      * @description Retrieves a single asset type category by its unique identifier
      */
     get: {
@@ -31569,6 +31575,167 @@ export interface components {
       message?: string
       request_id?: string
     }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.AssetType':
+      | 'domain'
+      | 'subdomain'
+      | 'certificate'
+      | 'ip_address'
+      | 'website'
+      | 'web_application'
+      | 'api'
+      | 'mobile_app'
+      | 'service'
+      | 'repository'
+      | 'cloud_account'
+      | 'compute'
+      | 'storage'
+      | 'serverless'
+      | 'container_registry'
+      | 'host'
+      | 'container'
+      | 'kubernetes_cluster'
+      | 'kubernetes_namespace'
+      | 'database'
+      | 'data_store'
+      | 's3_bucket'
+      | 'network'
+      | 'vpc'
+      | 'subnet'
+      | 'load_balancer'
+      | 'firewall'
+      | 'iam_user'
+      | 'iam_role'
+      | 'service_account'
+      | 'unclassified'
+      | 'http_service'
+      | 'open_port'
+      | 'discovered_url'
+      | 'endpoint'
+      | 'application'
+      | 'identity'
+      | 'kubernetes'
+    'github_com_openctemio_openctem_api_pkg_domain_asset.AttributeDefinition': {
+      facet?: boolean
+      group?: boolean
+      name?: string
+      type?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AttributeKind']
+      values?: string[]
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.AttributeKind':
+      'string' | 'int' | 'number' | 'bool' | 'time' | 'enum' | 'list' | 'object'
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.Category':
+      | 'external_surface'
+      | 'application'
+      | 'infrastructure'
+      | 'network'
+      | 'cloud'
+      | 'data'
+      | 'code'
+      | 'identity'
+      | 'other'
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.Class':
+      | 'domain'
+      | 'ip_address'
+      | 'certificate'
+      | 'service'
+      | 'web_endpoint'
+      | 'application'
+      | 'host'
+      | 'function'
+      | 'cloud_account'
+      | 'container'
+      | 'cluster'
+      | 'artifact_registry'
+      | 'code_repo'
+      | 'identity'
+      | 'data_store'
+      | 'network'
+      | 'other'
+    'github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition': {
+      id?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class']
+      jupiterone?: string
+      label?: string
+      lens?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
+      types?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AssetType'][]
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.Lens':
+      | 'external_surface'
+      | 'applications'
+      | 'cloud_infra'
+      | 'containers_k8s'
+      | 'code'
+      | 'identities'
+      | 'data'
+      | 'network'
+    'github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition': {
+      classes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class'][]
+      default_group_by?: string
+      description?: string
+      id?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
+      label?: string
+      row?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule': {
+      peers?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'][]
+      relationship?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType']
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType':
+      | 'runs_on'
+      | 'deployed_to'
+      | 'contains'
+      | 'exposes'
+      | 'resolves_to'
+      | 'cname_of'
+      | 'depends_on'
+      | 'peer_of'
+      | 'replicates_to'
+      | 'sends_data_to'
+      | 'stores_data_in'
+      | 'authenticates_to'
+      | 'granted_to'
+      | 'has_access_to'
+      | 'load_balances'
+      | 'protected_by'
+      | 'monitors'
+      | 'manages'
+    'github_com_openctemio_openctem_api_pkg_domain_asset.SectionDefinition': {
+      id?: string
+      label?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition': {
+      alias_of?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef']
+      attributes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AttributeDefinition'][]
+      card?: string
+      class?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class']
+      columns?: string[]
+      facets?: string[]
+      group_by?: string[]
+      icon?: string
+      identity_keys?: string[]
+      label?: string
+      legacy_category?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Category']
+      lens?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
+      plural?: string
+      relationships?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships']
+      sections?: string[]
+      storage?: string
+      sub_types?: string[]
+      type?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AssetType']
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef': {
+      sub_type?: string
+      type?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AssetType']
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships': {
+      in?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule'][]
+      out?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule'][]
+    }
     'github_com_openctemio_openctem_api_pkg_domain_audit.Changes': {
       after?: {
         [key: string]: unknown
@@ -32599,6 +32766,21 @@ export interface components {
       total?: number
       /** @example domain */
       type?: string
+    }
+    'internal_infra_http_handler.AssetTypeRegistryResponse': {
+      cards?: string[]
+      classes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition'][]
+      core_fields?: string[]
+      /** @description Deprecated: the legacy asset_types rows; use Types. */
+      data?: components['schemas']['internal_infra_http_handler.AssetTypeResponse'][]
+      lenses?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition'][]
+      page?: number
+      per_page?: number
+      sections?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.SectionDefinition'][]
+      total?: number
+      total_pages?: number
+      types?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition'][]
+      version?: string
     }
     'internal_infra_http_handler.AssetTypeResponse': {
       category?: components['schemas']['internal_infra_http_handler.CategoryResponse']

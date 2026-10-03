@@ -1,0 +1,1030 @@
+# =============================================================================
+# Asset Type Registry: the single source of truth for asset types
+# =============================================================================
+#
+# Design: docs/rfcs/RFC-042-asset-inventory-v2.md (§6.3) and
+#         docs/architecture/asset-inventory-v2.md.
+#
+# This file declares every asset type once: its class, the lens the class
+# belongs to, its typed attribute schema, facets and group-by fields, row
+# columns and card renderer, detail sections, identity keys and the
+# legacy category. Generated from it by `make generate-asset-types`:
+#
+#   - pkg/domain/asset/registry_generated.go   (Go data, TypeAliases,
+#                                               legacy categories)
+#   - ../web/src/features/asset-types/registry.generated.ts
+#   - the SQL block between the asset-type-registry markers in the newest
+#     migration that carries them (printed by `make asset-types-sql`; the
+#     generator never edits a migration)
+#
+# `GET /api/v1/asset-types` serves the same data. The CI step
+# "Asset Types Drift" (`go run ./cmd/gen-asset-types -check`) fails when the
+# YAML, the generated files or the migration block disagree;
+# tests/integration/asset_type_registry_db_test.go checks the live schema.
+#
+# Workflow:
+#   1. Edit this file.
+#   2. make generate-asset-types
+#   3. If class, lens or alias data changed: add a migration whose body is
+#      `make asset-types-sql` (it re-seeds asset_types and re-backfills
+#      assets.asset_class / assets.asset_lens).
+#   4. Commit the YAML, the generated files and the migration together.
+#
+# Classes and lenses are fixed in code, not tenant-editable (RFC-042 D18).
+# Tenants organise with groups and labels.
+# =============================================================================
+
+# Lenses: the inventory tabs. Order is display order.
+lenses:
+  - id: external_surface
+    label: External surface
+    description: Internet-facing names, addresses, certificates, services and web endpoints.
+    row: service_card
+    default_group_by: class
+  - id: applications
+    label: Applications
+    description: Web applications, websites, APIs and mobile apps.
+    row: table
+    default_group_by: type
+  - id: cloud_infra
+    label: Cloud & infrastructure
+    description: Hosts, endpoints, serverless functions and cloud accounts.
+    row: table
+    default_group_by: class
+  - id: containers_k8s
+    label: Containers & Kubernetes
+    description: Containers, clusters and artifact registries.
+    row: table
+    default_group_by: class
+  - id: code
+    label: Code
+    description: Source code repositories.
+    row: table
+    default_group_by: type
+  - id: identities
+    label: Identities
+    description: Users, roles and machine identities.
+    row: table
+    default_group_by: type
+  - id: data
+    label: Data
+    description: Databases, data stores and storage buckets.
+    row: table
+    default_group_by: type
+  - id: network
+    label: Network
+    description: Networks, VPCs, subnets, firewalls and load balancers.
+    row: table
+    default_group_by: type
+
+# Classes: the abstract kind above the type (JupiterOne `_class`).
+# Exactly one lens per class, except `other`, which only shows under All assets.
+classes:
+  - id: domain
+    label: Domain
+    lens: external_surface
+    jupiterone: Domain / DomainRecord
+  - id: ip_address
+    label: IP address
+    lens: external_surface
+    jupiterone: IpAddress
+  - id: certificate
+    label: Certificate
+    lens: external_surface
+    jupiterone: Certificate
+  - id: service
+    label: Service
+    lens: external_surface
+    jupiterone: Port / NetworkEndpoint
+  - id: web_endpoint
+    label: Web endpoint
+    lens: external_surface
+    jupiterone: ApplicationEndpoint
+  - id: application
+    label: Application
+    lens: applications
+    jupiterone: Application
+  - id: host
+    label: Host
+    lens: cloud_infra
+    jupiterone: Host / Device
+  - id: function
+    label: Function
+    lens: cloud_infra
+    jupiterone: Function
+  - id: cloud_account
+    label: Cloud account
+    lens: cloud_infra
+    jupiterone: Account
+  - id: container
+    label: Container
+    lens: containers_k8s
+    jupiterone: Container / Workload
+  - id: cluster
+    label: Cluster
+    lens: containers_k8s
+    jupiterone: Cluster
+  - id: artifact_registry
+    label: Artifact registry
+    lens: containers_k8s
+    jupiterone: Repository (artifact)
+  - id: code_repo
+    label: Code repository
+    lens: code
+    jupiterone: CodeRepo
+  - id: identity
+    label: Identity
+    lens: identities
+    jupiterone: User / AccessRole / NHI
+  - id: data_store
+    label: Data store
+    lens: data
+    jupiterone: DataStore / Database
+  - id: network
+    label: Network
+    lens: network
+    jupiterone: Network / Firewall / Gateway
+  - id: other
+    label: Other
+    jupiterone: Entity
+
+# Legacy categories (formerly hand-written in pkg/domain/asset/category.go).
+# Kept so the `category` field of asset responses does not change. New code
+# uses class and lens.
+legacy_categories:
+  - { id: external_surface, label: External Surface }
+  - { id: application, label: Applications }
+  - { id: infrastructure, label: Infrastructure }
+  - { id: network, label: Network }
+  - { id: cloud, label: Cloud }
+  - { id: data, label: Data }
+  - { id: code, label: Code }
+  - { id: identity, label: Identity }
+  - { id: other, label: Other }
+
+# Card renderers: a closed set the web implements. The API ships names only.
+cards: [generic, domain, ip_address, certificate, service, web_endpoint, application, host, function, cloud_account, container, cluster, artifact_registry, repository, identity, data_store, network]
+
+# Detail sections: a closed set the web implements.
+sections:
+  - { id: overview, label: Overview }
+  - { id: attributes, label: Attributes }
+  - { id: findings, label: Findings }
+  - { id: services, label: Services }
+  - { id: dns, label: DNS }
+  - { id: certificate, label: Certificate }
+  - { id: technologies, label: Technologies }
+  - { id: components, label: Components }
+  - { id: secrets, label: Secrets }
+  - { id: branches, label: Branches }
+  - { id: relationships, label: Relationships }
+  - { id: owners, label: Owners }
+  - { id: exposure, label: Exposure }
+  - { id: sources, label: Sources }
+  - { id: scans, label: Scans }
+  - { id: history, label: History }
+
+# Core fields every type shares (RFC-042 §6.3.4). Row columns may name a core
+# field or one of the type's own attributes.
+core_fields: [name, type, sub_type, class, lens, criticality, effective_criticality, exposure, owner, labels, findings.open, first_seen, last_seen, status]
+
+# Identity keys: RFC-028 identifier kinds (pkg/domain/asset/identifier.go),
+# `name` (exact canonical name) or `attr.<attribute>` for a type attribute.
+# Listed in match order; every type ends with `name`.
+identity_kinds: [host_id, cloud_id, bios_uuid, serial_number, mac, scm_repo_id, fqdn, hostname, ip]
+
+# Names used in configs/relationship-types.yaml constraints that are not
+# registry types. Resolving them here makes the relationship constraints
+# point at real (type, sub_type) pairs, so the server can enforce them.
+virtual_types:
+  - { name: k8s_cluster, type: kubernetes, sub_type: cluster }
+  - { name: k8s_workload, type: kubernetes, sub_type: workload }
+  - { name: container_image, type: container, sub_type: image }
+  - { name: api_collection, type: application, sub_type: api_collection }
+  - { name: api_endpoint, type: discovered_url }
+  - { name: identity_provider, type: identity, sub_type: identity_provider }
+  - { name: credential, type: identity, sub_type: credential }
+  - { name: mobile, type: mobile_app }
+
+# Attribute types: string, int, number, bool, time, enum (needs values),
+# list (of strings) and object (opaque). Only string, int, enum and bool
+# attributes can be facets or group-by fields.
+#
+# Each type: `alias_of` marks a legacy type that ingest stores as
+# (core type, sub_type) (pkg/domain/asset TypeAliases). An alias keeps its
+# own class: a `host` row with sub_type `serverless` is class `function`.
+types:
+  # ---------------------------------------------------------------------------
+  # External surface
+  # ---------------------------------------------------------------------------
+  - type: domain
+    label: Domain
+    plural: Domains
+    icon: globe
+    class: domain
+    legacy_category: external_surface
+    identity_keys: [fqdn, name]
+    attributes:
+      - { name: registrar, type: string, facet: true, group: true }
+      - { name: registered_at, type: time }
+      - { name: expires_at, type: time }
+      - { name: nameservers, type: list }
+      - { name: dns_records, type: object }
+      - { name: whois, type: object }
+    columns: [name, registrar, expires_at, findings.open, last_seen, owner]
+    card: domain
+    sections: [overview, attributes, dns, findings, relationships, owners, sources, history]
+
+  - type: subdomain
+    label: Subdomain
+    plural: Subdomains
+    icon: globe
+    class: domain
+    legacy_category: external_surface
+    identity_keys: [fqdn, name]
+    attributes:
+      - { name: parent_domain, type: string, facet: true, group: true }
+      - { name: resolved_ips, type: list }
+      - { name: cname_target, type: string }
+      - { name: discovery_source, type: string, facet: true }
+      - { name: is_wildcard, type: bool, facet: true }
+    columns: [name, parent_domain, findings.open, last_seen, owner]
+    card: domain
+    sections: [overview, attributes, dns, services, findings, relationships, owners, sources, history]
+
+  - type: ip_address
+    label: IP Address
+    plural: IP Addresses
+    icon: network
+    class: ip_address
+    legacy_category: external_surface
+    identity_keys: [ip, name]
+    attributes:
+      - { name: version, type: enum, values: ["4", "6"], facet: true }
+      - { name: hostname, type: string }
+      - { name: asn, type: int, facet: true, group: true }
+      - { name: asn_org, type: string, facet: true, group: true }
+      - { name: isp, type: string }
+      - { name: country, type: string, facet: true, group: true }
+      - { name: city, type: string }
+      - { name: geolocation, type: object }
+      - { name: ports, type: object }
+      - { name: is_private, type: bool, facet: true }
+      - { name: is_reserved, type: bool }
+    columns: [name, asn_org, country, findings.open, last_seen, owner]
+    card: ip_address
+    sections: [overview, attributes, services, findings, relationships, owners, sources, history]
+
+  - type: certificate
+    label: Certificate
+    plural: Certificates
+    icon: shield-check
+    class: certificate
+    legacy_category: external_surface
+    identity_keys: [attr.fingerprint_sha256, name]
+    attributes:
+      - { name: serial_number, type: string }
+      - { name: subject_cn, type: string }
+      - { name: sans, type: list }
+      - { name: issuer_cn, type: string, facet: true, group: true }
+      - { name: issuer_org, type: string, facet: true, group: true }
+      - { name: not_before, type: time }
+      - { name: not_after, type: time }
+      - { name: signature_algorithm, type: string, facet: true }
+      - { name: key_algorithm, type: string, facet: true }
+      - { name: key_size, type: int, facet: true }
+      - { name: fingerprint_sha256, type: string }
+      - { name: is_self_signed, type: bool, facet: true }
+      - { name: is_expired, type: bool, facet: true }
+      - { name: is_wildcard, type: bool, facet: true }
+    columns: [name, issuer_org, not_after, is_self_signed, last_seen, owner]
+    card: certificate
+    sections: [overview, certificate, attributes, findings, relationships, owners, sources, history]
+
+  - type: service
+    label: Service
+    plural: Services
+    icon: server
+    class: service
+    legacy_category: network
+    sub_types: [http, open_port, discovered_url, port]
+    identity_keys: [name]
+    attributes:
+      - { name: port, type: int, facet: true, group: true }
+      - { name: protocol, type: string, facet: true, group: true }
+      - { name: transport, type: enum, values: [tcp, udp, sctp], facet: true }
+      - { name: product, type: string, facet: true, group: true }
+      - { name: version, type: string }
+      - { name: banner, type: string }
+      - { name: cpe, type: string }
+      - { name: state, type: enum, values: [open, filtered, closed], facet: true }
+      - { name: tls_enabled, type: bool, facet: true }
+      - { name: tls_version, type: string, facet: true }
+      - { name: auth_required, type: bool, facet: true }
+      - { name: response_time_ms, type: int }
+    columns: [name, port, protocol, product, findings.open, last_seen]
+    card: service
+    sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
+
+  - type: http_service
+    label: HTTP Service
+    plural: HTTP Services
+    icon: globe
+    class: service
+    alias_of: { type: service, sub_type: http }
+    legacy_category: network
+    identity_keys: [name]
+    attributes:
+      - { name: url, type: string }
+      - { name: host, type: string, group: true }
+      - { name: port, type: int, facet: true, group: true }
+      - { name: scheme, type: enum, values: [http, https], facet: true }
+      - { name: status_code, type: int, facet: true, group: true }
+      - { name: title, type: string, group: true }
+      - { name: content_length, type: int }
+      - { name: content_type, type: string, facet: true }
+      - { name: server, type: string, facet: true, group: true }
+      - { name: technologies, type: list }
+      - { name: cdn, type: string, facet: true, group: true }
+      - { name: waf, type: string, facet: true }
+      - { name: tls_version, type: string, facet: true }
+      - { name: response_time_ms, type: int }
+      - { name: redirect_url, type: string }
+    columns: [name, status_code, title, server, findings.open, last_seen]
+    card: service
+    sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
+
+  - type: open_port
+    label: Open Port
+    plural: Open Ports
+    icon: radio
+    class: service
+    alias_of: { type: service, sub_type: open_port }
+    legacy_category: network
+    identity_keys: [name]
+    attributes:
+      - { name: host, type: string, group: true }
+      - { name: port, type: int, facet: true, group: true }
+      - { name: protocol, type: enum, values: [tcp, udp], facet: true }
+      - { name: state, type: enum, values: [open, filtered], facet: true }
+      - { name: service, type: string, facet: true, group: true }
+      - { name: version, type: string }
+      - { name: banner, type: string }
+      - { name: cpe, type: string }
+      - { name: discovery_tool, type: string, facet: true }
+    columns: [name, port, protocol, service, findings.open, last_seen]
+    card: service
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: discovered_url
+    label: Discovered URL
+    plural: Discovered URLs
+    icon: link
+    class: web_endpoint
+    alias_of: { type: service, sub_type: discovered_url }
+    legacy_category: network
+    identity_keys: [name]
+    attributes:
+      - { name: url, type: string }
+      - { name: method, type: string, facet: true }
+      - { name: status_code, type: int, facet: true, group: true }
+      - { name: content_type, type: string, facet: true }
+      - { name: content_length, type: int }
+      - { name: source, type: string, facet: true }
+      - { name: depth, type: int }
+      - { name: parameters, type: list }
+      - { name: forms, type: object }
+    columns: [name, method, status_code, content_type, findings.open, last_seen]
+    card: web_endpoint
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  # ---------------------------------------------------------------------------
+  # Applications
+  # ---------------------------------------------------------------------------
+  - type: application
+    label: Application
+    plural: Applications
+    icon: app-window
+    class: application
+    legacy_category: application
+    sub_types: [website, web_application, api, mobile_app, api_collection]
+    identity_keys: [name]
+    attributes:
+      - { name: url, type: string }
+      - { name: title, type: string }
+      - { name: technologies, type: list }
+      - { name: server, type: string, facet: true, group: true }
+      - { name: framework, type: string, facet: true, group: true }
+      - { name: authentication, type: string, facet: true }
+      - { name: has_waf, type: bool, facet: true }
+    columns: [name, sub_type, server, findings.open, last_seen, owner]
+    card: application
+    sections: [overview, attributes, technologies, findings, services, relationships, owners, sources, history]
+
+  - type: website
+    label: Website
+    plural: Websites
+    icon: globe
+    class: application
+    alias_of: { type: application, sub_type: website }
+    legacy_category: application
+    identity_keys: [name]
+    attributes:
+      - { name: url, type: string }
+      - { name: title, type: string }
+      - { name: technologies, type: list }
+      - { name: server, type: string, facet: true, group: true }
+      - { name: cms, type: string, facet: true, group: true }
+      - { name: response_code, type: int, facet: true }
+      - { name: tls_version, type: string, facet: true }
+      - { name: has_waf, type: bool, facet: true }
+      - { name: waf_vendor, type: string, facet: true }
+    columns: [name, title, server, findings.open, last_seen, owner]
+    card: application
+    sections: [overview, attributes, technologies, findings, relationships, owners, sources, history]
+
+  - type: web_application
+    label: Web Application
+    plural: Web Applications
+    icon: app-window
+    class: application
+    alias_of: { type: application, sub_type: web_application }
+    legacy_category: application
+    identity_keys: [name]
+    attributes:
+      - { name: url, type: string }
+      - { name: title, type: string }
+      - { name: technologies, type: list }
+      - { name: server, type: string, facet: true, group: true }
+      - { name: framework, type: string, facet: true, group: true }
+      - { name: response_code, type: int, facet: true }
+      - { name: has_waf, type: bool, facet: true }
+    columns: [name, title, framework, findings.open, last_seen, owner]
+    card: application
+    sections: [overview, attributes, technologies, findings, relationships, owners, sources, history]
+
+  - type: api
+    label: API
+    plural: APIs
+    icon: code
+    class: application
+    alias_of: { type: application, sub_type: api }
+    legacy_category: application
+    identity_keys: [name]
+    attributes:
+      - { name: base_url, type: string }
+      - { name: api_type, type: enum, values: [rest, graphql, grpc, soap, websocket], facet: true, group: true }
+      - { name: version, type: string }
+      - { name: authentication, type: enum, values: [none, api_key, oauth2, jwt, basic], facet: true }
+      - { name: documentation_url, type: string }
+      - { name: rate_limiting, type: bool, facet: true }
+      - { name: cors_enabled, type: bool, facet: true }
+      - { name: endpoints_count, type: int }
+    columns: [name, api_type, authentication, findings.open, last_seen, owner]
+    card: application
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: mobile_app
+    label: Mobile App
+    plural: Mobile Apps
+    icon: smartphone
+    class: application
+    alias_of: { type: application, sub_type: mobile_app }
+    legacy_category: application
+    identity_keys: [attr.package_name, name]
+    attributes:
+      - { name: platform, type: enum, values: [ios, android], facet: true, group: true }
+      - { name: package_name, type: string }
+      - { name: version, type: string }
+      - { name: store_url, type: string }
+      - { name: min_sdk_version, type: string }
+      - { name: target_sdk_version, type: string }
+      - { name: permissions, type: list }
+      - { name: uses_ssl_pinning, type: bool, facet: true }
+    columns: [name, platform, version, findings.open, last_seen, owner]
+    card: application
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  # ---------------------------------------------------------------------------
+  # Cloud & infrastructure
+  # ---------------------------------------------------------------------------
+  - type: host
+    label: Host
+    plural: Hosts
+    icon: server
+    class: host
+    legacy_category: infrastructure
+    sub_types: [compute, serverless, server]
+    identity_keys: [host_id, cloud_id, bios_uuid, serial_number, mac, fqdn, hostname, ip, name]
+    attributes:
+      - { name: hostname, type: string }
+      - { name: fqdn, type: string }
+      - { name: os_family, type: enum, values: [linux, windows, macos, bsd, other], facet: true, group: true }
+      - { name: os_name, type: string, facet: true, group: true }
+      - { name: os_version, type: string }
+      - { name: kernel_version, type: string }
+      - { name: architecture, type: string, facet: true }
+      - { name: cpu_count, type: int }
+      - { name: memory_gb, type: number }
+      - { name: ip_addresses, type: list }
+      - { name: mac_addresses, type: list }
+      - { name: is_virtual, type: bool, facet: true }
+      - { name: hypervisor, type: string, facet: true }
+    columns: [name, os_name, ip_addresses, findings.open, last_seen, owner]
+    card: host
+    sections: [overview, attributes, services, findings, components, relationships, owners, exposure, sources, history]
+
+  - type: compute
+    label: Compute Instance
+    plural: Compute Instances
+    icon: cpu
+    class: host
+    alias_of: { type: host, sub_type: compute }
+    legacy_category: infrastructure
+    identity_keys: [cloud_id, host_id, mac, ip, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
+      - { name: instance_id, type: string }
+      - { name: instance_type, type: string, facet: true, group: true }
+      - { name: region, type: string, facet: true, group: true }
+      - { name: zone, type: string }
+      - { name: private_ip, type: string }
+      - { name: public_ip, type: string }
+      - { name: vpc_id, type: string, group: true }
+      - { name: state, type: string, facet: true }
+      - { name: image_id, type: string }
+      - { name: platform, type: string, facet: true }
+    columns: [name, provider, region, instance_type, findings.open, last_seen]
+    card: host
+    sections: [overview, attributes, services, findings, relationships, owners, exposure, sources, history]
+
+  - type: endpoint
+    label: Endpoint
+    plural: Endpoints
+    icon: laptop
+    class: host
+    legacy_category: infrastructure
+    identity_keys: [host_id, bios_uuid, serial_number, mac, hostname, name]
+    attributes:
+      - { name: hostname, type: string }
+      - { name: os_family, type: enum, values: [linux, windows, macos, ios, android, other], facet: true, group: true }
+      - { name: os_version, type: string }
+      - { name: device_type, type: enum, values: [laptop, workstation, mobile, kiosk, other], facet: true, group: true }
+      - { name: user, type: string }
+      - { name: edr_installed, type: bool, facet: true }
+    columns: [name, device_type, os_family, findings.open, last_seen, owner]
+    card: host
+    sections: [overview, attributes, findings, components, relationships, owners, sources, history]
+
+  - type: serverless
+    label: Serverless Function
+    plural: Serverless Functions
+    icon: zap
+    class: function
+    alias_of: { type: host, sub_type: serverless }
+    legacy_category: infrastructure
+    identity_keys: [cloud_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
+      - { name: function_name, type: string }
+      - { name: runtime, type: string, facet: true, group: true }
+      - { name: handler, type: string }
+      - { name: memory_mb, type: int }
+      - { name: timeout_seconds, type: int }
+      - { name: region, type: string, facet: true, group: true }
+      - { name: arn, type: string }
+      - { name: role, type: string }
+      - { name: last_modified, type: time }
+    columns: [name, provider, runtime, region, findings.open, last_seen]
+    card: function
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: cloud_account
+    label: Cloud Account
+    plural: Cloud Accounts
+    icon: cloud
+    class: cloud_account
+    legacy_category: cloud
+    identity_keys: [cloud_id, attr.account_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, digitalocean, other], facet: true, group: true }
+      - { name: account_id, type: string }
+      - { name: account_name, type: string }
+      - { name: region, type: string, facet: true }
+      - { name: organization_id, type: string, group: true }
+      - { name: mfa_enabled, type: bool, facet: true }
+    columns: [name, provider, account_id, findings.open, last_seen, owner]
+    card: cloud_account
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  # ---------------------------------------------------------------------------
+  # Containers & Kubernetes
+  # ---------------------------------------------------------------------------
+  - type: container
+    label: Container
+    plural: Containers
+    icon: box
+    class: container
+    legacy_category: infrastructure
+    sub_types: [image]
+    identity_keys: [attr.container_id, name]
+    attributes:
+      - { name: container_id, type: string }
+      - { name: image, type: string, facet: true, group: true }
+      - { name: image_id, type: string }
+      - { name: runtime, type: enum, values: [docker, containerd, crio, other], facet: true }
+      - { name: state, type: string, facet: true }
+      - { name: created_at, type: time }
+      - { name: ports, type: object }
+      - { name: networks, type: list }
+    columns: [name, image, runtime, findings.open, last_seen, owner]
+    card: container
+    sections: [overview, attributes, findings, components, relationships, owners, sources, history]
+
+  - type: kubernetes
+    label: Kubernetes
+    plural: Kubernetes
+    icon: container
+    class: cluster
+    legacy_category: infrastructure
+    sub_types: [cluster, namespace, workload]
+    identity_keys: [cloud_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [eks, gke, aks, self-managed, other], facet: true, group: true }
+      - { name: version, type: string, facet: true }
+      - { name: region, type: string, facet: true }
+      - { name: cluster_name, type: string, group: true }
+      - { name: namespace, type: string, group: true }
+      - { name: node_count, type: int }
+      - { name: rbac_enabled, type: bool, facet: true }
+    columns: [name, sub_type, provider, version, findings.open, last_seen]
+    card: cluster
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: kubernetes_cluster
+    label: Kubernetes Cluster
+    plural: Kubernetes Clusters
+    icon: container
+    class: cluster
+    alias_of: { type: kubernetes, sub_type: cluster }
+    legacy_category: infrastructure
+    identity_keys: [cloud_id, name]
+    attributes:
+      - { name: cluster_name, type: string }
+      - { name: provider, type: enum, values: [eks, gke, aks, self-managed, other], facet: true, group: true }
+      - { name: version, type: string, facet: true }
+      - { name: region, type: string, facet: true, group: true }
+      - { name: node_count, type: int }
+      - { name: namespace_count, type: int }
+      - { name: api_server_url, type: string }
+      - { name: network_plugin, type: string, facet: true }
+      - { name: rbac_enabled, type: bool, facet: true }
+      - { name: pod_security_enabled, type: bool, facet: true }
+      - { name: network_policies, type: bool, facet: true }
+    columns: [name, provider, version, node_count, findings.open, last_seen]
+    card: cluster
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: kubernetes_namespace
+    label: Kubernetes Namespace
+    plural: Kubernetes Namespaces
+    icon: folder
+    class: cluster
+    alias_of: { type: kubernetes, sub_type: namespace }
+    legacy_category: infrastructure
+    identity_keys: [name]
+    attributes:
+      - { name: namespace, type: string }
+      - { name: cluster_name, type: string, facet: true, group: true }
+      - { name: pod_count, type: int }
+      - { name: service_count, type: int }
+      - { name: namespace_labels, type: object }
+    columns: [name, cluster_name, pod_count, findings.open, last_seen]
+    card: cluster
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: container_registry
+    label: Container Registry
+    plural: Container Registries
+    icon: package
+    class: artifact_registry
+    alias_of: { type: storage, sub_type: container_registry }
+    legacy_category: cloud
+    identity_keys: [attr.registry_url, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, dockerhub, ghcr, harbor, other], facet: true, group: true }
+      - { name: registry_url, type: string }
+      - { name: repository_count, type: int }
+      - { name: image_count, type: int }
+      - { name: scan_on_push, type: bool, facet: true }
+      - { name: encryption_enabled, type: bool, facet: true }
+      - { name: immutable_tags, type: bool, facet: true }
+    columns: [name, provider, image_count, findings.open, last_seen, owner]
+    card: artifact_registry
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  # ---------------------------------------------------------------------------
+  # Code
+  # ---------------------------------------------------------------------------
+  - type: repository
+    label: Repository
+    plural: Repositories
+    icon: git-branch
+    class: code_repo
+    legacy_category: code
+    sub_types: [github, gitlab, bitbucket, azure_devops]
+    storage: asset_repositories
+    identity_keys: [scm_repo_id, attr.canonical_url, name]
+    attributes:
+      - { name: provider, type: enum, values: [github, gitlab, bitbucket, azure_devops, other], facet: true, group: true }
+      - { name: visibility, type: enum, values: [public, private, internal], facet: true }
+      - { name: language, type: string, facet: true, group: true }
+      - { name: default_branch, type: string }
+      - { name: canonical_url, type: string }
+      - { name: last_commit_at, type: time }
+      - { name: archived, type: bool, facet: true }
+    columns: [name, provider, visibility, language, findings.open, last_seen, owner]
+    card: repository
+    sections: [overview, findings, components, secrets, branches, relationships, owners, sources, history]
+
+  # ---------------------------------------------------------------------------
+  # Identities
+  # ---------------------------------------------------------------------------
+  - type: identity
+    label: Identity
+    plural: Identities
+    icon: user
+    class: identity
+    legacy_category: identity
+    sub_types: [iam_user, iam_role, service_account, identity_provider, credential]
+    identity_keys: [cloud_id, attr.principal_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, entra, okta, kubernetes, other], facet: true, group: true }
+      - { name: principal_id, type: string }
+      - { name: arn, type: string }
+      - { name: email, type: string }
+      - { name: mfa_enabled, type: bool, facet: true }
+      - { name: privileged, type: bool, facet: true }
+      - { name: last_used, type: time }
+    columns: [name, sub_type, provider, mfa_enabled, findings.open, last_seen]
+    card: identity
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: iam_user
+    label: IAM User
+    plural: IAM Users
+    icon: user
+    class: identity
+    alias_of: { type: identity, sub_type: iam_user }
+    legacy_category: identity
+    identity_keys: [cloud_id, attr.user_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
+      - { name: user_id, type: string }
+      - { name: username, type: string }
+      - { name: arn, type: string }
+      - { name: email, type: string }
+      - { name: last_login, type: time }
+      - { name: mfa_enabled, type: bool, facet: true }
+      - { name: groups, type: list }
+      - { name: policies, type: list }
+    columns: [name, provider, email, mfa_enabled, findings.open, last_seen]
+    card: identity
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: iam_role
+    label: IAM Role
+    plural: IAM Roles
+    icon: key
+    class: identity
+    alias_of: { type: identity, sub_type: iam_role }
+    legacy_category: identity
+    identity_keys: [cloud_id, attr.role_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
+      - { name: role_id, type: string }
+      - { name: role_name, type: string }
+      - { name: arn, type: string }
+      - { name: max_session_duration, type: int }
+      - { name: trust_policy, type: object }
+      - { name: policies, type: list }
+      - { name: last_used, type: time }
+    columns: [name, provider, last_used, findings.open, last_seen]
+    card: identity
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: service_account
+    label: Service Account
+    plural: Service Accounts
+    icon: user-check
+    class: identity
+    alias_of: { type: identity, sub_type: service_account }
+    legacy_category: identity
+    identity_keys: [cloud_id, attr.account_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, kubernetes, other], facet: true, group: true }
+      - { name: account_id, type: string }
+      - { name: email, type: string }
+      - { name: display_name, type: string }
+      - { name: roles, type: list }
+      - { name: namespace, type: string, facet: true, group: true }
+    columns: [name, provider, email, findings.open, last_seen]
+    card: identity
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  # ---------------------------------------------------------------------------
+  # Data
+  # ---------------------------------------------------------------------------
+  - type: database
+    label: Database
+    plural: Databases
+    icon: database
+    class: data_store
+    legacy_category: data
+    sub_types: [data_store]
+    identity_keys: [cloud_id, name]
+    attributes:
+      - { name: engine, type: string, facet: true, group: true }
+      - { name: version, type: string }
+      - { name: provider, type: string, facet: true, group: true }
+      - { name: endpoint, type: string }
+      - { name: port, type: int, facet: true }
+      - { name: encrypted, type: bool, facet: true }
+      - { name: ssl_enforced, type: bool, facet: true }
+      - { name: publicly_accessible, type: bool, facet: true }
+      - { name: backup_retention_days, type: int }
+    columns: [name, engine, provider, publicly_accessible, findings.open, last_seen, owner]
+    card: data_store
+    sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
+
+  - type: data_store
+    label: Data Store
+    plural: Data Stores
+    icon: hard-drive
+    class: data_store
+    alias_of: { type: database, sub_type: data_store }
+    legacy_category: data
+    identity_keys: [cloud_id, name]
+    attributes:
+      - { name: engine, type: string, facet: true, group: true }
+      - { name: provider, type: string, facet: true, group: true }
+      - { name: encrypted, type: bool, facet: true }
+      - { name: publicly_accessible, type: bool, facet: true }
+    columns: [name, engine, provider, findings.open, last_seen, owner]
+    card: data_store
+    sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
+
+  - type: storage
+    label: Storage
+    plural: Storage
+    icon: archive
+    class: data_store
+    legacy_category: cloud
+    sub_types: [s3_bucket, container_registry]
+    identity_keys: [cloud_id, attr.arn, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
+      - { name: bucket_name, type: string }
+      - { name: region, type: string, facet: true, group: true }
+      - { name: arn, type: string }
+      - { name: versioning_enabled, type: bool, facet: true }
+      - { name: encryption_enabled, type: bool, facet: true }
+      - { name: encryption_type, type: string, facet: true }
+      - { name: public_access, type: enum, values: [public, private, restricted], facet: true }
+      - { name: logging_enabled, type: bool, facet: true }
+    columns: [name, provider, region, public_access, findings.open, last_seen, owner]
+    card: data_store
+    sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
+
+  - type: s3_bucket
+    label: S3 Bucket
+    plural: S3 Buckets
+    icon: archive
+    class: data_store
+    alias_of: { type: storage, sub_type: s3_bucket }
+    legacy_category: data
+    identity_keys: [cloud_id, attr.arn, name]
+    attributes:
+      - { name: bucket_name, type: string }
+      - { name: region, type: string, facet: true, group: true }
+      - { name: arn, type: string }
+      - { name: versioning_enabled, type: bool, facet: true }
+      - { name: encryption_enabled, type: bool, facet: true }
+      - { name: public_access, type: enum, values: [public, private, restricted], facet: true }
+    columns: [name, region, public_access, findings.open, last_seen, owner]
+    card: data_store
+    sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
+
+  # ---------------------------------------------------------------------------
+  # Network
+  # ---------------------------------------------------------------------------
+  - type: network
+    label: Network
+    plural: Networks
+    icon: network
+    class: network
+    legacy_category: network
+    sub_types: [vpc, subnet, firewall, load_balancer, router, switch]
+    identity_keys: [cloud_id, name]
+    attributes:
+      - { name: cidr, type: string }
+      - { name: gateway, type: string }
+      - { name: dns_servers, type: list }
+      - { name: dhcp_enabled, type: bool, facet: true }
+      - { name: vlan_id, type: int, facet: true }
+      - { name: zone, type: string, facet: true, group: true }
+    columns: [name, sub_type, cidr, findings.open, last_seen, owner]
+    card: network
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: vpc
+    label: VPC
+    plural: VPCs
+    icon: network
+    class: network
+    alias_of: { type: network, sub_type: vpc }
+    legacy_category: network
+    identity_keys: [cloud_id, attr.vpc_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
+      - { name: vpc_id, type: string }
+      - { name: cidr_block, type: string }
+      - { name: secondary_cidrs, type: list }
+      - { name: region, type: string, facet: true, group: true }
+      - { name: is_default, type: bool, facet: true }
+      - { name: flow_logs_enabled, type: bool, facet: true }
+    columns: [name, provider, cidr_block, region, findings.open, last_seen]
+    card: network
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: subnet
+    label: Subnet
+    plural: Subnets
+    icon: network
+    class: network
+    alias_of: { type: network, sub_type: subnet }
+    legacy_category: network
+    identity_keys: [cloud_id, attr.subnet_id, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
+      - { name: subnet_id, type: string }
+      - { name: vpc_id, type: string, group: true }
+      - { name: cidr_block, type: string }
+      - { name: availability_zone, type: string, facet: true }
+      - { name: is_public, type: bool, facet: true }
+    columns: [name, cidr_block, vpc_id, is_public, findings.open, last_seen]
+    card: network
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: firewall
+    label: Firewall
+    plural: Firewalls
+    icon: shield
+    class: network
+    alias_of: { type: network, sub_type: firewall }
+    legacy_category: network
+    identity_keys: [cloud_id, attr.firewall_id, name]
+    attributes:
+      - { name: provider, type: string, facet: true, group: true }
+      - { name: firewall_id, type: string }
+      - { name: vpc_id, type: string, group: true }
+      - { name: direction, type: enum, values: [inbound, outbound, both], facet: true }
+      - { name: rules, type: object }
+    columns: [name, provider, vpc_id, findings.open, last_seen]
+    card: network
+    sections: [overview, attributes, findings, relationships, owners, sources, history]
+
+  - type: load_balancer
+    label: Load Balancer
+    plural: Load Balancers
+    icon: split
+    class: network
+    alias_of: { type: network, sub_type: load_balancer }
+    legacy_category: network
+    identity_keys: [cloud_id, attr.dns_name, name]
+    attributes:
+      - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
+      - { name: lb_type, type: enum, values: [application, network, classic, gateway], facet: true }
+      - { name: dns_name, type: string }
+      - { name: scheme, type: enum, values: [internet-facing, internal], facet: true }
+      - { name: vpc_id, type: string, group: true }
+      - { name: listeners, type: object }
+      - { name: ssl_policy, type: string, facet: true }
+    columns: [name, provider, scheme, dns_name, findings.open, last_seen]
+    card: network
+    sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
+
+  # ---------------------------------------------------------------------------
+  # Unclassified: class `other`, no lens (All assets only)
+  # ---------------------------------------------------------------------------
+  - type: unclassified
+    label: Unclassified
+    plural: Unclassified
+    icon: help-circle
+    class: other
+    legacy_category: other
+    identity_keys: [name]
+    attributes: []
+    columns: [name, type, findings.open, last_seen, owner]
+    card: generic
+    sections: [overview, attributes, findings, relationships, owners, sources, history]

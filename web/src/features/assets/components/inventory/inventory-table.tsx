@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DataTable, DataTableColumnHeader, RiskScoreBadge } from '@/features/shared'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
+import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
 import { getAsset, updateAsset } from '../../hooks'
@@ -78,6 +79,8 @@ export function InventoryTable({
   // Tag suggestions only load once someone can actually edit tags.
   const { tags: tagSuggestions } = useAssetTags(undefined, canWriteAssets)
   const sorting = useMemo(() => sortToSorting(sort), [sort])
+  // RFC-042 class and lens of each row ("Code repository · Code").
+  const { classAndLens } = useAssetTypeRegistry()
 
   const columns = useMemo<ColumnDef<Asset>[]>(() => {
     const sortable = (id: string) => id in SORT_FIELDS
@@ -134,9 +137,14 @@ export function InventoryTable({
         enableSorting: sortable('type'),
         header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
         cell: ({ row }) => (
-          <Badge variant="outline" className="font-normal">
-            {ASSET_TYPE_LABELS[row.original.type] ?? row.original.type}
-          </Badge>
+          <div className="flex min-w-0 flex-col items-start gap-0.5">
+            <Badge variant="outline" className="font-normal">
+              {ASSET_TYPE_LABELS[row.original.type] ?? row.original.type}
+            </Badge>
+            <span className="truncate text-xs text-muted-foreground">
+              {classAndLens(row.original.type, row.original.subType)}
+            </span>
+          </div>
         ),
       },
       {
@@ -259,7 +267,7 @@ export function InventoryTable({
         },
       },
     ]
-  }, [])
+  }, [classAndLens])
 
   return (
     <>
