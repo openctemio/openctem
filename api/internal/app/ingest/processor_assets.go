@@ -310,12 +310,15 @@ func (p *AssetProcessor) ProcessBatch(
 	output *Output,
 	tenantCfg *CorrelationConfig, // nil = use system defaults
 ) (map[string]shared.ID, error) {
-	return p.processBatch(ctx, tenantID, report, output, tenantCfg, false)
+	return p.processBatch(ctx, tenantID, report, output, tenantCfg, false, fullScope())
 }
 
 // processBatch is ProcessBatch; noAutoAsset (protocol v2,
 // Options.RequireAssetForFindings) skips the metadata-derived asset a report
-// with findings but no assets would otherwise get.
+// with findings but no assets would otherwise get. scope says which existing
+// assets the report may change (RFC-040 §5.3); an existing asset outside it
+// is only marked seen, and only while it is active. scope.allowed is filled
+// with the persisted ids of the assets the report may change.
 //
 //nolint:gocognit,cyclop // the existing batch pipeline, unchanged apart from the gate
 func (p *AssetProcessor) processBatch(
@@ -325,8 +328,18 @@ func (p *AssetProcessor) processBatch(
 	output *Output,
 	tenantCfg *CorrelationConfig,
 	noAutoAsset bool,
+	scope *alterScope,
 ) (map[string]shared.ID, error) {
 	assetMap := make(map[string]shared.ID)
+	// CTIS ids of the report assets this report created or may change.
+	alterRefs := map[string]bool{}
+	defer func() {
+		for ref := range alterRefs {
+			if id, ok := assetMap[ref]; ok {
+				scope.allow(id)
+			}
+		}
+	}()
 
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
@@ -458,20 +471,38 @@ func (p *AssetProcessor) processBatch(
 			continue
 		}
 
-		// mergeInto folds this report asset into an existing one.
+		// mergeInto folds this report asset into an existing one. A report
+		// that may not change the asset (RFC-040 §5.3) only marks it seen,
+		// and only while it is active: no flags, exposure, classification,
+		// ownership, identifiers or reactivation.
 		mergeInto := func(existing *asset.Asset) {
-			exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
-			if id := existing.ID().String(); !isNew[id] && !queued[id] {
+			id := existing.ID().String()
+			alterable := isNew[id] || scope.mayAlter(existing)
+			if alterable {
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
+				alterRefs[ctisAsset.ID] = true
+			} else {
+				output.AssetsLimited++
+				if existing.Status() != asset.StatusActive {
+					assetMap[ctisAsset.ID] = existing.ID()
+					return
+				}
+				existing.MarkSeen()
+			}
+			if !isNew[id] && !queued[id] {
 				updateAssets = append(updateAssets, existing)
 				queued[id] = true
 			}
 			assetMap[ctisAsset.ID] = existing.ID()
-			if idx != nil {
+			if idx != nil && alterable {
 				idx.attach(i, existing, coreType, normalizedName, source)
 			}
 		}
 		// rename gives a matched asset the name the report uses now.
 		rename := func(existing *asset.Asset, via string) {
+			if !isNew[existing.ID().String()] && !scope.mayAlter(existing) {
+				return
+			}
 			oldName := existing.Name()
 			if err := existing.UpdateName(normalizedName); err != nil || existing.Name() == oldName {
 				return
@@ -489,6 +520,7 @@ func (p *AssetProcessor) processBatch(
 			}
 			newAssets = append(newAssets, newAsset)
 			assetMap[ctisAsset.ID] = newAsset.ID()
+			alterRefs[ctisAsset.ID] = true
 			existingMap[normalizedName] = newAsset
 			isNew[newAsset.ID().String()] = true
 			if idx != nil {

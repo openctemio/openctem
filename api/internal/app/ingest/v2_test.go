@@ -14,8 +14,12 @@ func TestV2Options(t *testing.T) {
 	if !o.RequireAssetForFindings || !o.NoCatalogWrites || !o.DeferAutoResolve || !o.DeferSensorStats {
 		t.Fatalf("v2 options %+v", o)
 	}
-	if (Options{}) != (Options{RequireAssetForFindings: false}) {
+	var zero Options
+	if zero.RequireAssetForFindings || zero.NoCatalogWrites || zero.DeferAutoResolve || zero.DeferSensorStats || zero.Admitted {
 		t.Fatal("zero options must be v1")
+	}
+	if zero.Binding.Kind != BindingUnsolicited {
+		t.Fatal("zero options must be an unsolicited sensor report (RFC-040 §5.3)")
 	}
 }
 

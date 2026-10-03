@@ -96,23 +96,14 @@ func (v *V2Receiver) openCommand(ctx context.Context, tenantID shared.ID, t V2Ta
 	if t.CommandID == "" {
 		return nil, nil
 	}
-	id, err := shared.IDFromString(t.CommandID)
+	if t.Sensor == nil || t.Sensor.TenantID == nil || *t.Sensor.TenantID != tenantID {
+		return nil, problem(protov2.ProblemCommandNotFound)
+	}
+	cmd, err := OpenCommand(ctx, v.commands, t.Sensor, t.CommandID, v.now())
 	if err != nil {
 		return nil, problem(protov2.ProblemCommandNotFound)
 	}
-	cmd, err := v.commands.GetByTenantAndID(ctx, tenantID, id)
-	if err != nil || cmd == nil || cmd.TenantID != tenantID || cmd.SensorID == nil || *cmd.SensorID != t.Sensor.ID {
-		return nil, problem(protov2.ProblemCommandNotFound)
-	}
-	switch cmd.Status {
-	case command.CommandStatusAcknowledged, command.CommandStatusRunning:
-		return cmd, nil
-	case command.CommandStatusCompleted, command.CommandStatusFailed:
-		if cmd.CompletedAt != nil && v.now().Sub(*cmd.CompletedAt) <= protov2.CommandGraceAfterFinish {
-			return cmd, nil
-		}
-	}
-	return nil, problem(protov2.ProblemCommandNotFound)
+	return cmd, nil
 }
 
 // commandTool is the tool a command asks for (payload "scanner", else

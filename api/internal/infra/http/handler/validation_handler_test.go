@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -79,10 +80,21 @@ func fixAppliedFinding(t *testing.T) *vulnerability.Finding {
 	return f
 }
 
+// advisoryPolicy is a tenant result policy with advisory evidence on or off.
+type advisoryPolicy bool
+
+func (a advisoryPolicy) ResultPolicy(_ context.Context, tenantID shared.ID) sensorresult.Policy {
+	return sensorresult.Policy{TenantID: tenantID, Mode: sensorresult.ModeQuarantine, AllowAdvisoryEvidence: bool(a)}
+}
+
+// newValidationHandler builds the handler for a tenant that allows advisory
+// evidence, so the tests below reach the evidence path without a command.
 func newValidationHandler(repo *fakeEvidenceRepo, fm *fakeFindingMutator) *ValidationHandler {
 	store := validation.NewEvidenceStore(repo)
 	svc := validation.NewEvidenceIngestService(store, fm, nil, nil, logger.NewNop())
-	return NewValidationHandler(svc, logger.NewNop())
+	h := NewValidationHandler(svc, logger.NewNop())
+	h.SetEvidencePolicy(advisoryPolicy(true))
+	return h
 }
 
 func sensorCtxReq(t *testing.T, method, target string, body []byte, tenantID shared.ID) *http.Request {
@@ -309,6 +321,32 @@ func TestValidationHandler_IngestEvidence_NoCommand_AdvisoryOnly(t *testing.T) {
 	}
 	if len(repo.rows) != 1 {
 		t.Fatalf("advisory evidence must still be stored, rows=%d", len(repo.rows))
+	}
+}
+
+// RFC-040 §5.3: evidence without a command is refused unless the tenant's
+// policy allows advisory evidence, which it does not by default (and not when
+// no policy reader is wired). Nothing is stored and the finding is untouched.
+func TestValidationHandler_IngestEvidence_NoCommand_RefusedByDefault(t *testing.T) {
+	for name, policy := range map[string]EvidencePolicyReader{"policy off": advisoryPolicy(false), "no policy reader": nil} {
+		t.Run(name, func(t *testing.T) {
+			repo := &fakeEvidenceRepo{}
+			fm := &fakeFindingMutator{current: fixAppliedFinding(t)}
+			h := newValidationHandler(repo, fm)
+			h.SetEvidencePolicy(policy)
+			h.SetCommandLookup(&fakeCommandLookup{})
+
+			w := postEvidence(t, h, shared.NewID(), shared.NewID(), shared.NewID(), "")
+			if w.Code != http.StatusForbidden || !bytes.Contains(w.Body.Bytes(), []byte("COMMAND_REQUIRED")) {
+				t.Fatalf("status = %d, want 403 COMMAND_REQUIRED; body=%s", w.Code, w.Body.String())
+			}
+			if len(repo.rows) != 0 {
+				t.Fatalf("refused evidence was stored, rows=%d", len(repo.rows))
+			}
+			if fm.current.Status() != vulnerability.FindingStatusFixApplied {
+				t.Fatalf("refused evidence moved the finding to %s", fm.current.Status())
+			}
+		})
 	}
 }
 
