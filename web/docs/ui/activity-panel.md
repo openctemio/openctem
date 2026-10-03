@@ -180,8 +180,8 @@ auto` with an intrinsic size). No virtualisation library: rows have very
   Event lines are plain text. Nothing is rendered as raw HTML.
 - The trigger's snippet is plain text built by `markdownSnippet` (no markup, no
   link targets).
-- Attachment links go through `attachmentHref`, which is the shared
-  `safeHref` (RFC-040 P0-B).
+- Attachment links go through the shared `SafeExternalLink` (`safeHref`,
+  RFC-040 P0-B); a refused URL renders as plain text.
 - Reactions: the API validates the emoji (one emoji sequence, normalised, no
   text, HTML or zero-width tricks), takes the tenant from the token, checks the
   parent finding's data scope and pentest membership, caps distinct emoji per

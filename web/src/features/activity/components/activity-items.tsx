@@ -7,7 +7,7 @@
  *
  * Comment bodies are user text: they render through the sanitised
  * MarkdownPreview only (no raw HTML; unsafe link schemes become "#").
- * Attachment names are text; their links go through `attachmentHref`.
+ * Attachment names are text; their links go through SafeExternalLink.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -40,7 +40,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { safeHref } from '@/lib/safe-href'
+import { SafeExternalLink } from '@/components/safe-external-link'
 import { cn } from '@/lib/utils'
 import type { ActivityActor, ActivityCommentItem, ActivityEventItem, ActivityTone } from '../types'
 import { collapsedLabel, dayLabel } from '../lib/activity-feed'
@@ -53,14 +53,6 @@ const TONE: Record<ActivityTone, string> = {
   success: 'bg-success/15 text-success',
   warning: 'bg-warning/15 text-warning',
   destructive: 'bg-destructive/15 text-destructive',
-}
-
-/**
- * The href for an attachment link, or undefined (rendered as plain text):
- * the shared RFC-040 guard, same-origin paths and http(s) only.
- */
-export function attachmentHref(url: string | undefined): string | undefined {
-  return safeHref(url)
 }
 
 /**
@@ -482,33 +474,18 @@ export function CommentCard({
 
       {item.attachments && item.attachments.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5 ps-8" aria-label="Attachments">
-          {item.attachments.map((a) => {
-            const href = attachmentHref(a.url)
-            const body = (
-              <>
+          {item.attachments.map((a) => (
+            <li key={a.id}>
+              {/* The URL is data: SafeExternalLink (safeHref) or plain text. */}
+              <SafeExternalLink
+                href={a.url}
+                className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs hover:bg-accent"
+              >
                 <Paperclip className="h-3 w-3" aria-hidden />
                 <span className="max-w-48 truncate">{a.filename}</span>
-              </>
-            )
-            return (
-              <li key={a.id}>
-                {href ? (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs hover:bg-accent"
-                  >
-                    {body}
-                  </a>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs">
-                    {body}
-                  </span>
-                )}
-              </li>
-            )
-          })}
+              </SafeExternalLink>
+            </li>
+          ))}
         </ul>
       )}
 
