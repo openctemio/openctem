@@ -39,7 +39,10 @@ func withoutExcludedRoots(roots []rootDomain, m *scopeapp.ExclusionMatcher) (kep
 }
 
 // withoutExcluded removes every excluded host from one domain's discoveries,
-// so no exposure (and no asset) is created for it.
+// so no exposure is created for it and it is not promoted to an asset (nor
+// given attribution evidence when an asset of that name already exists).
+// dropped counts excluded subdomains; promotable is a subset of them, so its
+// removals are not counted again.
 func withoutExcluded(d discoveries, m *scopeapp.ExclusionMatcher) (discoveries, int) {
 	if m.Empty() {
 		return d, 0
@@ -62,7 +65,14 @@ func withoutExcluded(d discoveries, m *scopeapp.ExclusionMatcher) (discoveries, 
 		}
 		return out
 	}
+	promotable := d.promotable[:0:0]
+	for _, h := range d.promotable {
+		if !m.Excluded(h.Name) {
+			promotable = append(promotable, h)
+		}
+	}
 	d.subdomains = subs
+	d.promotable = promotable
 	d.expiring = keepCerts(d.expiring)
 	d.expired = keepCerts(d.expired)
 	return d, dropped

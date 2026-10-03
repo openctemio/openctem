@@ -32,6 +32,7 @@ type Repositories struct {
 	Vulnerability    *postgres.VulnerabilityRepository
 	Finding          *postgres.FindingRepository
 	FindingComment   *postgres.FindingCommentRepository
+	CommentReaction  *postgres.CommentReactionRepository
 	FindingApproval  *postgres.FindingApprovalRepository
 	FindingActivity  *postgres.FindingActivityRepository
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
@@ -103,7 +104,10 @@ type Repositories struct {
 	Command                *postgres.CommandRepository
 	// SensorContentPolicy is the tenant scanner content policy (RFC-031).
 	SensorContentPolicy *postgres.SensorContentPolicyRepository
-	IngestJob           *postgres.IngestJobRepository
+	// SensorResult is the policy and quarantine for sensor results without a
+	// command (RFC-040 §5.3).
+	SensorResult *postgres.SensorResultRepository
+	IngestJob    *postgres.IngestJobRepository
 	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
 	IngestReport *postgres.IngestReportRepository
 
@@ -182,6 +186,8 @@ type Repositories struct {
 	// Domain-ownership verification (SSO P1, migration 000191)
 	VerifiedDomain *postgres.VerifiedDomainRepository
 	CTMonitorState *postgres.CTMonitorStateRepository
+	Attribution    *postgres.AttributionRepository
+	EASMSummary    *postgres.EASMSummaryRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -264,6 +270,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),
 		Finding:          postgres.NewFindingRepository(db),
 		FindingComment:   postgres.NewFindingCommentRepository(db),
+		CommentReaction:  postgres.NewCommentReactionRepository(db),
 		FindingApproval:  postgres.NewFindingApprovalRepository(db),
 		FindingActivity:  postgres.NewFindingActivityRepository(db),
 		AITriage:         postgres.NewAITriageRepository(db),              // AI-powered vulnerability triage
@@ -331,6 +338,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
 		Command:                postgres.NewCommandRepository(db),
 		SensorContentPolicy:    postgres.NewSensorContentPolicyRepository(db),
+		SensorResult:           postgres.NewSensorResultRepository(db),
 		IngestJob:              postgres.NewIngestJobRepository(db),
 		IngestReport:           postgres.NewIngestReportRepository(db),
 
@@ -405,6 +413,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
 		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
+		Attribution:      postgres.NewAttributionRepository(db),
+		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

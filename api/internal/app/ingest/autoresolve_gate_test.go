@@ -46,7 +46,9 @@ func TestSensorMayAutoResolveTool(t *testing.T) {
 		// Legit flows keep working.
 		{"declared tool", declared, "semgrep", true},
 		{"declared tool, case-insensitive", declared, "trivy", true},
-		{"legacy sensor without declared tools (backward compat)", legacy, "nuclei", true},
+		// RFC-040 §5.3: a sensor that declares and reports no tools no
+		// longer auto-resolves (it could close any tool's findings).
+		{"legacy sensor without declared tools", legacy, "nuclei", false},
 		{"server-side synthetic ingest", &sensor.Sensor{TenantID: &tid}, "tenable", true},
 		{"server-side synthetic ingest, defectdojo", &sensor.Sensor{TenantID: &tid}, "defectdojo", true},
 

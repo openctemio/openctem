@@ -24,7 +24,12 @@ kubectl create secret generic {{$slug}}-key \
   --from-literal=api-key="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}"
 {{- end}}
 
-# 2. Turn the bundled sensor on (release "openctem"; use yours).
+# 2. Save the "Local policy" tab as sensor-policy.yaml, reviewed by the owner
+#    of the scanned network: the sensor refuses every job outside it.
+
+# 3. Turn the bundled sensor on (release "openctem"; use yours). Chart 0.11.0
+#    or later: the sensor runs hardened (non-root, read-only root filesystem,
+#    no capabilities, seccomp RuntimeDefault) and mounts the policy read-only.
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \
@@ -35,5 +40,7 @@ helm upgrade openctem openctem/openctem --reuse-values \
 {{- end}}
   --set sensor.outbox.persistence.enabled=true \
   --set sensor.state.persistence.enabled=true \
-  --set sensor.content.persistence.enabled=true
+  --set sensor.content.persistence.enabled=true \
+  --set sensor.localPolicy.enabled=true \
+  --set-file sensor.localPolicy.policy=sensor-policy.yaml
 {{- end}}

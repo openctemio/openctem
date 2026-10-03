@@ -230,8 +230,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		h := strings.Repeat("ab", 32)
 		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
-	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
-	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	// emoji has a length CHECK.
+	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
+	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
+	"sensors":           func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
 	// digest has a format CHECK; manifest and ignored have type CHECKs.
@@ -849,6 +851,10 @@ func TestAssetStateHistory_AuditTriggers(t *testing.T) {
 	// that order and check the delete does not depend on it.
 	t.Run("deleting the tenant does not depend on cascade order", func(t *testing.T) {
 		inTx(t, func(tx *sql.Tx) {
+			// The ALTER locks assets and tenants, which concurrently running
+			// packages use all the time: take both up front, never waiting
+			// while holding one, or the ALTER deadlocks with them.
+			testdb.LockForDDL(t, ctx, tx, "tenants", "assets")
 			mustExecTx(t, tx, `ALTER TABLE assets DROP CONSTRAINT assets_tenant_id_fkey,
 				ADD CONSTRAINT assets_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE`)
 			tenantID, _, _ := seed(t, tx)

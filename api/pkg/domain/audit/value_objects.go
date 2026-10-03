@@ -35,6 +35,9 @@ const (
 	ActionAssetReactivated        Action = "asset.reactivated"
 	ActionAssetLifecycleSnoozed   Action = "asset.lifecycle_snoozed"
 	ActionAssetLifecycleUnsnoozed Action = "asset.lifecycle_unsnoozed"
+	// ActionAssetAttributionDecided: a person set whether an asset is the
+	// organization's (RFC-036 attribution review).
+	ActionAssetAttributionDecided Action = "asset.attribution_decided"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -84,6 +87,10 @@ const (
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
+	// ActionFindingCommentReactionRemoved records an administrator removing
+	// another member's reaction from a finding comment (moderation). A
+	// person adding or removing their own reaction is not audited.
+	ActionFindingCommentReactionRemoved Action = "finding.comment_reaction_removed"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -148,6 +155,11 @@ const (
 	// ActionSensorIdentityCloned records the platform seeing two live sensor
 	// processes use the same key (RFC-032 Phase 0 clone detection).
 	ActionSensorIdentityCloned Action = "sensor.identity_cloned"
+	// ActionSensorJobRefusedByLocalPolicy records a sensor refusing a job
+	// because the local policy its network owner installed forbids it
+	// (RFC-040 §5.7, detection A11): the platform asked for something the
+	// owner does not allow.
+	ActionSensorJobRefusedByLocalPolicy Action = "sensor.job_refused_local_policy"
 	// ActionSensorContentRefreshRequested records an administrator asking a
 	// sensor (or the fleet) to refresh its scanner content (RFC-031).
 	ActionSensorContentRefreshRequested Action = "sensor.content_refresh_requested"
@@ -158,6 +170,19 @@ const (
 	// commands a sensor held when it was revoked or disabled (RFC-040 §5.2):
 	// which were re-queued for another sensor and which were failed.
 	ActionSensorCommandsReleased Action = "sensor.commands_released"
+
+	// Sensor results without a command (RFC-040 §5.3).
+	// ActionSensorResultsQuarantined records an unsolicited report held for
+	// review instead of applied.
+	ActionSensorResultsQuarantined Action = "sensor.results_quarantined"
+	// ActionSensorResultsAccepted records a person accepting a quarantined
+	// report (it is then applied).
+	ActionSensorResultsAccepted Action = "sensor.results_accepted"
+	// ActionSensorResultsDiscarded records a person discarding one.
+	ActionSensorResultsDiscarded Action = "sensor.results_discarded"
+	// ActionSensorResultPolicyUpdated records a change of the tenant's
+	// policy for unsolicited sensor results.
+	ActionSensorResultPolicyUpdated Action = "sensor.result_policy_updated"
 
 	// Scan zone actions (RFC-023): every change to a zone or to which sensors
 	// serve it.
@@ -393,7 +418,7 @@ func (a Action) IsValid() bool {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
-		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -403,6 +428,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingCommentReactionRemoved,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
@@ -413,8 +439,10 @@ func (a Action) IsValid() bool {
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
+		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
+		ActionSensorResultPolicyUpdated,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -497,7 +525,8 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded:
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingCommentReactionRemoved:
 		return "finding"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
@@ -514,8 +543,10 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned,
-		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased:
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
+		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
+		ActionSensorResultPolicyUpdated:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
@@ -732,7 +763,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
-		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,

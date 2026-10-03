@@ -119,9 +119,14 @@ func (r *ThreatModelRepository) scanThreat(scan func(dest ...any) error) (*threa
 }
 
 // Save creates or replaces a model and its threats in one transaction. The model
-// is matched on its (tenant, scope_type, scope_ref_id) identity (NULL-safe); if a
-// model already exists for the scope its id is reused and its threats are
-// delete-and-inserted, so regeneration never drifts or leaves stale rows.
+// is matched on its (tenant, scope_type, scope_ref_id) identity, which
+// uq_threat_models_scope enforces with NULLS NOT DISTINCT (migration 000295), so
+// the tenant-wide model (scope_ref_id NULL) is unique too. The model row is
+// written with one INSERT ... ON CONFLICT: two concurrent regenerations of one
+// scope serialize on the row instead of both inserting, which a select-then-
+// insert allowed (RFC-043 P0). An existing model keeps its id and created_at;
+// its threats are delete-and-inserted, so regeneration never drifts or leaves
+// stale rows.
 func (r *ThreatModelRepository) Save(ctx context.Context, model *threatmodel.ThreatModel, threats []*threatmodel.ThreatModelThreat) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -129,31 +134,41 @@ func (r *ThreatModelRepository) Save(ctx context.Context, model *threatmodel.Thr
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Resolve any existing model for this scope (NULL-safe on scope_ref_id).
-	var existingID string
-	err = tx.QueryRowContext(ctx,
-		`SELECT id FROM threat_models
-		 WHERE tenant_id = $1 AND scope_type = $2 AND scope_ref_id IS NOT DISTINCT FROM $3`,
-		model.TenantID.String(), model.ScopeType.String(), nullID(model.ScopeRefID),
-	).Scan(&existingID)
+	m := model
+	var savedID string
+	var inserted bool
+	err = tx.QueryRowContext(ctx, `INSERT INTO threat_models
+		(id, tenant_id, scope_type, scope_ref_id, name, generated_at, input_hash,
+		 technique_dataset_version, threats_total, threats_open, threats_mitigated,
+		 threats_covered, coverage_pct, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		ON CONFLICT ON CONSTRAINT uq_threat_models_scope DO UPDATE SET
+			name = EXCLUDED.name,
+			generated_at = EXCLUDED.generated_at,
+			input_hash = EXCLUDED.input_hash,
+			technique_dataset_version = EXCLUDED.technique_dataset_version,
+			threats_total = EXCLUDED.threats_total,
+			threats_open = EXCLUDED.threats_open,
+			threats_mitigated = EXCLUDED.threats_mitigated,
+			threats_covered = EXCLUDED.threats_covered,
+			coverage_pct = EXCLUDED.coverage_pct,
+			updated_at = NOW()
+		RETURNING id, (xmax = 0)`,
+		m.ID.String(), m.TenantID.String(), m.ScopeType.String(), nullID(m.ScopeRefID),
+		m.Name, m.GeneratedAt, nullString(m.InputHash), nullString(m.TechniqueDatasetVersion),
+		m.ThreatsTotal, m.ThreatsOpen, m.ThreatsMitigated, m.ThreatsCovered, m.CoveragePct,
+		m.CreatedAt, m.UpdatedAt).Scan(&savedID, &inserted)
+	if err != nil {
+		return fmt.Errorf("failed to save threat model: %w", err)
+	}
 
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		if err := r.insertModel(ctx, tx, model); err != nil {
-			return err
-		}
-	case err != nil:
-		return fmt.Errorf("failed to resolve existing threat model: %w", err)
-	default:
-		reused, ierr := shared.IDFromString(existingID)
+	if !inserted {
+		reused, ierr := shared.IDFromString(savedID)
 		if ierr != nil {
 			return fmt.Errorf("failed to parse existing threat model id: %w", ierr)
 		}
 		model.ID = reused
 		model.UpdatedAt = time.Now().UTC()
-		if err := r.updateModel(ctx, tx, model); err != nil {
-			return err
-		}
 		if _, derr := tx.ExecContext(ctx,
 			`DELETE FROM threat_model_threats WHERE tenant_id = $1 AND threat_model_id = $2`,
 			model.TenantID.String(), model.ID.String()); derr != nil {
@@ -166,38 +181,6 @@ func (r *ThreatModelRepository) Save(ctx context.Context, model *threatmodel.Thr
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit threat model: %w", err)
-	}
-	return nil
-}
-
-func (r *ThreatModelRepository) insertModel(ctx context.Context, tx *sql.Tx, m *threatmodel.ThreatModel) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO threat_models
-		(id, tenant_id, scope_type, scope_ref_id, name, generated_at, input_hash,
-		 technique_dataset_version, threats_total, threats_open, threats_mitigated,
-		 threats_covered, coverage_pct, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-		m.ID.String(), m.TenantID.String(), m.ScopeType.String(), nullID(m.ScopeRefID),
-		m.Name, m.GeneratedAt, nullString(m.InputHash), nullString(m.TechniqueDatasetVersion),
-		m.ThreatsTotal, m.ThreatsOpen, m.ThreatsMitigated, m.ThreatsCovered, m.CoveragePct,
-		m.CreatedAt, m.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("failed to insert threat model: %w", err)
-	}
-	return nil
-}
-
-func (r *ThreatModelRepository) updateModel(ctx context.Context, tx *sql.Tx, m *threatmodel.ThreatModel) error {
-	_, err := tx.ExecContext(ctx, `UPDATE threat_models SET
-		name = $3, generated_at = $4, input_hash = $5, technique_dataset_version = $6,
-		threats_total = $7, threats_open = $8, threats_mitigated = $9,
-		threats_covered = $10, coverage_pct = $11, updated_at = $12
-		WHERE tenant_id = $1 AND id = $2`,
-		m.TenantID.String(), m.ID.String(),
-		m.Name, m.GeneratedAt, nullString(m.InputHash), nullString(m.TechniqueDatasetVersion),
-		m.ThreatsTotal, m.ThreatsOpen, m.ThreatsMitigated, m.ThreatsCovered, m.CoveragePct,
-		m.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("failed to update threat model: %w", err)
 	}
 	return nil
 }

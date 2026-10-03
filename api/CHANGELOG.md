@@ -25,6 +25,11 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Fixed
 
+- **A finding's occurrence count grows with every sighting** (RFC-043 P0).
+  Re-ingesting an existing finding wrote back the count it had loaded before
+  the merge, so `occurrence_count` stayed at 1 however often a scan saw the
+  finding, and concurrent ingests overwrote each other. The update now adds
+  one to the stored value in SQL.
 - **A finding another ingest just created is no longer reported as new, and
   keeps its ticket links** (RFC-043 P0). Ingest checked which fingerprints
   existed and then inserted the rest; when two ingests raced on one new
@@ -107,6 +112,27 @@ published at https://docs.openctem.io (operations/release-notes-*).
   covers it (and the pinned sensor, if any, is in that
   zone). Tenants that rotated internal assets without zones see those
   assets skipped (logged) until they add a zone.
+
+- **`*.example.com` means the subdomains of example.com, not example.com
+  itself.** The scope matcher used to let a wildcard domain pattern match the
+  bare name too, which is not what the pattern says (RFC-042 §6.13, F17).
+  `**.example.com` means the same as `*.example.com`. Matching ignores case
+  and a trailing dot, and compares names in their IDNA form
+  (`*.bücher.example` matches `shop.xn--bcher-kva.example`). The web's scope
+  preview already matched this way. Both directions change:
+  - **Scope targets:** a target `*.example.com` no longer puts
+    `example.com` in scope (coverage counts, `POST /scope/check`, overlap
+    warnings). This only narrows scope. Existing targets are not rewritten:
+    add `example.com` as its own target if the apex should stay in scope.
+  - **Exclusions:** an exclusion `*.example.com` no longer excludes
+    `example.com` from scans. So that nothing excluded today is scanned
+    tomorrow, migration 000292 adds an apex sibling (`example.com`, same
+    type, status, approval and expiry) for every existing domain/subdomain
+    exclusion written `*.x` or `**.x`, except rejected ones and names that
+    already have their own row. The siblings have `created_by =
+    system:migration-000292` and a reason naming the wildcard row; the down
+    migration removes exactly those. New wildcard exclusions cover
+    subdomains only: request the apex separately.
 
 - **Organizations are created by the platform administrator by default.**
   `TENANT_CREATION_MODE` now defaults to `admin_only` (was `self_service`).

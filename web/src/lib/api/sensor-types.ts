@@ -326,6 +326,11 @@ export interface Sensor {
   /** sensor: registered by the sensor; heartbeat: derived by the platform. */
   manifest_source?: 'sensor' | 'heartbeat' | '' | (string & {})
   /**
+   * The sensor-local policy the sensor reports (api RFC-040 §5.7): enforced
+   * on the sensor, shown here. Absent on APIs without it.
+   */
+  local_policy?: SensorLocalPolicy
+  /**
    * The load the sensor last reported on its heartbeat (api RFC-030 §5.8);
    * null when it never reported one, absent on APIs without it.
    */
@@ -620,12 +625,14 @@ export type SensorActivityType =
   | 'content_updated'
   | 'content_refresh_failed'
   | 'manifest_changed'
+  | 'local_policy_changed'
   // jobs
   | 'job_claimed'
   | 'job_completed'
   | 'job_failed'
   | 'job_canceled'
   | 'job_expired'
+  | 'job_refused_local_policy'
   // people (an audit-log row)
   | 'audit'
   | (string & {})
@@ -661,6 +668,12 @@ export interface SensorActivityDetails {
   was?: 'late' | 'stale' | 'offline' | (string & {})
   gap_seconds?: number
   interval_seconds?: number
+  // local_policy_changed (RFC-040): from/to above are display states
+  digest_from?: string
+  digest_to?: string
+  // job_refused_local_policy (RFC-040): the policy rule and the sensor's reason
+  rule?: string
+  reason?: string
   // job_*
   command_id?: string
   command_type?: string
@@ -735,4 +748,35 @@ export interface SensorActivityQuery {
   cursor?: string
   /** 1..100, default 30. */
   limit?: number
+}
+
+/** Display state of a sensor-local policy: paused while its kill switch is engaged. */
+export type SensorLocalPolicyState = 'enforced' | 'absent' | 'paused' | 'unknown'
+
+/** The shape of an enforced local policy (never its ranges). */
+export interface SensorLocalPolicySummary {
+  /** Number of allow entries; -1 when the policy sets no allow list. */
+  targets_allow: number
+  targets_deny: number
+  allow_private: boolean
+  /** Allowed ports ("" or absent = any). */
+  ports?: string
+  /** Allowed tools and job types (absent = any). */
+  tools?: string[]
+  checks?: string[]
+  allow_custom_templates: boolean
+  allow_interactsh: boolean
+  max_rps?: number
+  max_job_seconds?: number
+}
+
+/** A sensor's local policy as the API shows it (api RFC-040 §5.7). */
+export interface SensorLocalPolicy {
+  state: SensorLocalPolicyState | (string & {})
+  source?: 'file' | 'env' | (string & {})
+  digest?: string
+  kill_switch: boolean
+  summary?: SensorLocalPolicySummary
+  warnings?: string[]
+  reported_at?: string
 }

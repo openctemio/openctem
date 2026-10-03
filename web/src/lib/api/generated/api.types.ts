@@ -4284,36 +4284,39 @@ export interface paths {
       cookie?: never
     }
     /**
-     * List asset types
-     * @description Retrieves a paginated list of system asset types. Asset types are read-only configuration. Use active_only=true to get all active types without pagination.
+     * Asset type registry
+     * @description Returns the asset type registry (RFC-042): every asset type with its class, lens, attribute schema, facets, group-by fields, row columns, card renderer, detail sections, allowed relationships and identity keys, plus the classes, lenses and the closed sets of sections and cards. The registry is generated from api/configs/asset-types.yaml and holds no tenant data. The response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages fields are the legacy asset_types rows (deprecated, kept for one release); the query parameters below filter only those.
      */
     get: {
       parameters: {
         query?: {
-          /** @description Return only active asset types (bypasses pagination) */
+          /** @description Legacy rows: only active asset types, without pagination */
           active_only?: boolean
-          /** @description Include category details in response */
+          /** @description Legacy rows: include category details */
           include_category?: boolean
-          /** @description Search by name or code */
+          /** @description Legacy rows: search by name or code */
           search?: string
-          /** @description Filter by category ID */
+          /** @description Legacy rows: filter by category ID */
           category_id?: string
-          /** @description Filter by exact code */
+          /** @description Legacy rows: filter by exact code */
           code?: string
-          /** @description Filter by system type */
+          /** @description Legacy rows: filter by system type */
           is_system?: boolean
-          /** @description Filter by scannable flag */
+          /** @description Legacy rows: filter by scannable flag */
           is_scannable?: boolean
-          /** @description Filter by discoverable flag */
+          /** @description Legacy rows: filter by discoverable flag */
           is_discoverable?: boolean
-          /** @description Sort field (e.g., 'name', '-display_order') */
+          /** @description Legacy rows: sort field (e.g., 'name', '-display_order') */
           sort?: string
-          /** @description Page number */
+          /** @description Legacy rows: page number */
           page?: number
-          /** @description Items per page */
+          /** @description Legacy rows: items per page */
           per_page?: number
         }
-        header?: never
+        header?: {
+          /** @description ETag from a previous response */
+          'If-None-Match'?: string
+        }
         path?: never
         cookie?: never
       }
@@ -4325,14 +4328,15 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              data?: components['schemas']['internal_infra_http_handler.AssetTypeResponse'][]
-              page?: number
-              per_page?: number
-              total?: number
-              total_pages?: number
-            }
+            'application/json': components['schemas']['internal_infra_http_handler.AssetTypeRegistryResponse']
           }
+        }
+        /** @description Not modified (If-None-Match matched the ETag) */
+        304: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
         }
         /** @description Bad Request */
         400: {
@@ -4458,6 +4462,7 @@ export interface paths {
     }
     /**
      * List asset type categories
+     * @deprecated
      * @description Retrieves a paginated list of asset type categories. Use active_only=true to get all active categories without pagination.
      */
     get: {
@@ -4539,6 +4544,7 @@ export interface paths {
     }
     /**
      * Get a category by ID
+     * @deprecated
      * @description Retrieves a single asset type category by its unique identifier
      */
     get: {
@@ -5200,6 +5206,133 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/assets/{id}/attribution': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Asset attribution
+     * @description Whether the asset is believed to be the organization's, how confident the platform is, and the evidence (rule, technique, source, observed datum). Assets discovered passively under a domain the organization did not verify wait for review and are skipped by scans until confirmed.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Decide asset attribution
+     * @description Record whether the asset is the organization's. confirmed lets scans reach it; rejected, dependency (the organization's name on someone else's infrastructure) and monitor_only keep it passive. Automation never changes a decided state. Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Decision */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionDecisionRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAttributionResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -8311,6 +8444,163 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/comments/{comment_id}/reactions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * React to a finding comment
+     * @description Adds the caller's emoji reaction. Adding a reaction the caller already has changes nothing. A comment holds at most 20 different emoji and 10 reactions per person. Returns the comment's reactions, ordered by each emoji's first use.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      /** @description Reaction */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AddCommentReactionRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CommentReactionsResponse']
+          }
+        }
+        /** @description Not a single emoji, or a reaction limit reached */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/comments/{comment_id}/reactions/{emoji}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove a reaction from a finding comment
+     * @description Removes the caller's reaction (the emoji is path-escaped). An organization admin or owner may pass user_id to remove another member's reaction; only that moderation is audited. Returns the comment's reactions.
+     */
+    delete: {
+      parameters: {
+        query?: {
+          /** @description Remove this member's reaction (admin/owner only) */
+          user_id?: string
+        }
+        header?: never
+        path: {
+          /** @description Comment ID */
+          comment_id: string
+          /** @description Emoji, path-escaped */
+          emoji: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CommentReactionsResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/components': {
     parameters: {
       query?: never
@@ -10873,6 +11163,63 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/easm/summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * EASM overview
+     * @description The external attack surface in one call: surface assets by type and internet-facing services, attribution (confirmed, awaiting review and the age of the oldest review item, dependency, monitor only, rejected), assets first seen in the last 7/30 days and since the latest CTEM cycle started, open external exposures by severity and type, the top open risks, and how fresh the Certificate-Transparency monitoring is. Narrowed to the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Summary']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/exposures': {
     parameters: {
       query?: never
@@ -12397,6 +12744,235 @@ export interface paths {
         }
       }
     }
+    trace?: never
+  }
+  '/findings/{id}/comments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List finding comments
+     * @description Comments on a finding, oldest first, each with its aggregated emoji reactions.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Add a finding comment
+     * @description Posts a comment. is_internal keeps it inside the organization: it is never sent to an integration, ticket or external notifier.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Comment */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AddCommentRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/findings/{id}/comments/{comment_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    /**
+     * Edit a finding comment
+     * @description Only the author can edit. The response carries edited=true and the comment's reactions.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      /** @description New content */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateCommentRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingCommentResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Delete a finding comment
+     * @description Only the author can delete.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+          /** @description Comment ID */
+          comment_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/findings/{id}/dataflows': {
@@ -24672,6 +25248,326 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensors/quarantined-results': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List quarantined sensor results
+     * @description Reports that named no command, from a sensor whose role may not push results on its own, held for review (newest first). The payload is not included; GET one item for a preview.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description pending, accepted or discarded (default: every status) */
+          status?: string
+          /** @description Only this sensor's reports */
+          sensor_id?: string
+          /** @description Page number */
+          page?: number
+          /** @description Items per page (max 100) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_QuarantinedResultResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/quarantined-results/{qid}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a quarantined sensor report
+     * @description One quarantined report with a preview of its assets and findings (at most 100 of each).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Quarantine item ID */
+          qid: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.QuarantinedResultDetailResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/quarantined-results/{qid}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Accept a quarantined sensor report
+     * @description Apply the report as a person's decision: it may change the existing assets it names and reopen findings, but never auto-resolves anything. Applied once; a second accept or an accept after a discard is 409. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Quarantine item ID */
+          qid: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AcceptQuarantinedResultResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/quarantined-results/{qid}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Discard a quarantined sensor report
+     * @description Drop the report without applying it; its payload is deleted. 409 when it was already reviewed. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Quarantine item ID */
+          qid: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/result-policy': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get the policy for sensor results without a command
+     * @description What happens to a report that names no command (RFC-040 §5.3). Collector and CI runner sensors may always push results on their own; they are applied with limits (no change to existing assets, no reopening of findings a person resolved). For every other role the mode decides: warn applies them with the same limits and audits them, quarantine holds them for review. Tenants created before this policy existed are on warn; new tenants default to quarantine.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorResultPolicyResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update the policy for sensor results without a command
+     * @description Set the mode (warn or quarantine) and whether advisory validation evidence is accepted. Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Policy */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateSensorResultPolicyRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorResultPolicyResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors/stats': {
     parameters: {
       query?: never
@@ -31382,6 +32278,64 @@ export interface components {
       offset_ns?: number
       position?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock': {
+      candidate?: number
+      confirmed?: number
+      dependency?: number
+      legacy?: number
+      monitor_only?: number
+      needs_review?: number
+      rejected?: number
+      review_oldest_since?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock': {
+      by_severity?: {
+        [key: string]: number
+      }
+      by_type?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.TypeCount'][]
+      open?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock': {
+      ct_domains_watched?: number
+      ct_failing?: number
+      ct_never_succeeded?: number
+      ct_oldest_success?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.NewBlock': {
+      cycle_start?: string
+      last_7_days?: number
+      last_30_days?: number
+      since_cycle?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.Risk': {
+      asset_id?: string
+      asset_name?: string
+      id?: string
+      last_seen?: string
+      severity?: string
+      title?: string
+      type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.Summary': {
+      attribution?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock']
+      exposures?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock']
+      generated_at?: string
+      monitoring?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock']
+      new?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.NewBlock']
+      surface?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock']
+      top_risks?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Risk'][]
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.SurfaceBlock': {
+      by_type?: {
+        [key: string]: number
+      }
+      exposed_services?: number
+      total?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.TypeCount': {
+      count?: number
+      type?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput': {
       /**
        * @description BaseBranchKnown is false when the base branch has no scan history yet
@@ -31568,6 +32522,167 @@ export interface components {
       error?: string
       message?: string
       request_id?: string
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.AssetType':
+      | 'domain'
+      | 'subdomain'
+      | 'certificate'
+      | 'ip_address'
+      | 'website'
+      | 'web_application'
+      | 'api'
+      | 'mobile_app'
+      | 'service'
+      | 'repository'
+      | 'cloud_account'
+      | 'compute'
+      | 'storage'
+      | 'serverless'
+      | 'container_registry'
+      | 'host'
+      | 'container'
+      | 'kubernetes_cluster'
+      | 'kubernetes_namespace'
+      | 'database'
+      | 'data_store'
+      | 's3_bucket'
+      | 'network'
+      | 'vpc'
+      | 'subnet'
+      | 'load_balancer'
+      | 'firewall'
+      | 'iam_user'
+      | 'iam_role'
+      | 'service_account'
+      | 'unclassified'
+      | 'http_service'
+      | 'open_port'
+      | 'discovered_url'
+      | 'endpoint'
+      | 'application'
+      | 'identity'
+      | 'kubernetes'
+    'github_com_openctemio_openctem_api_pkg_domain_asset.AttributeDefinition': {
+      facet?: boolean
+      group?: boolean
+      name?: string
+      type?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AttributeKind']
+      values?: string[]
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.AttributeKind':
+      'string' | 'int' | 'number' | 'bool' | 'time' | 'enum' | 'list' | 'object'
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.Category':
+      | 'external_surface'
+      | 'application'
+      | 'infrastructure'
+      | 'network'
+      | 'cloud'
+      | 'data'
+      | 'code'
+      | 'identity'
+      | 'other'
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.Class':
+      | 'domain'
+      | 'ip_address'
+      | 'certificate'
+      | 'service'
+      | 'web_endpoint'
+      | 'application'
+      | 'host'
+      | 'function'
+      | 'cloud_account'
+      | 'container'
+      | 'cluster'
+      | 'artifact_registry'
+      | 'code_repo'
+      | 'identity'
+      | 'data_store'
+      | 'network'
+      | 'other'
+    'github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition': {
+      id?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class']
+      jupiterone?: string
+      label?: string
+      lens?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
+      types?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AssetType'][]
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.Lens':
+      | 'external_surface'
+      | 'applications'
+      | 'cloud_infra'
+      | 'containers_k8s'
+      | 'code'
+      | 'identities'
+      | 'data'
+      | 'network'
+    'github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition': {
+      classes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class'][]
+      default_group_by?: string
+      description?: string
+      id?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
+      label?: string
+      row?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule': {
+      peers?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'][]
+      relationship?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType']
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType':
+      | 'runs_on'
+      | 'deployed_to'
+      | 'contains'
+      | 'exposes'
+      | 'resolves_to'
+      | 'cname_of'
+      | 'depends_on'
+      | 'peer_of'
+      | 'replicates_to'
+      | 'sends_data_to'
+      | 'stores_data_in'
+      | 'authenticates_to'
+      | 'granted_to'
+      | 'has_access_to'
+      | 'load_balances'
+      | 'protected_by'
+      | 'monitors'
+      | 'manages'
+    'github_com_openctemio_openctem_api_pkg_domain_asset.SectionDefinition': {
+      id?: string
+      label?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition': {
+      alias_of?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef']
+      attributes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AttributeDefinition'][]
+      card?: string
+      class?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class']
+      columns?: string[]
+      facets?: string[]
+      group_by?: string[]
+      icon?: string
+      identity_keys?: string[]
+      label?: string
+      legacy_category?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Category']
+      lens?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
+      plural?: string
+      relationships?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships']
+      sections?: string[]
+      storage?: string
+      sub_types?: string[]
+      type?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AssetType']
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef': {
+      sub_type?: string
+      type?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.AssetType']
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships': {
+      in?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule'][]
+      out?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule'][]
     }
     'github_com_openctemio_openctem_api_pkg_domain_audit.Changes': {
       after?: {
@@ -31827,9 +32942,47 @@ export interface components {
        */
       tools_not_installed?: string[]
     }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport': {
+      /** @description Digest is "sha256:<hex>" of the policy; "" when absent. */
+      digest?: string
+      /** @description KillSwitch is true while the sensor owner stopped every job. */
+      kill_switch?: boolean
+      /** @description Source is "file" or "env" (shorthand settings); "" when absent. */
+      source?: string
+      /** @description State is LocalPolicyEnforced or LocalPolicyAbsent. */
+      state?: string
+      /** @description Summary is the shape of an enforced policy (never the ranges). */
+      summary?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary']
+      /** @description Warnings are the sensor's operator warnings. */
+      warnings?: string[]
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary': {
+      /** @description AllowCustomTemplates and AllowInteractsh are the policy's switches. */
+      allow_custom_templates?: boolean
+      allow_interactsh?: boolean
+      /** @description AllowPrivate: private ranges may be scanned. */
+      allow_private?: boolean
+      checks?: string[]
+      max_job_seconds?: number
+      /** @description MaxRPS and MaxJobSeconds are the caps (0 = not set). */
+      max_rps?: number
+      /** @description Ports is the allowed port list ("" = any). */
+      ports?: string
+      /** @description TargetsAllow is the number of allow entries; -1 = no allow list. */
+      targets_allow?: number
+      /** @description TargetsDeny is the number of deny entries. */
+      targets_deny?: number
+      /** @description Tools and Checks are the allowed tools and job types (nil = any). */
+      tools?: string[]
+    }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.Manifest': {
       capabilities?: string[]
       concurrency?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestConcurrency']
+      /**
+       * @description LocalPolicy is the sensor-local policy report (RFC-040 §5.7), sent
+       *     by SDKs that see "local_policy" on hello; sanitized when stored.
+       */
+      local_policy?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport']
       platform?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestPlatform']
       resources?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestResources']
       schema?: number
@@ -32164,6 +33317,14 @@ export interface components {
       external_id?: string
       role_arn: string
     }
+    'internal_infra_http_handler.AcceptQuarantinedResultResponse': {
+      assets_created?: number
+      assets_updated?: number
+      errors?: string[]
+      findings_auto_reopened?: number
+      findings_created?: number
+      findings_updated?: number
+    }
     'internal_infra_http_handler.ActivityItem': {
       description?: string
       ref_id?: string
@@ -32173,6 +33334,18 @@ export interface components {
     }
     'internal_infra_http_handler.AddAssetsRequest': {
       asset_ids: string[]
+    }
+    'internal_infra_http_handler.AddCommentReactionRequest': {
+      /**
+       * @description Emoji is a single emoji sequence (max 32 bytes).
+       * @example 👀
+       */
+      emoji?: string
+    }
+    'internal_infra_http_handler.AddCommentRequest': {
+      content: string
+      /** @description IsInternal keeps the comment inside the organization. */
+      is_internal?: boolean
     }
     'internal_infra_http_handler.AddGroupMemberRequest': {
       /** @enum {string} */
@@ -32367,6 +33540,38 @@ export interface components {
       fixed?: string
       introduced?: string
       package?: string
+    }
+    'internal_infra_http_handler.AssetAttributionDecisionRequest': {
+      /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
+      state?: string
+    }
+    'internal_infra_http_handler.AssetAttributionEvidence': {
+      first_observed_at?: string
+      last_observed_at?: string
+      observed?: {
+        [key: string]: unknown
+      }
+      rule?: string
+      source?: string
+      technique?: string
+      weight?: number
+    }
+    'internal_infra_http_handler.AssetAttributionResponse': {
+      /** @description ActiveChecksAllowed: whether a scan may touch the asset. */
+      active_checks_allowed?: boolean
+      confidence?: number
+      decided_at?: string
+      evidence?: components['schemas']['internal_infra_http_handler.AssetAttributionEvidence'][]
+      /** @description HumanDecided: a person set the state; automation will not change it. */
+      human_decided?: boolean
+      reason?: string
+      recorded?: boolean
+      /**
+       * @description State: confirmed, needs_review, candidate, dependency, monitor_only,
+       *     rejected. An asset with no record is a legacy asset and reports
+       *     confirmed with recorded=false.
+       */
+      state?: string
     }
     'internal_infra_http_handler.AssetBriefResponse': {
       id?: string
@@ -32599,6 +33804,21 @@ export interface components {
       total?: number
       /** @example domain */
       type?: string
+    }
+    'internal_infra_http_handler.AssetTypeRegistryResponse': {
+      cards?: string[]
+      classes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition'][]
+      core_fields?: string[]
+      /** @description Deprecated: the legacy asset_types rows; use Types. */
+      data?: components['schemas']['internal_infra_http_handler.AssetTypeResponse'][]
+      lenses?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition'][]
+      page?: number
+      per_page?: number
+      sections?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.SectionDefinition'][]
+      total?: number
+      total_pages?: number
+      types?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition'][]
+      version?: string
     }
     'internal_infra_http_handler.AssetTypeResponse': {
       category?: components['schemas']['internal_infra_http_handler.CategoryResponse']
@@ -33096,6 +34316,20 @@ export interface components {
       status?: string
       tenant_id?: string
       type?: string
+    }
+    'internal_infra_http_handler.CommentReactionSummary': {
+      count?: number
+      emoji?: string
+      reacted_by_me?: boolean
+      /** @description SampleUsers holds up to five reactors, earliest first. */
+      sample_users?: components['schemas']['internal_infra_http_handler.CommentReactionUser'][]
+    }
+    'internal_infra_http_handler.CommentReactionUser': {
+      id?: string
+      name?: string
+    }
+    'internal_infra_http_handler.CommentReactionsResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CommentReactionSummary'][]
     }
     'internal_infra_http_handler.ComponentResponse': {
       asset_id?: string
@@ -33859,6 +35093,31 @@ export interface components {
       id?: string
       name?: string
     }
+    'internal_infra_http_handler.FindingCommentListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.FindingCommentResponse'][]
+      total?: number
+    }
+    'internal_infra_http_handler.FindingCommentResponse': {
+      author_email?: string
+      author_id?: string
+      author_name?: string
+      content?: string
+      created_at?: string
+      /**
+       * @description Edited is true when the comment was changed after it was posted
+       *     (updated_at more than a second after created_at).
+       */
+      edited?: boolean
+      finding_id?: string
+      id?: string
+      /** @description IsInternal marks an organization-only comment. */
+      is_internal?: boolean
+      is_status_change?: boolean
+      new_status?: string
+      old_status?: string
+      reactions?: components['schemas']['internal_infra_http_handler.CommentReactionSummary'][]
+      updated_at?: string
+    }
     'internal_infra_http_handler.FindingComponentInfo': {
       /**
        * @description How the finding's asset uses the component. Set only when the asset's
@@ -34346,6 +35605,12 @@ export interface components {
        */
       instance_id?: string
       /**
+       * @description LocalPolicy is the sensor-local policy report (RFC-040 §5.7): state,
+       *     digest, summary and kill switch, sent by SDKs that see
+       *     "local_policy" on hello. Display data; sanitized before it is stored.
+       */
+      local_policy?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport']
+      /**
        * @description ManifestDigest is the digest of the sensor's registered manifest, as
        *     the platform returned it (RFC-033, protocol v2 feature "manifest").
        *     When it is not the stored one the v2 answer asks for the manifest
@@ -34431,18 +35696,40 @@ export interface components {
     'internal_infra_http_handler.IngestResponse': {
       assets_created?: number
       /**
+       * @description AssetsLimited counts existing assets the report matched but was not
+       *     allowed to change, because no command covering them stood behind it.
+       */
+      assets_limited?: number
+      /**
        * @description AssetsSkippedExcluded counts new assets not added because they match
        *     an active scope exclusion; their findings are in findings_skipped.
        */
       assets_skipped_excluded?: number
       assets_updated?: number
+      /**
+       * @description Binding is "command" when the report named a command assigned to this
+       *     sensor (X-OpenCTEM-Command-ID), "unsolicited" otherwise (RFC-040 §5.3).
+       */
+      binding?: string
       cves_created?: number
       cves_updated?: number
       errors?: string[]
       findings_created?: number
       findings_skipped?: number
       findings_updated?: number
+      /**
+       * @description ReopensWithheld counts findings a person had resolved that the report
+       *     saw again but was not allowed to reopen.
+       */
+      reopens_withheld?: number
       scan_id?: string
+      /**
+       * @description UnsolicitedWarned: this sensor's role may not send results without a
+       *     command; the report was applied only because the tenant's policy is
+       *     "warn". Under "quarantine" it is held for review (422
+       *     RESULTS_QUARANTINED).
+       */
+      unsolicited_warned?: boolean
     }
     /** @description Integration details including provider info and status */
     'internal_infra_http_handler.IntegrationResponse': {
@@ -34655,6 +35942,14 @@ export interface components {
     }
     'internal_infra_http_handler.ListResponse-internal_infra_http_handler_IntegrationResponse': {
       data?: components['schemas']['internal_infra_http_handler.IntegrationResponse'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.ListResponse-internal_infra_http_handler_QuarantinedResultResponse': {
+      data?: components['schemas']['internal_infra_http_handler.QuarantinedResultResponse'][]
       links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
       page?: number
       per_page?: number
@@ -35111,6 +36406,80 @@ export interface components {
       counts?: components['schemas']['internal_infra_http_handler.FindingCountsResponse']
       passed?: boolean
       reason?: string
+    }
+    'internal_infra_http_handler.QuarantinePreview': {
+      assets?: components['schemas']['internal_infra_http_handler.QuarantinePreviewAsset'][]
+      assets_omitted?: number
+      findings?: components['schemas']['internal_infra_http_handler.QuarantinePreviewFinding'][]
+      findings_omitted?: number
+    }
+    'internal_infra_http_handler.QuarantinePreviewAsset': {
+      ref?: string
+      type?: string
+      value?: string
+    }
+    'internal_infra_http_handler.QuarantinePreviewFinding': {
+      asset_ref?: string
+      rule_id?: string
+      severity?: string
+      title?: string
+    }
+    'internal_infra_http_handler.QuarantinedResultDetailResponse': {
+      assets_count?: number
+      created_at?: string
+      findings_count?: number
+      id?: string
+      payload_size?: number
+      /**
+       * @description Preview lists the report's assets and findings (at most 100 of each);
+       *     absent once the report was discarded.
+       */
+      preview?: components['schemas']['internal_infra_http_handler.QuarantinePreview']
+      /** @enum {string} */
+      protocol?: 'v1' | 'v2'
+      /** @enum {string} */
+      reason?: 'no_command'
+      report_id?: string
+      /** @description Result is what applying an accepted report did. */
+      result?: {
+        [key: string]: unknown
+      }
+      reviewed_at?: string
+      reviewed_by?: string
+      route?: string
+      segment?: number
+      sensor_id?: string
+      sensor_name?: string
+      sensor_type?: string
+      /** @enum {string} */
+      status?: 'pending' | 'accepted' | 'discarded'
+      tool_name?: string
+    }
+    'internal_infra_http_handler.QuarantinedResultResponse': {
+      assets_count?: number
+      created_at?: string
+      findings_count?: number
+      id?: string
+      payload_size?: number
+      /** @enum {string} */
+      protocol?: 'v1' | 'v2'
+      /** @enum {string} */
+      reason?: 'no_command'
+      report_id?: string
+      /** @description Result is what applying an accepted report did. */
+      result?: {
+        [key: string]: unknown
+      }
+      reviewed_at?: string
+      reviewed_by?: string
+      route?: string
+      segment?: number
+      sensor_id?: string
+      sensor_name?: string
+      sensor_type?: string
+      /** @enum {string} */
+      status?: 'pending' | 'accepted' | 'discarded'
+      tool_name?: string
     }
     'internal_infra_http_handler.ReconIngestRequest': {
       dns_records?: components['schemas']['internal_infra_http_handler.DNSRecordResult'][]
@@ -35746,6 +37115,12 @@ export interface components {
       /** @description Image is the sensor image the snippets run, with its pinned tag. */
       image?: string
       kubernetes?: string
+      /**
+       * @description Policy is the sensor-local policy template (sensor-policy.yaml, RFC-040
+       *     §5.7), prefilled with the ranges of the sensor's scan zones, for the
+       *     network owner to review and install read-only on the sensor host.
+       */
+      policy?: string
       yaml?: string
     }
     'internal_infra_http_handler.SensorContentResponse': {
@@ -35846,6 +37221,17 @@ export interface components {
       queue?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedQueue']
       reported_at?: string
       resources?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedResources']
+    }
+    'internal_infra_http_handler.SensorLocalPolicyResponse': {
+      digest?: string
+      kill_switch?: boolean
+      reported_at?: string
+      /** @enum {string} */
+      source?: '' | 'file' | 'env'
+      /** @enum {string} */
+      state?: 'enforced' | 'absent' | 'paused' | 'unknown'
+      summary?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicySummary']
+      warnings?: string[]
     }
     'internal_infra_http_handler.SensorManifestListResponse': {
       items?: components['schemas']['internal_infra_http_handler.SensorManifestResponse'][]
@@ -35995,6 +37381,12 @@ export interface components {
       load?: components['schemas']['internal_infra_http_handler.SensorLoadResponse']
       /** @description 0.0 to 1.0 */
       load_factor?: number
+      /**
+       * @description LocalPolicy is the sensor-local policy the sensor reports (RFC-040
+       *     §5.7): enforced on the sensor, shown here. Always present; state
+       *     "unknown" when the sensor never reported one.
+       */
+      local_policy?: components['schemas']['internal_infra_http_handler.SensorLocalPolicyResponse']
       manifest_at?: string
       /**
        * @description The current manifest (RFC-033): its digest, when it became current
@@ -36101,6 +37493,27 @@ export interface components {
        * @enum {string}
        */
       version_status?: 'latest' | 'update_available' | 'unsupported' | 'unknown'
+    }
+    'internal_infra_http_handler.SensorResultPolicyResponse': {
+      /**
+       * @description AllowAdvisoryEvidence accepts validation evidence without the validate
+       *     command assigned to the sensor (recorded as advisory, never changes the
+       *     finding).
+       */
+      allow_advisory_evidence?: boolean
+      /** @description DefaultMode is the mode of a tenant that never set one. */
+      default_mode?: string
+      /**
+       * @description Mode is what happens to a report that names no command from a sensor
+       *     whose role may not push results on its own (every role but collector
+       *     and runner): "warn" applies it with limits and audits it, "quarantine"
+       *     holds it for review.
+       * @enum {string}
+       */
+      mode?: 'warn' | 'quarantine'
+      /** @description UpdatedAt / UpdatedBy are null while the tenant uses the defaults. */
+      updated_at?: string
+      updated_by?: string
     }
     'internal_infra_http_handler.SensorRevokeRequest': {
       reason?: string
@@ -36599,6 +38012,9 @@ export interface components {
       error_message?: string
       result?: number[]
     }
+    'internal_infra_http_handler.UpdateCommentRequest': {
+      content: string
+    }
     'internal_infra_http_handler.UpdateComponentRequest': {
       dependency_type?: string
       license?: string
@@ -36847,6 +38263,11 @@ export interface components {
        */
       status?: 'active' | 'disabled' | 'revoked'
       tools?: string[]
+    }
+    'internal_infra_http_handler.UpdateSensorResultPolicyRequest': {
+      allow_advisory_evidence?: boolean
+      /** @enum {string} */
+      mode?: 'warn' | 'quarantine'
     }
     'internal_infra_http_handler.UpdateSeverityRequest': {
       severity: string

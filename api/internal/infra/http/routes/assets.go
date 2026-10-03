@@ -281,13 +281,23 @@ func registerAssetTypeRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Asset Type Category routes (read-only)
+	// Asset Type Category routes (read-only). Deprecated: the
+	// asset_type_categories table is retired by the RFC-042 type registry
+	// (classes and lenses, served by GET /api/v1/asset-types) and is dropped
+	// after one release.
+	categoriesDeprecated := middleware.Deprecated(middleware.Deprecation{
+		Plane:        "user",
+		Route:        "asset_type_categories",
+		Successor:    "/api/v1/asset-types",
+		DeprecatedAt: time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC),
+		SunsetAt:     time.Date(2027, 4, 3, 0, 0, 0, 0, time.UTC),
+	})
 	router.Group("/api/v1/asset-types/categories", func(r Router) {
 		r.GET("/", h.ListCategories, middleware.Require(permission.AssetsRead))
 		r.GET("/{categoryId}", h.GetCategory, middleware.Require(permission.AssetsRead))
-	}, tenantMiddlewares...)
+	}, append([]Middleware{categoriesDeprecated}, tenantMiddlewares...)...)
 
-	// Asset Type routes (read-only)
+	// Asset type registry (RFC-042) and the legacy asset_types rows; read-only.
 	router.Group("/api/v1/asset-types", func(r Router) {
 		r.GET("/", h.ListAssetTypes, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}", h.GetAssetType, middleware.Require(permission.AssetsRead))
@@ -343,6 +353,21 @@ func registerAttackSurfaceRoutes(
 		// Exposure chains — concrete shortest paths from public entry points to
 		// assets carrying KEV/critical findings, ranked by urgency.
 		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerEASMRoutes registers the EASM endpoints (RFC-036), behind the
+// attack_surface module like the rest of the external surface (O10).
+func registerEASMRoutes(
+	router Router,
+	h *handler.EASMHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm", func(r Router) {
+		r.GET("/summary", h.Summary, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 
@@ -526,6 +551,21 @@ func registerAssetIdentifierRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/assets/{id}/identifiers", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerAssetAttributionRoutes registers the asset attribution endpoint
+// (RFC-036 §6.4).
+func registerAssetAttributionRoutes(
+	router Router,
+	h *handler.AssetAttributionHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/assets/{id}/attribution", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.AssetsRead))
+		r.PUT("/", h.Decide, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 }
 

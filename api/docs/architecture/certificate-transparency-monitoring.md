@@ -49,6 +49,33 @@ A tenant's sweep also stops after 30 minutes; the domains it did not reach
 lead the next run. A per-tenant advisory lock keeps two API replicas from
 sweeping the same tenant at once.
 
+## From CT name to inventory asset
+
+After the exposures are written, names fit for the inventory are promoted
+through the normal ingest path (`internal/app/certmonitor/promote.go`), so
+identity resolution, state history and the exposure bridge apply as for any
+other source. A name is promoted when it is named exactly on a certificate
+(not only through a wildcard) whose newest `not_after` is no more than 90 days
+ago. At most 500 new assets per tenant per run, verified-root names first.
+
+| Found under | Evidence rule | Attribution |
+|---|---|---|
+| a verified domain | `fqdn_under_verified_root` (0.99, strong) | `confirmed` (O4: strong rule and ≥ 90) |
+| a domain asset or scope target the tenant did not verify | `fqdn_under_asserted_root` (0.85, medium) | `needs_review` |
+
+Promoted assets are `subdomain` assets with `discovery_source =
+cert_transparency` and `discovery_tool` = the CT source (`crt.sh` or
+`certspotter`); `discovered_at` is the earliest `not_before` CT shows, the
+earliest external evidence. A name that is already an asset is not
+re-ingested: it gets the evidence row only and keeps its standing (an asset
+with no attribution record is a legacy, confirmed asset).
+
+Attribution lives in `asset_attributions` and `easm_evidence` (migration
+000324); see [easm.md](easm.md#4-attribution). Scans skip asset-group members
+that are not confirmed, so nothing found passively under an unverified
+domain is touched by a sensor until a person confirms it (`PUT
+/api/v1/assets/{id}/attribution`, audited).
+
 ## Sources, retries and fallback
 
 | Step | Behaviour |
@@ -107,8 +134,9 @@ never scanned.
 
 ## Not yet built (RFC-019 Phase 2)
 
-Lookalike / typosquat detection and promoting a discovered subdomain into a
-first-class asset are scoped but not implemented.
+Lookalike / typosquat detection is scoped but not implemented (RFC-036 P6,
+passive only per O5). Promotion of discovered subdomains into assets is built
+(see above).
 
 ## Related
 

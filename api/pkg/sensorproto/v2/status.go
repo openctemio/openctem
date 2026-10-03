@@ -53,6 +53,13 @@ const (
 	CodeOutOfZone         = "out_of_zone"
 	CodeToolNotPermitted  = "tool_not_permitted"
 	CodeSegmentIncomplete = "segment_incomplete"
+	// CodeQuarantinedNoCommand: the segment named no command and the
+	// sensor's role may not send results on its own (RFC-040 §5.3); its
+	// items are counted as quarantined and held for review.
+	CodeQuarantinedNoCommand = "quarantined_no_command"
+	// CodeQuarantineFull: as above, but the tenant's quarantine was full; the
+	// segment's items were rejected and not kept.
+	CodeQuarantineFull = "quarantine_full"
 )
 
 // Fixed item error details. Details never quote sensor bytes.
@@ -68,6 +75,8 @@ const (
 	DetailUnknownField     = "the field is not part of CTIS v1"
 	DetailTooMany          = "the array exceeds the per-segment limit"
 	DetailProcessingFailed = "the segment could not be processed"
+	DetailQuarantined      = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
+	DetailQuarantineFull   = "the report names no command and the results quarantine is full: not kept"
 )
 
 // Counts are asset and finding counts on the status resource.
@@ -212,11 +221,16 @@ const (
 	// FeatureManifest: PUT /manifest registers the sensor manifest and the
 	// heartbeat accepts manifest_digest (RFC-033).
 	FeatureManifest = "manifest"
+	// FeatureLocalPolicy: heartbeats and manifests may carry the sensor's
+	// local policy report ("local_policy": state, digest, summary, kill
+	// switch), which the platform stores and shows (RFC-040 §5.7). The
+	// policy itself is enforced on the sensor.
+	FeatureLocalPolicy = "local_policy"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy}
 }
 
 // Deprecation announces a deprecated protocol on hello.

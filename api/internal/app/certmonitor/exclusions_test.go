@@ -126,3 +126,76 @@ func TestMonitorTenant_ExclusionLookupFailureStopsTheSweep(t *testing.T) {
 		t.Fatalf("swept without exclusions: %d queries, %d exposures", hits.Load(), len(expRepo.byKey))
 	}
 }
+
+// An excluded host is not promoted to an inventory asset: CT promotion reads
+// d.promotable after the exclusion filter.
+func TestWithoutExcluded_DropsExcludedPromotable(t *testing.T) {
+	tenant := shared.NewID()
+	m, err := exclusionsFor([]*scopedom.Exclusion{
+		approvedExclusion(tenant, scopedom.ExclusionTypeDomain, "vpn.example.com"),
+	}, nil).LoadExclusionMatcher(context.Background(), tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	in := discoveries{
+		subdomains: []string{"new.example.com", "vpn.example.com"},
+		promotable: []ctHost{{Name: "new.example.com", NotAfter: now}, {Name: "vpn.example.com", NotAfter: now}},
+	}
+	out, dropped := withoutExcluded(in, m)
+	if dropped != 1 {
+		t.Errorf("dropped = %d, want 1 (one excluded host, counted once)", dropped)
+	}
+	if len(out.promotable) != 1 || out.promotable[0].Name != "new.example.com" {
+		t.Fatalf("promotable = %+v, want only new.example.com", out.promotable)
+	}
+	if len(in.promotable) != 2 || in.promotable[1].Name != "vpn.example.com" {
+		t.Fatal("the input discoveries were modified")
+	}
+}
+
+// End to end: a sweep with promotion on creates no asset for an excluded
+// name and leaves an existing excluded asset untouched (no evidence, no
+// attribution record); other names are promoted as before.
+func TestMonitorTenant_ExcludedHostIsNotPromoted(t *testing.T) {
+	tenant := shared.NewID()
+	srv := ctNames(t, "www", "vpn", "legacy")
+	defer srv.Close()
+
+	listed := mustDomainAsset(t, tenant, "listed.com")
+	legacy, err := assetdom.NewAssetWithTenant(tenant, "legacy.listed.com", assetdom.AssetTypeSubdomain, assetdom.CriticalityMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, inv, attr := promotionService(t, srv.URL, srv.Client(), tenant, []*assetdom.Asset{listed, legacy})
+	svc.SetExclusions(exclusionsFor([]*scopedom.Exclusion{
+		approvedExclusion(tenant, scopedom.ExclusionTypeDomain, "vpn.listed.com"),
+		approvedExclusion(tenant, scopedom.ExclusionTypeDomain, "legacy.listed.com"),
+	}, nil))
+
+	if _, err := svc.MonitorTenant(context.Background(), tenant); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := inv.byName["www.listed.com"]; !ok {
+		t.Fatal("www.listed.com not promoted")
+	}
+	if _, ok := inv.byName["vpn.listed.com"]; ok {
+		t.Fatal("excluded vpn.listed.com was promoted to an asset")
+	}
+	for _, names := range inv.reports {
+		for _, n := range names {
+			if n == "vpn.listed.com" || n == "legacy.listed.com" {
+				t.Fatalf("excluded %s sent to ingest", n)
+			}
+		}
+	}
+	if inv.byName["legacy.listed.com"] != legacy {
+		t.Fatal("existing excluded asset was replaced")
+	}
+	if ev := attr.evidence[legacy.ID().String()]; len(ev) != 0 {
+		t.Fatalf("existing excluded asset got %d evidence rows, want none", len(ev))
+	}
+	if _, ok := attr.records[legacy.ID().String()]; ok {
+		t.Fatal("existing excluded asset got an attribution record")
+	}
+}

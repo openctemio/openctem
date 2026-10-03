@@ -268,7 +268,7 @@ named.
   approve their own exclusion (`api/internal/app/scope/service.go:462-465`).
   This RFC keeps the workflow unchanged.
 - **F19. Attribution gate in flight.** PR #835 adds `asset_attributions`
-  and `easm_evidence` (migration 000275) and a gate inside
+  and `easm_evidence` (migration 000324) and a gate inside
   `resolveScanTargets` that skips unconfirmed group members. Direct
   targets stay ungated (RFC-036 O8). Validation re-checks and pipeline
   hops are not covered yet.

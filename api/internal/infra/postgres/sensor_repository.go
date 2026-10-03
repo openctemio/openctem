@@ -317,16 +317,21 @@ func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) err
 }
 
 // RecordKeyUse marks the sensor seen and records the client address of the
-// key use (sensor.KeyUseRecorder). The previous address is read in the same
-// statement, so two concurrent requests each see the address before their
-// own write. The address and its time only move forward: key uses are
-// recorded asynchronously and can arrive out of order, and an older
-// observation must not overwrite a newer address.
+// key use (sensor.KeyUseRecorder). The address and its time only move
+// forward: key uses are recorded asynchronously and can arrive out of order,
+// and an older observation must not overwrite a newer address.
+//
+// The previous address is read in the same statement under the row lock
+// (FOR NO KEY UPDATE, what the UPDATE takes anyway). Without the lock, a use
+// that waited for a concurrent one to commit compared against the row as it
+// was when its own statement started: an older use then put its address back
+// over the newer one and reported an address change that did not happen.
 func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (net.IP, error) {
 	query := `
 		WITH prev AS (
 			SELECT id, host(api_key_last_used_ip) AS ip, api_key_last_used_at AS at
 			FROM sensors WHERE id = $1
+			FOR NO KEY UPDATE
 		)
 		UPDATE sensors s
 		SET last_seen_at = NOW(),
@@ -486,6 +491,10 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 	if err != nil {
 		return false, err
 	}
+	localPolicy, err := localPolicyArg(hb.LocalPolicy)
+	if err != nil {
+		return false, err
+	}
 
 	query := `
 		UPDATE sensors
@@ -538,6 +547,9 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    -- Control report: NULL ($36) leaves the stored one as it is.
 		    reported_control = COALESCE($36::jsonb, reported_control),
 		    control_reported_at = CASE WHEN $36::jsonb IS NULL THEN control_reported_at ELSE NOW() END,
+		    -- Local policy report (RFC-040 §5.7): NULL ($37) leaves it as it is.
+		    reported_local_policy = COALESCE($37::jsonb, reported_local_policy),
+		    local_policy_reported_at = CASE WHEN $37::jsonb IS NULL THEN local_policy_reported_at ELSE NOW() END,
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -561,7 +573,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		load.resources, load.capacity, load.queue, load.present,
 		hb.Build.SDKName, hb.Build.SDKVersion, hb.Build.Product, hb.Build.Commit, nullTime(hb.Build.BuildTime),
 		rep.clearMaxJobs,
-		heartbeatIntervalSeconds(hb.Interval), control,
+		heartbeatIntervalSeconds(hb.Interval), control, localPolicy,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -841,6 +853,7 @@ func (r *SensorRepository) selectQuery() string {
 		       instance_id, instance_state, identity_cloned_at,
 		       manifest_digest, manifest_at, manifest_source,
 		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at,
+		       reported_local_policy, local_policy_reported_at,
 		       ` + sensorActiveKeySQL("sensors") + ` AS active_key
 		FROM sensors
 	`
@@ -1004,6 +1017,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		hbDueAt          sql.NullTime
 		control          []byte
 		controlAt        sql.NullTime
+		localPolicy      []byte
+		localPolicyAt    sql.NullTime
 		activeKey        []byte
 	)
 
@@ -1082,6 +1097,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&hbDueAt,
 		&control,
 		&controlAt,
+		&localPolicy,
+		&localPolicyAt,
 		&activeKey,
 	)
 
@@ -1214,6 +1231,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		a.HeartbeatDueAt = &hbDueAt.Time
 	}
 	a.Control = scanControl(a.ID, control, controlAt)
+	a.LocalPolicy, a.LocalPolicyReportedAt = scanLocalPolicy(a.ID, localPolicy, localPolicyAt)
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {

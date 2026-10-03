@@ -387,11 +387,23 @@ func TestInferFindingType_ExplicitCompliance(t *testing.T) {
 
 func TestInferFindingType_ExplicitTypeOverridesSource(t *testing.T) {
 	p := &FindingProcessor{}
-	// Explicit type "vulnerability" should override source "secret"
-	finding := &ctis.Finding{Type: ctis.FindingTypeVulnerability}
+	// An explicit specific type still overrides the source.
+	finding := &ctis.Finding{Type: ctis.FindingTypeMisconfiguration}
 
 	result := p.inferFindingType(vulnerability.FindingSourceSecret, finding)
-	assert.Equal(t, vulnerability.FindingTypeVulnerability, result)
+	assert.Equal(t, vulnerability.FindingTypeMisconfiguration, result)
+}
+
+// A secret scanner's finding is a secret even when its CTIS type is the
+// generic "vulnerability" (ctis FromSARIF writes that for betterleaks). It
+// used to be stored as a vulnerability and skip the secret handling, snippet
+// redaction included.
+func TestInferFindingType_SecretSourceBeatsGenericVulnerability(t *testing.T) {
+	p := &FindingProcessor{}
+	finding := &ctis.Finding{Type: ctis.FindingTypeVulnerability, RuleID: "github-pat"}
+
+	result := p.inferFindingType(vulnerability.FindingSourceSecret, finding)
+	assert.Equal(t, vulnerability.FindingTypeSecret, result)
 }
 
 func TestInferFindingType_SourceSecret(t *testing.T) {
@@ -1300,7 +1312,7 @@ func (s *stubFindingRepository) GetByFingerprint(_ context.Context, _ shared.ID,
 func (s *stubFindingRepository) ExistsByFingerprint(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
-func (s *stubFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _ string) (int64, error) {
+func (s *stubFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _, _ string) (int64, error) {
 	return 0, nil
 }
 func (s *stubFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Context, _ shared.ID, _ map[string]string) (int64, error) {
