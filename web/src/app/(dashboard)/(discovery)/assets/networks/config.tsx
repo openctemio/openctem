@@ -27,10 +27,25 @@ const getDeviceTypeLabel = (asset: Asset): string => {
       return 'Switch'
     case 'router':
       return 'Router'
-    case 'wireless_ap':
+    case 'access_point':
+    case 'wireless_ap': // legacy value, mapped to access_point (RFC-042 §6.3.8)
       return 'Wireless AP'
+    case 'wireless_controller':
+      return 'Wireless Controller'
+    case 'vpn_gateway':
+      return 'VPN Gateway'
     case 'ids_ips':
       return 'IDS/IPS'
+    case 'vpc':
+      return 'VPC'
+    case 'subnet':
+      return 'Subnet'
+    case 'ip_block':
+      return 'IP Block'
+    case 'vlan':
+      return 'VLAN'
+    case 'security_group':
+      return 'Security Group'
     default:
       return 'Network Device'
   }
