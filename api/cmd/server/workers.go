@@ -408,6 +408,21 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// EASM DNS-only checks — daily, fail-open, passive (RFC-036 P1): dangling
+	// CNAME/NS and email posture of the tenant's own domains. Disable with
+	// EASM_DNS_CHECKS_ENABLED=false.
+	if svc.EASMDNS != nil {
+		w.ControllerManager.Register(controller.NewEASMDNSController(
+			svc.EASMDNS,
+			repos.Tenant,
+			&controller.EASMDNSControllerConfig{
+				Interval:    cfg.Worker.EASMDNSInterval,
+				Logger:      log.With("controller", "easm-dns-checks"),
+				ModuleGuard: svc.Module,
+			},
+		))
+	}
+
 	// Owner resolution — resolve owner_ref (email) to owner_id for assets
 	w.ControllerManager.Register(controller.NewOwnerResolutionController(
 		deps.DB,
