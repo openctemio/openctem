@@ -180,7 +180,7 @@ var findingCreateSQL = `
 			remediation, pentest_campaign_id, created_by,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status, tags,
+			sla_deadline, sla_status, tags, rule_name,
 			` + findingTypeColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
@@ -188,7 +188,7 @@ var findingCreateSQL = `
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90, $91` + findingTypePlaceholders(92) + `)
+			$89, $90, $91, $92` + findingTypePlaceholders(93) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -307,8 +307,11 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 		// Tags. The INSERT used to leave them out, so a new finding's tags
 		// (from the manual or pentest form) were lost until an edit.
 		pq.Array(finding.Tags()), // $91
+		// Rule name. Also left out of the INSERT, so the scanner's rule name
+		// (a nuclei template's, a semgrep rule's) arrived only on a re-sighting.
+		nullString(finding.RuleName()), // $92
 	}
-	args = append(args, findingTypeArgs(finding)...) // $92…
+	args = append(args, findingTypeArgs(finding)...) // $93…
 	return args, nil
 }
 
@@ -509,7 +512,7 @@ func findingInsertColumnsSQL() string {
 			remediation, pentest_campaign_id,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status, tags,
+			sla_deadline, sla_status, tags, rule_name,
 			` + findingTypeColumnsSQL + `
 		)`
 }
@@ -613,7 +616,9 @@ func findingUpsertConflictSQL() string {
 			-- enrich path: the stored tags (a user may have set them) stay
 			-- first, new non-empty ones not already there are appended, and
 			-- the list stops at vulnerability.MaxFindingTags.
-			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") +
+			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
+			-- Rule name: first non-empty one wins, as in EnrichFrom.
+			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
 		findingTypeConflictSQL() + "\n\t"
 }
 
@@ -647,7 +652,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 90 + findingTypeColumnCount
+const findingInsertColumnCount = 91 + findingTypeColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -774,6 +779,9 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Tags. Left out of the INSERT until now, so every ingested finding
 		// was stored with tags = '{}' whatever the report sent.
 		pq.Array(finding.Tags()),
+		// Rule name, left out with the tags: a nuclei template's or semgrep
+		// rule's name arrived only on a re-sighting.
+		nullString(finding.RuleName()),
 	}, findingTypeArgs(finding)...), nil
 }
 
