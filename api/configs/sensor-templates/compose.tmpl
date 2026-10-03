@@ -8,7 +8,7 @@
 {{- if .APIKey}}
 #        printf '%s\n' 'OPENCTEM_API_KEY={{.APIKey}}' > .env && chmod 600 .env
 {{- else}}
-#        printf '%s\n' 'OPENCTEM_API_KEY=rda_...' > .env && chmod 600 .env
+#        printf '%s\n' 'OPENCTEM_API_KEY=octs_...' > .env && chmod 600 .env
 #      (the key is shown once, when the sensor is created or its key rotated)
 {{- end}}
 #   2. Save this file as compose.yaml and run: docker compose up -d

@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -30,6 +31,7 @@ const (
 // ScannerTemplateHandler handles HTTP requests for scanner templates.
 type ScannerTemplateHandler struct {
 	service   *app.ScannerTemplateService
+	audit     *app.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
@@ -41,6 +43,36 @@ func NewScannerTemplateHandler(service *app.ScannerTemplateService, v *validator
 		validator: v,
 		logger:    log.With("handler", "scanner_template"),
 	}
+}
+
+// SetAuditService records template changes in the tenant's audit log with
+// the state before and after (RFC-040 §5.11): a custom template is code
+// sensors run.
+func (h *ScannerTemplateHandler) SetAuditService(svc *app.AuditService) {
+	h.audit = svc
+}
+
+func (h *ScannerTemplateHandler) auditTemplate(r *http.Request, action audit.Action, id string, before, after *scannertemplate.ScannerTemplate) {
+	name := ""
+	var b, a map[string]any
+	if before != nil {
+		b, name = auditSnapshot(toScannerTemplateResponse(before)), before.Name
+	}
+	if after != nil {
+		a, name = auditSnapshot(toScannerTemplateResponse(after)), after.Name
+	}
+	auditResourceChange(h.audit, h.logger, r, action, audit.ResourceTypeScannerTemplate, id, name, b, a)
+}
+
+// templateBefore reads the state a change starts from; a failed read
+// answers the request (the change would fail the same way).
+func (h *ScannerTemplateHandler) templateBefore(w http.ResponseWriter, r *http.Request, tenantID, id string) (*scannertemplate.ScannerTemplate, bool) {
+	t, err := h.service.GetTemplate(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return nil, false
+	}
+	return t, true
 }
 
 // CreateScannerTemplateRequest represents the request body for creating a template.
@@ -152,6 +184,7 @@ func (h *ScannerTemplateHandler) Create(w http.ResponseWriter, r *http.Request) 
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditTemplate(r, audit.ActionScannerTemplateCreated, template.ID.String(), nil, template)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -293,11 +326,16 @@ func (h *ScannerTemplateHandler) Update(w http.ResponseWriter, r *http.Request) 
 		Tags:        req.Tags,
 	}
 
+	before, ok := h.templateBefore(w, r, tenantID, templateID)
+	if !ok {
+		return
+	}
 	template, err := h.service.UpdateTemplate(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditTemplate(r, audit.ActionScannerTemplateUpdated, templateID, before, template)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScannerTemplateResponse(template))
@@ -321,10 +359,15 @@ func (h *ScannerTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) 
 	templateID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
+	before, ok := h.templateBefore(w, r, tenantID, templateID)
+	if !ok {
+		return
+	}
 	if err := h.service.DeleteTemplate(r.Context(), tenantID, templateID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditTemplate(r, audit.ActionScannerTemplateDeleted, templateID, before, nil)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -421,11 +464,16 @@ func (h *ScannerTemplateHandler) Deprecate(w http.ResponseWriter, r *http.Reques
 	templateID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
+	before, ok := h.templateBefore(w, r, tenantID, templateID)
+	if !ok {
+		return
+	}
 	template, err := h.service.DeprecateTemplate(r.Context(), tenantID, templateID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditTemplate(r, audit.ActionScannerTemplateDeprecated, templateID, before, template)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScannerTemplateResponse(template))

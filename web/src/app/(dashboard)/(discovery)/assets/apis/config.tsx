@@ -12,8 +12,12 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { sanitizeExternalUrl } from '@/lib/utils'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { safeHref } from '@/lib/safe-href'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
+import type { Asset } from '@/features/assets'
+import { httpStatusCode, redirectChain, tlsFacts } from '@/features/assets/lib/service-facts'
+import { HttpStatusChip, TlsSummary, UnknownChip } from '@/features/assets/components/service-cells'
 
 // ============================================
 // Constants
@@ -36,6 +40,23 @@ const apiTypeColors: Record<string, string> = {
   soap: 'bg-orange-500',
 }
 
+function metaOf(asset: Asset): Record<string, unknown> {
+  return asset.metadata as Record<string, unknown>
+}
+
+/** A recorded count, or null. A missing count is not zero endpoints. */
+function endpointCount(asset: Asset): number | null {
+  const n = metaOf(asset).endpoint_count
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null
+}
+
+/** The recorded auth type, or undefined. Never "none" by default: that
+ * would claim an API is unauthenticated because nobody recorded it. */
+function authType(asset: Asset): string | undefined {
+  const v = metaOf(asset).auth_type
+  return typeof v === 'string' && v ? v : undefined
+}
+
 // ============================================
 // Config
 // ============================================
@@ -56,11 +77,13 @@ export const apisConfig: AssetPageConfig = {
       accessorKey: 'metadata.api_type',
       header: 'Type',
       cell: ({ row }) => {
-        const meta = row.original.metadata as Record<string, unknown>
-        const apiType = (meta.api_type as string) || 'rest'
+        const apiType = metaOf(row.original).api_type as string | undefined
+        if (!apiType) return <UnknownChip>Unknown</UnknownChip>
         return (
           <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${apiTypeColors[apiType] || 'bg-gray-500'}`} />
+            <div
+              className={`h-2 w-2 rounded-full ${apiTypeColors[apiType] || 'bg-muted-foreground'}`}
+            />
             <Badge variant="outline" className="uppercase text-xs">
               {apiType}
             </Badge>
@@ -72,12 +95,12 @@ export const apisConfig: AssetPageConfig = {
       accessorKey: 'metadata.auth_type',
       header: 'Auth',
       cell: ({ row }) => {
-        const meta = row.original.metadata as Record<string, unknown>
-        const authType = (meta.auth_type as string) || 'none'
+        const auth = authType(row.original)
+        if (!auth) return <UnknownChip>Unknown</UnknownChip>
         return (
           <div className="flex items-center gap-1.5">
             <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-sm">{authTypeLabels[authType] || authType}</span>
+            <span className="text-sm">{authTypeLabels[auth] || auth}</span>
           </div>
         )
       },
@@ -86,16 +109,28 @@ export const apisConfig: AssetPageConfig = {
       accessorKey: 'metadata.endpoint_count',
       header: 'Endpoints',
       cell: ({ row }) => {
-        const meta = row.original.metadata as Record<string, unknown>
-        return <Badge variant="secondary">{(meta.endpoint_count as number) ?? 0}</Badge>
+        const n = endpointCount(row.original)
+        if (n === null) return <UnknownChip>Unknown</UnknownChip>
+        return <Badge variant="secondary">{n}</Badge>
       },
+    },
+    {
+      id: 'http_status',
+      header: 'Status',
+      cell: ({ row }) => (
+        <HttpStatusChip status={httpStatusCode(row.original)} chain={redirectChain(row.original)} />
+      ),
+    },
+    {
+      id: 'tls',
+      header: 'TLS',
+      cell: ({ row }) => <TlsSummary facts={tlsFacts(row.original)} detail={false} />,
     },
     {
       accessorKey: 'metadata.base_url',
       header: 'Base URL',
       cell: ({ row }) => {
-        const meta = row.original.metadata as Record<string, unknown>
-        const url = meta.base_url as string
+        const url = metaOf(row.original).base_url as string
         if (!url) return <span className="text-muted-foreground">-</span>
         return (
           <span className="text-xs text-muted-foreground truncate max-w-[200px] block">{url}</span>
@@ -257,11 +292,11 @@ export const apisConfig: AssetPageConfig = {
       label: 'View Docs',
       icon: ExternalLink,
       onClick: (asset) => {
-        const url = (asset.metadata as Record<string, unknown>).documentation_url as string
-        if (url) {
-          window.open(sanitizeExternalUrl(url), '_blank', 'noopener,noreferrer')
+        const href = safeHref(metaOf(asset).documentation_url, { allowRelative: false })
+        if (href) {
+          window.open(href, '_blank', 'noopener,noreferrer')
         } else {
-          toast.info('No documentation URL configured')
+          toast.info('No valid documentation URL configured')
         }
       },
     },
@@ -287,8 +322,7 @@ export const apisConfig: AssetPageConfig = {
       iconBg: 'bg-blue-500/10',
       iconColor: 'text-blue-500',
       label: 'Endpoints',
-      getValue: (asset) =>
-        ((asset.metadata as Record<string, unknown>).endpoint_count as number) || 0,
+      getValue: (asset) => endpointCount(asset) ?? '—',
     },
   ],
 
@@ -326,15 +360,15 @@ export const apisConfig: AssetPageConfig = {
         },
         {
           label: 'Authentication',
-          // Auth type defaults to 'none' which is a meaningful claim
-          // ("we know there's no auth") so we keep showing it.
+          // "No Auth" is a claim; it is only shown when recorded. A missing
+          // auth type is unknown, not "none".
           getValue: (asset) => {
-            const meta = asset.metadata as Record<string, unknown>
-            const authType = (meta.auth_type as string) || 'none'
+            const auth = authType(asset)
+            if (!auth) return <span className="text-muted-foreground">Unknown</span>
             return (
               <span className="flex items-center gap-1">
                 <Lock className="h-3.5 w-3.5" />
-                {authTypeLabels[authType] || authType}
+                {authTypeLabels[auth] || auth}
               </span>
             )
           },
@@ -355,6 +389,16 @@ export const apisConfig: AssetPageConfig = {
           },
         },
         {
+          label: 'HTTP status',
+          getValue: (asset) => (
+            <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} />
+          ),
+        },
+        {
+          label: 'TLS',
+          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} explainMissing />,
+        },
+        {
           label: 'TLS Version',
           getValue: (asset) =>
             ((asset.metadata as Record<string, unknown>).tls_version as string) || null,
@@ -362,19 +406,16 @@ export const apisConfig: AssetPageConfig = {
         {
           label: 'Documentation',
           getValue: (asset) => {
-            const meta = asset.metadata as Record<string, unknown>
-            const url = meta.documentation_url as string
-            if (!url) return null
+            const url = metaOf(asset).documentation_url
+            if (typeof url !== 'string' || !url) return null
             return (
-              <a
-                href={sanitizeExternalUrl(url)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary hover:underline flex items-center gap-1"
+              <SafeExternalLink
+                href={url}
+                className="flex items-center gap-1 text-sm text-primary hover:underline"
               >
                 <ExternalLink className="h-3 w-3" />
                 View Docs
-              </a>
+              </SafeExternalLink>
             )
           },
         },
@@ -449,7 +490,11 @@ export const apisConfig: AssetPageConfig = {
                 <div className="flex items-center gap-2">
                   <Zap className="h-4 w-4 text-blue-500" />
                   <div>
-                    <p className="text-sm font-bold">{meta.avg_response_time as number}ms</p>
+                    <p className="text-sm font-bold">
+                      {typeof meta.avg_response_time === 'number'
+                        ? `${meta.avg_response_time}ms`
+                        : '—'}
+                    </p>
                     <p className="text-xs text-muted-foreground">Avg Response</p>
                   </div>
                 </div>
@@ -457,7 +502,9 @@ export const apisConfig: AssetPageConfig = {
                   <AlertTriangle className="h-4 w-4 text-orange-500" />
                   <div>
                     <p className="text-sm font-bold">
-                      {(((meta.error_rate as number) || 0) * 100).toFixed(2)}%
+                      {typeof meta.error_rate === 'number'
+                        ? `${(meta.error_rate * 100).toFixed(2)}%`
+                        : '—'}
                     </p>
                     <p className="text-xs text-muted-foreground">Error Rate</p>
                   </div>
@@ -474,7 +521,7 @@ export const apisConfig: AssetPageConfig = {
     { header: 'Name', accessor: (a) => a.name },
     {
       header: 'Type',
-      accessor: (a) => ((a.metadata as Record<string, unknown>).api_type as string) || 'rest',
+      accessor: (a) => (metaOf(a).api_type as string) || '',
     },
     {
       header: 'Base URL',
@@ -486,11 +533,11 @@ export const apisConfig: AssetPageConfig = {
     },
     {
       header: 'Auth Type',
-      accessor: (a) => ((a.metadata as Record<string, unknown>).auth_type as string) || 'none',
+      accessor: (a) => authType(a) ?? '',
     },
     {
       header: 'Endpoints',
-      accessor: (a) => ((a.metadata as Record<string, unknown>).endpoint_count as number) || 0,
+      accessor: (a) => endpointCount(a) ?? '',
     },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Risk Score', accessor: (a) => a.riskScore },

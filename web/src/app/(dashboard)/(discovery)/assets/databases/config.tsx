@@ -2,6 +2,8 @@ import { Badge } from '@/components/ui/badge'
 import type { Asset } from '@/features/assets'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import { Database, Lock, Save, HardDrive, CheckCircle, Shield, AlertTriangle } from 'lucide-react'
+import { yesNoUnknown } from '@/features/assets/lib/honest-values'
+import { UnknownChip } from '@/features/assets/components/service-cells'
 
 const engineColors: Record<string, string> = {
   mysql: 'bg-blue-500/10 text-blue-500',
@@ -30,11 +32,16 @@ export const databasesConfig: AssetPageConfig = {
       cell: ({ row }) => {
         const engine = row.original.metadata.engine as string
         const version = row.original.metadata.db_version as string
+        // No engine recorded is "Unknown", never PostgreSQL.
         return (
           <div>
-            <Badge variant="secondary" className={engineColors[engine || 'postgresql']}>
-              {engine || 'postgresql'}
-            </Badge>
+            {engine ? (
+              <Badge variant="secondary" className={engineColors[engine]}>
+                {engine}
+              </Badge>
+            ) : (
+              <UnknownChip>Unknown</UnknownChip>
+            )}
             {version && <p className="text-xs text-muted-foreground mt-1">{version}</p>}
           </div>
         )
@@ -237,7 +244,11 @@ export const databasesConfig: AssetPageConfig = {
         {
           label: 'Replication',
           getValue: (asset) => (
-            <span className="capitalize">{(asset.metadata.replication as string) || 'single'}</span>
+            <span className="capitalize">
+              {(asset.metadata.replication as string) || (
+                <span className="text-muted-foreground normal-case">Unknown</span>
+              )}
+            </span>
           ),
         },
       ],
@@ -286,12 +297,12 @@ export const databasesConfig: AssetPageConfig = {
     {
       header: 'Encrypted',
       accessor: (a: Asset) => a.metadata.encryption,
-      transform: (v: unknown) => (v ? 'Yes' : 'No'),
+      transform: yesNoUnknown,
     },
     {
       header: 'Backup',
       accessor: (a: Asset) => a.metadata.backupEnabled,
-      transform: (v: unknown) => (v ? 'Yes' : 'No'),
+      transform: yesNoUnknown,
     },
     { header: 'Status', accessor: (a: Asset) => a.status },
     { header: 'Risk Score', accessor: (a: Asset) => a.riskScore },

@@ -1173,12 +1173,26 @@ func (s *AuditService) LogSensorKeyRegenerated(ctx context.Context, actx AuditCo
 // LogSensorKeyRenewed logs a sensor rotating its own API key (POST /agent/renew).
 // overlap is true when the renewed key was issued as an additional key row so
 // the superseded key keeps working until its own expiry (rotation overlap).
-func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContext, sensorID, sensorName string, expiresAt *time.Time, overlap bool) error {
+//
+// The new key is always an octs_ key. fromLegacy marks the renewal that moved
+// the sensor off a legacy rda_ key: the metadata then carries
+// previous_key_format "rda" and upgraded_from_legacy_key true. Only format
+// names are recorded, never key material (not even a prefix).
+func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContext, sensorID, sensorName string, expiresAt *time.Time, overlap, fromLegacy bool) error {
+	msg := fmt.Sprintf("Sensor '%s' renewed its API key", sensorName)
+	previous := "octs"
+	if fromLegacy {
+		msg = fmt.Sprintf("Sensor '%s' renewed its API key and moved from a legacy rda_ key to the octs_ format", sensorName)
+		previous = "rda"
+	}
 	event := NewSuccessEvent(auditdom.ActionSensorKeyRenewed, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithSeverity(auditdom.SeverityMedium).
-		WithMessage(fmt.Sprintf("Sensor '%s' renewed its API key", sensorName)).
-		WithMetadata("overlap", overlap)
+		WithMessage(msg).
+		WithMetadata("overlap", overlap).
+		WithMetadata("key_format", "octs").
+		WithMetadata("previous_key_format", previous).
+		WithMetadata("upgraded_from_legacy_key", fromLegacy)
 	if expiresAt != nil {
 		event = event.WithMetadata("expires_at", expiresAt.UTC().Format(time.RFC3339))
 	}
