@@ -72,6 +72,29 @@ export interface DetailSheetProps {
   width?: DetailSheetWidth
   children?: React.ReactNode
   className?: string
+  /**
+   * Pinned under the scrolling body (a composer, a primary action). The body
+   * scrolls between the header and this.
+   */
+  footer?: React.ReactNode
+  /** The scrolling body, for a feature that manages its scroll position. */
+  bodyRef?: React.Ref<HTMLDivElement>
+  /** Extra classes for the scrolling body (e.g. its own padding). */
+  bodyClassName?: string
+  /** Scroll events of the body. */
+  onBodyScroll?: React.UIEventHandler<HTMLDivElement>
+  /**
+   * Phones: `auto` (default) grows with the content up to 92% of the
+   * screen; `full` always takes that height (a feed with a pinned composer).
+   */
+  phoneHeight?: 'auto' | 'full'
+  /**
+   * Where focus goes on open. The default keeps focus on the sheet itself
+   * (no field grabs it); return an element to focus it instead.
+   */
+  initialFocus?: () => HTMLElement | null | undefined
+  /** Where focus returns on close; Radix's default (the opener) otherwise. */
+  returnFocus?: () => HTMLElement | null | undefined
 }
 
 export function DetailSheet({
@@ -83,6 +106,13 @@ export function DetailSheet({
   width = 'xl',
   children,
   className,
+  footer,
+  bodyRef,
+  bodyClassName,
+  onBodyScroll,
+  phoneHeight = 'auto',
+  initialFocus,
+  returnFocus,
 }: DetailSheetProps) {
   // Phones get a bottom sheet, larger screens the side drawer.
   const isPhone = useIsMobile()
@@ -94,10 +124,27 @@ export function DetailSheet({
         data-slot="detail-sheet"
         className={cn(
           'flex w-full flex-col gap-0 overflow-hidden p-0 [&>button]:hidden',
-          isPhone ? 'max-h-[92svh] rounded-t-2xl' : WIDTH[width],
+          isPhone
+            ? cn('max-h-[92svh] rounded-t-2xl', phoneHeight === 'full' && 'h-[92svh]')
+            : WIDTH[width],
           className
         )}
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          const el = initialFocus?.()
+          if (el) el.focus({ preventScroll: true })
+        }}
+        onCloseAutoFocus={
+          returnFocus
+            ? (e) => {
+                const el = returnFocus()
+                if (el && el.isConnected) {
+                  e.preventDefault()
+                  el.focus({ preventScroll: true })
+                }
+              }
+            : undefined
+        }
       >
         {isPhone && (
           <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border" />
@@ -107,11 +154,14 @@ export function DetailSheet({
           {tabs}
         </div>
         <div
-          className={cn('min-h-0 flex-1 overflow-y-auto pt-4 pb-6', pad)}
+          ref={bodyRef}
+          onScroll={onBodyScroll}
+          className={cn('min-h-0 flex-1 overflow-y-auto pt-4 pb-6', pad, bodyClassName)}
           {...(panel ? { role: 'tabpanel', 'aria-label': panel } : {})}
         >
           {children}
         </div>
+        {footer && <div className={cn('shrink-0 border-t bg-background', pad)}>{footer}</div>}
       </SheetContent>
     </Sheet>
   )

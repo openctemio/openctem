@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
@@ -58,7 +58,8 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import { redactUrlQueries } from '@/lib/redact-url'
 import { cn } from '@/lib/utils'
 
-import { SensorActivity, SensorRecentActivity } from './sensor-activity'
+import { SensorRecentActivity } from './sensor-activity'
+import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
 import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
 import { SensorManifestTab } from './sensor-manifest-tab'
@@ -122,12 +123,13 @@ interface SensorDetailSheetProps {
   fleet?: Sensor[]
 }
 
-type DrawerTab = 'overview' | 'jobs' | 'activity' | 'manifest' | 'config'
+// Activity is not a tab: the Overview's activity summary opens the shared
+// ActivityPanel (web/docs/ui/activity-panel.md).
+type DrawerTab = 'overview' | 'jobs' | 'manifest' | 'config'
 
 const DRAWER_TABS: DetailTab<DrawerTab>[] = [
   { value: 'overview', label: 'Overview' },
   { value: 'jobs', label: 'Jobs' },
-  { value: 'activity', label: 'Activity' },
   { value: 'manifest', label: 'Manifest' },
   { value: 'config', label: 'Config' },
 ]
@@ -778,6 +780,7 @@ export function SensorDetailSheet({
   const canWrite = useHasPermission(Permission.SensorsWrite)
   const canDelete = useHasPermission(Permission.SensorsDelete)
   const [tab, setTab] = useState<DrawerTab>('overview')
+  const activityRef = useRef<EntityActivityHandle>(null)
   const [shownId, setShownId] = useState<string | null>(null)
   if (sensorProp && sensorProp.id !== shownId) {
     // Another sensor: start on its overview.
@@ -899,7 +902,7 @@ export function SensorDetailSheet({
             checks={checks}
             canManage={canWrite}
             onAction={handleAction}
-            onActivity={() => setTab('activity')}
+            onActivity={() => activityRef.current?.open()}
           />
 
           <SensorStats sensor={sensor} now={now} thresholds={thresholds} />
@@ -919,7 +922,7 @@ export function SensorDetailSheet({
             {(sensor.control || hasHeartbeatHistory(heartbeatHistory)) && (
               <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
             )}
-            <SensorRecentActivity sensorId={sensor.id} onAll={() => setTab('activity')} />
+            <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />
             <ConnectionAndIdentity
               sensor={sensor}
               now={now}
@@ -931,8 +934,6 @@ export function SensorDetailSheet({
       )}
 
       {tab === 'jobs' && <SensorJobs sensor={sensor} />}
-
-      {tab === 'activity' && <SensorActivity sensorId={sensor.id} />}
 
       {tab === 'manifest' && <SensorManifestTab sensor={sensor} now={now} />}
 

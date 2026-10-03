@@ -130,6 +130,11 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 	if err := mergeRepositoryExtension(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}
+	// Exposure events embed the asset id in their fingerprint: re-key them for
+	// the kept asset before they move, folding duplicates into one event.
+	if err := rekeyMergedExposures(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
 	for _, ref := range assetMergeRefs {
 		if err := repointRef(ctx, tx, ref, keepID, mergeIDs, tenantID); err != nil {
 			return err
