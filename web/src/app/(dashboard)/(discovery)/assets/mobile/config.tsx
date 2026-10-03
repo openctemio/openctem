@@ -188,8 +188,17 @@ export const mobileConfig: AssetPageConfig = {
           label: 'Platform',
           getValue: (asset) => (
             <div className="flex items-center gap-2">
-              {getPlatformIcon((asset.metadata.platform as string) || 'android')}
-              <span>{platformLabels[(asset.metadata.platform as string) || 'android']}</span>
+              {asset.metadata.platform ? (
+                <>
+                  {getPlatformIcon(asset.metadata.platform as string)}
+                  <span>
+                    {platformLabels[asset.metadata.platform as string] ??
+                      (asset.metadata.platform as string)}
+                  </span>
+                </>
+              ) : (
+                <span className="text-muted-foreground">Unknown</span>
+              )}
             </div>
           ),
         },
