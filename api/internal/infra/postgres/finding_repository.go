@@ -577,6 +577,7 @@ func findingInsertColumnsSQL() string {
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
 			sla_deadline, sla_status, tags, rule_name,
+			last_seen_tool,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `
 		)`
@@ -610,6 +611,9 @@ func findingUpsertConflictSQL() string {
 			message = EXCLUDED.message,
 			severity = EXCLUDED.severity,
 			scan_id = EXCLUDED.scan_id,
+			-- The tool of the sighting moves with scan_id (RFC-043 interim
+			-- auto-resolve guard); tool_name stays the first reporter.
+			last_seen_tool = COALESCE(EXCLUDED.last_seen_tool, findings.last_seen_tool),
 			sensor_id = EXCLUDED.sensor_id,
 			-- Existing keys win, new keys are added. This path is only reached
 			-- when two ingests race on a new fingerprint or one batch repeats
@@ -724,7 +728,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 91 + findingTypeColumnCount + findingNetworkColumnCount
+const findingInsertColumnCount = 92 + findingTypeColumnCount + findingNetworkColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -854,6 +858,8 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Rule name, left out with the tags: a nuclei template's or semgrep
 		// rule's name arrived only on a re-sighting.
 		nullString(finding.RuleName()),
+		// Tool of this sighting (RFC-043 interim auto-resolve guard).
+		nullString(finding.LastSeenTool()),
 	}, append(findingTypeArgs(finding), findingNetworkArgs(finding)...)...), nil
 }
 
@@ -1773,7 +1779,7 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 		  AND o.tenant_id = $1
 		  AND o.branch_id = $2
 		  AND o.status = 'open'
-		  AND f.tool_name = $3
+		  AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 		  AND o.last_seen_scan_id IS DISTINCT FROM $4
 	`
 	res, err := r.db.ExecContext(ctx, query, tenantID.String(), branchID.String(), toolName, scanID)
@@ -1874,7 +1880,7 @@ func (r *FindingRepository) DeleteByScanID(ctx context.Context, tenantID shared.
 // UpdateScanIDBatchByFingerprints updates scan metadata for existing findings by their fingerprints.
 // This preserves user-set status (false_positive, accepted, etc.) while updating scan tracking.
 // Returns the count of updated findings.
-func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID string) (int64, error) {
+func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, toolName string) (int64, error) {
 	if len(fingerprints) == 0 {
 		return 0, nil
 	}
@@ -1883,11 +1889,12 @@ func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context,
 	// Note: Status is intentionally NOT updated to preserve user-set values (false_positive, accepted, etc.)
 	query := `
 		UPDATE findings
-		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW()
+		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(),
+			last_seen_tool = COALESCE(NULLIF($4, ''), last_seen_tool)
 		WHERE tenant_id = $2 AND fingerprint = ANY($3)
 	`
 
-	result, err := r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints))
+	result, err := r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints), toolName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to update findings scan_id: %w", err)
 	}
@@ -3275,7 +3282,10 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 			FROM repository_branches rb
 			WHERE f.tenant_id = $1
 				AND f.asset_id = $2
-				AND f.tool_name = $3
+				-- Only the tool that saw the finding last may close it (RFC-043
+				-- interim guard): tool_name is the first reporter, scan_id the
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
+				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = $5
 				AND f.branch_id = rb.id
@@ -3297,7 +3307,10 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 			FROM repository_branches rb
 			WHERE f.tenant_id = $1
 				AND f.asset_id = $2
-				AND f.tool_name = $3
+				-- Only the tool that saw the finding last may close it (RFC-043
+				-- interim guard): tool_name is the first reporter, scan_id the
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
+				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
@@ -3363,7 +3376,10 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 			FROM repository_branches rb
 			WHERE f.tenant_id = $1
 				AND f.asset_id = ANY($2)
-				AND f.tool_name = $3
+				-- Only the tool that saw the finding last may close it (RFC-043
+				-- interim guard): tool_name is the first reporter, scan_id the
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
+				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = $5
 				AND f.branch_id = rb.id
@@ -3384,7 +3400,10 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 			FROM repository_branches rb
 			WHERE f.tenant_id = $1
 				AND f.asset_id = ANY($2)
-				AND f.tool_name = $3
+				-- Only the tool that saw the finding last may close it (RFC-043
+				-- interim guard): tool_name is the first reporter, scan_id the
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
+				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
@@ -3717,7 +3736,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 66
+const enrichColumnsPerRow = 67
 
 // enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
 // 1000 rows × 50 columns = 50,000 params (safely under limit).
@@ -3797,6 +3816,7 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"end_column", "int"},
 	{"sla_deadline", "timestamptz"},
 	{"sla_status", "text"},
+	{"last_seen_tool", "text"},
 	{"network_port", "int"},
 	{"network_transport", "text"},
 	{"network_service", "text"},
@@ -3983,6 +4003,7 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		// means the enrich path is the single write surface for all findings).
 		nullTime(f.SLADeadline()),
 		f.SLAStatus().String(),
+		nullString(f.LastSeenTool()),
 		// Network location — EnrichFrom fills it first-wins (enrichNetwork).
 	}, findingNetworkArgs(f)...), nil
 }

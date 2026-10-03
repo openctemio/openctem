@@ -35,6 +35,9 @@ const (
 	ActionAssetReactivated        Action = "asset.reactivated"
 	ActionAssetLifecycleSnoozed   Action = "asset.lifecycle_snoozed"
 	ActionAssetLifecycleUnsnoozed Action = "asset.lifecycle_unsnoozed"
+	// ActionAssetAttributionDecided: a person set whether an asset is the
+	// organization's (RFC-036 attribution review).
+	ActionAssetAttributionDecided Action = "asset.attribution_decided"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -167,6 +170,19 @@ const (
 	// commands a sensor held when it was revoked or disabled (RFC-040 §5.2):
 	// which were re-queued for another sensor and which were failed.
 	ActionSensorCommandsReleased Action = "sensor.commands_released"
+
+	// Sensor results without a command (RFC-040 §5.3).
+	// ActionSensorResultsQuarantined records an unsolicited report held for
+	// review instead of applied.
+	ActionSensorResultsQuarantined Action = "sensor.results_quarantined"
+	// ActionSensorResultsAccepted records a person accepting a quarantined
+	// report (it is then applied).
+	ActionSensorResultsAccepted Action = "sensor.results_accepted"
+	// ActionSensorResultsDiscarded records a person discarding one.
+	ActionSensorResultsDiscarded Action = "sensor.results_discarded"
+	// ActionSensorResultPolicyUpdated records a change of the tenant's
+	// policy for unsolicited sensor results.
+	ActionSensorResultPolicyUpdated Action = "sensor.result_policy_updated"
 
 	// Scan zone actions (RFC-023): every change to a zone or to which sensors
 	// serve it.
@@ -402,7 +418,7 @@ func (a Action) IsValid() bool {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
-		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -425,6 +441,8 @@ func (a Action) IsValid() bool {
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
+		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
+		ActionSensorResultPolicyUpdated,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -526,7 +544,9 @@ func (a Action) Category() string {
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
-		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased:
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
+		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
+		ActionSensorResultPolicyUpdated:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
@@ -743,7 +763,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
-		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,

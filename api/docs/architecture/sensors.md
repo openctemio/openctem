@@ -973,6 +973,18 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
 - **Adding a collector type.** Add a catalog row with `metadata.kind =
   "collector"` in a migration, then report it from the collector.
 
+## Result binding and the results quarantine (RFC-040)
+
+A report changes existing assets, reopens findings a person resolved and
+auto-resolves only when it names a command assigned to the sensor and open
+(the v2 `commands/{command_id}/results/...` path, or `X-OpenCTEM-Command-ID`
+on v1), and only on the assets that command's targets cover. Collector and
+runner reports without a command are applied with limits; other roles' are
+applied with limits (tenant mode `warn`, every tenant that existed at
+upgrade) or held for review (`quarantine`, new tenants). Rule, response
+codes, compatibility and the review API:
+[sensor-result-binding.md](sensor-result-binding.md).
+
 ## Scanner content
 
 [RFC-031](../rfcs/RFC-031-managed-sensor-updates.md). A tool's binary is

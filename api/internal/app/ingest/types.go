@@ -100,6 +100,16 @@ type Options struct {
 	// report counts once, as one scan, when it completes (it may arrive in
 	// many segments).
 	DeferSensorStats bool
+	// Binding is the authority behind the report (RFC-040 §5.3). The zero
+	// value is an unsolicited sensor report: it never changes an existing
+	// asset and never reopens a finding a person resolved.
+	Binding Binding
+	// Admitted: the accept side already ran the unsolicited-results gate
+	// (quarantine or warn) for this report, so Ingest does not run it again.
+	Admitted bool
+	// Route names the ingest route for a quarantined report (ctis, sarif,
+	// recon, scan, chunk).
+	Route string
 }
 
 // GetBranchInfo returns branch info from Input or Report metadata.
@@ -162,6 +172,22 @@ type Output struct {
 	CVEsUpdated          int      `json:"cves_updated,omitempty"`
 	Errors               []string `json:"errors,omitempty"`
 	Warnings             []string `json:"warnings,omitempty"`
+
+	// Binding is the authority the report was applied under: command,
+	// unsolicited or trusted (RFC-040 §5.3).
+	Binding string `json:"binding,omitempty"`
+	// AssetsLimited counts existing assets the report matched but was not
+	// allowed to change (no command covering them): they were only marked
+	// seen, and only while active.
+	AssetsLimited int `json:"assets_limited,omitempty"`
+	// ReopensWithheld counts re-detected findings a person had resolved that
+	// were left resolved because no command covering their asset stood
+	// behind the report.
+	ReopensWithheld int `json:"reopens_withheld,omitempty"`
+	// UnsolicitedWarned: an unsolicited report from a sensor whose role may
+	// not push results on its own, applied because the tenant's mode is
+	// "warn"; in "quarantine" mode it would have been held for review.
+	UnsolicitedWarned bool `json:"unsolicited_warned,omitempty"`
 
 	// FailedFindings contains detailed info about findings that failed to save.
 	// This is used for audit logging and debugging purposes.

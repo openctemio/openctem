@@ -317,16 +317,21 @@ func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) err
 }
 
 // RecordKeyUse marks the sensor seen and records the client address of the
-// key use (sensor.KeyUseRecorder). The previous address is read in the same
-// statement, so two concurrent requests each see the address before their
-// own write. The address and its time only move forward: key uses are
-// recorded asynchronously and can arrive out of order, and an older
-// observation must not overwrite a newer address.
+// key use (sensor.KeyUseRecorder). The address and its time only move
+// forward: key uses are recorded asynchronously and can arrive out of order,
+// and an older observation must not overwrite a newer address.
+//
+// The previous address is read in the same statement under the row lock
+// (FOR NO KEY UPDATE, what the UPDATE takes anyway). Without the lock, a use
+// that waited for a concurrent one to commit compared against the row as it
+// was when its own statement started: an older use then put its address back
+// over the newer one and reported an address change that did not happen.
 func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (net.IP, error) {
 	query := `
 		WITH prev AS (
 			SELECT id, host(api_key_last_used_ip) AS ip, api_key_last_used_at AS at
 			FROM sensors WHERE id = $1
+			FOR NO KEY UPDATE
 		)
 		UPDATE sensors s
 		SET last_seen_at = NOW(),

@@ -339,6 +339,30 @@ var (
 		[]string{"stage"},
 	)
 
+	// SensorUnsolicitedResultsTotal counts sensor reports that named no
+	// command (RFC-040 §5.3), by what happened to them: applied (a collector
+	// or CI runner), warned (another role, applied because the tenant's mode
+	// is warn), quarantined, or refused (the quarantine was full).
+	SensorUnsolicitedResultsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_unsolicited_results_total",
+			Help: "Sensor reports without a command, by outcome (applied, warned, quarantined, refused)",
+		},
+		[]string{"outcome"},
+	)
+
+	// SensorResultChangesWithheldTotal counts changes a sensor report was not
+	// allowed to make because no command covering the object stood behind
+	// it (RFC-040 §5.3): kind asset (an existing asset left unchanged) or
+	// reopen (a finding a person resolved left resolved).
+	SensorResultChangesWithheldTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_result_changes_withheld_total",
+			Help: "Changes withheld from sensor reports with no command covering the object, by kind (asset, reopen)",
+		},
+		[]string{"kind"},
+	)
+
 	// IngestV2ItemsTotal counts processed v2 items by kind (asset, finding)
 	// and result (accepted, rejected, quarantined).
 	IngestV2ItemsTotal = promauto.NewCounterVec(
