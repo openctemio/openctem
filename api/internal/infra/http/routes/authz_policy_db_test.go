@@ -274,11 +274,11 @@ func TestAuthzPolicy_SensorsAreAdminOnly_DB(t *testing.T) {
 
 	// The administrator still creates sensors and rotates keys.
 	body := h.expect(admin, http.MethodPost, "/api/v1/sensors", create, http.StatusCreated)
-	if !strings.Contains(body, "rda_") {
+	if !strings.Contains(body, "octs_") {
 		t.Fatalf("admin create returned no sensor key: %s", body)
 	}
 	body = h.expect(admin, http.MethodPost, "/api/v1/sensors/"+sid+"/regenerate-key", "", http.StatusOK)
-	if !strings.Contains(body, "rda_") {
+	if !strings.Contains(body, "octs_") {
 		t.Fatalf("admin regenerate returned no sensor key: %s", body)
 	}
 }

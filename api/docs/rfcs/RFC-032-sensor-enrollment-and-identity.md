@@ -2,6 +2,11 @@
 
 > Status: **Accepted** (2026-10-02; owner decisions in §10.1). Proposed
 > 2026-10-02 in #706. Phase 0 is in implementation.
+> **Revised 2026-10-03** (§10.4): credential prefixes are `octs_` (sensor API
+> key, now issued) and `octe_` (enrollment token, replacing the proposed
+> `ocse_`), both with a base62 CRC32 checksum; `rda_` is legacy and is retired
+> **90 days after enrollment and key-bound identity (Phases 1 and 2) ship**,
+> replacing the 2027-04-01 date in D3.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) +
 > ui + helm-charts.
 > Builds on and makes concrete: [RFC-014](RFC-014-agent-identity.md) (per-sensor
@@ -389,11 +394,15 @@ over signing every request with the same key.
 
 ### 6.2 Enrollment token
 
-- Format `ocse_` + base62(16-byte id) + `_` + base62(32-byte secret) +
-  base62(CRC32). The `ocse_` prefix is distinct from `oct_` (which the
-  gateway routes as user API keys) and from `rda_`. Proposed for GitHub
-  secret scanning partner registration together with `rda_`, so leaked
-  tokens and keys in public repositories are reported to us.
+- Format (revised 2026-10-03, §10.4): `octe_` + base62(32 random bytes,
+  43 characters) + base62(CRC32 of the random part, 6 characters), the same
+  shape as an `octs_` sensor key. The token is looked up by its peppered
+  hash, like a sensor key, so it needs no separate public id. (Originally
+  proposed as `ocse_` + id + `_` + secret + CRC32.) The `octe_` prefix is
+  distinct from `oct_` (which the gateway routes as user API keys), from
+  `octs_` and from `rda_`. Proposed for GitHub secret scanning partner
+  registration together with `octs_`, so leaked tokens and keys in public
+  repositories are reported to us.
 - Stored: `sensor_enrollment_tokens (id, tenant_id, secret_hash, name,
   role, zone_ids, tags, tool_ceiling, capability_ceiling, approval_mode,
   ephemeral, name_template, max_uses, use_count, expires_at, revoked_at,
@@ -628,7 +637,7 @@ credential's `jti` is remembered until its `exp` to refuse reuse.
 | New SDK against an old platform | `hello` does not advertise `signed_requests` → the SDK stays on the bearer key it was given; with only an enrollment token it reports "platform does not support enrollment" and exits non-zero (clear failure, no silent mode) |
 | Install snippets | `GET /sensors/{id}/config-templates` keeps serving legacy snippets; a new `GET /sensor-enrollment-tokens/{id}/install` renders the enrollment snippets from the same templates directory |
 | Management API | `POST /api/v1/sensors` keeps working (legacy key), marked deprecated in OpenAPI once enrollment ships |
-| Sunset | tenant switch "require key-bound identity" first; platform-wide on 2027-04-01 with the protocol-v1 sunset (D3) |
+| Sunset | tenant switch "require key-bound identity" first; platform-wide **90 days after Phases 1 and 2 ship** (§10.4, replacing 2027-04-01 in D3). `rda_` sensors that renew before then are already on `octs_` keys |
 
 ## 8. Implementation plan
 
@@ -689,7 +698,7 @@ The owner accepted every recommendation in the table above.
 |---|---|---|
 | D1 (Q1) | The default credential on the wire is a **sensor-held Ed25519 key with RFC 9421 request signatures**. mTLS client certificates are an optional later mode (Phase 5), never the default. | E4, E5 and §5.2 stand as written. Phase 1 builds the verifier and the signer; no bearer-token exchange (DPoP, JWT) is built. |
 | D2 (Q2) | **Single-use enrollment tokens auto-approve; reusable tokens require approval.** | The E3 defaults stand: `approval auto` when `max_uses = 1`, else `manual`. |
-| D3 (Q3, Q4, Q6) | The "create sensor + `rda_` key" flow stays only behind **"Legacy key"** in the UI. **Phases 1 and 2 ship in one SDK release**, so a sensor never sees an enrollment that issues bearer keys. **New installs are enrollment-only from Phase 2.** **`rda_` keys are retired platform-wide on 2027-04-01** together with protocol v1; a tenant can opt in earlier with "require key-bound identity". | The §7 sunset row is fixed to 2027-04-01. Until Phase 2 ships the legacy flow is the only flow, and Phase 0 hardens it. |
+| D3 (Q3, Q4, Q6) | The "create sensor + `rda_` key" flow stays only behind **"Legacy key"** in the UI. **Phases 1 and 2 ship in one SDK release**, so a sensor never sees an enrollment that issues bearer keys. **New installs are enrollment-only from Phase 2.** ~~`rda_` keys are retired platform-wide on 2027-04-01 together with protocol v1~~ **(superseded 2026-10-03, §10.4: `rda_` keys are retired 90 days after Phases 1 and 2 ship)**; a tenant can opt in earlier with "require key-bound identity". | The §7 sunset row follows §10.4. Until Phase 2 ships the legacy flow is the only flow, and Phase 0 hardens it. |
 | D4 | **Start Phase 0 now**, independently of Phases 1 and 2. | Phase 0 is tracked in §10.2. |
 | D5 (Q5) | **Scan credentials go only to approved, key-bound (or stronger) sensors**, HPKE-sealed per job. Legacy-key sensors keep sensor-local credentials. | E10 stands. Until Phase 3, Phase 0 warns when a scan's `scanner_config` looks like it carries a secret (G7). |
 
@@ -706,6 +715,10 @@ The owner accepted every recommendation in the table above.
 | `rda_` in GitHub secret scanning | owner | Needs the GitHub partner program; steps in §10.3. |
 
 ### 10.3 Follow-up for the owner: GitHub secret scanning for `rda_` (and `ocse_`)
+
+> Superseded in part by §10.4: the patterns to register are now `octs_` and
+> `octe_` (checksummed), with `rda_` as the legacy pattern. The current
+> patterns are in [agent-identity.md, *Credential formats*](../architecture/agent-identity.md#credential-formats).
 
 Having GitHub report leaked keys in public repositories to us is done
 through the **GitHub secret scanning partner program**, not a repository
@@ -761,6 +774,21 @@ description = "OpenCTEM sensor key"
 regex = '''\brda_[0-9a-f]{64}\b'''
 keywords = ["rda_"]
 ```
+
+### 10.4 Revision 2026-10-03: credential prefixes and the `rda_` sunset
+
+Owner decisions (2026-10-03):
+
+| # | Decision | Consequence |
+|---|---|---|
+| D6 | **New sensor API keys use `octs_`; enrollment tokens use `octe_`.** Both are `<prefix>` + base62 of 32 random bytes (43 characters, zero-padded) + base62 of the CRC32 of the random part (6 characters), in the style of GitHub's `ghp_` tokens. | Implemented in `pkg/sensorkey`. Create, regenerate, renew and `RotateKey` issue `octs_` keys. The API rejects an `octs_` key whose checksum fails, and any `octe_` token presented as a key, before the hash lookup. The display prefix is 10 characters (`octs_` + 5). The checksum is a typo and scanner aid, **not** a security control. |
+| D7 | **No sensor prefix starts with `oct_`**, which the HTTP layer routes to user / MCP API-key authentication. | A test pins that `octs_`, `octe_` and `rda_` bearer tokens never reach user-key authentication. |
+| D8 | **`rda_` keys keep working until 90 days after enrollment (Phase 2) and Ed25519 key-bound identity (Phase 1) ship**; this replaces 2027-04-01 in D3. Live sensors move to `octs_` automatically on their next key renewal. | `Sensor.IsLegacyKey()`, `legacy_key` in the sensor response with a "legacy key" tag on the Sensors page, the `openctem_sensor_legacy_keys` gauge, and `previous_key_format` / `upgraded_from_legacy_key` in the `sensor.key_renewed` audit event. |
+| D9 | Secret-scanning rules for `octs_`, `octe_` and legacy `rda_` ship in the repository's `.betterleaks.toml` and are documented for customers. | [agent-identity.md, *Credential formats*](../architecture/agent-identity.md#credential-formats). |
+
+The SDK and the sensor never checked the `rda_` prefix (only test fixtures and
+a log-redaction comment mention it), so no SDK or sensor release is needed for
+`octs_` keys.
 
 ## 11. Sources
 
