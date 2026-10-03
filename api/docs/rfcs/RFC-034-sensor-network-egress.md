@@ -11,6 +11,10 @@
 > (key-bound identity, HPKE-sealed secrets, D5) and
 > [RFC-033](RFC-033-sensor-manifest.md) (manifest, policy echo,
 > `config_version`).
+> Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
+> §5.7 makes the operator allow-list and the egress veto one sensor-local
+> policy file, and extends the forwarder's destination check from proxied
+> jobs to every job of a proxy-aware tool.
 >
 > Owner's request (2026-10-02): "When sensors are used for internal systems,
 > some network zones can only be reached through a proxy; research the best

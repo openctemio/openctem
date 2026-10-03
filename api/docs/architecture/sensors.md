@@ -7,6 +7,9 @@
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
 > Proxies and network egress (proposed): [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
+> Trust between sensors and the platform (what each side verifies about the
+> other, current gaps): [sensor-platform-trust.md](sensor-platform-trust.md),
+> [RFC-040](../rfcs/RFC-040-platform-sensor-mutual-distrust.md) (proposed).
 
 ## Glossary
 
