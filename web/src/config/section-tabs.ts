@@ -96,8 +96,9 @@ export const THREAT_MODEL_SECTION_TABS: readonly SectionTab[] = [
 
 /**
  * Discovery > Assets: the inventory, the groups that organise it, what changed
- * in it and the relationships detected between assets. URLs predate the tabs
- * and are unchanged; Suggestions is its own module.
+ * in it and the relationships detected between assets. Every tab lives under
+ * /assets because a URL mirrors its place in the nav (RFC-042 §6.19).
+ * Suggestions is its own module (`relationships`).
  */
 export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
   {
@@ -109,7 +110,7 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Groups',
-    href: '/asset-groups',
+    href: '/assets/groups',
     icon: FolderKanban,
     module: 'assets',
     permission: Permission.AssetGroupsRead,
@@ -123,7 +124,7 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Suggestions',
-    href: '/relationships/suggestions',
+    href: '/assets/suggestions',
     icon: Link2,
     module: 'relationships',
     permission: Permission.AssetsRead,

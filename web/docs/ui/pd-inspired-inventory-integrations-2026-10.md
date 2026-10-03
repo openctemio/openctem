@@ -211,7 +211,7 @@ There are two builds of the asset list:
     - remediation-efficiency-per-SLA-tier card.
 - **Assets overview:** `/attack-surface` is the overview, and PR #857 (open) turns it into the EASM overview from `GET /easm/summary` (#839).
   - PD's "over time" charts need observation history, which is RFC-036 P4 / the inventory v2 RFC. `What changed` has 7/30/90-day state history only.
-- **Asset groups:** `/asset-groups` lists **static** groups.
+- **Asset groups:** `/assets/groups` lists **static** groups.
   - 6 of 10 live groups are quick-scan machine groups (Scoping IA C13).
   - There is no source, discovery duration or "last run". PD's groups are discovery runs per root domain; ours are containers.
 
