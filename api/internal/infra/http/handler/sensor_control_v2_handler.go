@@ -184,7 +184,7 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 
 	resp := protov2.HeartbeatResponse{
 		SensorID: s.ID.String(), TenantID: s.TenantID.String(),
-		Status: protov2.HeartbeatStatusOK, Actions: []string{},
+		Status: protov2.HeartbeatStatusOK, Actions: []string{}, CancelCommandIDs: []string{},
 	}
 	if id.Paused {
 		resp.Status = protov2.HeartbeatStatusPaused
@@ -196,6 +196,10 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 		for _, a := range hints.Actions {
 			resp.Actions = append(resp.Actions, string(a))
 		}
+	}
+	if ids := h.ingest.commandsToCancel(r.Context(), s, &req); len(ids) > 0 {
+		resp.CancelCommandIDs = ids
+		resp.Actions = append(resp.Actions, protov2.ActionCancel)
 	}
 	// RFC-033: a sensor that registers manifests and echoes a digest the
 	// platform does not have as current is asked to send it again.
@@ -499,6 +503,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			h.commands.triggerPipelineProgression(r.Context(), res.Command)
 			h.commands.triggerValidationEvidence(res.Command)
 			h.commands.triggerSimulationFinalize(res.Command)
+			h.commands.triggerCoverageAutoResolve(res.Command)
 		case command.TransitionFail:
 			h.commands.triggerPipelineFailed(r.Context(), res.Command, in.ErrorMessage)
 		}

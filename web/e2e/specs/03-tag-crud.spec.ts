@@ -29,10 +29,11 @@ test.describe('Asset tag CRUD', () => {
     const tagName = `e2e-tag-${Date.now()}`
     const sheet = await openFirstAssetSheet(page)
     test.skip(!sheet, 'No assets in tenant — seed at least one asset')
-    const assetName = await sheet!.getByRole('heading', { level: 2 }).nth(1).innerText()
+    // The drawer's title (its only h2) is the asset's name.
+    const assetName = await sheet!.getByRole('heading', { level: 2 }).first().innerText()
 
     const tags = () =>
-      page.getByRole('dialog', { name: /details$/i }).getByRole('region', { name: 'Tags' })
+      page.getByRole('dialog').getByRole('region', { name: 'Tags' })
     const reopen = async () => {
       await page.reload()
       await page.getByRole('row').filter({ hasText: assetName }).first().click()

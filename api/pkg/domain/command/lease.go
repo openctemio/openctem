@@ -58,6 +58,23 @@ type LeaseRenewer interface {
 	RenewLeases(ctx context.Context, tenantID, sensorID shared.ID, ids []string, all bool) (int64, error)
 }
 
+// CancelFinder finds, among the commands a sensor says it holds (its
+// heartbeat's running list), the ones it must stop: canceled, closed by the
+// platform (a scan run timeout fails them), re-queued after its lease ran
+// out, held by another sensor, or unknown. A command the sensor still holds,
+// or completed itself, is never returned. The heartbeat answers them as
+// cancel_command_ids, which the SDK's poller stops and releases.
+type CancelFinder interface {
+	CommandsToCancel(ctx context.Context, tenantID, sensorID shared.ID, ids []string) ([]string, error)
+}
+
+// OpenCanceler cancels a command only while it is still open (pending,
+// acknowledged or running): one that finished in the meantime is left as
+// it is and false is returned.
+type OpenCanceler interface {
+	CancelIfOpen(ctx context.Context, cmd *Command) (bool, error)
+}
+
 // LeaseReaper takes back the commands whose lease ran out.
 type LeaseReaper interface {
 	RequeueExpiredLeases(ctx context.Context) ([]RequeuedCommand, error)

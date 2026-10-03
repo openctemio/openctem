@@ -442,23 +442,53 @@ func truncateUTF8(s string, maxBytes int) string {
 	return s[:cut]
 }
 
-// CancelCommand marks a command as canceled.
+// CancelCommand cancels an open command (pending, acknowledged, running).
+// Canceling a canceled command is a no-op; a finished one (completed,
+// failed, expired) cannot be canceled. The write is conditional, so a
+// result the sensor got accepted after the read is not overwritten. The
+// sensor learns about it on its next heartbeat (cancel_command_ids).
 func (s *Service) CancelCommand(ctx context.Context, tenantID, commandID string) (*commanddom.Command, error) {
 	cmd, err := s.Get(ctx, tenantID, commandID)
 	if err != nil {
 		return nil, err
 	}
 
-	if cmd.Status == commanddom.CommandStatusCompleted {
-		return nil, shared.NewDomainError("INVALID_STATE", "cannot cancel completed command", shared.ErrValidation)
+	switch cmd.Status {
+	case commanddom.CommandStatusCanceled:
+		return cmd, nil
+	case commanddom.CommandStatusPending, commanddom.CommandStatusAcknowledged, commanddom.CommandStatusRunning:
+	default:
+		return nil, cannotCancel(cmd.Status)
 	}
 
 	cmd.Cancel()
-	if err := s.repo.Update(ctx, cmd); err != nil {
+	c, ok := s.repo.(commanddom.OpenCanceler)
+	if !ok {
+		if err := s.repo.Update(ctx, cmd); err != nil {
+			return nil, err
+		}
+		return cmd, nil
+	}
+	applied, err := c.CancelIfOpen(ctx, cmd)
+	if err != nil {
 		return nil, err
 	}
-
+	if !applied {
+		// It finished between the read and the write.
+		now, err := s.Get(ctx, tenantID, commandID)
+		if err != nil {
+			return nil, err
+		}
+		if now.Status == commanddom.CommandStatusCanceled {
+			return now, nil
+		}
+		return nil, cannotCancel(now.Status)
+	}
 	return cmd, nil
+}
+
+func cannotCancel(st commanddom.CommandStatus) error {
+	return shared.NewDomainError("INVALID_STATE", "cannot cancel a "+string(st)+" command", shared.ErrValidation)
 }
 
 // DeleteCommand deletes a command.
