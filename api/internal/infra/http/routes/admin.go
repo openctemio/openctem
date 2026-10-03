@@ -29,6 +29,9 @@ import (
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
+//	/admin/tenants/{id}/audit-chain
+//	                          any admin         rebaseline: super_admin + fresh
+//	                                            TOTP code (audited, both logs)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
@@ -167,6 +170,16 @@ func registerAdminRoutes(
 				r.PUT("/{tenantId}/sso/identity-providers/{id}", h.SSO.UpdateProvider, write("organization.idp_update")...)
 				r.DELETE("/{tenantId}/sso/identity-providers/{id}", h.SSO.DeleteProvider, write("organization.idp_delete")...)
 			}
+			// The organization's audit hash-chain: classify (any admin) and
+			// rebaseline (super_admin). The rebaseline handler also demands a
+			// fresh authenticator code and writes its own high-severity admin
+			// audit row (with the rebaseline id and the outcome), so it does not
+			// take the generic audit middleware.
+			if h.AdminAuditChain != nil {
+				r.GET("/{tenantId}/audit-chain", h.AdminAuditChain.Classify, read...)
+				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, scope)
+			}
+
 			if h.VerifiedDomain != nil {
 				r.GET("/{tenantId}/sso/verified-domains", h.VerifiedDomain.List, read...)
 				r.POST("/{tenantId}/sso/verified-domains", h.VerifiedDomain.AddDomain, write("organization.domain_add")...)

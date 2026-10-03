@@ -27,7 +27,7 @@ interface AboutDialogProps {
  * and the admin console (via SidebarFooterLinks).
  *
  * Release builds show their tag; development deployments show
- * "<highest tag>-dev" and the commit, read from the checkout. A row that cannot
+ * "<highest tag>-dev+<commit>", read from the checkout. A row that cannot
  * be determined says "unavailable" and the dialog still renders.
  */
 export function AboutDialog({ open, onOpenChange, shell = 'app' }: AboutDialogProps) {
@@ -91,7 +91,7 @@ function VersionRow({
       <span className="flex flex-col items-end gap-0.5">
         <span className="font-medium tabular-nums">
           {info.version}
-          {info.commit !== UNKNOWN_COMMIT && (
+          {info.commit !== UNKNOWN_COMMIT && !info.version.endsWith(`+${info.commit}`) && (
             <span className="ms-1.5 font-mono text-xs font-normal text-muted-foreground">
               ({info.commit})
             </span>
@@ -100,7 +100,9 @@ function VersionRow({
         <span className="text-xs text-muted-foreground" data-testid={`${testId}-channel`}>
           {info.channel === 'release'
             ? t('help.about.release', 'Release')
-            : t('help.about.devBuild', 'Development build')}
+            : info.channel === 'rc'
+              ? t('help.about.rc', 'Release candidate')
+              : t('help.about.devBuild', 'Development build')}
         </span>
       </span>
     )

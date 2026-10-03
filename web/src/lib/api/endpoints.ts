@@ -1083,6 +1083,10 @@ export const sensorEndpoints = {
       limit: query.limit,
     })}`,
 
+  /** The sensor's heartbeat history in 15-minute buckets (RFC-035, sensors:read; at most 24 h). */
+  heartbeatHistory: (sensorId: string, hours = 24) =>
+    `${API_BASE.SENSORS}/${sensorId}/heartbeat-history${buildQueryString({ hours })}`,
+
   /** The sensor's current manifest (RFC-033, sensors:read); 404 before the first. */
   manifest: (sensorId: string) => `${API_BASE.SENSORS}/${sensorId}/manifest`,
 

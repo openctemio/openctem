@@ -18,6 +18,7 @@
 /test-results
 /playwright/.cache
 e2e/.env
+e2e/ci/.env
 
 # next.js
 /.next/

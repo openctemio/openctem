@@ -1,0 +1,250 @@
+name: Release Train
+
+# The owner presses Run; this does the rest (api/docs/rfcs/RFC-037 §4).
+#
+#   plan  last tag -> proposed version (or the override, validated);
+#         the newest develop commit with every required check green (or the
+#         given one, which must be green); the release branch built locally as
+#         a check (-s ours precondition, tree equality); changelog preview in
+#         the run summary
+#   cut   (not in a dry run) push release/vX.Y.Z, open the PR into main and
+#         queue it. Release Publish tags it when the merge queue merges it.
+#
+# Hotfix (security or critical fix, RFC-037 §4.3): mode hotfix + the develop
+# commits to cherry-pick; the version is the last tag's patch + 1.
+#
+# RELEASE_TOKEN (fine-grained PAT or App token; Contents, Pull requests and
+# Workflows read/write) makes the pushed branch and the PR start CI. Without it
+# the branch is pushed with GITHUB_TOKEN when GitHub allows it, and the summary
+# links "open the PR": a PR opened by a person runs CI normally.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: compute and report everything, push nothing"
+        type: boolean
+        default: true
+      version:
+        description: "Version override, vX.Y.Z (empty: the proposal from conventional commits)"
+        type: string
+        default: ""
+      sha:
+        description: "develop commit to release (empty: the newest one with every required check green)"
+        type: string
+        default: ""
+      mode:
+        description: "train, or hotfix (patch release from the last tag)"
+        type: choice
+        options: [train, hotfix]
+        default: train
+      cherry_picks:
+        description: "hotfix only: develop commits to cherry-pick, space-separated, oldest first"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-train
+  cancel-in-progress: false
+
+env:
+  RELEASE_SCRIPTS: .github/scripts/release
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      version: ${{ steps.version.outputs.NEXT_VERSION }}
+      last_tag: ${{ steps.version.outputs.LAST_TAG }}
+      bump: ${{ steps.version.outputs.BUMP }}
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Choose the commit
+        id: sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          if [ "$MODE" = hotfix ]; then
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$INPUT_SHA" ]; then
+            sha="$(git rev-parse --verify "${INPUT_SHA}^{commit}")"
+            git merge-base --is-ancestor "$sha" origin/develop || { echo "::error::$sha is not on develop"; exit 1; }
+            bash "$RELEASE_SCRIPTS/check-ci.sh" "$sha"
+          else
+            sha="$(bash "$RELEASE_SCRIPTS/check-ci.sh" --newest-green origin/develop --max 30)"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Propose the version
+        id: version
+        env:
+          MODE: ${{ inputs.mode }}
+          OVERRIDE: ${{ inputs.version }}
+          PICKS: ${{ inputs.cherry_picks }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          args=(--notes "$RUNNER_TEMP/notes.md")
+          if [ "$MODE" = hotfix ]; then
+            args+=(--mode hotfix --picks "$PICKS")
+          else
+            args+=(--ref "$SHA")
+          fi
+          [ -n "$OVERRIDE" ] && args+=(--version "$OVERRIDE")
+          set +e
+          bash "$RELEASE_SCRIPTS/next-version.sh" "${args[@]}" > "$RUNNER_TEMP/version.env"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 3 ]; then echo "::error::Nothing to release: no commits since the last tag."; exit 1; fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          cat "$RUNNER_TEMP/version.env" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/version.env"
+
+      - name: Build the release branch (check only, nothing pushed)
+        env:
+          MODE: ${{ inputs.mode }}
+          PICKS: ${{ inputs.cherry_picks }}
+          SHA: ${{ steps.sha.outputs.sha }}
+          VERSION: ${{ steps.version.outputs.NEXT_VERSION }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$MODE" = hotfix ]; then
+            bash "$RELEASE_SCRIPTS/cut-release.sh" --version "$VERSION" --mode hotfix --picks "$PICKS"
+          else
+            bash "$RELEASE_SCRIPTS/cut-release.sh" --version "$VERSION" --sha "$SHA"
+          fi
+
+      - name: Summary
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          MODE: ${{ inputs.mode }}
+          SHA: ${{ steps.sha.outputs.sha }}
+          VERSION: ${{ steps.version.outputs.NEXT_VERSION }}
+          LAST: ${{ steps.version.outputs.LAST_TAG }}
+          BUMP: ${{ steps.version.outputs.BUMP }}
+        run: |
+          {
+            echo "# Release ${VERSION}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Mode | ${MODE}$([ "$DRY_RUN" = true ] && echo ' (dry run: nothing pushed)') |"
+            echo "| Last release | ${LAST} |"
+            echo "| Proposed | **${VERSION}** (${BUMP}) |"
+            [ -n "$SHA" ] && echo "| develop commit | \`${SHA:0:12}\` (every required check green) |"
+            echo
+            if [ "$DRY_RUN" = true ]; then
+              echo "To release: run this workflow again with **dry_run** unchecked."
+              echo "To change the version: fill **version**."
+              echo
+            fi
+            cat "$RUNNER_TEMP/notes.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes.md
+          retention-days: 7
+
+  cut:
+    name: Cut and open the release PR
+    needs: [plan]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Token
+        id: token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_TOKEN" ]; then echo "has_release_token=true" >> "$GITHUB_OUTPUT"; else echo "has_release_token=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}
+
+      - name: Cut release/${{ needs.plan.outputs.version }}
+        env:
+          MODE: ${{ inputs.mode }}
+          PICKS: ${{ inputs.cherry_picks }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$MODE" = hotfix ]; then
+            bash "$RELEASE_SCRIPTS/cut-release.sh" --version "$VERSION" --mode hotfix --picks "$PICKS" --push
+          else
+            bash "$RELEASE_SCRIPTS/cut-release.sh" --version "$VERSION" --sha "$SHA" --push
+          fi
+
+      - name: Open the release PR
+        env:
+          HAS_RELEASE_TOKEN: ${{ steps.token.outputs.has_release_token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          MODE: ${{ inputs.mode }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          body="$RUNNER_TEMP/pr-body.md"
+          {
+            if [ "$MODE" = hotfix ]; then
+              echo "Hotfix release **${VERSION}**: the last release plus cherry-picked fixes."
+            else
+              echo "Release train **${VERSION}**: develop at a commit with every required check green, plus one \`merge -s ours\` commit that records main as a parent (the tree is develop's, byte for byte)."
+            fi
+            echo
+            echo "When the merge queue merges this PR, **Release Publish** tags ${VERSION} on the merge commit, which publishes the images and the GitHub Release and opens the follow-up PRs. Merge with the queue (merge commit), never squash."
+            echo
+            cat "$RUNNER_TEMP/notes.md"
+          } | python3 "$RELEASE_SCRIPTS/sanitize-notes.py" > "$body"
+          title="chore(release): ${VERSION}"
+          [ "$MODE" = hotfix ] && title="chore(release): ${VERSION} (hotfix)"
+          if [ "$HAS_RELEASE_TOKEN" != true ]; then
+            url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...release/${VERSION}?expand=1"
+            {
+              echo "## Next: open the release PR"
+              echo
+              echo "No RELEASE_TOKEN secret, so a PR opened here would start no CI. Open it yourself (title \`${title}\`):"
+              echo
+              echo "$url"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::Open the release PR: $url"
+            exit 0
+          fi
+          pr_url="$(gh pr create --base main --head "release/${VERSION}" --title "$title" --body-file "$body")"
+          echo "Release PR: $pr_url" >> "$GITHUB_STEP_SUMMARY"
+          # Queue it; the merge queue merges once the required checks pass.
+          if ! gh pr merge "$pr_url" --merge --auto; then
+            echo "::notice::Could not queue $pr_url automatically: press 'Merge when ready' on it."
+          fi

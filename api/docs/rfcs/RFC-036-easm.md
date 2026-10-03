@@ -1,7 +1,9 @@
 # RFC-036 — External Attack Surface Management (EASM)
 
-> Status: **Proposed** (2026-10-02). Research and design only; nothing here is
-> implemented.
+> Status: **Accepted** (2026-10-02). The owner approved decisions O1–O10 as
+> recommended (§12.3). The api + ui monorepo cutover has merged, so
+> implementation (P0 → P1) is written directly in the monorepo (`api/` +
+> `web/`); §9 tracks which phase items have shipped.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on [RFC-019](RFC-019-certificate-transparency-discovery.md) (CT
 > monitoring), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones, default
@@ -182,10 +184,72 @@ Vendor documentation was read on 2026-10-02. Marketing-only sources are marked
    inference [5][19].
 
 Intrigue Core, the open-source EASM engine Mandiant acquired, is gone (its
-repository returns 404) [20], so there is no open-source reference product to
-follow either. No peer-reviewed system for organisation → internet-presence
+repository returns 404) [20]. The closest open-source product is reNgine, a
+reconnaissance suite rather than an attribution engine (§4.1). No peer-reviewed system for organisation → internet-presence
 attribution was found. Vendor practice is the state of the art, and our rules (§6.4) are built
 from it.
+
+### 4.1 Open-source reference: reNgine
+
+The owner pointed at reNgine [104] (GPL-3.0, the same licence as OpenCTEM;
+read at commit `de41992`, 2025-11-16) as a model worth learning from. It is a
+single-host Django + Celery recon suite for pentesters and bug-bounty hunters.
+What it does, read from the code rather than the README:
+
+- **Scan engines are YAML** (`default_yaml_config.yaml`,
+  `web/fixtures/default_scan_engines.yaml`): one block per stage
+  (`subdomain_discovery`, `port_scan`, `fetch_url`, `dir_file_fuzz`,
+  `vulnerability_scan`, `screenshot`, `waf_detection`, `osint`) with
+  `uses_tools` and per-tool settings (threads, rate limit, ports `top-100`,
+  nuclei severities/tags, out-of-scope regexes). Users edit and save their own
+  engines; six presets ship.
+- **The stage graph is fixed in code** (`reNgine/tasks.py`, `initiate_scan`):
+  `(subdomains ∥ osint) → ports → fetch_url → (fuzz ∥ nuclei ∥ screenshots ∥
+  waf)`. A stage absent from the engine is skipped. **Data passes through the
+  database:** each stage reads the `Subdomain` / `EndPoint` rows the previous
+  stages wrote for the same scan.
+- **Subscans:** any subdomain in the results can be sent to a single stage
+  (ports, nuclei, screenshot …) without re-running the pipeline.
+- **Inventory UX:** per-target pages with subdomains, endpoints/URLs (gau,
+  waybackurls, katana, gospider, hakrawler), technologies, IPs/ports with
+  geo/ASN, WHOIS and related domains, a screenshot gallery, and **"interesting"
+  subdomains and URLs** matched by keyword on name, title or URL
+  (`InterestingLookupModel`, default `admin, ftp, cpanel, dashboard`).
+- **Monitoring:** periodic or clocked scans; the change view is the set
+  difference of subdomains between the last two scans (`startScan/models.py`),
+  with Slack/Discord/Telegram notifications for new subdomains and
+  vulnerabilities.
+
+**What we take:**
+
+| Idea | Where it lands |
+|---|---|
+| Declarative, user-editable engine definitions: a stage list with per-tool settings, shipped presets, validated server-side | P3: the "External discovery (T1)" preset (§6.6) is expressed as such a definition, so tenants copy and edit it instead of building pipelines step by step |
+| Stage-to-stage data passing (subdomains → ports → HTTP probe → screenshots → endpoints → nuclei) | P3 (E6): the step-output chaining in §6.6, with `active_allowed` and exclusions applied at every hop, which reNgine does not have |
+| Subscans from any result | P3: "Scan this" on an asset, a domain group or a review-queue row runs one stage (or a short engine) on that selection, through the normal scan path (zones, politeness, tier ceiling) |
+| Recon inventory UX: screenshot gallery, endpoints/URLs, technology stack, WHOIS/IP/ASN panels | P3 (screenshots, endpoints from katana and passive URL sources) and the Inventory tab (§6.11) |
+| "Interesting" names and URLs by keyword | P1–P2: a per-tenant keyword list (admin, vpn, jenkins, staging, dev, test, old …) that tags assets and raises their review-queue rank; never a finding on its own |
+| Continuous monitoring with change notifications | P4: facet observations and diffs (§6.5) are the richer version of reNgine's subdomain set difference; notifications go through the existing outbox and channels |
+
+**What we keep ours / do not copy:**
+
+| reNgine behaviour | Ours instead | Why |
+|---|---|---|
+| One host runs every tool (Celery workers next to the web app); results in that host's database | Multi-tenant platform, distributed **sensors** in scan zones (RFC-023, RFC-030, RFC-033) | Scans must leave from the tenant's chosen vantage point, with per-host politeness and an auditable source IP |
+| The Full Scan engine fuzzes directories and files (`dir_file_fuzz`); dalfox XSS and CRLF fuzzing are one switch away; nuclei runs every severity by default | **Non-intrusive by default** (O3): T1 nuclei excludes intrusive, default-login, fuzz, dos and bruteforce; fuzzing and payload tests are T2 only, opt-in per scope target with a verified seed, a named approver and an expiry | Our users scan production estates they own, not bug-bounty scopes |
+| A target is whatever domain the user types; out-of-scope is a regex list per scan | Scope governance: boundaries, exclusions that win everywhere, verified domains, attribution states (§6.3–6.4) | "Who authorized this probe?" must have an answer |
+| OSINT on people (employees and emails via theHarvester, h8mail breach lookups) and search-engine dorking | Not adopted. Leaked-credential lookups only through HIBP with a tenant key (P5) | Personal data and search-engine terms of service |
+| GPT-written vulnerability reports and attack suggestions | Not in EASM scope; the platform's AI triage applies to EASM findings as to any other source | Separate feature with its own review |
+| Results and prioritisation per scan | CTEM prioritisation (P0–P3, KEV/EPSS, reachability, effective criticality) over one inventory | EASM output joins the same register as every other source |
+
+**Licence.** reNgine is GPL-3.0, like OpenCTEM. We take design ideas only; it
+is Python and none of its code is reused. If a file is ever adapted, it keeps
+reNgine's copyright notice and attribution.
+
+**Sequencing.** These ideas shape P3 (chained pipeline, engine definitions,
+subscans) and the inventory UI. P0 and P1 continue as planned. P3 is not built
+before the owner approves the separate scans proposal, which may define the
+same pipeline model; the two are reconciled then rather than built twice.
 
 ## 5. Techniques by stage
 
@@ -710,13 +774,17 @@ Effort is engineer-weeks across all repos.
 | **P0 — Make what exists honest** | E1 CT rotation cursor (oldest-checked first) and `certificate_expired` for the newest cert only; E2 recon tools in `full`/`platform` (pinned, checksummed), recon capabilities advertised only when the binary answers; E3 flags verified against each tool's `-h` and fixed, with golden tests; E4 parser type; E7 presets reference only shipped tools; E8 UI: server pagination, expiring from certificate assets, unknown ≠ valid/200; E9 real trends from state history, website bucket = application/website; E11 README (this PR) | 1.5–2 | Low | — | Tenant with 120 domains: every domain queried within 3 runs. Stock `platform` image + a test domain we own: subfinder → dnsx → httpx produce subdomain/IP/service assets live. UI cards match API counts on a fixture. No new findings from a run with zero data |
 | **P1 — Quick wins** | Dangling CNAME/NS check (API, daily, can-i-take-over-xyz fingerprints vendored with attribution) → `dangling_cname`/`dangling_ns` exposures; sensor nuclei `takeover` confirmation → `subdomain_takeover` (high); email posture (SPF/DMARC RFC 9989/MTA-STS/TLS-RPT) → `email_security_weak`; asset attribution columns + `easm_evidence` with the strong rules only; CT subdomains under **verified** domains promoted via internal ingest; `GET /easm/summary` + Overview tab | 3 | Low–medium (false positives on takeover → confirm step before *high*) | P0 | Fixture zone with a CNAME to an unclaimed provider is flagged medium within 24 h and high after confirmation. Fixture domains with `p=none` / no SPF flagged; correct ones not. Every promoted asset shows its evidence. Overview numbers equal list counts |
 | **P2 — Seeds and attribution** | `easm_seeds` + Boundaries › Seeds tab; `easm_candidates`, full rule table, noisy-OR, states, tombstones, path-cascading exclusions; collectors RDAP, RIPEstat/Cymru, PTR of seeded netblocks, SAN co-occurrence from CT; Review tab with evidence drawer and bulk; Beta learning; rule precision on Overview | 5–6 | Medium (precision; UI volume) | P1 | On a labelled test set (one real org's surface, ≥200 names), auto-confirmed precision ≥ 0.98 and queue precision ≥ 0.7. Rejected names never reappear without a new rule. Cross-tenant test: two tenants claiming one domain see nothing of each other |
-| **P3 — Active discovery pipeline** | Step-output chaining with `active_allowed` at each hop; wildcard filter in Go (puredns method); alterx bounded; naabu top-100; httpx+tlsx+cdncheck fields kept; certificate assets, `cname_of`, `serves_certificate`, `hosted_by`, `asn`/`netblock`; nuclei T1 flags; optional gowitness; one parser (sdk-go) | 5–6 | Medium–high (load on targets; tool behaviour) | P0; **RFC-030 P4 politeness** before enabling daily runs for more than pilot tenants | A wildcard test zone yields 0 false subdomains. One run on a 1k-name surface stays within per_host=1 and the zone `max_rps`. Every finding traces seed → … → asset. Excluded nodes are never probed (sensor log) |
+| **P3 — Active discovery pipeline** | Step-output chaining with `active_allowed` at each hop; wildcard filter in Go (puredns method); alterx bounded; naabu top-100; httpx+tlsx+cdncheck fields kept; certificate assets, `cname_of`, `serves_certificate`, `hosted_by`, `asn`/`netblock`; nuclei T1 flags; optional gowitness; one parser (sdk-go) | 5–6 | Medium–high (load on targets; tool behaviour) | P0; **RFC-030 P4 politeness** before enabling daily runs for more than pilot tenants; owner approval of the scans proposal (§4.1) | A wildcard test zone yields 0 false subdomains. One run on a 1k-name surface stays within per_host=1 and the zone `max_rps`. Every finding traces seed → … → asset. Excluded nodes are never probed (sensor log) |
 | **P4 — Continuous monitoring** | `easm_observations` facets + hashes; diffs → state history + exposure events (`dns_change`, `port_open/closed`, `service_changed`, certificate change, `subdomain_removed`); cadence tiers + budget; notifications via outbox; MTTD and freshness metrics | 3 | Low–medium (noise) | P3 | Changing a fixture DNS record / opening a port / rotating a cert yields one event each within the tier's cadence. Unchanged rescans write no rows. MTTD shown per asset |
 | **P5 — Sources and connectors** | `discovery_source` integrations (Cert Spotter, Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, GitHub) with quota + cache; cloud connectors AWS (Route 53, public IPs, ELB, S3), Azure Resource Graph, GCP CAI as authoritative evidence; "cloud public IPs not in inventory" coverage metric | 6–8 (S per source, M per cloud) | Medium (credentials, terms) | P2 | Each source is per-tenant (`ListByProvider`) and isolation-tested. Quota exhaustion degrades to skip + warning. A connector-only asset auto-confirms with w = 1.0 |
 | **P6 — Optional modes** (each its own owner decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
 
-P0 and P1 can start immediately and need no owner input beyond accepting this
-RFC. P2 should not start before P1's attribution columns ship. P3's daily
+**When and where.** The RFC is accepted (§12.3). Implementation of P0, then
+P1, starts now that the api + ui monorepo cutover has merged. It is written
+directly in the monorepo: `api/` for the backend and `web/` for the UI, which
+replaces the separate ui repository. sdk-go and sensor changes (E2–E5, P3
+tools) stay in their own repositories. P2 should not start before P1's
+attribution columns ship. P3's daily
 cadence waits on RFC-030 P4.
 
 ## 10. Metrics
@@ -781,6 +849,24 @@ Health page.
 | **O8** | Should results of tenant-triggered sensor scans under **unverified** roots go to the review queue instead of straight into the inventory? | Keep / change | **Keep for now** (today's behaviour, the tenant chose the target), with evidence stamped. Revisit after P2 precision data |
 | **O9** | Cadence floors on shared resources | — | Tier A daily light / weekly nuclei is the fastest a tenant can set on shared sensors; own sensors are free to go faster within RFC-030 politeness |
 | **O10** | Packaging | EASM in the existing `attack_surface` module / a new `easm` module | **Existing `attack_surface` module.** It already gates `/attack-surface/*` and the CT monitor; a new module would split one feature across two toggles |
+
+### 12.3 Decisions (approved 2026-10-02)
+
+The owner approved O1–O10 **as recommended** on 2026-10-02. These are now the
+design; §12.2 keeps the options that were considered.
+
+| # | Decision (approved 2026-10-02) |
+|---|---|
+| **O1** | Data sources: free sources on by default (crt.sh, Cert Spotter free tier, RDAP, RIPEstat, Team Cymru, our own DNS); paid sources (Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, VirusTotal premium …) only with **tenant-supplied keys**, per tenant. No platform-wide licensed dataset |
+| **O2** | No shared platform sensors for the external view in OSS now; tenants use their own sensor in the default (public) zone. A hosted offering may add them in P6: opt-in per tenant, public targets only, published stable egress ranges with rDNS, an information page and an abuse contact. Never on by default (RFC-023 D14) |
+| **O3** | Default tier **T1 (safe-active)** for confirmed assets, T0 for all others. **T2 intrusive is opt-in** per scope target and needs a verified seed, a named approver and an expiry |
+| **O4** | Auto-confirm only at confidence **≥ 90 with at least one strong rule** (verified root, seeded CIDR/ASN, connector, tenant-scanned); everything else goes to the review queue |
+| **O5** | Lookalike / brand monitoring **in**, passive only (T0), in P6; no probes of lookalike hosts; no takedown service |
+| **O6** | Third-party / vendor-risk mode **out**. If ever revisited: separate register, passive public data only, no packets to vendor hosts (§7) |
+| **O7** | Retention: changed observation rows 13 months; raw collector responses not stored; evidence kept while its subject exists; rejected tombstones 12 months; screenshots 30 days; state history unchanged |
+| **O8** | Results of tenant-triggered scans under unverified roots **keep going straight into the inventory**, with evidence stamped; revisit after P2 precision data |
+| **O9** | Fastest cadence on shared sensors: Tier A daily light checks and weekly nuclei; the tenant's own sensors may go faster within RFC-030 politeness |
+| **O10** | EASM ships in the existing **`attack_surface`** module; no new module |
 
 ## 13. Compatibility
 
@@ -912,6 +998,7 @@ Standards, data sources, tools
 101. 18 U.S.C. §1030 (CFAA); UK Computer Misuse Act 1990; *Van Buren v. United States* (2021). General background, not legal advice. https://www.law.cornell.edu/uscode/text/18/1030 ; https://www.legislation.gov.uk/ukpga/1990/18/contents ; https://www.supremecourt.gov/opinions/20pdf/19-783_k53l.pdf
 102. Szurdi, Christin, "Email Typosquatting", IMC 2017. https://doi.org/10.1145/3131365.3131399
 103. Arturi et al., "as2org+: Enriching AS-to-Organization Mappings with PeeringDB", PAM 2023. https://doi.org/10.1007/978-3-031-28486-1_17
+104. reNgine, web application reconnaissance suite (GPL-3.0), read at commit de41992 (2025-11-16). https://github.com/yogeshojha/rengine
 
 Not verified during the research (and therefore not relied on for a design
 choice): crt.sh limits; full BOD 23-02 and BOD 26-04 text on cisa.gov; Gartner's

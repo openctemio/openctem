@@ -1,0 +1,102 @@
+# Stack the Playwright suite runs against in CI (.github/workflows/web-e2e.yml),
+# and locally:
+#
+#   bash web/e2e/ci/make-env.sh          # writes web/e2e/ci/.env (git-ignored):
+#                                        # random secrets, image names, ports
+#   docker compose -f web/e2e/ci/compose.yml up -d --wait
+#   (set -a; . web/e2e/ci/.env; bash web/e2e/ci/seed.sh) > web/e2e/.env
+#
+# No credential is written in this repository: every password and secret comes
+# from the environment (web/e2e/ci/.env.example lists the names). Compose reads
+# web/e2e/ci/.env on its own; the workflow sets the same names per run.
+#
+# The images are the production targets of api/Dockerfile, web/Dockerfile and
+# api/Dockerfile.admin-cli. Postgres keeps its data in tmpfs: every run starts
+# from an empty database.
+name: octe2e-ci
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: openctem
+      POSTGRES_PASSWORD: ${E2E_DB_PASSWORD:?set E2E_DB_PASSWORD (see web/e2e/ci/make-env.sh)}
+      POSTGRES_DB: openctem
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U openctem -d openctem']
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--requirepass', '${E2E_REDIS_PASSWORD:?set E2E_REDIS_PASSWORD}']
+    environment:
+      REDISCLI_AUTH: ${E2E_REDIS_PASSWORD:?set E2E_REDIS_PASSWORD}
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      retries: 30
+
+  migrate:
+    image: migrate/migrate:v4.18.1
+    volumes: ['../../../api/migrations:/migrations:ro']
+    # The URL is assembled from E2E_DB_PASSWORD by make-env.sh / the workflow.
+    command: ['-path=/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    image: ${API_IMAGE:?set API_IMAGE}
+    ports: ['127.0.0.1:${E2E_API_PORT:-8080}:8080']
+    environment:
+      APP_ENV: staging
+      APP_URL: http://localhost:${E2E_WEB_PORT:-3000}
+      CORS_ALLOWED_ORIGINS: http://localhost:${E2E_WEB_PORT:-3000}
+      AUTH_COOKIE_SECURE: 'false'
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: openctem
+      DB_PASSWORD: ${E2E_DB_PASSWORD:?set E2E_DB_PASSWORD}
+      DB_NAME: openctem
+      DB_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${E2E_REDIS_PASSWORD:?set E2E_REDIS_PASSWORD}
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      AUTH_PROVIDER: local
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY (64 hex characters)}
+      AUTH_ALLOW_REGISTRATION: 'true'
+      AUTH_REQUIRE_EMAIL_VERIFICATION: 'false'
+      TENANT_CREATION_MODE: self_service
+      # One account drives every test; at the default 120 reads a minute per
+      # user the suite gets 429s and their error toasts cover what it clicks.
+      RATE_LIMIT_READ_PER_MIN: '3000'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8080/health']
+      interval: 2s
+      retries: 60
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    image: ${WEB_IMAGE:?set WEB_IMAGE}
+    ports: ['127.0.0.1:${E2E_WEB_PORT:-3000}:3000']
+    environment:
+      NODE_ENV: production
+      BACKEND_API_URL: http://api:8080
+      CSRF_SECRET: ${CSRF_SECRET:?set CSRF_SECRET}
+      SECURE_COOKIES: 'false'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:3000/api/health']
+      interval: 2s
+      retries: 60
+    depends_on:
+      api: { condition: service_healthy }

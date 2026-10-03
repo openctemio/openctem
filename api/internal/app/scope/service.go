@@ -377,7 +377,7 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		return nil, fmt.Errorf("failed to update scope exclusion: %w", err)
 	}
 
-	s.logger.Info("scope exclusion updated", "id", exclusionID)
+	s.logger.Info("scope exclusion updated", "id", logSafe(exclusionID))
 	return exclusion, nil
 }
 
@@ -397,7 +397,7 @@ func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenan
 		return err
 	}
 
-	s.logger.Info("scope exclusion deleted", "id", exclusionID)
+	s.logger.Info("scope exclusion deleted", "id", logSafe(exclusionID))
 	return nil
 }
 
@@ -456,10 +456,12 @@ func (s *Service) ListActiveExclusions(ctx context.Context, tenantID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-	return s.exclusionRepo.ListActive(ctx, parsedID)
+	return s.effectiveExclusions(ctx, parsedID)
 }
 
-// ApproveExclusion approves a scope exclusion.
+// ApproveExclusion approves a pending scope exclusion and puts it into effect.
+// The route requires attack_surface:scope:exclusions:approve; the requester
+// cannot approve their own exclusion.
 func (s *Service) ApproveExclusion(ctx context.Context, exclusionID string, tenantID string, approvedBy string) (*scopedom.Exclusion, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -483,11 +485,40 @@ func (s *Service) ApproveExclusion(ctx context.Context, exclusionID string, tena
 		return nil, fmt.Errorf("failed to approve scope exclusion: %w", err)
 	}
 
-	s.logger.Info("scope exclusion approved", "id", exclusionID, "approvedBy", approvedBy)
+	s.logger.Info("scope exclusion approved", "id", logSafe(exclusionID), "approvedBy", logSafe(approvedBy))
 	return exclusion, nil
 }
 
-// ActivateExclusion activates a scope exclusion.
+// RejectExclusion declines a pending scope exclusion; it never takes effect.
+// The route requires attack_surface:scope:exclusions:approve.
+func (s *Service) RejectExclusion(ctx context.Context, exclusionID string, tenantID string, rejectedBy string) (*scopedom.Exclusion, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	parsedID, err := shared.IDFromString(exclusionID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+
+	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := exclusion.Reject(rejectedBy); err != nil {
+		return nil, err
+	}
+
+	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+		return nil, fmt.Errorf("failed to reject scope exclusion: %w", err)
+	}
+
+	s.logger.Info("scope exclusion rejected", "id", logSafe(exclusionID), "rejectedBy", logSafe(rejectedBy))
+	return exclusion, nil
+}
+
+// ActivateExclusion puts an approved scope exclusion back into effect.
 func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, tenantID string) (*scopedom.Exclusion, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -503,13 +534,15 @@ func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, ten
 		return nil, err
 	}
 
-	exclusion.Activate()
+	if err := exclusion.Activate(); err != nil {
+		return nil, err
+	}
 
 	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
 		return nil, fmt.Errorf("failed to activate scope exclusion: %w", err)
 	}
 
-	s.logger.Info("scope exclusion activated", "id", exclusionID)
+	s.logger.Info("scope exclusion activated", "id", logSafe(exclusionID))
 	return exclusion, nil
 }
 
@@ -529,13 +562,15 @@ func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, t
 		return nil, err
 	}
 
-	exclusion.Deactivate()
+	if err := exclusion.Deactivate(); err != nil {
+		return nil, err
+	}
 
 	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
 		return nil, fmt.Errorf("failed to deactivate scope exclusion: %w", err)
 	}
 
-	s.logger.Info("scope exclusion deactivated", "id", exclusionID)
+	s.logger.Info("scope exclusion deactivated", "id", logSafe(exclusionID))
 	return exclusion, nil
 }
 
@@ -1030,7 +1065,7 @@ func (s *Service) calculateCoverage(ctx context.Context, tenantID string) (float
 	}
 
 	// Get active exclusions for this tenant
-	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list active exclusions: %w", err)
 	}
@@ -1132,6 +1167,24 @@ func (s *Service) isAssetInScope(assetValues []string, targets []*scopedom.Targe
 	return false
 }
 
+// effectiveExclusions returns the tenant's exclusions that are in effect:
+// approved, active and unexpired. The repository already filters on that;
+// re-checking here keeps a pending or rejected exclusion from ever reaching a
+// matcher, whatever the repository implementation returns.
+func (s *Service) effectiveExclusions(ctx context.Context, tenantID shared.ID) ([]*scopedom.Exclusion, error) {
+	all, err := s.exclusionRepo.ListActive(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0:0]
+	for _, e := range all {
+		if e != nil && e.IsActive() {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
 // isAssetExcluded checks if any asset value matches any exclusion.
 func (s *Service) isAssetExcluded(assetValues []string, exclusions []*scopedom.Exclusion) bool {
 	for _, raw := range assetValues {
@@ -1189,7 +1242,7 @@ func (s *Service) ExcludedTargets(ctx context.Context, tenantID string, candidat
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list active scope exclusions: %w", err)
 	}
@@ -1216,7 +1269,7 @@ func (s *Service) FilterExcludedTargets(ctx context.Context, tenantID string, ca
 		return excluded
 	}
 
-	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
 	if err != nil {
 		s.logger.Warn("scope exclusion lookup failed; scanning all assets (fail-open)",
 			"tenant_id", parsedTenantID.String(), "error", err)
@@ -1248,7 +1301,7 @@ func (s *Service) CheckScope(ctx context.Context, tenantID string, assetType str
 	}
 
 	// Get active exclusions
-	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list active exclusions: %w", err)
 	}
@@ -1330,4 +1383,12 @@ func (s *Service) CheckPatternOverlaps(ctx context.Context, tenantID string, tar
 	}
 
 	return warnings, nil
+}
+
+// logSafe strips CR and LF so a request-derived value cannot forge log lines.
+// strings.ReplaceAll of "\n" and "\r" is the sanitizer CodeQL's
+// go/log-injection query recognizes.
+func logSafe(v string) string {
+	v = strings.ReplaceAll(v, "\n", "")
+	return strings.ReplaceAll(v, "\r", "")
 }

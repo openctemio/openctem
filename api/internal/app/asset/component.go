@@ -140,6 +140,24 @@ func (s *ComponentService) GetComponent(ctx context.Context, componentID string)
 	return s.repo.GetByID(ctx, parsedID)
 }
 
+// GetAssetDependency returns how the tenant's asset uses a component (manifest
+// file, direct or transitive), or nil, nil when the asset does not list it.
+func (s *ComponentService) GetAssetDependency(ctx context.Context, tenantID, assetID, componentID string) (*componentdom.AssetDependency, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	aid, err := shared.IDFromString(assetID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+	}
+	cid, err := shared.IDFromString(componentID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid component id format", shared.ErrValidation)
+	}
+	return s.repo.GetAssetDependency(ctx, tid, aid, cid)
+}
+
 // GetComponentByPURL retrieves a component by Package URL.
 func (s *ComponentService) GetComponentByPURL(ctx context.Context, tenantID, purl string) (*componentdom.Component, error) {
 	// parsedTenantID is not used for global lookup

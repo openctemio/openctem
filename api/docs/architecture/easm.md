@@ -1,8 +1,9 @@
 # External Attack Surface Management (EASM)
 
-> **Status: design (RFC-036 Proposed, 2026-10-02).** This document describes
-> how EASM works in OpenCTEM today and the architecture RFC-036 builds towards.
-> Each section marks what is **built**, what is **partial** and what is
+> **Status: design (RFC-036 Accepted 2026-10-02, owner decisions O1–O10 as
+> recommended; implementation in progress in the monorepo, P0 first).**
+> This document describes how EASM works in OpenCTEM today and the
+> architecture RFC-036 builds towards. Each section marks what is **built**, what is **partial** and what is
 > **planned**. The reasoning, the industry survey, the ranked gap list and the
 > phased plan are in
 > [RFC-036](../rfcs/RFC-036-easm.md). Update this page in the same PR whenever
@@ -126,7 +127,7 @@ Candidates and dependencies get passive (T0) checks only.
 
 ## 4. Attribution
 
-**Built (P0, migration 000271).** `asset_attributions` holds per asset a
+**Built (P0, migration 000272).** `asset_attributions` holds per asset a
 state, a confidence 0–100 and the strongest rule; `easm_evidence` holds one row
 per (asset, rule, source) with the technique, the source and the observed
 datum. It is a side table, not columns on `assets`: the asset write paths each

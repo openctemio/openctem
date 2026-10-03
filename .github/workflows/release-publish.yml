@@ -1,0 +1,216 @@
+name: Release Publish
+
+# Runs when a release PR (release/vX.Y.Z -> main) merges (api/docs/rfcs/RFC-037 §4.2):
+#
+#   tag        verify main's tree at the merge commit is the release branch's,
+#              then push the annotated tag vX.Y.Z. Pushed with RELEASE_TOKEN the
+#              tag starts Docker Publish and Release by itself; pushed with
+#              GITHUB_TOKEN it does not, so both are started by dispatch.
+#   follow-ups the develop PR (main merged back for a train, versions.yaml
+#              platform.release + chart.version), the helm-charts PR (appVersion
+#              + chart version; needs RELEASE_TOKEN, skipped with a message
+#              otherwise), and the train issue is closed.
+#
+# Recovery: run it by hand with the merged release PR's number.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Number of the merged release PR (release/vX.Y.Z -> main)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
+env:
+  RELEASE_SCRIPTS: .github/scripts/release
+
+jobs:
+  tag:
+    name: Tag
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      version: ${{ steps.pr.outputs.version }}
+      mode: ${{ steps.pr.outputs.mode }}
+    steps:
+      - name: Read the release PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
+        run: |
+          gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefName,headRefOid,mergeCommit,state,baseRefName > pr.json
+          head_ref="$(jq -r .headRefName pr.json)"
+          version="${head_ref#release/}"
+          [ "$(jq -r .state pr.json)" = MERGED ] || { echo "::error::PR $PR is not merged"; exit 1; }
+          [ "$(jq -r .baseRefName pr.json)" = main ] || { echo "::error::PR $PR does not target main"; exit 1; }
+          [[ "$head_ref" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$head_ref is not release/vX.Y.Z"; exit 1; }
+          {
+            echo "version=$version"
+            echo "head=$(jq -r .headRefOid pr.json)"
+            echo "merge=$(jq -r .mergeCommit.oid pr.json)"
+          } >> "$GITHUB_OUTPUT"
+          # A train's release head is the `merge -s ours` commit (two parents);
+          # a hotfix's is its last cherry-pick (one parent).
+          parents="$(gh api "repos/$GITHUB_REPOSITORY/commits/$(jq -r .headRefOid pr.json)" --jq '.parents | length')"
+          if [ "$parents" -ge 2 ]; then echo "mode=train" >> "$GITHUB_OUTPUT"; else echo "mode=hotfix" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Token
+        id: token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_TOKEN" ]; then echo "has_release_token=true" >> "$GITHUB_OUTPUT"; else echo "has_release_token=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Tag ${{ steps.pr.outputs.version }}
+        env:
+          VERSION: ${{ steps.pr.outputs.version }}
+          MERGE: ${{ steps.pr.outputs.merge }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: bash "$RELEASE_SCRIPTS/tag-release.sh" --version "$VERSION" --commit "$MERGE" --release-head "$HEAD_SHA" --push
+
+      - name: Start Docker Publish and Release
+        # A tag pushed with GITHUB_TOKEN starts no workflow; dispatch them on
+        # the tag instead. With RELEASE_TOKEN the tag push already did.
+        if: steps.token.outputs.has_release_token != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.pr.outputs.version }}
+        run: |
+          gh workflow run docker-publish.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f version="$VERSION" -f environment=production
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION"
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.pr.outputs.version }}
+          MERGE: ${{ steps.pr.outputs.merge }}
+        run: |
+          {
+            echo "# Released ${VERSION}"
+            echo
+            echo "Tagged on \`${MERGE:0:12}\`. Images: Docker Publish; GitHub Release: Release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  follow-ups:
+    name: Follow-up PRs
+    needs: [tag]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Token
+        id: token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_TOKEN" ]; then echo "has_release_token=true" >> "$GITHUB_OUTPUT"; else echo "has_release_token=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Helm chart PR (openctemio/helm-charts)
+        id: helm
+        env:
+          HAS_RELEASE_TOKEN: ${{ steps.token.outputs.has_release_token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          VERSION: ${{ needs.tag.outputs.version }}
+        run: |
+          if [ "$HAS_RELEASE_TOKEN" != true ]; then
+            msg="Skipped the helm-charts PR: it needs the RELEASE_TOKEN secret (GITHUB_TOKEN cannot write to another repository). Bump charts/openctem/Chart.yaml appVersion to ${VERSION} by hand."
+            echo "::warning::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git clone --quiet "https://x-access-token:${GH_TOKEN}@github.com/openctemio/helm-charts.git" "$RUNNER_TEMP/helm"
+          set +e
+          bash "$RELEASE_SCRIPTS/helm-bump.sh" --chart "$RUNNER_TEMP/helm/charts/openctem/Chart.yaml" --app-version "$VERSION" > "$RUNNER_TEMP/helm.env"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 4 ]; then
+            echo "helm-charts already deploys ${VERSION}; no PR." >> "$GITHUB_STEP_SUMMARY"
+            current="$(sed -nE 's/^version:[[:space:]]*"?([0-9.]+)"?$/\1/p' "$RUNNER_TEMP/helm/charts/openctem/Chart.yaml")"
+            echo "chart_version=$current" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          chart="$(sed -n 's/^CHART_VERSION=//p' "$RUNNER_TEMP/helm.env")"
+          echo "chart_version=$chart" >> "$GITHUB_OUTPUT"
+          branch="chore/app-${VERSION}"
+          cd "$RUNNER_TEMP/helm"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -q -c "$branch"
+          git commit -qam "chore(chart): appVersion ${VERSION}, chart ${chart}"
+          git push -q origin "$branch"
+          url="$(gh pr create --repo openctemio/helm-charts --base main --head "$branch" \
+            --title "chore(chart): appVersion ${VERSION} (chart ${chart})" \
+            --body "OpenCTEM ${VERSION} is tagged and published. This points the chart's default images at it (appVersion) and releases chart ${chart}. Opened by Release Publish in openctemio/openctem.")"
+          echo "helm-charts PR: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: develop PR (merge main back, versions.yaml)
+        env:
+          HAS_RELEASE_TOKEN: ${{ steps.token.outputs.has_release_token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          VERSION: ${{ needs.tag.outputs.version }}
+          MODE: ${{ needs.tag.outputs.mode }}
+          CHART: ${{ steps.helm.outputs.chart_version }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          args=(--version "$VERSION" --mode "$MODE" --push)
+          [ -n "$CHART" ] && args+=(--chart-version "$CHART")
+          bash "$RELEASE_SCRIPTS/post-release.sh" "${args[@]}"
+          branch="chore/post-release-${VERSION}"
+          title="chore(release): after ${VERSION}: versions.yaml$([ "$MODE" = train ] && echo ', main merged back')"
+          if [ "$HAS_RELEASE_TOKEN" != true ]; then
+            url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/develop...${branch}?expand=1"
+            echo "Open the develop follow-up PR (title \`${title}\`; merge with the queue, never squash): $url" >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::Open the develop follow-up PR: $url"
+            exit 0
+          fi
+          url="$(gh pr create --base develop --head "$branch" --title "$title" \
+            --body "Follow-up of ${VERSION}: versions.yaml says ${VERSION}. For a train it also merges main back into develop (the tree does not change), so the tag becomes reachable from develop. Merge with the queue (merge commit), never squash: a squash drops the second parent, which is the point.")"
+          echo "develop PR: $url" >> "$GITHUB_STEP_SUMMARY"
+          gh pr merge "$url" --merge --auto || echo "::notice::Press 'Merge when ready' on $url"
+
+      - name: Close the train issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.tag.outputs.version }}
+        run: |
+          gh issue list --repo "$GITHUB_REPOSITORY" --label release-train --state open --json number --jq '.[].number' |
+            while read -r n; do
+              gh issue close "$n" --repo "$GITHUB_REPOSITORY" --comment "Released ${VERSION}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${VERSION}"
+            done

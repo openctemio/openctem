@@ -125,6 +125,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
+	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
 	// (sync) leaves the handler processing reports in-request as before.
@@ -165,6 +166,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
+	vulnHandler.SetComponentService(svc.Component)
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
@@ -400,6 +402,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminAuth:           handler.NewAdminAuthHandler(log),
 		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
 		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
+		AdminAuditChain:     handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
 
 		// Admin Audit middleware (audit logging for admin operations)

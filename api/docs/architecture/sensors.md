@@ -508,6 +508,20 @@ replaces bearer keys.
   (`pkg/domain/scan/config_secrets.go`). The config travels to the sensor in
   clear inside every command; the warning never blocks a save and never
   echoes the value.
+  Callers without `scans:write` (viewers, custom read-only roles) get exactly
+  the warned values replaced by `********` (`scan.RedactConfigSecrets`,
+  `pkg/domain/scan/config_redact.go`) in every user-facing response that
+  carries the config: `GET /scans`, `GET /scans/{id}`,
+  `GET /scans/{id}/export`, and the `payload` of `GET /commands` and
+  `GET /commands/{id}` (which embeds the config as `scanner_config`,
+  `config` and `context.scanner_config`). The structure, the non-secret
+  values and `scanner_config_warnings` stay. Owners, admins and members with
+  `scans:write` see the real values, because they edit them. Sensors claim
+  the stored command and are unaffected. As a guard, a `PUT /scans/{id}`
+  whose `scanner_config` has `********` where the stored value would be
+  masked keeps the stored value instead of saving the mask. An export taken
+  by a reader holds the masks and must have its secrets re-entered before it
+  is imported.
 
 ## Protocol v2 results ingest
 
@@ -601,6 +615,22 @@ v1 pipeline with the v2 options:
   than `SENSOR_V2_BLINDING_MIN_FINDINGS` (100) and more than
   `SENSOR_V2_BLINDING_RATIO` (50 %) of the open findings of that tool on
   those assets; the status then says `auto_resolve: held`.
+- **Coverage-scoped auto-resolve (non-repository findings).** The commit
+  auto-resolve above only covers repository default branches, so a host or
+  web finding was never closed by a later scan. A scan command is evaluated
+  when it is `completed` AND every report filed under it is `completed`
+  (checked from both ends: command completion and report finalize). It
+  qualifies only if the command exited 0, every report has no rejected or
+  quarantined items and is not `partial`/`incremental`, all reports name one
+  tool the sensor declares, and the reports touched at least one asset. The
+  candidates are open findings of that tool on the touched assets, with no
+  branch, not reported by this run, and last seen by a v2 run of the same
+  scan profile (a v1 or imported sighting is never a candidate). The blinding
+  guard applies. `INGEST_COVERAGE_AUTO_RESOLVE` = `dry_run` (default: log,
+  `findings_coverage_auto_resolve_total{mode,result}` and an
+  `ingest.coverage_auto_resolve_dry_run` audit entry listing the findings, no
+  state change), `enforce` (closes them as `auto_fixed`/`scan_verified`,
+  audited as `ingest.coverage_auto_resolved`) or `off`.
 - An uncommitted report expires 60 minutes after its last segment; its
   upserts stay and it never resolves anything. A segment's outcome is stored
   under its number, so a retried segment is never counted twice. Payloads
@@ -626,6 +656,7 @@ v2 responses carry `OpenCTEM-Protocol: 2`.
 | `SENSOR_PROTOCOL_V2_RESULTS` | `true` | Mount `/api/v2/sensor`, process v2 jobs, advertise on the heartbeat. `false` unmounts it; v2 jobs already queued wait until it is on again. |
 | `SENSOR_V2_BLINDING_RATIO` | `0.5` | Blinding guard ratio. |
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | `100` | Blinding guard floor. |
+| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce`. |
 | `INGEST_MAX_PENDING_PER_TENANT` | `100` | Shared with v1: queue depth per tenant. |
 
 Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239
@@ -862,6 +893,38 @@ Code: `pkg/domain/sensor/manifest.go`, `internal/app/sensor/manifest.go`,
 `sensor_manifest_handler.go`. Migration 000258. Tests:
 `routes/sensor_manifest_db_test.go`, `sensor/manifest_test.go`.
 
+## Collector sensors
+
+A sensor of type `collector` (`sensor.SensorTypeCollector`) pulls asset
+inventory from an external system and submits it as CTIS assets. It runs
+its collections on its own schedule: it takes no dispatched scans. The
+reference implementation is the OpenCTEM Asset Collector
+([github.com/openctemio/asset-collector](https://github.com/openctemio/asset-collector),
+image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
+
+- **Type and key.** An administrator creates the sensor with type
+  `collector` (a rotated key gets `sensor.CollectorScopes()`). Until
+  enrollment ships ([RFC-032](../rfcs/RFC-032-sensor-enrollment-and-identity.md)),
+  the collector uses an `rda_` key and renews it like any other sensor.
+- **Protocol.** It uses protocol v2 through sdk-go `pkg/sensorkit` (hello,
+  heartbeat with control block, manifest, results ingest, durable outbox,
+  key renewal), with commands off. Reports go to
+  `PUT /api/v2/sensor/results/{report_id}` (unbound to a command) with
+  `metadata.source_type = "collector"` and the collector type as
+  `tool.name`.
+- **Tools.** It reports one tool per configured collector type, of kind
+  `collector` (`sensor.ToolKindCollector`): `gcp-dns`, `vcenter`, `ldap`,
+  `splunk` and `prtg`. The platform keeps only tool names in its catalog, so
+  these are in it (migration 000265, category `inventory`, "Asset
+  Collectors").
+- **Not scannable.** Their catalog rows carry `metadata.kind =
+  "collector"` (`tool.KindCollector`). Scan creation and trigger refuse such
+  a tool, as a single scanner or as a pipeline step (`tool.Tool.IsCollector`,
+  error code `TOOL_NOT_SCANNER` at trigger), because nothing would ever
+  claim the job.
+- **Adding a collector type.** Add a catalog row with `metadata.kind =
+  "collector"` in a migration, then report it from the collector.
+
 ## Scanner content
 
 [RFC-031](../rfcs/RFC-031-managed-sensor-updates.md). A tool's binary is
@@ -1080,6 +1143,21 @@ inside it. Use one zone per segment (scan-zones.md).
     are never shown in the audit.
   - Permissions: `sensors:egress:read|write|delete`, admin and owner only.
 
+## Tool settings (RFC-038, proposed)
+
+> Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
+> **proposed, nothing shipped yet.**
+
+Today a tool's options are not managed by the platform: the sensor's
+wrappers take them from host env vars or code, and the SDK copies only
+`allow_interactsh` and `exclude` from a command's `config` into
+`core.ScanOptions`; other `scanner_config` / scan-profile `options` keys
+are ignored. The design: each tool declares a typed settings schema,
+registered by digest in the manifest; admins edit a generated form on the
+sensor's page; the api validates and audits, then pushes a signed,
+versioned settings document that the sensor re-validates, stores and
+applies from the next job, reporting the applied version.
+
 ## Control plane under load (RFC-035)
 
 A sensor's scanners can saturate its CPU, memory and disk, and the sensor
@@ -1118,8 +1196,41 @@ platform-side work.
   leniently, clamped (`pkg/domain/sensor/control.go`) and stored
   (`sensors.reported_control`, `control_reported_at`); `GET /sensors/{id}`
   returns it and the console's sensor drawer shows a "Control channel" card.
-- `running` commands of a sensor that died are not recovered before the run
-  timeout (B5); RFC-030 leases address it.
+- **Leases (D6).** Running commands of a sensor that died go back to the
+  queue when their lease runs out ("Command leases" above).
+- **Heartbeat gap metric.** Every heartbeat that had a previous one feeds
+  two Prometheus histograms with no labels (fixed cardinality whatever the
+  fleet size):
+  - `sensor_heartbeat_gap_seconds`: the time between two heartbeats;
+  - `sensor_heartbeat_gap_ratio`: that time divided by the interval the
+    sensor followed (1 = on time).
+  The gap comes from the stored deadline (`heartbeat_due_at` minus the
+  interval), so polls and other requests do not shorten it.
+- **Recovery entry.** A heartbeat that arrives after its own deadline had
+  made the sensor late, stale or offline adds one `heartbeat_recovered`
+  activity entry ("Heartbeats back after a 1m20s gap (was late)"; details
+  `was`, `gap_seconds`, `interval_seconds`).
+  - It is judged on the heartbeat deadline, not on whether the controller
+    already ticked.
+  - Status entries coalesce on type, so a sensor that keeps slipping folds
+    into one row with a repeat count.
+  - A sensor back from `offline` gets the usual `online` entry instead.
+- **Heartbeat history and sparkline.**
+  - **Storage.** Each tenant sensor's heartbeats are aggregated on write
+    into 15-minute buckets (`sensor_heartbeat_history`, migration 000263;
+    one upsert per heartbeat). A bucket holds: heartbeats, average and
+    largest gap, the interval followed, the largest timer lag, and the
+    heartbeats the sensor reported lost.
+  - **Retention.** A controller deletes buckets older than 48 h every hour,
+    so there are at most 192 rows per sensor.
+  - **Read.** `GET /api/v1/sensors/{id}/heartbeat-history?hours=24`
+    (sensors:read, at most 24 h) returns the buckets that had a heartbeat,
+    oldest first.
+  - **Display.** The Control channel card draws them as a 24 h bar
+    sparkline: the bar height is the largest gap, a warning bar is a slot
+    where the sensor was late, an empty slot had no heartbeat, and a dashed
+    line shows the interval. Sensors that send no `control` block still get
+    the card for the sparkline.
 
 **What the SDK does** (sdk-go, RFC-035 Phase 1):
 
@@ -1132,9 +1243,9 @@ platform-side work.
 | Scanner processes | Linux: process group at nice +10, best-effort I/O level 7, `oom_score_adj` 500, set right after start. `SENSOR_SCANNER_PRIORITY=normal` turns it off. |
 | Slots | Leave memory free for the sensor: a tenth of its memory, 256 MiB to 1 GiB (`resource.DefaultReservedMem`). |
 
-**Still to come**: command leases with re-queue (D6, RFC-030), a
-`sensor_heartbeat_gap_seconds` histogram, an activity entry when a sensor
-recovers from `late`, and a gap sparkline on the Control channel card.
+The SDK echoes the lease epoch of each command it holds on `complete` and
+`fail` (`X-OpenCTEM-Lease-Epoch`, sdk-go v0.16.0); the API accepts both
+forms, so older sensors keep working (fenced by sensor and state only).
 
 ## History written in the old vocabulary
 

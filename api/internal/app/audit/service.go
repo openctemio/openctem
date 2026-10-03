@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify"
 	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -332,12 +333,77 @@ type RebaselineResult struct {
 //   - it refuses, changing nothing, if an underlying audit_log is missing,
 //     since that is a genuine tamper signal it must not paper over.
 func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, actx AuditContext) (*RebaselineResult, error) {
+	res, _, err := s.rebaseline(ctx, tenantID, actx, actx.ActorID, nil)
+	return res, err
+}
+
+// ErrChainUnexplained means a rebaseline was refused because the chain has a
+// break no known defect explains (or a missing source row, or a broken link).
+var ErrChainUnexplained = fmt.Errorf("%w: audit chain has unexplained breaks", shared.ErrConflict)
+
+// ErrChainFingerprintMismatch means a rebaseline was refused because the chain
+// is no longer the one the caller classified and reviewed.
+var ErrChainFingerprintMismatch = fmt.Errorf("%w: audit chain changed since it was classified", shared.ErrConflict)
+
+// ClassifyChain classifies every row of a tenant's chain (see chainclassify):
+// how many verify, how many are explained by a known hashing defect, and how
+// many are not. The report's fingerprint names the exact chain classified.
+func (s *AuditService) ClassifyChain(ctx context.Context, tenantID shared.ID) (*chainclassify.Report, error) {
+	b := chainclassify.NewBuilder()
+	err := s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
+		log, err := s.chainSource(ctx, tenantID, e)
+		if err != nil || log == nil {
+			b.AddMissing(e.ChainPosition, e.AuditLogID.String(), e.PrevHash, e.Hash)
+			return nil //nolint:nilerr // a missing source row is classified, and the walk continues
+		}
+		b.Add(chainRow(e, log))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return b.Report(), nil
+}
+
+// RebaselineChainIfExplained is RebaselineChain for the platform admin console:
+// it re-runs the classification in the same locked walk that computes the new
+// hashes and refuses, rewriting nothing, unless every break is explained by a
+// known defect AND the chain is exactly the one the caller reviewed
+// (expectedFingerprint, from ClassifyChain). The classification of that walk is
+// returned with a refusal so the caller can show why.
+//
+// archiveActorID is recorded on the archive row (audit_chain_rebaselines, a
+// plain UUID); actx attributes the tenant audit event.
+func (s *AuditService) RebaselineChainIfExplained(ctx context.Context, tenantID shared.ID, expectedFingerprint string,
+	actx AuditContext, archiveActorID string,
+) (*RebaselineResult, *chainclassify.Report, error) {
+	if expectedFingerprint == "" {
+		return nil, nil, fmt.Errorf("%w: classification fingerprint is required", shared.ErrValidation)
+	}
+	return s.rebaseline(ctx, tenantID, actx, archiveActorID, func(rep *chainclassify.Report) error {
+		if !rep.RebaselineAllowed() {
+			return fmt.Errorf("cannot re-baseline: %w (%d unexplained, %d missing source, %d broken links)",
+				ErrChainUnexplained, rep.Counts.Unexplained, rep.Counts.SourceMissing, rep.Counts.LinkBroken)
+		}
+		if rep.Fingerprint != expectedFingerprint {
+			return fmt.Errorf("cannot re-baseline: %w", ErrChainFingerprintMismatch)
+		}
+		return nil
+	})
+}
+
+// rebaseline runs a rebaseline and records it on the tenant's chain. guard,
+// when set, sees the classification of the chain about to be re-signed and
+// may refuse it.
+func (s *AuditService) rebaseline(ctx context.Context, tenantID shared.ID, actx AuditContext, archiveActorID string,
+	guard func(*chainclassify.Report) error,
+) (*RebaselineResult, *chainclassify.Report, error) {
 	// The event must land on the chain that was rebaselined.
 	actx.TenantID = tenantID.String()
 
 	// rebaselineLocked holds chainMu; it is released before the audit event
 	// is written because LogEvent -> appendChainEntry takes chainMu itself.
-	res, err := s.rebaselineLocked(ctx, tenantID, actx.ActorID)
+	res, rep, err := s.rebaselineLocked(ctx, tenantID, archiveActorID, guard)
 	if err != nil {
 		event := NewFailureEvent(auditdom.ActionAuditChainRebaselined, auditdom.ResourceTypeAuditChain, tenantID.String(), err).
 			WithSeverity(auditdom.SeverityCritical).
@@ -346,12 +412,12 @@ func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, 
 			s.logger.Error("failed to audit a failed chain rebaseline",
 				"tenant_id", tenantID.String(), "error", logErr)
 		}
-		return nil, err
+		return nil, rep, err
 	}
 
 	s.logger.Warn("audit chain re-baselined",
 		"tenant_id", tenantID.String(),
-		"actor_id", actx.ActorID,
+		"actor_id", archiveActorID,
 		"rebaseline_id", res.RebaselineID,
 		"entries_total", res.EntriesTotal,
 		"entries_rewritten", res.EntriesRewritten,
@@ -365,17 +431,25 @@ func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, 
 		WithMetadata("rebaseline_id", res.RebaselineID).
 		WithMetadata("entries_total", res.EntriesTotal).
 		WithMetadata("entries_rewritten", res.EntriesRewritten).
-		WithMetadata("actor_id", actx.ActorID)
+		WithMetadata("actor_id", archiveActorID)
+	if rep != nil {
+		event = event.
+			WithMetadata("classification_fingerprint", rep.Fingerprint).
+			WithMetadata("legacy_truncate", rep.Counts.LegacyTruncate).
+			WithMetadata("pre_79_nanosecond", rep.Counts.PreHashReduction)
+	}
 	if err := s.LogEvent(ctx, actx, event); err != nil {
 		// The rewrite is committed and its archive row names the actor, so
 		// the evidence survives; this only loses the audit_logs copy.
 		s.logger.Error("chain rebaselined but its audit event was not written",
 			"tenant_id", tenantID.String(), "rebaseline_id", res.RebaselineID, "error", err)
 	}
-	return res, nil
+	return res, rep, nil
 }
 
-func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID, actorID string) (*RebaselineResult, error) {
+func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID, actorID string,
+	guard func(*chainclassify.Report) error,
+) (*RebaselineResult, *chainclassify.Report, error) {
 	s.chainMu.Lock()
 	defer s.chainMu.Unlock()
 
@@ -387,6 +461,10 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 		rb.ActorID = &id
 	}
 
+	var classify *chainclassify.Builder
+	if guard != nil {
+		classify = chainclassify.NewBuilder()
+	}
 	prev := ""
 	err := s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
 		rb.EntriesTotal++
@@ -397,7 +475,10 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 			return fmt.Errorf("cannot re-baseline: %w: audit log %s (position %d)",
 				auditdom.ErrChainSourceMissing, e.AuditLogID.String(), e.ChainPosition)
 		}
-		payload := fmt.Sprintf("%s|%s|%s|%s",
+		if classify != nil {
+			classify.Add(chainRow(e, log))
+		}
+		payload := chainclassify.Payload(
 			log.Action().String(),
 			log.ResourceType().String(),
 			log.ResourceID(),
@@ -419,17 +500,50 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	var rep *chainclassify.Report
+	if classify != nil {
+		rep = classify.Report()
+		if err := guard(rep); err != nil {
+			return nil, rep, err
+		}
 	}
 
 	if err := s.auditRepo.ApplyChainRebaseline(ctx, rb); err != nil {
-		return nil, fmt.Errorf("apply rebaseline: %w", err)
+		return nil, rep, fmt.Errorf("apply rebaseline: %w", err)
 	}
 	return &RebaselineResult{
 		RebaselineID:     rb.ID.String(),
 		EntriesTotal:     rb.EntriesTotal,
 		EntriesRewritten: len(rb.Rewrites),
-	}, nil
+	}, rep, nil
+}
+
+// chainSource loads the audit log behind a chain entry. System-chain entries
+// point at rows with tenant_id IS NULL, which the tenant-scoped getter cannot
+// see.
+func (s *AuditService) chainSource(ctx context.Context, tenantID shared.ID, e auditdom.ChainEntry) (*auditdom.AuditLog, error) {
+	if tenantID == auditdom.SystemChainTenantID {
+		return s.auditRepo.GetSystemByID(ctx, e.AuditLogID)
+	}
+	return s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
+}
+
+// chainRow is the classifier's view of a chain entry and its audit log.
+func chainRow(e auditdom.ChainEntry, log *auditdom.AuditLog) chainclassify.Row {
+	return chainclassify.Row{
+		AuditLogID:   e.AuditLogID.String(),
+		Position:     e.ChainPosition,
+		PrevHash:     e.PrevHash,
+		Hash:         e.Hash,
+		Action:       log.Action().String(),
+		ResourceType: log.ResourceType().String(),
+		ResourceID:   log.ResourceID(),
+		Result:       log.Result().String(),
+		LoggedAt:     log.Timestamp(),
+	}
 }
 
 // appendChainEntry computes the next hash in the per-tenant chain and

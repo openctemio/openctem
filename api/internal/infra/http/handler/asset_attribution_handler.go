@@ -111,14 +111,14 @@ func (h *AssetAttributionHandler) Get(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Asset").WriteJSON(w)
 			return
 		}
-		h.logger.Error("failed to load asset for attribution", "error", err)
+		h.logger.Error("failed to load asset for attribution", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to load asset").WriteJSON(w)
 		return
 	}
 
 	view, found, err := h.attribution.Get(ctx, tenantID, assetID)
 	if err != nil {
-		h.logger.Error("failed to load attribution", "error", err)
+		h.logger.Error("failed to load attribution", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to load attribution").WriteJSON(w)
 		return
 	}
@@ -180,13 +180,13 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 			apierror.NotFound("Asset").WriteJSON(w)
 			return
 		}
-		h.logger.Error("failed to load asset for attribution decision", "error", err)
+		h.logger.Error("failed to load asset for attribution decision", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to load asset").WriteJSON(w)
 		return
 	}
 	before, _, err := h.attribution.Get(ctx, tenantID, assetID)
 	if err != nil {
-		h.logger.Error("failed to load attribution", "error", err)
+		h.logger.Error("failed to load attribution", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to load attribution").WriteJSON(w)
 		return
 	}
@@ -196,7 +196,7 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 	}
 	ok, err := h.attribution.SaveDecision(ctx, tenantID, assetID, state, userID)
 	if err != nil {
-		h.logger.Error("failed to save attribution decision", "error", err)
+		h.logger.Error("failed to save attribution decision", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to save decision").WriteJSON(w)
 		return
 	}

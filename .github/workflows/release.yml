@@ -13,6 +13,10 @@ on:
   push:
     tags:
       - "v*"
+  # Release Publish (release-publish.yml) dispatches this on the tag
+  # (`--ref vX.Y.Z`) when it had to push the tag with GITHUB_TOKEN, whose
+  # pushes start no workflow (api/docs/rfcs/RFC-037 §7).
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,6 +30,7 @@ env:
 jobs:
   build:
     name: Build bootstrap-admin (${{ matrix.os }}/${{ matrix.arch }})
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:
@@ -122,19 +127,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Sanitize release notes
-        # Escape @mentions that are not "by @login" credits; drop raw emails.
+        # Escape @mentions that are not "by @login" credits; drop raw emails
+        # (.github/scripts/release/sanitize-notes.py).
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
-          python3 - notes.md <<'PY'
-          import re, sys
-          path = sys.argv[1]
-          text = re.sub(r" ?<[^<>\s]+@[^<>\s]+>", "", open(path).read())
-          mention = re.compile(r"(?<![\w`/.@-])(?<!by )(?<!\* )@[A-Za-z0-9][\w-]*(?:/[\w.-]+)?(?:@[\w.^~-]+)?")
-          parts = re.split(r"(`[^`]*`)", text)
-          text = "".join(p if p.startswith("`") else mention.sub(lambda m: "`" + m.group(0) + "`", p) for p in parts)
-          open(path, "w").write(text)
-          PY
+          python3 .github/scripts/release/sanitize-notes.py notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md

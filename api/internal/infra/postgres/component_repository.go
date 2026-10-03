@@ -302,6 +302,31 @@ func (r *ComponentRepository) GetExistingDependencyByComponentID(ctx context.Con
 	return dep, nil
 }
 
+// GetAssetDependency returns the shallowest asset_components row for the
+// (tenant, asset, component) triple. Tenant-scoped: another tenant's asset
+// never matches. Returns nil, nil when there is none.
+func (r *ComponentRepository) GetAssetDependency(ctx context.Context, tenantID, assetID, componentID shared.ID) (*component.AssetDependency, error) {
+	query := `
+		SELECT
+			ac.id, ac.tenant_id, ac.asset_id, ac.component_id, ac.path, ac.dependency_type, ac.manifest_file, ac.parent_component_id, ac.depth, ac.created_at, ac.updated_at,
+			c.id, c.name, c.version, c.ecosystem, c.purl, c.description, c.homepage, c.vulnerability_count, c.metadata, c.created_at, c.updated_at
+		FROM asset_components ac
+		JOIN components c ON ac.component_id = c.id
+		WHERE ac.tenant_id = $1 AND ac.asset_id = $2 AND ac.component_id = $3
+		ORDER BY ac.depth ASC, ac.created_at ASC
+		LIMIT 1
+	`
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), assetID.String(), componentID.String())
+	dep, err := r.scanDependency(row)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get asset dependency: %w", err)
+	}
+	return dep, nil
+}
+
 // UpdateAssetDependencyParent updates the parent_component_id and depth of an asset_component.
 func (r *ComponentRepository) UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error {
 	query := `
