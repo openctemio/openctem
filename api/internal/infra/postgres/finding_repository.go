@@ -3276,7 +3276,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 				AND f.asset_id = $2
 				-- Only the tool that saw the finding last may close it (RFC-043
 				-- interim guard): tool_name is the first reporter, scan_id the
-				-- last sighting. NULL last_seen_tool = rows from before 000296.
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
 				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = $5
@@ -3301,7 +3301,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 				AND f.asset_id = $2
 				-- Only the tool that saw the finding last may close it (RFC-043
 				-- interim guard): tool_name is the first reporter, scan_id the
-				-- last sighting. NULL last_seen_tool = rows from before 000296.
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
 				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
@@ -3370,7 +3370,7 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 				AND f.asset_id = ANY($2)
 				-- Only the tool that saw the finding last may close it (RFC-043
 				-- interim guard): tool_name is the first reporter, scan_id the
-				-- last sighting. NULL last_seen_tool = rows from before 000296.
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
 				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = $5
@@ -3394,7 +3394,7 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 				AND f.asset_id = ANY($2)
 				-- Only the tool that saw the finding last may close it (RFC-043
 				-- interim guard): tool_name is the first reporter, scan_id the
-				-- last sighting. NULL last_seen_tool = rows from before 000296.
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
 				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
