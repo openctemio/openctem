@@ -14,19 +14,53 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// stubGroupAssetsRepo overrides only GetGroupAssets; the embedded interface
+// stubGroupAssetsRepo overrides only ListScanMembers; the embedded interface
 // panics on any other unexpected call.
 type stubGroupAssetsRepo struct {
 	assetgroup.Repository
 	assets []*assetgroup.GroupAsset
 }
 
-func (s *stubGroupAssetsRepo) GetGroupAssets(_ context.Context, _ shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
-	return pagination.NewResult(s.assets, int64(len(s.assets)), page), nil
+func (s *stubGroupAssetsRepo) ListScanMembers(_ context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	return scanMemberPage(s.assets, q, 0), nil
 }
+
+// scanMemberPage serves members like the repository's ListScanMembers: in the
+// given order, archived ones left out and counted on the first page, keyset
+// after (AfterName, AfterID), at most limit (or q.Limit when limit is 0).
+// Properties of a member come from groupAssetProps.
+func scanMemberPage(all []*assetgroup.GroupAsset, q assetgroup.ScanMemberQuery, limit int) *assetgroup.ScanMemberPage {
+	if limit == 0 || (q.Limit > 0 && q.Limit < limit) {
+		limit = q.Limit
+	}
+	page := &assetgroup.ScanMemberPage{}
+	first := q.AfterID.IsZero()
+	started := first
+	for _, a := range all {
+		if a.Status == "archived" {
+			if first {
+				page.ArchivedCount++
+			}
+			continue
+		}
+		if !started {
+			started = a.ID == q.AfterID
+			continue
+		}
+		if limit > 0 && len(page.Members) == limit {
+			continue
+		}
+		page.Members = append(page.Members, &assetgroup.ScanMember{
+			ID: a.ID, Name: a.Name, Type: a.Type, Status: a.Status, Properties: groupAssetProps[a.ID],
+		})
+	}
+	return page
+}
+
+// groupAssetProps holds test members' properties by asset id.
+var groupAssetProps = map[shared.ID]map[string]any{}
 
 // stubExclusions excludes candidates by value.
 type stubExclusions struct {
@@ -254,13 +288,14 @@ type stubGroupsRepo struct {
 	calls   map[shared.ID]int
 }
 
-func (s *stubGroupsRepo) GetGroupAssets(_ context.Context, id shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
+func (s *stubGroupsRepo) ListScanMembers(_ context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
 	if s.calls == nil {
 		s.calls = map[shared.ID]int{}
 	}
-	s.calls[id]++
-	a := s.byGroup[id]
-	return pagination.NewResult(a, int64(len(a)), page), nil
+	if q.AfterID.IsZero() {
+		s.calls[q.GroupID]++
+	}
+	return scanMemberPage(s.byGroup[q.GroupID], q, 0), nil
 }
 
 func groupAsset(name string) *assetgroup.GroupAsset {
@@ -405,17 +440,15 @@ func (errSelector) SelectSensor(context.Context, SelectSensorRequest) (*SelectSe
 	return nil, errors.New("selector down")
 }
 
-// pagedGroupAssetsRepo pages like the real repository, including
-// pagination's 100-row clamp.
+// pagedGroupAssetsRepo pages like a repository that returns fewer rows than
+// asked for (100 per page), so the keyset loop must keep reading.
 type pagedGroupAssetsRepo struct {
 	assetgroup.Repository
 	assets []*assetgroup.GroupAsset
 }
 
-func (s *pagedGroupAssetsRepo) GetGroupAssets(_ context.Context, _ shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
-	start := min(page.Offset(), len(s.assets))
-	end := min(start+page.Limit(), len(s.assets))
-	return pagination.NewResult(s.assets[start:end], int64(len(s.assets)), page), nil
+func (s *pagedGroupAssetsRepo) ListScanMembers(_ context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	return scanMemberPage(s.assets, q, 100), nil
 }
 
 // A scan of a 250-asset group scans all 250. The member listing asked for
@@ -436,5 +469,47 @@ func TestResolveScanTargets_GroupLargerThanOnePage(t *testing.T) {
 	}
 	if len(got.Targets) != 250 {
 		t.Fatalf("resolved %d of 250 group members", len(got.Targets))
+	}
+}
+
+// A group member is an asset: archived members are not scanned, and an
+// exclusion of an address the member resolves to excludes it, also when the
+// member's name was already given as a direct target.
+func TestResolveScanTargets_GroupMemberAddressesAndArchived(t *testing.T) {
+	web := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "web.example.com", Type: "domain", Status: "active"}
+	db := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "db.example.com", Type: "domain", Status: "active"}
+	app := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "app.example.com", Type: "domain", Status: "stale"}
+	old := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "old.example.com", Type: "domain", Status: "archived"}
+	groupAssetProps[web.ID] = map[string]any{"ip_addresses": []any{"10.9.9.10"}}
+	groupAssetProps[db.ID] = map[string]any{"ip": "10.9.9.11"}
+	t.Cleanup(func() { delete(groupAssetProps, web.ID); delete(groupAssetProps, db.ID) })
+
+	svc := &Service{
+		assetGroupRepo:  &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{web, db, app, old}},
+		scopeExclusions: &stubExclusions{values: map[string]bool{"10.9.9.10": true, "10.9.9.11": true}},
+		logger:          logger.NewNop(),
+	}
+	sc := testScan("nuclei", "web.example.com")
+	sc.AssetGroupID = shared.NewID()
+
+	got, err := svc.resolveScanTargets(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Targets, []string{"app.example.com"}) {
+		t.Fatalf("targets = %v, want only app.example.com", got.Targets)
+	}
+	if !reflect.DeepEqual(got.ExcludedNames, []string{"web.example.com", "db.example.com"}) {
+		t.Fatalf("excluded = %v, want web and db (excluded by address)", got.ExcludedNames)
+	}
+	if got.Archived != 1 {
+		t.Fatalf("archived = %d, want 1", got.Archived)
+	}
+	found := false
+	for _, w := range got.Warnings {
+		found = found || strings.Contains(w, "1 archived asset")
+	}
+	if !found {
+		t.Fatalf("want a warning about the skipped archived asset, got %v", got.Warnings)
 	}
 }

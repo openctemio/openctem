@@ -36,10 +36,15 @@ func NewKEVEscalator(db *DB) *KEVEscalator {
 //  2. is_in_kev reconciliation — is_in_kev is set true for EVERY finding whose
 //     CVE is in KEV, independent of severity. This is a fact about the CVE, not
 //     a workflow decision, so an already-critical KEV finding (which the
-//     escalation update skips) still gets flagged. The flag is only set
-//     false→true here; a CVE leaving KEV is rare and out of scope.
+//     escalation update skips) still gets flagged.
+//  3. Unflagging — a finding whose CVE is no longer in KEV (CISA removed it;
+//     the sync prunes kev_catalog) gets is_in_kev=false and kev_due_date
+//     cleared. This runs on every status: a resolved finding must not keep
+//     claiming a fact that stopped being true. Severity is NOT lowered: the
+//     escalation did not record the severity it replaced, and a human may have
+//     confirmed critical since.
 //
-// Both updates skip terminal/closed statuses. Returns what changed plus the
+// Updates 1 and 2 skip terminal/closed statuses. Returns what changed plus the
 // distinct set of tenants touched, so the caller can enqueue a priority
 // reclassify per tenant (severity=critical + is_in_kev=true should drive those
 // findings toward P0 via the classifier's KEV/severity ladder).
@@ -82,6 +87,20 @@ func (e *KEVEscalator) EscalateKEVFindings(ctx context.Context) (threat.KEVEscal
 		return result, fmt.Errorf("failed to reconcile is_in_kev: %w", err)
 	}
 	result.Flagged = flagged
+
+	// 3. Unflag findings whose CVE left KEV.
+	unflagQuery := `
+		UPDATE findings
+		SET is_in_kev = false, kev_due_date = NULL, updated_at = NOW()
+		WHERE is_in_kev = true
+		  AND (cve_id IS NULL OR cve_id NOT IN (SELECT cve_id FROM kev_catalog))
+		RETURNING tenant_id
+	`
+	unflagged, err := e.runReturningTenants(ctx, unflagQuery, tenantSet)
+	if err != nil {
+		return result, fmt.Errorf("failed to clear is_in_kev: %w", err)
+	}
+	result.Unflagged = unflagged
 
 	result.Tenants = make([]shared.ID, 0, len(tenantSet))
 	for t := range tenantSet {

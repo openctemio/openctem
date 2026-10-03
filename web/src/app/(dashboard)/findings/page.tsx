@@ -117,7 +117,10 @@ import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
-import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
+import {
+  FINDINGS_LIST_HIDDEN_STATUSES,
+  FINDINGS_OPEN_STATUSES,
+} from '@/features/findings/lib/list-defaults'
 
 // ============================================
 // Transform API Finding to UI Finding
@@ -280,6 +283,7 @@ const PAGE_SIZES = [10, 20, 30, 50, 100]
 /** Short option labels — the trigger's layers icon already says "group by". */
 const GROUP_BY_LABELS: Record<GroupByDimension, string> = {
   cve_id: 'CVE',
+  rule_id: 'Rule',
   asset_id: 'Asset',
   owner_id: 'Owner',
   severity: 'Severity',
@@ -295,7 +299,7 @@ const SEVERITY_LABELS: Record<FacetSeverity, string> = {
   low: 'Low',
   info: 'Info',
 }
-const OPEN_STATUSES = ['new', 'confirmed', 'in_progress', 'fix_applied', 'remediation', 'retest']
+const OPEN_STATUSES: string[] = [...FINDINGS_OPEN_STATUSES]
 const STATUS_GROUPS = [
   { label: 'Open', values: OPEN_STATUSES },
   {
@@ -487,6 +491,9 @@ function FindingsContent() {
   // A CVE group's "View": the list narrowed to that CVE (search does not match
   // the CVE id, so it cannot stand in for this).
   const [cveParam, setCveParam] = useUrlFilter('cve', '')
+  // A rule group's "View": the list narrowed to that scanner rule (nuclei
+  // template, semgrep rule, misconfiguration check, secret rule).
+  const [ruleParam, setRuleParam] = useUrlFilter('rule', '')
   // Bumped after a change, so the grouped view reloads its groups and rows.
   const [groupsReloadKey, setGroupsReloadKey] = useState(0)
   const [autoAssignOpen, setAutoAssignOpen] = useState(false)
@@ -588,6 +595,7 @@ function FindingsContent() {
     if (sourceIdFilter) filters.source_id = sourceIdFilter
     if (scanIdFilter) filters.scan_id = scanIdFilter
     if (cveParam) filters.cve_ids = [cveParam]
+    if (ruleParam) filters.rule_id = ruleParam
     if (severities.length > 0) filters.severities = severities
     if (statuses.length > 0) {
       filters.statuses = statuses as NonNullable<FindingApiFilters['statuses']>
@@ -617,6 +625,7 @@ function FindingsContent() {
     sourceIdFilter,
     scanIdFilter,
     cveParam,
+    ruleParam,
     severities,
     statuses,
     sourceFilter,
@@ -640,6 +649,7 @@ function FindingsContent() {
     sourceIdFilter,
     scanIdFilter,
     cveParam,
+    ruleParam,
     groupParam,
     viewParam,
     severities.join(),
@@ -1655,11 +1665,16 @@ function FindingsContent() {
   // "View" on a group opens the list filtered to it, where the dimension maps
   // to a list filter. Other dimensions get no View button (not a dead one).
   const viewableGroup =
-    groupBy === 'cve_id' || groupBy === 'severity' || groupBy === 'source' || groupBy === 'asset_id'
+    groupBy === 'cve_id' ||
+    groupBy === 'rule_id' ||
+    groupBy === 'severity' ||
+    groupBy === 'source' ||
+    groupBy === 'asset_id'
   const viewGroup = (group: FindingGroup) => {
     const key = group.group_key
     setGroupParam('')
     if (groupBy === 'cve_id') setCveParam(key)
+    else if (groupBy === 'rule_id') setRuleParam(key)
     else if (groupBy === 'severity') setSeverityParam([key])
     else if (groupBy === 'source') setSourceFilter([key])
     else if (groupBy === 'asset_id') setAssetParam(key)
@@ -1727,6 +1742,7 @@ function FindingsContent() {
     sourceIdFilter && { key: 'source', label: `Source ${sourceIdFilter.slice(0, 8)}…` },
     scanIdFilter && { key: 'scan', label: `Scan ${scanIdFilter.slice(0, 8)}…` },
     cveParam && { key: 'cve', label: cveParam },
+    ruleParam && { key: 'rule', label: `Rule ${ruleParam}` },
   ].filter(Boolean) as { key: string; label: string }[]
 
   return (

@@ -242,6 +242,8 @@ func (p *FindingProcessor) processBatch(
 
 	validFindings := make([]findingMeta, 0, len(report.Findings))
 	fingerprints := make([]string, 0, len(report.Findings))
+	seenFingerprints := make(map[string]struct{}, len(report.Findings))
+	duplicatesInReport := 0
 
 	// Get default asset if available (single asset report)
 	var defaultAssetID shared.ID
@@ -298,6 +300,16 @@ func (p *FindingProcessor) processBatch(
 		// recomputed for a new asset_id after an asset merge).
 		fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
 
+		// One report naming the same finding twice (the same package in two
+		// lockfiles, a template matching twice) is one observation. Keep the
+		// first; the rest would otherwise reach the multi-row upsert twice,
+		// fail it, and be counted as two created findings (RFC-043 B2).
+		if _, dup := seenFingerprints[fp]; dup {
+			duplicatesInReport++
+			continue
+		}
+		seenFingerprints[fp] = struct{}{}
+
 		// Get branch ID for this asset (if available)
 		var branchID *shared.ID
 		if bid, ok := branchMap[targetAssetID]; ok {
@@ -313,6 +325,10 @@ func (p *FindingProcessor) processBatch(
 			base:        base,
 		})
 		fingerprints = append(fingerprints, fp)
+	}
+
+	if duplicatesInReport > 0 {
+		p.logger.Debug("folded repeated findings within one report", "count", duplicatesInReport)
 	}
 
 	if len(validFindings) == 0 {
@@ -420,7 +436,23 @@ func (p *FindingProcessor) processBatch(
 			}
 		} else {
 			output.FindingsCreated = result.Created
+			// A row that met an existing finding (a concurrent ingest created it
+			// between the fingerprint check and this insert) is a re-sighting,
+			// not a new finding.
+			output.FindingsUpdated += result.Updated
 			output.FindingsSkipped += result.Skipped
+
+			// Only rows this insert created get the new-finding treatment.
+			// The others already exist under another id (re-pointed by the
+			// repository) and their side effects ran when they were created.
+			createdFindings := make([]*vulnerability.Finding, 0, result.Created)
+			createdIndex := make(map[int]struct{}, result.Created)
+			for i, f := range newFindings {
+				if result.WasInserted(i) {
+					createdFindings = append(createdFindings, f)
+					createdIndex[i] = struct{}{}
+				}
+			}
 
 			// Log individual errors for debugging
 			if result.HasErrors() {
@@ -452,86 +484,8 @@ func (p *FindingProcessor) processBatch(
 				}
 			}
 
-			// Step 4b: Persist data flows for newly created findings
-			if p.dataFlowRepo != nil && result.Created > 0 {
-				p.persistDataFlows(ctx, newFindings)
-			}
-
-			// Step 4b1: Record which approved rule suppressed each newly-created
-			// finding (finding_suppressions) so the ingest suppression is
-			// traceable and can be un-suppressed if the rule is later removed.
-			// The disposition (resolved+suppressed) was already applied pre-insert
-			// above; this only records the audit link. Best-effort.
-			if len(suppressionDecisions) > 0 && result.Created > 0 {
-				if n := p.recordSuppressions(ctx, newFindings, suppressionDecisions, result.Errors); n > 0 {
-					output.FindingsSuppressed += n
-					p.logger.Info("suppressed findings at ingest via approved rules", "count", n)
-				}
-			}
-
-			// Step 4b2: Derive remediation-group keys (RFC-015). Best-effort;
-			// grouping is a convenience layer, never blocks ingest.
-			if p.remediationKeyApplier != nil && result.Created > 0 {
-				if err := p.remediationKeyApplier.ApplyBatch(ctx, tenantID, newFindings); err != nil {
-					p.logger.Warn("failed to derive remediation keys", "error", err)
-				}
-			}
-
-			// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert
-			// above, so the created rows already carry those fields — no
-			// post-insert UPDATE pass is needed here.
-
-			// Step 4d: Trigger workflow events for newly created findings
-			if p.findingCreatedCallback != nil && result.Created > 0 {
-				// Only include successfully created findings (exclude failed ones)
-				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
-				for i, f := range newFindings {
-					// Check if this finding was created (not in error list)
-					if result.Errors == nil || result.Errors[i] == "" {
-						createdFindings = append(createdFindings, f)
-					}
-				}
-				if len(createdFindings) > 0 {
-					p.findingCreatedCallback(ctx, tenantID, createdFindings)
-				}
-			}
-
-			// Step 4e: Route newly-created findings to groups via assignment
-			// rules (post-insert — FGA records need persisted finding IDs).
-			// Best-effort: a failure is logged and never aborts ingestion.
-			if p.assignmentApplier != nil && result.Created > 0 {
-				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
-				for i, f := range newFindings {
-					if result.Errors == nil || result.Errors[i] == "" {
-						createdFindings = append(createdFindings, f)
-					}
-				}
-				if len(createdFindings) > 0 {
-					if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, createdFindings); err != nil {
-						p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(createdFindings))
-					} else if assigned > 0 {
-						p.logger.Info("auto-routed findings to groups", "assignments", assigned)
-					}
-				}
-			}
-
-			// Step 4f: Promote secret-scan findings into the exposure/credential
-			// store so hardcoded secrets show up in the Credentials/Exposures
-			// view continuously (labeled discovery_source=secret_scan, distinct
-			// from an external breach import). Best-effort: a failure is logged
-			// and never aborts ingestion.
-			if p.exposureBridge != nil && result.Created > 0 {
-				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
-				for i, f := range newFindings {
-					if result.Errors == nil || result.Errors[i] == "" {
-						createdFindings = append(createdFindings, f)
-					}
-				}
-				if len(createdFindings) > 0 {
-					if err := p.exposureBridge.ApplyBatch(ctx, tenantID, createdFindings); err != nil {
-						p.logger.Warn("failed to bridge secret findings into exposure store", "error", err, "count", len(createdFindings))
-					}
-				}
+			if len(createdFindings) > 0 {
+				p.afterCreate(ctx, tenantID, output, newFindings, createdFindings, createdIndex, suppressionDecisions)
 			}
 		}
 	}
@@ -1990,4 +1944,79 @@ func normalizeEnumToken(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// afterCreate runs the post-insert steps for the findings this batch newly
+// inserted: data flows, the ingest suppression audit link, remediation keys,
+// the created callback (workflows, notifications), assignment rules and the
+// secret-to-exposure bridge. created holds only inserted findings with their
+// persisted ids; createdIndex maps the same set back to newFindings indexes
+// for the index-keyed suppression decisions. A row that met an existing
+// finding never gets here, so its side effects do not run twice and never run
+// with an id that does not exist (RFC-043 B2).
+func (p *FindingProcessor) afterCreate(
+	ctx context.Context,
+	tenantID shared.ID,
+	output *Output,
+	newFindings, created []*vulnerability.Finding,
+	createdIndex map[int]struct{},
+	suppressionDecisions map[int]shared.ID,
+) {
+	// Persist data flows for newly created findings.
+	if p.dataFlowRepo != nil {
+		p.persistDataFlows(ctx, created)
+	}
+
+	// Record which approved rule suppressed each newly-created finding
+	// (finding_suppressions) so the ingest suppression is traceable and can be
+	// un-suppressed if the rule is later removed. The disposition
+	// (resolved+suppressed) was already applied pre-insert; this only records
+	// the audit link. Best-effort.
+	if len(suppressionDecisions) > 0 {
+		decisions := make(map[int]shared.ID, len(suppressionDecisions))
+		for idx, ruleID := range suppressionDecisions {
+			if _, ok := createdIndex[idx]; ok {
+				decisions[idx] = ruleID
+			}
+		}
+		if n := p.recordSuppressions(ctx, newFindings, decisions, nil); n > 0 {
+			output.FindingsSuppressed += n
+			p.logger.Info("suppressed findings at ingest via approved rules", "count", n)
+		}
+	}
+
+	// Derive remediation-group keys (RFC-015). Best-effort; grouping is a
+	// convenience layer, never blocks ingest.
+	if p.remediationKeyApplier != nil {
+		if err := p.remediationKeyApplier.ApplyBatch(ctx, tenantID, created); err != nil {
+			p.logger.Warn("failed to derive remediation keys", "error", err)
+		}
+	}
+
+	// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert, so the
+	// created rows already carry those fields.
+
+	// Trigger workflow events for newly created findings.
+	if p.findingCreatedCallback != nil {
+		p.findingCreatedCallback(ctx, tenantID, created)
+	}
+
+	// Route newly-created findings to groups via assignment rules
+	// (post-insert: FGA records need persisted finding IDs). Best-effort.
+	if p.assignmentApplier != nil {
+		if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, created); err != nil {
+			p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(created))
+		} else if assigned > 0 {
+			p.logger.Info("auto-routed findings to groups", "assignments", assigned)
+		}
+	}
+
+	// Promote secret-scan findings into the exposure/credential store so
+	// hardcoded secrets show up in the Credentials/Exposures view
+	// (discovery_source=secret_scan). Best-effort.
+	if p.exposureBridge != nil {
+		if err := p.exposureBridge.ApplyBatch(ctx, tenantID, created); err != nil {
+			p.logger.Warn("failed to bridge secret findings into exposure store", "error", err, "count", len(created))
+		}
+	}
 }

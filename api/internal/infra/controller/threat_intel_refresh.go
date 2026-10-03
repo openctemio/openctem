@@ -57,13 +57,14 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 		if err != nil {
 			c.logger.Warn("KEV auto-escalation failed", "error", err)
 		} else {
-			if res.Escalated > 0 || res.Flagged > 0 {
+			if res.Escalated > 0 || res.Flagged > 0 || res.Unflagged > 0 {
 				c.logger.Info("KEV reconciliation completed",
 					"findings_escalated", res.Escalated,
 					"findings_flagged", res.Flagged,
+					"findings_unflagged", res.Unflagged,
 					"tenants_touched", len(res.Tenants),
 				)
-				processed += res.Escalated + res.Flagged
+				processed += res.Escalated + res.Flagged + res.Unflagged
 			}
 			// Recompute priority for the touched findings: severity=critical +
 			// is_in_kev=true should push them toward P0, but that only happens

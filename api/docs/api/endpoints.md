@@ -336,10 +336,10 @@ Agents are distributed components (scanners, collectors) that execute security t
     "status": "pending",
     "capabilities": ["sast", "sca"],
     "tools": ["semgrep", "trivy"],
-    "api_key_prefix": "rda_abc12345",
+    "api_key_prefix": "octs_abc12",
     "created_at": "2024-01-15T10:30:00Z"
   },
-  "api_key": "rda_abc12345..." // Only shown once on creation
+  "api_key": "octs_abc12..." // Only shown once on creation
 }
 ```
 

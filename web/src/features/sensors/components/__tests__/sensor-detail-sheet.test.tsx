@@ -151,6 +151,17 @@ describe('SensorDetailSheet', () => {
     expect(within(health).getByText(/v0.4.2, the latest release/)).toBeInTheDocument()
   })
 
+  it('explains a legacy rda_ key next to the key', () => {
+    open({ sensor: { ...sensor, legacy_key: true } })
+    expect(screen.getByText('legacy key')).toBeInTheDocument()
+    expect(screen.getByText(/renews automatically to the new octs_ format/)).toBeInTheDocument()
+  })
+
+  it('no legacy note for an octs_ key', () => {
+    open({ sensor: { ...sensor, legacy_key: false } })
+    expect(screen.queryByText('legacy key')).toBeNull()
+  })
+
   describe('health callout', () => {
     it('says why a degraded sensor is degraded, in plain words, with the fix', async () => {
       perms.granted.add('sensors:write')
