@@ -154,24 +154,27 @@ func (i Input) IsFullCoverage() bool {
 
 // Output represents the result of ingestion.
 type Output struct {
-	ReportID             string   `json:"report_id"`
-	AssetsCreated        int      `json:"assets_created"`
-	AssetsUpdated        int      `json:"assets_updated"`
-	FindingsCreated      int      `json:"findings_created"`
-	FindingsUpdated      int      `json:"findings_updated"`
-	FindingsSkipped      int      `json:"findings_skipped"`
-	FindingsAutoResolved int      `json:"findings_auto_resolved,omitempty"`
-	FindingsAutoReopened int      `json:"findings_auto_reopened,omitempty"`
-	FindingsSuppressed   int      `json:"findings_suppressed,omitempty"`
-	ComponentsCreated    int      `json:"components_created,omitempty"`
-	ComponentsUpdated    int      `json:"components_updated,omitempty"`
-	DependenciesLinked   int      `json:"dependencies_linked,omitempty"`
-	LicensesDiscovered   int      `json:"licenses_discovered,omitempty"`
-	LicensesLinked       int      `json:"licenses_linked,omitempty"`
-	CVEsCreated          int      `json:"cves_created,omitempty"`
-	CVEsUpdated          int      `json:"cves_updated,omitempty"`
-	Errors               []string `json:"errors,omitempty"`
-	Warnings             []string `json:"warnings,omitempty"`
+	ReportID      string `json:"report_id"`
+	AssetsCreated int    `json:"assets_created"`
+	AssetsUpdated int    `json:"assets_updated"`
+	// AssetsSkippedExcluded counts new assets not added because they match
+	// an active scope exclusion (RFC-042 F16).
+	AssetsSkippedExcluded int      `json:"assets_skipped_excluded,omitempty"`
+	FindingsCreated       int      `json:"findings_created"`
+	FindingsUpdated       int      `json:"findings_updated"`
+	FindingsSkipped       int      `json:"findings_skipped"`
+	FindingsAutoResolved  int      `json:"findings_auto_resolved,omitempty"`
+	FindingsAutoReopened  int      `json:"findings_auto_reopened,omitempty"`
+	FindingsSuppressed    int      `json:"findings_suppressed,omitempty"`
+	ComponentsCreated     int      `json:"components_created,omitempty"`
+	ComponentsUpdated     int      `json:"components_updated,omitempty"`
+	DependenciesLinked    int      `json:"dependencies_linked,omitempty"`
+	LicensesDiscovered    int      `json:"licenses_discovered,omitempty"`
+	LicensesLinked        int      `json:"licenses_linked,omitempty"`
+	CVEsCreated           int      `json:"cves_created,omitempty"`
+	CVEsUpdated           int      `json:"cves_updated,omitempty"`
+	Errors                []string `json:"errors,omitempty"`
+	Warnings              []string `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).
@@ -196,6 +199,11 @@ type Output struct {
 	// AssetMap maps each CTIS asset id of the report to the persisted asset
 	// it was merged into. Not exposed; v2 derives per-item outcomes from it.
 	AssetMap map[string]shared.ID `json:"-"`
+
+	// ExcludedAssetRefs are the CTIS asset ids of the report that were not
+	// added because they match a scope exclusion. Their findings are skipped,
+	// never attached to another asset of the report.
+	ExcludedAssetRefs map[string]bool `json:"-"`
 }
 
 // FailedFinding contains details about a finding that failed during ingestion.

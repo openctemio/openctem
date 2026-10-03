@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -37,6 +38,7 @@ type AssetProcessor struct {
 	stateHistory  asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
 	correlator    *AssetCorrelator             // RFC-001: IP-based correlation (nil = disabled)
 	dedupEnqueuer DedupReviewEnqueuer          // RFC-001: enqueue multi-match dupes for review (nil = disabled)
+	exclusions    ExclusionSource              // scope exclusions: new excluded assets are not added (nil = not checked)
 	// Asset identity model: identifier matching (nil = name and IP only).
 	identityStore    IdentityStore
 	identityReviewer IdentityReviewer
@@ -411,6 +413,13 @@ func (p *AssetProcessor) processBatch(
 		"valid_names_count", len(names),
 	)
 
+	// Scope exclusions in effect: a new asset that matches one is not added
+	// (exclusions.go). Without them nothing is created (fail closed).
+	excl, err := p.loadExclusions(ctx, tenantID)
+	if err != nil {
+		return assetMap, err
+	}
+
 	// Step 2: Batch lookup existing assets
 	existingMap, err := p.repo.GetByNames(ctx, tenantID, names)
 	if err != nil {
@@ -516,6 +525,9 @@ func (p *AssetProcessor) processBatch(
 			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
 			if createErr != nil {
 				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, shortName(normalizedName), createErr))
+				return
+			}
+			if skipExcluded(excl, newAsset, ctisAsset.ID, output) {
 				return
 			}
 			newAssets = append(newAssets, newAsset)
@@ -756,7 +768,7 @@ func (p *AssetProcessor) processBatch(
 	}
 
 	// Step 5.5: Auto-create root domain assets for orphaned subdomains
-	p.ensureRootDomainAssets(ctx, tenantID, report, existingMap, output, &discovered)
+	p.ensureRootDomainAssets(ctx, tenantID, report, existingMap, output, &discovered, excl)
 
 	// Step 6: Create subdomain-to-domain relationships
 	if p.relRepo != nil {
@@ -765,7 +777,7 @@ func (p *AssetProcessor) processBatch(
 
 	// Step 7: Create resolves_to relationships for DNS records (domain/subdomain → IP)
 	if p.relRepo != nil {
-		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered)
+		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl)
 	}
 
 	// Announce every asset this ingest created (report assets plus the root
@@ -847,6 +859,7 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 	existingMap map[string]*asset.Asset,
 	output *Output,
 	discovered *[]*asset.Asset,
+	excl *scopeapp.ExclusionMatcher,
 ) {
 	// Collect unique root domains that need to be created
 	needed := make(map[string]bool)
@@ -919,6 +932,9 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 
 		metadata := asset.BuildDomainMetadata(domainName, asset.DiscoverySourceDNS)
 		domainAsset.SetProperties(metadata)
+		if skipExcluded(excl, domainAsset, "", output) {
+			continue
+		}
 		// Same exposure inference as scanner-reported domains (public by nature).
 		if inferred := inferAssetExposure(domainAsset); inferred != asset.ExposureUnknown {
 			domainAsset.SetExposure(inferred)
@@ -1052,6 +1068,7 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 	existingMap map[string]*asset.Asset,
 	output *Output,
 	discovered *[]*asset.Asset,
+	excl *scopeapp.ExclusionMatcher,
 ) {
 	// Collect domain→IP mappings from report assets
 	type dnsMapping struct {
@@ -1131,6 +1148,9 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 			continue
 		}
 		ipAsset.SetTenantID(tenantID)
+		if skipExcluded(excl, ipAsset, "", output) {
+			continue
+		}
 		ipAsset.UpdateDescription("IP address auto-created from DNS resolution")
 
 		now := time.Now()

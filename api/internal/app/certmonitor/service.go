@@ -34,6 +34,7 @@ import (
 	"strings"
 	"time"
 
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -155,6 +156,7 @@ type Service struct {
 	exposureRepo ExposureUpserter
 	verified     VerifiedDomainLister
 	scopeTargets ScopeTargetLister
+	exclusions   ExclusionSource // nil = exclusions not wired (tests, minimal wiring)
 	state        StateStore
 	httpClient   *http.Client
 	feedBaseURL  string
@@ -292,6 +294,18 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 	if err != nil {
 		return 0, err
 	}
+	var excl *scopeapp.ExclusionMatcher
+	if s.exclusions != nil {
+		// Fail closed: without the exclusions nothing is discovered.
+		if excl, err = s.exclusions.LoadExclusionMatcher(ctx, tenantID); err != nil {
+			return 0, fmt.Errorf("failed to load scope exclusions: %w", err)
+		}
+	}
+	roots, droppedRoots := withoutExcludedRoots(roots, excl)
+	if droppedRoots > 0 {
+		s.logger.Info("ct sweep: excluded domains are not queried",
+			"tenant_id", tenantID.String(), "excluded_domains", droppedRoots)
+	}
 	if len(roots) == 0 {
 		return 0, nil
 	}
@@ -316,7 +330,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 	client := &sweepClient{s: s}
 	var events []*exposuredom.ExposureEvent
 	var promotions []promotion
-	failed, queried := 0, 0
+	failed, queried, excludedHosts := 0, 0, 0
 	started := s.now()
 	for i, root := range due {
 		if err := ctx.Err(); err != nil {
@@ -358,6 +372,8 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		}
 
 		d := collectDiscoveries(root.name, res.entries, attempted, s.expiryWindow, s.expiredLookback, s.maxSubs)
+		d, dropped := withoutExcluded(d, excl)
+		excludedHosts += dropped
 		events = append(events, s.buildEvents(tenantID, root, assetsByName, d)...)
 		for _, h := range d.promotable {
 			promotions = append(promotions, promotion{host: h, root: root, source: res.source})
@@ -389,6 +405,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		"domains_known", len(roots),
 		"domains_queried", queried,
 		"domains_failed", failed,
+		"hosts_excluded", excludedHosts,
 		"exposures", len(events),
 		"assets_promoted", promoted)
 	return len(events), nil

@@ -217,6 +217,13 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 		}
 		authorized = true
 		ev.CorrelationID = cmd.ID
+		// A retest check (RFC-039) never moves the finding on its own: the
+		// retest service reads both of the retest's commands when they
+		// complete. Its evidence is recorded, not applied.
+		var payload validation.ValidateCommandPayload
+		if json.Unmarshal(cmd.Payload, &payload) == nil && payload.RetestID != "" {
+			authorized = false
+		}
 	}
 
 	var result validation.IngestResult

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
@@ -186,6 +187,7 @@ type Service struct {
 	scanRunRecorder   ScanRunRecorder      // Optional: records run outcome back onto the scan
 	runCompleted      RunCompletedCallback // Optional: fires scan_completed automation
 	db                TransactionDB        // Optional: for transaction support
+	targetGate        TargetGate           // checks run-context targets; nil refuses runs that carry targets
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)
@@ -236,6 +238,21 @@ func WithQualityGate(profileRepo scanprofile.Repository, findingRepo vulnerabili
 func WithScanDeactivator(deactivator ScanDeactivator) Option {
 	return func(s *Service) {
 		s.scanDeactivator = deactivator
+	}
+}
+
+// TargetGate applies a scan trigger's target checks (private-range policy,
+// scope exclusions, scan zones) to the targets a pipeline run is started
+// with. Implemented by *scan.Service.
+type TargetGate interface {
+	ResolveDispatchTargets(ctx context.Context, in scanapp.DispatchTargetsInput) (*scanapp.DispatchTargets, error)
+}
+
+// WithTargetGate wires the target gate. Without it a run started with
+// targets is refused (fail closed).
+func WithTargetGate(g TargetGate) Option {
+	return func(s *Service) {
+		s.targetGate = g
 	}
 }
 

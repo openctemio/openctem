@@ -109,7 +109,7 @@ func TestScheduler_DispatchesUnlimitedBatch(t *testing.T) {
 	}
 	disp := &recordingDispatcher{}
 	store := &recordingStore{}
-	s := NewScheduler(src, disp, store, nil)
+	s := NewScheduler(src, disp, store, &SchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := s.RunOnce(context.Background())
 	if err != nil {
@@ -161,7 +161,7 @@ func TestScheduler_CapHeadroomLimitsBatch(t *testing.T) {
 	}
 	disp := &recordingDispatcher{}
 	store := &recordingStore{}
-	s := NewScheduler(src, disp, store, nil)
+	s := NewScheduler(src, disp, store, &SchedulerConfig{Gate: allowAllGate{}})
 
 	if _, err := s.RunOnce(context.Background()); err != nil {
 		t.Fatalf("run: %v", err)
@@ -195,7 +195,7 @@ func TestScheduler_CapFullPausesUntilReclaim(t *testing.T) {
 	}
 	disp := &recordingDispatcher{}
 	store := &recordingStore{}
-	s := NewScheduler(src, disp, store, nil)
+	s := NewScheduler(src, disp, store, &SchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := s.RunOnce(context.Background())
 	if err != nil {
@@ -224,7 +224,7 @@ func TestScheduler_OversizedTargetSkippedForCap(t *testing.T) {
 	}
 	disp := &recordingDispatcher{}
 	store := &recordingStore{}
-	s := NewScheduler(src, disp, store, nil)
+	s := NewScheduler(src, disp, store, &SchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := s.RunOnce(context.Background())
 	if err != nil {
@@ -250,7 +250,7 @@ func TestScheduler_OversizedTargetAllowedForUnlimited(t *testing.T) {
 	}
 	disp := &recordingDispatcher{}
 	store := &recordingStore{}
-	s := NewScheduler(src, disp, store, nil)
+	s := NewScheduler(src, disp, store, &SchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := s.RunOnce(context.Background())
 	if err != nil {
@@ -279,7 +279,7 @@ func TestScheduler_PinnedSensorForwarded(t *testing.T) {
 		},
 	}
 	disp := &recordingDispatcher{}
-	s := NewScheduler(src, disp, &recordingStore{}, nil)
+	s := NewScheduler(src, disp, &recordingStore{}, &SchedulerConfig{Gate: allowAllGate{}})
 
 	if _, err := s.RunOnce(context.Background()); err != nil {
 		t.Fatalf("run: %v", err)
@@ -301,7 +301,7 @@ func TestScheduler_NoCandidatesNoDispatch(t *testing.T) {
 		candidates: map[string][]Candidate{},
 	}
 	disp := &recordingDispatcher{}
-	s := NewScheduler(src, disp, &recordingStore{}, nil)
+	s := NewScheduler(src, disp, &recordingStore{}, &SchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := s.RunOnce(context.Background())
 	if err != nil {
@@ -329,7 +329,7 @@ func TestScheduler_OneTenantFailureDoesNotAbortPass(t *testing.T) {
 		activeErr: errors.New("active ip lookup down"),
 	}
 	disp := &recordingDispatcher{}
-	s := NewScheduler(src, disp, &recordingStore{}, nil)
+	s := NewScheduler(src, disp, &recordingStore{}, &SchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := s.RunOnce(context.Background())
 	if err != nil {
@@ -342,7 +342,7 @@ func TestScheduler_OneTenantFailureDoesNotAbortPass(t *testing.T) {
 
 func TestScheduler_ListErrorAborts(t *testing.T) {
 	src := &fakeSource{listErr: errors.New("db down")}
-	s := NewScheduler(src, &recordingDispatcher{}, &recordingStore{}, nil)
+	s := NewScheduler(src, &recordingDispatcher{}, &recordingStore{}, &SchedulerConfig{Gate: allowAllGate{}})
 	if _, err := s.RunOnce(context.Background()); err == nil {
 		t.Fatal("list error must propagate")
 	}
@@ -363,7 +363,7 @@ func TestScheduler_DispatchErrorSurfacedPerTenant(t *testing.T) {
 	}
 	disp := &recordingDispatcher{err: errors.New("command create failed")}
 	store := &recordingStore{}
-	s := NewScheduler(src, disp, store, nil)
+	s := NewScheduler(src, disp, store, &SchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := s.RunOnce(context.Background())
 	if err != nil {
@@ -400,7 +400,7 @@ func TestScheduler_DispatchesOnlyClaimedAssets(t *testing.T) {
 	tenant := shared.NewID()
 	disp := &recordingDispatcher{}
 	store := &recordingStore{lose: map[string]bool{"a2": true}}
-	if _, err := NewScheduler(claimTestSource(tenant), disp, store, nil).RunOnce(context.Background()); err != nil {
+	if _, err := NewScheduler(claimTestSource(tenant), disp, store, &SchedulerConfig{Gate: allowAllGate{}}).RunOnce(context.Background()); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if len(disp.calls) != 1 {
@@ -421,7 +421,7 @@ func TestScheduler_WholeBatchClaimedElsewhere(t *testing.T) {
 	tenant := shared.NewID()
 	disp := &recordingDispatcher{}
 	store := &recordingStore{lose: map[string]bool{"a1": true, "a2": true, "a3": true}}
-	n, err := NewScheduler(claimTestSource(tenant), disp, store, nil).RunOnce(context.Background())
+	n, err := NewScheduler(claimTestSource(tenant), disp, store, &SchedulerConfig{Gate: allowAllGate{}}).RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestScheduler_FailedDispatchReleasesClaim(t *testing.T) {
 	tenant := shared.NewID()
 	disp := &recordingDispatcher{err: errors.New("no runner")}
 	store := &recordingStore{}
-	if _, err := NewScheduler(claimTestSource(tenant), disp, store, nil).RunOnce(context.Background()); err != nil {
+	if _, err := NewScheduler(claimTestSource(tenant), disp, store, &SchedulerConfig{Gate: allowAllGate{}}).RunOnce(context.Background()); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if len(store.released) != 1 || len(store.released[0]) != 3 {
