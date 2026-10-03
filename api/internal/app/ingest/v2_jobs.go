@@ -146,6 +146,11 @@ func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report)
 	}
 	metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateCompleted), res.AutoResolve).Inc()
 	p.service.recordV2ReportStats(ctx, claimed)
+	// The command may already be completed: then this report was the last
+	// half of its coverage evidence.
+	if claimed.CommandID != nil {
+		p.service.EvaluateCommandCoverage(ctx, claimed.TenantID, *claimed.CommandID)
+	}
 	if err := p.jobs.ClearV2Payloads(ctx, claimed.ID); err != nil {
 		p.logger.Warn("v2: could not clear segment payloads", "report_ref", claimed.ID.String(), "error", err)
 	}

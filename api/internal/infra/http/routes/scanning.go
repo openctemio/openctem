@@ -411,8 +411,10 @@ func registerPipelineRoutes(
 		r.GET("/", h.ListRuns, middleware.Require(permission.PipelinesRead))
 		r.GET("/{id}", h.GetRun, middleware.Require(permission.PipelinesRead))
 
-		// Write operations
-		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.PipelinesWrite))
+		// Write operations. Scan runs are pipeline runs, and this is how a
+		// scan run is stopped, so it also needs scans:write (owner decision
+		// D12, scans redesign 2026-10).
+		r.POST("/{id}/cancel", h.CancelRun, middleware.RequireAll(permission.PipelinesWrite, permission.ScansWrite))
 	}, tenantMiddlewares...)
 }
 
