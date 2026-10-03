@@ -458,6 +458,10 @@ func (r *PermissionSetRepository) BatchAddItems(ctx context.Context, items []*pe
 	if len(items) == 0 {
 		return nil
 	}
+	// One statement cannot update one (set, permission) twice: last wins.
+	items = dedupeLastWins(items, func(it *permissionset.Item) string {
+		return it.PermissionSetID().String() + "\x1f" + it.PermissionID()
+	})
 
 	valueStrings := make([]string, 0, len(items))
 	args := make([]any, 0, len(items)*3)

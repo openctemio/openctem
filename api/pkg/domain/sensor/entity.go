@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/sensorkey"
 )
 
 // SensorType represents the type of sensor.
@@ -384,6 +385,20 @@ func (a *Sensor) KeyState() KeyState {
 		return KeyState{Prefix: k.Prefix, ExpiresAt: k.ExpiresAt, Rotating: true}
 	}
 	return KeyState{Prefix: a.InlineKeyPrefix, ExpiresAt: a.InlineKeyExpiresAt}
+}
+
+// IsLegacyKey reports whether the sensor's effective key (KeyState) is a
+// legacy rda_ key. Such a sensor moves to an octs_ key on its next renewal;
+// rda_ keys are retired 90 days after enrollment and key-bound identity
+// (RFC-032) ship.
+func (a *Sensor) IsLegacyKey() bool {
+	return a.KeyState().IsLegacy()
+}
+
+// IsLegacy reports whether this key is a legacy rda_ key, judged by its
+// stored display prefix.
+func (k KeyState) IsLegacy() bool {
+	return sensorkey.IsLegacy(k.Prefix)
 }
 
 // IsKeyExpired reports whether the INLINE API key has passed its expiry. It

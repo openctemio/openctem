@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { HardDrive, Globe, Lock, Database, AlertTriangle, Shield, RefreshCw } from 'lucide-react'
 import type { Asset } from '@/features/assets'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
+import { yesNoUnknown } from '@/features/assets/lib/honest-values'
 
 const providerStyles: Record<string, { bg: string; text: string }> = {
   aws: {
@@ -331,17 +332,17 @@ export const storageConfig: AssetPageConfig = {
     {
       header: 'Public',
       accessor: (a: Asset) => a.metadata.is_publicly_accessible,
-      transform: (v: unknown) => (v ? 'Yes' : 'No'),
+      transform: yesNoUnknown,
     },
     {
       header: 'Encrypted',
       accessor: (a: Asset) => a.metadata.encryption_enabled,
-      transform: (v: unknown) => (v ? 'Yes' : 'No'),
+      transform: yesNoUnknown,
     },
     {
       header: 'Versioning',
       accessor: (a: Asset) => a.metadata.versioning_enabled,
-      transform: (v: unknown) => (v ? 'Yes' : 'No'),
+      transform: yesNoUnknown,
     },
     { header: 'Status', accessor: (a: Asset) => a.status },
     { header: 'Risk Score', accessor: (a: Asset) => a.riskScore },

@@ -7,6 +7,9 @@
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
 > Proxies and network egress (proposed): [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
+> Trust between sensors and the platform (what each side verifies about the
+> other, current gaps): [sensor-platform-trust.md](sensor-platform-trust.md),
+> [RFC-040](../rfcs/RFC-040-platform-sensor-mutual-distrust.md) (proposed).
 
 ## Glossary
 
@@ -950,7 +953,7 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
 - **Type and key.** An administrator creates the sensor with type
   `collector` (a rotated key gets `sensor.CollectorScopes()`). Until
   enrollment ships ([RFC-032](../rfcs/RFC-032-sensor-enrollment-and-identity.md)),
-  the collector uses an `rda_` key and renews it like any other sensor.
+  the collector uses an `octs_` key and renews it like any other sensor.
 - **Protocol.** It uses protocol v2 through sdk-go `pkg/sensorkit` (hello,
   heartbeat with control block, manifest, results ingest, durable outbox,
   key renewal), with commands off. Reports go to

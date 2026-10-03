@@ -50,6 +50,11 @@ type Repository interface {
 	// keeps only the assets in that data scope (nil = all members).
 	GetGroupAssets(ctx context.Context, groupID shared.ID, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*GroupAsset], error)
 
+	// ListScanMembers returns one page of the group's members for scan
+	// dispatch: only members of the tenant, archived assets left out (and
+	// counted), ordered by name, after the cursor in q.
+	ListScanMembers(ctx context.Context, q ScanMemberQuery) (*ScanMemberPage, error)
+
 	// GetGroupFindings returns findings for assets belonging to a group. A
 	// non-nil scope keeps only findings whose asset is in that data scope.
 	GetGroupFindings(ctx context.Context, groupID shared.ID, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*GroupFinding], error)
@@ -194,6 +199,34 @@ type GroupAsset struct {
 	RiskScore    int
 	FindingCount int
 	LastSeen     string
+}
+
+// ScanMemberQuery selects one keyset page of a group's scan members.
+type ScanMemberQuery struct {
+	TenantID shared.ID
+	GroupID  shared.ID
+	// AfterName and AfterID are the last member of the previous page; both
+	// empty for the first page.
+	AfterName string
+	AfterID   shared.ID
+	Limit     int
+}
+
+// ScanMember is a group member as scan dispatch sees it: its identity, the
+// name a scanner is handed, and the properties that exclusions match.
+type ScanMember struct {
+	ID         shared.ID
+	Name       string
+	Type       string
+	Status     string
+	Properties map[string]any // only the keys exclusion matching reads
+}
+
+// ScanMemberPage is one page of scan members. ArchivedCount (the group's
+// archived members, which are never listed) is set on the first page only.
+type ScanMemberPage struct {
+	Members       []*ScanMember
+	ArchivedCount int64
 }
 
 // GroupFinding represents a finding in group context (joined with asset info).

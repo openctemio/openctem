@@ -1,67 +1,47 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
-import {
-  ShieldCheck,
-  CheckCircle,
-  Clock,
-  XCircle,
-  AlertTriangle,
-  Shield,
-  HelpCircle,
-} from 'lucide-react'
+import { ShieldCheck, CheckCircle, XCircle, AlertTriangle, Shield } from 'lucide-react'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
-import { toStringArray } from '@/features/assets/lib/property-utils'
 import {
   certDaysLeft,
+  certFingerprint,
+  certIsWildcard,
   certIssuer,
+  certKeyAlgorithm,
+  certKeySize,
   certNotAfter,
   certNotBefore,
+  certSans,
+  certSelfSigned,
+  certSerial,
+  certSignatureAlgorithm,
   certStatus,
+  certSubject,
   type CertStatus,
 } from '@/features/assets/lib/certificate-facts'
+import { recordedCertificate } from '@/features/assets/lib/service-facts'
+import {
+  CertExpiryChip,
+  ChipMono,
+  ChipRow,
+  FactChip,
+  OverflowChips,
+  UnknownChip,
+} from '@/features/assets/components/service-cells'
 
 // Validity comes from certificate-facts: it reads both the form keys and the
 // nested map ingest writes, and a certificate without a date is "unknown",
-// never "valid".
+// never "valid". The expiry chip is the shared one every TLS cell uses.
 const getCertStatus = (asset: Asset): CertStatus => certStatus(asset)
 const getDaysUntilExpiry = (asset: Asset): number | null => certDaysLeft(asset)
-const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString() : '-')
+const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
+const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString() : unknownText())
+const yesNo = (v: boolean | null) => (v === null ? unknownText() : v ? 'Yes' : 'No')
 
-function CertStatusBadge({ status }: { status: CertStatus }) {
-  switch (status) {
-    case 'valid':
-      return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2.5 py-1 text-xs font-medium text-green-600">
-          <CheckCircle className="h-3.5 w-3.5" />
-          Valid
-        </span>
-      )
-    case 'expiring':
-      return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/15 px-2.5 py-1 text-xs font-medium text-yellow-600">
-          <Clock className="h-3.5 w-3.5" />
-          Expiring
-        </span>
-      )
-    case 'expired':
-      return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-600">
-          <XCircle className="h-3.5 w-3.5" />
-          Expired
-        </span>
-      )
-    case 'unknown':
-      return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-          <HelpCircle className="h-3.5 w-3.5" />
-          Unknown
-        </span>
-      )
-    default:
-      return null
-  }
+function ExpiryCell({ asset }: { asset: Asset }) {
+  const cert = recordedCertificate(asset)
+  return cert ? <CertExpiryChip cert={cert} /> : <UnknownChip>Expiry unknown</UnknownChip>
 }
 
 export const certificatesConfig: AssetPageConfig = {
@@ -79,8 +59,13 @@ export const certificatesConfig: AssetPageConfig = {
       id: 'issuer',
       header: 'Issuer',
       cell: ({ row }) => {
-        const issuer = certIssuer(row.original) || '-'
-        return <span className="text-muted-foreground">{issuer}</span>
+        const issuer = certIssuer(row.original)
+        if (!issuer) return <UnknownChip>Unknown</UnknownChip>
+        return (
+          <span className="block max-w-[180px] truncate text-muted-foreground" title={issuer}>
+            {issuer}
+          </span>
+        )
       },
     },
     {
@@ -89,26 +74,27 @@ export const certificatesConfig: AssetPageConfig = {
       header: 'Valid Until',
       cell: ({ row }) => {
         const notAfter = certNotAfter(row.original)
-        if (!notAfter) return <span className="text-muted-foreground">-</span>
-        return <span className="text-sm">{notAfter.toLocaleDateString()}</span>
-      },
-    },
-    {
-      id: 'daysLeft',
-      header: 'Days Left',
-      cell: ({ row }) => {
-        const days = getDaysUntilExpiry(row.original)
-        if (days === null) return <span className="text-muted-foreground">-</span>
-        if (days < 0)
-          return <span className="font-medium text-red-600">Expired {Math.abs(days)}d ago</span>
-        if (days <= 30) return <span className="font-medium text-yellow-600">{days}d</span>
-        return <span>{days}d</span>
+        if (!notAfter) return <UnknownChip>Unknown</UnknownChip>
+        return <span className="text-sm tabular-nums">{notAfter.toLocaleDateString()}</span>
       },
     },
     {
       id: 'certStatus',
       header: 'Validity',
-      cell: ({ row }) => <CertStatusBadge status={getCertStatus(row.original)} />,
+      cell: ({ row }) => <ExpiryCell asset={row.original} />,
+    },
+    {
+      id: 'sans',
+      header: 'SANs',
+      cell: ({ row }) => {
+        const sans = certSans(row.original)
+        if (sans.length === 0) return <UnknownChip>Not collected</UnknownChip>
+        return (
+          <ChipRow className="max-w-[240px]">
+            <OverflowChips label="SAN" values={sans} />
+          </ChipRow>
+        )
+      },
     },
   ],
 
@@ -253,21 +239,7 @@ export const certificatesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Status',
-          getValue: (asset: Asset) => {
-            const days = getDaysUntilExpiry(asset)
-            return (
-              <div className="flex items-center gap-3">
-                <CertStatusBadge status={getCertStatus(asset)} />
-                {days !== null && (
-                  <span
-                    className={`text-sm ${days < 0 ? 'text-red-600' : 'text-muted-foreground'}`}
-                  >
-                    {days < 0 ? `Expired ${Math.abs(days)} days ago` : `${days} days remaining`}
-                  </span>
-                )}
-              </div>
-            )
-          },
+          getValue: (asset: Asset) => <ExpiryCell asset={asset} />,
           fullWidth: true,
         },
       ],
@@ -277,11 +249,11 @@ export const certificatesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Issuer',
-          getValue: (asset: Asset) => certIssuer(asset) || '-',
+          getValue: (asset: Asset) => certIssuer(asset) ?? unknownText(),
         },
         {
           label: 'Subject',
-          getValue: (asset: Asset) => (asset.metadata?.cert_subject as string) || '-',
+          getValue: (asset: Asset) => certSubject(asset) ?? unknownText(),
         },
         {
           label: 'Valid From',
@@ -293,24 +265,42 @@ export const certificatesConfig: AssetPageConfig = {
         },
         {
           label: 'Algorithm',
-          getValue: (asset: Asset) => (asset.metadata?.cert_signature_algorithm as string) || '-',
+          getValue: (asset: Asset) => certSignatureAlgorithm(asset) ?? unknownText(),
         },
         {
-          label: 'Key Size',
-          getValue: (asset: Asset) =>
-            asset.metadata?.cert_key_size ? `${asset.metadata.cert_key_size} bits` : '-',
+          label: 'Key',
+          getValue: (asset: Asset) => {
+            const size = certKeySize(asset)
+            const algo = certKeyAlgorithm(asset)
+            if (!size && !algo) return unknownText()
+            return [algo, size ? `${size} bits` : ''].filter(Boolean).join(' ')
+          },
         },
         {
           label: 'Serial Number',
-          getValue: (asset: Asset) => (
-            <span className="break-all font-mono text-xs">
-              {(asset.metadata?.cert_serial_number as string) || '-'}
-            </span>
-          ),
+          getValue: (asset: Asset) => {
+            const serial = certSerial(asset)
+            return serial ? (
+              <span className="break-all font-mono text-xs">{serial}</span>
+            ) : (
+              unknownText()
+            )
+          },
         },
         {
           label: 'Wildcard',
-          getValue: (asset: Asset) => (asset.metadata?.cert_is_wildcard ? 'Yes' : 'No'),
+          getValue: (asset: Asset) => yesNo(certIsWildcard(asset)),
+        },
+        {
+          label: 'Self-signed',
+          getValue: (asset: Asset) => yesNo(certSelfSigned(asset)),
+        },
+        {
+          label: 'Fingerprint',
+          getValue: (asset: Asset) => {
+            const fp = certFingerprint(asset)
+            return fp ? <span className="break-all font-mono text-xs">{fp}</span> : unknownText()
+          },
         },
       ],
     },
@@ -321,17 +311,16 @@ export const certificatesConfig: AssetPageConfig = {
           label: 'SANs',
           fullWidth: true,
           getValue: (asset: Asset) => {
-            const raw = asset.metadata?.cert_sans
-            const sans = toStringArray(raw)
-            if (sans.length === 0) return <span className="text-muted-foreground">None</span>
+            const sans = certSans(asset)
+            if (sans.length === 0) return unknownText('Not collected')
             return (
-              <div className="flex flex-wrap gap-1">
-                {sans.map((san: string) => (
-                  <Badge key={san} variant="outline" className="text-xs">
-                    {san}
-                  </Badge>
+              <ChipRow>
+                {sans.map((san) => (
+                  <FactChip key={san} tone="muted">
+                    <ChipMono>{san}</ChipMono>
+                  </FactChip>
                 ))}
-              </div>
+              </ChipRow>
             )
           },
         },
@@ -341,8 +330,9 @@ export const certificatesConfig: AssetPageConfig = {
 
   exportFields: [
     { header: 'Certificate', accessor: (a: Asset) => a.name },
-    { header: 'Issuer', accessor: (a: Asset) => certIssuer(a) || '' },
-    { header: 'Subject', accessor: (a: Asset) => (a.metadata?.cert_subject as string) || '' },
+    { header: 'Issuer', accessor: (a: Asset) => certIssuer(a) ?? '' },
+    { header: 'Subject', accessor: (a: Asset) => certSubject(a) ?? '' },
+    { header: 'SANs', accessor: (a: Asset) => certSans(a).join(';') },
     {
       header: 'Valid From',
       accessor: (a: Asset) => certNotBefore(a)?.toISOString() ?? '',
