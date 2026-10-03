@@ -1736,6 +1736,19 @@ func validateAllowedDomains(domains []string) error {
 
 // CreateProvider creates a new identity provider configuration for a tenant.
 func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInput) (*identityproviderdom.IdentityProvider, error) {
+	ip, err := s.BuildProvider(input)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ipRepo.Create(ctx, ip); err != nil {
+		return nil, err
+	}
+	return ip, nil
+}
+
+// BuildProvider validates input and returns the identity provider it
+// describes (client secret encrypted), without storing it.
+func (s *SSOService) BuildProvider(input CreateProviderInput) (*identityproviderdom.IdentityProvider, error) {
 	provider := identityproviderdom.Provider(input.Provider)
 	if !provider.IsValid() {
 		return nil, identityproviderdom.ErrInvalidProvider
@@ -1795,11 +1808,6 @@ func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInp
 	if input.CreatedBy != "" {
 		ip.SetCreatedBy(input.CreatedBy)
 	}
-
-	if err := s.ipRepo.Create(ctx, ip); err != nil {
-		return nil, err
-	}
-
 	return ip, nil
 }
 
@@ -1821,6 +1829,19 @@ type UpdateProviderInput struct {
 
 // UpdateProvider updates an identity provider configuration.
 func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInput) (*identityproviderdom.IdentityProvider, error) {
+	ip, err := s.BuildProviderUpdate(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ipRepo.Update(ctx, ip); err != nil {
+		return nil, err
+	}
+	return ip, nil
+}
+
+// BuildProviderUpdate validates input and returns the tenant's identity
+// provider with the update applied, without storing it.
+func (s *SSOService) BuildProviderUpdate(ctx context.Context, input UpdateProviderInput) (*identityproviderdom.IdentityProvider, error) {
 	ip, err := s.ipRepo.GetByID(ctx, input.TenantID, input.ID)
 	if err != nil {
 		return nil, err
@@ -1888,17 +1909,18 @@ func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInp
 	if input.IsActive != nil {
 		ip.SetActive(*input.IsActive)
 	}
-
-	if err := s.ipRepo.Update(ctx, ip); err != nil {
-		return nil, err
-	}
-
 	return ip, nil
 }
 
 // GetProvider retrieves a provider configuration by ID.
 func (s *SSOService) GetProvider(ctx context.Context, tenantID, id string) (*identityproviderdom.IdentityProvider, error) {
 	return s.ipRepo.GetByID(ctx, tenantID, id)
+}
+
+// GetProviderByType returns the tenant's identity provider of one type (a
+// tenant has at most one per type).
+func (s *SSOService) GetProviderByType(ctx context.Context, tenantID, provider string) (*identityproviderdom.IdentityProvider, error) {
+	return s.ipRepo.GetByTenantAndProvider(ctx, tenantID, identityproviderdom.Provider(provider))
 }
 
 // ListProviders lists all identity provider configurations for a tenant.

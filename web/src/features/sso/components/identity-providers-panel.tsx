@@ -25,6 +25,11 @@ import {
   updateOrgIdentityProvider,
   useOrgIdentityProviders,
 } from '../api/use-sso-api'
+import { usePendingSSOChanges } from '@/features/saml/api/use-saml-config'
+import {
+  isPendingSSOChange,
+  PENDING_SSO_MESSAGE,
+} from '@/features/sso-approvals/api/use-sso-changes'
 import {
   SSO_PROVIDERS,
   SSO_DEFAULT_ROLES,
@@ -57,6 +62,7 @@ export function IdentityProvidersPanel({
 }: IdentityProvidersPanelProps) {
   // SSO Identity Providers state
   const { data: identityProviders, mutate: mutateIdPs } = useOrgIdentityProviders(tenantId)
+  const { mutate: mutatePending } = usePendingSSOChanges(tenantId)
   const [ssoExpandedProvider, setSsoExpandedProvider] = useState<SSOProviderType | null>(null)
   const [ssoForms, setSsoForms] = useState<
     Record<
@@ -131,7 +137,7 @@ export function IdentityProvidersPanel({
 
       if (existing) {
         // Update existing
-        await updateOrgIdentityProvider(tenantId, existing.id, {
+        const res = await updateOrgIdentityProvider(tenantId, existing.id, {
           display_name: form.display_name,
           client_id: form.client_id,
           client_secret: form.client_secret || undefined,
@@ -141,7 +147,11 @@ export function IdentityProvidersPanel({
           default_role: form.default_role,
           is_active: form.is_active,
         })
-        toast.success(`${getProviderLabel(type)} updated`)
+        if (isPendingSSOChange(res)) {
+          toast.info(PENDING_SSO_MESSAGE)
+        } else {
+          toast.success(`${getProviderLabel(type)} updated`)
+        }
       } else {
         // Create new
         if (!form.client_secret) {
@@ -149,7 +159,7 @@ export function IdentityProvidersPanel({
           setSsoSaving(null)
           return
         }
-        await createOrgIdentityProvider(tenantId, {
+        const res = await createOrgIdentityProvider(tenantId, {
           provider: type,
           display_name: form.display_name,
           client_id: form.client_id,
@@ -159,9 +169,14 @@ export function IdentityProvidersPanel({
           auto_provision: form.auto_provision,
           default_role: form.default_role,
         })
-        toast.success(`${getProviderLabel(type)} configured`)
+        if (isPendingSSOChange(res)) {
+          toast.info(PENDING_SSO_MESSAGE)
+        } else {
+          toast.success(`${getProviderLabel(type)} configured`)
+        }
       }
       await mutateIdPs()
+      void mutatePending()
       onChanged?.()
       // Clear form cache so it reloads from API
       setSsoForms((prev) => {

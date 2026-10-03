@@ -1090,6 +1090,51 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/admin/tenants/{tenantId}/sso/changes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List an organization's SSO changes awaiting owner approval
+     * @description Platform admin console (RFC-022). SAML and identity-provider changes submitted here wait for an owner of the organization. Pending, unexpired changes by default; status=all includes decided ones.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description pending (default) or all */
+          status?: string
+        }
+        header?: never
+        path: {
+          /** @description Organization ID */
+          tenantId: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SSOChangeListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/admin/tenants/{tenantId}/sso/enforcement': {
     parameters: {
       query?: never
@@ -1196,7 +1241,7 @@ export interface paths {
     put?: never
     /**
      * Create an identity provider for an organization
-     * @description Platform admin console (RFC-022): runs against the organization in the path.
+     * @description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the provider is stored as a pending change (202, SSOChangeResponse) and is created only after an owner approves it; an organization without an owner yet gets it created directly (201).
      */
     post: {
       parameters: {
@@ -1245,7 +1290,7 @@ export interface paths {
     }
     /**
      * Update an organization's identity provider
-     * @description Platform admin console (RFC-022): runs against the organization in the path.
+     * @description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the update is stored as a pending change (202, SSOChangeResponse) and is applied only after an owner approves it; an organization without an owner yet gets it applied directly (200).
      */
     put: {
       parameters: {
@@ -1313,7 +1358,7 @@ export interface paths {
     }
     /**
      * Set an organization's SAML config
-     * @description Platform admin console (RFC-022): runs against the organization in the path.
+     * @description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the change is stored as pending (202, SSOChangeResponse) and takes effect only after an owner approves it; an organization without an owner yet gets it applied directly (200).
      */
     put: {
       parameters: {
@@ -27440,6 +27485,220 @@ export interface paths {
     }
     trace?: never
   }
+  '/tenants/{tenant}/settings/sso/changes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List SSO changes awaiting your approval
+     * @description Owner only. SAML and identity-provider changes a platform administrator proposed for this organization; none takes effect until an owner approves it. Pending, unexpired changes by default; status=all includes decided ones.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description pending (default) or all */
+          status?: string
+        }
+        header?: never
+        path: {
+          /** @description Tenant ID or slug */
+          tenant: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SSOChangeListResponse']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/tenants/{tenant}/settings/sso/changes/{changeId}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Approve an SSO change
+     * @description Owner only. Applies the proposed SAML or identity-provider change to this organization's live configuration.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Tenant ID or slug */
+          tenant: string
+          /** @description SSO change ID */
+          changeId: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SSOChangeResponse']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Gone */
+        410: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/tenants/{tenant}/settings/sso/changes/{changeId}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Reject an SSO change
+     * @description Owner only. Discards the proposed change; the live configuration is unchanged.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Tenant ID or slug */
+          tenant: string
+          /** @description SSO change ID */
+          changeId: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SSOChangeResponse']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Gone */
+        410: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/tenants/{tenant}/users': {
     parameters: {
       query?: never
@@ -29941,6 +30200,8 @@ export interface components {
       name?: string
       /** @description File path where this dependency is defined */
       path?: string
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
       /** @description Package URL (PURL) */
       purl?: string
       /** @description Dependency relationship: direct, indirect, root, transit */
@@ -30620,10 +30881,17 @@ export interface components {
       message?: string
     }
     'ctis.Suppression': {
+      /** @description When the suppression stops applying. Empty means it does not expire. */
+      expires_at?: string
       /** @description Justification for suppression */
       justification?: string
       /** @description Suppression kind: in_source, external */
       kind?: string
+      /**
+       * @description Short reason code or phrase, e.g. "false_positive", "test_code",
+       *     "risk_accepted".
+       */
+      reason?: string
       /** @description Suppression status: accepted, under_review, rejected */
       status?: string
       /** @description When the finding was suppressed */
@@ -31756,10 +32024,16 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Heartbeat': {
       /**
        * @description Actions are typed control directives from a closed set: pause,
-       *     resume, drain, rotate_key, update. Never free-form text.
+       *     resume, drain, rotate_key, update, cancel. Never free-form text.
        */
       actions?: string[]
       agent_id?: string
+      /**
+       * @description CancelCommandIDs are commands the sensor listed as running that it
+       *     must stop (canceled, timed out, re-queued, held elsewhere); sent with
+       *     the cancel action. Only for a sensor that reports its running list.
+       */
+      cancel_command_ids?: string[]
       /**
        * @description ConfigVersion is an opaque digest of what the platform governs about
        *     the sensor; it changes when that changes. Sent to doorbell-aware
@@ -35026,6 +35300,31 @@ export interface components {
     'internal_infra_http_handler.SSHKeyDataRequest': {
       passphrase?: string
       private_key: string
+    }
+    'internal_infra_http_handler.SSOChangeListResponse': {
+      changes?: components['schemas']['internal_infra_http_handler.SSOChangeResponse'][]
+    }
+    'internal_infra_http_handler.SSOChangeResponse': {
+      /**
+       * @description CertificateSHA256 identifies the IdP signing certificate a SAML change
+       *     installs; compare it with the certificate your IdP shows.
+       */
+      certificate_sha256?: string
+      created_at?: string
+      decided_at?: string
+      decided_by?: string
+      expires_at?: string
+      id?: string
+      /** @enum {string} */
+      kind?: 'saml_config' | 'idp_create' | 'idp_update'
+      /** @description Payload is the proposed configuration. */
+      payload?: Record<string, never>
+      requested_by?: string
+      /** @enum {string} */
+      status?: 'pending' | 'approved' | 'rejected' | 'expired' | 'superseded'
+      /** @description Summary is a one-line description of the change. */
+      summary?: string
+      target_id?: string
     }
     'internal_infra_http_handler.SaveScanRequest': {
       name: string
