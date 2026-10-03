@@ -665,6 +665,15 @@ Each segment runs through the v1 pipeline with the v2 options:
   under its number, so a retried segment is never counted twice. Payloads
   are dropped once the report completes.
 
+**Finding tags** (every ingest path, v1 and v2). A new finding stores the
+tags its report sent, empty and repeated ones dropped, at most
+`vulnerability.MaxFindingTags` (50, the limit of `PUT /findings/{id}/tags`).
+A re-sighting of an existing fingerprint **merges**: the stored tags stay
+first and in order (a user may have set them), new ones are appended, and
+the list stops at 50. The enrich path (`Finding.EnrichFrom`) and the
+upsert's `ON CONFLICT` apply the same rule, so a scanner can add tags but
+never remove one. Only the tags API replaces the list.
+
 The status resource (`GET /results/{id}`) reports `receiving`, `queued`,
 `processing`, `completed`, `failed` or `expired`, accepted/rejected counts,
 up to 100 item errors (fixed details, never sensor bytes) and the
