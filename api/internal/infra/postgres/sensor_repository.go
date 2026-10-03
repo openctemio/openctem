@@ -423,6 +423,11 @@ var (
 // the expiry earlier. It writes key_expires_at alone, so it cannot revive a
 // revoked sensor or put back a replaced key.
 func (r *SensorRepository) RetireInlineKey(ctx context.Context, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
+	return retireInlineKey(ctx, r.db, id, keyHashes, at)
+}
+
+// retireInlineKey is RetireInlineKey on exec (the pool or a transaction).
+func retireInlineKey(ctx context.Context, exec executor, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
 	query := `
 		UPDATE sensors
 		SET key_expires_at = $3,
@@ -431,7 +436,7 @@ func (r *SensorRepository) RetireInlineKey(ctx context.Context, id shared.ID, ke
 		  AND api_key_hash = ANY($2)
 		  AND (key_expires_at IS NULL OR key_expires_at > $3)
 	`
-	res, err := r.db.ExecContext(ctx, query, id.String(), pq.Array(keyHashes), at)
+	res, err := exec.ExecContext(ctx, query, id.String(), pq.Array(keyHashes), at)
 	if err != nil {
 		return false, fmt.Errorf("retire inline sensor key: %w", err)
 	}
@@ -559,6 +564,12 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 // write is guarded by status = 'active' so a self-renewal racing an admin
 // revoke cannot install a fresh key on a revoked sensor.
 func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	return updateInlineKey(ctx, r.db, r.value(), id, hash, prefix, expiresAt, requireActive)
+}
+
+// updateInlineKey is UpdateAPIKey on exec (the pool or a transaction),
+// stamping pepperID as the key's pepper.
+func updateInlineKey(ctx context.Context, exec executor, pepperID sql.NullString, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
 	query := `
 		UPDATE sensors
 		SET api_key_hash = $2,
@@ -571,7 +582,7 @@ func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash,
 	if requireActive {
 		query += " AND status = 'active'"
 	}
-	result, err := r.db.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt), r.value())
+	result, err := exec.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt), pepperID)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor api key: %w", err)
 	}

@@ -110,12 +110,12 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 	}
 }
 
-// RetireKeys is the write that makes a renewal retire what it supersedes.
-// Against the real schema: only active, non-revoked keys of the sensor older
-// than the new key are capped; a newer key (a concurrent renewal) and other
-// sensors' keys are not; an expiry is never extended. Skipped unless
-// DATABASE_URL is set.
-func TestSensorAPIKeyRepository_RetireKeys(t *testing.T) {
+// RotateKey and ReplaceInlineKey are the writes that make a renewal retire
+// what it supersedes. Against the real schema: every other active,
+// non-revoked key of the sensor is capped; the new key and other sensors'
+// keys are not; an expiry is never extended; the inline key is retired only
+// while its hash matches. Skipped unless DATABASE_URL is set.
+func TestSensorAPIKeyRepository_RotateKey(t *testing.T) {
 	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping schema-level check")
@@ -153,15 +153,16 @@ func TestSensorAPIKeyRepository_RetireKeys(t *testing.T) {
 	other := newSensor("srt-b", "inline-b")
 
 	repo := NewSensorAPIKeyRepository(&DB{DB: db})
-	created := time.Now().Add(-time.Hour)
-	key := func(sensorID shared.ID, name string, exp *time.Time) *sensordom.APIKey {
+	newKey := func(sensorID shared.ID, name string, exp *time.Time) *sensordom.APIKey {
 		k, _ := sensordom.NewAPIKey(sensorID, name, sensordom.RunnerScopes())
 		k.SetKeyHash("hash-"+name, "rda_"+(name + "________")[:8])
 		if exp != nil {
 			k.SetExpiration(*exp)
 		}
-		created = created.Add(time.Minute) // strictly increasing created_at
-		k.CreatedAt = created
+		return k
+	}
+	key := func(sensorID shared.ID, name string, exp *time.Time) *sensordom.APIKey {
+		k := newKey(sensorID, name, exp)
 		if err := repo.Create(ctx, k); err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
@@ -178,16 +179,14 @@ func TestSensorAPIKeyRepository_RetireKeys(t *testing.T) {
 	if err := repo.Revoke(ctx, revoked.ID, "test"); err != nil {
 		t.Fatal(err)
 	}
-	successor := key(sid, "successor", &long)
-	newer := key(sid, "newer", &long) // a concurrent renewal that finished later
 	otherK := key(other, "other", &long)
 
-	n, err := repo.RetireKeys(ctx, sid, &successor.ID, at)
-	if err != nil {
-		t.Fatalf("RetireKeys: %v", err)
-	}
-	if n != 2 {
-		t.Errorf("retired %d keys, want 2 (never, long)", n)
+	// A successor whose created_at is EARLIER than the keys it supersedes
+	// (its clock read happened before theirs) still retires all of them.
+	successor := newKey(sid, "successor", &long)
+	successor.CreatedAt = time.Now().Add(-time.Hour)
+	if err := repo.RotateKey(ctx, successor, []string{"stale-hash", "inline-a"}, at); err != nil {
+		t.Fatalf("RotateKey: %v", err)
 	}
 	expiry := func(id shared.ID) *time.Time {
 		k, err := repo.GetByID(ctx, id)
@@ -196,17 +195,23 @@ func TestSensorAPIKeyRepository_RetireKeys(t *testing.T) {
 		}
 		return k.ExpiresAt
 	}
+	inlineExpiry := func(id shared.ID) *time.Time {
+		var exp sql.NullTime
+		if err := db.QueryRowContext(ctx, `SELECT key_expires_at FROM sensors WHERE id = $1`, id.String()).Scan(&exp); err != nil {
+			t.Fatal(err)
+		}
+		return nullTimeValue(exp)
+	}
 	for _, c := range []struct {
 		name string
 		id   shared.ID
 		want *time.Time
 	}{
-		{"never-expiring older key", never.ID, &at},
-		{"long-lived older key", longK.ID, &at},
-		{"older key already expiring sooner (not extended)", soonK.ID, &soon},
+		{"never-expiring key", never.ID, &at},
+		{"long-lived key", longK.ID, &at},
+		{"key already expiring sooner (not extended)", soonK.ID, &soon},
 		{"revoked key (untouched)", revoked.ID, &long},
 		{"the successor itself", successor.ID, &long},
-		{"a newer key (concurrent renewal)", newer.ID, &long},
 		{"another sensor's key", otherK.ID, &long},
 	} {
 		got := expiry(c.id)
@@ -214,28 +219,63 @@ func TestSensorAPIKeyRepository_RetireKeys(t *testing.T) {
 			t.Errorf("%s: expires_at = %v, want %v", c.name, got, *c.want)
 		}
 	}
+	if got := inlineExpiry(sid); got == nil || !got.Equal(at) {
+		t.Errorf("inline key with a matching hash: key_expires_at = %v, want %v", got, at)
+	}
+	if got := inlineExpiry(other); got != nil {
+		t.Errorf("another sensor's inline key changed: %v", got)
+	}
 
-	// The newer renewal's own RetireKeys caps the earlier successor: of two
-	// concurrent renewals exactly one key stays long-lived.
-	if _, err := repo.RetireKeys(ctx, sid, &newer.ID, at); err != nil {
+	// A later rotation caps the earlier successor: one key stays long-lived.
+	next := newKey(sid, "next", &long)
+	if err := repo.RotateKey(ctx, next, nil, at); err != nil {
 		t.Fatal(err)
 	}
 	if got := expiry(successor.ID); got == nil || !got.Equal(at) {
-		t.Errorf("older successor: expires_at = %v, want %v", got, at)
+		t.Errorf("earlier successor: expires_at = %v, want %v", got, at)
 	}
-	if got := expiry(newer.ID); got == nil || !got.Equal(long) {
-		t.Errorf("newest successor: expires_at = %v, want %v", got, long)
+	if got := expiry(next.ID); got == nil || !got.Equal(long) {
+		t.Errorf("latest successor: expires_at = %v, want %v", got, long)
 	}
 
-	// Without a successor (the inline key was replaced) every active key of
-	// the sensor is capped; other sensors are not.
-	if _, err := repo.RetireKeys(ctx, sid, nil, at); err != nil {
-		t.Fatal(err)
+	// A rotation that fails leaves nothing written: its key is not issued
+	// and nothing is retired.
+	dup := newKey(sid, "dup", &long)
+	dup.ID = next.ID // primary-key violation on insert
+	if err := repo.RotateKey(ctx, dup, nil, at.Add(-time.Minute)); err == nil {
+		t.Fatal("RotateKey with a duplicate id must fail")
 	}
-	if got := expiry(newer.ID); got == nil || !got.Equal(at) {
-		t.Errorf("newest key without successor: expires_at = %v, want %v", got, at)
+	if got := expiry(next.ID); got == nil || !got.Equal(long) {
+		t.Errorf("a failed rotation retired the latest key: expires_at = %v", got)
+	}
+
+	// Replacing the inline key caps every active key row of the sensor;
+	// other sensors are not touched.
+	ok, err := repo.ReplaceInlineKey(ctx, sid, "inline-a2", "rda_a2", nil, at)
+	if err != nil || !ok {
+		t.Fatalf("ReplaceInlineKey: ok=%v err=%v", ok, err)
+	}
+	if got := expiry(next.ID); got == nil || !got.Equal(at) {
+		t.Errorf("key row after inline replacement: expires_at = %v, want %v", got, at)
+	}
+	if got := inlineExpiry(sid); got != nil {
+		t.Errorf("replaced inline key: key_expires_at = %v, want none", got)
 	}
 	if got := expiry(otherK.ID); got == nil || !got.Equal(long) {
 		t.Errorf("another sensor's key changed: %v", got)
+	}
+
+	// No active sensor: nothing is written.
+	if _, err := db.ExecContext(ctx, `UPDATE sensors SET status = 'revoked' WHERE id = $1`, other.String()); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := repo.ReplaceInlineKey(ctx, other, "inline-b2", "rda_b2", nil, at); err != nil || ok {
+		t.Fatalf("ReplaceInlineKey on a revoked sensor: ok=%v err=%v, want a no-op", ok, err)
+	}
+	if got := expiry(otherK.ID); got == nil || !got.Equal(long) {
+		t.Errorf("a refused inline replacement retired a key row: %v", got)
+	}
+	if ok, err := repo.ReplaceInlineKey(ctx, shared.NewID(), "h", "p", nil, at); err != nil || ok {
+		t.Fatalf("ReplaceInlineKey on a missing sensor: ok=%v err=%v, want a no-op", ok, err)
 	}
 }

@@ -1210,20 +1210,21 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 	// Targeted, status-guarded write of the key columns only: a full-row
 	// Update would also write back the status read above and could revive an
 	// sensor an admin revoked in the meantime. The replaced inline key stops
-	// authenticating at once.
-	updated, err := s.repo.UpdateAPIKey(ctx, fresh.ID, hash, prefix, expiresAt, true)
+	// authenticating at once. With the multi-key store wired, rotating keys
+	// issued while a TTL was configured (the presented key may be one) are
+	// retired in the same transaction, serialized with every other renewal of
+	// the sensor, so none of them outlives the renewal.
+	var updated bool
+	if s.apiKeyRepo != nil {
+		updated, err = s.apiKeyRepo.ReplaceInlineKey(ctx, fresh.ID, hash, prefix, expiresAt, retireAt)
+	} else {
+		updated, err = s.repo.UpdateAPIKey(ctx, fresh.ID, hash, prefix, expiresAt, true)
+	}
 	if err != nil {
 		return "", nil, err
 	}
 	if !updated {
 		return "", nil, shared.NewDomainError("FORBIDDEN", "sensor is not active", shared.ErrForbidden)
-	}
-	// Rotating keys issued while a TTL was configured (the presented key may
-	// be one) must not outlive the renewal either.
-	if s.apiKeyRepo != nil {
-		if _, err := s.apiKeyRepo.RetireKeys(ctx, fresh.ID, nil, retireAt); err != nil {
-			return "", nil, fmt.Errorf("retire superseded keys: %w", err)
-		}
 	}
 
 	s.logger.Info("sensor renewed its API key",
@@ -1248,20 +1249,24 @@ func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor
 // issueOverlappingKey issues the renewed key as a new sensor_api_keys row and
 // retires every credential it supersedes at retireAt (the renewal grace):
 //
-//   - every active key row older than the new one, the presented key among
-//     them. "Older than the new row" (not "other than") is what makes two
-//     concurrent renewals end with one successor: the newer row is never in
-//     the older one's set, so it survives, and the older one is in the
-//     newer's set, so it is capped whichever renewal finishes last;
+//   - every other active key row of the sensor, the presented key among them;
 //   - the inline key on the sensor row, guarded by its hash — the presented
 //     key's (any pepper variant), or the one read above when a key row was
 //     presented — so an admin regeneration landing in between is not cut
 //     short.
 //
-// Both writes only ever bring an expiry earlier (never extend one) and touch
-// only the expiry column, so they cannot undo a concurrent admin revoke or
-// regeneration. A failure fails the renewal: the sensor keeps its old key and
-// retries, rather than receive a new key while the old one stays long-lived.
+// The repository does all of it in one transaction under a per-sensor lock
+// (APIKeyRepository.RotateKey), so concurrent renewals of one sensor run one
+// after another and end with exactly one long-lived key: the last one issued.
+// Done as separate writes, two renewals interleaved and each kept its own key
+// long-lived, so a superseded (possibly leaked) credential outlived the
+// renewal until its own expiry.
+//
+// Retirement only ever brings an expiry earlier (never extends one) and
+// touches only the expiry columns, so it cannot undo a concurrent admin
+// revoke or regeneration. A failure fails the renewal and writes nothing: the
+// sensor keeps its old key and retries, rather than receive a new key while
+// the old one stays long-lived.
 func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordom.Sensor, id SensorIdentity, hash, prefix string, expiresAt, retireAt time.Time) error {
 	key, err := sensordom.NewAPIKey(fresh.ID, "renewed", scopesForSensor(fresh.Type))
 	if err != nil {
@@ -1269,13 +1274,6 @@ func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordo
 	}
 	key.SetKeyHash(hash, prefix)
 	key.SetExpiration(expiresAt)
-	if err := s.apiKeyRepo.Create(ctx, key); err != nil {
-		return fmt.Errorf("issue overlapping key: %w", err)
-	}
-
-	if _, err := s.apiKeyRepo.RetireKeys(ctx, fresh.ID, &key.ID, retireAt); err != nil {
-		return fmt.Errorf("retire superseded keys: %w", err)
-	}
 
 	inlineHashes := id.keyHashes
 	if id.KeyID != nil || len(inlineHashes) == 0 {
@@ -1284,10 +1282,8 @@ func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordo
 			inlineHashes = []string{fresh.APIKeyHash}
 		}
 	}
-	if len(inlineHashes) > 0 {
-		if _, err := s.repo.RetireInlineKey(ctx, fresh.ID, inlineHashes, retireAt); err != nil {
-			return fmt.Errorf("retire inline key: %w", err)
-		}
+	if err := s.apiKeyRepo.RotateKey(ctx, key, inlineHashes, retireAt); err != nil {
+		return fmt.Errorf("issue overlapping key: %w", err)
 	}
 
 	s.pruneExpiredKeys(ctx, fresh.ID)

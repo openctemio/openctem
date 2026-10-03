@@ -6,6 +6,7 @@ package sensor_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -81,39 +82,45 @@ func TestSensorRenew_RetiresPresentedKey_DB(t *testing.T) {
 	}
 }
 
+// Renewals of one sensor are serialized in the database. Done as separate
+// writes they interleaved (each retired only the keys that existed when it
+// ran), and about one round in ten left two long-lived credentials, or
+// deadlocked. Several rounds make that failure near-certain without the lock.
 func TestSensorRenew_ConcurrentSameKey_OneSuccessor_DB(t *testing.T) {
 	h := newActivityHarness(t)
 	tid := h.tenant()
 	ctx := context.Background()
-
-	inline := "rda_" + strings.Repeat("6b", 32)
-	id := h.sensorWithKey(tid, crypto.HashTokenPeppered(inline, testEncryptionKey))
 	svc := newPepperedService(h, "")
 	svc.SetKeyTTL(90 * 24 * time.Hour)
 
-	ident, err := svc.AuthenticateIdentity(ctx, inline)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const n = 8
-	var wg sync.WaitGroup
-	errs := make(chan error, n)
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, _, err := svc.RenewAPIKey(ctx, ident); err != nil {
-				errs <- err
-			}
-		}()
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		t.Errorf("renew: %v", err)
-	}
-	if got := h.longLivedKeys(id); got != 1 {
-		t.Fatalf("%d concurrent renewals with one key left %d long-lived credentials, want 1", n, got)
+	const rounds, n = 20, 16
+	for r := 0; r < rounds; r++ {
+		inline := "rda_" + fmt.Sprintf("%02x", r) + strings.Repeat("6b", 31)
+		id := h.sensorWithKey(tid, crypto.HashTokenPeppered(inline, testEncryptionKey))
+
+		ident, err := svc.AuthenticateIdentity(ctx, inline)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		errs := make(chan error, n)
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if _, _, err := svc.RenewAPIKey(ctx, ident); err != nil {
+					errs <- err
+				}
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Errorf("round %d: renew: %v", r, err)
+		}
+		if got := h.longLivedKeys(id); got != 1 {
+			t.Fatalf("round %d: %d concurrent renewals with one key left %d long-lived credentials, want 1", r, n, got)
+		}
 	}
 }
 

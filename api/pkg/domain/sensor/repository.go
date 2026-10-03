@@ -302,12 +302,23 @@ type APIKeyRepository interface {
 	// CountActiveBySensorID counts active keys for a sensor.
 	CountActiveBySensorID(ctx context.Context, sensorID shared.ID) (int, error)
 
-	// RetireKeys brings the expiry of the sensor's active keys forward to at.
-	// With newest set, only keys created before that key (by created_at, then
-	// id) are retired, so the newest of two concurrent renewals survives;
-	// with newest nil every active key is. It never extends an expiry and
-	// writes nothing but expires_at. Returns how many keys changed.
-	RetireKeys(ctx context.Context, sensorID shared.ID, newest *shared.ID, at time.Time) (int64, error)
+	// RotateKey is a renewal under rotation overlap, as one unit serialized
+	// per sensor: it issues key, brings the expiry of every other active key
+	// row of key.SensorID forward to retireAt, and does the same to the
+	// sensor's inline key while its stored hash is one of inlineKeyHashes
+	// (none when empty; an admin regeneration in between installs another
+	// hash and is left alone). Rotations for one sensor never interleave, so
+	// concurrent renewals end with exactly one long-lived key: the one
+	// committed last. Retirement never extends an expiry and writes nothing
+	// but the expiry columns. Any failure leaves nothing written.
+	RotateKey(ctx context.Context, key *APIKey, inlineKeyHashes []string, retireAt time.Time) error
+
+	// ReplaceInlineKey is a renewal without rotation overlap, serialized per
+	// sensor with RotateKey: it replaces the sensor's inline key (only while
+	// the sensor is active) and brings the expiry of every active key row
+	// forward to retireAt. Returns false, with nothing written, when no
+	// active sensor matched.
+	ReplaceInlineKey(ctx context.Context, sensorID shared.ID, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error)
 }
 
 // KeyUseRecorder is implemented by a sensor repository that records where
