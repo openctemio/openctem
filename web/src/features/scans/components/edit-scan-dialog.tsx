@@ -27,16 +27,12 @@ import { BasicInfoStep } from './new-scan/basic-info-step'
 import { TargetsStep } from './new-scan/targets-step'
 import { OptionsStep } from './new-scan/options-step'
 import { ScheduleStep } from './new-scan/schedule-step'
-import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
+import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../types'
+import { basicInfoError, formDataToUpdateRequest, scanConfigToFormData } from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
 import { useUpdateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import type {
-  ScanConfig,
-  UpdateScanConfigRequest,
-  ScheduleType,
-  SensorPreference,
-} from '@/lib/api/scan-types'
+import type { ScanConfig } from '@/lib/api/scan-types'
 
 interface EditScanDialogProps {
   scanConfig: ScanConfig | null
@@ -46,80 +42,6 @@ interface EditScanDialogProps {
 }
 
 const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
-
-function mapScheduleTypeToFrequency(scheduleType?: string): ScheduleFrequency {
-  switch (scheduleType) {
-    case 'daily':
-      return 'daily'
-    case 'weekly':
-      return 'weekly'
-    case 'monthly':
-      return 'monthly'
-    default:
-      return 'once'
-  }
-}
-
-function mapScheduleFrequencyToType(frequency: ScheduleFrequency | undefined): ScheduleType {
-  switch (frequency) {
-    case 'daily':
-      return 'daily'
-    case 'weekly':
-      return 'weekly'
-    case 'monthly':
-      return 'monthly'
-    default:
-      return 'manual'
-  }
-}
-
-/**
- * Convert a ScanConfig from the API into form data for the wizard steps.
- */
-function scanConfigToFormData(config: ScanConfig): NewScanFormData {
-  const scannerConfig = (config.scanner_config ?? {}) as Record<string, boolean | string>
-  const isManual = config.schedule_type === 'manual'
-
-  return {
-    name: config.name,
-    mode: config.scan_type === 'workflow' ? 'workflow' : 'single',
-    type: 'full',
-    workflowId: config.pipeline_id,
-    sensorPreference: config.sensor_preference || 'auto',
-    targets: {
-      type: 'asset_groups',
-      assetGroupIds:
-        config.asset_group_ids ?? (config.asset_group_id ? [config.asset_group_id] : []),
-      assetIds: [],
-      assetNames: {},
-      customTargets: config.targets ?? [],
-    },
-    options: {
-      portScanning: !!scannerConfig.port_scanning,
-      webAppScanning: !!scannerConfig.web_app_scanning,
-      sslAnalysis: !!scannerConfig.ssl_analysis,
-      bruteForce: !!scannerConfig.brute_force,
-      techDetection: !!scannerConfig.tech_detection,
-      apiSecurity: !!scannerConfig.api_security,
-    },
-    intensity: (scannerConfig.intensity as 'low' | 'medium' | 'high') || 'medium',
-    maxConcurrent: config.targets_per_job || 10,
-    timeoutSeconds: config.timeout_seconds || 3600,
-    maxRetries: config.max_retries ?? 0,
-    retryBackoffSeconds: config.retry_backoff_seconds || 60,
-    schedule: {
-      runImmediately: isManual,
-      frequency: mapScheduleTypeToFrequency(config.schedule_type),
-      dayOfWeek: config.schedule_day,
-      time: config.schedule_time,
-    },
-    notifications: {
-      notifyOnComplete: false,
-      autoCreateTasks: false,
-    },
-    scanZoneId: config.scan_zone_id ?? null,
-  }
-}
 
 export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: EditScanDialogProps) {
   const [currentStep, setCurrentStep] = useState<ScanWizardStep>('basic')
@@ -137,7 +59,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
           targets: formData.targets.customTargets,
           asset_group_ids: formData.targets.assetGroupIds,
           scan_type: formData.mode === 'workflow' ? 'workflow' : 'single',
-          scanner_name: formData.mode === 'single' ? 'nuclei' : undefined,
+          scanner_name: formData.mode === 'single' ? formData.scannerName : undefined,
           pipeline_id: formData.mode === 'workflow' ? formData.workflowId : undefined,
           targets_per_job: formData.maxConcurrent || 10,
         },
@@ -168,16 +90,14 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
 
   const validateCurrentStep = (): boolean => {
     switch (currentStep) {
-      case 'basic':
-        if (!formData.name.trim()) {
-          toast.error('Please enter a scan name')
-          return false
-        }
-        if (formData.mode === 'workflow' && !formData.workflowId) {
-          toast.error('Please select a workflow')
+      case 'basic': {
+        const problem = basicInfoError(formData)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
+      }
       case 'targets': {
         const { targets } = formData
         const hasAssetGroups = targets.assetGroupIds.length > 0
@@ -220,64 +140,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
 
     setIsSubmitting(true)
     try {
-      const { options, intensity, schedule } = formData
-      // Send all scanner options explicitly (including false) so the API
-      // knows which options to disable vs enable.
-      // The backend replaces the whole scanner_config map on save, so spread
-      // the existing config first to preserve keys the wizard doesn't model
-      // (e.g. `severity`) instead of wiping them.
-      const scannerConfig: Record<string, unknown> = {
-        ...(scanConfig?.scanner_config ?? {}),
-        port_scanning: options.portScanning,
-        web_app_scanning: options.webAppScanning,
-        ssl_analysis: options.sslAnalysis,
-        brute_force: options.bruteForce,
-        tech_detection: options.techDetection,
-        api_security: options.apiSecurity,
-        intensity,
-      }
-
-      const scheduleType = schedule.runImmediately
-        ? 'manual'
-        : mapScheduleFrequencyToType(schedule.frequency)
-
-      const request: UpdateScanConfigRequest = {
-        name: formData.name.trim(),
-        description: scanConfig?.description || undefined,
-        scanner_config: scannerConfig,
-        targets_per_job: formData.maxConcurrent || 10,
-        // Reliability options are editable in the Options step (and sent by the
-        // create path) but were previously omitted here, so edits to them
-        // silently reverted on save.
-        timeout_seconds: formData.timeoutSeconds,
-        max_retries: formData.maxRetries,
-        retry_backoff_seconds: formData.retryBackoffSeconds,
-        schedule_type: scheduleType as ScheduleType,
-        sensor_preference: formData.sensorPreference as SensorPreference,
-      }
-      // Only someone who can see the zones may change the zone: otherwise an
-      // empty picker would reset a restricted scan to Automatic.
-      if (canReadZones) {
-        request.scan_zone_id = formData.scanZoneId ?? ''
-      }
-
-      if (formData.mode === 'workflow' && formData.workflowId) {
-        request.pipeline_id = formData.workflowId
-      }
-      if (formData.mode === 'single') {
-        request.scanner_name = 'nuclei'
-      }
-
-      if (!schedule.runImmediately && schedule.frequency !== 'once') {
-        if (schedule.time) request.schedule_time = schedule.time
-        if (schedule.frequency === 'weekly' && schedule.dayOfWeek !== undefined) {
-          request.schedule_day = schedule.dayOfWeek
-        }
-        if (schedule.frequency === 'monthly') {
-          request.schedule_day = 1
-        }
-      }
-
+      const request = formDataToUpdateRequest(formData, scanConfig, { canSetZone: canReadZones })
       const updated = await updateScanConfig(request)
 
       toast.success(`Scan "${formData.name}" updated successfully`)
@@ -301,7 +164,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
   const renderStep = () => {
     switch (currentStep) {
       case 'basic':
-        return <BasicInfoStep data={formData} onChange={handleDataChange} />
+        return <BasicInfoStep data={formData} onChange={handleDataChange} lockMode />
       case 'targets':
         return (
           <div>
