@@ -23,10 +23,20 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace, push: vi.fn(), back: vi.fn() }),
   useParams: () => ({ id: ID }),
 }))
-vi.mock('@/features/assets', () => ({
-  useAsset: () => ({ asset: current, isLoading: false, error: null }),
-  AssetIdentitySections: () => null,
-}))
+// The detail page's own data sections (identity, attribution, ...) fetch on
+// their own; stub every `*Section(s)` export so a section added later does not
+// need this test to change. The page shell under test stays real.
+vi.mock('@/features/assets', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  const sections = Object.keys(actual)
+    .filter((k) => /^Asset\w*Sections?$/.test(k))
+    .map((k) => [k, () => null])
+  return {
+    ...actual,
+    ...Object.fromEntries(sections),
+    useAsset: () => ({ asset: current, isLoading: false, error: null }),
+  }
+})
 
 /**
  * The page file Next.js serves for a URL path: route groups are transparent,
