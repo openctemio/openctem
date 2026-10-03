@@ -8672,6 +8672,16 @@ definitions:
         type: string
       misconfig_resource_type:
         type: string
+      network_port:
+        description: Port the finding was observed on (CTIS Finding.Network); absent
+          when not port-specific
+        type: integer
+      network_service:
+        description: Service on the port as the scanner named it (https, ssh, ...)
+        type: string
+      network_transport:
+        description: tcp, udp or sctp
+        type: string
       occurrence_count:
         type: integer
       owasp_ids:

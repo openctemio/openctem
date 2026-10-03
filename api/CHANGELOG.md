@@ -55,6 +55,18 @@ published at https://docs.openctem.io (operations/release-notes-*).
   per asset and returns the top 20 values per key from the database. On a
   larger inventory the facet counts are counts within that sample.
 
+- **Findings keep the port they were found on.** CTIS `Finding.Network`
+  (port, transport, service) was used only inside the network-VA dedup
+  fingerprint and then dropped, so no stored finding knew its port. Ingest
+  now stores it in `findings.network_port`, `network_transport` and
+  `network_service` (migration 000326), and the finding API returns
+  `network_port`, `network_transport` and `network_service`. A re-sighting
+  fills a missing value and never replaces a stored port, so the port does
+  not flip between scans for a finding whose fingerprint does not include
+  it. Fingerprints are unchanged. Existing findings get the value on their
+  next scan.
+
+
 - **Group scans resolve members as assets and skip archived ones.** A scan
   of an asset group matched scope exclusions against each member's name
   only, so a host whose address was in an excluded network was scanned. It

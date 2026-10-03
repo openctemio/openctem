@@ -35270,6 +35270,12 @@ export interface components {
       misconfig_resource_name?: string
       misconfig_resource_path?: string
       misconfig_resource_type?: string
+      /** @description Port the finding was observed on (CTIS Finding.Network); absent when not port-specific */
+      network_port?: number
+      /** @description Service on the port as the scanner named it (https, ssh, ...) */
+      network_service?: string
+      /** @description tcp, udp or sctp */
+      network_transport?: string
       occurrence_count?: number
       owasp_ids?: string[]
       partial_fingerprints?: {
