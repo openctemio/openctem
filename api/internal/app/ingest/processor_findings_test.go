@@ -1254,8 +1254,8 @@ func (s *stubFindingRepository) CreateBatchWithResult(_ context.Context, finding
 	return &vulnerability.BatchCreateResult{Created: len(findings)}, nil
 }
 
-func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]shared.ID, error) {
-	return map[string]shared.ID{}, nil
+func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
+	return map[string]vulnerability.ReopenedFinding{}, nil
 }
 
 // Remaining interface stubs (unused by ProcessBatch)

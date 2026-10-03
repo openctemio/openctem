@@ -40,6 +40,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
+	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
@@ -712,6 +713,8 @@ type Services struct {
 	// Validation (CTEM Stage-4): proof-of-fix / technique-execution evidence
 	// recorded by sensors, reconciling finding status from the outcome.
 	ValidationEvidence *validation.EvidenceIngestService
+	// Retest runs continuous retests (RFC-039): Retest now, settle, auto ticks.
+	Retest *retestapp.Service
 
 	// ValidationRun dispatches validation (safe-check) jobs for findings.
 	ValidationRun *validation.RunService
@@ -1210,6 +1213,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// panicked on the nil receiver instead of falling back to the synthetic
 	// path.
 	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
+
+	// Continuous retest (RFC-039): re-run a finding's own nuclei template plus a
+	// reachability probe through the same validate-command transport, gated by
+	// the fail-closed scope exclusions (the #835 attribution gate plugs into the
+	// same TargetGate list). Evidence is recorded advisory-only; the retest
+	// service settles the finding (fixed / still present / unknown).
+	s.Retest = retestapp.NewService(
+		repos.FindingRetest,
+		repos.Finding,
+		repos.Asset,
+		repos.Command,
+		validation.NewCommandDispatcher(repos.Command, log),
+		validationSensorAvailability{sensors: repos.Sensor},
+		log,
+		retestapp.ScopeExclusionGate{Scope: s.Scope},
+	)
+	s.Retest.SetAuditLogger(s.Audit)
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)

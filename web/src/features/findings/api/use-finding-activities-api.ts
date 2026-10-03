@@ -10,6 +10,7 @@ import useSWRInfinite, { type SWRInfiniteConfiguration } from 'swr/infinite'
 import { get } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import type { Activity, ActivityType } from '../types'
+import { retestActivity } from '../lib/retest-activity'
 
 // ============================================
 // API TYPES
@@ -137,11 +138,13 @@ function mapActivity(api: ApiFindingActivity): Activity {
     previousAssigneeName,
   }
 
+  const retest = retestActivity(api.activity_type, changes)
+
   return {
     id: api.id,
-    type: mapActivityType(api.activity_type),
+    type: retest?.type ?? mapActivityType(api.activity_type),
     actor,
-    content,
+    content: retest?.content ?? content,
     metadata,
     previousValue,
     newValue,

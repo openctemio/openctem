@@ -2125,6 +2125,60 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 	return &result, nil
 }
 
+// GetRetestSettings returns the tenant's auto-retest settings (RFC-039). The
+// zero value means auto-retest is off with default bounds.
+func (s *TenantService) GetRetestSettings(ctx context.Context, tenantID string) (*tenantdom.RetestSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	rs := t.TypedSettings().Retest
+	return &rs, nil
+}
+
+// UpdateRetestSettings replaces the tenant's auto-retest settings and audits the
+// before/after values.
+func (s *TenantService) UpdateRetestSettings(
+	ctx context.Context,
+	tenantID string,
+	rs tenantdom.RetestSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.RetestSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	before := t.TypedSettings().Retest
+	if err := t.UpdateRetestSettings(rs); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, t); err != nil {
+		return nil, fmt.Errorf("failed to update retest settings: %w", err)
+	}
+
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantRetestUpdated, audit.ResourceTypeTenant, tenantID).
+		WithMessage("Auto-retest settings updated").
+		WithMetadata("auto_enabled_before", before.AutoEnabled).
+		WithMetadata("auto_enabled_after", rs.AutoEnabled).
+		WithMetadata("interval_hours_before", before.IntervalHours).
+		WithMetadata("interval_hours_after", rs.IntervalHours).
+		WithMetadata("daily_cap_before", before.DailyCap).
+		WithMetadata("daily_cap_after", rs.DailyCap)
+	s.logAudit(ctx, actx, event)
+
+	out := t.TypedSettings().Retest
+	return &out, nil
+}
+
 // GetAssetLifecycleSettings returns the tenant's current lifecycle
 // settings. An empty (zero-value) payload means the feature has
 // never been configured — the UI shows defaults.

@@ -258,7 +258,7 @@ func (m *mockFindingRepository) AutoResolveStaleByAssets(_ context.Context, _ sh
 func (m *mockFindingRepository) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
 	return nil, nil
 }
-func (m *mockFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]shared.ID, error) {
+func (m *mockFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
 }
 func (m *mockFindingRepository) ExpireFeatureBranchFindings(_ context.Context, _ shared.ID, _ int) (int64, error) {

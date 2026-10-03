@@ -127,6 +127,10 @@ type ValidationJob struct {
 	// cross-scanner findings. Both empty for safe-check jobs.
 	TemplateID string
 	CVEID      string
+	// RetestID links the job to a finding retest (RFC-039). A retest job's
+	// evidence is recorded advisory-only and the retest service, not
+	// applyOutcomeToFinding, decides what happens to the finding.
+	RetestID shared.ID
 }
 
 // ValidationDispatcher submits a job for a sensor and returns the

@@ -101,7 +101,7 @@ type AssignmentApplier interface {
 
 // activityRecorder is the subset of FindingActivityService needed by the processor.
 type activityRecorder interface {
-	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) error
+	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner, scanID string) error
 }
 
 // RemediationKeyApplier derives and persists each finding's remediation group
@@ -408,7 +408,8 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 
-	// Step 3b: Batch auto-reopen previously auto-resolved findings
+	// Step 3b: Batch-reopen re-detected findings that were closed as fixed or
+	// downgraded by validation (regressions).
 	// PERFORMANCE: Single query instead of N queries per existing finding
 	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
 	if len(existingFingerprints) > 0 {
@@ -420,13 +421,17 @@ func (p *FindingProcessor) processBatch(
 			p.logger.Info("batch auto-reopened findings",
 				"count", len(reopenedMap),
 			)
-			// Record audit trail for auto-reopened findings
+			// Record the regression on each finding, with who had resolved it.
 			if p.activityService != nil {
-				reopenedIDs := make([]shared.ID, 0, len(reopenedMap))
-				for _, fid := range reopenedMap {
-					reopenedIDs = append(reopenedIDs, fid)
+				reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
+				for _, rf := range reopenedMap {
+					reopened = append(reopened, rf)
 				}
-				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopenedIDs); err != nil {
+				scanner := ""
+				if report.Tool != nil {
+					scanner = report.Tool.Name
+				}
+				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopened, scanner, report.Metadata.ID); err != nil {
 					p.logger.Warn("failed to record auto-reopen activities", "error", err)
 				}
 			}

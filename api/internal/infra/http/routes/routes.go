@@ -122,6 +122,8 @@ type Handlers struct {
 
 	// Finding Lifecycle (closed-loop: fix_applied → verified → resolved)
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
+	// FindingRetest serves Retest now + retest history (RFC-039); nil if not initialized
+	FindingRetest *handler.FindingRetestHandler
 
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
 	JiraWebhook   *handler.JiraWebhookHandler   // nil if not initialized (no database)
@@ -466,6 +468,10 @@ func Register(
 	if h.Vulnerability != nil {
 		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, h.RemediationGroup, authMiddleware, userSync)
 	}
+
+	// Continuous retest (RFC-039): Retest now + a finding's retest history.
+	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
+	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {

@@ -217,6 +217,7 @@ type Repositories struct {
 
 	// Validation evidence (CTEM Stage-4, migration 000178)
 	ValidationEvidence *postgres.ValidationEvidenceRepository
+	FindingRetest      *postgres.FindingRetestRepository
 
 	// Runtime-telemetry reads for Stage-4 detection correlation
 	// (migration 000203)
@@ -439,6 +440,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Validation evidence (CTEM Stage-4, migration 000178).
 		ValidationEvidence: postgres.NewValidationEvidenceRepository(db),
+		FindingRetest:      postgres.NewFindingRetestRepository(db),
 
 		// Runtime-telemetry reads for detection correlation (migration 000203).
 		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),
