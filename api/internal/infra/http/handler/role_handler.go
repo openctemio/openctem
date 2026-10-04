@@ -223,7 +223,7 @@ func toPermissionResponse(p *role.Permission) PermissionResponse {
 
 func (h *RoleHandler) buildAuditContext(r *http.Request) app.AuditContext {
 	actx := app.AuditContext{
-		ActorIP:   r.RemoteAddr,
+		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
 	}
