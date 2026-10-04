@@ -295,6 +295,16 @@ const (
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
 
+	// Report schedule actions: a schedule mails organization posture to its
+	// recipients (members or the allowed domains, D12).
+	ActionReportScheduleCreated   Action = "report_schedule.created"
+	ActionReportScheduleActivated Action = "report_schedule.activated"
+	ActionReportScheduleDeleted   Action = "report_schedule.deleted"
+	// EASM seeds (RFC-036 §6.3): what discovery expands from.
+	ActionEASMSeedCreated Action = "easm_seed.created"
+	ActionEASMSeedUpdated Action = "easm_seed.updated"
+	ActionEASMSeedDeleted Action = "easm_seed.deleted"
+
 	// Scanner template actions: custom templates are code a sensor runs.
 	ActionScannerTemplateCreated    Action = "scanner_template.created"
 	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
@@ -515,6 +525,8 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
@@ -621,8 +633,11 @@ func (a Action) Category() string {
 		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
-		ActionScopeExclusionApproved, ActionScopeExclusionRejected:
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
+	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
+		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
 		return "scanner_template"
@@ -715,6 +730,8 @@ const (
 	ResourceTypeScopeExclusion  ResourceType = "scope_exclusion"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
 	ResourceTypeIntegration     ResourceType = "integration"
+	ResourceTypeReportSchedule  ResourceType = "report_schedule"
+	ResourceTypeEASMSeed        ResourceType = "easm_seed"
 )
 
 // String returns the string representation of the resource type.
@@ -739,7 +756,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign:
+		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
 	return false
@@ -819,7 +836,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTemplateSourceCredentialAttached,
 		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		// Widening what sensors scan, and the code they run.
-		ActionScopeTargetCreated, ActionScopeTargetActivated,
+		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		// Deleting an asset also deletes its findings.
@@ -853,6 +870,8 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeTargetUpdated, ActionScopeTargetDeleted, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
