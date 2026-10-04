@@ -14,7 +14,7 @@ import (
 func TestWorkflowStepPayload_NamesTheScanner(t *testing.T) {
 	run := &pipeline.Run{ID: shared.NewID(), Context: map[string]any{"targets": []string{"example.com"}}}
 	step := &pipeline.Step{ID: shared.NewID(), StepKey: "dns_resolve", Tool: "dnsx", Capabilities: []string{"recon", "dns"}}
-	p, err := workflowStepPayload(run, step, "sr-1")
+	p, err := workflowStepPayload(run, step, "sr-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestWorkflowStepPayload_NamesTheScanner(t *testing.T) {
 	if p[pipeline.PayloadKeyStepRunID] != "sr-1" {
 		t.Fatalf("step run = %v", p[pipeline.PayloadKeyStepRunID])
 	}
-	p, err = workflowStepPayload(&pipeline.Run{ID: shared.NewID()}, &pipeline.Step{ID: shared.NewID(), StepKey: "merge"}, "")
+	p, err = workflowStepPayload(&pipeline.Run{ID: shared.NewID()}, &pipeline.Step{ID: shared.NewID(), StepKey: "merge"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,11 +42,11 @@ func TestWorkflowStepPayload_SettingsUnderTheKeyTheSensorReads(t *testing.T) {
 	run := &pipeline.Run{ID: shared.NewID()}
 	step := &pipeline.Step{ID: shared.NewID(), StepKey: "ports", Tool: "naabu",
 		Config: map[string]any{"ports": "80", "top_ports": "1000"}}
-	if _, err := workflowStepPayload(run, step, "sr-1"); err == nil {
+	if _, err := workflowStepPayload(run, step, "sr-1", nil); err == nil {
 		t.Fatal("ports and top_ports together accepted")
 	}
 	step.Config = map[string]any{"top_ports": "1000", "rate": float64(500)}
-	p, err := workflowStepPayload(run, step, "sr-1")
+	p, err := workflowStepPayload(run, step, "sr-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestWorkflowStepPayload_SettingsUnderTheKeyTheSensorReads(t *testing.T) {
 	}
 	step.Config = map[string]any{"tags": []any{"cve", "-code"}}
 	step.Tool = "nuclei"
-	if _, err := workflowStepPayload(run, step, "sr-1"); err == nil {
+	if _, err := workflowStepPayload(run, step, "sr-1", nil); err == nil {
 		t.Fatal("a flag as a nuclei tag reached a command payload")
 	}
 }

@@ -900,7 +900,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize component & branch services
 	s.Component = app.NewComponentService(repos.Component, repos.Asset, log)
+	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = app.NewSBOMImportService(repos.Component, repos.Asset, log)
+	s.SBOMImport.SetDataScope(s.DataScope)
 	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
 	s.Branch = app.NewBranchService(repos.Branch, log)
