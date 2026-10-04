@@ -335,17 +335,17 @@ func (r *TenantRepository) GetMembership(ctx context.Context, userID shared.ID, 
 // GetMembershipByID retrieves a membership by ID.
 // Role is fetched from v_user_effective_role view.
 // Status fields are populated so the service layer can branch on suspension.
-func (r *TenantRepository) GetMembershipByID(ctx context.Context, id shared.ID) (*tenant.Membership, error) {
+func (r *TenantRepository) GetMembershipByID(ctx context.Context, tenantID, id shared.ID) (*tenant.Membership, error) {
 	query := `
 		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
 		       m.invited_by, m.joined_at,
 		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
-		WHERE m.id = $1
+		WHERE m.id = $1 AND m.tenant_id = $2
 	`
 
-	return r.scanMembership(r.db.QueryRowContext(ctx, query, id.String()))
+	return r.scanMembership(r.db.QueryRowContext(ctx, query, id.String(), tenantID.String()))
 }
 
 // UpdateMembership updates a membership's role.
@@ -354,8 +354,8 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 	// Verify membership exists
 	var userID, tenantID string
 	err := r.db.QueryRowContext(ctx,
-		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1",
-		m.ID().String(),
+		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1 AND tenant_id = $2",
+		m.ID().String(), m.TenantID().String(),
 	).Scan(&userID, &tenantID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -378,8 +378,8 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 	if oldRole != m.Role().String() {
 		// Update role in tenant_members
 		_, err = r.db.ExecContext(ctx,
-			"UPDATE tenant_members SET role = $1 WHERE id = $2",
-			m.Role().String(), m.ID().String(),
+			"UPDATE tenant_members SET role = $1 WHERE id = $2 AND tenant_id = $3",
+			m.Role().String(), m.ID().String(), tenantID,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to update membership role: %w", err)
@@ -419,13 +419,14 @@ func (r *TenantRepository) UpdateMembershipStatus(ctx context.Context, m *tenant
 	query := `
 		UPDATE tenant_members
 		SET status = $2, suspended_at = $3, suspended_by = $4
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $5
 	`
 	result, err := r.db.ExecContext(ctx, query,
 		m.ID().String(),
 		string(m.Status()),
 		nullTime(m.SuspendedAt()),
 		nullIDPtr(m.SuspendedBy()),
+		m.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("update membership status: %w", err)
@@ -442,12 +443,12 @@ func (r *TenantRepository) UpdateMembershipStatus(ctx context.Context, m *tenant
 
 // DeleteMembership removes a membership.
 // Also removes all user_roles for this user in this tenant.
-func (r *TenantRepository) DeleteMembership(ctx context.Context, id shared.ID) error {
+func (r *TenantRepository) DeleteMembership(ctx context.Context, memberTenantID, id shared.ID) error {
 	// First get user_id and tenant_id for user_roles cleanup
 	var userID, tenantID string
 	err := r.db.QueryRowContext(ctx,
-		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1",
-		id.String(),
+		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1 AND tenant_id = $2",
+		id.String(), memberTenantID.String(),
 	).Scan(&userID, &tenantID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -457,9 +458,9 @@ func (r *TenantRepository) DeleteMembership(ctx context.Context, id shared.ID) e
 	}
 
 	// Delete from tenant_members
-	query := `DELETE FROM tenant_members WHERE id = $1`
+	query := `DELETE FROM tenant_members WHERE id = $1 AND tenant_id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to delete membership: %w", err)
 	}
@@ -1122,14 +1123,14 @@ func (r *TenantRepository) GetInvitationByToken(ctx context.Context, token strin
 }
 
 // GetInvitationByID retrieves an invitation by ID.
-func (r *TenantRepository) GetInvitationByID(ctx context.Context, id shared.ID) (*tenant.Invitation, error) {
+func (r *TenantRepository) GetInvitationByID(ctx context.Context, tenantID, id shared.ID) (*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at
 		FROM tenant_invitations
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $2
 	`
 
-	return r.scanInvitation(r.db.QueryRowContext(ctx, query, id.String()))
+	return r.scanInvitation(r.db.QueryRowContext(ctx, query, id.String(), tenantID.String()))
 }
 
 // UpdateInvitation updates an invitation's mutable fields (accepted_at and the
@@ -1139,10 +1140,10 @@ func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Inv
 	query := `
 		UPDATE tenant_invitations
 		SET accepted_at = $2, token = $3
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $4
 	`
 
-	result, err := r.db.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token())
+	result, err := r.db.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token(), inv.TenantID().String())
 	if err != nil {
 		return fmt.Errorf("failed to update invitation: %w", err)
 	}
@@ -1159,10 +1160,10 @@ func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Inv
 }
 
 // DeleteInvitation removes an invitation.
-func (r *TenantRepository) DeleteInvitation(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM tenant_invitations WHERE id = $1`
+func (r *TenantRepository) DeleteInvitation(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM tenant_invitations WHERE tenant_id = $1 AND id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete invitation: %w", err)
 	}
@@ -1271,9 +1272,13 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 		updateQuery := `
 			UPDATE tenant_invitations
 			SET accepted_at = $2
-			WHERE id = $1
+			WHERE id = $1 AND tenant_id = $3
 		`
-		result, err := tx.ExecContext(ctx, updateQuery, inv.ID().String(), inv.AcceptedAt())
+		// The membership is created in the invitation's own tenant.
+		if m.TenantID() != inv.TenantID() {
+			return shared.ErrNotFound
+		}
+		result, err := tx.ExecContext(ctx, updateQuery, inv.ID().String(), inv.AcceptedAt(), inv.TenantID().String())
 		if err != nil {
 			return fmt.Errorf("failed to update invitation: %w", err)
 		}

@@ -141,6 +141,7 @@ the inventory changed meaning.
 | Rules, noisy-OR, O4 decision, `Merge` (automation only raises; a human decision stands) | `pkg/domain/attribution` |
 | Storage, tenant-scoped writes (a foreign asset id writes nothing) | `internal/infra/postgres/attribution_repository.go` |
 | First producer: CT promotion (`fqdn_under_verified_root` 0.99 → confirmed; `fqdn_under_asserted_root` 0.85 → needs_review) | `internal/app/certmonitor/promote.go` |
+| Second producer: tenant scans (`tenant_scanned` 0.95, strong; owner decision O8). A report bound to a command the tenant's own sensor ran stamps, on the assets it created or its command's targets cover, one evidence row per (asset, sensor) with the sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated (needs_review + tenant_scanned → confirmed), a human decision is never touched, and a legacy asset gets evidence only. Unsolicited reports and server-side ingests (CT promotion, uploads) never fire the rule | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
 | Scan gate: asset-group members that are not confirmed are skipped; a group of only unconfirmed assets is refused; a failed lookup stops the dispatch | `internal/app/scan/targets.go` (`WithAttributionGate`) |
 | `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
 
@@ -189,6 +190,35 @@ seen in the last 7 and 30 days and since the latest CTEM cycle was activated
 by severity and type; the ten most severe open external exposures; and CT
 monitoring freshness (`ct_monitor_state`). Code: `internal/app/easm`,
 `internal/infra/postgres/easm_summary_repository.go`.
+
+## 4b. Review queue and inventory filter (built, P1)
+
+Until P2 adds `easm_candidates`, the review queue is the set of inventory
+assets whose attribution is `needs_review` or `candidate`.
+
+| Route | Permission | Behaviour |
+|---|---|---|
+| `GET /api/v1/easm/candidates?states=&types=&min_confidence=&search=` | `assets:read` | Most confident first, each row with its evidence. Default states `needs_review,candidate`; `states=rejected` lists rejections for undo |
+| `POST /api/v1/easm/candidates/decisions` `{asset_ids ≤ 200, state, note?}` | `assets:write` | One statement upserts a human decision for each asset that is the tenant's and not deleted; automation never changes it afterwards. One `asset.attribution_decided` audit event per asset (from, to, `via=review_queue`, the note) |
+| `GET /api/v1/assets?attribution=` | `assets:read` | `confirmed` (includes assets with no record), `needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`, `unknown` (no record), `unconfirmed` (= needs_review + candidate), `approved` (= confirmed + unknown + dependency + monitor_only) |
+
+Both EASM routes sit behind the `attack_surface` module. **Isolation:** every
+query pins `tenant_id`; the caller's data scope narrows the queue
+(`user_accessible_assets`, as for the asset list) and filters the decision's
+asset ids first (`datascope.Enforcer.FilterForCaller`). An asset outside the
+scope, of another tenant or deleted is returned in `not_found`; the three cases
+look the same. A data-scope lookup error fails the request. Code:
+`internal/app/easm/review.go`, `internal/infra/postgres/easm_review_repository.go`.
+
+**Web.** `/attack-surface/review` (assets:read, `attack_surface` module) lists
+the queue with each row's evidence in words, with tabs for "Awaiting review"
+and "Not ours" and bulk Confirm / Not ours / Dependency / Monitor only for
+assets:write; the Overview's "Needs review" row links to it. The asset
+inventory (`/assets`) shows only the organisation's assets by default
+(`attribution=approved`): names awaiting review and rejected names are hidden
+behind a "Show all" link, and the filter panel has an Attribution facet.
+Code: `web/src/features/attack-surface/components/easm-review-queue.tsx`,
+`web/src/features/assets/lib/inventory-url.ts` (`attributionQuery`).
 
 ## 5. Data model (planned)
 

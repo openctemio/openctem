@@ -187,10 +187,11 @@ func (s *AssetFilterService) PreviewCompatibility(
 }
 
 // FilterAssetsForScan reports, per stored (type, sub_type), which assets the
-// tool can scan. Unclassified assets cannot be matched to a target type and
-// are skipped (counted in UnclassifiedAssets too); a tool that declares no
-// target type the platform knows scans everything, since nothing can be
-// decided for it.
+// tool can scan. It reports what dispatch does (the scanner type gate,
+// type_gate.go): an asset whose compatibility cannot be decided (unclassified,
+// a type the registry does not know, or a tool that declares no target type
+// the platform knows) is dispatched, and unclassified ones are also counted
+// in UnclassifiedAssets.
 func (s *AssetFilterService) FilterAssetsForScan(
 	ctx context.Context,
 	toolTargets []string,
@@ -236,13 +237,8 @@ func (s *AssetFilterService) FilterAssetsForScan(
 		switch {
 		case ref.Type == asset.AssetTypeUnclassified:
 			result.UnclassifiedAssets += intCount
-			result.SkippedAssets += intCount
-			result.SkippedByType[label] += intCount
-			result.SkipReasons = append(result.SkipReasons, SkipReason{
-				AssetType: label,
-				Count:     intCount,
-				Reason:    "Unclassified assets cannot be matched to scanner targets",
-			})
+			result.ScannedAssets += intCount
+			result.ScannedByType[label] += intCount
 		case !decidable:
 			result.ScannedAssets += intCount
 			result.ScannedByType[label] += intCount

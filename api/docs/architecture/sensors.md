@@ -341,7 +341,10 @@ connects from.
 
 **Stats** count the same rows the list returns: the tenant's own sensors.
 Shared platform sensors (`is_platform_sensor`) are in neither; their capacity
-is `GET /api/v1/platform/stats`, shown on its own page. The stats also add `by_state` (every state, zeros included), `by_version_status`,
+is `GET /api/v1/platform/stats`, shown on its own page. Their queue
+(`get_next_platform_job`) is shared fairly across tenants: within a priority
+class, the tenant with the fewest platform jobs in flight goes first
+(migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
 ## Build information
@@ -653,7 +656,9 @@ Each segment runs through the v1 pipeline with the v2 options:
   when it is `completed` AND every report filed under it is `completed`
   (checked from both ends: command completion and report finalize). It
   qualifies only if the command exited 0, every report has no rejected or
-  quarantined items and is not `partial`/`incremental`, all reports name one
+  quarantined items and declares `coverage_type: full` (an absent value is
+  not full, CTIS spec 4.5; sensors on sdk-go with openctemio/sdk-go#150
+  always send it), all reports name one
   tool the sensor declares, and the reports touched at least one asset. The
   candidates are open findings of that tool on the touched assets, with no
   branch, not reported by this run, and last seen by a v2 run of the same
@@ -1080,6 +1085,21 @@ fresh (≤ 3 min) `capacity.slots_free`. The command poll (v1 and v2) never
 offers more scan commands than that; selection skips sensors with no free
 slot and prefers the most free slots, then the highest reported throughput
 for the tool. `sensors.current_jobs` (never written) is no longer read.
+
+The poll orders commands fairly (RFC-046 §11): by priority class, a command
+moving up one class per 30 minutes waited (never into `critical`), then
+round-robin across runs (the first pending command of every run before the
+second of any), then age.
+
+**Claim-N** (feature `capacity`, RFC-030 §5.9): a v2 sensor that names
+`capacity` in `X-OpenCTEM-Sensor-Features` gets `GET /api/v2/sensor/commands`
+already claimed for it: acknowledged, lease and epoch set, in one
+`UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` that re-checks the
+tenant, pinning, zone, tool and capability gates. Scans are capped at the
+sensor's effective max jobs minus the scans it holds, counted from the
+commands, and at a fresh reported `slots_free`. Its later `claim` of each
+command is a replay (`200`). Without the feature the poll only lists, as
+before.
 
 A sensor hands a command it holds back with
 `POST /api/v2/sensor/commands/{id}/release` (feature `release`): the

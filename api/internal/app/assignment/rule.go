@@ -123,7 +123,7 @@ func (s *RuleService) CreateRule(ctx context.Context, input CreateRuleInput, cre
 	}
 
 	// Verify target group exists and belongs to this tenant
-	targetGroup, err := s.groupRepo.GetByID(ctx, targetGroupID)
+	targetGroup, err := s.groupRepo.GetByTenantAndID(ctx, tenantID, targetGroupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: target group not found", shared.ErrValidation)
 	}
@@ -250,7 +250,7 @@ func (s *RuleService) UpdateRule(ctx context.Context, tenantIDStr, ruleID string
 			return nil, fmt.Errorf("%w: invalid target group id format", shared.ErrValidation)
 		}
 		// Verify target group exists and belongs to this tenant
-		targetGroup, err := s.groupRepo.GetByID(ctx, targetGroupID)
+		targetGroup, err := s.groupRepo.GetByTenantAndID(ctx, tenantID, targetGroupID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: target group not found", shared.ErrValidation)
 		}

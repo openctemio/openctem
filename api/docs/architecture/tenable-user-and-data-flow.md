@@ -9,6 +9,12 @@ how data moves end-to-end. Companion to
 > the live runner are planned. This doc describes the intended UX *and* what
 > works today.
 
+> **Superseded design (2026-10-04).** The live Tenable path is being rebuilt as a
+> two-way Tenable.sc connector inside the sensor:
+> [RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md). The runner and
+> direct modes described here are not coming back; the coverage planner and its
+> batch-scoped auto-resolve invariant return on top of RFC-047 P1.
+
 ---
 
 ## 1. Where Tenable lives in the UI

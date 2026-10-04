@@ -921,7 +921,10 @@ export default function ScopeConfigPage() {
             <Switch
               checked={exclusion.status === 'active'}
               onCheckedChange={() => toggleExclusionStatus(exclusion)}
-              disabled={!canWriteScope}
+              // Switching off an exclusion in effect takes the approval
+              // permission (and someone other than the requester): the API
+              // refuses scope:write alone.
+              disabled={!canWriteScope || (exclusion.status === 'active' && !canApproveExclusions)}
               aria-label={`Toggle ${exclusion.pattern}`}
             />
             <span
