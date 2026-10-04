@@ -61,6 +61,9 @@ func TestAliasConstants_MatchRegistry(t *testing.T) {
 			want = append(want, string(d.Type))
 		}
 	}
+	for _, n := range registryTypeInputs {
+		want = append(want, string(n))
+	}
 	for _, v := range aliasConstants {
 		got = append(got, string(v))
 	}

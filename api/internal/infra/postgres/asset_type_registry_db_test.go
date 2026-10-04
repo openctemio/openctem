@@ -500,3 +500,48 @@ func TestAssetTypeNormalise_Batch(t *testing.T) {
 		t.Errorf("second pass moved %d rows, want 0", total)
 	}
 }
+
+// O3 (RFC-042 §6.3.8, migration 000470): one web sub-type. No asset and no
+// threat-model row is keyed by (application, web_application) any more, and
+// a row an old pod still writes that way is moved by the normalise batch.
+func TestAssetTypeRegistry_OneWebSubType(t *testing.T) {
+	db, ctx := openRegistryDB(t)
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM technique_applicability WHERE asset_type = 'application' AND sub_type = 'web_application'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("%d technique_applicability row(s) still keyed by application/web_application", n)
+	}
+
+	tenantID := seedTestTenant(ctx, t, db)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var id string
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO assets (tenant_id, name, asset_type, sub_type) VALUES ($1, $2, 'application', 'web_application') RETURNING id`,
+		tenantID.String(), "o3-"+shared.NewID().String()).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	var cursor sql.NullString
+	for {
+		var moved int
+		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 470)`, cursor).Scan(&cursor, &moved); err != nil {
+			t.Fatal(err)
+		}
+		if !cursor.Valid {
+			break
+		}
+	}
+	var sub string
+	var ledger int
+	_ = tx.QueryRowContext(ctx, `SELECT COALESCE(sub_type, '') FROM assets WHERE id = $1`, id).Scan(&sub)
+	_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_type_reclassifications WHERE asset_id = $1 AND migration = 470 AND tenant_id = $2`, id, tenantID.String()).Scan(&ledger)
+	if sub != "website" || ledger != 1 {
+		t.Errorf("application/web_application -> sub_type %q with %d ledger row(s); want website, 1", sub, ledger)
+	}
+}
