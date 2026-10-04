@@ -473,6 +473,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
 		}
+		if report.Tool != nil {
+			s.auditSourceResolve(ctx, tenantID, binding, report.Tool.Name, output)
+		}
 	}
 
 	// Step 2d: takeover-template findings confirm open dangling CNAMEs

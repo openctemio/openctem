@@ -11,11 +11,12 @@
 > [Scan Orchestration](scan-orchestration.md) (agent-run scanners); this doc
 > covers **external** Tenable engines.
 
-> **Superseded design (2026-10-04).** The live Tenable path is being rebuilt as a
-> two-way Tenable.sc connector inside the sensor:
-> [RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md). The runner and
-> direct modes described here are not coming back; the coverage planner and its
-> batch-scoped auto-resolve invariant return on top of RFC-047 P1.
+> **Superseded design (2026-10-04).** Coverage now runs on the Tenable.sc
+> sensor connector ([RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md)
+> §9, [tenable-sc-connector.md](tenable-sc-connector.md#rolling-coverage-p2)):
+> each batch is a `connector_scan`, sized against Tenable.sc's own licensed and
+> active IPs. The runner and direct modes described below are gone; the
+> planner, cursor and batch-scoped auto-resolve invariant are kept.
 
 ## Problem
 

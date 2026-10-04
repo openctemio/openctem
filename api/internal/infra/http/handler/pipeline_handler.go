@@ -200,9 +200,14 @@ type RunResponse struct {
 	ErrorMessage      string                         `json:"error_message,omitempty"`
 	CreatedAt         string                         `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
-	ScheduledFor    *string                  `json:"scheduled_for,omitempty"`
-	FilteringResult *FilteringResultResponse `json:"filtering_result,omitempty"`
-	Dispatch        *RunDispatchResponse     `json:"dispatch,omitempty"`
+	ScheduledFor *string `json:"scheduled_for,omitempty"`
+	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
+	DeadlineAt *string `json:"deadline_at,omitempty"`
+	// UnfinishedTargetCount is how many targets were still open when the run
+	// was settled at its deadline; the next scheduled run plans them first.
+	UnfinishedTargetCount int                      `json:"unfinished_target_count,omitempty"`
+	FilteringResult       *FilteringResultResponse `json:"filtering_result,omitempty"`
+	Dispatch              *RunDispatchResponse     `json:"dispatch,omitempty"`
 }
 
 // RunDispatchResponse is what a scan run dispatched: targets resolved and
@@ -1083,6 +1088,11 @@ func toRunResponse(r *pipeline.Run) *RunResponse {
 		sf := r.ScheduledFor.Format("2006-01-02T15:04:05Z07:00")
 		resp.ScheduledFor = &sf
 	}
+	if r.DeadlineAt != nil {
+		d := r.DeadlineAt.Format("2006-01-02T15:04:05Z07:00")
+		resp.DeadlineAt = &d
+	}
+	resp.UnfinishedTargetCount = r.UnfinishedTargetCount
 
 	if r.QualityGateResult != nil {
 		resp.QualityGateResult = r.QualityGateResult

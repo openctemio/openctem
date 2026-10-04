@@ -58,6 +58,17 @@ func ParseCoverageAutoResolveMode(v string) CoverageAutoResolveMode {
 	}
 }
 
+// isCoverageCommandType: the command types whose completed full-coverage run
+// may close findings by absence: scans, and Tenable.sc scans launched through
+// the connector (RFC-047). A connector_sync never does (a pull window proves
+// nothing about absence).
+func isCoverageCommandType(t string) bool {
+	return t == string(command.CommandTypeScan) || t == string(command.CommandTypeConnectorScan)
+}
+
+// IsCoverageCommandType is isCoverageCommandType for the command handler.
+func IsCoverageCommandType(t string) bool { return isCoverageCommandType(t) }
+
 // coverageRepo is implemented by the postgres finding repository. Optional: a
 // finding repository without it (tests, mocks) disables the feature.
 type coverageRepo interface {
@@ -114,7 +125,7 @@ func decideRepoCoverage(c *ingestreport.CommandCoverage) coverageDecision {
 //
 //nolint:cyclop,gocognit // a flat list of independent refusals, each with its reason
 func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecision {
-	if c == nil || c.CommandType != string(command.CommandTypeScan) {
+	if c == nil || !isCoverageCommandType(c.CommandType) {
 		return coverageDecision{reason: coverageNotScanCommand}
 	}
 	if c.CommandStatus != string(command.CommandStatusCompleted) {

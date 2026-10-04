@@ -94,7 +94,7 @@ func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
 	}
 
 	if count > 0 {
-		c.logger.Info("marked scan runs as timeout", "count", count)
+		c.logger.Info("ended scan runs past their deadline (partial when some work finished, else timeout)", "count", count)
 		metrics.ScanRunsReapedTotal.WithLabelValues("deadline").Add(float64(count))
 	}
 

@@ -29,13 +29,20 @@ function subscribeToUrl(cb: () => void) {
  */
 function writeSearch(params: URLSearchParams) {
   const qs = params.toString()
+  const { pathname, search, hash } = window.location
+  // Idempotency guard on the NORMALISED query string, not the raw address bar.
+  // URLSearchParams.toString() re-encodes and can reorder keys, so a shared link
+  // carrying a literal `?sources=a,b` (serialised here as `a%2Cb`) looks changed
+  // on a raw string compare even when nothing changed. That bogus "change"
+  // dispatches URL_PARAMS_CHANGED, a subscriber re-renders and may write the same
+  // value straight back, and the page loops ("Maximum update depth exceeded").
+  // Comparing normalised query strings makes a no-op write a true no-op.
+  if (qs === new URLSearchParams(search).toString()) return
   // Keep the hash. Rebuilding the URL from pathname + query alone silently
   // dropped it, so changing any filter threw away a deep link like
   // /findings#evidence-3 — and the anchor is often the reason the link was
   // shared in the first place.
-  const { pathname, search, hash } = window.location
   const next = `${pathname}${qs ? `?${qs}` : ''}${hash}`
-  if (next === `${pathname}${search}${hash}`) return
   window.history.replaceState(window.history.state, '', next)
   window.dispatchEvent(new Event(URL_PARAMS_CHANGED))
 }
