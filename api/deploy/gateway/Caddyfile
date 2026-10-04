@@ -80,7 +80,13 @@ import planes.caddy
 
 	# Access log: one readable line per request. Secrets are removed:
 	# Authorization/Cookie are redacted by Caddy itself; API keys sent as
-	# headers are removed here. No credential travels in a URL.
+	# headers are removed here. Invitation tokens travel in the body or the
+	# URL fragment (never sent to a server), but the deprecated API aliases and
+	# links emailed before RFC-041 still carry one in the path
+	# (/api/v1/invitations/{token}/..., /invitations/{token}): it is replaced.
+	# So is a WebSocket `?ticket=`: the API no longer issues one (RFC-045), but
+	# this file is also the Helm chart's gateway, which can front an older API.
+	# One regexp, because a log field takes one filter.
 	log {
 		output stdout
 		format filter {
@@ -91,6 +97,7 @@ import planes.caddy
 				request>headers>X-Api-Key delete
 				request>headers>X-Sensor-Api-Key delete
 				request>headers>X-Csrf-Token delete
+				request>uri regexp "^(/api/v1/invitations/|/invitations/)[A-Za-z0-9_-]{20,}|([?&]ticket=)[^&]*" "${1}${2}REDACTED"
 			}
 		}
 	}

@@ -556,8 +556,9 @@ POST /api/v1/tenants/{tenant}/invitations
 //   00000000-...-000000000003  member
 //   00000000-...-000000000004  viewer
 
-// 2. User accepts via token link
-POST /api/v1/invitations/{token}/accept-with-refresh
+// 2. User opens the emailed link (/invitations#token=..., the token in the
+//    fragment) and accepts; the token always travels in the body:
+POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 ```
 
 **Key Files:** `internal/app/tenant_service.go` (CreateInvitation), `internal/infra/http/handler/tenant_handler.go`
@@ -829,13 +830,14 @@ case errors.Is(err, sensor.ErrBootstrapTokenInvalid),
 
 Smart filtering matches assets to compatible scanners based on `supported_targets`.
 
-**How it works:**
-1. **At scan creation** — `PreviewScanCompatibility()` warns about incompatible assets (never blocks)
-2. **At scan trigger** — `filterAssetsForSingleScan()` filters by tool's `supported_targets`
+**How it works** (RFC-042 §6.3.8 O6: enforcing, keyed on the stored (type, sub_type)):
+1. **At scan creation** — `PreviewScanCompatibility()` warns about incompatible assets (never blocks creation)
+2. **At scan trigger** — `resolveScanTargets()` leaves out asset-group members the scanner cannot scan (registry `scannable_by` + active admin target mappings); nothing left → `NO_COMPATIBLE_TARGETS` (400). `filterAssetsForSingleScan()` reports the same split
+3. **At every workflow step** — `FilterStepTargets()` gates the run's typed targets for the step's tool before the sensor command is built (both dispatchers); nothing left → the step fails with `INCOMPATIBLE_TARGETS`
 
-**Design principles:** Never block, transparent (show scanned vs skipped), graceful degradation, unclassified = skipped.
+**Design principles:** a scanner is never handed a type it cannot scan; transparent (counts and a reason per type); undecidable (unclassified, unknown type, tool without target types) = dispatched; direct targets have no stored type and are not type-gated; `target_types` in the run context never reaches a sensor.
 
-**Key files:** `internal/app/scan/filtering.go`, `internal/app/scan/trigger.go`, `internal/domain/tool/target_mapping.go`
+**Key files:** `internal/app/scan/type_gate.go`, `internal/app/scan/compatibility.go`, `internal/app/scan/filtering.go`, `internal/app/scan/targets.go`, `pkg/domain/tool/target_mapping.go`
 
 ---
 

@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -282,20 +283,22 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	))
 
 	// Coverage scheduler: license-aware rolling Tenable scan coverage (RFC-007).
-	// Dispatches license-sized batches to runners for coverage-enabled, unlimited
-	// (Nessus Pro) Tenable integrations and advances the rotation cursor. Capped
-	// engines (Tenable.sc) are skipped until active-IP accounting ships.
-	w.ControllerManager.Register(controller.NewCoverageScheduler(
-		repos.Integration,
-		repos.ScanCoverage,
-		scancoverage.NewDispatcher(repos.Command),
-		&controller.CoverageSchedulerConfig{
-			Interval: 5 * time.Minute,
-			// Each batch passes a scan trigger's target checks (RFC-042 F16).
-			Gate:   svc.Scan,
-			Logger: log.With("controller", "coverage-scheduler"),
-		},
-	))
+	// Paused with the Tenable connector (integrationdom.TenableConnectorEnabled,
+	// owner decision D-14, rebuild RFC-047): with no sensor-side runner every
+	// batch would be a command nothing runs.
+	if integrationdom.TenableConnectorEnabled {
+		w.ControllerManager.Register(controller.NewCoverageScheduler(
+			repos.Integration,
+			repos.ScanCoverage,
+			scancoverage.NewDispatcher(repos.Command),
+			&controller.CoverageSchedulerConfig{
+				Interval: 5 * time.Minute,
+				// Each batch passes a scan trigger's target checks (RFC-042 F16).
+				Gate:   svc.Scan,
+				Logger: log.With("controller", "coverage-scheduler"),
+			},
+		))
+	}
 
 	// Report scheduler: runs due report_schedules, renders the executive summary,
 	// and emails it to recipients. Only registered when email is configured

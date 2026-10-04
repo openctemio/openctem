@@ -582,6 +582,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        providers             query string false "Filter by provider/source (comma-separated)"
 // @Param        last_seen_after       query string false "Filter assets last seen at/after this time (RFC3339 or YYYY-MM-DD)"
 // @Param        last_seen_before      query string false "Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD)"
+// @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (confirmed+unknown+dependency+monitor_only)"
 // @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
 // @Param        page          query     int     false  "Page number"  default(1)
 // @Param        per_page      query     int     false  "Items per page"  default(20)  maximum(100)
@@ -622,6 +623,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Providers:            parseQueryArray(query.Get("providers")),
 		LastSeenAfter:        parseQueryTimePtr(query.Get("last_seen_after")),
 		LastSeenBefore:       parseQueryTimePtr(query.Get("last_seen_before")),
+		Attribution:          parseQueryArray(query.Get("attribution")),
 		Sort:                 query.Get("sort"),
 		Page:                 parseQueryInt(query.Get("page"), 1),
 		PerPage:              parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
