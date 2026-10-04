@@ -30,7 +30,7 @@ function chainToPath(chain: ExposureChain, maxScore: number): PathGraphPath {
       criticality: isTarget ? chain.targetCriticality : undefined,
       isCrownJewel: isTarget ? chain.isCrownJewel : undefined,
       kev: isTarget ? chain.kevCount > 0 : undefined,
-      href: hop.assetId ? `/findings?assetId=${hop.assetId}` : undefined,
+      href: hop.assetId ? `/findings?asset_id=${hop.assetId}` : undefined,
     }
   })
 

@@ -47,7 +47,7 @@ function assetToPath(asset: AttackPathScore, maxPathScore: number): PathGraphPat
         criticality: asset.criticality,
         isCrownJewel: asset.isCrownJewel,
         findingCount: asset.findingCount,
-        href: asset.assetId ? `/findings?assetId=${asset.assetId}` : undefined,
+        href: asset.assetId ? `/findings?asset_id=${asset.assetId}` : undefined,
       },
     ],
     score: asset.pathScore,
@@ -262,7 +262,7 @@ export default function AttackPathAnalysisPage() {
                         ep.assetId ? (
                           <Link
                             key={ep.assetId}
-                            href={`/findings?assetId=${ep.assetId}`}
+                            href={`/findings?asset_id=${ep.assetId}`}
                             aria-label={`View findings for ${ep.name}`}
                             className="hover:bg-muted/50 focus-visible:ring-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:outline-none"
                           >
