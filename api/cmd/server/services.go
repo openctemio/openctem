@@ -1768,12 +1768,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
 	// Resolve a finding's asset type so rules scoped by AssetTypes can match
 	// (without this, such rules never fire).
-	assignmentEngine.SetAssetTypeResolver(func(ctx context.Context, tenantID, assetID shared.ID) (string, error) {
+	assignmentEngine.SetAssetTypeResolver(func(ctx context.Context, tenantID, assetID shared.ID) (assetdom.TypeRef, error) {
 		a, err := repos.Asset.GetByID(ctx, tenantID, assetID)
 		if err != nil {
-			return "", err
+			return assetdom.TypeRef{}, err
 		}
-		return a.Type().String(), nil
+		return assetdom.TypeRef{Type: a.Type(), SubType: a.SubType()}, nil
 	})
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 

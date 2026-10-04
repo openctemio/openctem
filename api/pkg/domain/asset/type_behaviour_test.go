@@ -173,3 +173,26 @@ func TestRelationshipRules_UseStoredPairsOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestTypeNameMatches(t *testing.T) {
+	web := TypeRef{Type: AssetTypeApplication, SubType: "website"}
+	cases := []struct {
+		name string
+		ref  TypeRef
+		want bool
+	}{
+		{"website", web, true},
+		{"application", web, true},
+		{"api", web, false},
+		{"website", TypeRef{Type: AssetTypeApplication}, true}, // kind never recorded
+		{"s3_bucket", TypeRef{Type: AssetTypeStorage, SubType: "bucket"}, true},
+		{"subnet", TypeRef{Type: AssetTypeNetwork, SubType: "vpc"}, false},
+		{"", web, false},
+		{"bogus", web, false},
+	}
+	for _, c := range cases {
+		if got := TypeNameMatches(c.name, c.ref); got != c.want {
+			t.Errorf("TypeNameMatches(%q, %+v) = %v, want %v", c.name, c.ref, got, c.want)
+		}
+	}
+}

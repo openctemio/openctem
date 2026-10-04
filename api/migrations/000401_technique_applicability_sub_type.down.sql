@@ -1,4 +1,4 @@
--- Reverts 000379: restores the alias-keyed rows from the ledger and the
+-- Reverts 000401: restores the alias-keyed rows from the ledger and the
 -- (technique_id, asset_type, dataset_version) primary key.
 
 -- Rows the up migration inserted for a moved row.
