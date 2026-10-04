@@ -145,7 +145,7 @@ the inventory changed meaning.
 | Scan gate: asset-group members that are not confirmed are skipped; a group of only unconfirmed assets is refused; a failed lookup stops the dispatch | `internal/app/scan/targets.go` (`WithAttributionGate`) |
 | `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
 
-**Rejection tombstones (P2, migration 000550).** When a person marks a
+**Rejection tombstones (P2, migration 000620).** When a person marks a
 domain or subdomain as not the tenant's (asset page or review queue), the
 lowercased name and the rules that supported it are kept in
 `easm_tombstones`, in the same transaction as the decision. CT promotion does

@@ -42,6 +42,7 @@ ctem_cycles
 data_sources
 easm_dns_check_state
 easm_evidence
+easm_tombstones
 exposure_events
 exposures
 finding_activities

@@ -127,12 +127,12 @@ var (
 	specCoverage    = metricSpec{key: MetricValidationCoverage, unit: UnitPercent}
 	specRiskReduced = metricSpec{key: MetricRiskReductionPct, unit: UnitPercent}
 	specRiskAfter   = metricSpec{key: MetricRiskAfter, unit: UnitScore, lowerIsBetter: true}
+	specScopeDrift  = metricSpec{key: MetricScopeDriftSize, unit: UnitCount, lowerIsBetter: true}
 )
 
 // metricAliases maps a normalized metric name to the metric it measures.
-// Only exact matches count. scope_drift_size is intentionally absent: its
-// source is not wired yet (always 0), so checking a criterion against it
-// would report a success that was never measured.
+// Only exact matches count. scope_drift_size counts the external-surface
+// assets first seen during the cycle (RFC-036 §6.9).
 var metricAliases = map[string]metricSpec{
 	"mttr":                     specMTTRHours,
 	"mttr_hours":               specMTTRHours,
@@ -170,6 +170,9 @@ var metricAliases = map[string]metricSpec{
 	"risk_after":               specRiskAfter,
 	"risk_score_after":         specRiskAfter,
 	"risk_at_close":            specRiskAfter,
+	"scope_drift_size":         specScopeDrift,
+	"scope_drift":              specScopeDrift,
+	"new_external_assets":      specScopeDrift,
 }
 
 // RecognizedCriterionMetrics returns the canonical metric names a criterion
