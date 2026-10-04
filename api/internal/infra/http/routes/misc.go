@@ -188,7 +188,7 @@ func registerIntegrationRoutes(
 		r.GET("/", h.List, middleware.Require(permission.IntegrationsRead))
 
 		// List SCM integrations specifically
-		r.GET("/scm", h.ListSCM, middleware.Require(permission.IntegrationsRead))
+		r.GET("/scm", h.ListSCM, middleware.RequireAll(permission.IntegrationsRead, permission.SCMConnectionsRead))
 
 		// List Notification integrations specifically
 		r.GET("/notifications", h.ListNotifications, middleware.Require(permission.IntegrationsRead))

@@ -99,7 +99,7 @@ func newSDHarness(t *testing.T) *sdHarness {
 				}
 			}
 			ctx = context.WithValue(ctx, middleware.PermissionsKey, []string{
-				permission.GroupsRead.String(), permission.GroupsWrite.String(), permission.GroupsMembers.String(),
+				permission.GroupsRead.String(), permission.GroupsWrite.String(), permission.GroupsMembers.String(), permission.GroupsAssets.String(),
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

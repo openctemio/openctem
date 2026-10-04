@@ -404,7 +404,6 @@ var ModulePermissionMapping = map[string]string{
 	// Mobilization modules
 	ModuleRemediation:  "findings:remediation:read",
 	ModuleSuppressions: "findings:suppressions:read",
-	ModulePolicies:     "findings:policies:read",
 
 	// Insights modules
 	ModuleReports: "reports:read",

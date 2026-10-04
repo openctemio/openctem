@@ -298,3 +298,30 @@ func TestFindingsList_Research17Filters(t *testing.T) {
 		t.Errorf("sort=-cvss_score order: %d %s", status, body)
 	}
 }
+
+// /findings/related-cves takes the list's filter (RFC-048): the filter
+// narrows the related findings, never the visibility rule of the source
+// CVE, and a bad filter is 400 INVALID_FILTER.
+func TestFindingsRelatedCVEs_TakesTheListFilter(t *testing.T) {
+	h := newGroupScopeHarness(t)
+	admin := flCaller{"owner", h.owner, true}
+	// FA (cveA) and FB2 (cveB2) share component A; FB2 is high, out of memberA's scope.
+	path := "/api/v1/findings/related-cves/" + url.PathEscape(h.cveA) + "?"
+	status, _, body := h.listFindingsPath(t, admin, path)
+	if status != http.StatusOK || !strings.Contains(body, h.cveB2) {
+		t.Fatalf("admin related CVEs: %d %.300s", status, body)
+	}
+	if _, _, body := h.listFindingsPath(t, admin, path+"severity=critical"); strings.Contains(body, h.cveB2) {
+		t.Errorf("severity=critical should exclude the high CVE: %.300s", body)
+	}
+	if _, _, body := h.listFindingsPath(t, admin, path+"asset_id="+h.assetB.String()); !strings.Contains(body, h.cveB2) {
+		t.Errorf("asset_id=B1 should keep the CVE on B1: %.300s", body)
+	}
+	memberA := flCaller{"memberA", h.memberA, false}
+	if _, _, body := h.listFindingsPath(t, memberA, path+"asset_id="+h.assetB.String()); strings.Contains(body, h.cveB2) {
+		t.Errorf("a filter must not widen memberA's scope: %.300s", body)
+	}
+	if status, _, body := h.listFindingsPath(t, admin, path+"severity=urgent"); status != http.StatusBadRequest || !strings.Contains(body, "INVALID_FILTER") {
+		t.Errorf("bad filter: %d %.200s", status, body)
+	}
+}

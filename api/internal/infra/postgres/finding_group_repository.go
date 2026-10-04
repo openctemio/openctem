@@ -180,6 +180,17 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 // A filter that asks for either rule without a tenant cannot be resolved and
 // matches nothing (the list builder skipped the rule instead).
 func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) ([]string, []any) {
+	if v := filter.CompiledVisibility; v != nil {
+		if v.First != argOffset || !strings.HasPrefix(v.SQL, vulnerability.FindingFieldsF.TenantSQL+" = $") {
+			return []string{"FALSE"}, nil
+		}
+		return []string{v.SQL}, v.Args
+	}
+	if filter.Compiled != nil {
+		// A compiled filter without its compiled visibility cannot be
+		// narrowed by the legacy fields: match nothing (fail closed).
+		return []string{"FALSE"}, nil
+	}
 	var clauses []string
 	var args []any
 	if (filter.PentestMemberOrNonPentestUserID != nil || filter.DataScopeUserID != nil) && filter.TenantID == nil {
