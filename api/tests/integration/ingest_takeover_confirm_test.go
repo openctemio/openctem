@@ -36,7 +36,7 @@ func TestIngest_TakeoverConfirmation(t *testing.T) {
 		postgres.NewAuditRepository(db), logger.NewNop())
 	svc.SetTakeoverConfirmer(easmdns.NewTakeoverConfirmer(postgres.NewEASMDNSRepository(db), exposures, logger.NewNop()))
 
-	agentOf := func(v v2Tenant) *sensor.Sensor {
+	sensorOf := func(v v2Tenant) *sensor.Sensor {
 		tid := v.tenant
 		return &sensor.Sensor{ID: v.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	}
@@ -49,7 +49,7 @@ func TestIngest_TakeoverConfirmation(t *testing.T) {
 	}
 	run := func(v v2Tenant, bind ingest.Binding, host string) {
 		t.Helper()
-		out, err := svc.Ingest(ctx, agentOf(v), ingest.Input{Report: report(host), Options: ingest.Options{Binding: bind}})
+		out, err := svc.Ingest(ctx, sensorOf(v), ingest.Input{Report: report(host), Options: ingest.Options{Binding: bind}})
 		if err != nil || len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
