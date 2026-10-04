@@ -75,6 +75,9 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 		}
 		uncovered = append(uncovered, tbl+"."+col)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if len(uncovered) > 0 {
 		t.Errorf("asset references with a tenant_id but no composite (tenant_id, asset) foreign key: %v", uncovered)
 	}
