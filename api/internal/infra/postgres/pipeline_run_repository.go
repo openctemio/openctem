@@ -127,7 +127,8 @@ func (r *PipelineRunRepository) List(ctx context.Context, filter pipeline.RunFil
 
 	// Apply pagination
 	offset := (page.Page - 1) * page.PerPage
-	baseQuery += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d OFFSET %d", page.PerPage, offset)
+	// OrderBy is a constant expression chosen from the domain whitelist.
+	baseQuery += fmt.Sprintf(" ORDER BY %s LIMIT %d OFFSET %d", filter.Sort.OrderBy(), page.PerPage, offset)
 
 	rows, err := r.db.QueryContext(ctx, baseQuery, args...)
 	if err != nil {
@@ -1048,6 +1049,39 @@ func (r *PipelineRunRepository) selectQuery() string {
 		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0)
 		FROM pipeline_runs
 	`
+}
+
+var _ pipeline.RunScanNamer = (*PipelineRunRepository)(nil)
+
+// ScanNames returns the names of the scans in scanIDs that belong to
+// tenantID, in one query. A scan of another tenant, or a deleted one, is
+// simply absent from the map.
+func (r *PipelineRunRepository) ScanNames(ctx context.Context, tenantID shared.ID, scanIDs []shared.ID) (map[shared.ID]string, error) {
+	out := make(map[shared.ID]string, len(scanIDs))
+	if len(scanIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(scanIDs))
+	for i, id := range scanIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, name FROM scans WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to name run scans: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("failed to scan run scan name: %w", err)
+		}
+		if sid, err := shared.IDFromString(id); err == nil {
+			out[sid] = name
+		}
+	}
+	return out, rows.Err()
 }
 
 func (r *PipelineRunRepository) buildWhereClause(filter pipeline.RunFilter) (string, []any) {

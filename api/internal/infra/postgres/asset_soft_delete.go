@@ -92,11 +92,14 @@ func (r *AssetRepository) Delete(ctx context.Context, tenantID, assetID shared.I
 		return fmt.Errorf("failed to lock asset: %w", err)
 	}
 
-	// Any finding, whatever its status, is history that must not go.
+	// Any finding of this tenant, whatever its status, is history that must
+	// not go. Only this tenant's findings count: a row another tenant managed
+	// to point at this asset must neither block the delete nor have its count
+	// disclosed to this tenant (the refusal reports the count).
 	var findings int64
 	if err := tx.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM findings WHERE asset_id = $1`,
-		assetID.String()).Scan(&findings); err != nil {
+		`SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND asset_id = $2`,
+		tenantID.String(), assetID.String()).Scan(&findings); err != nil {
 		return fmt.Errorf("failed to count asset findings: %w", err)
 	}
 	if findings > 0 {
@@ -141,6 +144,9 @@ func (r *AssetRepository) PurgeDeleted(ctx context.Context, before time.Time, li
 		 WHERE id IN (
 			SELECT a.id FROM assets a
 			 WHERE a.deleted_at IS NOT NULL AND a.deleted_at < $1
+			   -- Deliberately any tenant: findings.asset_id is NO ACTION, so
+			   -- any row pointing here would fail the DELETE. Nothing is
+			   -- returned to a tenant from this system job.
 			   AND NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id)
 			 ORDER BY a.deleted_at
 			 LIMIT $2
