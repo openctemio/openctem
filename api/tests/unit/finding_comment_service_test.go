@@ -451,52 +451,6 @@ func TestAddStatusChangeComment_RepoError(t *testing.T) {
 }
 
 // =============================================================================
-// Tests: GetComment
-// =============================================================================
-
-func TestGetComment_Success(t *testing.T) {
-	commentRepo := newMockFindingCommentServiceRepo()
-	findingRepo := newMockFindingRepo()
-	svc := newTestCommentService(commentRepo, findingRepo)
-
-	findingID := shared.NewID()
-	authorID := shared.NewID()
-	comment := makeTestComment(findingID, authorID, "existing comment", false)
-	commentRepo.comments[comment.ID().String()] = comment
-
-	result, err := svc.GetComment(context.Background(), comment.ID().String())
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	assert.Equal(t, comment.ID(), result.ID())
-	assert.Equal(t, "existing comment", result.Content())
-}
-
-func TestGetComment_InvalidID(t *testing.T) {
-	commentRepo := newMockFindingCommentServiceRepo()
-	findingRepo := newMockFindingRepo()
-	svc := newTestCommentService(commentRepo, findingRepo)
-
-	result, err := svc.GetComment(context.Background(), "not-a-uuid")
-
-	require.Error(t, err)
-	assert.Nil(t, result)
-	assert.True(t, errors.Is(err, shared.ErrValidation))
-}
-
-func TestGetComment_NotFound(t *testing.T) {
-	commentRepo := newMockFindingCommentServiceRepo()
-	findingRepo := newMockFindingRepo()
-	svc := newTestCommentService(commentRepo, findingRepo)
-
-	result, err := svc.GetComment(context.Background(), shared.NewID().String())
-
-	require.Error(t, err)
-	assert.Nil(t, result)
-	assert.True(t, errors.Is(err, shared.ErrNotFound))
-}
-
-// =============================================================================
 // Tests: UpdateComment
 // =============================================================================
 

@@ -20,28 +20,30 @@ import (
 // CreateScanInput represents the input for creating a scan.
 // Either AssetGroupID/AssetGroupIDs OR Targets must be provided (can have all).
 type CreateScanInput struct {
-	TenantID         string         `json:"tenant_id" validate:"required,uuid"`
-	Name             string         `json:"name" validate:"required,min=1,max=200"`
-	Description      string         `json:"description" validate:"max=1000"`
-	AssetGroupID     string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Primary asset group (legacy)
-	AssetGroupIDs    []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets          []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
-	ScanType         string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName      string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig    map[string]any `json:"scanner_config"`
-	TargetsPerJob    int            `json:"targets_per_job"`
-	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay      *int           `json:"schedule_day"`
-	ScheduleTime     *time.Time     `json:"schedule_time"`
-	Timezone         string         `json:"timezone" validate:"max=50"`
-	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     bool           `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
-	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`                              // Optional scan profile (tool configs, quality gates)
-	ScanZoneID       string         `json:"scan_zone_id" validate:"omitempty,uuid"`                            // Optional: pin targets to one scan zone ("" = Automatic)
-	TimeoutSeconds   int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max execution time (default 3600, min 30, max 86400)
+	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
+	Name          string         `json:"name" validate:"required,min=1,max=200"`
+	Description   string         `json:"description" validate:"max=1000"`
+	AssetGroupID  string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Primary asset group (legacy)
+	AssetGroupIDs []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets       []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	ScanType      string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName   string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig map[string]any `json:"scanner_config"`
+	TargetsPerJob int            `json:"targets_per_job"`
+	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
+	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
+	ScheduleRRule    string     `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay      *int       `json:"schedule_day"`
+	ScheduleTime     *time.Time `json:"schedule_time"`
+	Timezone         string     `json:"timezone" validate:"max=50"`
+	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     bool       `json:"run_on_tenant_runner"`
+	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
+	ProfileID        string     `json:"profile_id" validate:"omitempty,uuid"`                              // Optional scan profile (tool configs, quality gates)
+	ScanZoneID       string     `json:"scan_zone_id" validate:"omitempty,uuid"`                            // Optional: pin targets to one scan zone ("" = Automatic)
+	TimeoutSeconds   int        `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max execution time (default 3600, min 30, max 86400)
 	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
@@ -457,6 +459,9 @@ func (s *Service) configureScanSchedule(sc *scan.Scan, input CreateScanInput) er
 		}
 	}
 
+	if scheduleType == scan.ScheduleRRule {
+		return sc.SetRRuleSchedule(input.ScheduleRRule, timezone)
+	}
 	return sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone)
 }
 
@@ -548,7 +553,7 @@ type ListScansInput struct {
 	AssetGroupID string   `json:"asset_group_id" validate:"omitempty,uuid"`
 	PipelineID   string   `json:"pipeline_id" validate:"omitempty,uuid"`
 	ScanType     string   `json:"scan_type" validate:"omitempty,oneof=workflow single"`
-	ScheduleType string   `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
+	ScheduleType string   `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
 	Status       string   `json:"status" validate:"omitempty,oneof=active paused disabled"`
 	Tags         []string `json:"tags"`
 	Search       string   `json:"search" validate:"max=255"`
@@ -622,22 +627,24 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scan.Stats, e
 
 // UpdateScanInput represents the input for updating a scan.
 type UpdateScanInput struct {
-	TenantID         string         `json:"tenant_id" validate:"required,uuid"`
-	ScanID           string         `json:"scan_id" validate:"required,uuid"`
-	Name             string         `json:"name" validate:"omitempty,min=1,max=200"`
-	Description      string         `json:"description" validate:"max=1000"`
-	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName      string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig    map[string]any `json:"scanner_config"`
-	TargetsPerJob    *int           `json:"targets_per_job"`
-	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay      *int           `json:"schedule_day"`
-	ScheduleTime     *time.Time     `json:"schedule_time"`
-	Timezone         string         `json:"timezone" validate:"max=50"`
-	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     *bool          `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
+	ScanID        string         `json:"scan_id" validate:"required,uuid"`
+	Name          string         `json:"name" validate:"omitempty,min=1,max=200"`
+	Description   string         `json:"description" validate:"max=1000"`
+	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName   string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig map[string]any `json:"scanner_config"`
+	TargetsPerJob *int           `json:"targets_per_job"`
+	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
+	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
+	ScheduleRRule    string     `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay      *int       `json:"schedule_day"`
+	ScheduleTime     *time.Time `json:"schedule_time"`
+	Timezone         string     `json:"timezone" validate:"max=50"`
+	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     *bool      `json:"run_on_tenant_runner"`
+	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	// ProfileID: pointer with sentinel:
 	//   nil           = leave unchanged
 	//   pointer to "" = unlink profile
@@ -727,7 +734,13 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		if timezone == "" {
 			timezone = sc.ScheduleTimezone
 		}
-		if err := sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone); err != nil {
+		var err error
+		if scheduleType == scan.ScheduleRRule {
+			err = sc.SetRRuleSchedule(input.ScheduleRRule, timezone)
+		} else {
+			err = sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone)
+		}
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -824,7 +837,7 @@ func (s *Service) DeleteScan(ctx context.Context, tenantID, scanID string) error
 
 	scanName := sc.Name
 
-	if err := s.scanRepo.Delete(ctx, sc.ID); err != nil {
+	if err := s.scanRepo.Delete(ctx, sc.TenantID, sc.ID); err != nil {
 		return err
 	}
 
