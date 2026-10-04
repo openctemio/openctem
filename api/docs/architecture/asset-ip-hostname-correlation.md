@@ -68,7 +68,7 @@ Admin UI to manually merge two assets into one when auto-correlation misses.
 ├──────────────────────────────────────────────────────────┤
 │                                                           │
 │  1. GetByName(input.name)                                 │
-│     ├─ FOUND → mergeAndUpdateExisting()                   │
+│     ├─ FOUND → merge (ingest) / 409 (POST /assets)        │
 │     └─ NOT FOUND ↓                                        │
 │                                                           │
 │  2. correlateByIPOrHostname(input.name)                   │
