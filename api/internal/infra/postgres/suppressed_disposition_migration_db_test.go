@@ -9,13 +9,13 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Migration 000506 (research 18 F7): resolved/suppressed findings take the
+// Migration 000564 (research 18 F7): resolved/suppressed findings take the
 // disposition of the rule recorded for them, only when that rule is certain,
 // without being counted as regressions. Replayed in a rolled-back transaction.
 func TestSuppressedDispositionMigration(t *testing.T) {
 	ctx := context.Background()
 	db := openGroupsDB(t)
-	up, err := os.ReadFile("../../../migrations/000506_suppressed_findings_disposition.up.sql")
+	up, err := os.ReadFile("../../../migrations/000564_suppressed_findings_disposition.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
