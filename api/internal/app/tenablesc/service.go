@@ -149,6 +149,10 @@ type SyncState struct {
 	// Catalog is what the sensor last reported it allows (names for the
 	// scan pickers); nil until a sync reports one.
 	Catalog *Catalog `json:"catalog,omitempty"`
+	// CoverageCommandID is the open coverage batch (RFC-047 §9), if any;
+	// LastCoverageOutcome the final status of the previous one.
+	CoverageCommandID   string `json:"coverage_command_id,omitempty"`
+	LastCoverageOutcome string `json:"last_coverage_outcome,omitempty"`
 }
 
 // Outcomes recorded in SyncState.LastOutcome.
@@ -336,6 +340,9 @@ func (s *Service) ScheduledSync(ctx context.Context, intg *integration.Integrati
 func (s *Service) ValidateConnector(ctx context.Context, tenantID shared.ID, cfg map[string]any) error {
 	cc, err := ParseConnectorConfigMap(cfg)
 	if err != nil {
+		return err
+	}
+	if err := validateCoverageConfig(cfg); err != nil {
 		return err
 	}
 	sn, err := s.sensors.GetByTenantAndID(ctx, tenantID, cc.SensorID)
