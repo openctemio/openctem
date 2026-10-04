@@ -999,6 +999,17 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
 | `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
 
+### Scheduled reports render under their creator's scope
+
+Owner decision D6 (research doc 15 P1-4): a scheduled report shows what its
+creator can see, decided at each run (`datascope.Enforcer.ForUser`, the same
+admin, full-data and policy rules as a request). A restricted creator's report
+counts only their in-scope assets and findings (`FindingStatsFilter.ScopeStrict`
+drops the fail-open "no scope row means everything", and the trend window takes
+the same scope). A schedule with no recorded creator, or whose creator can no
+longer be resolved (left the organization), is not rendered or sent
+(`failed`).
+
 ### Deliberately tenant-wide (counts only, no row data)
 
 These return aggregates over the whole tenant to every holder of the read
