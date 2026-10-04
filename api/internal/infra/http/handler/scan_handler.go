@@ -426,6 +426,7 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Param        status          query     string  false  "Filter by status"
 // @Param        search          query     string  false  "Search by name"
 // @Param        include_ad_hoc  query     bool    false  "Also list unsaved quick scans (ad_hoc)"
+// @Param        sort            query     string  false  "One sort key, - for descending: name, created_at, last_run_at, next_run_at, total_runs" default(name)
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        per_page        query     int     false  "Items per page" default(20)
 // @Success      200  {object}  ListResponse[ScanDetailResponse]
@@ -446,6 +447,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 		Tags:         parseQueryArray(r.URL.Query().Get("tags")),
 		Search:       r.URL.Query().Get("search"),
 		IncludeAdHoc: r.URL.Query().Get("include_ad_hoc") == "true",
+		Sort:         r.URL.Query().Get("sort"),
 		Page:         parseQueryInt(r.URL.Query().Get("page"), 1),
 		PerPage:      parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}

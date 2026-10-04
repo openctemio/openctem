@@ -336,9 +336,10 @@ exactly two sources:
 **Being an asset owner is not a scope grant** (owner decision O1,
 2026-10-03): naming a *user* as an owner is an assignment (accountability,
 finding assignment, notifications) and never changes what that user can see.
-Owners/admins and internal calls with no user are never restricted; a member
-with no scope row sees what `tenants.members_without_group_see` says
-(`everything` or `nothing`). By-id access is enforced in
+Owners/admins, holders of a `has_full_data_access` role and internal calls
+with no user are never restricted; a member with no scope row sees
+**nothing**, in every organization (the per-organization "see everything"
+mode is retired, owner decision D2, 2026-10-04). By-id access is enforced in
 `internal/app/datascope` (out of scope answers 404, never 403). Full model:
 `docs/architecture/authorization-matrix.md`, section "Data scope".
 
@@ -425,7 +426,7 @@ touching any gate. In short:
 - Never rely on the module gate for security — it is fail-open by design.
 - Never widen a route's gate to "make a role work" — adjust the role's grant via seed/migration.
 - No `expires_at`/time-boxed grants and no permission-set deny-gate (deliberate — see the doc).
-- Don't change an organization's data-scope policy (`tenants.members_without_group_see`: existing orgs `everything`, new orgs `nothing`) in a migration, and don't unify admin/owner oracles, without signoff.
+- Never add a fail-open data-scope mode back ("no scope row means everything", per organization or global): a member with no scope row sees nothing. Don't unify admin/owner oracles without signoff.
 
 ---
 

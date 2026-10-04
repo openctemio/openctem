@@ -102,3 +102,10 @@ export function elapsedMs(
   const ms = end - start
   return Number.isFinite(ms) && ms >= 0 ? ms : undefined
 }
+
+/** How often an open run refreshes: every 5 s while it is live, never once settled. */
+export const LIVE_RUN_REFRESH_MS = 5000
+
+export function runRefreshInterval(run?: { status: string } | null): number {
+  return run && isRunInProgress(run) ? LIVE_RUN_REFRESH_MS : 0
+}

@@ -140,12 +140,9 @@ func (b *recordingBroadcaster) BroadcastActivity(_ string, data any, _ string) {
 	b.events = append(b.events, data.(map[string]any))
 }
 
-// scopeRepo denies every asset to users that have a scope assignment.
+// denyScopeRepo puts no asset in any member's scope.
 type denyScopeRepo struct{}
 
-func (denyScopeRepo) HasAnyScopeAssignment(context.Context, shared.ID, shared.ID) (bool, error) {
-	return true, nil
-}
 func (denyScopeRepo) AssetIDsInScope(context.Context, shared.ID, shared.ID, []shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
@@ -328,7 +325,7 @@ func TestCommentReaction_CrossTenantCommentNotFound(t *testing.T) {
 
 func TestCommentReaction_DataScopeDenied(t *testing.T) {
 	f := newReactFixture(t)
-	f.svc.SetDataScope(datascope.New(denyScopeRepo{}, nil, func(context.Context) datascope.Caller {
+	f.svc.SetDataScope(datascope.New(denyScopeRepo{}, func(context.Context) datascope.Caller {
 		return datascope.Caller{UserID: f.member.String()}
 	}, nil))
 
