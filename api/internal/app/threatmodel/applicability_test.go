@@ -9,7 +9,7 @@ import (
 func cat() []tmdom.TechniqueApplicability {
 	return []tmdom.TechniqueApplicability{
 		// Public web exploit — any external attacker, needs the 'exposes' edge.
-		{TechniqueID: "T1190", AssetType: "application", SubType: "web_application", EdgeType: "exposes", MinNetwork: "external", MinCredential: "none"},
+		{TechniqueID: "T1190", AssetType: "application", SubType: "website", EdgeType: "exposes", MinNetwork: "external", MinCredential: "none"},
 		// Recon on a domain — external, no edge required.
 		{TechniqueID: "T1595", AssetType: "domain", EdgeType: "", MinNetwork: "external", MinCredential: "none"},
 		// Credential dumping on a host — internal + admin + persistence.
@@ -31,13 +31,13 @@ func TestApplicableTechniques_ExternalUnauthGate(t *testing.T) {
 	caps := tmdom.AttackerCapabilities{NetworkAccess: "external", CredentialLevel: "none"}
 
 	// web_application reached via 'exposes' → T1190 included.
-	got := techIDs(applicableTechniques("application", "web_application", "exposes", caps, cat()))
+	got := techIDs(applicableTechniques("application", "website", "exposes", caps, cat()))
 	if !got["T1190"] {
 		t.Errorf("expected T1190 for external-unauth on exposed web_application, got %v", got)
 	}
 
 	// Same asset but wrong incoming edge → T1190 excluded (edge constraint).
-	got = techIDs(applicableTechniques("application", "web_application", "depends_on", caps, cat()))
+	got = techIDs(applicableTechniques("application", "website", "depends_on", caps, cat()))
 	if got["T1190"] {
 		t.Errorf("T1190 must not match when incoming edge is not 'exposes'")
 	}
@@ -82,7 +82,7 @@ func TestApplicableTechniques_PersistenceGate(t *testing.T) {
 func TestApplicableTechniques_AssetTypeExact(t *testing.T) {
 	caps := tmdom.AttackerCapabilities{NetworkAccess: "external", CredentialLevel: "none"}
 	// domain recon technique should not appear on a web_application.
-	if techIDs(applicableTechniques("application", "web_application", "", caps, cat()))["T1595"] {
+	if techIDs(applicableTechniques("application", "website", "", caps, cat()))["T1595"] {
 		t.Errorf("T1595 is domain-scoped; must not match web_application")
 	}
 	if !techIDs(applicableTechniques("domain", "", "", caps, cat()))["T1595"] {
