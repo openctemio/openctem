@@ -201,7 +201,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 - **The crown-jewel flag is the `assets.is_crown_jewel` column** (owner
   decision O5). It was written into `properties.is_crown_jewel`, while the
-  scoping summary read the column, so the two disagreed. Migration 000760
+  scoping summary read the column, so the two disagreed. Migration 000776
   backfills the column from the property (JSON `true` or the string `"true"`,
   any case; anything else reads as false), removes the key from properties
   and makes the column `NOT NULL DEFAULT FALSE`. Priority classification, the
