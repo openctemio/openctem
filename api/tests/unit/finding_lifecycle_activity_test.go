@@ -111,7 +111,7 @@ func (s *stubFindingRepo) ListAffectedAssetsByVulnerabilityID(_ context.Context,
 func (s *stubFindingRepo) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (s *stubFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (s *stubFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (s *stubFindingRepo) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
@@ -141,7 +141,7 @@ func (s *stubFindingRepo) UpdateSnippetBatchByFingerprints(_ context.Context, _ 
 func (s *stubFindingRepo) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
 	return nil, nil
 }
-func (s *stubFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID) error {
+func (s *stubFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }
 func (s *stubFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) error { return nil }
