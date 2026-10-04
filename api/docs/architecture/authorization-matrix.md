@@ -939,6 +939,13 @@ scans, audit logs, report schedules, and access-control administration
 The reachability oracle used by priority classification and threat models reads
 the full graph on purpose (`GetExposureChains` stays unscoped).
 
+**Asset references a caller writes** go through `datascope.Enforcer.AssertAssetRef`:
+the asset must be a live asset of the tenant (checked for unrestricted callers
+too) **and** in the caller's scope; a foreign, unknown, deleted or out-of-scope
+id all answer 404. It fails closed when not wired. Used by
+`POST /pentest/campaigns/{id}/findings` (`asset_id`), whose
+`findings.asset_id` references `assets(id)` without the tenant (research doc 15, L-02).
+
 Outside a request (WebSocket subscriptions, cross-organization dashboard) admin
 status is the team role from `v_user_effective_role` (owner/admin) — the same
 source as the access token's `admin` claim; the live-push recipient query reads
