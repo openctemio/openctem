@@ -248,6 +248,16 @@ func CategoryForType(t AssetType) Category {
 	if d, ok := registryTypeIndex[t]; ok {
 		return d.LegacyCategory
 	}
+	// A legacy type input (web_application) has the category of the pair it
+	// is stored as.
+	if a, ok := TypeAliases[t]; ok {
+		if d, ok := registryAliasIndex[TypeRef{Type: a.CoreType, SubType: a.SubType}]; ok {
+			return d.LegacyCategory
+		}
+		if d, ok := registryTypeIndex[a.CoreType]; ok {
+			return d.LegacyCategory
+		}
+	}
 	return CategoryOther
 }
 

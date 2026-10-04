@@ -144,7 +144,7 @@ func (h *CommandHandler) SetCoverageEvaluator(svc commandCoverageEvaluator) {
 // triggerCoverageAutoResolve evaluates a completed scan command's coverage in
 // the background; it never delays the sensor's completion response.
 func (h *CommandHandler) triggerCoverageAutoResolve(cmd *commanddom.Command) {
-	if h.coverage == nil || cmd == nil || cmd.Type != commanddom.CommandTypeScan {
+	if h.coverage == nil || cmd == nil || !ingest.IsCoverageCommandType(string(cmd.Type)) {
 		return
 	}
 	tenantID, commandID := cmd.TenantID, cmd.ID

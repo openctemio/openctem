@@ -170,3 +170,47 @@ describe('URL filter regressions', () => {
     expect(result.current[0]).toBe(7)
   })
 })
+
+// A write whose result equals the current query must not fire the change event.
+// Otherwise a subscriber re-renders, a reader can write the same value back, and
+// the page loops ("Maximum update depth exceeded"). The guard compares NORMALISED
+// query strings, so it also catches a shared link whose literal comma the hook
+// re-encodes as %2C.
+describe('URL filter idempotency (no spurious re-render)', () => {
+  const EVENT = 'openctem:url-params-changed'
+
+  it('does not dispatch when a list write leaves the query unchanged (literal comma link)', () => {
+    window.history.replaceState(null, '', '/findings?sources=a,b')
+    let dispatches = 0
+    const bump = () => (dispatches += 1)
+    window.addEventListener(EVENT, bump)
+    const { result } = renderHook(() => useUrlFilterList('sources'))
+    act(() => result.current[1](['a', 'b'])) // same logical value
+    window.removeEventListener(EVENT, bump)
+    expect(dispatches).toBe(0)
+    expect(result.current[0]).toEqual(['a', 'b'])
+  })
+
+  it('does not dispatch when a scalar write leaves the query unchanged', () => {
+    window.history.replaceState(null, '', '/findings?severity=critical')
+    let dispatches = 0
+    const bump = () => (dispatches += 1)
+    window.addEventListener(EVENT, bump)
+    const { result } = renderHook(() => useUrlFilter('severity', 'all'))
+    act(() => result.current[1]('critical'))
+    window.removeEventListener(EVENT, bump)
+    expect(dispatches).toBe(0)
+  })
+
+  it('still dispatches exactly once for a real change', () => {
+    window.history.replaceState(null, '', '/findings')
+    let dispatches = 0
+    const bump = () => (dispatches += 1)
+    window.addEventListener(EVENT, bump)
+    const { result } = renderHook(() => useUrlFilter('severity', 'all'))
+    act(() => result.current[1]('critical'))
+    window.removeEventListener(EVENT, bump)
+    expect(dispatches).toBe(1)
+    expect(result.current[0]).toBe('critical')
+  })
+})
