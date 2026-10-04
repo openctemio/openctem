@@ -107,7 +107,7 @@ func (m *wfActionMockFindingRepo) ListAffectedAssetsByVulnerabilityID(_ context.
 func (m *wfActionMockFindingRepo) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (m *wfActionMockFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (m *wfActionMockFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 
@@ -147,7 +147,7 @@ func (m *wfActionMockFindingRepo) BatchCountByAssetIDs(_ context.Context, _ shar
 	return nil, nil
 }
 
-func (m *wfActionMockFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID) error {
+func (m *wfActionMockFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }
 
@@ -1265,7 +1265,7 @@ func (m *wfActionMockFindingRepo) ListFindingGroups(_ context.Context, _ shared.
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *wfActionMockFindingRepo) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *wfActionMockFindingRepo) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 

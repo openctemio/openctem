@@ -16,7 +16,8 @@ type Repository interface {
 	DeleteAssetOwner(ctx context.Context, assetID, groupID shared.ID) error
 	ListAssetOwners(ctx context.Context, assetID shared.ID) ([]*AssetOwner, error)
 	ListAssetsByGroup(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
-	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
+	// scope limits the listed assets to the caller's data scope (nil: all).
+	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, scope *shared.DataScope, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
 	ListGroupsByAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error)
 	CountAssetOwners(ctx context.Context, assetID shared.ID) (int64, error)
 	CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error)
