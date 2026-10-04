@@ -14,9 +14,32 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Platform admin recovers an organization whose owners are all suspended | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
-| Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/{token}/accept` | owner/admin to invite; the token + matching email to accept |
+| Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain + allowed domains |
 | Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
+
+### Invitation tokens stay out of URLs
+
+The invitation token is a bearer credential (whoever holds it can see and
+decline the invitation; accepting also needs the invited email). It never
+appears in a URL a server or proxy records (RFC-041 §3.2 P4):
+
+- The emailed link is `{APP_URL}/invitations#token=...`. A fragment is never
+  sent to a server or put in a `Referer`. The web page reads it, keeps it in the
+  tab's `sessionStorage` (so it survives the trip through `/login` or
+  `/register?returnTo=/invitations`), and removes it from the address bar and
+  history with `history.replaceState`.
+- The API takes the token in the JSON body: `POST /api/v1/invitations/lookup`,
+  `/accept`, `/accept-with-refresh` and `/decline`.
+- Links sent before this change (`/invitations/{token}`) still work: the web
+  page redirects them to the fragment form. The API aliases
+  `/api/v1/invitations/{token}/...` answer with `Deprecation`/`Sunset`
+  headers until 2027-01-15 and are counted in
+  `deprecated_route_requests_total{plane="auth"}`.
+- For those legacy paths, the API access log, HTTP metric labels and trace
+  attributes record `/api/v1/invitations/{redacted}/...`
+  (`middleware.RedactPath`), and the gateway's access log records
+  `REDACTED`. No log line records a token or a token prefix.
 
 ### First owner (platform administrator)
 

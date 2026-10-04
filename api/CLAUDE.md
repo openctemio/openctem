@@ -536,8 +536,9 @@ POST /api/v1/tenants/{tenant}/invitations
 //   00000000-...-000000000003  member
 //   00000000-...-000000000004  viewer
 
-// 2. User accepts via token link
-POST /api/v1/invitations/{token}/accept-with-refresh
+// 2. User opens the emailed link (/invitations#token=..., the token in the
+//    fragment) and accepts; the token always travels in the body:
+POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 ```
 
 **Key Files:** `internal/app/tenant_service.go` (CreateInvitation), `internal/infra/http/handler/tenant_handler.go`

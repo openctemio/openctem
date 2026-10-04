@@ -201,6 +201,8 @@ func Metrics() func(http.Handler) http.Handler {
 // normalizePath replaces dynamic path segments with placeholders.
 // This prevents high cardinality in metrics labels.
 func normalizePath(path string) string {
+	// A secret in the path must never become a label or a span name.
+	path = RedactPath(path)
 	// Common patterns: UUIDs, numeric IDs
 	// /api/v1/assets/123e4567-e89b-12d3-a456-426614174000 -> /api/v1/assets/{id}
 	// /api/v1/users/123 -> /api/v1/users/{id}

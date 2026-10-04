@@ -1349,11 +1349,75 @@ func (h *TenantHandler) ResendInvitation(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// GetInvitation handles GET /api/v1/invitations/{token}
-func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
+// The invitation token is a bearer credential: whoever holds it can see the
+// invitation, decline it, or (signed in as the invited email) accept it. The
+// body routes below carry it in the request body (RFC-041, docs/rfcs/RFC-041-api-path-design.md):
+// a URL path is written to access logs, metric labels, traces, the browser
+// history and Referer headers. The /api/v1/invitations/{token}/... routes are
+// deprecated aliases of these and share their handlers.
+
+// InvitationTokenRequest is the body of the invitation routes that take the
+// token: lookup, accept and decline.
+type InvitationTokenRequest struct {
+	Token string `json:"token" example:"Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8"`
+}
+
+// maxInvitationTokenBody bounds the body of the invitation routes (a token
+// and, for accept-with-refresh, a refresh token).
+const maxInvitationTokenBody = 8 << 10
+
+// validInvitationToken reports whether t has the shape of an invitation token
+// (32 random bytes, base64url: 43 characters), with room for older formats.
+// Anything else is refused before it reaches the database.
+func validInvitationToken(t string) bool {
+	return len(t) >= 40 && len(t) <= 100 && !strings.ContainsRune(t, 0)
+}
+
+// decodeInvitationBody decodes an invitation route's JSON body into dst. On
+// failure it writes the 400 and returns false.
+func decodeInvitationBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if r.Body == nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return false
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxInvitationTokenBody)).Decode(dst); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// invitationTokenFromBody reads {"token": ...}. On failure it writes the 400
+// and returns false.
+func invitationTokenFromBody(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var req InvitationTokenRequest
+	if !decodeInvitationBody(w, r, &req) {
+		return "", false
+	}
+	if !validInvitationToken(req.Token) {
+		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
+		return "", false
+	}
+	return req.Token, true
+}
+
+// invitationTokenFromPath reads the token of a deprecated
+// /api/v1/invitations/{token}/... route. On failure it writes the 400 and
+// returns false.
+func invitationTokenFromPath(w http.ResponseWriter, r *http.Request) (string, bool) {
 	token := r.PathValue("token")
-	if token == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
+	if !validInvitationToken(token) {
+		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
+		return "", false
+	}
+	return token, true
+}
+
+// GetInvitation handles GET /api/v1/invitations/{token} (deprecated; the
+// successor is POST /api/v1/invitations/lookup).
+func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
+	token, ok := invitationTokenFromPath(w, r)
+	if !ok {
 		return
 	}
 
@@ -1384,60 +1448,117 @@ func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetInvitationPreview handles GET /api/v1/invitations/{token}/preview (public)
-// Returns limited invitation info without requiring authentication.
-// This allows users to see what team they're invited to before logging in.
-func (h *TenantHandler) GetInvitationPreview(w http.ResponseWriter, r *http.Request) {
-	token := r.PathValue("token")
-	if token == "" || strings.ContainsRune(token, 0) || len(token) < 40 || len(token) > 100 {
-		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
-		return
-	}
+// InvitationLookupResponse is what an invitation token reveals before sign-in:
+// enough to decide whether to join, and nothing else (no token, no tenant
+// settings, never the inviter's email).
+type InvitationLookupResponse struct {
+	Invitation InvitationLookupInvitation `json:"invitation"`
+	Tenant     InvitationLookupTenant     `json:"tenant"`
+}
 
+// InvitationLookupInvitation is the invitation part of InvitationLookupResponse.
+type InvitationLookupInvitation struct {
+	ID          string    `json:"id"`
+	Email       string    `json:"email"`
+	Role        string    `json:"role"`
+	Pending     bool      `json:"pending"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	InviterName string    `json:"inviter_name"`
+}
+
+// InvitationLookupTenant is the organization part of InvitationLookupResponse.
+type InvitationLookupTenant struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+// LookupInvitation handles POST /api/v1/invitations/lookup (public).
+// @Summary      Look up an invitation
+// @Description  What an invitation token grants, readable before sign-in: the organization, the invited email and role, and whether it is still pending. The token travels in the body, never in the URL.
+// @Tags         Invitations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      InvitationTokenRequest  true  "Invitation token"
+// @Success      200  {object}  InvitationLookupResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /invitations/lookup [post]
+func (h *TenantHandler) LookupInvitation(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromBody(w, r); ok {
+		h.writeInvitationLookup(w, r, token)
+	}
+}
+
+// GetInvitationPreview handles GET /api/v1/invitations/{token}/preview
+// (public, deprecated; the successor is POST /api/v1/invitations/lookup).
+func (h *TenantHandler) GetInvitationPreview(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromPath(w, r); ok {
+		h.writeInvitationLookup(w, r, token)
+	}
+}
+
+// writeInvitationLookup answers a lookup: limited invitation info, without
+// authentication, so the invited person sees what they are invited to before
+// signing in.
+func (h *TenantHandler) writeInvitationLookup(w http.ResponseWriter, r *http.Request, token string) {
 	invitation, err := h.service.GetInvitationByToken(r.Context(), token)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Get the tenant info
 	t, err := h.service.GetTenant(r.Context(), invitation.TenantID().String())
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Get inviter name for better UX
-	inviterName := h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy())
-
-	// Return limited info (no sensitive data like token)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"invitation": map[string]any{
-			"id":           invitation.ID().String(),
-			"email":        invitation.Email(),
-			"role":         invitation.Role().String(),
-			"pending":      invitation.IsPending(),
-			"expires_at":   invitation.ExpiresAt(),
-			"inviter_name": inviterName,
+	_ = json.NewEncoder(w).Encode(InvitationLookupResponse{
+		Invitation: InvitationLookupInvitation{
+			ID:          invitation.ID().String(),
+			Email:       invitation.Email(),
+			Role:        invitation.Role().String(),
+			Pending:     invitation.IsPending(),
+			ExpiresAt:   invitation.ExpiresAt(),
+			InviterName: h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
 		},
-		"tenant": map[string]any{
-			"id":   t.ID().String(),
-			"name": t.Name(),
-			"slug": t.Slug(),
-		},
+		Tenant: InvitationLookupTenant{ID: t.ID().String(), Name: t.Name(), Slug: t.Slug()},
 	})
 }
 
-// AcceptInvitation handles POST /api/v1/invitations/{token}/accept
-func (h *TenantHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
-	token := r.PathValue("token")
-	if token == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
-		return
+// AcceptInvitationToken handles POST /api/v1/invitations/accept.
+// @Summary      Accept an invitation
+// @Description  Joins the organization of the invitation. The caller must be signed in as the invited email. The token travels in the body, never in the URL.
+// @Tags         Invitations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      InvitationTokenRequest  true  "Invitation token"
+// @Success      200  {object}  MemberResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /invitations/accept [post]
+func (h *TenantHandler) AcceptInvitationToken(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromBody(w, r); ok {
+		h.acceptInvitation(w, r, token)
 	}
+}
 
+// AcceptInvitation handles POST /api/v1/invitations/{token}/accept
+// (deprecated; the successor is POST /api/v1/invitations/accept).
+func (h *TenantHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromPath(w, r); ok {
+		h.acceptInvitation(w, r, token)
+	}
+}
+
+func (h *TenantHandler) acceptInvitation(w http.ResponseWriter, r *http.Request, token string) {
 	localUser := middleware.GetLocalUser(r.Context())
 	if localUser == nil {
 		apierror.Unauthorized("Authentication required").WriteJSON(w)
@@ -1456,17 +1577,33 @@ func (h *TenantHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(toMemberResponse(membership))
 }
 
-// DeclineInvitation handles POST /api/v1/invitations/{token}/decline
-// This is a public endpoint - having the token is authorization to decline.
-// Similar to email unsubscribe links.
-func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request) {
-	token := r.PathValue("token")
-	if token == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
-		return
+// DeclineInvitationToken handles POST /api/v1/invitations/decline (public:
+// holding the token is the authorization, like an unsubscribe link).
+// @Summary      Decline an invitation
+// @Description  Deletes the invitation. Holding the token is the authorization, so no sign-in is needed. The token travels in the body, never in the URL.
+// @Tags         Invitations
+// @Accept       json
+// @Param        request  body      InvitationTokenRequest  true  "Invitation token"
+// @Success      204
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /invitations/decline [post]
+func (h *TenantHandler) DeclineInvitationToken(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromBody(w, r); ok {
+		h.declineInvitation(w, r, token)
 	}
+}
 
-	// Get invitation to verify it exists
+// DeclineInvitation handles POST /api/v1/invitations/{token}/decline
+// (public, deprecated; the successor is POST /api/v1/invitations/decline).
+func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromPath(w, r); ok {
+		h.declineInvitation(w, r, token)
+	}
+}
+
+func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request, token string) {
 	invitation, err := h.service.GetInvitationByToken(r.Context(), token)
 	if err != nil {
 		h.handleServiceError(w, err)

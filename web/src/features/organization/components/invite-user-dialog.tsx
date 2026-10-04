@@ -20,14 +20,18 @@ import { Label } from '@/components/ui/label'
 import { useRoles } from '@/features/access-control/api/use-roles'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
+import { invitationLink } from '@/features/auth/lib/invitation-token'
 
 import { createTenantInvitation } from '../api/use-members'
 import { RoleChecklist } from './role-checklist'
 
-/** `${origin}/invitations/<token>`: the page the invitee opens to join. */
+/**
+ * `${origin}/invitations#token=<token>`: the page the invitee opens to join.
+ * The token is in the fragment, which the browser never sends to a server.
+ */
 export function buildInvitationLink(token: string, origin?: string): string {
   const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '')
-  return `${base}/invitations/${token}`
+  return invitationLink(base, token)
 }
 
 interface InviteUserDialogProps {
