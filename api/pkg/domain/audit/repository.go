@@ -16,9 +16,6 @@ type Repository interface {
 	// CreateBatch persists multiple audit log entries.
 	CreateBatch(ctx context.Context, logs []*AuditLog) error
 
-	// GetByID retrieves an audit log by ID.
-	GetByID(ctx context.Context, id shared.ID) (*AuditLog, error)
-
 	// GetByTenantAndID retrieves an audit log by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*AuditLog, error)
 

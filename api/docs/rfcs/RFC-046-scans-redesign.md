@@ -391,7 +391,18 @@ Plan:
    resolution is an audit entry (`ingest.coverage_auto_resolve.dry_run`).
 2. Review: sample false positives by tool; publish the counts in the run's
    coverage summary.
-3. Switch `INGEST_COVERAGE_AUTO_RESOLVE=enforce`. Per tenant override stays.
+3. ~~Switch `INGEST_COVERAGE_AUTO_RESOLVE=enforce` after the review window
+   (~2026-10-16).~~ **Postponed (owner decision D-22 / O1, 2026-10-04,
+   research 18).** The mode stays `dry_run`. This path proves coverage per
+   tool, profile and asset, but not per check, port or authentication, so a
+   template-pack update or a removed template would read as "fixed".
+   Enforcement waits for the **closure evaluator** (research 18 P2: per-check
+   coverage records, a detector-set digest, `metadata.execution`), and at
+   minimum for an explicit `coverage_type` (absent is not full) and the nuclei
+   exit-code fix. P2-4 (the owner reviews the evaluator's dry-run counts, then
+   enforces per tenant) replaces this step. No code, config or schedule
+   switches it; `INGEST_COVERAGE_AUTO_RESOLVE` defaults to `dry_run` and is
+   unset on live.
 4. Key on `last_seen_tool` (RFC-043 sightings later) instead of `tool_name`.
 5. With `partial` (P1.2): a test proves a partial run's failed tasks never
    resolve and its completed tasks resolve only their own targets (§3.3).
@@ -571,13 +582,13 @@ means a test against a migrated Postgres (skips without `DATABASE_URL`).
 | **P1.2** | **`partial`** run and step status: migration (CHECKs + `scans.partial_runs`); a batched step with some failed and some completed batches ends `partial`; a run ends `partial` when it has completed and failed/partial steps; `partial` is terminal, counted in `partial_runs`, never auto-retried; web: status badge, filter, one success-rate formula; dead step-level retry removed | DB: run with one failed batch of three → step and run `partial`, counters (total+1, partial+1); retry controller skips partial; terminal guards include partial. Unit: settle matrix (all ok → completed, all failed → failed, mixed → partial). Web: vitest for the formula and badge |
 | **P1.3** | **Deadline → `partial` + unfinished targets**: `deadline_at`; reaper ends runs with any completed task `partial` (else `timeout`), records unfinished targets, cancels leased commands; next occurrence plans unfinished targets first | DB: reaper on a run with one completed and one running command → partial, unfinished = the running command's targets, command canceled; next trigger orders unfinished first |
 | **P1.4** | *(Started: runs carry `task_summary` and `tasks`, shown in the web Runs tab and run drawer, migration 000489.)* **Runs read model (D2 step 1)**: `GET /scans/{id}/runs` and `/runs/{id}` return trigger, `scheduled_for`, status incl. partial, task summary (done/failed/running/queued, sensors), coverage summary; trigger types `ci`, `retest`, `automation`, `rollover`; CI ingest creates a `trigger=ci` run instead of a `scan_sessions` row; dead `useScanSessions` removed | Route tests incl. cross-tenant 404; CI ingest creates exactly one run per report; web vitest for the runs tab |
-| **P1.5** | **Occurrence key + rrule**: `scheduled_for` + `UNIQUE(scan_id, scheduled_for)`; rrule + tz with backfill from daily/weekly/monthly/crontab; minimum interval 15 min; stable jitter; misfire grace | DB: two inserts for one occurrence → one run, the second gets a conflict; rrule property tests (DST, month ends, every-15-min ok, every-5-min refused); backfill test per legacy type |
+| **P1.5** | *(Occurrence key shipped in #949; 15-minute minimum and misfire grace shipped; rrule + tz storage and the legacy backfill remain.)* **Occurrence key + rrule**: `scheduled_for` + `UNIQUE(scan_id, scheduled_for)`; rrule + tz with backfill from daily/weekly/monthly/crontab; minimum interval 15 min; stable jitter; misfire grace | DB: two inserts for one occurrence → one run, the second gets a conflict; rrule property tests (DST, month ends, every-15-min ok, every-5-min refused); backfill test per legacy type |
 | **P1.6** | *(Shipped: the skip is checked in `CreateRunIfUnderLimit` under the scan row lock for every scheduled run.)* Overlap check and run insert in one transaction | Race test: manual trigger and scheduler for the same scan concurrently → one active run |
 | **P1.7** | *(Shipped for tenant sensors: v2 `capacity` feature, fair order by class with aging then round-robin per run; platform-sensor tenant fair share in #991.)* **Claim-N** with `FOR UPDATE SKIP LOCKED`, server capacity, priority classes with ageing, per-run round-robin | DB: two sensors × N polls never claim the same command; capacity respected; class order; round-robin across two runs; tenant/zone predicates hold |
 | **P1.8** | **`controller_leases`** + non-idempotent sweeps converted; remove the two session advisory locks | DB: two holders, one wins, epoch increments, expiry hands over; each converted sweep runs once with two instances |
-| **P1.9** | Observability: `tenant_id` out of metric labels, inert metrics written or deleted, `traceparent` in payloads, `run_id` log key, `/runs/{id}/explain` | Metric label test; explain route tests incl. cross-tenant; trace propagation unit test |
+| **P1.9** | *(Started: no id labels on any metric, test-enforced; 17 never-written metrics deleted; `command_claims_total`, `command_leases_expired_total`, `scan_runs_reaped_total` added. `traceparent`, `run_id` log key and `/runs/{id}/explain` remain.)* Observability: `tenant_id` out of metric labels, inert metrics written or deleted, `traceparent` in payloads, `run_id` log key, `/runs/{id}/explain` | Metric label test; explain route tests incl. cross-tenant; trace propagation unit test |
 | **P1.10** | Cancel completeness: sdk-go cancel without doorbell; command cancel on scan commands needs `scans:write`; automation cancel stops steps; cancel audited | sdk-go conformance test; route permission test; DB test that automation cancel stops pending steps |
-| **P1.11** | Two-replica race suite in CI; lift B4 in helm-charts | CI job with two API processes against one DB: scheduler, claim, audit chain, leases |
+| **P1.11** | *(Started: `tests/integration/two_replica_race_test.go` races two connection pools on one database — scheduler claim + occurrence key, command claim, audit chain — in the API CI test job; controller leases have their own race test with P1.8. A CI job with two API processes and the helm-charts B4 lift remain.)* Two-replica race suite in CI; lift B4 in helm-charts | CI job with two API processes against one DB: scheduler, claim, audit chain, leases |
 
 ### P2 — engines and the event backbone
 
