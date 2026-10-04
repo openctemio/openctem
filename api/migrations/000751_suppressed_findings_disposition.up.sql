@@ -1,4 +1,4 @@
--- 000682: suppressed findings carry their disposition, not "resolved"
+-- 000751: suppressed findings carry their disposition, not "resolved"
 -- (research 18 F7, owner decision O9).
 --
 -- Ingest used to close a finding an approved suppression rule matched as

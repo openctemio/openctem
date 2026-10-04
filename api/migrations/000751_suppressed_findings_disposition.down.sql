@@ -1,4 +1,4 @@
--- Revert 000682: suppressed findings go back to resolved / suppressed, as the
+-- Revert 000751: suppressed findings go back to resolved / suppressed, as the
 -- old ingest wrote them. Only rows a suppression rule closed (resolution
 -- 'suppressed' with a recorded rule) are touched.
 UPDATE findings f
