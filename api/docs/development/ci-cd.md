@@ -166,7 +166,7 @@ make check            # both contract checks, as CI runs them
 | SQL Schema Drift | `api/scripts/check-sql-schema.sh`: prepares every SQL statement against a migrations-only database. |
 | Security Gates | `api/scripts/security-lint.sh` (checks out `sensor` and `sdk-go` alongside), tenant-scope analyzer, sensor vocabulary guard. |
 | OpenAPI Contract | See above. |
-| Gateway Routing | `api/deploy/gateway/smoke-test.sh` + renders the production compose files. |
+| Gateway Routing | `api/deploy/gateway/smoke-test.sh` (every plane's routing against stub upstreams) + renders the production compose files. That `planes.caddy` matches the plane table is a unit test (`routes/plane` `TestGatewayPlanesFile`). |
 | Lint | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
 | Unit tests | PRs. `go test -race -timeout 20m ./...` with no database (DB-backed tests skip). |
 | Tests (Postgres + Redis) | Merge queue and pushes. The same suite against Postgres 17 + Redis 7 service containers. |
