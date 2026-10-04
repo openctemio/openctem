@@ -23,12 +23,23 @@ const (
 	runContextKeyExcludedCount = "excluded_target_count"
 )
 
+// userIDOf parses a triggered_by user id; anything else is nil.
+func userIDOf(s string) *shared.ID {
+	id, err := shared.IDFromString(strings.TrimSpace(s))
+	if err != nil || id.IsZero() {
+		return nil
+	}
+	return &id
+}
+
 // gateRunContext checks the targets a run is started with and returns the
 // context to store:
 //
 //   - `target` and `targets` are replaced by one checked `targets` list;
 //   - a target the scan target validator or zone routing refuses fails the
 //     whole run (400): the caller named it explicitly;
+//   - a target the actor may not scan (outside their data scope, or free
+//     text matching no scope target) fails the run (research/15 L-06);
 //   - a target matching an active scope exclusion is dropped, as on a scan
 //     run, and counted; a run whose every target is excluded is refused;
 //   - `scan_zone_id` is never taken from the caller: it is set from the
@@ -37,7 +48,7 @@ const (
 // A run with no targets is unchanged, apart from the zone key. A failed
 // exclusion lookup, or no gate wired, refuses a run with targets (fail
 // closed).
-func (s *Service) gateRunContext(ctx context.Context, tenantID shared.ID, in map[string]any) (map[string]any, error) {
+func (s *Service) gateRunContext(ctx context.Context, tenantID shared.ID, triggeredBy string, in map[string]any) (map[string]any, error) {
 	out := maps.Clone(in)
 	if out == nil {
 		return nil, nil
@@ -54,7 +65,12 @@ func (s *Service) gateRunContext(ctx context.Context, tenantID shared.ID, in map
 	if s.targetGate == nil {
 		return nil, errors.New("pipeline target gate is not configured; run not started")
 	}
-	gated, err := s.targetGate.ResolveDispatchTargets(ctx, scanapp.DispatchTargetsInput{TenantID: tenantID, Targets: targets})
+	gated, err := s.targetGate.ResolveDispatchTargets(ctx, scanapp.DispatchTargetsInput{
+		TenantID: tenantID, Targets: targets,
+		// The person who starts the run (or, from a workflow, triggered_by
+		// when it names a user) may scan only targets in their act scope.
+		ActScope: true, FallbackUser: userIDOf(triggeredBy),
+	})
 	if err != nil {
 		return nil, err
 	}
