@@ -137,8 +137,8 @@ func (m *mockGroupRepoForRules) Create(_ context.Context, _ *group.Group) error 
 func (m *mockGroupRepoForRules) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForRules) Update(_ context.Context, _ *group.Group) error { return nil }
-func (m *mockGroupRepoForRules) Delete(_ context.Context, _ shared.ID, _ shared.ID) error    { return nil }
+func (m *mockGroupRepoForRules) Update(_ context.Context, _ *group.Group) error           { return nil }
+func (m *mockGroupRepoForRules) Delete(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
 func (m *mockGroupRepoForRules) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }

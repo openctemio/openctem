@@ -305,7 +305,9 @@ func (m *mockGroupRepoForPermission) GetBySlug(_ context.Context, _ shared.ID, _
 	return nil, nil
 }
 func (m *mockGroupRepoForPermission) Update(_ context.Context, _ *group.Group) error { return nil }
-func (m *mockGroupRepoForPermission) Delete(_ context.Context, _ shared.ID, _ shared.ID) error    { return nil }
+func (m *mockGroupRepoForPermission) Delete(_ context.Context, _ shared.ID, _ shared.ID) error {
+	return nil
+}
 func (m *mockGroupRepoForPermission) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }
