@@ -72,6 +72,7 @@ describe('asset registry lookups', () => {
       if (c.id === 'other') expect(c.lens).toBeNull()
       else expect(ASSET_LENSES.find((l) => l.id === c.lens)?.classes).toContain(c.id)
     }
-    expect(Object.keys(ASSET_TYPE_CLASSES)).toHaveLength(38)
+    // 36 types + unclassified; web_application is an input name only (O3)
+    expect(Object.keys(ASSET_TYPE_CLASSES)).toHaveLength(37)
   })
 })
