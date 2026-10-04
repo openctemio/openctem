@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/group"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -21,7 +23,32 @@ type RuleService struct {
 	groupRepo   group.Repository
 	agValidator assetGroupValidator
 	broadcaster RuleBroadcaster
+	delegation  *datascope.Enforcer
 	logger      *logger.Logger
+}
+
+// SetScopeDelegationCap wires the D13 cap: a scope rule adds every matching
+// asset, now and later, so only a caller whose own scope is unrestricted
+// may create or change one (research doc 15 L-09).
+func (s *RuleService) SetScopeDelegationCap(e *datascope.Enforcer) { s.delegation = e }
+
+// ErrRuleNeedsFullScope: a restricted caller cannot create or change a
+// scope rule.
+var ErrRuleNeedsFullScope = fmt.Errorf("%w: scope rules can add any matching asset; only someone who sees every asset can create or change them", shared.ErrForbidden)
+
+// checkRuleDelegation refuses a caller whose own data scope is restricted.
+func (s *RuleService) checkRuleDelegation(ctx context.Context, tenantID shared.ID) error {
+	if s.delegation == nil {
+		return nil
+	}
+	_, unrestricted, err := s.delegation.Delegable(ctx, tenantID, nil)
+	if err != nil {
+		return err
+	}
+	if !unrestricted {
+		return ErrRuleNeedsFullScope
+	}
+	return nil
 }
 
 // assetGroupValidator validates that asset group IDs belong to a specific tenant.
@@ -84,6 +111,9 @@ func (s *RuleService) CreateRule(ctx context.Context, input CreateRuleInput, cre
 	groupID, err := shared.IDFromString(input.GroupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id", shared.ErrValidation)
+	}
+	if err := s.checkRuleDelegation(ctx, tenantID); err != nil {
+		return nil, err
 	}
 
 	// Verify group exists, belongs to tenant, and is active
@@ -225,6 +255,10 @@ func (s *RuleService) UpdateRule(ctx context.Context, tenantID, ruleID string, i
 	id, err := shared.IDFromString(ruleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid rule id", shared.ErrValidation)
+	}
+
+	if err := s.checkRuleDelegation(ctx, tid); err != nil {
+		return nil, err
 	}
 
 	rule, err := s.acRepo.GetScopeRule(ctx, tid, id)

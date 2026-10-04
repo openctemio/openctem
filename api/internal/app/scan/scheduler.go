@@ -187,7 +187,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	// the move also keeps the next polling cycle from picking it up again.
 	occurrence := *sc.NextRunAt
 	nextRunAt := sc.CalculateNextRunAt()
-	claimed, err := s.scanRepo.ClaimScheduledRun(ctx, sc.ID, occurrence, nextRunAt)
+	claimed, err := s.scanRepo.ClaimScheduledRun(ctx, sc.TenantID, sc.ID, occurrence, nextRunAt)
 	if err != nil {
 		s.logger.Error("failed to claim scheduled run", "scan_id", sc.ID.String(), "error", err)
 		return
@@ -254,7 +254,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 		// for three nights on the demo deployment — looks identical to one that
 		// simply has not run yet: next run scheduled, last run blank. Best-effort;
 		// a failure to record must not mask the original trigger error.
-		if recErr := s.scanRepo.RecordTriggerFailure(ctx, sc.ID, "failed"); recErr != nil {
+		if recErr := s.scanRepo.RecordTriggerFailure(ctx, sc.TenantID, sc.ID, "failed"); recErr != nil {
 			s.logger.Error("failed to record scan trigger failure",
 				"scan_id", sc.ID.String(), "error", recErr)
 		}
