@@ -140,7 +140,7 @@ func TestDataScopePolicyMigration_ExistingOrganizationsKeepEverything(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := h.db.BeginTx(ctx, nil)
+	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil) // the migration is DDL: schema owner
 	if err != nil {
 		t.Fatal(err)
 	}
