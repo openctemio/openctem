@@ -141,6 +141,25 @@ the queue (no required check; the PR and the push scan the change).
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
 
+### Workflow security
+
+- **Every action is pinned to a full commit SHA** with a `# vX.Y.Z` comment
+  (`uses: actions/checkout@<40-hex> # v7.0.1`). A tag or branch ref can be moved
+  by whoever controls the action's repository, and the new code would run with
+  the job's token and secrets; a SHA cannot. Workflow Lint runs
+  `.github/scripts/check-action-pins.sh`, which fails on any unpinned `uses:`.
+  Dependabot (`github-actions`, weekly, minor/patch grouped) bumps the SHA and
+  the comment together. To add an action, resolve the release tag to its commit
+  (`gh api repos/<owner>/<repo>/commits/<tag> -q .sha`) and pin that.
+- **Least-privilege tokens.** Each workflow sets `permissions: contents: read`
+  at the top; a job that needs more asks for it itself (for example
+  `security-events: write` only on the jobs that upload SARIF, `contents: write`
+  only on the job that publishes a release). The repository default for
+  `GITHUB_TOKEN` is read-only as well.
+- **No `pull_request_target`.** PR workflows run with the PR's read-only token
+  and no secrets for fork PRs; nothing checks out a PR head with a write token.
+- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint).
+
 ### The API ↔ web contract
 
 `api/api/openapi/swagger.yaml` is generated from the Go handler annotations.
