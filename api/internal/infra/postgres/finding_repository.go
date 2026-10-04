@@ -1250,12 +1250,19 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 	// Build dynamic WHERE for outer filters
 	var whereClauses []string
 	args := []any{tenantID.String()}
-	argN := 2
 
 	statusFilter := ""
 	if !filter.IncludeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
 	}
+	// Layer 2: a restricted caller's CVEs, counts and dates come only from
+	// findings on assets in their scope ($2, $3).
+	if filter.DataScope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", filter.DataScope, args)
+		statusFilter += " AND " + cond
+	}
+	argN := len(args) + 1
 
 	if len(filter.SeverityIn) > 0 {
 		placeholders := make([]string, 0, len(filter.SeverityIn))
@@ -1411,10 +1418,17 @@ func (r *FindingRepository) GetActiveCVEStats(
 	ctx context.Context,
 	tenantID shared.ID,
 	includeResolved bool,
+	scope *shared.DataScope,
 ) (*vulnerability.ActiveCVEStats, error) {
 	statusFilter := ""
 	if !includeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+	args := []any{tenantID.String()}
+	if scope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", scope, args)
+		statusFilter += " AND " + cond
 	}
 
 	query := `
@@ -1439,7 +1453,7 @@ func (r *FindingRepository) GetActiveCVEStats(
 
 	var stats vulnerability.ActiveCVEStats
 	var crit, high, med, low, info int
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Total, &crit, &high, &med, &low, &info,
 		&stats.KEVCount, &stats.ExploitAvailableCount,
 	); err != nil {
@@ -1840,17 +1854,26 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
-func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+//
+// A move to resolved must name how the finding was resolved (method), so every
+// closure carries its evidence class; any other status clears
+// resolution_method, so a reopened or dispositioned finding never keeps a
+// stale "fixed" claim.
+func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
 	if len(ids) == 0 {
 		return nil
+	}
+	methodArg, err := resolutionMethodArg(status, method)
+	if err != nil {
+		return err
 	}
 
 	// Security: tenant_id is first parameter for isolation
 	placeholders := make([]string, len(ids))
-	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}
+	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg}
 
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+5)
+		placeholders[i] = fmt.Sprintf("$%d", i+6)
 		args = append(args, id.String())
 	}
 
@@ -1865,16 +1888,27 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 	// Security: Exclude pentest findings — they must be managed via the pentest module
 	query := fmt.Sprintf(`
 		UPDATE findings
-		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
+		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5%s, updated_at = NOW()
 		WHERE tenant_id = $1 AND source != 'pentest' AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
-	_, err := r.db.ExecContext(ctx, query, args...)
-	if err != nil {
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to update findings status: %w", err)
 	}
 
 	return nil
+}
+
+// resolutionMethodArg is the resolution_method value a status write stores:
+// the (required, valid) method for resolved, NULL for everything else.
+func resolutionMethodArg(status vulnerability.FindingStatus, method vulnerability.ResolutionMethod) (any, error) {
+	if status != vulnerability.FindingStatusResolved {
+		return nil, nil
+	}
+	if !method.IsValid() {
+		return nil, fmt.Errorf("%w: resolving a finding needs a valid resolution method, got %q", shared.ErrValidation, method)
+	}
+	return method.String(), nil
 }
 
 // DeleteByScanID removes all findings for a scan.
@@ -2687,18 +2721,21 @@ func (r *FindingRepository) ListByAssetID(ctx context.Context, tenantID, assetID
 // CountWindow returns, for the trailing `days` window, how many findings were
 // newly detected (created_at) and how many were resolved (resolved_at, status
 // resolved/verified) — the new-vs-resolved trend a digest reports. Tenant-scoped.
-func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error) {
+func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (newCount, resolvedCount int64, err error) {
 	if days <= 0 {
 		days = 7
 	}
+	// A non-nil scope counts only findings on in-scope assets ($3, $4).
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 	query := `
 		SELECT
 			COALESCE(SUM(CASE WHEN created_at >= NOW() - ($2::int || ' days')::interval THEN 1 ELSE 0 END), 0) AS new_count,
 			COALESCE(SUM(CASE WHEN resolved_at >= NOW() - ($2::int || ' days')::interval
 				AND status IN ('resolved','verified') THEN 1 ELSE 0 END), 0) AS resolved_count
 		FROM findings
-		WHERE tenant_id = $1`
-	if err = r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(&newCount, &resolvedCount); err != nil {
+		WHERE tenant_id = $1 AND ` + inScope
+	if err = r.db.QueryRowContext(ctx, query, args...).Scan(&newCount, &resolvedCount); err != nil {
 		return 0, 0, fmt.Errorf("failed to count finding window: %w", err)
 	}
 	return newCount, resolvedCount, nil
@@ -2800,11 +2837,58 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 // dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
 // filter: optional asset / source narrowing, applied to every number returned.
 func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
-	stats := vulnerability.NewFindingStats()
-
 	// Query for total and counts by severity, status, source in one go
 	// Statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate
-	query := `
+	query := findingStatsSelect + `
+		WHERE tenant_id = $1
+	`
+
+	args := []any{tenantID.String()}
+
+	// Layer 2: Data Scope - filter stats by user's group membership. Fail-OPEN:
+	// no assignment ⇒ NOT EXISTS bypasses ⇒ all (backward compat). Fail-CLOSED is
+	// handled one level up in the service (it returns empty stats when the tenant
+	// enforces RestrictedDataScope and the user has no assignment), so this query
+	// stays unchanged and its interface signature stable.
+	if dataScopeUserID != nil && filter.ScopeStrict {
+		query += ` AND asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)`
+		args = append(args, dataScopeUserID.String())
+	} else if dataScopeUserID != nil {
+		query += ` AND (
+			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
+			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
+		)`
+		args = append(args, dataScopeUserID.String())
+	}
+
+	// Asset filter — used when the page is `/findings?assetId=…` so
+	// the severity cards reflect the same filtered table the user is
+	// looking at, not the global tenant counts.
+	if filter.AssetID != nil {
+		args = append(args, filter.AssetID.String())
+		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
+	}
+
+	// Source filter — used by the Exposures type pages (vulnerabilities,
+	// secrets, code, misconfigurations) so their counts come from one
+	// aggregate instead of walking the whole findings list. Same `source IN`
+	// shape as the list endpoint's filter; values are bound, never inlined.
+	if len(filter.Sources) > 0 {
+		placeholders := make([]string, len(filter.Sources))
+		for i, src := range filter.Sources {
+			args = append(args, src.String())
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
+	}
+
+	return r.queryFindingStats(ctx, query, args)
+}
+
+// findingStatsSelect is the one aggregate behind every findings stats read:
+// totals by severity, status and source, and the open risk posture. Callers
+// append the WHERE clause.
+const findingStatsSelect = `
 		SELECT
 			COUNT(*) as total,
 			COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) as critical,
@@ -2839,44 +2923,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
 			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
 		FROM findings
-		WHERE tenant_id = $1
-	`
+`
 
-	args := []any{tenantID.String()}
-
-	// Layer 2: Data Scope - filter stats by user's group membership. Fail-OPEN:
-	// no assignment ⇒ NOT EXISTS bypasses ⇒ all (backward compat). Fail-CLOSED is
-	// handled one level up in the service (it returns empty stats when the tenant
-	// enforces RestrictedDataScope and the user has no assignment), so this query
-	// stays unchanged and its interface signature stable.
-	if dataScopeUserID != nil {
-		query += ` AND (
-			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
-			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
-		)`
-		args = append(args, dataScopeUserID.String())
-	}
-
-	// Asset filter — used when the page is `/findings?assetId=…` so
-	// the severity cards reflect the same filtered table the user is
-	// looking at, not the global tenant counts.
-	if filter.AssetID != nil {
-		args = append(args, filter.AssetID.String())
-		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
-	}
-
-	// Source filter — used by the Exposures type pages (vulnerabilities,
-	// secrets, code, misconfigurations) so their counts come from one
-	// aggregate instead of walking the whole findings list. Same `source IN`
-	// shape as the list endpoint's filter; values are bound, never inlined.
-	if len(filter.Sources) > 0 {
-		placeholders := make([]string, len(filter.Sources))
-		for i, src := range filter.Sources {
-			args = append(args, src.String())
-			placeholders[i] = fmt.Sprintf("$%d", len(args))
-		}
-		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
-	}
+// queryFindingStats runs a findingStatsSelect query and maps its row.
+func (r *FindingRepository) queryFindingStats(ctx context.Context, query string, args []any) (*vulnerability.FindingStats, error) {
+	stats := vulnerability.NewFindingStats()
 
 	var (
 		total, critical, high, medium, low, info                     int64
@@ -3536,6 +3587,8 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 					(status IN ('resolved', 'verified')
 						AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed')))
 					OR status = 'validated_fixed'
+					-- Seen again: a not_observed finding is observed (O2).
+					OR status = 'not_observed'
 				)
 			FOR UPDATE
 		)
@@ -3596,9 +3649,10 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	return result, nil
 }
 
-// ExpireFeatureBranchFindings marks stale feature branch findings as resolved.
-// This is called by a background job to clean up findings on non-default branches
-// that have not been seen for a configurable period.
+// ExpireFeatureBranchFindings marks stale feature branch findings as
+// not_observed: not seen for a configurable period on a non-default branch is
+// stale, not fixed (research 18 F7, owner decision O2), so the finding is never
+// counted as fixed and its SLA keeps running. A sighting reopens it.
 // Uses JOIN with repository_branches to determine default branch status.
 func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, tenantID shared.ID, defaultExpiryDays int) (int64, error) {
 	// Expire findings that:
@@ -3606,12 +3660,14 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 	// 2. The branch allows expiry (keep_when_inactive = false)
 	// 3. Have active status (new, open)
 	// 4. Have not been seen for the configured expiry period (per-branch or default)
-	// Resolution is set to 'branch_expired' to distinguish from other auto-resolve types
+	// Resolution 'branch_expired' records why the finding is not observed.
 	query := `
 		UPDATE findings f
-		SET status = 'resolved',
+		SET status = 'not_observed',
 			resolution = 'branch_expired',
-			resolved_at = NOW(),
+			resolution_method = NULL,
+			resolved_at = NULL,
+			resolved_by = NULL,
 			updated_at = NOW()
 		FROM repository_branches rb
 		WHERE f.tenant_id = $1

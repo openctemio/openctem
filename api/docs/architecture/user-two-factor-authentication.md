@@ -114,6 +114,7 @@ integration credentials are.
 |---|---|---|
 | 2FA turned on (self-service or forced enrollment) | `auth.mfa_enabled` (metadata `via`) | |
 | 2FA turned off | `auth.mfa_disabled` | yes |
+| 2FA reset by an organization owner/admin | `auth.mfa_reset` (high; actor, target user, metadata `membership_id`, `target_role`; in the caller's organization) | yes (same "turned off" notice) |
 | Wrong second factor at login | `auth.mfa_failed` | |
 | Recovery code used to sign in | `auth.mfa_recovery_code_used` (metadata `recovery_codes_remaining`) | yes |
 | Recovery codes regenerated | `auth.mfa_recovery_codes_regenerated` | |
@@ -123,10 +124,31 @@ integration credentials are.
 ## Recovery
 
 A user who lost their authenticator signs in with a recovery code, then disables and
-re-enables 2FA, or regenerates codes after setting up a new device. If the recovery codes
-are also lost, an operator can delete the user's row:
-`DELETE FROM user_mfa WHERE user_id = '<uuid>';`. Recovery codes cascade with it. If the
-organization requires 2FA, the user's next login forces enrollment again.
+re-enables 2FA, or regenerates codes after setting up a new device.
+
+If the recovery codes are also lost, an owner or administrator of their organization
+resets it: **Settings > Members**, row menu **Reset 2FA**
+(`POST /api/v1/tenants/{tenant}/members/{membershipId}/reset-2fa`,
+`AuthService.ResetMemberMFA`). The reset deletes the factor and the recovery codes,
+revokes every session of the user (with immediate access-token revocation), writes
+`auth.mfa_reset` and e-mails the user. If the organization requires 2FA, the user's next
+login forces enrollment again.
+
+The factor belongs to the user account, not to one organization, so the rules are:
+
+- the target must be a member of the caller's organization (404 otherwise);
+- the caller must be an active owner or administrator there (route `RequireTeamAdmin`,
+  re-checked live in the service);
+- nobody resets their own factor here: that is the self-service disable, which needs the
+  password and a code, so a hijacked admin session cannot strip its own second factor;
+- an owner or administrator target needs an owner caller (the peer-administrator rule);
+- **the same authority is required in every other organization the target belongs to**,
+  active or suspended. An administrator of organization A cannot weaken the account of
+  someone who is also a member, administrator or owner of organization B unless they hold
+  the same authority in B; otherwise 403 tells them to ask an administrator there.
+
+An operator can still delete the row directly as a last resort:
+`DELETE FROM user_mfa WHERE user_id = '<uuid>';` (recovery codes cascade).
 
 ## Key files
 

@@ -81,12 +81,8 @@ System roles are read-only; only **custom** roles can be edited or deleted. You
 can only grant permissions you hold yourself — you can't create a role more
 powerful than you.
 
-### Permission Sets
-
-**Settings → Access Control → Permission Sets** lets you bundle related
-permissions into a reusable set (**Create Permission Set** → name it, pick
-permissions by category). Sets make it easier to compose roles consistently.
-System sets are read-only.
+Permissions come **only** from roles. Teams (below) decide which data a
+member sees, never what they can do.
 
 ### Teams (data-scope groups) and Assignment Rules
 

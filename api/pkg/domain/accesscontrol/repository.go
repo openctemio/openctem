@@ -16,7 +16,8 @@ type Repository interface {
 	DeleteAssetOwner(ctx context.Context, assetID, groupID shared.ID) error
 	ListAssetOwners(ctx context.Context, assetID shared.ID) ([]*AssetOwner, error)
 	ListAssetsByGroup(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
-	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
+	// scope limits the listed assets to the caller's data scope (nil: all).
+	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, scope *shared.DataScope, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
 	ListGroupsByAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error)
 	CountAssetOwners(ctx context.Context, assetID shared.ID) (int64, error)
 	CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error)
@@ -82,14 +83,6 @@ type Repository interface {
 	// HasAnyScopeAssignment checks if a user has any rows in user_accessible_assets.
 	// Used for backward compat: if false, user sees all data (no groups configured).
 	HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error)
-
-	// Group Permissions (custom overrides)
-	CreateGroupPermission(ctx context.Context, gp *GroupPermission) error
-	GetGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) (*GroupPermission, error)
-	UpdateGroupPermission(ctx context.Context, gp *GroupPermission) error
-	DeleteGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) error
-	ListGroupPermissions(ctx context.Context, groupID shared.ID) ([]*GroupPermission, error)
-	ListGroupPermissionsByEffect(ctx context.Context, groupID shared.ID, effect PermissionEffect) ([]*GroupPermission, error)
 
 	// Assignment Rules
 	CreateAssignmentRule(ctx context.Context, rule *AssignmentRule) error

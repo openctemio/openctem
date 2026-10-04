@@ -31,6 +31,7 @@ const STATUS_MAP: Record<string, FindingStatus> = {
   confirmed: 'confirmed',
   in_progress: 'in_progress',
   fix_applied: 'fix_applied',
+  not_observed: 'not_observed',
   resolved: 'resolved',
   false_positive: 'false_positive',
   accepted: 'accepted',
