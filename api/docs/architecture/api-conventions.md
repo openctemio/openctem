@@ -164,13 +164,19 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   - Do not add `limit`/`offset` or `page_size` to new routes.
 - **Sorting:** `sort=field,-other` (a leading `-` means descending). Do not
   add `sort_by`/`sort_order`/`order`/`order_by` to new routes.
-- **Filtering:**
-  - Equality uses the field's own name, e.g. `status=open`. A list value is
-    the plural name with commas, e.g. `severities=critical,high`.
-  - Ranges use `min_`/`max_` or `_before`/`_after` prefixes and suffixes,
-    e.g. `min_cvss`, `first_seen_after`.
-  - Booleans use `is_`/`has_`, e.g. `is_internet_accessible`.
-  - Free text is `search`.
+- **Filtering** follows [RFC-048](../rfcs/RFC-048-list-query-contract.md)
+  ([how to use it](list-query-contract.md)). It supersedes the older
+  plural / `min_` / `search` style, which stays only as deprecated aliases on
+  migrated endpoints:
+  - The param is the **singular response field name**; a list value uses
+    commas, e.g. `severity=critical,high`.
+  - Operators are suffixes: `_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_null`,
+    `_contains`, e.g. `cvss_score_gte=7`, `last_seen_at_gte=-P30D`.
+  - Booleans use `is_`/`has_`, e.g. `is_in_kev=true`.
+  - Free text is `q`.
+  - OR and nesting: `POST /{collection}/search` with a FilterDocument.
+  - A bad value, an unknown param (after the warn release) or an unsortable
+    field is `400 INVALID_FILTER`.
 
 ## 6. Bodies and errors
 

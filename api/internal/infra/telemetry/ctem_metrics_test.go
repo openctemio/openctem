@@ -121,7 +121,9 @@ func TestMetricNames_Stable(t *testing.T) {
 
 	cases := []struct {
 		name string
-		col  interface{ Collect(ch chan<- prometheusMetric) }
+		col  interface {
+			Collect(ch chan<- prometheusMetric)
+		}
 	}{}
 	// CollectAndCount accepts any prometheus.Collector; we invoke it
 	// through the concrete vars so the import-identity check works.
