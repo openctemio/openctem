@@ -215,6 +215,13 @@ func (s *Service) SetPriorityClassifier(classifier PriorityClassifier) {
 	s.findingProcessor.SetPriorityClassifier(classifier)
 }
 
+// SetRegressionHandler wires the follow-up on findings a scan reopened as
+// regressions: a fresh SLA deadline and a ticket comment + notification
+// (RFC-039 D2).
+func (s *Service) SetRegressionHandler(h RegressionHandler) {
+	s.findingProcessor.SetRegressionHandler(h)
+}
+
 // SetSLAApplier wires the SLA-deadline calculator used after priority
 // classification (F3 wire). Nil-safe: when not wired, findings persist
 // with NULL sla_deadline, matching pre-F3 behavior.

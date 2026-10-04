@@ -71,6 +71,9 @@ type Scan struct {
 	TotalRuns      int
 	SuccessfulRuns int
 	FailedRuns     int
+	// PartialRuns counts runs that kept results but lost some work
+	// (RFC-046 D5); neither a success nor a failure.
+	PartialRuns int
 
 	// Audit
 	CreatedBy *shared.ID
@@ -581,6 +584,8 @@ func (s *Scan) RecordRun(runID shared.ID, status string) {
 
 	if status == RunStatusCompleted || status == RunStatusSuccess {
 		s.SuccessfulRuns++
+	} else if status == RunStatusPartial {
+		s.PartialRuns++
 	} else if status == RunStatusFailed || status == RunStatusError {
 		s.FailedRuns++
 	}

@@ -38,6 +38,12 @@ const RUN_STATUS: Record<string, RunStatusConfig> = {
     icon: CheckCircle2,
     className: 'bg-success/15 text-success',
   },
+  // Kept results but lost some work (a batch or a step failed).
+  partial: {
+    label: 'Partial',
+    icon: AlertTriangle,
+    className: 'bg-warning/15 text-warning',
+  },
   failed: {
     label: 'Failed',
     icon: XCircle,

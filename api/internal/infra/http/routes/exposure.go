@@ -289,10 +289,9 @@ func registerVulnerabilityRoutes(
 		// gates on FindingsVerify.
 		r.POST("/{id}/verify", h.VerifyFinding, middleware.Require(permission.FindingsVerify))
 
-		// Verification scan automation: trigger a targeted scan on the finding's asset
-		// (only available when finding actions handler is wired)
+		// The whole-asset "request verification scan" is retired (RFC-039 D4):
+		// Retest now (POST /{id}/retests) re-runs the finding's own check.
 		if findingActionsHandler != nil {
-			r.POST("/{id}/request-verification", findingActionsHandler.RequestVerificationScan, middleware.Require(permission.FindingsWrite))
 			// CTEM Stage-4: dispatch a validation (safe-check) job for this finding.
 			r.POST("/{id}/validate", findingActionsHandler.RequestValidation, middleware.Require(permission.FindingsWrite))
 		}

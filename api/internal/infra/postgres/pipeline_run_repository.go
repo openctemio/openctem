@@ -203,7 +203,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 }
 
 // terminalRunStatusesSQL lists the statuses a run never leaves.
-const terminalRunStatusesSQL = `('completed', 'failed', 'canceled', 'timeout')`
+const terminalRunStatusesSQL = `('completed', 'partial', 'failed', 'canceled', 'timeout')`
 
 // notUpdatedError explains a guarded UPDATE that touched no row: the run is
 // missing, or it already finished.
@@ -1067,6 +1067,7 @@ func (r *PipelineRunRepository) GetStatsByTenant(ctx context.Context, tenantID s
 			COUNT(*) FILTER (WHERE status = 'pending') as pending,
 			COUNT(*) FILTER (WHERE status = 'running') as running,
 			COUNT(*) FILTER (WHERE status = 'completed') as completed,
+			COUNT(*) FILTER (WHERE status = 'partial') as partial,
 			COUNT(*) FILTER (WHERE status = 'failed' OR status = 'timeout') as failed,
 			COUNT(*) FILTER (WHERE status = 'canceled') as canceled
 		FROM pipeline_runs
@@ -1078,6 +1079,7 @@ func (r *PipelineRunRepository) GetStatsByTenant(ctx context.Context, tenantID s
 		&stats.Pending,
 		&stats.Running,
 		&stats.Completed,
+		&stats.Partial,
 		&stats.Failed,
 		&stats.Canceled,
 	)
@@ -1331,7 +1333,11 @@ func (r *StepRunRepository) List(ctx context.Context, filter pipeline.StepRunFil
 	return stepRuns, nil
 }
 
-// Update updates a step run.
+// Update updates a step run. A terminal step run is final, the same rule as
+// PipelineRunRepository.Update: a stale in-memory copy written back after a
+// cancel, the timeout reaper or a duplicate result settled the step must not
+// re-queue it, reopen it or overwrite its outcome. Such a write changes
+// nothing and returns pipeline.ErrStepRunAlreadyFinished.
 func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) error {
 	output, err := json.Marshal(sr.Output)
 	if err != nil {
@@ -1346,6 +1352,7 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 		    queued_at = $11, started_at = $12, completed_at = $13,
 		    error_message = $14, error_code = $15
 		WHERE id = $1
+		  AND status NOT IN ` + terminalStepRunStatusesSQL + `
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -1370,12 +1377,28 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 		return fmt.Errorf("failed to update step run: %w", err)
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return shared.ErrNotFound
+	if n, _ := result.RowsAffected(); n == 0 {
+		return r.notUpdatedError(ctx, sr.ID)
 	}
 
 	return nil
+}
+
+// terminalStepRunStatusesSQL lists the statuses a step run never leaves.
+const terminalStepRunStatusesSQL = `('completed', 'partial', 'failed', 'skipped', 'canceled', 'timeout')`
+
+// notUpdatedError explains a guarded UPDATE that touched no row: the step run
+// is missing, or it already finished.
+func (r *StepRunRepository) notUpdatedError(ctx context.Context, id shared.ID) error {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM step_runs WHERE id = $1)`, id.String()).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check step run: %w", err)
+	}
+	if !exists {
+		return shared.ErrNotFound
+	}
+	return pipeline.ErrStepRunAlreadyFinished
 }
 
 // Delete deletes a step run.
@@ -1394,16 +1417,25 @@ func (r *StepRunRepository) Delete(ctx context.Context, id shared.ID) error {
 	return nil
 }
 
-// UpdateStatus updates step run status.
+// UpdateStatus updates step run status. Only a step run that has not finished
+// moves; for a terminal one it returns pipeline.ErrStepRunAlreadyFinished and
+// changes nothing.
 func (r *StepRunRepository) UpdateStatus(ctx context.Context, id shared.ID, status pipeline.StepRunStatus, errorMessage, errorCode string) error {
 	query := `
 		UPDATE step_runs
 		SET status = $2, error_message = $3, error_code = $4,
-		    completed_at = CASE WHEN $2::varchar IN ('completed', 'failed', 'skipped', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ` + terminalStepRunStatusesSQL + ` THEN NOW() ELSE completed_at END
 		WHERE id = $1
+		  AND status NOT IN ` + terminalStepRunStatusesSQL + `
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage, errorCode)
-	return err
+	result, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage, errorCode)
+	if err != nil {
+		return fmt.Errorf("failed to update step run status: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return r.notUpdatedError(ctx, id)
+	}
+	return nil
 }
 
 // AssignSensor records that a sensor started the step run with the command.
@@ -1420,7 +1452,8 @@ func (r *StepRunRepository) AssignSensor(ctx context.Context, id shared.ID, sens
 	return err
 }
 
-// Complete marks a step run as completed.
+// Complete marks a step run as completed. A step run that already finished is
+// left alone and pipeline.ErrStepRunAlreadyFinished is returned.
 func (r *StepRunRepository) Complete(ctx context.Context, id shared.ID, findingsCount int, output map[string]any) error {
 	outputJSON, err := json.Marshal(output)
 	if err != nil {
@@ -1431,9 +1464,16 @@ func (r *StepRunRepository) Complete(ctx context.Context, id shared.ID, findings
 		UPDATE step_runs
 		SET status = 'completed', findings_count = $2, output = $3, completed_at = NOW()
 		WHERE id = $1
+		  AND status NOT IN ` + terminalStepRunStatusesSQL + `
 	`
-	_, err = r.db.ExecContext(ctx, query, id.String(), findingsCount, outputJSON)
-	return err
+	result, err := r.db.ExecContext(ctx, query, id.String(), findingsCount, outputJSON)
+	if err != nil {
+		return fmt.Errorf("failed to complete step run: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return r.notUpdatedError(ctx, id)
+	}
+	return nil
 }
 
 // GetPendingByDependencies gets step runs that are pending and have their dependencies completed.
@@ -1473,6 +1513,7 @@ func (r *StepRunRepository) GetStatsByTenant(ctx context.Context, tenantID share
 			COUNT(*) FILTER (WHERE sr.status = 'pending') as pending,
 			COUNT(*) FILTER (WHERE sr.status IN ('queued', 'running')) as running,
 			COUNT(*) FILTER (WHERE sr.status = 'completed') as completed,
+			COUNT(*) FILTER (WHERE sr.status = 'partial') as partial,
 			COUNT(*) FILTER (WHERE sr.status IN ('failed', 'timeout')) as failed,
 			COUNT(*) FILTER (WHERE sr.status IN ('canceled', 'skipped')) as canceled
 		FROM step_runs sr
@@ -1485,6 +1526,7 @@ func (r *StepRunRepository) GetStatsByTenant(ctx context.Context, tenantID share
 		&stats.Pending,
 		&stats.Running,
 		&stats.Completed,
+		&stats.Partial,
 		&stats.Failed,
 		&stats.Canceled,
 	)
