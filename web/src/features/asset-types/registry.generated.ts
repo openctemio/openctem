@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '86e61f2533871e72'
+export const ASSET_REGISTRY_VERSION = '4449e500ad1d69fe'
 
 export type AssetLens =
   | 'external_surface'
@@ -51,7 +51,6 @@ export type RegistryAssetType =
   | 'discovered_url'
   | 'application'
   | 'website'
-  | 'web_application'
   | 'api'
   | 'mobile_app'
   | 'host'
@@ -174,7 +173,6 @@ export const ASSET_TYPE_CLASSES: Readonly<Record<RegistryAssetType, AssetClass>>
   discovered_url: 'web_endpoint',
   application: 'application',
   website: 'application',
-  web_application: 'application',
   api: 'application',
   mobile_app: 'application',
   host: 'host',
@@ -273,7 +271,7 @@ export const ASSET_SUB_TYPES: Readonly<Record<StoredAssetType, readonly string[]
   ip_address: [],
   certificate: [],
   service: ['http', 'open_port', 'discovered_url'],
-  application: ['website', 'web_application', 'api', 'mobile_app'],
+  application: ['website', 'api', 'mobile_app'],
   host: ['compute', 'serverless'],
   endpoint: [],
   cloud_account: ['account', 'project', 'subscription', 'organization'],
@@ -313,7 +311,6 @@ export const ASSET_RELATIONSHIP_NAMES: Readonly<
   open_port: { type: 'service', subType: 'open_port' },
   discovered_url: { type: 'service', subType: 'discovered_url' },
   website: { type: 'application', subType: 'website' },
-  web_application: { type: 'application', subType: 'web_application' },
   api: { type: 'application', subType: 'api' },
   mobile_app: { type: 'application', subType: 'mobile_app' },
   compute: { type: 'host', subType: 'compute' },
@@ -347,7 +344,6 @@ export const ASSET_TYPE_ALIASES: Readonly<
   open_port: { type: 'service', subType: 'open_port' },
   discovered_url: { type: 'service', subType: 'discovered_url' },
   website: { type: 'application', subType: 'website' },
-  web_application: { type: 'application', subType: 'web_application' },
   api: { type: 'application', subType: 'api' },
   mobile_app: { type: 'application', subType: 'mobile_app' },
   compute: { type: 'host', subType: 'compute' },
@@ -364,4 +360,5 @@ export const ASSET_TYPE_ALIASES: Readonly<
   subnet: { type: 'network', subType: 'subnet' },
   firewall: { type: 'network', subType: 'firewall' },
   load_balancer: { type: 'network', subType: 'load_balancer' },
+  web_application: { type: 'application', subType: 'website' },
 }
