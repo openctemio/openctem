@@ -141,6 +141,10 @@ type Field struct {
 	// predicate and its negation is generated). A template that reads another
 	// table must carry its own tenant predicate.
 	Templates map[Op]string
+	// BoolTemplate, for a TypeBool field with OpEq, is the constant predicate
+	// for "true"; "false" compiles to its negation (a NULL counts as false).
+	// It binds no value, so a partial index on the predicate can serve it.
+	BoolTemplate string
 	// Enum is the allowed set for TypeEnum.
 	Enum []string
 	// Nullable makes not-in and ne also match NULL, and allows OpIsNull.
@@ -317,6 +321,16 @@ func validateField(f *Field) error {
 			return fmt.Errorf("field %q: %w", f.Name, err)
 		}
 	}
+	return validateTemplates(f)
+}
+
+// validateTemplates checks a field's SQL templates and BoolTemplate.
+func validateTemplates(f *Field) error {
+	if f.BoolTemplate != "" {
+		if f.Type != TypeBool || !f.allows(OpEq) || strings.Contains(f.BoolTemplate, ArgToken) || f.Templates[OpEq] != "" {
+			return fmt.Errorf("field %q: BoolTemplate needs a boolean eq field, no %s and no eq template", f.Name, ArgToken)
+		}
+	}
 	for op, tpl := range f.Templates {
 		if !f.allows(op) {
 			return fmt.Errorf("field %q: template for operator %s it does not allow", f.Name, op)
@@ -377,7 +391,7 @@ func (r *Registry) Rebase(table, alias string) *Registry {
 	cp.fields = make(map[string]*Field, len(r.fields))
 	for name, f := range r.fields {
 		nf := *f
-		nf.SQL, nf.SortSQL = sub(f.SQL), sub(f.SortSQL)
+		nf.SQL, nf.SortSQL, nf.BoolTemplate = sub(f.SQL), sub(f.SortSQL), sub(f.BoolTemplate)
 		if f.Templates != nil {
 			nf.Templates = make(map[Op]string, len(f.Templates))
 			for op, tpl := range f.Templates {
