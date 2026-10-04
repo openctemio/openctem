@@ -44,6 +44,10 @@ var findingMergeRefs = []mergeRef{
 	{table: "iocs", column: "source_finding_id", tenantCol: "tenant_id"},
 	{table: "ioc_matches", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "findings", column: "duplicate_of", tenantCol: "tenant_id"},
+	// Every key the loser had (rememberFindingKey adds its current one first)
+	// resolves to the survivor from now on. The key is the whole primary key,
+	// so a move cannot collide.
+	{table: "finding_fingerprints", column: "finding_id", tenantCol: "tenant_id"},
 
 	{table: "finding_suppressions", column: "finding_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"suppression_rule_id"}}}},
@@ -145,6 +149,10 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 		tenantID, newFP).Scan(&holderID, &holderCreated)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
+		// The key on the merged-away asset stays an alias of the finding.
+		if err := rememberFindingKey(ctx, tx, tenantID, f.id); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE findings SET fingerprint = $1 WHERE id = $2 AND tenant_id = $3`,
 			newFP, f.id, tenantID); err != nil {
@@ -266,6 +274,12 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 	}
 
 	if err := settleLoserPendingRetest(ctx, tx, tenantID, survivorID, loserID); err != nil {
+		return err
+	}
+
+	// The loser's key must keep resolving (to the survivor) after the loser
+	// gives it up below.
+	if err := rememberFindingKey(ctx, tx, tenantID, loserID); err != nil {
 		return err
 	}
 
