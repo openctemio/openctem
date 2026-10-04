@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
@@ -1585,6 +1586,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to from the platform.
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
+		// Scan targets limited to the actor: restricted members scan only
+		// assets in their data scope; free text must match a scope target
+		// (research/15 L-06, decision D9).
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope)),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
