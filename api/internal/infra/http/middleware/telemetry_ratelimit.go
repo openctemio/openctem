@@ -145,7 +145,7 @@ func (rl *TelemetryRateLimiter) MiddlewareKeyed(keyFn func(*http.Request) string
 			}
 			if !rl.bucket(key).Allow() {
 				rl.log.Warn("keyed rate limit exceeded",
-					"key", logSafe(key), "path", logSafe(r.URL.Path))
+					"key", logSafe(key), "path", logSafe(RedactPath(r.URL.Path)))
 				apierror.TooManyRequests(message).WriteJSON(w)
 				return
 			}

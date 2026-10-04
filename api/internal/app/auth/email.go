@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -371,7 +372,10 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 		return nil
 	}
 
-	invitationURL := fmt.Sprintf("%s/invitations/%s", s.config.BaseURL, token)
+	// The token goes in the URL fragment, which the browser never sends to a
+	// server: it stays out of access logs, proxies and Referer headers
+	// (RFC-041). The web app reads it from the fragment and removes it.
+	invitationURL := fmt.Sprintf("%s/invitations#token=%s", s.config.BaseURL, url.QueryEscape(token))
 
 	data := emaildom.TeamInvitationData{
 		InviterName:   inviterName,

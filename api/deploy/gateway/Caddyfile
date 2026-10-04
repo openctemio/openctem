@@ -71,7 +71,10 @@
 
 	# Access log: one readable line per request. Secrets are removed:
 	# Authorization/Cookie are redacted by Caddy itself; API keys sent as
-	# headers are removed here. No credential travels in a URL.
+	# headers are removed here. Invitation tokens travel in the body or the
+	# URL fragment (never sent to a server), but the deprecated API aliases and
+	# links emailed before RFC-041 still carry one in the path
+	# (/api/v1/invitations/{token}/..., /invitations/{token}): it is replaced.
 	log {
 		output stdout
 		format filter {
@@ -82,6 +85,7 @@
 				request>headers>X-Api-Key delete
 				request>headers>X-Sensor-Api-Key delete
 				request>headers>X-Csrf-Token delete
+				request>uri regexp "^(/api/v1/invitations/|/invitations/)[A-Za-z0-9_-]{20,}" "${1}REDACTED"
 			}
 		}
 	}
