@@ -26,18 +26,7 @@ import {
 } from '@/features/assets'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Select,
   SelectContent,
@@ -47,12 +36,9 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import {
-  Plus,
   KeyRound,
   Search as SearchIcon,
   Eye,
-  Pencil,
-  Trash2,
   Download,
   Shield,
   AlertTriangle,
@@ -65,7 +51,6 @@ import {
   Layers,
 } from 'lucide-react'
 import { type Asset } from '@/features/assets'
-import { AssetGroupSelect } from '@/features/asset-groups'
 import type { Severity, Status } from '@/features/shared/types'
 import {
   useCredentialsApi,
@@ -82,7 +67,6 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useDebounce } from '@/hooks/use-debounce'
-import { Permission } from '@/lib/permissions'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
@@ -107,17 +91,6 @@ const sourceFilters: { value: SourceFilter; label: string }[] = [
   { value: 'internal', label: 'Internal' },
   { value: 'other', label: 'Other' },
 ]
-
-// Empty form state
-const emptyCredentialForm = {
-  name: '',
-  description: '',
-  groupId: '',
-  source: '',
-  username: '',
-  leakDate: '',
-  tags: '',
-}
 
 // Source categorization helper
 const categorizeSource = (source: string): SourceFilter => {
@@ -250,15 +223,6 @@ export default function CredentialsPage() {
   }, [allCredentialsResponse])
 
   const [selectedCredential, setSelectedCredential] = useState<Asset | null>(null)
-
-  // Dialog states
-  const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [credentialToDelete, setCredentialToDelete] = useState<Asset | null>(null)
-
-  // Form state
-  const [formData, setFormData] = useState(emptyCredentialForm)
 
   // Filter data (client-side filtering for source since API doesn't support it directly)
   const filteredData = useMemo(() => {
@@ -411,26 +375,9 @@ export default function CredentialsPage() {
                 onClick: () => setSelectedCredential(credential),
               },
               {
-                label: 'Edit',
-                icon: Pencil,
-                onClick: () => handleOpenEdit(credential),
-                permission: Permission.CredentialsWrite,
-              },
-              {
                 label: 'Copy name',
                 icon: Copy,
                 onClick: () => handleCopyCredential(credential),
-              },
-              {
-                label: 'Delete',
-                icon: Trash2,
-                onClick: () => {
-                  setCredentialToDelete(credential)
-                  setDeleteDialogOpen(true)
-                },
-                destructive: true,
-                separatorBefore: true,
-                permission: Permission.CredentialsWrite,
               },
             ]}
           />
@@ -440,38 +387,11 @@ export default function CredentialsPage() {
   ]
 
   // Handlers
-  const handleOpenEdit = (credential: Asset) => {
-    setFormData({
-      name: credential.name,
-      description: credential.description || '',
-      groupId: credential.groupId || '',
-      source: credential.metadata.source || '',
-      username: credential.metadata.username || '',
-      leakDate: credential.metadata.leakDate || '',
-      tags: credential.tags?.join(', ') || '',
-    })
-    setSelectedCredential(credential)
-    setEditDialogOpen(true)
-  }
-
-  const handleAddCredential = () => {
-    if (!formData.name || !formData.source) {
-      toast.error('Please fill in required fields')
-      return
-    }
-
-    // Phase 2: Wire to credentials API when backend endpoints are implemented.
-    toast.info('Use the Import feature to add credentials via API or CSV')
-    setFormData(emptyCredentialForm)
-    setAddDialogOpen(false)
-  }
-
-  // NOTE: edit + delete of discovered credentials are intentionally deferred —
-  // the Edit "Save changes" and Delete confirm buttons are disabled ("Coming
-  // soon") until dedicated credentials endpoints exist. The credential
-  // lifecycle today is resolve / accept / mark-false-positive (see the
-  // credentials API), not free-form edit or hard delete. The dead update/delete
-  // handlers were removed to avoid a future dev wiring a button to a no-op.
+  //
+  // Read-only page: there is no create, edit or delete endpoint for
+  // credentials (owner decision D-17). Credentials arrive through import and
+  // sensors; their lifecycle is resolve / accept / false positive. Do not add
+  // Add/Edit/Delete controls back until the backend exists.
 
   const handleCopyCredential = (credential: Asset) => {
     copyToClipboard(credential.name)
@@ -608,10 +528,6 @@ export default function CredentialsPage() {
             <Download className="h-4 w-4 sm:me-2" />
             <span className="hidden sm:inline">Export</span>
           </Button>
-          <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-            <Plus className="h-4 w-4 sm:me-2" />
-            <span className="hidden sm:inline">Add credential</span>
-          </Button>
         </PageHeader>
 
         <MetricStrip className="mt-5" loading={statsLoading} items={metrics} />
@@ -679,16 +595,13 @@ export default function CredentialsPage() {
       {/* Detail Sheet */}
       <AssetDetailSheet
         asset={selectedCredential}
-        open={!!selectedCredential && !editDialogOpen}
+        open={!!selectedCredential}
         onOpenChange={(open) => !open && setSelectedCredential(null)}
         icon={KeyRound}
-        onEdit={() => selectedCredential && handleOpenEdit(selectedCredential)}
-        onDelete={() => {
-          if (selectedCredential) {
-            setCredentialToDelete(selectedCredential)
-            setDeleteDialogOpen(true)
-          }
-        }}
+        canEdit={false}
+        canDelete={false}
+        onEdit={() => undefined}
+        onDelete={() => undefined}
         assetTypeName="Credential"
         showFindingsTab={false}
         extraTabs={
@@ -796,173 +709,6 @@ export default function CredentialsPage() {
             </>
           )
         }
-      />
-
-      {/* Add Dialog */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Add credential leak</DialogTitle>
-            <DialogDescription>Add a new credential leak to track</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Credential name *</Label>
-              <Input
-                id="name"
-                placeholder="e.g., admin@company.com"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                placeholder="Describe the credential leak..."
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="source">Source *</Label>
-              <Input
-                id="source"
-                placeholder="e.g., Data breach - DarkWeb"
-                value={formData.source}
-                onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                placeholder="Username or identifier"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="leakDate">Leak date</Label>
-              <Input
-                id="leakDate"
-                type="date"
-                value={formData.leakDate}
-                onChange={(e) => setFormData({ ...formData, leakDate: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="group">Group</Label>
-              <AssetGroupSelect
-                value={formData.groupId}
-                onValueChange={(v) => setFormData({ ...formData, groupId: v })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tags">Tags</Label>
-              <Input
-                id="tags"
-                placeholder="critical, credential-leak, etc."
-                value={formData.tags}
-                onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddCredential}>Add credential</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Dialog */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit credential</DialogTitle>
-            <DialogDescription>Update credential leak details</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Credential name *</Label>
-              <Input
-                id="edit-name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Description</Label>
-              <Textarea
-                id="edit-description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-source">Source *</Label>
-              <Input
-                id="edit-source"
-                value={formData.source}
-                onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-username">Username</Label>
-              <Input
-                id="edit-username"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-leakDate">Leak date</Label>
-              <Input
-                id="edit-leakDate"
-                type="date"
-                value={formData.leakDate}
-                onChange={(e) => setFormData({ ...formData, leakDate: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-group">Group</Label>
-              <AssetGroupSelect
-                value={formData.groupId}
-                onValueChange={(v) => setFormData({ ...formData, groupId: v })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-tags">Tags</Label>
-              <Input
-                id="edit-tags"
-                value={formData.tags}
-                onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button disabled title="Coming soon">
-              Save changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Dialog — confirm stays disabled until a credentials delete endpoint exists. */}
-      <ConfirmDialog
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        title="Delete credential?"
-        desc={`Are you sure you want to delete "${credentialToDelete?.name ?? ''}"? This action cannot be undone. Deleting credentials is not available yet.`}
-        confirmText="Delete"
-        destructive
-        disabled
-        handleConfirm={() => undefined}
       />
     </>
   )

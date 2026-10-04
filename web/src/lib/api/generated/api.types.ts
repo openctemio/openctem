@@ -4734,7 +4734,7 @@ export interface paths {
     put?: never
     /**
      * Create asset
-     * @description Creates a new asset for the current tenant
+     * @description Creates a new asset for the current tenant. A name (or a correlated address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id names the existing asset only when it is in the caller's data scope.
      */
     post: {
       parameters: {
@@ -34890,6 +34890,12 @@ export interface components {
         [key: string]: unknown
       }
       scope?: string
+      /**
+       * @description SubType is the kind within the type, from the registry's closed list
+       *     (GET /asset-types). A legacy value of the type is mapped; anything
+       *     else is a 400.
+       */
+      sub_type?: string
       tags?: string[]
       type: string
     }
@@ -38496,6 +38502,11 @@ export interface components {
         [key: string]: unknown
       }
       scope?: string
+      /**
+       * @description SubType changes the kind within the asset's type (closed list from
+       *     GET /asset-types); "" clears it. The type itself cannot change.
+       */
+      sub_type?: string
       tags?: string[]
     }
     'internal_infra_http_handler.UpdateAssetServiceRequest': {
