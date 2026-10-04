@@ -372,8 +372,12 @@ type OwnerBriefResponse struct {
 
 // CreateAssetRequest represents the request to create an asset.
 type CreateAssetRequest struct {
-	Name        string         `json:"name" validate:"required,min=1,max=255"`
-	Type        string         `json:"type" validate:"required,asset_type"`
+	Name string `json:"name" validate:"required,min=1,max=255"`
+	Type string `json:"type" validate:"required,asset_type"`
+	// SubType is the kind within the type, from the registry's closed list
+	// (GET /asset-types). A legacy value of the type is mapped; anything
+	// else is a 400.
+	SubType     string         `json:"sub_type,omitempty" validate:"omitempty,max=50"`
 	Criticality string         `json:"criticality" validate:"required,criticality"`
 	Scope       string         `json:"scope" validate:"omitempty,scope"`
 	Exposure    string         `json:"exposure" validate:"omitempty,exposure"`
@@ -393,6 +397,9 @@ type UpdateAssetRequest struct {
 	OwnerRef    *string        `json:"owner_ref" validate:"omitempty,max=500"`
 	Tags        []string       `json:"tags" validate:"omitempty,max=50,dive,max=50"`
 	Properties  map[string]any `json:"properties,omitempty"`
+	// SubType changes the kind within the asset's type (closed list from
+	// GET /asset-types); "" clears it. The type itself cannot change.
+	SubType *string `json:"sub_type,omitempty" validate:"omitempty,max=50"`
 
 	// CTEM Scoping: CIA impact rating (low | moderate | high). Empty string clears.
 	ImpactConfidentiality *string `json:"impact_confidentiality" validate:"omitempty,impact_rating"`
@@ -734,6 +741,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		TenantID:    tenantID,
 		Name:        req.Name,
 		Type:        req.Type,
+		SubType:     req.SubType,
 		Criticality: req.Criticality,
 		Scope:       req.Scope,
 		Exposure:    req.Exposure,
@@ -850,6 +858,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description:           req.Description,
 		OwnerRef:              req.OwnerRef,
 		Tags:                  req.Tags,
+		SubType:               req.SubType,
 		Properties:            req.Properties,
 		ImpactConfidentiality: req.ImpactConfidentiality,
 		ImpactIntegrity:       req.ImpactIntegrity,

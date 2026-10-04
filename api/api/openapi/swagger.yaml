@@ -6804,6 +6804,13 @@ definitions:
         type: object
       scope:
         type: string
+      sub_type:
+        description: |-
+          SubType is the kind within the type, from the registry's closed list
+          (GET /asset-types). A legacy value of the type is mapped; anything
+          else is a 400.
+        maxLength: 50
+        type: string
       tags:
         items:
           type: string
@@ -13630,6 +13637,12 @@ definitions:
         additionalProperties: {}
         type: object
       scope:
+        type: string
+      sub_type:
+        description: |-
+          SubType changes the kind within the asset's type (closed list from
+          GET /asset-types); "" clears it. The type itself cannot change.
+        maxLength: 50
         type: string
       tags:
         items:

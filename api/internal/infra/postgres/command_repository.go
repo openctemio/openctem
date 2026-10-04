@@ -238,6 +238,13 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 					  AND ` + claimable + `
 					LIMIT $4) unpinned)
 			) AS pending,
+			(SELECT count(*) FROM (
+				SELECT 1 FROM commands
+				WHERE commands.tenant_id = $1 AND commands.sensor_id = $2
+				  AND commands.status = 'canceled'
+				  AND commands.acknowledged_at IS NOT NULL
+				  AND COALESCE(commands.completed_at, commands.acknowledged_at) > NOW() - make_interval(secs => $5)
+				LIMIT $4) canceled) AS recently_canceled,
 			COALESCE((
 				SELECT string_agg(z.id::text || '@' || to_char(z.updated_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS'), ',' ORDER BY z.id)
 				FROM scan_zone_sensors zs
@@ -246,8 +253,8 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 			), '') AS zones`
 
 	var out sensordom.PendingWork
-	err := r.db.QueryRowContext(ctx, query, tenantID.String(), sensorID.String(), pq.Array(capabilities), limit).
-		Scan(&out.Count, &out.ZoneFingerprint)
+	err := r.db.QueryRowContext(ctx, query, tenantID.String(), sensorID.String(), pq.Array(capabilities), limit, r.leaseSeconds()).
+		Scan(&out.Count, &out.RecentlyCanceled, &out.ZoneFingerprint)
 	if err != nil {
 		return sensordom.PendingWork{}, fmt.Errorf("failed to read pending work: %w", err)
 	}
@@ -1459,7 +1466,8 @@ func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID,
 		SET status = 'canceled',
 		    -- NOTE: commands has no updated_at column (no migration adds one), so
 		    -- assigning it made every pipeline cancel fail with 42703.
-		    completed_at = NOW()
+		    completed_at = NOW(),
+		    lease_expires_at = NULL
 		WHERE c.tenant_id = $1
 		  AND c.status IN ('pending', 'acknowledged', 'running')
 		  AND (

@@ -171,7 +171,8 @@ func (r *EASMSummaryRepository) exposureCounts(ctx context.Context, tenantID sha
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT e.severity, e.event_type, count(*)
 		FROM exposure_events e
-		WHERE e.tenant_id = $1 AND e.state = 'active' AND e.event_type = ANY($2)`+notRejectedFor("e.asset_id")+sc+`
+		WHERE e.tenant_id = $1 AND e.state = 'active' AND e.event_type = ANY($2)
+		  AND `+notOfDeletedAssetSQL("e.asset_id")+notRejectedFor("e.asset_id")+sc+`
 		GROUP BY 1, 2`, args...)
 	if err != nil {
 		return fmt.Errorf("easm exposures: %w", err)
