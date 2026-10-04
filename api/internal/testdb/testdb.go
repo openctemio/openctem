@@ -29,6 +29,19 @@ func URL() string {
 	return guard(os.Getenv("DATABASE_URL"))
 }
 
+// MigratorURL is the connection for a test that runs DDL (replays a migration,
+// alters a constraint) and so needs the schema owner. It is
+// DATABASE_MIGRATE_URL when set, and URL otherwise. CI runs the DB tests as
+// the least-privilege app role (deploy/postgres/least-privilege-roles.sql) with
+// DATABASE_MIGRATE_URL pointing at the migrator, the way production splits
+// them; a plain single-role setup keeps working unchanged.
+func MigratorURL() string {
+	if raw := os.Getenv("DATABASE_MIGRATE_URL"); raw != "" {
+		return guard(raw)
+	}
+	return URL()
+}
+
 // RLSURL is URL for DATABASE_URL_RLS_TEST.
 func RLSURL() string {
 	return guard(os.Getenv("DATABASE_URL_RLS_TEST"))
