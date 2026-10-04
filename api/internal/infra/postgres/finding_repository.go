@@ -1250,12 +1250,19 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 	// Build dynamic WHERE for outer filters
 	var whereClauses []string
 	args := []any{tenantID.String()}
-	argN := 2
 
 	statusFilter := ""
 	if !filter.IncludeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
 	}
+	// Layer 2: a restricted caller's CVEs, counts and dates come only from
+	// findings on assets in their scope ($2, $3).
+	if filter.DataScope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", filter.DataScope, args)
+		statusFilter += " AND " + cond
+	}
+	argN := len(args) + 1
 
 	if len(filter.SeverityIn) > 0 {
 		placeholders := make([]string, 0, len(filter.SeverityIn))
@@ -1411,10 +1418,17 @@ func (r *FindingRepository) GetActiveCVEStats(
 	ctx context.Context,
 	tenantID shared.ID,
 	includeResolved bool,
+	scope *shared.DataScope,
 ) (*vulnerability.ActiveCVEStats, error) {
 	statusFilter := ""
 	if !includeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+	args := []any{tenantID.String()}
+	if scope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", scope, args)
+		statusFilter += " AND " + cond
 	}
 
 	query := `
@@ -1439,7 +1453,7 @@ func (r *FindingRepository) GetActiveCVEStats(
 
 	var stats vulnerability.ActiveCVEStats
 	var crit, high, med, low, info int
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Total, &crit, &high, &med, &low, &info,
 		&stats.KEVCount, &stats.ExploitAvailableCount,
 	); err != nil {
