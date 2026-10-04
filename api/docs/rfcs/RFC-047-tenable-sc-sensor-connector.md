@@ -1,6 +1,9 @@
 # RFC-047 — Tenable.sc two-way sensor connector
 
-> Status: **Proposed** (2026-10-04). Owner decision D-14 (2026-10-04, final):
+> Status: **Proposed** (2026-10-04; design merged in #995). P0 pull path:
+> platform side in this PR's branch `feat/tenable-sc-connector-sync`,
+> sensor side in openctemio/sensor#129. Current build:
+> [architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md). Owner decision D-14 (2026-10-04, final):
 > rebuild the Tenable integration as a **two-way Tenable Security Center
 > (Tenable.sc) connector that runs inside the sensor**. Pull assets,
 > vulnerabilities and plugin metadata; push scan launches and schedules; keep
@@ -470,9 +473,11 @@ into the definition catalog as `namespace: TENABLE` definitions with
   person's `false_positive`, `accepted` or `resolved` is never changed. A
   mitigated row that matches no finding creates nothing.
 - Gate: `INGEST_SOURCE_RESOLVE=off|dry_run|enforce`, default `dry_run`, which
-  logs, counts and writes a "would resolve" audit entry, as
-  `INGEST_COVERAGE_AUTO_RESOLVE` does. Enforce is a tenant opt-in after the
-  dry-run numbers are reviewed.
+  logs and counts (`findings_source_would_resolve` on the ingest output);
+  enforce resolves with `resolution_method = source_mitigated` and counts
+  `findings_source_resolved`. A per-finding audit entry, as
+  `INGEST_COVERAGE_AUTO_RESOLVE` writes, is a follow-up. Enforce is an
+  installation opt-in after the dry-run numbers are reviewed.
 - **Reopen.** A cumulative row seen after a resolution reopens the finding by
   the existing rule (auto-reopen only from command-bound reports of the same
   tool, RFC-040 §5.3).
@@ -594,8 +599,8 @@ Tenable administrator's aging setting. An optional, separately allow-listed
   (`hosts`, `open`, `mitigated`, `plugins`) and `metadata.tenable`
   (`version`, `licensed_ips`, `active_ips`, `last_successful_sync`,
   `last_full_sync`) when the command and its reports completed.
-- Ingest: tool `tenable_sc` mapped to `FindingSourceVA` in `toolNameToSource`
-  (today only `nessus` and `tenable` are); the mitigated resolve gate (§7.6);
+- Ingest: tool `tenable_sc` is a network VA source (`toolNameToSource`
+  matches the `tenable` substring); the mitigated resolve gate (§7.6);
   scope exclusions apply to new assets as for any report.
 - No synthetic branch. The `.nessus` converter sets a fake default branch
   `{Name: "network"}` to pass the git-centric `ShouldAutoResolve` gate, but
@@ -607,9 +612,12 @@ Tenable administrator's aging setting. An optional, separately allow-listed
 - Command routing already works for the new types: `ClaimForSensor` only hands a
   command whose payload names a `scanner` to a sensor whose verified effective
   tools include it, so the sensor registers `tenable_sc` in its tool registry.
-- No migration in P0 (the integration row already has `last_sync_at`,
-  `next_sync_at`, `sync_interval_minutes`, `sync_error`, `stats`, `metadata`).
-  P2 may add license columns if querying JSON proves too slow.
+- Migrations in P0: the `tenable_sc` tool catalog row (a sensor's report of a
+  tool outside the catalog is dropped, and routing needs the reported tool)
+  and the two command types in `chk_command_type`. The sync state lives on the
+  integration row (`last_sync_at`, `next_sync_at`, `sync_interval_minutes`,
+  `sync_error`, `stats`, `metadata.tenable_sync`). P2 may add license columns
+  if querying JSON proves too slow.
 
 ## 11. UI
 
