@@ -1316,12 +1316,15 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Layer 2: Data Scope - filter by user's group membership
+	// Layer 2: Data Scope - only the user's in-scope assets (a user scope
+	// without a tenant matches nothing).
+	tenantForScope := ""
 	if filter.TenantID != nil {
-		if cond, scopeArgs := dataScopeCondition(filter.AccessScope(), *filter.TenantID, argIndex); cond != "" {
-			conditions = append(conditions, cond)
-			args = append(args, scopeArgs...)
-		}
+		tenantForScope = *filter.TenantID
+	}
+	if cond, scopeArgs := dataScopeCondition(filter.AccessScope(), tenantForScope, argIndex); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, scopeArgs...)
 	}
 
 	return strings.Join(conditions, " AND "), args
@@ -1333,26 +1336,19 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 // argIndex is the first free $N placeholder; the returned args fill it and the
 // next one. It returns "" when the scope restricts nothing.
 //
-// Default (fail-OPEN): no rows in user_accessible_assets ⇒ NOT EXISTS bypasses
-// and the user sees all (backward compatible). When the tenant enables
-// RestrictedDataScope (DataScopeStrict), the bypass is dropped: no
-// assignment ⇒ no assets (fail-CLOSED, Tenable "No Access" default).
+// Always fail closed: a user with no rows in user_accessible_assets sees no
+// asset (there is no "no rows means everything" mode).
 func dataScopeCondition(access asset.AccessScope, tenantID string, argIndex int) (string, []any) {
-	if access.DataScopeUserID == nil || tenantID == "" {
+	if access.DataScopeUserID == nil {
 		return "", nil
 	}
-	userIDIdx := argIndex
-	tenantIDIdx := argIndex + 1
-	args := []any{access.DataScopeUserID.String(), tenantID}
-	if access.DataScopeStrict {
-		return fmt.Sprintf(
-			`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-			userIDIdx, tenantIDIdx), args
+	if tenantID == "" {
+		// A user scope without a tenant cannot be matched: admit nothing.
+		return "FALSE", nil
 	}
-	return fmt.Sprintf(`(
-				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-				OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx), args
+	return fmt.Sprintf(
+		`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
+		argIndex, argIndex+1), []any{access.DataScopeUserID.String(), tenantID}
 }
 
 // =============================================================================

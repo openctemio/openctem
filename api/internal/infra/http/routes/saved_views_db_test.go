@@ -53,7 +53,7 @@ func TestSavedViews_VisibilityOwnershipAndRunAsViewer(t *testing.T) {
 	team, otherTeam := shared.NewID(), shared.NewID()
 	h.exec(`INSERT INTO groups (id, tenant_id, name, slug, group_type) VALUES ($1, $2, 'sv-team', $3, 'team')`, team.String(), ten, "sv-"+team.String())
 	h.exec(`INSERT INTO groups (id, tenant_id, name, slug, group_type) VALUES ($1, $2, 'sv-other', $3, 'team')`, otherTeam.String(), ten, "sv-"+otherTeam.String())
-	h.exec(`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2), ($1, $3)`, team.String(), h.memberA.String(), h.memberFree.String())
+	h.exec(`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2), ($1, $3), ($1, $4)`, team.String(), h.memberA.String(), h.memberFree.String(), h.memberFull.String())
 
 	// A personal view and a team view, both "SAST findings".
 	status, personal, raw := h.createView(t, h.memberA, map[string]any{"page": "findings", "name": "My SAST", "query": "source=sast&sort=-severity"})
@@ -115,7 +115,8 @@ func TestSavedViews_VisibilityOwnershipAndRunAsViewer(t *testing.T) {
 	}
 
 	// A5: the shared view runs as the viewer. memberA (scope A1) gets FA;
-	// memberFree (unrestricted) gets FA and FB2 from the same view.
+	// memberFull (full-data role) gets FA and FB2 from the same view; memberFree
+	// (team member, no scope row) gets nothing.
 	run := func(c flCaller, extra string) ([]string, int) {
 		status, _, body := h.listFindingsPath(t, c, "/api/v1/findings?view="+url.QueryEscape(shared1.ID)+extra)
 		if status != http.StatusOK {
@@ -133,11 +134,14 @@ func TestSavedViews_VisibilityOwnershipAndRunAsViewer(t *testing.T) {
 	if ids, _ := run(flCaller{"memberA", h.memberA, false}, ""); strings.Join(ids, ",") != fa {
 		t.Errorf("memberA via view = %v", ids)
 	}
-	if ids, _ := run(flCaller{"free", h.memberFree, false}, ""); strings.Join(ids, ",") != strings.Join(sorted(fa, fb2), ",") {
-		t.Errorf("team member via view = %v", ids)
+	if ids, _ := run(flCaller{"full", h.memberFull, false}, ""); strings.Join(ids, ",") != strings.Join(sorted(fa, fb2), ",") {
+		t.Errorf("full-data team member via view = %v", ids)
+	}
+	if ids, status := run(flCaller{"free", h.memberFree, false}, ""); status != http.StatusOK || len(ids) != 0 {
+		t.Errorf("scopeless team member via view = %v (%d), want nothing", ids, status)
 	}
 	// Explicit params override the view field by field: source=dast replaces sast.
-	if ids, _ := run(flCaller{"free", h.memberFree, false}, "&source=dast"); strings.Join(ids, ",") != h.findingB.String() {
+	if ids, _ := run(flCaller{"full", h.memberFull, false}, "&source=dast"); strings.Join(ids, ",") != h.findingB.String() {
 		t.Errorf("override = %v", ids)
 	}
 	// Stats and groups follow the view too.

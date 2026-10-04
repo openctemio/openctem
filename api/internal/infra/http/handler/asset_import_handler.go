@@ -189,8 +189,8 @@ func (h *AssetImportHandler) ImportNessus(w http.ResponseWriter, r *http.Request
 //     assets in their scope; other hosts (hidden or unknown alike) are
 //     skipped and counted as assets_skipped_out_of_scope, and the upload
 //     never auto-resolves anything;
-//   - an unrestricted person (owner, admin, member of a fail-open
-//     organization without a group) auto-resolves only Tenable findings:
+//   - an unrestricted person (owner, admin, full-data role) auto-resolves
+//     only Tenable findings:
 //     with any other ?tool= the batch is treated as partial coverage, so the
 //     tool name a person types cannot close another scanner's findings.
 func (h *AssetImportHandler) IngestNessusFindings(w http.ResponseWriter, r *http.Request) {
