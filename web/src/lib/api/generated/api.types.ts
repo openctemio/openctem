@@ -36369,6 +36369,8 @@ export interface components {
       /** @description CTEM Scoping: CIA impact rating (low | moderate | high; empty = not rated) */
       impact_confidentiality?: string
       impact_integrity?: string
+      /** @description IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel. */
+      is_crown_jewel?: boolean
       is_internet_accessible?: boolean
       last_seen?: string
       last_synced_at?: string
@@ -36569,6 +36571,8 @@ export interface components {
       /** @description CTEM Scoping: CIA impact rating (low | moderate | high; empty = not rated) */
       impact_confidentiality?: string
       impact_integrity?: string
+      /** @description IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel. */
+      is_crown_jewel?: boolean
       is_internet_accessible?: boolean
       last_seen?: string
       last_synced_at?: string

@@ -819,8 +819,8 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		// signal. Only-raise: unset ratings (every existing asset) yield a zero
 		// score and no bump, so classification is byte-identical to before.
 		ctx.CIAImpactScore, ctx.CIAImpactHigh, ctx.CIAImpactDetail = ciaImpact(a)
-		// Crown jewel: check properties (DB column exposed via properties map)
-		if cj, ok := a.Properties()["is_crown_jewel"].(bool); ok && cj {
+		// Crown jewel: the assets.is_crown_jewel column.
+		if a.IsCrownJewel() {
 			ctx.AssetIsCrownJewel = true
 		}
 		// High criticality assets treated as implicit crown jewels — evaluated on

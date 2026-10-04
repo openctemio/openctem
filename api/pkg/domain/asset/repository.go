@@ -162,6 +162,11 @@ type Repository interface {
 	// in-memory. Columns are minimal (id, name, type, exposure, criticality,
 	// risk_score, is_crown_jewel, finding_count) to keep the query fast.
 	ListAllNodes(ctx context.Context, tenantID shared.ID) ([]AssetNode, error)
+
+	// SetCrownJewel sets the crown-jewel flag and business impact of an
+	// asset of the tenant (shared.ErrNotFound when there is none). It is the
+	// only writer of the flag.
+	SetCrownJewel(ctx context.Context, tenantID, assetID shared.ID, isCrownJewel bool, impactScore float64, impactNotes string) error
 }
 
 // AssetNode is a lightweight representation of an asset used for in-memory

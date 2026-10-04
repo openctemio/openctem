@@ -5478,6 +5478,9 @@ definitions:
         type: string
       impact_integrity:
         type: string
+      is_crown_jewel:
+        description: IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel.
+        type: boolean
       is_internet_accessible:
         type: boolean
       last_seen:
@@ -5835,6 +5838,9 @@ definitions:
         type: string
       impact_integrity:
         type: string
+      is_crown_jewel:
+        description: IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel.
+        type: boolean
       is_internet_accessible:
         type: boolean
       last_seen:
