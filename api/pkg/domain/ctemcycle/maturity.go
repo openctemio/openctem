@@ -161,15 +161,15 @@ func ComputeMaturity(cycles []CycleMetrics) MaturityBreakdown {
 			Name: "priority_stability", RawValue: churn, Score: priScore,
 			Weight: WeightPriorityStability, Detail: priDetail,
 		}},
-		// 5. Scope stability — scope_drift_size is currently always 0 (the
-		// scope-change event emitter is deferred), so this component carries no
-		// measured signal. Reported for transparency but permanently excluded
-		// from Score until that source is wired.
+		// 5. Scope stability — scope_drift_size now counts new external
+		// assets per cycle (RFC-036 §6.9), but its ratio to findings_opened is
+		// not a meaningful score, so the component stays reported-only until
+		// a scoring rule for asset drift is agreed. Excluded from Score.
 		weighted{active: false, c: MaturityComponent{
 			Name: "scope_stability", RawValue: drift,
 			Score:  100 * (1 - clamp(drift/nonZero(opened), 0, 1)),
 			Weight: WeightScopeStability,
-			Detail: "reported only; excluded from score (scope-drift source deferred)",
+			Detail: "reported only; excluded from score (new external assets this cycle; no scoring rule yet)",
 		}})
 
 	out.finalize(comps)
