@@ -250,7 +250,7 @@ func (c *ReportScheduler) render(ctx context.Context, s *reportschedule.ReportSc
 			return "", fmt.Errorf("resolve creator scope: %w", err)
 		}
 		if sc != nil {
-			scope, statsUser, filter.ScopeStrict = sc, creator, true
+			scope, statsUser = sc, creator
 		}
 	}
 	stats, err := c.stats.GetStats(ctx, s.TenantID(), statsUser, filter)

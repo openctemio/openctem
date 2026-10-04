@@ -33,7 +33,7 @@ func asCaller(ctx context.Context, c datascope.Caller) context.Context {
 // context and the given administrators.
 func actScopeChecker(db *sql.DB, admins ...shared.ID) *actscope.Checker {
 	pg := &postgres.DB{DB: db}
-	enf := datascope.New(postgres.NewDataScopeRepository(pg), nil, func(ctx context.Context) datascope.Caller {
+	enf := datascope.New(postgres.NewDataScopeRepository(pg), func(ctx context.Context) datascope.Caller {
 		c, _ := ctx.Value(actCallerKey{}).(datascope.Caller)
 		return c
 	}, logger.NewNop())

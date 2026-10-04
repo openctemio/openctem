@@ -104,4 +104,5 @@ var (
 	ErrBulkTooLarge            = finding.ErrBulkTooLarge
 	ErrPriorityFloodSuppressed = finding.ErrPriorityFloodSuppressed
 	ErrInvalidAssignee         = finding.ErrInvalidAssignee
+	ErrFindingAssetNotFound    = finding.ErrFindingAssetNotFound
 )

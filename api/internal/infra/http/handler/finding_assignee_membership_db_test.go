@@ -88,7 +88,7 @@ func TestFindingAssign_AssigneeMustBeActiveMember_DB(t *testing.T) {
 
 	db := &postgres.DB{DB: raw}
 	svc := app.NewVulnerabilityService(nil, postgres.NewFindingRepository(db), logger.NewNop())
-	svc.SetDataScope(datascope.New(postgres.NewDataScopeRepository(db), nil, nil, logger.NewNop()))
+	svc.SetDataScope(datascope.New(postgres.NewDataScopeRepository(db), nil, logger.NewNop()))
 	userRepo := postgres.NewUserRepository(db)
 	svc.SetUserRepository(userRepo)
 	svc.SetActivityService(activity.NewFindingActivityService(postgres.NewFindingActivityRepository(db), postgres.NewFindingRepository(db), logger.NewNop()))

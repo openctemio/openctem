@@ -54,7 +54,6 @@ type AssetService struct {
 	repoExtRepo       assetdom.RepositoryExtensionRepository
 	assetGroupRepo    assetgroupdom.Repository // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
-	dataScopePolicy   DataScopePolicy          // Layer 2: fail-open vs fail-closed per tenant (nil = fail-open)
 	dataScope         *datascope.Enforcer      // Layer 2 enforcement on bulk-by-id paths (nil = unrestricted)
 	scoringProvider   assetdom.ScoringConfigProvider
 	redisClient       *redis.Client
@@ -155,21 +154,6 @@ func (s *AssetService) SetAssetGroupRepository(repo assetgroupdom.Repository) {
 // SetAccessControlRepository sets the access control repository for Layer 2 data scope checks.
 func (s *AssetService) SetAccessControlRepository(repo accesscontrol.Repository) {
 	s.accessControlRepo = repo
-}
-
-// DataScopePolicy reports whether a tenant enforces restricted (fail-closed)
-// data scope. Nil (or false) preserves the default fail-open behavior.
-type DataScopePolicy interface {
-	RestrictedDataScope(ctx context.Context, tenantID string) bool
-}
-
-// SetDataScopePolicy wires the per-tenant fail-open/closed policy. Nil-safe.
-func (s *AssetService) SetDataScopePolicy(p DataScopePolicy) {
-	s.dataScopePolicy = p
-}
-
-func (s *AssetService) dataScopeStrict(ctx context.Context, tenantID string) bool {
-	return s.dataScopePolicy != nil && s.dataScopePolicy.RestrictedDataScope(ctx, tenantID)
 }
 
 // SetScoringConfigProvider sets the scoring config provider for configurable risk scoring.
@@ -964,29 +948,16 @@ func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID,
 			return nil, shared.ErrNotFound // fail-closed
 		}
 
-		// Check if user has any scope assignments (1 EXISTS query, no memory load)
-		hasScope, scopeErr := s.accessControlRepo.HasAnyScopeAssignment(ctx, parsedTenantID, userID)
-		if scopeErr != nil {
-			s.logger.Error("failed to check scope assignment", "error", scopeErr)
+		// The asset must be in the user's scope rows; a member with none
+		// sees nothing (fail closed). 404, so existence is not confirmed.
+		canAccess, accessErr := s.accessControlRepo.CanAccessAsset(ctx, userID, parsedID)
+		if accessErr != nil {
+			s.logger.Error("failed to check asset access", "error", accessErr)
 			return nil, shared.ErrNotFound // fail-closed
 		}
-
-		if hasScope {
-			// User has scope assignments — verify access to this specific asset
-			canAccess, accessErr := s.accessControlRepo.CanAccessAsset(ctx, userID, parsedID)
-			if accessErr != nil {
-				s.logger.Error("failed to check asset access", "error", accessErr)
-				return nil, shared.ErrNotFound // fail-closed
-			}
-			if !canAccess {
-				return nil, shared.ErrNotFound // don't leak asset existence
-			}
-		} else if s.dataScopeStrict(ctx, tenantID) {
-			// Fail-CLOSED (tenant RestrictedDataScope): no scope assignment ⇒ no
-			// access. Don't leak the asset's existence.
+		if !canAccess {
 			return nil, shared.ErrNotFound
 		}
-		// Else (fail-OPEN default): no scope assignments → show all (backward compat)
 	}
 
 	return a, nil
@@ -1005,7 +976,7 @@ type UpdateAssetInput struct {
 	// legacy input of the same type). "" clears it. Nil = leave unchanged.
 	SubType *string `validate:"omitempty,max=50"`
 	// Properties patches per-type metadata. Merged (not replaced) into the
-	// asset's existing properties so keys like is_crown_jewel are preserved.
+	// asset's existing properties so keys like business_impact_score are preserved.
 	Properties map[string]any
 	// CIA impact rating (CTEM Scoping critical-asset register). Each is
 	// low | moderate | high; an empty string clears the rating. Nil = leave
@@ -1141,7 +1112,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	}
 
 	// Patch per-type metadata. Merge into existing properties (don't replace)
-	// so keys written elsewhere — e.g. is_crown_jewel — are not wiped.
+	// so keys written elsewhere — e.g. business_impact_score — are not wiped.
 	if input.Properties != nil {
 		merged := a.Properties()
 		if merged == nil {
@@ -1243,6 +1214,24 @@ func applySubTypeChange(a *assetdom.Asset, requested string) error {
 // Used by handlers that modify the entity and need to persist without going through UpdateAssetInput.
 func (s *AssetService) SaveAsset(ctx context.Context, a *assetdom.Asset) error {
 	return s.repo.Update(ctx, a)
+}
+
+// UpdateCrownJewel marks or unmarks an asset of the tenant as a crown jewel
+// and records its business impact, then returns the stored asset. The flag
+// is the assets.is_crown_jewel column; this is its only writer.
+func (s *AssetService) UpdateCrownJewel(ctx context.Context, tenantID, assetID string, isCrownJewel bool, impactScore float64, impactNotes string) (*assetdom.Asset, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	parsedID, err := shared.IDFromString(assetID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	if err := s.repo.SetCrownJewel(ctx, parsedTenantID, parsedID, isCrownJewel, impactScore, impactNotes); err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, parsedTenantID, parsedID)
 }
 
 // DeleteAsset deletes an asset by ID on behalf of a person (actorID, may be
@@ -1507,7 +1496,6 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		return pagination.Result[*assetdom.Asset]{}, err
 	}
 	filter.DataScopeUserID = access.DataScopeUserID
-	filter.DataScopeStrict = access.DataScopeStrict
 
 	// Build list options with sorting
 	opts := assetdom.NewListOptions()
@@ -1538,10 +1526,7 @@ func (s *AssetService) listAccessScope(ctx context.Context, tenantID, actingUser
 	} else if full {
 		return assetdom.AccessScope{}, nil
 	}
-	return assetdom.AccessScope{
-		DataScopeUserID: &userID,
-		DataScopeStrict: s.dataScopeStrict(ctx, tenantID),
-	}, nil
+	return assetdom.AccessScope{DataScopeUserID: &userID}, nil
 }
 
 // GetPropertyFacets returns distinct property keys and values for faceted
