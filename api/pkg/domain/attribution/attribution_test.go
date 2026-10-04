@@ -75,3 +75,38 @@ func TestAllowsActiveChecks(t *testing.T) {
 		}
 	}
 }
+
+func TestParseFilter(t *testing.T) {
+	cases := []struct {
+		in         []string
+		states     []State
+		unrecorded bool
+		given      bool
+	}{
+		{nil, nil, false, false},
+		{[]string{""}, nil, false, false},
+		{[]string{"confirmed"}, []State{StateConfirmed}, true, true},
+		{[]string{"unknown"}, nil, true, true},
+		{[]string{"rejected"}, []State{StateRejected}, false, true},
+		{[]string{"unconfirmed"}, []State{StateCandidate, StateNeedsReview}, false, true},
+		{[]string{"approved"}, []State{StateConfirmed, StateDependency, StateMonitorOnly}, true, true},
+		{[]string{"needs_review", "unconfirmed"}, []State{StateCandidate, StateNeedsReview}, false, true},
+	}
+	for _, tc := range cases {
+		f, given, err := ParseFilter(tc.in)
+		if err != nil {
+			t.Fatalf("%v: %v", tc.in, err)
+		}
+		if given != tc.given || f.Unrecorded != tc.unrecorded || len(f.States) != len(tc.states) {
+			t.Fatalf("ParseFilter(%v) = %+v given=%v", tc.in, f, given)
+		}
+		for i := range f.States {
+			if f.States[i] != tc.states[i] {
+				t.Fatalf("ParseFilter(%v) states = %v, want %v", tc.in, f.States, tc.states)
+			}
+		}
+	}
+	if _, _, err := ParseFilter([]string{"confirmed", "x' OR 1=1"}); err == nil {
+		t.Fatal("unknown value accepted")
+	}
+}

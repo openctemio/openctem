@@ -13,7 +13,7 @@
 -- the role grants are copied, as JSON, into access_control_removed_archive
 -- first, so the down migration restores them exactly.
 
-CREATE TEMP TABLE removed_permission_ids (id VARCHAR(100) PRIMARY KEY) ON COMMIT DROP;
+CREATE TEMP TABLE removed_permission_ids (id VARCHAR(100) PRIMARY KEY);
 INSERT INTO removed_permission_ids (id) VALUES
     ('team:permission_sets:read'),
     ('team:permission_sets:write'),
@@ -41,3 +41,5 @@ DELETE FROM permissions WHERE id IN (SELECT id FROM removed_permission_ids);
 COMMENT ON TABLE permission_sets IS 'Unused since migration 000465 (permissions come only from roles); dropped by a later migration';
 COMMENT ON TABLE group_permission_sets IS 'Unused since migration 000465 (permissions come only from roles); dropped by a later migration';
 COMMENT ON TABLE group_permissions IS 'Unused since migration 000465 (permissions come only from roles); dropped by a later migration';
+
+DROP TABLE removed_permission_ids;
