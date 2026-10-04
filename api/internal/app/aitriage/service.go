@@ -494,7 +494,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		if err := s.budget.Check(ctx, tenantID, estimated); err != nil {
 			if errors.Is(err, ErrBudgetExceeded) {
 				s.logTriageBudgetExhausted(ctx, tenantID.String(), resultID.String(), findingID.String())
-				metrics.AITriageBudgetExhaustedTotal.WithLabelValues(tenantID.String()).Inc()
+				metrics.AITriageBudgetExhaustedTotal.WithLabelValues().Inc()
 				return s.failTriage(ctx, result, "monthly AI token budget exhausted")
 			}
 			// ErrBudgetUnavailable (only returned when strict=true) —
@@ -612,12 +612,6 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 				"tokens", llmResp.TotalTokens,
 				"error", berr)
 		}
-		// Snapshot the per-tenant running counter for dashboards.
-		// Status() re-reads the row so the gauge reflects the post-
-		// increment value. Best-effort: fetch failure is non-fatal.
-		if status, serr := s.budget.Status(ctx, tenantID); serr == nil && status != nil {
-			metrics.AITriageBudgetUsedTokens.WithLabelValues(tenantID.String()).Set(float64(status.Used))
-		}
 	}
 
 	// Mark completed
@@ -651,7 +645,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			"warnings", analysis.ValidationWarnings,
 		)
 		s.logTriageNeedsReview(ctx, tenantID.String(), resultID.String(), findingID.String(), analysis.ValidationWarnings)
-		metrics.AITriageNeedsReviewTotal.WithLabelValues(tenantID.String()).Inc()
+		metrics.AITriageNeedsReviewTotal.WithLabelValues().Inc()
 	}
 
 	// Record activity
