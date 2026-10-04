@@ -38,7 +38,7 @@ jobs:
     outputs:
       web: ${{ steps.f.outputs.web }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: f
@@ -59,12 +59,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # check-palette-drift needs the merge base
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: web/.nvmrc
           cache: 'npm'
@@ -99,7 +99,7 @@ jobs:
       # router here rather than committed (a committed copy went stale whenever
       # two route-adding pull requests were queued together).
       - name: Setup Go (route manifest)
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
           cache: true
@@ -118,7 +118,7 @@ jobs:
         run: npm test -- --run --coverage --passWithNoTests
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           directory: web/coverage
           flags: web
@@ -131,8 +131,8 @@ jobs:
     if: needs.changes.outputs.web == 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: web/.nvmrc
           cache: 'npm'
@@ -140,7 +140,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Cache Next.js build
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: web/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/src/**/*.ts', 'web/src/**/*.tsx') }}

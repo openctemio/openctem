@@ -313,14 +313,34 @@ Integration credentials (access tokens, API keys) are encrypted using AES-256-GC
 ## 2-Layer Access Control
 
 ```
-┌──────────────────────────────────────────────┐
-│  LAYER 1: RBAC — User → Roles → Permissions │
-│  "What can this user do?"                     │
-├──────────────────────────────────────────────┤
-│  LAYER 2: Groups — User → Groups → Data      │
-│  "What data can this user see?"               │
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│  LAYER 1: RBAC — User → Roles → Permissions            │
+│  "What can this user do?"                              │
+├────────────────────────────────────────────────────────┤
+│  LAYER 2: Data scope — which assets this user can see  │
+│  = assets of the user's active groups                  │
+│  + explicit per-user grants (asset_access_grants)      │
+└────────────────────────────────────────────────────────┘
 ```
+
+**Layer 2 (data scope)** rows live in `user_accessible_assets`, computed from
+exactly two sources:
+
+- **Group assignment:** the assets assigned to the user's active groups
+  (`asset_owners` rows with a `group_id`: Groups → Assets, scope rules, or a
+  group owner on an asset), managed with `team:groups:write`.
+- **Explicit grant:** one user, one asset, in `asset_access_grants`
+  (migration `000372`), managed with `team:groups:write` through
+  `GET/POST/DELETE /api/v1/assets/{id}/access-grants`.
+
+**Being an asset owner is not a scope grant** (owner decision O1,
+2026-10-03): naming a *user* as an owner is an assignment (accountability,
+finding assignment, notifications) and never changes what that user can see.
+Owners/admins and internal calls with no user are never restricted; a member
+with no scope row sees what `tenants.members_without_group_see` says
+(`everything` or `nothing`). By-id access is enforced in
+`internal/app/datascope` (out of scope answers 404, never 403). Full model:
+`docs/architecture/authorization-matrix.md`, section "Data scope".
 
 > **Note:** Module route gating IS live: `RequireModule` (`internal/infra/http/middleware/module_gate.go`) gates ~26 route groups. It is a **fail-open feature flag, NOT a security boundary** (nil/error/unknown → allow) and has **no admin bypass** (unlike permission checks). A request must pass BOTH the module gate (feature on for tenant) AND the permission check.
 
@@ -349,7 +369,7 @@ r.Route("/assets", func(r chi.Router) {
 **Permission check flow:**
 
 - **Owner/Admin** (`isAdmin=true` in JWT): Bypass all permission checks
-- **Member** (`isAdmin=false`): Check permissions array in JWT
+- **Member** (`isAdmin=false`): Check the permissions `EnrichPermissions` resolved for this request (the JWT array is only a fallback; see below)
 
 ### Permission Real-time Sync
 
@@ -850,44 +870,19 @@ git commit -m "fix(security): add input validation
 
 ---
 
-## Recent Changes (2026-04-15)
+## Where to find recent changes
 
-### Asset Identity Resolution (RFC-001)
-- Asset names normalized automatically in `NewAsset()` constructor (16 asset types)
-- IP correlation for host dedup (`internal/app/ingest/correlator.go`)
-- Aliases stored in `properties.aliases[]` when assets renamed
-- Admin dedup review: `GET/POST /api/v1/assets/dedup/reviews`
-- Per-tenant config: `tenant.Settings.AssetIdentity`
-- See `docs/architecture/asset-identity-resolution.md`
+This file describes conventions, not history, so it keeps no change log and
+no counts that go stale:
 
-### API Decoupled from SDK-Go (RFC-002)
-- API imports `github.com/openctemio/ctis` (4K lines, zero deps) instead of SDK-Go (50K lines)
-- Adapters copied to `internal/infra/adapters/`
-- Branch: `feat/decouple-sdk` (pending merge)
-- See `docs/architecture/api-ctis-decoupling.md`
+- **What changed:** `git log` on `develop`, `CHANGELOG.md`, and the RFC index
+  (`docs/rfcs/README.md`), which maps each design to its implementation PRs.
+- **Migrations:** the numbers are not contiguous (renumbering leaves gaps), so
+  do not count them. The newest is
+  `ls migrations/*.up.sql | sort | tail -1`. A new migration takes the next
+  number above the highest on `develop` and in open PRs.
 
-### Asset metadata column removed
-- `metadata` JSONB merged into `properties` (migration 000140)
-- Entity: `Metadata()` and `SetMetadata()` removed
-- API response: only `properties` field (no more `metadata`)
-
-### Sub-type promotion
-- Ingest now resolves TypeAliases and promotes `sub_type` from properties
-- Migration 000141 backfills existing data
-
-### CTEM loop closures (2026-04-20)
-- Migration 000154 — audit log hash-chain (tamper-evident trail)
-- Migration 000155 — runtime telemetry events (EDR/XDR ingest from endpoint sensors)
-- Migration 000156 — IOC catalogue + match log (runtime auto-reopen, B6)
-- Sensor API-key endpoint (protocol v1): `POST /api/v1/agent/telemetry-events` (NOT `/runtime-telemetry/events`)
-- Admin endpoint: `GET /api/v1/audit-logs/verify` returns 409 when chain broken
-- Package `pkg/domain/ioc/`, `pkg/domain/telemetry/`, `internal/app/ioc/` added
-- Priority-flood guard renamed: `P0FloodGuard` → `PriorityFloodGuard` with configurable `ProtectedClass`
-- Q1/Q2/Q3 gate integration tests in `tests/integration/ctem_*_test.go`
-
-### Migrations: 176 total (000001–000176)
-
-### Local builds: `GOWORK=off`
+## Local builds: `GOWORK=off`
 
 The monorepo has no `go.work`, but a `go.work` in a parent directory (for example
 a workspace checkout that lists `sdk-go` or `sensor`) would still be picked up and
@@ -900,4 +895,4 @@ GOWORK=off go test ./...
 GOWORK=off golangci-lint run ./...
 ```
 
-**Last Updated**: 2026-10-02
+**Last Updated**: 2026-10-04

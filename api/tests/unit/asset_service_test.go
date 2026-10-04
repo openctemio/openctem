@@ -475,7 +475,7 @@ func TestAssetService_CreateAsset_WithTenantID(t *testing.T) {
 	}
 }
 
-func TestAssetService_CreateAsset_DuplicateName_Upserts(t *testing.T) {
+func TestAssetService_CreateAsset_DuplicateName_IsConflict(t *testing.T) {
 	svc, repo := newTestService()
 
 	input := app.CreateAssetInput{
@@ -493,75 +493,56 @@ func TestAssetService_CreateAsset_DuplicateName_Upserts(t *testing.T) {
 		t.Fatalf("failed to create first asset: %v", err)
 	}
 
-	// Create duplicate — should upsert (merge), not error
+	// A second create of the same name is a conflict that names the existing
+	// asset (no data scope is wired: the caller sees everything) and changes
+	// nothing.
 	input.Description = "Updated"
 	input.Tags = []string{"tag2"}
-	a2, err := svc.CreateAsset(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected upsert, got error: %v", err)
+	_, err = svc.CreateAsset(context.Background(), input)
+	var dup *app.DuplicateAssetError
+	if !errors.As(err, &dup) || !errors.Is(err, shared.ErrAlreadyExists) {
+		t.Fatalf("duplicate create error = %v, want a DuplicateAssetError", err)
 	}
-
-	// Should return same asset (updated)
-	if a2.ID() != a1.ID() {
-		t.Errorf("expected same asset ID, got different: %s vs %s", a1.ID(), a2.ID())
+	if dup.ExistingID != a1.ID() {
+		t.Errorf("conflict names %s, want the existing asset %s", dup.ExistingID, a1.ID())
 	}
-	if a2.Description() != "Updated" {
-		t.Errorf("expected updated description, got %s", a2.Description())
+	if got := repo.assets[a1.ID().String()]; got == nil || got.Description() == "Updated" || len(got.Tags()) != len(a1.Tags()) {
+		t.Errorf("duplicate create changed the existing asset")
 	}
-	// Tags should be merged
-	if len(a2.Tags()) < 2 {
-		t.Errorf("expected merged tags (>=2), got %d: %v", len(a2.Tags()), a2.Tags())
-	}
-	// Should be 1 asset in repo, not 2
 	if len(repo.assets) != 1 {
-		t.Errorf("expected 1 asset (upsert), got %d", len(repo.assets))
+		t.Errorf("expected 1 asset, got %d", len(repo.assets))
 	}
 }
 
-func TestAssetService_CreateAsset_IPCorrelation(t *testing.T) {
+func TestAssetService_CreateAsset_IPCorrelation_IsConflict(t *testing.T) {
 	svc, repo := newTestService()
 
-	// Create host named by IP (simulating Splunk ingest)
-	input1 := app.CreateAssetInput{
+	// A host named by IP (for example from a Splunk import).
+	a1, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "10.0.1.5",
 		Type:        "host",
 		Criticality: "medium",
 		Description: "From Splunk",
-	}
-	a1, err := svc.CreateAsset(context.Background(), input1)
+	})
 	if err != nil {
 		t.Fatalf("failed to create IP-named host: %v", err)
 	}
-	if a1.Name() != "10.0.1.5" {
-		t.Errorf("expected name 10.0.1.5, got %s", a1.Name())
-	}
-	if len(repo.assets) != 1 {
-		t.Errorf("expected 1 asset, got %d", len(repo.assets))
-	}
 
-	// Create same host with hostname (simulating ESXi ingest)
-	// This should match by name "10.0.1.5" (exact match via GetByName)
-	// and upsert with new description
-	input2 := app.CreateAssetInput{
+	// The same address again is the same asset: a conflict naming it.
+	_, err = svc.CreateAsset(context.Background(), app.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "10.0.1.5",
 		Type:        "host",
 		Criticality: "high",
 		Description: "From ESXi",
+	})
+	var dup *app.DuplicateAssetError
+	if !errors.As(err, &dup) || dup.ExistingID != a1.ID() {
+		t.Fatalf("duplicate address create error = %v, want a conflict naming %s", err, a1.ID())
 	}
-	a2, err := svc.CreateAsset(context.Background(), input2)
-	if err != nil {
-		t.Fatalf("expected upsert, got error: %v", err)
-	}
-	if a2.ID() != a1.ID() {
-		t.Errorf("expected same asset, got different ID")
-	}
-	if a2.Description() != "From ESXi" {
-		t.Errorf("expected updated description, got %s", a2.Description())
-	}
-	if len(repo.assets) != 1 {
-		t.Errorf("expected still 1 asset, got %d", len(repo.assets))
+	if len(repo.assets) != 1 || repo.assets[a1.ID().String()].Description() != "From Splunk" {
+		t.Errorf("duplicate address create changed or added assets")
 	}
 }
 

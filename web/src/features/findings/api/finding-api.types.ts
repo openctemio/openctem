@@ -234,6 +234,7 @@ export interface ApiFinding {
   kind?: string // fail/pass/warning/note
   occurrence_count?: number // number of occurrences
   duplicate_count?: number // number of duplicates
+  duplicate_of?: string // the finding this one was folded into (status duplicate)
   comments_count?: number // number of comments
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable
   sla_deadline?: string // ISO timestamp of the remediation deadline (nullable)
