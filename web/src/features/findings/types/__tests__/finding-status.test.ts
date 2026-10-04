@@ -224,3 +224,26 @@ describe('PENTEST_STATUSES and AUTOMATED_STATUSES disjointness', () => {
     }
   })
 })
+
+// ============================================
+// not_observed (research 18, owner decision O2)
+// ============================================
+
+describe('not_observed status', () => {
+  it('is an open (in progress) status, never closed', () => {
+    expect(FINDING_STATUS_CONFIG.not_observed.category).toBe('in_progress')
+    expect(FINDING_STATUS_CONFIG.not_observed.label).toBe('Not Observed')
+  })
+
+  it('cannot be chosen by a person: no transition leads to it', () => {
+    for (const [from, targets] of Object.entries(STATUS_TRANSITIONS)) {
+      expect(targets, `${from} offers not_observed`).not.toContain('not_observed' as FindingStatus)
+    }
+  })
+
+  it('leaves to an open state, a verified close or a disposition', () => {
+    expect(STATUS_TRANSITIONS.not_observed).toEqual(
+      expect.arrayContaining(['confirmed', 'in_progress', 'resolved'])
+    )
+  })
+})

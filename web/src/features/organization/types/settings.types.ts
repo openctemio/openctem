@@ -71,6 +71,22 @@ export type MembersWithoutGroupSee = 'everything' | 'nothing'
 
 export interface DataScopePolicy {
   members_without_group_see: MembersWithoutGroupSee
+  /** True while the organization still shows everything (being retired). */
+  deprecated?: boolean
+}
+
+export interface DataScopeImpactMember {
+  user_id: string
+  name: string
+  email: string
+  role: string
+}
+
+/** Members who would see nothing after switching off "everything". */
+export interface DataScopeImpact {
+  members_without_group_see: MembersWithoutGroupSee
+  total_count: number
+  members: DataScopeImpactMember[]
 }
 
 // ============================================
