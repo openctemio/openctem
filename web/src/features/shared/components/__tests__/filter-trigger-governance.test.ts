@@ -49,10 +49,6 @@ const ICON_ALLOWLIST: Record<string, { icons: string[]; reason: string }> = {
     reason:
       'Context chip ("filtered to asset X") above the table marks an applied filter; it is a label, not a trigger.',
   },
-  'src/features/scans/components/filtering-result-banner.tsx': {
-    icons: ['Filter'],
-    reason: 'Banner reporting how many scan results the scanner filtered out; no trigger.',
-  },
 }
 
 /** Elements that act as a button. */
