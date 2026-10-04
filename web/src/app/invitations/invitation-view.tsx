@@ -12,6 +12,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { csrfFetch } from '@/lib/api/client'
+import { endpoints } from '@/lib/api/endpoints'
+import {
+  INVITATION_PAGE,
+  clearInvitationToken,
+  takeInvitationToken,
+} from '@/features/auth/lib/invitation-token'
 import { registerHref } from '@/features/auth/lib/self-register'
 
 interface InvitationData {
@@ -32,7 +38,6 @@ interface InvitationData {
 }
 
 interface InvitationViewProps {
-  token: string
   /**
    * Whether the visitor has a session (auth or refresh cookie). Without one,
    * Accept/Decline cannot work, so the page offers "Sign in" and "Create your
@@ -42,37 +47,61 @@ interface InvitationViewProps {
   hasSession: boolean
 }
 
-export function InvitationView({ token, hasSession }: InvitationViewProps) {
+/** POSTs the invitation token in the body (never in the URL). */
+function postToken(url: string, token: string): Promise<Response> {
+  return csrfFetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+}
+
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  const data = (await response.json().catch(() => ({}))) as { message?: string }
+  return data.message || fallback
+}
+
+export function InvitationView({ hasSession }: InvitationViewProps) {
   const router = useRouter()
 
   const [isPending, startTransition] = useTransition()
   const [isLoading, setIsLoading] = useState(true)
+  const [token, setToken] = useState<string | null>(null)
   const [invitation, setInvitation] = useState<InvitationData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [acceptError, setAcceptError] = useState<string | null>(null)
 
-  const invitationPath = `/invitations/${token}`
+  // The token never goes back into a URL: sign-in and sign-up return to the
+  // bare invitation page, which finds the token kept for this tab.
+  const invitationPath = INVITATION_PAGE
   const invitationLoginHref = `/login?returnTo=${encodeURIComponent(invitationPath)}&email=${encodeURIComponent(invitation?.invitation.email || '')}`
 
-  // Fetch invitation details using public preview endpoint
+  // Take the token from the link's fragment (or this tab), then look it up.
   useEffect(() => {
-    async function fetchInvitation() {
-      try {
-        // Use public preview endpoint (no auth required)
-        const previewResponse = await fetch(`/api/v1/invitations/${token}/preview`)
+    const found = takeInvitationToken()
+    if (!found) {
+      setError(
+        'This invitation link is incomplete. Open the link from your invitation email again.'
+      )
+      setIsLoading(false)
+      return
+    }
+    setToken(found)
 
-        if (!previewResponse.ok) {
-          if (previewResponse.status === 404) {
+    async function fetchInvitation(t: string) {
+      try {
+        const response = await postToken(endpoints.invitations.lookup(), t)
+        if (!response.ok) {
+          if (response.status === 404) {
+            clearInvitationToken()
             setError('Invitation not found or has expired')
           } else {
-            const data = await previewResponse.json()
-            setError(data.message || 'Failed to load invitation')
+            setError(await errorMessage(response, 'Failed to load invitation'))
           }
           return
         }
-
-        const data = await previewResponse.json()
-        setInvitation(data)
+        setInvitation(await response.json())
       } catch {
         setError('Failed to load invitation. Please try again.')
       } finally {
@@ -80,28 +109,25 @@ export function InvitationView({ token, hasSession }: InvitationViewProps) {
       }
     }
 
-    if (token) {
-      fetchInvitation()
-    }
-  }, [token])
+    fetchInvitation(found)
+  }, [])
 
   // Accepting sets fresh auth/tenant cookies: navigate client-side, then refresh
   // so server components and the session are re-read with them.
   function navigateWithFreshSession(path: string) {
+    clearInvitationToken()
     router.push(path)
     router.refresh()
   }
 
   // Accept invitation - tries access token first, then refresh token
   function handleAccept() {
+    if (!token) return
     setAcceptError(null)
     startTransition(async () => {
       try {
         // First try with access token (for users with tenant)
-        const response = await csrfFetch(`/api/v1/invitations/${token}/accept`, {
-          method: 'POST',
-          credentials: 'include',
-        })
+        const response = await postToken(endpoints.invitations.accept(), token)
 
         if (response.ok) {
           toast.success('You have joined the team!')
@@ -111,13 +137,7 @@ export function InvitationView({ token, hasSession }: InvitationViewProps) {
 
         // If 401, try with refresh token (for users without tenant)
         if (response.status === 401) {
-          const refreshResponse = await csrfFetch(
-            `/api/v1/invitations/${token}/accept-with-refresh`,
-            {
-              method: 'POST',
-              credentials: 'include',
-            }
-          )
+          const refreshResponse = await postToken(endpoints.invitations.acceptWithRefresh(), token)
 
           if (refreshResponse.ok) {
             toast.success('You have joined the team!')
@@ -131,17 +151,13 @@ export function InvitationView({ token, hasSession }: InvitationViewProps) {
             return
           }
 
-          // Other error from refresh endpoint
-          const refreshData = await refreshResponse.json()
-          const errorMsg = refreshData.message || 'Failed to accept invitation'
+          const errorMsg = await errorMessage(refreshResponse, 'Failed to accept invitation')
           setAcceptError(errorMsg)
           toast.error(errorMsg)
           return
         }
 
-        // Other error from regular accept
-        const data = await response.json()
-        const errorMsg = data.message || 'Failed to accept invitation'
+        const errorMsg = await errorMessage(response, 'Failed to accept invitation')
         setAcceptError(errorMsg)
         toast.error(errorMsg)
       } catch (err) {
@@ -154,17 +170,14 @@ export function InvitationView({ token, hasSession }: InvitationViewProps) {
 
   // Decline invitation
   function handleDecline() {
+    if (!token) return
     startTransition(async () => {
       try {
-        const response = await csrfFetch(`/api/v1/invitations/${token}/decline`, {
-          method: 'POST',
-        })
-
+        const response = await postToken(endpoints.invitations.decline(), token)
         if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.message || 'Failed to decline invitation')
+          throw new Error(await errorMessage(response, 'Failed to decline invitation'))
         }
-
+        clearInvitationToken()
         toast.success('Invitation declined')
         router.push('/')
       } catch (err) {
