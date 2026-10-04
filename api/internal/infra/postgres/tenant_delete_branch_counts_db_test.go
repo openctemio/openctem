@@ -14,7 +14,8 @@ import (
 // TestDeleteCascade_RepositoryBranchWithFindings guards migration 000238:
 // deleting a tenant or a repository asset whose branch has findings used to
 // fail, because update_branch_finding_counts() updated a branch row whose
-// repository the same cascade had already removed.
+// repository the same cascade had already removed. Since 000378 only a tenant
+// delete still cascades findings; an asset delete refuses them.
 //
 // DB-gated: needs DATABASE_URL pointing at app_test (never the live DB).
 func TestDeleteCascade_RepositoryBranchWithFindings(t *testing.T) {
@@ -89,6 +90,16 @@ func TestDeleteCascade_RepositoryBranchWithFindings(t *testing.T) {
 	t.Run("delete repository asset", func(t *testing.T) {
 		inTx(t, func(tx *sql.Tx) {
 			_, assetID, branchID := seed(t, tx)
+			// An asset's findings no longer cascade away with it
+			// (findings.asset_id is ON DELETE NO ACTION, migration 000378):
+			// the delete fails while the finding exists...
+			mustExecTx(t, tx, `SAVEPOINT before_delete`)
+			if _, err := tx.ExecContext(ctx, `DELETE FROM assets WHERE id=$1`, assetID); err == nil {
+				t.Fatal("deleting an asset that has findings succeeded; findings must not cascade away")
+			}
+			mustExecTx(t, tx, `ROLLBACK TO SAVEPOINT before_delete`)
+			// ...and once they are gone the repository's branches still cascade.
+			mustExecTx(t, tx, `DELETE FROM findings WHERE asset_id=$1`, assetID)
 			if _, err := tx.ExecContext(ctx, `DELETE FROM assets WHERE id=$1`, assetID); err != nil {
 				t.Fatalf("delete asset: %v", err)
 			}

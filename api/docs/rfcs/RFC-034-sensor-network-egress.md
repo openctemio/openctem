@@ -1,7 +1,11 @@
 # RFC-034 — Sensor network egress: proxies per scan zone
 
-> Status: **Proposed** (2026-10-02). Research and design only; nothing here is
-> implemented.
+> Status: **Proposed** (2026-10-02). Phase 0 shipped on the sensor side
+> (checked 2026-10-04): `SENSOR_CONTROL_PROXY`, `SENSOR_CONTENT_PROXY`,
+> `SENSOR_SCAN_PROXY` and a proxy-aware `SafeHTTPClient` that checks the
+> target before the proxy (sdk-go#111, released in sdk-go v0.15.0; content
+> tools follow the content proxy in sensor#102). Not built: the manifest
+> `egress.control` field and Phases 1–4 (no api code yet).
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on [RFC-023](RFC-023-scan-zones-and-scanners.md) (scan zones, the three
 > enforcement layers D7, the operator allow-list D8, credential tiers D12),
