@@ -35814,9 +35814,14 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      /**
+       * @description ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+       *     evaluated in timezone; at most every 15 minutes.
+       */
+      schedule_rrule?: string
       schedule_time?: string
       /** @enum {string} */
-      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab'
+      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab' | 'rrule'
       /** @enum {string} */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
       tags?: string[]
@@ -38017,6 +38022,7 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      schedule_rrule?: string
       schedule_time?: string
       schedule_timezone?: string
       schedule_type?: string
@@ -39399,9 +39405,14 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      /**
+       * @description ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+       *     evaluated in timezone; at most every 15 minutes.
+       */
+      schedule_rrule?: string
       schedule_time?: string
       /** @enum {string} */
-      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab'
+      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab' | 'rrule'
       /** @enum {string} */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
       tags?: string[]
