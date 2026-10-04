@@ -728,5 +728,6 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
 	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
 	h.SetAuditService(svc.Audit)
+	h.SetDataScope(svc.DataScope)
 	return h
 }
