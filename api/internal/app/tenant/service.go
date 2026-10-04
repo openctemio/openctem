@@ -1043,6 +1043,17 @@ func (s *TenantService) SearchMembersWithUserInfo(ctx context.Context, tenantID 
 		return nil, fmt.Errorf("%w: search string exceeds maximum of %d characters", shared.ErrValidation, maxSearchLength)
 	}
 
+	switch filters.Status {
+	case "", string(tenantdom.MemberStatusActive), string(tenantdom.MemberStatusSuspended):
+	default:
+		return nil, fmt.Errorf("%w: unknown member status filter", shared.ErrValidation)
+	}
+	switch filters.Role {
+	case "", tenantdom.RoleOwner.String(), tenantdom.RoleAdmin.String(), tenantdom.RoleMember.String(), tenantdom.RoleViewer.String():
+	default:
+		return nil, fmt.Errorf("%w: unknown member role filter", shared.ErrValidation)
+	}
+
 	return s.repo.SearchMembersWithUserInfo(ctx, parsedID, filters)
 }
 

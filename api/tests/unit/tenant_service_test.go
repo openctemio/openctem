@@ -2997,3 +2997,28 @@ func TestTenantSvc_UpdateSecuritySettings_NoRequesterIPSkipsGuard(t *testing.T) 
 		t.Fatalf("no requester IP must skip the guard: %v", err)
 	}
 }
+
+// The status and role filters take an allowlist: anything else is a
+// validation error, never an unchecked value in the query.
+func TestTenantSvc_SearchMembers_RejectsUnknownStatusAndRole(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	repo.memberSearchResult = &tenant.MemberSearchResult{}
+
+	for _, f := range []tenant.MemberSearchFilters{
+		{Limit: 10, Status: "deleted"},
+		{Limit: 10, Role: "superuser"},
+	} {
+		if _, err := svc.SearchMembersWithUserInfo(context.Background(), existing.ID().String(), f); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("filters %+v: err = %v, want a validation error", f, err)
+		}
+	}
+	for _, f := range []tenant.MemberSearchFilters{
+		{Limit: 10, Status: "active"},
+		{Limit: 10, Status: "suspended", Role: "viewer"},
+	} {
+		if _, err := svc.SearchMembersWithUserInfo(context.Background(), existing.ID().String(), f); err != nil {
+			t.Errorf("filters %+v: unexpected error %v", f, err)
+		}
+	}
+}

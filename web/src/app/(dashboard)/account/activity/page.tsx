@@ -1,17 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   History,
   Key,
@@ -58,40 +51,19 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: 'bg-muted text-muted-foreground',
 }
 
-// Filter options map to action categories (the prefix before the first dot).
-const FILTER_OPTIONS: { value: string; label: string }[] = [
-  { value: 'all', label: 'All Activity' },
-  { value: 'auth', label: 'Authentication' },
-  { value: 'user', label: 'Account' },
-  { value: 'settings', label: 'Settings' },
-  { value: 'permission', label: 'Permissions' },
-]
-
 const PER_PAGE = 10
 
 export default function ActivityPage() {
   const user = useUser()
-  const [filter, setFilter] = useState<string>('all')
   const [page, setPage] = useState(1)
 
-  const { activities, isLoading } = useAccountActivity(user?.id)
-
-  // Filter by action category, then paginate client-side.
-  const filteredActivities = useMemo(
-    () =>
-      filter === 'all'
-        ? activities
-        : activities.filter((a) => getActionCategory(a.action) === filter),
-    [activities, filter]
+  // Paged on the server (the user-activity endpoint has no category filter,
+  // so the old browser-side "type" filter is gone with the browser paging).
+  const { activities, total, totalPages, isLoading } = useAccountActivity(
+    user?.id,
+    page,
+    PER_PAGE
   )
-
-  const totalPages = Math.ceil(filteredActivities.length / PER_PAGE)
-  const paginatedActivities = filteredActivities.slice((page - 1) * PER_PAGE, page * PER_PAGE)
-
-  const handleFilterChange = (value: string) => {
-    setFilter(value)
-    setPage(1)
-  }
 
   return (
     <div className="grid gap-6">
@@ -108,18 +80,6 @@ export default function ActivityPage() {
                 View your recent account activity and security events
               </CardDescription>
             </div>
-            <Select value={filter} onValueChange={handleFilterChange}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by type" />
-              </SelectTrigger>
-              <SelectContent>
-                {FILTER_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </CardHeader>
         <CardContent>
@@ -129,11 +89,11 @@ export default function ActivityPage() {
                 <Skeleton key={i} className="h-20 w-full" />
               ))}
             </div>
-          ) : paginatedActivities.length === 0 ? (
+          ) : activities.length === 0 ? (
             <EmptyState icon={History} title="No activity found" card={false} />
           ) : (
             <div className="space-y-4">
-              {paginatedActivities.map((activity) => {
+              {activities.map((activity) => {
                 const category = getActionCategory(activity.action)
                 const Icon = CATEGORY_ICONS[category] ?? History
                 const colorClass = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other
@@ -179,9 +139,8 @@ export default function ActivityPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-6">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * PER_PAGE + 1} to{' '}
-                {Math.min(page * PER_PAGE, filteredActivities.length)} of{' '}
-                {filteredActivities.length} activities
+                Showing {(page - 1) * PER_PAGE + 1} to {Math.min(page * PER_PAGE, total)} of{' '}
+                {total} activities
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -219,8 +178,9 @@ export default function ActivityPage() {
             <div>
               <p className="font-medium">Security Tip</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Review your activity regularly to detect unauthorized access. If you see any
-                suspicious activity, change your password immediately and contact support.
+                Review your activity regularly. Sign-ins are not listed here yet; your active
+                sessions are under Security. If you see anything you do not recognise, change
+                your password and sign out your other sessions.
               </p>
             </div>
           </div>
