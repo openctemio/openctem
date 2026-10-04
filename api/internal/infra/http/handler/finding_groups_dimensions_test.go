@@ -14,7 +14,7 @@ import (
 
 // The groups endpoint accepts exactly the dimensions the repository groups by.
 func TestFindingGroupByDimensions_MatchRepository(t *testing.T) {
-	want := []string{"cve_id", "rule_id", "asset_id", "owner_id", "component_id", "severity", "source", "finding_type"}
+	want := []string{"cve_id", "rule_id", "asset_id", "owner_id", "component_id", "severity", "source", "finding_type", "family"}
 	if len(findingGroupByDimensions) != len(want) {
 		t.Fatalf("got %d dimensions, want %d", len(findingGroupByDimensions), len(want))
 	}

@@ -22644,6 +22644,20 @@ paths:
         name: cve_id_not
         type: array
       - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
         description: 'finding type: any of (comma list)'
         in: query
         items:
@@ -24050,6 +24064,20 @@ paths:
         name: cve_id_not
         type: array
       - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
         description: 'finding type: any of (comma list)'
         in: query
         items:
@@ -24429,7 +24457,7 @@ paths:
         (RFC-048), so a grouped view counts exactly the rows the list shows.
       parameters:
       - description: cve_id (default), rule_id, asset_id, owner_id, component_id,
-          severity, source, finding_type
+          severity, source, finding_type, family
         in: query
         name: group_by
         type: string
@@ -24707,6 +24735,20 @@ paths:
         items:
           type: string
         name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
         type: array
       - collectionFormat: csv
         description: 'finding type: any of (comma list)'
@@ -25404,6 +25446,20 @@ paths:
         items:
           type: string
         name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
         type: array
       - collectionFormat: csv
         description: 'finding type: any of (comma list)'
