@@ -51,6 +51,35 @@ FSF lists it as GPLv3-compatible); attribution and the source commit are in
 `fingerprints/NOTICE.md`. Only `service`, `cname`, `status` and `nxdomain` are
 read.
 
+## Takeover confirmation
+
+A `dangling_cname` stays medium with `confirmation: pending` until a sensor
+confirms it. Confirmation is a **nuclei takeover template** (tagged
+`takeover`, or a template id `<provider>-takeover[-detection]`) that matches
+the same name in a scan the tenant ran (`internal/app/ingest/takeover.go`,
+`internal/app/easmdns/takeover.go`):
+
+- the report must be bound to a command the tenant's sensor ran (RFC-040
+  §5.3), and the asset must be one the report created or the command's
+  targets cover; unsolicited reports, uploads and imports confirm nothing;
+- the asset must have an **active** `dangling_cname` from this check; a
+  template match alone (an HTTP fingerprint) never raises a high;
+- the platform then raises `subdomain_takeover` (**high**, migration
+  000485; details: template, sensor, command, matched text, the
+  dangling exposure) and sets `confirmation: confirmed` on the
+  `dangling_cname`.
+
+**No new probe path.** The confirming request is an ordinary tenant scan,
+which went through the active-probe gate (scope exclusions, attribution:
+only confirmed assets, zones; see
+[active-probe-gate.md](active-probe-gate.md)) before the command existed.
+Nothing is dispatched from here.
+
+**Lifecycle.** The takeover shares the name's identity with the DNS check: a
+check that finds the CNAME fixed (or replaced by a delegation) resolves the
+takeover with the `dangling_cname`, and a takeover this check resolved is
+reopened by the next confirmation. A person's resolution is never reopened.
+
 ## Email posture
 
 DNS TXT only:

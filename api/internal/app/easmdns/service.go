@@ -212,13 +212,19 @@ func (s *Service) checkDanglingTarget(ctx context.Context, tenantID shared.ID, t
 	if err != nil {
 		return OutcomeUnknown, nil, nil, err
 	}
+	// A confirmed takeover of this name stays open while the CNAME dangles,
+	// and is resolved with it once the record is fixed or removed.
+	takeover, err := takeoverEvent(tenantID, t, nil, nil)
+	if err != nil {
+		return OutcomeUnknown, nil, nil, err
+	}
 	switch d.Outcome {
 	case OutcomeDanglingCNAME:
 		return d.Outcome, []*exposuredom.ExposureEvent{cname}, []string{ns.Fingerprint()}, nil
 	case OutcomeDanglingNS:
-		return d.Outcome, []*exposuredom.ExposureEvent{ns}, []string{cname.Fingerprint()}, nil
+		return d.Outcome, []*exposuredom.ExposureEvent{ns}, []string{cname.Fingerprint(), takeover.Fingerprint()}, nil
 	default:
-		return OutcomeOK, nil, []string{cname.Fingerprint(), ns.Fingerprint()}, nil
+		return OutcomeOK, nil, []string{cname.Fingerprint(), ns.Fingerprint(), takeover.Fingerprint()}, nil
 	}
 }
 
