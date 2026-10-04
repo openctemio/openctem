@@ -18,12 +18,12 @@ var RolePermissions = map[tenant.Role][]Permission{
 		AuditRead,
 		SettingsRead, SettingsWrite,
 		// Assets
-		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport,
+		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
 		ComponentsRead, ComponentsWrite, ComponentsDelete,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
-		FindingsAssign, FindingsTriage, FindingsStatus, FindingsBulkUpdate, FindingsApprove,
+		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
 		FindingsFixApply, FindingsVerify,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
@@ -93,12 +93,12 @@ var RolePermissions = map[tenant.Role][]Permission{
 		AuditRead,
 		SettingsRead, SettingsWrite,
 		// Assets
-		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport,
+		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
 		ComponentsRead, ComponentsWrite, ComponentsDelete,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
-		FindingsAssign, FindingsTriage, FindingsStatus, FindingsBulkUpdate, FindingsApprove,
+		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
 		FindingsFixApply, FindingsVerify,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete,

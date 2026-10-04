@@ -1,7 +1,5 @@
--- Remove permissions that gate nothing and cannot (backlog D-4):
---   assets:export, findings:export      export is a client-side CSV of rows the
---                                        caller can already read; no API
---                                        exports assets or findings
+-- Remove permissions that gate nothing and cannot (backlog D-4).
+-- (assets:export and findings:export stay: RFC-048 adds server-side exports.)
 --   compliance:frameworks:write          frameworks are a read-only seeded
 --                                        catalog; no API writes them
 --   compliance:reports:read              no compliance report API; the page is
@@ -15,8 +13,6 @@
 
 CREATE TEMP TABLE IF NOT EXISTS meaningless_permission_ids (id VARCHAR(100) PRIMARY KEY);
 INSERT INTO meaningless_permission_ids (id) VALUES
-    ('assets:export'),
-    ('findings:export'),
     ('compliance:frameworks:write'),
     ('compliance:reports:read'),
     ('findings:policies:read'),

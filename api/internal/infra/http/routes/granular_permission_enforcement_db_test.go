@@ -109,7 +109,7 @@ func TestGranularPermissions_SystemRolesKeepTheirAbilities_DB(t *testing.T) {
 		}
 	}
 	// The removed permissions are gone from the catalog and every role.
-	for _, id := range []string{"assets:export", "findings:export", "compliance:frameworks:write", "compliance:reports:read",
+	for _, id := range []string{"compliance:frameworks:write", "compliance:reports:read",
 		"findings:policies:read", "findings:policies:write", "findings:policies:delete", "settings:billing:read", "settings:billing:write"} {
 		var n int
 		if err := h.db.QueryRowContext(context.Background(),

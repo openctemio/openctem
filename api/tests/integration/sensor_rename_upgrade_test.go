@@ -306,7 +306,7 @@ var laterRevocations = map[string][]string{
 var laterRemovedPermissions = []string{
 	"team:permission_sets:read", "team:permission_sets:write", "team:permission_sets:delete",
 	// 000541: permissions that gate nothing.
-	"assets:export", "findings:export", "compliance:frameworks:write", "compliance:reports:read",
+	"compliance:frameworks:write", "compliance:reports:read",
 	"findings:policies:read", "findings:policies:write", "findings:policies:delete",
 	"settings:billing:read", "settings:billing:write",
 }
