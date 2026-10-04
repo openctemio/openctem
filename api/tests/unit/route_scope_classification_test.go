@@ -154,6 +154,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-sessions":               {classGap, "L-06 (scan reads)"},
 	"/api/v1/commands":                    {classGap, "L-06 (command payloads)"},
 	"/api/v1/pipelines":                   {classGap, "L-06 (pipeline reads)"},
+	"POST /api/v1/pipelines/{id}/runs":    {classPartial, "asset_id through AssertAssetRef (research 21b C4), run targets through the act-scope gate (D9); step config targets unchecked (21b LOW)"},
 	"/api/v1/pipeline-runs":               {classGap, "L-06 (run reads)"},
 	"/api/v1/workflow-runs":               {classGap, "L-18 (trigger data)"},
 	"/api/v1/iocs":                        {classGap, "§1.3 IOC matches (L-18)"},

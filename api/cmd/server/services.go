@@ -1728,6 +1728,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Targets of a directly started run pass a scan trigger's checks:
 		// private-range policy, scope exclusions, scan zones (RFC-042 F16).
 		pipeline.WithTargetGate(s.Scan),
+		// A run's asset_id (copied into every step command) must be a live
+		// asset of the tenant in the caller's scope (research doc 21b, C4).
+		pipeline.WithAssetRefChecker(s.DataScope),
 	)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation
