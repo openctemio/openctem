@@ -1000,6 +1000,23 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
 | `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
 
+### Scheduled report recipients
+
+A scheduled report mails organization posture out, so its recipients are
+limited (owner decision D12, research doc 15 L-19): an **active member of the
+organization**, or an address in one of its **`Security.AllowedDomains`**
+(exact domain, case-insensitive; no allowed domains means members only).
+
+- `POST /reports/schedules` refuses (400) any other recipient; activating a
+  schedule (`PATCH /reports/schedules/{id}/toggle`) re-checks, so a schedule
+  written before the rule, or whose recipient has left, is not switched back
+  on with them.
+- The scheduler re-checks every recipient at send time and skips the ones no
+  longer allowed (logged); with nobody left it sends nothing (`no_recipients`).
+- Create, activate and delete are audited (`report_schedule.*`, with the
+  recipients on create).
+- The report body is still tenant-wide; rendering under the creator's scope is
+  part of P1-4 (D6).
 ### Scheduled reports render under their creator's scope
 
 Owner decision D6 (research doc 15 P1-4): a scheduled report shows what its
@@ -1399,6 +1416,61 @@ Tenable.sc's RBAC.
 - **RLS is shadow-mode.** ~99 policies exist, 0 tables have RLS enabled. This is
   intentional (staged rollout), not a dead control. Tenant isolation is enforced by
   convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
+
+## Granular permissions enforced (D-4, migrations 000771/000772)
+
+Thirty permissions were defined, seeded and shown in the role editor, yet no
+route checked them. Each is now either enforced or removed.
+
+**Enforced on top of the route's existing gate** (`RequireAll(old, new)`, so no
+role gains anything). Migration 000771 grants the new permission to every role,
+system or custom, that held the old gate, recording each grant in
+`granular_permission_backfill` (its down removes exactly those), so every
+role keeps its abilities. An administrator can now remove the new permission
+from a custom role to deny that one action.
+
+| Permission | Routes | Old gate |
+|---|---|---|
+| `assets:import` | `POST /assets/import/{csv,nessus,nessus-findings,kubernetes}` | `assets:write` |
+| `scans:execute` | `POST /scans/{id}/trigger`, `POST /scans/quick`, `POST /assets/{id}/scan` | `scans:write` / `assets:write` |
+| `integrations:pipelines:execute` | `POST /pipelines/{id}/runs` | `integrations:pipelines:write` |
+| `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
+| `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` | `findings:write` |
+| `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
+| `findings:exposures:write` | `POST /exposures`, `/ingest`, `PUT /{id}/ctem-id` | `findings:write` |
+| `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate` (with `findings:write`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |
+| `findings:exposures:delete` | `DELETE /exposures/{id}` | `findings:delete` |
+| `integrations:scm:read` | `GET /integrations/scm` | `integrations:read` |
+| `integrations:scm:write` / `:delete` | create/update / delete of an SCM-category integration (checked in the handler) | `integrations:manage` |
+| `team:groups:assets` | `POST/PUT/DELETE /groups/{id}/assets*` | `team:groups:write` |
+| `team:read` | `GET /tenants/{tenant}` | membership |
+| `team:members:read` | `GET /tenants/{tenant}/members`, `/members/stats`, `/invitations` | membership |
+| `settings:read` | `GET /tenants/{tenant}/settings`, admin `GET .../settings/*` | membership / team admin |
+| `team:update` | `PATCH /tenants/{tenant}` | team admin |
+| `team:members:write` | member add/role/suspend/reactivate/remove, admin-created users and setup links | team admin |
+| `team:members:invite` | create/resend/delete invitations | team admin |
+| `settings:write` | every `PATCH/PUT/POST .../settings/*` (owner-only ones stay owner-only) | team admin / owner |
+| `team:delete` | `DELETE /tenants/{tenant}` | team owner |
+
+`/tenants/{tenant}/...` routes name the tenant in the path, which may differ
+from the credential's tenant, so they use `RequireTenantPermission`: the
+caller's permissions are resolved **in the path tenant** (owner passes); a
+permission held in another tenant never counts. Every member could read the
+organization, its members and its settings, so 000771 also grants
+`team:read`, `team:members:read` and `settings:read` to every existing custom
+role. A custom role created later needs them explicitly for those reads.
+
+`findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
+
+**Removed** (000772; catalog rows and grants archived in
+`access_control_removed_archive`, restored by its down):
+
+| Permission | Why it is meaningless |
+|---|---|
+| `compliance:frameworks:write` | Frameworks are a read-only seeded catalog; no API writes them. |
+| `compliance:reports:read` | No compliance report API; the page is a redirect. |
+| `findings:policies:*` | The policies module was retired (000215) without ever having routes. |
+| `settings:billing:read`, `settings:billing:write` | No billing API or page. |
 
 ## CI invariants that keep this from drifting
 

@@ -170,6 +170,9 @@ export type AuditAction =
   | 'scope_exclusion.deactivated'
   | 'scope_exclusion.approved'
   | 'scope_exclusion.rejected'
+  | 'report_schedule.created'
+  | 'report_schedule.activated'
+  | 'report_schedule.deleted'
   | 'tool.created'
   | 'tool.updated'
   | 'tool.deleted'
@@ -211,6 +214,7 @@ export type AuditResourceType =
   | 'scan_zone'
   | 'scope_target'
   | 'scope_exclusion'
+  | 'report_schedule'
   | 'tool'
   | 'scanner_template'
   | 'remediation_campaign'
@@ -426,6 +430,10 @@ export function getActionLabel(action: AuditAction): string {
     'scope_exclusion.deactivated': 'Scope Exclusion Deactivated',
     'scope_exclusion.approved': 'Scope Exclusion Approved',
     'scope_exclusion.rejected': 'Scope Exclusion Rejected',
+    // Report schedules
+    'report_schedule.created': 'Report Schedule Created',
+    'report_schedule.activated': 'Report Schedule Activated',
+    'report_schedule.deleted': 'Report Schedule Deleted',
     // Tool actions
     'tool.created': 'Tool Created',
     'tool.updated': 'Tool Updated',
