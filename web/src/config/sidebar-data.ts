@@ -140,7 +140,8 @@ export const sidebarData: SidebarData = {
       title: 'Scoping',
       icon: Goal,
       cluster: 'cycle',
-      // The header opens the overview (D7).
+      // The rail flyout heading opens the overview; the expanded header only
+      // folds the section, and the Overview row below opens /scoping.
       url: '/scoping',
       items: [
         {
