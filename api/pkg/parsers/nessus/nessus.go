@@ -61,6 +61,7 @@ type Item struct {
 	VPRScore     string   `xml:"vpr_score"`
 	ExploitAvail string   `xml:"exploit_available"`
 	CPE          string   `xml:"cpe"`
+	PatchPubDate string   `xml:"patch_publication_date"`
 }
 
 // Props flattens the host's HostProperties into a map (a repeated tag keeps
