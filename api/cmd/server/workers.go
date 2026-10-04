@@ -388,7 +388,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	// Tenable.sc sensor connector (RFC-047): settle finished connector_sync
 	// commands and queue the next sync of each connector integration when due.
-	if svc.TenableSC != nil {
+	if svc.TenableSC != nil && integrationdom.TenableConnectorEnabled {
 		w.ControllerManager.Register(controller.NewTenableSCSyncController(repos.Integration, svc.TenableSC, log))
 	}
 
