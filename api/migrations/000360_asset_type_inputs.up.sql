@@ -18,6 +18,7 @@
 --      alias s3_bucket is now stored as (storage, bucket) and data_store as
 --      (database, no sub-type); both keep their class.
 -- =============================================================================
+-- expand-contract-ok: nothing is renamed or dropped; the lint matches the existing state-history value renamed in the CHECK list, which is re-created as a superset (adds reclassified). Old pods keep working: no assets row changes and no assets constraint is added.
 
 ALTER TABLE asset_types
     ADD COLUMN IF NOT EXISTS sub_types TEXT[] NOT NULL DEFAULT '{}',
