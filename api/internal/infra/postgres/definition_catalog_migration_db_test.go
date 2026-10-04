@@ -205,6 +205,9 @@ func assertDefinitionCatalogBackfill(ctx context.Context, t *testing.T, db *sql.
 		}
 		notValid = append(notValid, n)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if len(notValid) > 0 {
 		t.Errorf("constraints left NOT VALID: %v", notValid)
 	}
