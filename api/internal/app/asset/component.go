@@ -233,14 +233,16 @@ func (s *ComponentService) UpdateComponent(ctx context.Context, dependencyID str
 		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
 
-	// 1. Get the existing dependency link
-	dep, err := s.repo.GetDependency(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return nil, err
+		return nil, shared.ErrNotFound
 	}
 
-	if dep.TenantID().String() != tenantID {
-		return nil, shared.ErrNotFound
+	// 1. Get the existing dependency link (tenant-scoped: another tenant's
+	// id is not found).
+	dep, err := s.repo.GetDependency(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return nil, err
 	}
 	// The asset the dependency belongs to must be in the caller's scope.
 	if err := s.assertInScope(ctx, dep.TenantID(), dep.AssetID()); err != nil {
@@ -291,18 +293,20 @@ func (s *ComponentService) DeleteComponent(ctx context.Context, dependencyID str
 	if tenantID == "" {
 		return fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
-	dep, err := s.repo.GetDependency(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return shared.ErrNotFound
+	}
+	dep, err := s.repo.GetDependency(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return err
 	}
-	if dep.TenantID().String() != tenantID {
-		return shared.ErrNotFound
-	}
+	// The asset the dependency belongs to must be in the caller's scope.
 	if err := s.assertInScope(ctx, dep.TenantID(), dep.AssetID()); err != nil {
 		return err
 	}
 
-	if err := s.repo.DeleteDependency(ctx, parsedID); err != nil {
+	if err := s.repo.DeleteDependency(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 

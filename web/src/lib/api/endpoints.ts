@@ -381,6 +381,11 @@ export const tenantEndpoints = {
   reactivateMember: (tenantIdOrSlug: string, memberId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}/reactivate`,
 
+  /**
+   * Reset a member's two-factor authentication (POST) — owner/admin
+   */
+  resetMemberMfa: (memberId: string) => `/api/v1/organization/members/${memberId}/mfa`,
+
   // ============================================
   // SETTINGS MANAGEMENT
   // ============================================
@@ -407,6 +412,11 @@ export const tenantEndpoints = {
    */
   dataScopePolicy: (tenantIdOrSlug: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/data-scope`,
+
+  /**
+   * Members who would see nothing after switching off "everything" (GET, owner/admin)
+   */
+  dataScopeImpact: () => `/api/v1/organization/settings/data-scope/impact`,
 
   /**
    * Update API settings

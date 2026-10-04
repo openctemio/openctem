@@ -75,7 +75,7 @@ func (m *mockScanRepository) Update(_ context.Context, s *scan.Scan) error {
 	return nil
 }
 
-func (m *mockScanRepository) Delete(_ context.Context, id shared.ID) error {
+func (m *mockScanRepository) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if _, ok := m.scans[id.String()]; !ok {
 		return shared.ErrNotFound
 	}
@@ -91,19 +91,19 @@ func (m *mockScanRepository) ListDueForExecution(_ context.Context, _ time.Time)
 	return nil, nil
 }
 
-func (m *mockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ *time.Time) error {
+func (m *mockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ shared.ID, _ *time.Time) error {
 	return nil
 }
 
-func (m *mockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID) error {
+func (m *mockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 
-func (m *mockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
+func (m *mockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
 
-func (m *mockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ string) error {
+func (m *mockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
 
@@ -127,7 +127,7 @@ func (m *mockScanRepository) UpdateStatusByAssetGroupID(_ context.Context, _ sha
 	return nil
 }
 
-func (m *mockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
+func (m *mockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
 }
 

@@ -1519,6 +1519,7 @@ function FindingsTab({
           | 'confirmed'
           | 'in_progress'
           | 'fix_applied'
+          | 'not_observed'
           | 'resolved'
           | 'false_positive'
           | 'accepted_risk',
@@ -1605,6 +1606,7 @@ function FindingsTab({
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="fix_applied">Fix Applied</SelectItem>
+                  <SelectItem value="not_observed">Not Observed</SelectItem>
                   <SelectItem value="resolved">Resolved</SelectItem>
                   <SelectItem value="false_positive">False Positive</SelectItem>
                 </SelectContent>
