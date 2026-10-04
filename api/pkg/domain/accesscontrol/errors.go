@@ -12,6 +12,8 @@ var (
 	// Asset ownership errors
 	ErrAssetOwnerNotFound   = fmt.Errorf("%w: asset owner not found", shared.ErrNotFound)
 	ErrAssetOwnerExists     = fmt.Errorf("%w: asset ownership already exists", shared.ErrAlreadyExists)
+	ErrAccessGrantNotFound  = fmt.Errorf("%w: access grant not found", shared.ErrNotFound)
+	ErrAccessGrantExists    = fmt.Errorf("%w: the user already has an access grant for this asset", shared.ErrAlreadyExists)
 	ErrLastPrimaryOwner     = fmt.Errorf("%w: cannot remove the last primary owner", shared.ErrValidation)
 	ErrInvalidOwnershipType = fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
 

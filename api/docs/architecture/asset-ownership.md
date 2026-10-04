@@ -13,6 +13,9 @@ owns this asset" uses it.
 | `internal/infra/http/handler/asset_owner_handler.go` | `GET/POST/PUT/DELETE /api/v1/assets/{id}/owners` |
 | `internal/infra/controller/owner_resolution.go` | Matches `owner_ref` to a member every 30 minutes |
 | `web/src/features/assets/components/asset-owners-tab.tsx` | The Owners tab |
+| `migrations/000372_asset_access_grants.up.sql` | Explicit grants; ownership stops granting access |
+| `internal/infra/postgres/asset_access_grant_repository.go` · `handler/asset_access_grant_handler.go` | Grant storage and `/assets/{id}/access-grants` |
+| `web/src/features/assets/components/asset-access-grants-section.tsx` | *Direct access* on the Owners tab |
 
 ## The model
 
@@ -62,11 +65,23 @@ team name, a cost center). It is a hint, not an owner:
 
 ## Ownership and data access
 
-Ownership is accountability. Rows with source `owner_ref` never appear in
-`user_accessible_assets`, so matching an email never changes what a user can
-see. The rules for the other rows are in
-[access-control-rules.md](access-control-rules.md) and the data-scope section
-of [authorization-matrix.md](authorization-matrix.md).
+Ownership is accountability, not access (owner decision O1, 2026-10-03). A
+**user** owner row, of any type or source, never puts the asset in that user's
+data scope. A user who should see an asset gets it from a group that holds the
+asset, or from an explicit grant (`asset_access_grants`,
+`/api/v1/assets/{id}/access-grants`, `team:groups:write`, audited).
+
+A **group** owner row is the group's asset assignment (the same row the Groups
+page and scope rules write), so its members do see the asset. Adding or
+removing a group owner therefore needs `team:groups:write`.
+
+Migration `000372` preserved the access users had through ownership: each
+direct owner who had the asset in `user_accessible_assets` got a grant with
+source `migration`, shown as "From ownership" in the asset's *Direct access*
+section, where an administrator can revoke it. It writes the counts to the
+database log. See the data-scope section of
+[authorization-matrix.md](authorization-matrix.md) and
+[access-control-rules.md](access-control-rules.md).
 
 ## Migration from `assets.owner_id`
 

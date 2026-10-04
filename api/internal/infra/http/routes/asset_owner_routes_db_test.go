@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -31,6 +33,25 @@ type aoHarness struct {
 	srv    *httptest.Server
 	tenant shared.ID
 	actor  shared.ID // a member with assets:read/write/delete
+	mu     sync.Mutex
+	perms  []string // the actor's permissions (assets:* by default); setPerms
+}
+
+// setPerms replaces the actor's permissions for the next requests.
+func (h *aoHarness) setPerms(perms ...permission.Permission) {
+	out := make([]string, 0, len(perms))
+	for _, p := range perms {
+		out = append(out, p.String())
+	}
+	h.mu.Lock()
+	h.perms = out
+	h.mu.Unlock()
+}
+
+func (h *aoHarness) currentPerms() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.perms
 }
 
 func newAOHarness(t *testing.T) *aoHarness {
@@ -56,14 +77,14 @@ func newAOHarness(t *testing.T) *aoHarness {
 
 	db := &postgres.DB{DB: sqldb}
 	ownerHandler := handler.NewAssetOwnerHandler(postgres.NewAccessControlRepository(db), postgres.NewAssetRepository(db), logger.NewNop())
-	perms := []string{permission.AssetsRead.String(), permission.AssetsWrite.String(), permission.AssetsDelete.String()}
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete)
 	auth := Middleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, middleware.UserIDKey, h.actor.String())
 			ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenant.String())
 			ctx = context.WithValue(ctx, middleware.IsAdminKey, false)
-			ctx = context.WithValue(ctx, middleware.PermissionsKey, perms)
+			ctx = context.WithValue(ctx, middleware.PermissionsKey, h.currentPerms())
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	})
@@ -197,5 +218,188 @@ func TestAssetOwners_OwnerRefOwnerRemovalClearsOwnerRef(t *testing.T) {
 	}
 	if n := len(h.list(asset).Data); n != 0 {
 		t.Fatalf("owners left = %d, want 0", n)
+	}
+}
+
+func (h *aoHarness) canSee(user, asset shared.ID) bool {
+	h.t.Helper()
+	var n int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM user_accessible_assets WHERE user_id = $1 AND asset_id = $2`,
+		user.String(), asset.String()).Scan(&n); err != nil {
+		h.t.Fatal(err)
+	}
+	return n > 0
+}
+
+func (h *aoHarness) scopeRows(user shared.ID) int {
+	h.t.Helper()
+	var n int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM user_accessible_assets WHERE user_id = $1`, user.String()).Scan(&n); err != nil {
+		h.t.Fatal(err)
+	}
+	return n
+}
+
+// Owner decision O1: naming a user as an owner (any type) is an assignment
+// only and never changes their data scope, and removing an owner never takes
+// away access a grant gives.
+func TestAssetOwners_AddingAUserOwnerDoesNotChangeDataScope(t *testing.T) {
+	h := newAOHarness(t)
+	dev := h.member("dev")
+	asset := h.asset("")
+
+	for _, typ := range []string{"primary", "secondary", "stakeholder", "informed"} {
+		a := h.asset("")
+		status, body := h.do(http.MethodPost, "/api/v1/assets/"+a.String()+"/owners",
+			map[string]string{"user_id": dev.String(), "ownership_type": typ})
+		if status != http.StatusCreated {
+			t.Fatalf("add %s owner = %d %s", typ, status, body)
+		}
+	}
+	if n := h.scopeRows(dev); n != 0 {
+		t.Fatalf("adding user owners created %d data-scope rows, want 0 (fail-open user would drop to seeing only these)", n)
+	}
+
+	// A grant gives access; adding then removing an owner leaves it alone.
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete, permission.GroupsRead, permission.GroupsWrite)
+	if status, body := h.do(http.MethodPost, "/api/v1/assets/"+asset.String()+"/access-grants",
+		map[string]string{"user_id": dev.String()}); status != http.StatusCreated {
+		t.Fatalf("grant = %d %s", status, body)
+	}
+	status, body := h.do(http.MethodPost, "/api/v1/assets/"+asset.String()+"/owners",
+		map[string]string{"user_id": dev.String(), "ownership_type": "primary"})
+	if status != http.StatusCreated {
+		t.Fatalf("add owner = %d %s", status, body)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &created)
+	if status, body := h.do(http.MethodDelete, "/api/v1/assets/"+asset.String()+"/owners/"+created.ID, nil); status != http.StatusNoContent {
+		t.Fatalf("remove owner = %d %s", status, body)
+	}
+	if !h.canSee(dev, asset) {
+		t.Fatal("removing an owner took away access given by an explicit grant")
+	}
+}
+
+// A group owner is the group's data-scope assignment: adding or removing one
+// needs team:groups:write, and with it the group's members see the asset.
+func TestAssetOwners_GroupOwnerNeedsGroupsWrite(t *testing.T) {
+	h := newAOHarness(t)
+	dev := h.member("dev")
+	asset := h.asset("")
+	group := shared.NewID()
+	h.exec(`INSERT INTO groups (id, tenant_id, name, slug, is_active) VALUES ($1, $2, $3, $3, true)`,
+		group.String(), h.tenant.String(), "g-"+group.String())
+	h.exec(`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, group.String(), dev.String())
+
+	add := map[string]string{"group_id": group.String(), "ownership_type": "secondary"}
+	if status, body := h.do(http.MethodPost, "/api/v1/assets/"+asset.String()+"/owners", add); status != http.StatusForbidden {
+		t.Fatalf("add group owner with assets:write only = %d %s, want 403", status, body)
+	}
+	if h.canSee(dev, asset) {
+		t.Fatal("refused group owner still gave access")
+	}
+
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete, permission.GroupsWrite)
+	status, body := h.do(http.MethodPost, "/api/v1/assets/"+asset.String()+"/owners", add)
+	if status != http.StatusCreated {
+		t.Fatalf("add group owner with groups:write = %d %s", status, body)
+	}
+	if !h.canSee(dev, asset) {
+		t.Fatal("group owner (group assignment) did not give its member access")
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &created)
+
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete)
+	if status, body := h.do(http.MethodDelete, "/api/v1/assets/"+asset.String()+"/owners/"+created.ID, nil); status != http.StatusForbidden {
+		t.Fatalf("remove group owner without groups:write = %d %s, want 403", status, body)
+	}
+	h.setPerms(permission.AssetsRead, permission.AssetsWrite, permission.AssetsDelete, permission.GroupsWrite)
+	if status, body := h.do(http.MethodDelete, "/api/v1/assets/"+asset.String()+"/owners/"+created.ID, nil); status != http.StatusNoContent {
+		t.Fatalf("remove group owner = %d %s", status, body)
+	}
+	if h.canSee(dev, asset) {
+		t.Fatal("removing the group owner left the member's access")
+	}
+}
+
+// Explicit access grants: tenant-isolated, idempotence refused with 409,
+// revoke keeps access a group still gives.
+func TestAssetAccessGrants_Lifecycle(t *testing.T) {
+	h := newAOHarness(t)
+	dev := h.member("dev")
+	asset := h.asset("")
+	path := "/api/v1/assets/" + asset.String() + "/access-grants"
+
+	// Another tenant's member and another tenant's asset.
+	other := shared.NewID()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, other.String(), "ao-"+other.String())
+	t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM tenants WHERE id = $1`, other.String()) })
+	stranger := shared.NewID()
+	h.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'stranger')`, stranger.String(), stranger.String()+"@ao.test")
+	t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM users WHERE id = $1`, stranger.String()) })
+	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, stranger.String(), other.String())
+	foreignAsset := shared.NewID()
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, $3, 'host')`,
+		foreignAsset.String(), other.String(), "ao-"+foreignAsset.String())
+
+	// assets:* alone cannot read or write grants (route gate).
+	if status, _ := h.do(http.MethodGet, path, nil); status != http.StatusForbidden {
+		t.Fatalf("list grants without groups:read = %d, want 403", status)
+	}
+	h.setPerms(permission.AssetsRead, permission.GroupsRead, permission.GroupsWrite)
+
+	if status, body := h.do(http.MethodPost, path, map[string]string{"user_id": stranger.String()}); status != http.StatusNotFound {
+		t.Fatalf("grant to another tenant's user = %d %s, want 404", status, body)
+	}
+	if status, body := h.do(http.MethodPost, "/api/v1/assets/"+foreignAsset.String()+"/access-grants",
+		map[string]string{"user_id": dev.String()}); status != http.StatusNotFound {
+		t.Fatalf("grant on another tenant's asset = %d %s, want 404", status, body)
+	}
+	status, body := h.do(http.MethodPost, path, map[string]string{"user_id": dev.String()})
+	if status != http.StatusCreated {
+		t.Fatalf("grant = %d %s", status, body)
+	}
+	var g struct {
+		ID     string `json:"id"`
+		Source string `json:"source"`
+	}
+	_ = json.Unmarshal([]byte(body), &g)
+	if g.Source != "manual" || !h.canSee(dev, asset) {
+		t.Fatalf("grant %+v did not give access", g)
+	}
+	if status, _ := h.do(http.MethodPost, path, map[string]string{"user_id": dev.String()}); status != http.StatusConflict {
+		t.Fatalf("duplicate grant = %d, want 409", status)
+	}
+	status, body = h.do(http.MethodGet, path, nil)
+	if status != http.StatusOK || !strings.Contains(body, dev.String()) {
+		t.Fatalf("list grants = %d %s", status, body)
+	}
+	// Another tenant's grant id cannot be revoked through this asset.
+	if status, _ := h.do(http.MethodDelete, "/api/v1/assets/"+foreignAsset.String()+"/access-grants/"+g.ID, nil); status != http.StatusNotFound {
+		t.Fatalf("revoke via another tenant's asset = %d, want 404", status)
+	}
+
+	// A group still giving access keeps it after the revoke.
+	group := shared.NewID()
+	h.exec(`INSERT INTO groups (id, tenant_id, name, slug, is_active) VALUES ($1, $2, $3, $3, true)`,
+		group.String(), h.tenant.String(), "g-"+group.String())
+	h.exec(`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, group.String(), dev.String())
+	h.exec(`INSERT INTO asset_owners (asset_id, group_id, ownership_type) VALUES ($1, $2, 'secondary')`, asset.String(), group.String())
+	if status, _ := h.do(http.MethodDelete, path+"/"+g.ID, nil); status != http.StatusNoContent {
+		t.Fatalf("revoke = %d", status)
+	}
+	if !h.canSee(dev, asset) {
+		t.Fatal("revoke removed access the group still gives")
+	}
+	h.exec(`DELETE FROM asset_owners WHERE asset_id = $1 AND group_id = $2`, asset.String(), group.String())
+	h.exec(`SELECT refresh_access_for_asset_unassign($1, $2)`, group.String(), asset.String())
+	if h.canSee(dev, asset) {
+		t.Fatal("access remained with neither grant nor group")
 	}
 }

@@ -19,6 +19,7 @@ func TestChangeAuditIsWiredForScopeToolsAndTemplates(t *testing.T) {
 		"handlers.Scope.SetAuditService(svc.Audit)",
 		"handlers.Tool.SetAuditService(svc.Audit)",
 		"handlers.ScannerTemplate.SetAuditService(svc.Audit)",
+		"handlers.AssetOwner.SetAuditService(svc.Audit)",
 	} {
 		if !strings.Contains(string(src), call) {
 			t.Errorf("cmd/server/handlers.go does not call %s", call)
