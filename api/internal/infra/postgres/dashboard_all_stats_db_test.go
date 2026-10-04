@@ -69,7 +69,7 @@ func TestDashboardGetAllStats_OnePass(t *testing.T) {
 	seedDashFinding(ctx, t, db, tenant, host, "low", "draft", nil) // excluded (draft)
 	seedDashFinding(ctx, t, db, other, otherAsset, "critical", "new", nil)
 
-	s, err := repo.GetAllStats(ctx, tenant)
+	s, err := repo.GetAllStats(ctx, tenant, nil)
 	if err != nil {
 		t.Fatalf("GetAllStats: %v", err)
 	}
