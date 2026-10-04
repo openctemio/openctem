@@ -5,6 +5,28 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Changed: suppressed findings are dispositions, not fixes
+
+- **A suppression rule marks a finding `false_positive` or `accepted`,
+  never `resolved`** (research 18 F7, owner decision O9). A false-positive
+  rule gives `false_positive`; accepted-risk and won't-fix rules give
+  `accepted`. The resolution stays `suppressed` and `finding_suppressions`
+  names the rule. Fix rate and MTTR therefore count real fixes only.
+- Migration 000751 moves existing `resolved` / `suppressed` rows to the
+  disposition of their recorded rule (same tenant), only when that rule is
+  certain; rows with no recorded rule or conflicting rules stay as they are.
+  The relabel is not counted as a regression.
+
+### Findings keep the scanner details they used to drop (research 17 R2)
+
+- Ingest now stores the rule **family** (Nessus / Tenable.sc plugin family,
+  scanner category), the scanner's **exploit-available** verdict as a column,
+  **VPR** (display only, no priority effect), the **CVSS version**, **every
+  CVE** named on the finding (`cve_ids`) and the vendor **patch publication
+  date**. The finding API returns them. Migrations 000688-000689 (nullable
+  columns, NOT VALID checks, partial indexes, and a backfill of the exploit
+  flag from metadata). Fingerprints are unchanged.
+
 ### Added: the `not_observed` finding status
 
 - **`not_observed`: not seen lately, not fixed** (research 18, owner

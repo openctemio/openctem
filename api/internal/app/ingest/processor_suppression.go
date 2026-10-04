@@ -9,10 +9,21 @@ import (
 )
 
 // resolutionSuppressed is the resolution note stamped on a finding that an
-// approved suppression rule matched at ingest time. It is the same sentinel the
-// auto-reopen query excludes (see FindingRepository.AutoReopenByFingerprintsBatch),
-// so a re-ingested suppressed finding is never reopened.
+// approved suppression rule matched at ingest time; finding_suppressions names
+// the rule. It is also a sentinel the auto-reopen query excludes (see
+// FindingRepository.AutoReopenByFingerprintsBatch).
 const resolutionSuppressed = "suppressed"
+
+// suppressionDisposition is the status a rule of type t gives a finding it
+// matches (research 18 F7, owner decision O9): a disposition, never resolved,
+// so fix rate and MTTR count real fixes only. A false-positive rule marks the
+// finding false_positive; accepted-risk and won't-fix rules mark it accepted.
+func suppressionDisposition(t suppression.SuppressionType) vulnerability.FindingStatus {
+	if t == suppression.SuppressionTypeFalsePositive {
+		return vulnerability.FindingStatusFalsePositive
+	}
+	return vulnerability.FindingStatusAccepted
+}
 
 // SuppressionChecker loads a tenant's active (approved, non-expired) suppression
 // rules and records which rule suppressed a finding. Implemented by
@@ -33,9 +44,11 @@ func (p *FindingProcessor) SetSuppressionChecker(checker SuppressionChecker) {
 	p.suppressionChecker = checker
 }
 
-// applySuppressions marks each NEW finding that an active suppression rule
-// matches as resolved+suppressed BEFORE it is persisted, so it lands out of the
-// open backlog instead of appearing and then being closed on a later pass.
+// applySuppressions gives each NEW finding that an active suppression rule
+// matches the rule's disposition (false_positive or accepted, resolution
+// "suppressed") BEFORE it is persisted, so it lands out of the open backlog
+// instead of appearing and then being closed on a later pass. It is never
+// marked resolved: a suppression is not a fix.
 //
 // Active rules are loaded ONCE per batch (tenant-scoped), never per finding.
 // Returns a map of newFindings index -> matching rule id so the finding→rule
@@ -75,10 +88,9 @@ func (p *FindingProcessor) applySuppressions(
 			if !rule.Matches(match) {
 				continue
 			}
-			// resolvedBy nil = system disposition (no human actor). Resolved +
-			// resolution="suppressed" keeps the finding out of the open backlog
-			// and excluded from auto-reopen on re-ingest.
-			if err := f.UpdateStatus(vulnerability.FindingStatusResolved, resolutionSuppressed, nil); err != nil {
+			// resolvedBy nil = system disposition (no human actor); the rule
+			// was approved by a person (separation of duties).
+			if err := f.UpdateStatus(suppressionDisposition(rule.SuppressionType()), resolutionSuppressed, nil); err != nil {
 				p.logger.Warn("failed to apply suppression disposition",
 					"error", err, "fingerprint", f.Fingerprint())
 				break
