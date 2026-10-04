@@ -2872,3 +2872,41 @@ func TestTestIntegration_Jira_OtherTenantNotFound(t *testing.T) {
 		t.Fatal("another tenant's credentials must never be tested")
 	}
 }
+
+// A ticketing integration's status_inbound map may not target a closing
+// status (resolved / false_positive / accepted / duplicate): a webhook would
+// close findings with no findings:verify holder and no approval. Refused on
+// create and on update; a safe map is stored.
+func TestIntegration_TicketingInboundClosingTargetRefused(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), newMockEncryptor())
+	tenantID := shared.NewID().String()
+	jiraInput := func(inbound map[string]any) app.CreateIntegrationInput {
+		return app.CreateIntegrationInput{
+			TenantID: tenantID, Name: "Jira " + shared.NewID().String(), Category: "ticketing", Provider: "jira",
+			AuthType: "basic", BaseURL: "https://x.atlassian.net", Credentials: "u:token",
+			Config: map[string]any{"ticketing": map[string]any{"status_inbound": inbound}},
+		}
+	}
+
+	for _, target := range []string{"resolved", "false_positive", "accepted", "duplicate"} {
+		_, err := svc.CreateIntegration(context.Background(), jiraInput(map[string]any{"Done": target}))
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("create with Done=%s: err = %v, want ErrValidation", target, err)
+		}
+	}
+	if repo.createCalls != 0 {
+		t.Fatalf("a refused config was stored (%d creates)", repo.createCalls)
+	}
+
+	created, err := svc.CreateIntegration(context.Background(), jiraInput(map[string]any{"Done": "fix_applied"}))
+	if err != nil {
+		t.Fatalf("safe inbound map refused: %v", err)
+	}
+	_, err = svc.UpdateIntegration(context.Background(), created.ID().String(), tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"ticketing": map[string]any{"status_inbound": map[string]any{"Done": "resolved"}}},
+	})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("update to Done=resolved: err = %v, want ErrValidation", err)
+	}
+}
