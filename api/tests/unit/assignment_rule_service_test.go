@@ -186,18 +186,6 @@ func (m *mockGroupRepoForRules) ListGroupsByUser(_ context.Context, _, _ shared.
 func (m *mockGroupRepoForRules) ListGroupIDsByUser(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForRules) AssignPermissionSet(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
-	return nil
-}
-func (m *mockGroupRepoForRules) RemovePermissionSet(_ context.Context, _, _ shared.ID) error {
-	return nil
-}
-func (m *mockGroupRepoForRules) ListPermissionSetIDs(_ context.Context, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-func (m *mockGroupRepoForRules) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*group.Group, error) {
-	return nil, nil
-}
 
 // =============================================================================
 // Helpers

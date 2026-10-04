@@ -220,22 +220,6 @@ func (m *mockGroupRepo) ListGroupIDsByUser(_ context.Context, _, _ shared.ID) ([
 	return nil, nil
 }
 
-func (m *mockGroupRepo) AssignPermissionSet(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
-	return nil
-}
-
-func (m *mockGroupRepo) RemovePermissionSet(_ context.Context, _, _ shared.ID) error {
-	return nil
-}
-
-func (m *mockGroupRepo) ListPermissionSetIDs(_ context.Context, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-
-func (m *mockGroupRepo) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*group.Group, error) {
-	return nil, nil
-}
-
 // =============================================================================
 // Test Helpers
 // =============================================================================
