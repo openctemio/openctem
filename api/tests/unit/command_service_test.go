@@ -145,7 +145,7 @@ func (m *cmdMockRepo) Update(_ context.Context, cmd *commanddom.Command) error {
 	return nil
 }
 
-func (m *cmdMockRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *cmdMockRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}

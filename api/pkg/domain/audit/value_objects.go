@@ -144,6 +144,7 @@ const (
 	// Account security actions (the user acting on their own account).
 	ActionAuthMFAEnabled                  Action = "auth.mfa_enabled"
 	ActionAuthMFADisabled                 Action = "auth.mfa_disabled"
+	ActionAuthMFAReset                    Action = "auth.mfa_reset"
 	ActionAuthMFAFailed                   Action = "auth.mfa_failed"
 	ActionAuthMFARecoveryCodeUsed         Action = "auth.mfa_recovery_code_used"
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
@@ -316,6 +317,8 @@ const (
 	ActionAssetAccessRevoked Action = "asset.access_revoked"
 
 	// Permission Set actions
+	// Permission sets were removed (permissions come only from roles). The
+	// actions stay so historical audit rows still render.
 	ActionPermissionSetCreated    Action = "permission_set.created"
 	ActionPermissionSetUpdated    Action = "permission_set.updated"
 	ActionPermissionSetDeleted    Action = "permission_set.deleted"
@@ -483,7 +486,7 @@ func (a Action) IsValid() bool {
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
-		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
@@ -588,7 +591,7 @@ func (a Action) Category() string {
 	case ActionScanStarted, ActionScanCompleted, ActionScanFailed:
 		return "scan"
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
-		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged:
 		return "security"
 	case ActionSettingsUpdated:
@@ -809,7 +812,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionUserSuspended, ActionUserDeactivated,
-		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,

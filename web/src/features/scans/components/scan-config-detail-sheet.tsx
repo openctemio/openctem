@@ -268,6 +268,11 @@ function Configuration({ config }: { config: ScanConfig }) {
         <DetailFieldGrid>
           <DetailField label="Scan type">{SCAN_TYPE_LABELS[config.scan_type]}</DetailField>
           <DetailField label="Frequency">{SCHEDULE_TYPE_LABELS[config.schedule_type]}</DetailField>
+          {config.schedule_rrule && (
+            <DetailField label="Rule" full>
+              <code className="text-xs break-all">{config.schedule_rrule}</code>
+            </DetailField>
+          )}
           {config.schedule_time && <DetailField label="Time">{config.schedule_time}</DetailField>}
           <DetailField label="Timezone">{config.schedule_timezone}</DetailField>
         </DetailFieldGrid>
