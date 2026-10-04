@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -100,7 +101,7 @@ func (m *MockAssetRepository) Update(_ context.Context, a *asset.Asset) error {
 	return nil
 }
 
-func (m *MockAssetRepository) Delete(_ context.Context, tenantID, id shared.ID) error {
+func (m *MockAssetRepository) Delete(_ context.Context, tenantID, id shared.ID, _ *shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -1149,7 +1150,7 @@ func TestAssetService_DeleteAsset_Success(t *testing.T) {
 
 	created := createAssetForTest(t, svc, tenantID, "To Delete")
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1163,7 +1164,7 @@ func TestAssetService_DeleteAsset_NotFound(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), tenantID, "")
 	if err == nil {
 		t.Fatal("expected error for non-existent asset")
 	}
@@ -1176,7 +1177,7 @@ func TestAssetService_DeleteAsset_InvalidID(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	err := svc.DeleteAsset(context.Background(), "not-a-uuid", tenantID)
+	err := svc.DeleteAsset(context.Background(), "not-a-uuid", tenantID, "")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -1188,7 +1189,7 @@ func TestAssetService_DeleteAsset_InvalidID(t *testing.T) {
 func TestAssetService_DeleteAsset_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestService()
 
-	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), "not-a-uuid")
+	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), "not-a-uuid", "")
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -1205,7 +1206,7 @@ func TestAssetService_DeleteAsset_CrossTenantIsolation(t *testing.T) {
 	created := createAssetForTest(t, svc, tenantA, "Tenant A Delete Test")
 
 	// Try to delete from tenant B
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantB)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantB, "")
 	if err == nil {
 		t.Fatal("expected error when deleting asset from different tenant")
 	}
@@ -1231,7 +1232,7 @@ func TestAssetService_DeleteAsset_RepoError(t *testing.T) {
 
 	repo.deleteErr = errors.New("foreign key constraint violation")
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err == nil {
 		t.Fatal("expected error when repo.Delete fails")
 	}
@@ -2074,7 +2075,7 @@ func TestAssetService_DeleteAsset_CallsRepoCorrectly(t *testing.T) {
 
 	repo.deleteCalls = 0
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2303,4 +2304,8 @@ func TestAssetService_GetAssetDisplayInfo_InvalidTenant(t *testing.T) {
 	if _, err := svc.GetAssetDisplayInfo(context.Background(), "bad", []string{shared.NewID().String()}); err == nil {
 		t.Fatal("expected validation error for bad tenant id")
 	}
+}
+
+func (m *MockAssetRepository) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
+	return 0, nil
 }

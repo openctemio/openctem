@@ -149,7 +149,7 @@ func toPermissionSetWithItemsResponse(ps *permissionset.PermissionSetWithItems, 
 
 func (h *PermissionSetHandler) buildAuditContext(r *http.Request) app.AuditContext {
 	actx := app.AuditContext{
-		ActorIP:   r.RemoteAddr,
+		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
 	}

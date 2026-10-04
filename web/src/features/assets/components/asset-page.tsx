@@ -1382,8 +1382,13 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
         typeName={config.label}
         onConfirm={async () => {
           if (!dialogs.assetToDelete) return
-          const success = await crud.handleDelete(dialogs.assetToDelete.id)
-          if (success) {
+          const result = await crud.handleDelete(
+            dialogs.assetToDelete.id,
+            dialogs.assetToDelete.name
+          )
+          // A refused delete (the asset has findings) closes too: the toast
+          // explains it and offers Archive.
+          if (result !== 'failed') {
             dialogs.setDeleteDialogOpen(false)
             dialogs.setAssetToDelete(null)
           }

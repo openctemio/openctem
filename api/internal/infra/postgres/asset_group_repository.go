@@ -55,7 +55,7 @@ const assetGroupSelectQuery = `
 // tenant's asset is never returned or counted. $1 is the group id.
 const groupMembersFrom = `asset_group_members agm
 		JOIN asset_groups mg ON mg.id = agm.asset_group_id
-		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = mg.tenant_id`
+		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = mg.tenant_id AND a.deleted_at IS NULL`
 
 func (r *AssetGroupRepository) scanAssetGroup(row interface{ Scan(...any) error }) (*assetgroup.AssetGroup, error) {
 	var (
@@ -550,7 +550,7 @@ func (r *AssetGroupRepository) AddAssets(ctx context.Context, groupID shared.ID,
 		WITH own AS (
 			SELECT ag.id AS group_id, a.id AS asset_id
 			FROM asset_groups ag
-			JOIN assets a ON a.tenant_id = ag.tenant_id
+			JOIN assets a ON a.tenant_id = ag.tenant_id AND a.deleted_at IS NULL
 			WHERE ag.id = $1 AND a.id = ANY($2::uuid[])
 		), ins AS (
 			INSERT INTO asset_group_members (asset_group_id, asset_id)
@@ -572,7 +572,7 @@ func (r *AssetGroupRepository) FilterTenantAssetIDs(ctx context.Context, tenantI
 		return nil, nil
 	}
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id FROM assets WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+		`SELECT id FROM assets WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
 		tenantID.String(), pq.Array(memberIDStrings(assetIDs)))
 	if err != nil {
 		return nil, fmt.Errorf("filter tenant assets: %w", err)
