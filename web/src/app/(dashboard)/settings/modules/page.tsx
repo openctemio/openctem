@@ -36,7 +36,7 @@ import {
 import { toast } from 'sonner'
 import { useSWRConfig } from 'swr'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, isHiddenReleaseStatus } from '@/lib/permissions'
 import {
   useTenantModules,
   useUpdateTenantModules,
@@ -173,8 +173,8 @@ export default function ModuleManagementPage() {
     const core: TenantModule[] = []
     const features: TenantModule[] = []
     for (const mod of modules) {
-      // Hide deprecated modules entirely
-      if (mod.release_status === 'deprecated') continue
+      // Hide deprecated and not-yet-built modules entirely
+      if (isHiddenReleaseStatus(mod.release_status)) continue
       if (mod.is_core) {
         core.push(mod)
       } else {
@@ -679,9 +679,9 @@ function ModuleRow({
   const hasSubModules = mod.sub_modules && mod.sub_modules.length > 0
   const categoryLabel = CATEGORY_LABELS[mod.category] || mod.category
 
-  // Filter out deprecated sub-modules; keep coming_soon (shown as disabled)
+  // Deprecated and not-yet-built sub-modules are not shown.
   const visibleSubModules = hasSubModules
-    ? mod.sub_modules!.filter((sub) => sub.release_status !== 'deprecated')
+    ? mod.sub_modules!.filter((sub) => !isHiddenReleaseStatus(sub.release_status))
     : []
 
   // Count only HARD edges for the compact badges — soft edges are
@@ -707,11 +707,6 @@ function ModuleRow({
             {mod.release_status === 'beta' && (
               <Badge variant="outline" className="text-xs">
                 Beta
-              </Badge>
-            )}
-            {mod.release_status === 'coming_soon' && (
-              <Badge variant="outline" className="text-xs text-muted-foreground">
-                Coming soon
               </Badge>
             )}
             {hasPendingChange && (

@@ -16,6 +16,7 @@ import { hasSessionCookie } from '@/lib/middleware/auth'
 import { LoginForm } from '@/features/auth/components/login-form'
 import { SignUpPrompt } from '@/features/auth/components/sign-up-prompt'
 import { LegalNotice } from '@/features/auth/components/legal-notice'
+import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 
 interface LoginPageProps {
   searchParams: Promise<{
@@ -28,7 +29,7 @@ interface LoginPageProps {
     error?: string
     // Preserved from the invitation flow — when a user clicks an
     // invite link and doesn't have an account, the invitation page
-    // redirects to /login?email=alice@co.com&returnTo=/invitations/{token}.
+    // redirects to /login?email=alice@co.com&returnTo=/invitations.
     // The login page passes this email (and the invitation returnTo)
     // through to the "Sign up" link so the register form can pre-fill it
     // and send the invitation token.
@@ -56,7 +57,7 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
     } else if (hasPendingTenants) {
       // User has multiple teams but hasn't selected one - redirect to select-tenant
       redirect('/select-tenant')
-    } else if (redirectTo.includes('/invitations/')) {
+    } else if (isInvitationReturnTo(redirectTo)) {
       // Special case: invitation links — let them through with current auth
       // so the invitation acceptance flow can issue a fresh tenant cookie.
       redirect(redirectTo)

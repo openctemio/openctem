@@ -967,7 +967,7 @@ func TestScopeServiceExclusion_RejectedNeverApplies(t *testing.T) {
 			return err
 		},
 		"deactivate": func() error {
-			_, err := svc.DeactivateExclusion(ctx, id, tid)
+			_, err := svc.DeactivateExclusion(ctx, id, tid, exclusionApprover)
 			return err
 		},
 		"reject": func() error {
@@ -1000,7 +1000,7 @@ func TestScopeServiceExclusion_ExtendingAnApprovedWindowNeedsReapproval(t *testi
 	er.exclusions[exc.ID().String()] = exc
 
 	day := time.Now().Add(24 * time.Hour)
-	got, err := svc.UpdateExclusion(ctx, exc.ID().String(), tenantID.String(), scope.UpdateExclusionInput{ExpiresAt: &day})
+	got, err := svc.UpdateExclusion(ctx, exc.ID().String(), tenantID.String(), scope.UpdateExclusionInput{ExpiresAt: &day, Reviewer: exclusionApprover})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1042,7 +1042,7 @@ func TestScopeServiceActivateDeactivateExclusion(t *testing.T) {
 	}
 
 	t.Run("Deactivate", func(t *testing.T) {
-		result, err := svc.DeactivateExclusion(context.Background(), exc.ID().String(), tenantID.String())
+		result, err := svc.DeactivateExclusion(context.Background(), exc.ID().String(), tenantID.String(), exclusionApprover)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1073,7 +1073,7 @@ func TestScopeServiceDeleteExclusion(t *testing.T) {
 		exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
 		er.exclusions[exc.ID().String()] = exc
 
-		err := svc.DeleteExclusion(context.Background(), exc.ID().String(), tenantID.String())
+		err := svc.DeleteExclusion(context.Background(), exc.ID().String(), tenantID.String(), exclusionApprover)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1087,7 +1087,7 @@ func TestScopeServiceDeleteExclusion(t *testing.T) {
 		exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
 		er.exclusions[exc.ID().String()] = exc
 
-		err := svc.DeleteExclusion(context.Background(), exc.ID().String(), shared.NewID().String())
+		err := svc.DeleteExclusion(context.Background(), exc.ID().String(), shared.NewID().String(), exclusionApprover)
 		if !errors.Is(err, shared.ErrNotFound) {
 			t.Errorf("expected ErrNotFound, got: %v", err)
 		}
@@ -2086,7 +2086,7 @@ func TestScopeServiceDeactivateExclusionTenantIsolation(t *testing.T) {
 		exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
 		er.exclusions[exc.ID().String()] = exc
 
-		_, err := svc.DeactivateExclusion(context.Background(), exc.ID().String(), shared.NewID().String())
+		_, err := svc.DeactivateExclusion(context.Background(), exc.ID().String(), shared.NewID().String(), exclusionApprover)
 		if !errors.Is(err, shared.ErrNotFound) {
 			t.Errorf("expected ErrNotFound, got: %v", err)
 		}
@@ -2161,4 +2161,91 @@ func TestScopeServiceDisableScheduleTenantIsolation(t *testing.T) {
 
 func (m *mockAssetRepo) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
 	return 0, nil
+}
+
+// exclusionApprover holds the exclusion approval permission and requested
+// none of the test exclusions.
+var exclusionApprover = scopedom.Reviewer{UserID: "approver2", CanApprove: true}
+
+// Taking an approved exclusion out of effect (deactivate, delete, shorten
+// its window, a past date included) needs the approval permission and
+// someone other than the requester, like approving it. Research doc 15, L-07.
+func TestScopeServiceExclusion_ReducingProtectionNeedsSecondApprover(t *testing.T) {
+	ctx := context.Background()
+	member := scopedom.Reviewer{UserID: "member9", CanApprove: false}
+	requester := scopedom.Reviewer{UserID: "member1", CanApprove: true}
+	week := time.Now().Add(7 * 24 * time.Hour)
+
+	newApproved := func(t *testing.T) (*scope.Service, *scopedom.Exclusion, string, string) {
+		t.Helper()
+		svc, _, er, _, _ := newTestScopeService()
+		tenantID := shared.NewID()
+		exc, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "payments.prod", "prod", &week, "member1")
+		if err := exc.Approve("admin1"); err != nil {
+			t.Fatal(err)
+		}
+		er.exclusions[exc.ID().String()] = exc
+		return svc, exc, exc.ID().String(), tenantID.String()
+	}
+	past := time.Now().Add(-time.Hour)
+	day := time.Now().Add(24 * time.Hour)
+	reason := "edited"
+
+	type op func(svc *scope.Service, id, tid string, r scopedom.Reviewer) error
+	ops := map[string]op{
+		"deactivate": func(svc *scope.Service, id, tid string, r scopedom.Reviewer) error {
+			_, err := svc.DeactivateExclusion(ctx, id, tid, r)
+			return err
+		},
+		"delete": func(svc *scope.Service, id, tid string, r scopedom.Reviewer) error {
+			return svc.DeleteExclusion(ctx, id, tid, r)
+		},
+		"expire in the past": func(svc *scope.Service, id, tid string, r scopedom.Reviewer) error {
+			_, err := svc.UpdateExclusion(ctx, id, tid, scope.UpdateExclusionInput{ExpiresAt: &past, Reviewer: r})
+			return err
+		},
+		"shorten": func(svc *scope.Service, id, tid string, r scopedom.Reviewer) error {
+			_, err := svc.UpdateExclusion(ctx, id, tid, scope.UpdateExclusionInput{ExpiresAt: &day, Reviewer: r})
+			return err
+		},
+	}
+	for name, do := range ops {
+		t.Run(name, func(t *testing.T) {
+			svc, exc, id, tid := newApproved(t)
+			if err := do(svc, id, tid, member); !errors.Is(err, scopedom.ErrExclusionReduceNeedsApprover) {
+				t.Fatalf("scope:write only: got %v, want ErrExclusionReduceNeedsApprover", err)
+			}
+			if err := do(svc, id, tid, requester); !errors.Is(err, scopedom.ErrExclusionSelfReduce) {
+				t.Fatalf("the requester: got %v, want ErrExclusionSelfReduce", err)
+			}
+			if !exc.InEffect() || !exc.ExpiresAt().Equal(week) {
+				t.Fatal("a refused reduction changed the exclusion")
+			}
+			if err := do(svc, id, tid, exclusionApprover); err != nil {
+				t.Fatalf("a second approver: %v", err)
+			}
+		})
+	}
+
+	t.Run("protection-neutral changes stay on scope:write", func(t *testing.T) {
+		svc, _, id, tid := newApproved(t)
+		later := week.Add(time.Hour)
+		if _, err := svc.UpdateExclusion(ctx, id, tid, scope.UpdateExclusionInput{Reason: &reason, Reviewer: member}); err != nil {
+			t.Fatalf("editing the reason: %v", err)
+		}
+		// Extending sends it back for approval (already covered elsewhere).
+		if _, err := svc.UpdateExclusion(ctx, id, tid, scope.UpdateExclusionInput{ExpiresAt: &later, Reviewer: member}); err != nil {
+			t.Fatalf("extending: %v", err)
+		}
+	})
+
+	t.Run("an exclusion not in effect can be removed with scope rights", func(t *testing.T) {
+		svc, _, er, _, _ := newTestScopeService()
+		tenantID := shared.NewID()
+		pending, _ := scopedom.NewExclusion(tenantID, scopedom.ExclusionTypeDomain, "pending.prod", "p", nil, "member9")
+		er.exclusions[pending.ID().String()] = pending
+		if err := svc.DeleteExclusion(ctx, pending.ID().String(), tenantID.String(), member); err != nil {
+			t.Fatalf("deleting a pending exclusion: %v", err)
+		}
+	})
 }

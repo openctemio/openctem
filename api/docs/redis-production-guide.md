@@ -179,7 +179,7 @@ replicas would get N times the budget.
 | `auth:mfa`, `auth:mfa-ip` | `/auth/mfa/verify`, `/auth/mfa/enroll/*` | 10/min per challenge, 30/min per IP |
 | `account-2fa:login`, `account-2fa:password` | `/users/me/2fa/setup`, `/enable` / `/disable`, `/recovery-codes` | 5/min, 3/min per IP |
 | `console:login`, `console:password`, `console:token` | admin console `/admin/auth/session`, `/admin/auth/mfa` / `/password` / `/idp/start`, `/idp/callback` | 5/min, 3/min, 20/min per IP |
-| `invitation:token` | `/invitations/{token}/preview`, `/decline`, `/accept`, `/accept-with-refresh`, `GET /invitations/{token}` | 20/min per IP |
+| `invitation:token` | `/invitations/lookup`, `/accept`, `/decline`, `/accept-with-refresh` (token in the body), and the deprecated `/invitations/{token}/...` aliases | 20/min per IP |
 
 `/auth/providers` is not in these buckets: it is a config read the UI makes on
 many screens and uses the general API limiter (`RATE_LIMIT_*`), so reading it

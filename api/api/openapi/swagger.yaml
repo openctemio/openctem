@@ -3376,6 +3376,11 @@ definitions:
         type: array
       relationship:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType'
+      sub_type:
+        description: |-
+          SubType restricts the rule to the type's assets of one sub-type
+          ("" = any sub-type).
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType:
     enum:
@@ -3440,6 +3445,10 @@ definitions:
         items:
           type: string
         type: array
+      exposure_default:
+        description: ExposureDefault is the exposure the type has by nature ("" =
+          none).
+        type: string
       facets:
         items:
           type: string
@@ -3464,6 +3473,13 @@ definitions:
         type: string
       relationships:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships'
+      scannable_by:
+        description: |-
+          ScannableBy lists the tool target types (supported_targets) that can
+          scan the type (RFC-042 §6.3.8 R5).
+        items:
+          type: string
+        type: array
       sections:
         items:
           type: string
@@ -4625,6 +4641,32 @@ definitions:
         type: string
     required:
     - role_arn
+    type: object
+  internal_infra_http_handler.AcceptInvitationWithRefreshRequest:
+    properties:
+      refresh_token:
+        type: string
+      token:
+        type: string
+    type: object
+  internal_infra_http_handler.AcceptInvitationWithRefreshResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      refresh_token:
+        type: string
+      role:
+        type: string
+      tenant_id:
+        type: string
+      tenant_name:
+        type: string
+      tenant_slug:
+        type: string
+      token_type:
+        type: string
     type: object
   internal_infra_http_handler.AcceptQuarantinedResultResponse:
     properties:
@@ -9834,6 +9876,43 @@ definitions:
       total:
         type: integer
     type: object
+  internal_infra_http_handler.InvitationLookupInvitation:
+    properties:
+      email:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      inviter_name:
+        type: string
+      pending:
+        type: boolean
+      role:
+        type: string
+    type: object
+  internal_infra_http_handler.InvitationLookupResponse:
+    properties:
+      invitation:
+        $ref: '#/definitions/internal_infra_http_handler.InvitationLookupInvitation'
+      tenant:
+        $ref: '#/definitions/internal_infra_http_handler.InvitationLookupTenant'
+    type: object
+  internal_infra_http_handler.InvitationLookupTenant:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      slug:
+        type: string
+    type: object
+  internal_infra_http_handler.InvitationTokenRequest:
+    properties:
+      token:
+        example: Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8
+        type: string
+    type: object
   internal_infra_http_handler.LicensingModuleResponse:
     properties:
       category:
@@ -10356,6 +10435,19 @@ definitions:
       otpauth_uri:
         type: string
       secret:
+        type: string
+    type: object
+  internal_infra_http_handler.MemberResponse:
+    properties:
+      id:
+        type: string
+      invited_by:
+        type: string
+      joined_at:
+        type: string
+      role:
+        type: string
+      user_id:
         type: string
     type: object
   internal_infra_http_handler.NotificationEventCategoryResponse:
@@ -24289,6 +24381,155 @@ paths:
       summary: Test integration credentials without creating
       tags:
       - Integrations
+  /invitations/accept:
+    post:
+      consumes:
+      - application/json
+      description: Joins the organization of the invitation. The caller must be signed
+        in as the invited email. The token travels in the body, never in the URL.
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.MemberResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Accept an invitation
+      tags:
+      - Invitations
+  /invitations/accept-with-refresh:
+    post:
+      consumes:
+      - application/json
+      description: 'For an invited user without an organization yet: accepts the invitation
+        and issues an access token for the new organization. The refresh token comes
+        from the body or the httpOnly cookie (cookie requires the CSRF pair). The
+        invitation token travels in the body, never in the URL.'
+      parameters:
+      - description: Invitation token and optional refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AcceptInvitationWithRefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AcceptInvitationWithRefreshResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Accept an invitation with a refresh token
+      tags:
+      - Invitations
+  /invitations/decline:
+    post:
+      consumes:
+      - application/json
+      description: Deletes the invitation. Holding the token is the authorization,
+        so no sign-in is needed. The token travels in the body, never in the URL.
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Decline an invitation
+      tags:
+      - Invitations
+  /invitations/lookup:
+    post:
+      consumes:
+      - application/json
+      description: 'What an invitation token grants, readable before sign-in: the
+        organization, the invited email and role, and whether it is still pending.
+        The token travels in the body, never in the URL.'
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.InvitationLookupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Look up an invitation
+      tags:
+      - Invitations
   /me/assets:
     get:
       description: List all assets the current user can access through their group
@@ -27583,6 +27824,11 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
           description: Not Found
           schema:
@@ -27655,6 +27901,11 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
@@ -27775,6 +28026,11 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
