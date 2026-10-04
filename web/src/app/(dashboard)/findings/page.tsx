@@ -3,7 +3,7 @@
 import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useUrlParams, useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
@@ -63,8 +63,6 @@ import {
   Copy,
   Link2,
   Plus,
-  X,
-  Filter,
   AlertCircle,
   Loader2,
   Route,
@@ -95,6 +93,10 @@ import {
 } from '@/features/findings/components/finding-groups-table'
 import { AutoAssignDialog } from '@/features/findings/components/auto-assign-dialog'
 import type { GroupByDimension } from '@/features/findings/api/use-finding-groups'
+import {
+  FindingContextChips,
+  hasFindingContextFilters,
+} from '@/features/findings/components/finding-context-chips'
 import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialog'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
 import { LinkFindingsToRemediationDialog } from '@/features/remediation/components/link-findings-dialog'
@@ -322,13 +324,20 @@ const PRIORITY_OPTIONS = [
   { value: 'P3', hint: 'Low' },
 ]
 
-/** First-load placeholder shaped like the toolbar + table it stands in for. */
-function FindingsTableSkeleton() {
+/**
+ * First-load placeholder shaped like the toolbar + table it stands in for. The
+ * context chips render in it already (they come from the URL, not the fetch),
+ * so they sit in the same toolbar row before and after the rows load.
+ */
+function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-9 w-24" />
-        <Skeleton className="h-9 w-72" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-72" />
+          {contextChips}
+        </div>
         <Skeleton className="ms-auto h-9 w-24" />
       </div>
       <div className="space-y-2 rounded-md border p-3">
@@ -530,6 +539,8 @@ function FindingsContent() {
     )
 
   const [, setAssetParam] = useUrlFilter('asset_id', '')
+  // A scan run's "View all findings" (scan-session-detail-sheet).
+  const [, setScanParam] = useUrlFilter('scan_id', '')
   // A CVE group's "View": the list narrowed to that CVE (search does not match
   // the CVE id, so it cannot stand in for this).
   const [cveParam, setCveParam] = useUrlFilter('cve_id', '')
@@ -802,10 +813,6 @@ function FindingsContent() {
   }, [findingStats])
 
   const selectedCount = selectedFindingIds.length
-
-  const clearFilters = () => {
-    router.push('/findings')
-  }
 
   const handleRefresh = async () => {
     await Promise.all([mutateFindings(), mutateStats()])
@@ -1651,10 +1658,31 @@ function FindingsContent() {
     </DropdownMenu>
   )
 
+  // Filters that arrive from elsewhere (an asset, a scan run, a CVE or rule
+  // group) are context, not facets: always shown, inline in the toolbar so they
+  // never add a row above the table. Each chip removes only its own parameter.
+  const removeContextParam = (param: string) => {
+    if (param === 'asset_id') setAssetParam('')
+    else if (param === 'scan_id') setScanParam('')
+    else if (param === 'cve_id') setCveParam('')
+    else if (param === 'rule_id') setRuleParam('')
+  }
+  const contextFilterValues = {
+    assetId: assetIdFilter,
+    scanId: scanIdFilter,
+    cveId: cveParam,
+    ruleId: ruleParam,
+  }
+  const contextFilterOn = hasFindingContextFilters(contextFilterValues)
+  const contextChips = (
+    <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
+  )
+
   const toolbarStart = (
     <>
       {filterButtons}
       {searchBox}
+      {contextChips}
     </>
   )
 
@@ -1676,6 +1704,7 @@ function FindingsContent() {
   // Grouped view: the groups API takes severity / status / source / "mine";
   // say so when a filter it cannot apply is on, rather than silently ignore it.
   const listOnlyFilterOn =
+    contextFilterOn ||
     !!searchQuery.trim() ||
     priorityClasses.length > 0 ||
     kevActive ||
@@ -1714,7 +1743,7 @@ function FindingsContent() {
 
   const listOnlyNote = listOnlyFilterOn && (
     <span className="text-xs text-muted-foreground">
-      Search, priority, KEV and SLA filters apply to the ungrouped list.
+      Search, priority, KEV, SLA, asset, scan, CVE and rule filters apply to the ungrouped list.
     </span>
   )
 
@@ -1791,15 +1820,6 @@ function FindingsContent() {
     reloadKey: groupsReloadKey,
   }
 
-  // Filters that arrive from elsewhere (an asset, a source, a scan) are context,
-  // not facets — always shown. Facet chips only when the panel is not visible.
-  const contextChips = [
-    assetIdFilter && { key: 'asset', label: `Asset ${assetIdFilter.slice(0, 8)}…` },
-    scanIdFilter && { key: 'scan', label: `Scan ${scanIdFilter.slice(0, 8)}…` },
-    cveParam && { key: 'cve', label: cveParam },
-    ruleParam && { key: 'rule', label: `Rule ${ruleParam}` },
-  ].filter(Boolean) as { key: string; label: string }[]
-
   return (
     <>
       <Main>
@@ -1847,25 +1867,6 @@ function FindingsContent() {
             </div>
 
             <div className="min-w-0 flex-1 space-y-3">
-              {contextChips.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {contextChips.map((c) => (
-                    <Badge key={c.key} variant="secondary" className="gap-1.5">
-                      <Filter className="h-3 w-3" />
-                      {c.label}
-                      <button
-                        type="button"
-                        onClick={clearFilters}
-                        className="rounded-sm hover:bg-background/60"
-                        aria-label={`Clear ${c.key} filter`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-
               {verifyView ? (
                 <FindingGroupsTable
                   {...groupedProps}
@@ -1906,6 +1907,7 @@ function FindingsContent() {
                   toolbarStart={
                     <>
                       {filterButtons}
+                      {contextChips}
                       {listOnlyNote}
                     </>
                   }
@@ -1931,7 +1933,7 @@ function FindingsContent() {
                   }
                 />
               ) : !findingsResponse && findingsLoading ? (
-                <FindingsTableSkeleton />
+                <FindingsTableSkeleton contextChips={contextChips} />
               ) : (
                 <DataTable
                   columns={columns}
