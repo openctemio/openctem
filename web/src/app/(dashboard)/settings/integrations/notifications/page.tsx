@@ -48,6 +48,7 @@ import {
 import type { Integration } from '@/features/integrations'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { ALL_NOTIFICATION_SEVERITIES } from '@/features/integrations/types/integration.types'
+import { coversAllSeverities } from '@/features/notifications/lib/notification-filters'
 import {
   useTenantEventTypes,
   labelEventTypes,
@@ -322,14 +323,9 @@ export default function NotificationIntegrationsPage() {
                 <TooltipTrigger asChild>
                   <div className="flex gap-1 flex-wrap cursor-default">
                     {(() => {
-                      // null/undefined means no filter = all severities
-                      // empty array also means all severities
-                      // 5+ severities (accounting for legacy data missing 'medium') = all severities
-                      const severities = ext?.enabled_severities
-                      const isAllSeverities =
-                        !severities ||
-                        severities.length === 0 ||
-                        severities.length >= ALL_NOTIFICATION_SEVERITIES.length - 1
+                      // "All" only when every real severity is enabled.
+                      const severities = ext?.enabled_severities ?? []
+                      const isAllSeverities = coversAllSeverities(severities)
                       if (isAllSeverities) {
                         return <span className="text-xs text-muted-foreground">All severities</span>
                       }
@@ -369,11 +365,8 @@ export default function NotificationIntegrationsPage() {
                   <p className="text-xs font-medium mb-1">Severity filters:</p>
                   <p className="text-xs text-muted-foreground">
                     {(() => {
-                      const severities = ext?.enabled_severities
-                      const isAllSeverities =
-                        !severities ||
-                        severities.length === 0 ||
-                        severities.length >= ALL_NOTIFICATION_SEVERITIES.length - 1
+                      const severities = ext?.enabled_severities ?? []
+                      const isAllSeverities = coversAllSeverities(severities)
                       if (isAllSeverities) {
                         // Show actual list of all severities
                         return ALL_NOTIFICATION_SEVERITIES.map((s) => s.label).join(', ')
