@@ -128,7 +128,6 @@ const PERMISSION_TO_LICENSE_MODULE: Record<string, string> = {
   'asset-groups': 'assets',
   'scan-profiles': 'scans',
   'scm-connections': 'integrations',
-  'permission-sets': 'team',
   'assignment-rules': 'team',
   'tenant-tools': 'scans',
 
@@ -140,7 +139,6 @@ const PERMISSION_TO_LICENSE_MODULE: Record<string, string> = {
   groups: 'team',
   roles: 'team',
   members: 'team',
-  permission_sets: 'team',
   assignment_rules: 'team',
   workflows: 'findings',
   billing: 'settings',

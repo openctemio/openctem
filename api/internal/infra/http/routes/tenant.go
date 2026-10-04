@@ -162,7 +162,9 @@ func registerTenantRoutes(
 		// Data scope of members without an access group ("everything" |
 		// "nothing"); owners/admins always see everything.
 		r.GET("/settings/data-scope", h.GetDataScopePolicy, middleware.RequireTeamAdmin())
-		r.PATCH("/settings/data-scope", h.UpdateDataScopePolicy, middleware.RequireTeamAdmin())
+		// Owner decision D2: the owner switches the organization off
+		// "everything" after reviewing the impact report.
+		r.PATCH("/settings/data-scope", h.UpdateDataScopePolicy, middleware.RequireTeamOwner())
 
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())
@@ -236,4 +238,21 @@ func invitationDeprecated(name, successor string) Middleware {
 		DeprecatedAt: invitationPathDeprecatedAt,
 		SunsetAt:     invitationPathSunsetAt,
 	})
+}
+
+// registerOrganizationMemberRoutes wires member administration under the
+// token singleton /api/v1/organization: the tenant comes from the credential,
+// never from the path (docs/architecture/api-conventions.md §2).
+//
+// DELETE .../members/{member_id}/mfa resets a member's second factor. The
+// route admits owners and administrators; the service re-checks the caller's
+// live membership and adds the peer-administrator, self and
+// other-organization rules.
+func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAuthHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if localAuth == nil {
+		return
+	}
+	router.Group("/api/v1/organization/members/{member_id}/mfa", func(r Router) {
+		r.DELETE("/", localAuth.ResetMemberMFA, middleware.RequireAdmin())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
