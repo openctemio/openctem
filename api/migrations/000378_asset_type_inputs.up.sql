@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000372: asset type inputs and closed sub-types
+-- Migration 000378: asset type inputs and closed sub-types
 -- =============================================================================
 -- RFC-042 §6.3.8 (docs/rfcs/RFC-042-asset-inventory-v2.md), PR T1 "close the
 -- writers". Only core types are stored; aliases (website, firewall, s3_bucket
