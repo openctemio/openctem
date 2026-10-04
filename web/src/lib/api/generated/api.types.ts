@@ -4734,7 +4734,7 @@ export interface paths {
     put?: never
     /**
      * Create asset
-     * @description Creates a new asset for the current tenant
+     * @description Creates a new asset for the current tenant. A name (or a correlated address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id names the existing asset only when it is in the caller's data scope.
      */
     post: {
       parameters: {
@@ -13252,6 +13252,89 @@ export interface paths {
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/findings/{id}/duplicates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Mark a finding as a duplicate of this one
+     * @description Folds the finding named in the body into the finding in the path, the original (RFC-043 §9). Both must be in the caller's organization and data scope and on the same asset, and neither may already be a duplicate. The canonical finding keeps the stronger status and inherits the duplicate's comments, activities, retests, evidence, tickets and fingerprints; the duplicate stays as a tombstone (status duplicate, duplicate_of). Merging with a false positive or risk acceptance also requires findings:approve. Pentest findings are managed in the pentest module. Returns the canonical finding.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description ID of the original finding */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description The finding that duplicates it */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AddFindingDuplicateRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -33277,6 +33360,9 @@ export interface components {
       content: string
       /** @description IsInternal keeps the comment inside the organization. */
       is_internal?: boolean
+    }
+    'internal_infra_http_handler.AddFindingDuplicateRequest': {
+      finding_id: string
     }
     'internal_infra_http_handler.AddGroupMemberRequest': {
       /** @enum {string} */

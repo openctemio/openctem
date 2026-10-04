@@ -85,11 +85,14 @@ type SensorAvailability interface {
 	HasNucleiValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error)
 }
 
-// TargetGate decides whether an active check may touch an asset. It must fail
-// closed: an error refuses the retest. The scope-exclusion gate is wired today;
-// the EASM attribution gate (#835: only confirmed assets) plugs in here too.
-type TargetGate interface {
-	AllowActiveCheck(ctx context.Context, tenantID shared.ID, a *asset.Asset) (bool, string, error)
+// Dispatcher queues the two checks (*validation.CommandDispatcher). Dispatch
+// passes every job through the active-probe gate (scope exclusions, the
+// private-range policy, attribution, scan zones); Preflight runs the same
+// gate before the retest row exists, so a refused target never claims the
+// finding's retest slot.
+type Dispatcher interface {
+	validation.JobDispatcher
+	Preflight(ctx context.Context, tenantID shared.ID, t validation.Target) error
 }
 
 // AuditLogger writes audit-log events.
@@ -103,9 +106,8 @@ type Service struct {
 	findings   FindingReader
 	assets     AssetReader
 	commands   CommandReader
-	dispatcher validation.JobDispatcher
+	dispatcher Dispatcher
 	sensors    SensorAvailability
-	gates      []TargetGate
 	audit      AuditLogger
 	// regressionSLA and announcer run after a retest moved a finding.
 	regressionSLA RegressionSLA
@@ -114,14 +116,13 @@ type Service struct {
 	logger        *logger.Logger
 }
 
-// NewService wires the service. gates are applied in order; any refusal or
-// error refuses the retest.
+// NewService wires the service.
 func NewService(store Store, findings FindingReader, assets AssetReader, commands CommandReader,
-	dispatcher validation.JobDispatcher, sensors SensorAvailability, log *logger.Logger, gates ...TargetGate,
+	dispatcher Dispatcher, sensors SensorAvailability, log *logger.Logger,
 ) *Service {
 	return &Service{
 		store: store, findings: findings, assets: assets, commands: commands,
-		dispatcher: dispatcher, sensors: sensors, gates: gates,
+		dispatcher: dispatcher, sensors: sensors,
 		now: time.Now, logger: log.With("service", "retest"),
 	}
 }
@@ -247,18 +248,15 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 	if !validation.IsNetworkAddressable(a.Type()) {
 		return nil, nil, "", "", fmt.Errorf("%w: a %s asset has no network address to retest", retestdom.ErrNotEligible, a.Type())
 	}
-	for _, g := range s.gates {
-		ok, reason, err := g.AllowActiveCheck(ctx, tenantID, a)
-		if err != nil {
-			return nil, nil, "", "", fmt.Errorf("target gate: %w", err)
-		}
-		if !ok {
-			return nil, nil, "", "", fmt.Errorf("%w: %s", retestdom.ErrNotEligible, reason)
-		}
-	}
 	target := ResolveTarget(f.FilePath(), a.Name())
 	if target == "" {
 		return nil, nil, "", "", fmt.Errorf("%w: the asset has no address", retestdom.ErrNotEligible)
+	}
+	// A gate refusal is policy, not ineligibility: it wraps
+	// validation.ErrTargetRefused (never ErrNotEligible), so proof-of-fix
+	// stops instead of falling back to another probe of the same target.
+	if err := s.dispatcher.Preflight(ctx, tenantID, probeTarget(a, target)); err != nil {
+		return nil, nil, "", "", err
 	}
 
 	return f, a, templateID, target, nil
@@ -294,9 +292,14 @@ func (s *Service) checkLimits(ctx context.Context, tenantID, findingID, assetID 
 	return nil
 }
 
+// probeTarget is what both checks probe: the re-run address on the asset.
+func probeTarget(a *asset.Asset, address string) validation.Target {
+	return validation.Target{AssetID: a.ID(), Type: a.Type().String(), Address: address, AssetName: a.Name()}
+}
+
 // dispatch queues the template re-run and the reachability probe.
 func (s *Service) dispatch(ctx context.Context, rt *retestdom.Retest, a *asset.Asset) (*shared.ID, *shared.ID, error) {
-	target := validation.Target{AssetID: a.ID(), Type: a.Type().String(), Address: rt.Target}
+	target := probeTarget(a, rt.Target)
 	check := validation.ValidationJob{
 		JobID: shared.NewID(), TenantID: rt.TenantID, FindingID: rt.FindingID,
 		ExecutorKind: validation.KindNuclei, Technique: validation.NucleiTechnique,
