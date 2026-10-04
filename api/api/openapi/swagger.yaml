@@ -5201,6 +5201,18 @@ definitions:
         example: added
         type: string
     type: object
+  internal_infra_http_handler.AssetDeleteRefusedDetails:
+    properties:
+      archive_path:
+        description: ArchivePath is the request that archives the asset instead.
+        example: /api/v1/assets/{id}/archive
+        type: string
+      finding_count:
+        type: integer
+      reason:
+        example: asset_has_findings
+        type: string
+    type: object
   internal_infra_http_handler.AssetGroupResponse:
     properties:
       asset_count:
@@ -17418,7 +17430,11 @@ paths:
       - Assets
   /assets/{id}:
     delete:
-      description: Deletes an asset by ID
+      description: 'Deletes an asset that has no findings (soft delete: it disappears
+        from every list and its name can be used again; it is purged after the retention
+        period). An asset that has findings, whatever their status, is refused with
+        409 (details.reason "asset_has_findings"): archive it instead (POST /assets/{id}/archive),
+        so its finding history is kept.'
       parameters:
       - description: Asset ID
         in: path
@@ -17446,6 +17462,15 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+            - properties:
+                details:
+                  $ref: '#/definitions/internal_infra_http_handler.AssetDeleteRefusedDetails'
+              type: object
         "500":
           description: Internal Server Error
           schema:

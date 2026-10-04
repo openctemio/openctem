@@ -3,7 +3,8 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { createAsset, updateAsset, deleteAsset, bulkDeleteAssets } from './use-assets'
+import { createAsset, updateAsset } from './use-assets'
+import { bulkDeleteAssetsSafely, deleteAssetSafely, reportBulkDelete } from '../lib/safe-delete'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { toastIfDuplicateAsset } from '../lib/duplicate-asset'
 import type { Asset, AssetType, CreateAssetInput, UpdateAssetInput } from '../types'
@@ -66,17 +67,15 @@ export function useAssetCRUD(
     [label, mutate]
   )
 
+  // Deletes go through the safe-delete helpers: an asset with findings is
+  // refused by the API and the user is offered Archive instead.
+  // Returns 'deleted', 'refused' (the asset has findings; Archive was
+  // offered) or 'failed'.
   const handleDelete = useCallback(
-    async (id: string) => {
+    async (id: string, name?: string) => {
       setIsSubmitting(true)
       try {
-        await deleteAsset(id)
-        await mutate()
-        toast.success(`${label} deleted successfully`)
-        return true
-      } catch (err) {
-        toast.error(getErrorMessage(err, `Failed to delete ${label.toLowerCase()}`))
-        return false
+        return await deleteAssetSafely(id, name || label, mutate)
       } finally {
         setIsSubmitting(false)
       }
@@ -93,12 +92,10 @@ export function useAssetCRUD(
       }
       setIsSubmitting(true)
       try {
-        await bulkDeleteAssets(ids)
+        const outcome = await bulkDeleteAssetsSafely(ids)
         await mutate()
-        toast.success(
-          `Deleted ${ids.length} ${ids.length === 1 ? label.toLowerCase() : label.toLowerCase() + 's'}`
-        )
-        return true
+        reportBulkDelete(outcome, mutate)
+        return outcome.deleted.length > 0
       } catch (err) {
         toast.error(getErrorMessage(err, 'Failed to delete items'))
         return false
@@ -106,7 +103,7 @@ export function useAssetCRUD(
         setIsSubmitting(false)
       }
     },
-    [label, mutate]
+    [mutate]
   )
 
   return { handleCreate, handleUpdate, handleDelete, handleBulkDelete, isSubmitting }

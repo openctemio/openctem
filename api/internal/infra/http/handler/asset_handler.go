@@ -876,9 +876,18 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toAssetResponse(a))
 }
 
+// AssetDeleteRefusedDetails is the details object of the 409 returned when an
+// asset that has findings is deleted.
+type AssetDeleteRefusedDetails struct {
+	Reason       string `json:"reason" example:"asset_has_findings"`
+	FindingCount int64  `json:"finding_count"`
+	// ArchivePath is the request that archives the asset instead.
+	ArchivePath string `json:"archive_path" example:"/api/v1/assets/{id}/archive"`
+}
+
 // Delete handles DELETE /api/v1/assets/{id}
 // @Summary      Delete asset
-// @Description  Deletes an asset by ID
+// @Description  Deletes an asset that has no findings (soft delete: it disappears from every list and its name can be used again; it is purged after the retention period). An asset that has findings, whatever their status, is refused with 409 (details.reason "asset_has_findings"): archive it instead (POST /assets/{id}/archive), so its finding history is kept.
 // @Tags         Assets
 // @Security     BearerAuth
 // @Param        id   path      string  true  "Asset ID"
@@ -886,6 +895,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
 // @Failure      404  {object}  map[string]string
+// @Failure      409  {object}  apierror.Error{details=AssetDeleteRefusedDetails}
 // @Failure      500  {object}  map[string]string
 // @Router       /assets/{id} [delete]
 func (h *AssetHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -897,18 +907,29 @@ func (h *AssetHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read the name first: the audit entry outlives the asset.
+	// Read it first (data scope applies): the audit entry keeps the name the
+	// soft delete replaces with a tombstone.
 	existing, err := h.service.GetAsset(r.Context(), tenantID, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	if err := h.service.DeleteAsset(r.Context(), id, tenantID); err != nil {
+	if err := h.service.DeleteAsset(r.Context(), id, tenantID, middleware.GetUserID(r.Context())); err != nil {
+		var hasFindings *asset.HasFindingsError
+		if errors.As(err, &hasFindings) {
+			apierror.Conflict("This asset has findings, so it cannot be deleted: archive it instead to keep its finding history").
+				WithDetails(AssetDeleteRefusedDetails{
+					Reason:       "asset_has_findings",
+					FindingCount: hasFindings.FindingCount,
+					ArchivePath:  "/api/v1/assets/" + id + "/archive",
+				}).WriteJSON(w)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
-	h.auditAsset(r, auditdom.ActionAssetDeleted, existing.ID().String(), existing.Name(), "Asset deleted",
+	h.auditAsset(r, auditdom.ActionAssetDeleted, existing.ID().String(), existing.Name(), "Asset deleted (soft delete; it had no findings)",
 		map[string]any{"type": existing.Type().String()})
 
 	w.WriteHeader(http.StatusNoContent)
