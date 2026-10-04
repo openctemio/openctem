@@ -32,6 +32,7 @@ const sampleNessus = `<?xml version="1.0" ?>
         <vpr_score>8.9</vpr_score>
         <exploit_available>true</exploit_available>
         <cpe>cpe:/a:openssl:openssl</cpe>
+        <patch_publication_date>2014/04/07</patch_publication_date>
         <cve>CVE-2014-0160</cve>
         <cve>CVE-2014-0346</cve>
         <see_also>https://heartbleed.com
@@ -206,4 +207,25 @@ func TestConvert_EmptyReport(t *testing.T) {
 	if len(rep.Assets) != 0 || len(rep.Findings) != 0 {
 		t.Fatalf("expected no assets/findings, got %d/%d", len(rep.Assets), len(rep.Findings))
 	}
+}
+
+// research 17 R2: the patch publication date travels as a finding property
+// that ingest stores (the family travels as Category, VPR and CVSS version
+// on the vulnerability).
+func TestConvert_PatchPublicationDate(t *testing.T) {
+	rep := convert(t, ConvertOptions{})
+	for _, f := range rep.Findings {
+		if f.RuleID != "98765" {
+			if _, ok := f.Properties["patch_publication_date"]; ok {
+				t.Fatalf("plugin %s has no patch date but got one", f.RuleID)
+			}
+			continue
+		}
+		if f.Properties["patch_publication_date"] != "2014/04/07" || f.Category != "General" ||
+			f.Vulnerability.VPRScore != 8.9 || f.Vulnerability.CVSSVersion != "3.x" || len(f.Vulnerability.CVEIDs) != 2 {
+			t.Fatalf("finding: %+v %+v", f.Properties, f.Vulnerability)
+		}
+		return
+	}
+	t.Fatal("plugin 98765 not converted")
 }
