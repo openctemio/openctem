@@ -11258,6 +11258,10 @@ definitions:
         type: string
       scan_profile_id:
         type: string
+      scheduled_for:
+        description: ScheduledFor is the schedule occurrence this run serves (scheduled
+          runs only).
+        type: string
       skipped_steps:
         type: integer
       started_at:
