@@ -34890,6 +34890,12 @@ export interface components {
         [key: string]: unknown
       }
       scope?: string
+      /**
+       * @description SubType is the kind within the type, from the registry's closed list
+       *     (GET /asset-types). A legacy value of the type is mapped; anything
+       *     else is a 400.
+       */
+      sub_type?: string
       tags?: string[]
       type: string
     }
@@ -38503,6 +38509,11 @@ export interface components {
         [key: string]: unknown
       }
       scope?: string
+      /**
+       * @description SubType changes the kind within the asset's type (closed list from
+       *     GET /asset-types); "" clears it. The type itself cannot change.
+       */
+      sub_type?: string
       tags?: string[]
     }
     'internal_infra_http_handler.UpdateAssetServiceRequest': {

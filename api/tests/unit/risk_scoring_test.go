@@ -14,7 +14,7 @@ import (
 
 func makeTestAsset(t *testing.T, exposure asset.Exposure, criticality asset.Criticality, findingCount int) *asset.Asset {
 	t.Helper()
-	a, err := asset.NewAsset("test-asset", asset.AssetTypeWebsite, criticality)
+	a, err := asset.NewAssetWithSubType("test-asset", asset.AssetTypeApplication, "website", criticality)
 	if err != nil {
 		t.Fatalf("failed to create test asset: %v", err)
 	}

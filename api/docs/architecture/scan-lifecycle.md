@@ -54,7 +54,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | Heartbeat | Renews leases of tasks the sensor still runs; returns `cancel_command_ids` for those it no longer holds |
 | Task completes | Results ingested (idempotent report ids); coverage-scoped auto-resolve for that task's targets (dry-run by default); the step and run settle when their last task settles |
 | Deadline | Queued tasks dropped, leased tasks canceled, run ends `partial` or `timeout`, unfinished targets recorded for the next occurrence |
-| Cancel | Run → `canceled`; open tasks canceled; the sensor stops at its next heartbeat |
+| Cancel | Run → `canceled`; open step runs and tasks canceled in one statement, leases cleared (never re-queued); the holding sensor is asked to ring within 5 s and gets `cancel_command_ids`; an offline sensor gets them when it reports the task again; canceling again is a no-op |
 | Failure | Classified: permanent codes never retried; lost work and timeouts retried twice with backoff; others by the scan's `max_retries` |
 
 ## 2. Where the code stands (2026-10-03)
@@ -70,7 +70,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | Overlap skip | done | `scheduler.go` (`SkipIfRunning`) |
 | rrule | planned (P1.5); daily/weekly/monthly/crontab + timezone today | `api/pkg/domain/scan/entity.go` |
 | Claim + leases + fencing | claim-1 by id with lease and epoch; claim-N planned (P1.7) | `command_repository.go` (`ClaimForSensor`), `command_lease.go`, `api/pkg/domain/command/lease.go` |
-| Cancel to sensor | via heartbeat `cancel_command_ids` | `command_lease.go` (`CommandsToCancel`), sdk-go `pkg/core/doorbell.go` |
+| Cancel to sensor | via heartbeat `cancel_command_ids`; doorbell busy interval while a held task was just canceled; run cancel closes steps + tasks (`CloseCanceledRun`) | `command_lease.go` (`CommandsToCancel`), sdk-go `pkg/core/doorbell.go` |
 | Abort unclaimed | done (4 h / 1 h) | `pipeline_run_repository.go` (`AbortUnclaimedRuns`), `controller/scan_timeout.go` |
 | Retry classes | done (run-level) | `api/pkg/domain/pipeline/failure.go`, `pipeline_run_repository.go` (`ListPendingRetries`) |
 | Coverage auto-resolve | done, dry-run by default | `api/internal/app/ingest/coverage_autoresolve.go`, `INGEST_COVERAGE_AUTO_RESOLVE` |

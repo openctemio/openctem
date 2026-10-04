@@ -291,3 +291,25 @@ type RolloverStore interface {
 	// was canceled, or was not a scheduled run).
 	LatestRollover(ctx context.Context, tenantID, scanID shared.ID) (*Rollover, error)
 }
+
+// CanceledRunClosure is what closing a canceled run changed.
+type CanceledRunClosure struct {
+	// Steps is how many open step runs ended canceled.
+	Steps int64
+	// Commands is how many open commands ended canceled.
+	Commands int64
+	// Sensors are the sensors that held (claimed or were pinned) one of
+	// those commands; each is told to stop on its next heartbeat.
+	Sensors []shared.ID
+}
+
+// CanceledRunCloser closes what a canceled run leaves open (RFC-046 §8).
+// Optional extension of RunRepository, asserted by the pipeline service.
+type CanceledRunCloser interface {
+	// CloseCanceledRun ends the open step runs and commands of runID as
+	// canceled, in one statement, only when the run is in tenantID and is
+	// canceled. Commands lose their lease, so the expired-lease sweep never
+	// re-queues them and the sensor holding one finds it in
+	// cancel_command_ids. Repeating it changes nothing (zero closure).
+	CloseCanceledRun(ctx context.Context, tenantID, runID shared.ID) (CanceledRunClosure, error)
+}
