@@ -26,13 +26,17 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
+	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -51,6 +55,7 @@ type gsHarness struct {
 	cveA, cveB, cveB2, cveP      string
 	componentA, componentB, camp shared.ID
 	vuln                         *app.VulnerabilityService
+	views                        *savedviewapp.Service
 }
 
 func newGroupScopeHarness(t *testing.T) *gsHarness {
@@ -111,9 +116,22 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		}))
 	})
+	// Saved views (D15) on the same router, so ?view=<id> runs end to end.
+	viewSvc := savedviewapp.NewService(postgres.NewSavedViewRepository(db), map[string]savedviewapp.PageConfig{
+		savedview.PageFindings: {Registry: vulnerability.FindingFields, Permission: permission.FindingsRead.String(),
+			GroupBy: vulnerability.FindingGroupDimensions(), Extra: []string{"branch_status"}},
+	}, log)
+	viewSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	h.views = viewSvc
+	vulnHandler := handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log)
+	vulnHandler.SetSavedViews(viewSvc)
+	actionsHandler := handler.NewFindingActionsHandler(actionsSvc, log)
+	actionsHandler.SetSavedViews(viewSvc)
+
 	router := infrahttp.NewChiRouter()
-	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log),
-		handler.NewFindingActionsHandler(actionsSvc, log), nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
+	registerVulnerabilityRoutes(router, vulnHandler,
+		actionsHandler, nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
+	registerSavedViewRoutes(router, handler.NewSavedViewHandler(viewSvc, log), auth, nil)
 	ds.srv.Close()
 	ds.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(ds.srv.Close)

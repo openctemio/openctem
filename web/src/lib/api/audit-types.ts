@@ -132,6 +132,9 @@ export type AuditAction =
   | 'sla_policy.created'
   | 'sla_policy.updated'
   | 'sla_policy.deleted'
+  | 'saved_view.created'
+  | 'saved_view.updated'
+  | 'saved_view.deleted'
   // Scan actions
   | 'scan.started'
   | 'scan.completed'
@@ -199,6 +202,7 @@ export type AuditResourceType =
   | 'finding'
   | 'finding_comment'
   | 'sla_policy'
+  | 'saved_view'
   | 'scan'
   | 'asset'
   | 'settings'
@@ -371,6 +375,9 @@ export function getActionLabel(action: AuditAction): string {
     'sla_policy.created': 'SLA Policy Created',
     'sla_policy.updated': 'SLA Policy Updated',
     'sla_policy.deleted': 'SLA Policy Deleted',
+    'saved_view.created': 'Saved View Created',
+    'saved_view.updated': 'Saved View Updated',
+    'saved_view.deleted': 'Saved View Deleted',
     // Scan actions
     'scan.started': 'Scan Started',
     'scan.completed': 'Scan Completed',

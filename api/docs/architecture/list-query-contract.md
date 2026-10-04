@@ -79,3 +79,38 @@ A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the
 
 50 leaves, depth 3, 100 values per list (500 for id fields in POST), 200
 characters per value (`q` 255), 32 KB POST body.
+
+## Export
+
+`GET|POST /findings/export` streams CSV or NDJSON in keyset batches of 1,000
+(60 s statement timeout per batch), at most 100,000 rows, needs
+`findings:export`, and is audit-logged as `data.exported` with the filter's
+field:operator shape (never its values). CSV cells a spreadsheet would run as
+formulas are neutralized.
+
+**Known limit (follow-up):** "one export per user at a time" is an in-process
+slot, so it holds per API instance. The platform runs one API replica today
+(RFC-046); before running several, move the slot to a shared limiter (Redis
+key with a TTL, or a row lock). The per-user rate limit already applies across
+instances.
+
+## Saved views
+
+Saved views (UI contract D15) live in `saved_views` (migration 000666) and
+`/api/v1/views`:
+
+- A view stores a FilterDocument (from a document or from the page's flat
+  query) plus page state (`group_by`, `columns`, `density`). Never SQL, never
+  results. The filter is validated on save and again every time the view
+  runs; a stored filter the registry no longer accepts is `400
+  INVALID_FILTER`.
+- A view is personal, or shared with one active group the owner belongs to.
+  Members of the group use it; only the owner edits or deletes it (owner
+  decision A1); others duplicate it. 100 views per person, 100 per group.
+- A view runs as the person using it (decision A5): `?view=<id>` on
+  `/findings`, `/findings/stats`, `/findings/groups` and `/findings/export`
+  compiles the view's filter as the caller, with the request's own params
+  overriding it field by field (`filterspec.Overlay`). Sharing a view shares
+  a query, not anyone's rows.
+- Every read and write is tenant-bound; a view the caller may not see (or of
+  another tenant) is 404. Changes are audit-logged (`saved_view.*`).

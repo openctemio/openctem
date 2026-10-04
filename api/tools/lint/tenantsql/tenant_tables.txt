@@ -91,6 +91,7 @@ rule_sources
 rules
 runtime_telemetry_events
 saml_providers
+saved_views
 scan_coverage_state
 scan_profiles
 scan_schedules
