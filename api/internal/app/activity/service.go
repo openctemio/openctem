@@ -341,6 +341,31 @@ func (s *FindingActivityService) RecordStatusChange(
 	})
 }
 
+// RecordIntegrationStatusChange records a status change made by an
+// integration (a Jira or GitHub webhook): actor type integration, source
+// webhook, with the integration and the ticket reference, so the history
+// never shows an actorless change.
+func (s *FindingActivityService) RecordIntegrationStatusChange(
+	ctx context.Context,
+	tenantID, findingID shared.ID,
+	oldStatus, newStatus, integration, ref string,
+) error {
+	_, err := s.RecordActivity(ctx, RecordActivityInput{
+		TenantID:     tenantID.String(),
+		FindingID:    findingID.String(),
+		ActivityType: string(vulnerability.ActivityStatusChanged),
+		ActorType:    string(vulnerability.ActorTypeIntegration),
+		Changes: map[string]any{
+			"old_status": oldStatus,
+			"new_status": newStatus,
+			"reason":     "synced from " + integration + " " + ref,
+		},
+		Source:         string(vulnerability.SourceWebhook),
+		SourceMetadata: map[string]any{"integration": integration, "ticket": ref},
+	})
+	return err
+}
+
 // RecordSeverityChange is a convenience method for recording severity changes.
 func (s *FindingActivityService) RecordSeverityChange(
 	ctx context.Context,
