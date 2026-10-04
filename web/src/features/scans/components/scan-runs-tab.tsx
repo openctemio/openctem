@@ -19,6 +19,7 @@ import {
   MetricStrip,
   type MetricStripItem,
   RunStatusBadge,
+  TruncatedText,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import {
@@ -142,12 +143,11 @@ function ScanRunsTable() {
           <div className="space-y-0.5">
             <RunStatusBadge status={row.original.status} />
             {row.original.error_message && (
-              <p
-                className="max-w-[260px] truncate text-xs text-muted-foreground"
-                title={row.original.error_message}
-              >
-                {row.original.error_message}
-              </p>
+              <TruncatedText
+                value={row.original.error_message}
+                label="Run message"
+                className="max-w-[260px] text-xs text-muted-foreground"
+              />
             )}
           </div>
         ),
