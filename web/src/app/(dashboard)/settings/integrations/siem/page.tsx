@@ -57,10 +57,7 @@ export default function SIEMIntegrationPage() {
   const { data, error, isLoading, mutate } = useNotificationIntegrationsApi()
   const { trigger: createIntegration, isMutating: creating } = useCreateNotificationIntegrationApi()
 
-  const splunkIntegrations = useMemo(
-    () => siemIntegrationsOnly(data?.data ?? []),
-    [data]
-  )
+  const splunkIntegrations = useMemo(() => siemIntegrationsOnly(data?.data ?? []), [data])
 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', hecUrl: '', token: '', index: '', sourcetype: '' })

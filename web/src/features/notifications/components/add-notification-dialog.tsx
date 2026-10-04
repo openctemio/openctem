@@ -4,10 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import {
-  enabledEventTypesSchema,
-  enabledSeveritiesSchema,
-} from '../lib/notification-filters'
+import { enabledEventTypesSchema, enabledSeveritiesSchema } from '../lib/notification-filters'
 import {
   Dialog,
   DialogContent,
@@ -681,9 +678,7 @@ export function AddNotificationDialog({
               />
 
               {errors.enabled_event_types && (
-
                 <p className="text-sm text-destructive">{errors.enabled_event_types.message}</p>
-
               )}
 
               {/* Advanced Settings */}

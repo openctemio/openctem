@@ -865,8 +865,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                         {logoDraft !== undefined ? (
                           <>
                             <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
-                              {logoDraft === null ? 'Logo will be removed' : 'New logo'}: unsaved, use
-                              Save changes
+                              {logoDraft === null ? 'Logo will be removed' : 'New logo'}: unsaved,
+                              use Save changes
                             </span>
                             <Button
                               variant="ghost"

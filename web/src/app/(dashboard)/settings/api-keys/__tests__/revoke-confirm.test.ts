@@ -19,7 +19,9 @@ describe('API key revoke', () => {
   })
 
   it('only the confirmation calls handleRevoke', () => {
-    expect(src).toMatch(/open=\{revokeOpen\}[\s\S]*?handleConfirm=\{\(\) => void handleRevoke\(\)\}/)
+    expect(src).toMatch(
+      /open=\{revokeOpen\}[\s\S]*?handleConfirm=\{\(\) => void handleRevoke\(\)\}/
+    )
   })
 
   it('error toasts carry the server reason', () => {
