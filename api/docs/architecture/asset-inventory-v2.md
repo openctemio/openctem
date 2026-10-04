@@ -67,7 +67,7 @@ code keys on the class or on (type, sub_type), never on an alias.
 - Type-aware features read the registry on the stored pair, never a type
   name: exposure inference (`exposure_default`), asset-group counters (by
   class), scan coverage, threat-model applicability (keyed by
-  `(asset_type, sub_type)`, migration 000401), relationship constraints
+  `(asset_type, sub_type)`, migration 000457), relationship constraints
   (enforced on human writes, after the tenant and data-scope checks),
   scanner compatibility (`scannable_by`), assignment-rule type conditions,
   and the web scope, relationship and create-finding matchers. A row still
