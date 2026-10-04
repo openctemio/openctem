@@ -484,8 +484,12 @@ These routes require the tenant ID in the URL path and use database-based member
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/invitations/{token}` | Any authenticated |
-| `POST /api/v1/invitations/{token}/accept` | Any authenticated (email must match) |
+| `POST /api/v1/invitations/lookup` | Public (token in the body, rate limited) |
+| `POST /api/v1/invitations/decline` | Public (token in the body, rate limited) |
+| `POST /api/v1/invitations/accept` | Any authenticated (email must match) |
+| `POST /api/v1/invitations/accept-with-refresh` | Refresh token (email must match) |
+
+The `/api/v1/invitations/{token}/...` paths are deprecated aliases of these (RFC-041) with the same chains.
 
 ### User Routes (`/api/v1/users`)
 
@@ -1135,7 +1139,8 @@ URL-Tenant Routes (Role-based):
 └── /api/v1/tenants/{tenant}             → admin+ (U), owner (D)
 
 Invitations:
-└── /api/v1/invitations/{token}/*        → Any authenticated
+└── /api/v1/invitations/{lookup,decline,accept,accept-with-refresh}
+                                         → token in the body; accept needs the invited email
 ```
 
 Legend: (R) = Read, (W) = Write, (U) = Update, (D) = Delete
