@@ -147,7 +147,10 @@ In scope:
   set of actions over inventory rows. Workflows (`internal/app/workflow`)
   stay the imperative tool for findings.
 - **Hard delete from automation.** No policy, exclusion or lifecycle path
-  deletes an asset. Deletion stays a human action under `assets:delete`.
+  deletes an asset. Deletion stays a human action under `assets:delete`,
+  and since owner decision O3 (2026-10) a human delete never destroys
+  findings: an asset with findings is refused (archive it), one without is
+  soft-deleted and purged after 30 days (`architecture/asset-deletion.md`).
 
 ## 3. Current state (verified 2026-10-03: `develop` d547a60; ctis `main` 272ae51; sensor `main` ca3d576)
 
@@ -918,8 +921,8 @@ legacy data (never on live).
 | PR | Scope | Contents | Status |
 |---|---|---|---|
 | **T0** | docs | This section, the rfcs README row, `architecture/asset-inventory-v2.md`, `development/asset-type-registry.md` | this PR |
-| **T1** Close the writers | api + web | `ResolveInputType` / `StoredAssetTypes` / closed sub-types generated from the YAML; `POST`/`PATCH /assets`, CSV import, the Nessus and Kubernetes importers, ingest, connectors and seeds resolve aliases and validate the sub-type; fix the `properties.type` override (a non-alias value overwrote the type); typed web pages send `sub_type`; the CTIS mapper reads `properties.kind` for `kubernetes` | planned |
-| **T2** Re-key consumers | api + web | Exposure inference from the registry's `exposure_default`; asset-group counters by class; scan coverage by (type, sub_type); threat-model applicability keyed by (type, sub_type) with a migration rewriting the alias rows; relationship constraints resolved to (core, sub_type) and enforced for human writes; scanner compatibility from `scannable_by` (advisory); assignment-rule type conditions resolved through the registry; web option lists from the registry; a test that fails on alias names in feature code. Each fix has a probe test that fails on `develop` before it | planned |
+| **T1** Close the writers | api + web | `ResolveInputType` / `StoredAssetTypes` / closed sub-types generated from the YAML; `POST`/`PATCH /assets`, CSV import, the Nessus and Kubernetes importers, ingest, connectors and seeds resolve aliases and validate the sub-type; fix the `properties.type` override (a non-alias value overwrote the type); typed web pages send `sub_type`; the CTIS mapper reads `properties.kind` for `kubernetes` | #948 |
+| **T2** Re-key consumers | api + web | Exposure inference from the registry's `exposure_default`; asset-group counters by class; scan coverage by (type, sub_type); threat-model applicability keyed by (type, sub_type) with a migration rewriting the alias rows; relationship constraints resolved to (core, sub_type) and enforced for human writes; scanner compatibility from `scannable_by` (advisory); assignment-rule type conditions resolved through the registry; web option lists from the registry; a test that fails on alias names in feature code. Each fix has a probe test that fails on `develop` before it | in review |
 | **T3** Normalise data | api migration | §6.3.8.1. Stored aliases → (core, sub_type); undeclared sub-types → the closed list or attributes; delete the 14 legacy `asset_types` rows; drop the unread `asset_types.module_id`; `CHECK` on `assets.asset_type` | planned |
 | **O6** Enforce compatibility | api | Dispatch skips group members whose (type, sub_type) the scanner's target types cannot scan, with a reason per type; tested against every registry type | planned (after T2) |
 | **T4a** Boundary fixes | api + registry + migration | `endpoint` → `(host, workstation)`; core types `function`, `artifact_registry`, `web_endpoint`; network identity flags (O2); `web_application` → `(application, website)` (O3); `subdomain` → `(domain, subdomain)` with the PSL-derived sub-type (O1) | next |

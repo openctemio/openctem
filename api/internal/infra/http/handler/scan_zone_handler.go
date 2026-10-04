@@ -459,12 +459,10 @@ func writeScanZoneJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func buildScanZoneAuditContext(r *http.Request) auditapp.AuditContext {
-	clientIP := r.RemoteAddr
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		clientIP = xff
-	} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		clientIP = xri
-	}
+	// The TCP peer, or the forwarded client only when that peer is a trusted
+	// proxy. Reading X-Forwarded-For directly let any caller choose the IP
+	// recorded in the audit log.
+	clientIP := getClientIP(r)
 	return auditapp.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
 		ActorID:    middleware.GetUserID(r.Context()),

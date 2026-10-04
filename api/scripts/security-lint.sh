@@ -392,6 +392,59 @@ check_httpsec_drift() {
 }
 
 # ---------------------------------------------------------------------------
+# Rule 7: client-IP forwarding headers are read only by pkg/httpsec.
+#
+# httpsec.ClientIP believes X-Real-IP / X-Forwarded-For only when the TCP peer
+# is a configured trusted proxy, and walks X-Forwarded-For from the right. Code
+# that reads one of these headers itself lets any caller choose the IP that
+# lands in the audit log, keys a rate limit, or passes an IP allowlist (the
+# scan zone handler copied raw X-Forwarded-For into the audit log). Use
+# getClientIP (handler, middleware) or middleware.ClientIP instead.
+#
+# The match is the header name as a quoted Go string, any case, so a
+# r.Header.Get, r.Header["..."], r.Header.Values or a named constant are all
+# caught. Exceptions: tests, pkg/httpsec itself, and the sites listed below.
+# ---------------------------------------------------------------------------
+check_client_ip_headers() {
+    local allow_sites=(
+        # Outbound workflow HTTP action: refuses to let a workflow author SET
+        # these headers on the request it sends. Nothing is read from a
+        # client request.
+        'api/internal/app/workflow/handlers.go'
+    )
+
+    local hits
+    hits="$(grep -RniE '"(x-forwarded-for|x-real-ip|forwarded|cf-connecting-ip|true-client-ip|x-client-ip|x-cluster-client-ip|fastly-client-ip)"' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        api/ 2>/dev/null | grep -v '^api/pkg/httpsec/' || true)"
+
+    local filtered=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local file="${line%%:*}"
+        local ok=0
+        for a in "${allow_sites[@]}"; do
+            if [[ "$file" == "$a" ]]; then ok=1; break; fi
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            filtered+="$line"$'\n'
+        fi
+    done <<< "$hits"
+
+    if [[ -n "$filtered" ]]; then
+        say_fail "Rule 7: client-IP forwarding header read outside pkg/httpsec — use getClientIP / middleware.ClientIP (trusted-proxy aware):"
+        printf '%s' "$filtered" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 7: client-IP forwarding headers read only through pkg/httpsec (api/; 1 documented exception)"
+}
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 printf '== security-lint ==\n'
@@ -411,6 +464,7 @@ check_env_files_tracked
 check_agent_dangerous_flags
 check_httpsec_used
 check_httpsec_drift
+check_client_ip_headers
 printf '\n'
 if [[ $fail -ne 0 ]]; then
     printf '%sSecurity lint FAILED.%s Fix the rules above before merging.\n' "$RED" "$RST"

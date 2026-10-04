@@ -17,7 +17,7 @@ import (
 var ErrInvalid = errors.New("invalid Nessus XML")
 
 // ErrTooLarge is returned when the input is larger than the caller's limit.
-var ErrTooLarge = errors.New("Nessus export too large")
+var ErrTooLarge = errors.New("nessus export too large")
 
 // Document is a parsed .nessus export.
 type Document struct {

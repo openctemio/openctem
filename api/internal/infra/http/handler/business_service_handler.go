@@ -278,7 +278,7 @@ func (h *BusinessServiceHandler) LinkAsset(w http.ResponseWriter, r *http.Reques
 	// Verify asset belongs to the same tenant before linking.
 	var assetExists bool
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM assets WHERE tenant_id = $1 AND id = $2)",
+		"SELECT EXISTS(SELECT 1 FROM assets WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL)",
 		tenantID, req.AssetID,
 	).Scan(&assetExists); err != nil || !assetExists {
 		apierror.NotFound("asset not found").WriteJSON(w)

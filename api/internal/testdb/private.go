@@ -24,7 +24,8 @@ import (
 // a foreign key violation).
 //
 // The name ends in _test, so URL's guard accepts it. Skipped unless
-// DATABASE_URL names a test database and the role may create databases.
+// DATABASE_URL names a test database and the role may create databases
+// (with OPENCTEM_TEST_DB_REQUIRED on, those preconditions fail instead).
 func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
 	t.Helper()
 	base := URL()
@@ -37,7 +38,7 @@ func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
 	}
 	t.Cleanup(func() { _ = server.Close() })
 	if err := server.Ping(); err != nil {
-		t.Skipf("testdb: cannot reach DATABASE_URL: %v", err)
+		Skipf(t, "testdb: cannot reach DATABASE_URL: %v", err)
 	}
 
 	suffix := make([]byte, 6)
@@ -46,7 +47,7 @@ func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
 	}
 	name := prefix + "_" + hex.EncodeToString(suffix) + "_test"
 	if _, err := server.Exec(`CREATE DATABASE ` + name); err != nil {
-		t.Skipf("testdb: cannot create a private test database: %v", err)
+		Skipf(t, "testdb: cannot create a private test database: %v", err)
 	}
 	t.Cleanup(func() { _, _ = server.Exec(`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`) })
 
