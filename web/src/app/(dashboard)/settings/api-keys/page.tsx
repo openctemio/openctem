@@ -37,6 +37,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   KeyRound,
   Plus,
@@ -248,6 +249,7 @@ function RevealKeyDialog({ value, onClose }: { value: string; onClose: () => voi
 
 function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [revokeOpen, setRevokeOpen] = useState(false)
   const { trigger: revoke, isMutating: revoking } = useRevokeApiKey()
   const { trigger: del, isMutating: deleting } = useDeleteApiKey()
 
@@ -255,9 +257,10 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
     try {
       await revoke(k.id)
       toast.success('Key revoked')
+      setRevokeOpen(false)
       onChanged()
-    } catch {
-      toast.error('Failed to revoke')
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to revoke the key'))
     }
   }
   async function handleDelete() {
@@ -266,8 +269,8 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
       toast.success('Key deleted')
       setDeleteOpen(false)
       onChanged()
-    } catch {
-      toast.error('Failed to delete')
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to delete the key'))
     }
   }
 
@@ -278,7 +281,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleRevoke}
+            onClick={() => setRevokeOpen(true)}
             disabled={revoking}
             title="Revoke"
           >
@@ -297,6 +300,16 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
           <Trash2 className="h-4 w-4" />
         </Button>
       </Can>
+      <ConfirmDialog
+        open={revokeOpen}
+        onOpenChange={setRevokeOpen}
+        title={`Revoke ${k.name}?`}
+        desc="Any client using this key stops working immediately. A revoked key cannot be re-enabled."
+        confirmText={revoking ? 'Revoking...' : 'Revoke'}
+        destructive
+        isLoading={revoking}
+        handleConfirm={() => void handleRevoke()}
+      />
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
