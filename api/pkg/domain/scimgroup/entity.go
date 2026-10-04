@@ -69,10 +69,12 @@ type Repository interface {
 	UpdateDisplayName(ctx context.Context, tenantID, id shared.ID, displayName string) error
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	// SetMembers replaces the group's full membership.
-	SetMembers(ctx context.Context, groupID shared.ID, userIDs []shared.ID) error
+	// All three act only on a group of tenantID; another tenant's group is
+	// shared.ErrNotFound (SetMembers) or a no-op (Add/Remove).
+	SetMembers(ctx context.Context, tenantID, groupID shared.ID, userIDs []shared.ID) error
 	// AddMembers / RemoveMembers apply incremental PATCH changes.
-	AddMembers(ctx context.Context, groupID shared.ID, userIDs []shared.ID) error
-	RemoveMembers(ctx context.Context, groupID shared.ID, userIDs []shared.ID) error
+	AddMembers(ctx context.Context, tenantID, groupID shared.ID, userIDs []shared.ID) error
+	RemoveMembers(ctx context.Context, tenantID, groupID shared.ID, userIDs []shared.ID) error
 	// RoleGroupNamesForUser returns the display names of the groups a user
 	// belongs to in a tenant, used to reconcile their effective role.
 	RoleGroupNamesForUser(ctx context.Context, tenantID, userID shared.ID) ([]string, error)

@@ -259,7 +259,7 @@ func (m *ssoMockTenantRepo) GetMembership(_ context.Context, _ shared.ID, _ shar
 	return nil, shared.ErrNotFound
 }
 
-func (m *ssoMockTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID) (*tenant.Membership, error) {
+func (m *ssoMockTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipByIDErr != nil {
 		return nil, m.getMembershipByIDErr
 	}
@@ -270,7 +270,7 @@ func (m *ssoMockTenantRepo) UpdateMembership(_ context.Context, _ *tenant.Member
 	return m.updateMembershipErr
 }
 
-func (m *ssoMockTenantRepo) DeleteMembership(_ context.Context, _ shared.ID) error {
+func (m *ssoMockTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return m.deleteMembershipErr
 }
 
@@ -324,7 +324,7 @@ func (m *ssoMockTenantRepo) GetInvitationByToken(_ context.Context, _ string) (*
 	return nil, shared.ErrNotFound
 }
 
-func (m *ssoMockTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID) (*tenant.Invitation, error) {
+func (m *ssoMockTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Invitation, error) {
 	return nil, shared.ErrNotFound
 }
 
@@ -332,7 +332,7 @@ func (m *ssoMockTenantRepo) UpdateInvitation(_ context.Context, _ *tenant.Invita
 	return nil
 }
 
-func (m *ssoMockTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID) error {
+func (m *ssoMockTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 

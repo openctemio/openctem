@@ -95,13 +95,14 @@ func (m *mockRoleRepo) Create(_ context.Context, r *role.Role) error {
 	return nil
 }
 
-func (m *mockRoleRepo) GetByID(_ context.Context, id role.ID) (*role.Role, error) {
+func (m *mockRoleRepo) GetByID(_ context.Context, tenantID, id role.ID) (*role.Role, error) {
 	m.getByIDCalls++
 	if m.getByIDErr != nil {
 		return nil, m.getByIDErr
 	}
 	r, ok := m.roles[id.String()]
-	if !ok {
+	// Like the repository: a system role, or one of tenantID's own.
+	if !ok || (r.TenantID() != nil && *r.TenantID() != tenantID) {
 		return nil, role.ErrRoleNotFound
 	}
 	return r, nil
@@ -153,7 +154,7 @@ func (m *mockRoleRepo) Update(_ context.Context, r *role.Role) error {
 	return nil
 }
 
-func (m *mockRoleRepo) Delete(_ context.Context, id role.ID) error {
+func (m *mockRoleRepo) Delete(_ context.Context, _ role.ID, id role.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -905,8 +906,10 @@ func TestAssignRole_RoleBelongsToDifferentTenant(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for cross-tenant role assignment")
 	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+	// Another tenant's custom role is invisible to this tenant (D-11): the
+	// lookup itself answers not-found, without disclosing that it exists.
+	if !errors.Is(err, role.ErrRoleNotFound) {
+		t.Errorf("expected ErrRoleNotFound, got %v", err)
 	}
 }
 

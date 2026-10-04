@@ -306,7 +306,7 @@ func (m *mockGroupRepoForScope) GetBySlug(_ context.Context, _ shared.ID, _ stri
 	return nil, nil
 }
 func (m *mockGroupRepoForScope) Update(_ context.Context, _ *group.Group) error { return nil }
-func (m *mockGroupRepoForScope) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *mockGroupRepoForScope) Delete(_ context.Context, _ shared.ID, _ shared.ID) error    { return nil }
 func (m *mockGroupRepoForScope) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }
