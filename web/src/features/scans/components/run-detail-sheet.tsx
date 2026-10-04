@@ -24,6 +24,7 @@ import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { PipelineRun } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
@@ -127,7 +128,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               icon={CircleAlert}
               title={runOutcomeCallout(run.status).title}
             >
-              {run.error_message}
+              {/* Sensor and tool output can shape this text: control and
+                  direction characters are shown as escapes, never applied. */}
+              <span dir="auto" className="break-words [unicode-bidi:isolate]">
+                {toDisplayText(run.error_message)}
+              </span>
             </DetailCallout>
           )}
 

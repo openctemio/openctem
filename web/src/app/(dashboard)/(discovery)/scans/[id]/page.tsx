@@ -12,6 +12,7 @@ import {
   DataTableColumnHeader,
   DangerZone,
   DangerZoneItem,
+  TruncatedText,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -696,8 +697,8 @@ export default function ScanDetailPage() {
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {config.targets.map((target, i) => (
-                          <Badge key={i} variant="secondary">
-                            {target}
+                          <Badge key={i} variant="secondary" className="max-w-[20rem]">
+                            <TruncatedText value={target} label="Target" />
                           </Badge>
                         ))}
                       </div>
