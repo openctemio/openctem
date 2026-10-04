@@ -884,6 +884,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ThreatModel = threatmodel.NewService(
 		repos.ThreatModel, s.AttackSurface, repos.Asset, repos.AssetRelationship,
 		repos.AttackerProfileReader, repos.Finding, log)
+	s.ThreatModel.SetDataScope(s.DataScope)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.AssetRelationship.SetDataScope(s.DataScope)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
@@ -1000,6 +1001,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// for tenants that enabled the floor.
 	s.PriorityClassification.SetAssetOwnerLookup(postgres.NewAssetOwnershipLookupRepo(deps.DB))
 	s.PriorityClassification.SetOwnershipFloorPolicy(app.NewTenantOwnershipFloorPolicy(repos.Tenant))
+	// RFC-036 §6.8: findings on assets whose attribution is not confirmed
+	// (needs_review, candidate, rejected) are capped at P2.
+	if repos.Attribution != nil {
+		s.PriorityClassification.SetAttributionLookup(repos.Attribution)
+	}
 
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
@@ -1238,6 +1244,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
 	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
+	s.BusinessUnit.SetDataScope(s.DataScope)
 
 	s.Compliance = app.NewComplianceService(
 		repos.ComplianceFramework, repos.ComplianceControl,
@@ -1464,6 +1471,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
 		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution))
+	}
+	// A nuclei takeover-template match from a tenant scan confirms an open
+	// dangling_cname as subdomain_takeover (RFC-036 P1).
+	if repos.EASMDNS != nil && repos.Exposure != nil {
+		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, repos.Exposure, log))
 	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is

@@ -27,6 +27,11 @@ type Entry struct {
 	RCode dnsmessage.RCode
 	// Truncate forces a truncated UDP answer so the client retries over TCP.
 	Truncate bool
+	// Referral answers like a parent zone's server: no answer, NOERROR, and
+	// these name servers in the authority section.
+	Referral []string
+	// Authoritative sets the AA bit on answers for this name.
+	Authoritative bool
 }
 
 // Server is a running fake resolver.
@@ -161,6 +166,13 @@ func (s *Server) answer(q []byte, udp bool) []byte {
 			resp.Truncated = true
 			break
 		}
+		if len(e.Referral) > 0 {
+			for _, n := range e.Referral {
+				resp.Authorities = append(resp.Authorities, rr(cur, &dnsmessage.NSResource{NS: mustName(n)}))
+			}
+			break
+		}
+		resp.Authoritative = e.Authoritative
 		if e.CNAME != "" {
 			resp.Answers = append(resp.Answers, rr(cur, &dnsmessage.CNAMEResource{CNAME: mustName(e.CNAME)}))
 			if question.Type == dnsmessage.TypeCNAME {
