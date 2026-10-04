@@ -287,7 +287,7 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		// No scope filter declared → legacy behaviour: freeze every asset.
 		allQuery := `
 			INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id)
-			SELECT $1, id FROM assets WHERE tenant_id = $2
+			SELECT $1, id FROM assets WHERE deleted_at IS NULL AND tenant_id = $2
 			ON CONFLICT DO NOTHING
 		`
 		result, snapErr = h.db.ExecContext(r.Context(), allQuery, id, tenantID)

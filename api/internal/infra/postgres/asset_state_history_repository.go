@@ -380,7 +380,7 @@ func (r *AssetStateHistoryRepository) GetShadowITCandidates(ctx context.Context,
 			h.change_type, h.field, h.old_value, h.new_value,
 			h.reason, h.metadata, h.source, h.changed_by, h.changed_at, h.created_at
 		FROM asset_state_history h
-		JOIN assets a ON h.asset_id = a.id
+		JOIN assets a ON h.asset_id = a.id AND a.deleted_at IS NULL
 		WHERE h.tenant_id = $1
 		AND h.change_type = 'appeared'
 		AND h.changed_at >= $2

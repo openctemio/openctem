@@ -2173,10 +2173,10 @@ func (r *AccessControlRepository) FindAssetsByTagMatch(ctx context.Context, tena
 	var query string
 	if logic == accesscontrol.MatchLogicAll {
 		// AND: asset must have ALL tags
-		query = `SELECT id FROM assets WHERE tenant_id = $1 AND tags @> $2 LIMIT ` + fmt.Sprintf("%d", maxMatchingAssets+1)
+		query = `SELECT id FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND tags @> $2 LIMIT ` + fmt.Sprintf("%d", maxMatchingAssets+1)
 	} else {
 		// OR: asset must have ANY tag
-		query = `SELECT id FROM assets WHERE tenant_id = $1 AND tags && $2 LIMIT ` + fmt.Sprintf("%d", maxMatchingAssets+1)
+		query = `SELECT id FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND tags && $2 LIMIT ` + fmt.Sprintf("%d", maxMatchingAssets+1)
 	}
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), tags)

@@ -1161,9 +1161,12 @@ func (s *AssetService) SaveAsset(ctx context.Context, a *assetdom.Asset) error {
 	return s.repo.Update(ctx, a)
 }
 
-// DeleteAsset deletes an asset by ID.
+// DeleteAsset deletes an asset by ID on behalf of a person (actorID, may be
+// empty). An asset that has findings is refused with *assetdom.HasFindingsError
+// (a conflict): its history must be kept, so it should be archived instead.
+// Otherwise the asset is soft-deleted (see the repository's Delete).
 // Security: Requires tenantID to prevent cross-tenant deletion.
-func (s *AssetService) DeleteAsset(ctx context.Context, assetID string, tenantID string) error {
+func (s *AssetService) DeleteAsset(ctx context.Context, assetID, tenantID, actorID string) error {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -1174,14 +1177,20 @@ func (s *AssetService) DeleteAsset(ctx context.Context, assetID string, tenantID
 		return shared.ErrNotFound
 	}
 
-	// Get groups containing this asset BEFORE deletion
+	var deletedBy *shared.ID
+	if actor, aerr := shared.IDFromString(actorID); aerr == nil {
+		deletedBy = &actor
+	}
+
+	// Get groups containing this asset BEFORE deletion (the delete detaches
+	// it from them).
 	var groupIDs []shared.ID
 	if s.assetGroupRepo != nil {
 		groupIDs, _ = s.assetGroupRepo.GetGroupIDsByAssetID(ctx, parsedID)
 	}
 
 	// Delete with tenantID automatically enforces tenant isolation
-	if err := s.repo.Delete(ctx, parsedTenantID, parsedID); err != nil {
+	if err := s.repo.Delete(ctx, parsedTenantID, parsedID, deletedBy); err != nil {
 		return err
 	}
 
@@ -1832,7 +1841,7 @@ func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, inp
 	repoExt, err := assetdom.NewRepositoryExtension(a.ID(), input.FullName, visibility)
 	if err != nil {
 		// Rollback: delete the asset if extension creation fails
-		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID()); deleteErr != nil {
+		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID(), nil); deleteErr != nil {
 			s.logger.Error("rollback delete failed after extension creation error", "assetID", a.ID(), "error", deleteErr)
 		}
 		return nil, nil, none, fmt.Errorf("failed to create repository extension: %w", err)
@@ -1843,7 +1852,7 @@ func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, inp
 
 	if err := s.repoExtRepo.Create(ctx, repoExt); err != nil {
 		// Rollback: delete the asset if extension creation fails
-		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID()); deleteErr != nil {
+		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID(), nil); deleteErr != nil {
 			s.logger.Error("rollback delete failed after repo extension save error", "assetID", a.ID(), "error", deleteErr)
 		}
 		return nil, nil, none, fmt.Errorf("failed to create repository extension: %w", err)
