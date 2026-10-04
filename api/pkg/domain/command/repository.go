@@ -23,9 +23,6 @@ type Repository interface {
 	// Create creates a new command.
 	Create(ctx context.Context, cmd *Command) error
 
-	// GetByID retrieves a command by ID.
-	GetByID(ctx context.Context, id shared.ID) (*Command, error)
-
 	// GetByTenantAndID retrieves a command by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Command, error)
 
@@ -54,7 +51,7 @@ type Repository interface {
 	Update(ctx context.Context, cmd *Command) error
 
 	// Delete deletes a command.
-	Delete(ctx context.Context, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// FindExpired finds commands that have expired but not yet marked as expired.
 	// This is the ONLY expiry path. A second reaper (ExpireOldCommands, a raw

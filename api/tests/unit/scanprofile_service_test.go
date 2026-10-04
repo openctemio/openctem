@@ -161,7 +161,7 @@ func (m *scanProfileMockRepository) Update(_ context.Context, profile *scanprofi
 	return nil
 }
 
-func (m *scanProfileMockRepository) Delete(_ context.Context, id shared.ID) error {
+func (m *scanProfileMockRepository) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
