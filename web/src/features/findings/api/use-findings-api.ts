@@ -59,49 +59,51 @@ const defaultConfig: SWRConfiguration = {
 
 export function buildFindingsEndpoint(filters?: FindingApiFilters): string {
   const baseUrl = '/api/v1/findings'
-
   if (!filters) return baseUrl
+  const queryString = buildFindingsQuery(filters).toString()
+  return queryString ? `${baseUrl}?${queryString}` : baseUrl
+}
 
+/** The list query (RFC-048 param names) for a filter set; shared by list, stats and export. */
+export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams {
   const params = new URLSearchParams()
 
+  // The list query contract's param names (RFC-048): the singular response
+  // field names. The old plural names still work on the server, as
+  // deprecated aliases.
   if (filters.asset_id) params.set('asset_id', filters.asset_id)
   if (filters.branch_id) params.set('branch_id', filters.branch_id)
   if (filters.branch_id && filters.branch_status && filters.branch_status !== 'all')
     params.set('branch_status', filters.branch_status)
   if (filters.component_id) params.set('component_id', filters.component_id)
   if (filters.vulnerability_id) params.set('vulnerability_id', filters.vulnerability_id)
-  if (filters.source_id) params.set('source_id', filters.source_id)
   if (filters.tool_name) params.set('tool_name', filters.tool_name)
   if (filters.rule_id) params.set('rule_id', filters.rule_id)
   if (filters.scan_id) params.set('scan_id', filters.scan_id)
   if (filters.file_path) params.set('file_path', filters.file_path)
-  if (filters.search) params.set('search', filters.search)
+  if (filters.search) params.set('q', filters.search)
   if (filters.page) params.set('page', String(filters.page))
   if (filters.per_page) params.set('per_page', String(filters.per_page))
 
-  if (filters.severities?.length) params.set('severities', filters.severities.join(','))
-  if (filters.statuses?.length) params.set('statuses', filters.statuses.join(','))
-  if (filters.exclude_statuses?.length)
-    params.set('exclude_statuses', filters.exclude_statuses.join(','))
-  if (filters.sources?.length) params.set('sources', filters.sources.join(','))
+  if (filters.severities?.length) params.set('severity', filters.severities.join(','))
+  if (filters.statuses?.length) params.set('status', filters.statuses.join(','))
+  if (filters.exclude_statuses?.length) params.set('status_not', filters.exclude_statuses.join(','))
+  if (filters.sources?.length) params.set('source', filters.sources.join(','))
 
   // CTEM prioritization filters (RFC-017)
   if (filters.priority_classes?.length)
-    params.set('priority_classes', filters.priority_classes.join(','))
+    params.set('priority_class', filters.priority_classes.join(','))
   if (filters.is_in_kev) params.set('is_in_kev', 'true')
   if (filters.is_reachable) params.set('is_reachable', 'true')
-  if (filters.assigned_to_me) params.set('assigned_to_me', 'true')
-  // Backend query key is singular `sla_status` (comma-separated); maps to the
-  // FindingFilter.SLAStatuses list server-side.
+  if (filters.assigned_to_me) params.set('related_to', 'me')
   if (filters.sla_statuses?.length) params.set('sla_status', filters.sla_statuses.join(','))
-  if (filters.epss_min != null) params.set('epss_min', String(filters.epss_min))
-  if (filters.finding_ids?.length) params.set('finding_ids', filters.finding_ids.join(','))
-  if (filters.cve_ids?.length) params.set('cve_ids', filters.cve_ids.join(','))
-  if (filters.finding_types?.length) params.set('finding_types', filters.finding_types.join(','))
+  if (filters.epss_min != null) params.set('epss_score_gte', String(filters.epss_min))
+  if (filters.finding_ids?.length) params.set('id', filters.finding_ids.join(','))
+  if (filters.cve_ids?.length) params.set('cve_id', filters.cve_ids.join(','))
+  if (filters.finding_types?.length) params.set('finding_type', filters.finding_types.join(','))
+  if (filters.families?.length) params.set('family', filters.families.join(','))
   if (filters.sort) params.set('sort', filters.sort)
-
-  const queryString = params.toString()
-  return queryString ? `${baseUrl}?${queryString}` : baseUrl
+  return params
 }
 
 function buildFindingEndpoint(findingId: string): string {
@@ -466,20 +468,31 @@ export async function fetchFindingStats(url: string): Promise<FindingStatsRespon
  *
  * Add new filters here as the backend grows.
  */
-export interface FindingStatsFilters {
+export interface FindingStatsFilters extends Omit<FindingApiFilters, 'page' | 'per_page' | 'sort'> {
   assetId?: string | null
-  sources?: readonly string[] | null
 }
 
-/** `/api/v1/findings/stats` with the given filters as query params. */
+/**
+ * `/api/v1/findings/stats` with the given filters as query params. Stats take
+ * every list filter (RFC-048), so the numbers match the table they sit over.
+ */
 export function buildFindingStatsUrl(filters?: FindingStatsFilters): string {
-  const params = new URLSearchParams()
-  if (filters?.assetId) params.set('asset_id', filters.assetId)
-  if (filters?.sources && filters.sources.length > 0) {
-    params.set('sources', filters.sources.join(','))
-  }
+  if (!filters) return '/api/v1/findings/stats'
+  const { assetId, ...rest } = filters
+  const params = buildFindingsQuery({ ...rest, asset_id: rest.asset_id ?? assetId ?? undefined })
   const queryString = params.toString()
   return queryString ? `/api/v1/findings/stats?${queryString}` : '/api/v1/findings/stats'
+}
+
+/** `/api/v1/findings/export` for a filter set (RFC-048; needs findings:export). */
+export function buildFindingsExportUrl(
+  filters: FindingApiFilters,
+  format: 'csv' | 'ndjson'
+): string {
+  const { page: _page, per_page: _perPage, sort: _sort, ...rest } = filters
+  const params = buildFindingsQuery(rest)
+  params.set('format', format)
+  return `/api/v1/findings/export?${params.toString()}`
 }
 
 /**

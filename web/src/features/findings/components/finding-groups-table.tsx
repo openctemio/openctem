@@ -35,6 +35,7 @@ export const GROUP_BY_DIMENSIONS: GroupByDimension[] = [
   'source',
   'component_id',
   'finding_type',
+  'family',
 ]
 
 /** Statuses the grouped view counts when no status filter is set. */
@@ -80,6 +81,8 @@ export function groupRowFilter(
       return { rule_id: key }
     case 'finding_type':
       return { finding_types: [key] }
+    case 'family':
+      return { families: [key] }
     default:
       return null
   }
@@ -98,6 +101,8 @@ function belongsToGroup(dimension: GroupByDimension, key: string, f: ApiFinding)
       return f.rule_id === key
     case 'finding_type':
       return (f.finding_type ?? '') === key
+    case 'family':
+      return (f.family ?? '') === key
     case 'asset_id':
       return f.asset_id === key
     default:

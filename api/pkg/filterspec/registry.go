@@ -426,7 +426,7 @@ func (r *Registry) Params() []string {
 	out := []string{"q", "sort", "page", "per_page"}
 	for _, n := range r.order {
 		f := r.fields[n]
-		if f.allows(OpIn) || f.allows(OpEq) {
+		if f.allows(OpIn) || f.allows(OpEq) || f.allows(OpContains) {
 			out = append(out, f.Name)
 		}
 		for _, s := range suffixOps {
