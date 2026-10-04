@@ -5,6 +5,16 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Findings keep the scanner details they used to drop (research 17 R2)
+
+- Ingest now stores the rule **family** (Nessus / Tenable.sc plugin family,
+  scanner category), the scanner's **exploit-available** verdict as a column,
+  **VPR** (display only, no priority effect), the **CVSS version**, **every
+  CVE** named on the finding (`cve_ids`) and the vendor **patch publication
+  date**. The finding API returns them. Migrations 000660-000664 (nullable
+  columns, NOT VALID checks, a backfill of the exploit flag from metadata,
+  concurrent indexes). Fingerprints are unchanged.
+
 ### Security: validation evidence no longer resolves a finding
 
 - **A validation "not detected" keeps a `fix_applied` finding open**
