@@ -808,3 +808,4 @@ Two notes from the approval:
 | P0 | web check: every `endpoints.ts` builder targets a real route | — |
 | P0 | `Deprecated()` middleware + `deprecated_route_requests_total` | — |
 | P1 | live phantom web calls fixed or removed | — |
+| P1 | gateway routes by the plane table: `planes.caddy` generated from `routes/plane` (`PlaneEdges`, `EdgeOverrides`), drift test in CI, stale `/api/v1/platform/*` rule removed, smoke test covers every plane | this PR |
