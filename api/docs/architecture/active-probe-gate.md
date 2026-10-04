@@ -61,6 +61,39 @@ retest. A refused retest therefore stops and is reported; it does not fall
 back to another probe of the same target (finding L-08 of research/15). The
 auto-retest scheduler logs the refusal and moves on.
 
+## Act scope: who may scan what
+
+Owner decision D9 (research/15 L-06) limits scan targets to what the actor may
+act on. The rule lives in `internal/app/actscope` and uses one helper,
+`datascope.Enforcer.CanActOnAssets`. Today that helper treats an
+administrator as unrestricted. When `has_full_data_access` becomes the Layer 2
+bypass, only the helper changes.
+
+| Actor | Inventory asset (a typed name that is an asset, or a group member) | Free text that is not an asset |
+|---|---|---|
+| Restricted member | only assets in their data scope | refused |
+| Unrestricted (admin, member of a fail-open organization with no scope row, system) | any asset of the tenant | only if it matches an active scope target of the tenant (the allowlist); exclusions still apply |
+
+**The actor** is the request's caller. With no user in the context (a
+scheduled run, a workflow action) the actor is the scan owner
+(`scans.created_by`, resolved like `ForUser`). With neither, the actor is the
+system, which is unrestricted.
+
+| Path | Behavior |
+|---|---|
+| Scan create, quick scan | refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, with each target and its reason) |
+| Scan update | refused when the editor may not scan every direct target of the scan |
+| Scan run (manual, scheduled, workflow) | out-of-scope direct targets and group members are skipped, with a run warning; a run left with nothing is refused |
+| `POST /pipelines/runs`, `trigger_pipeline` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
+| `POST /commands` | refused as a whole |
+
+Every lookup error refuses (fail closed). A dispatch that asks for the check
+when none is wired gets `ErrActScopeUnavailable`.
+
+**Live impact.** A scan of free text that matches no scope target, in an
+organization with no scope targets, now has nothing to scan. Add the ranges
+and domains to Scoping › Targets first.
+
 ## Bypass guard
 
 `internal/app/validation/gate_paths_test.go` scans `internal/` and `pkg/` for
@@ -81,6 +114,8 @@ never allow or refuse a probe (`retest/gate_db_test.go`,
 
 ## Where the caller's scope plugs in
 
-`ResolveDispatchTargets` is also where a check of the caller's data scope
-belongs (research/15 L-06): one call per dispatch, with the tenant, the
-targets and the assets already resolved, before any command exists.
+`ResolveDispatchTargets` checks the act scope when `DispatchTargetsInput.ActScope`
+is set (see above): one call per dispatch, with the tenant, the targets and the
+assets already resolved, before any command exists. A new path a person starts
+sets it; system paths (coverage, validation re-checks of a finding the caller
+was already scope-checked on) leave it off.
