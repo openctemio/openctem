@@ -830,6 +830,22 @@ group's assignment, which is why adding or removing one needs
 | `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
 | `POST /api/v1/groups/{g}/assets` · `/assets/bulk` · scope rules | `team:groups:write`; the group must be in the caller's organization, and each asset must be a live asset of the **group's** organization. A single assign answers 404 for a foreign, deleted or unknown asset id alike; a bulk assign counts them as failed |
 
+**You can only hand out scope you hold** (owner decision D13, research doc 15
+L-09). A custom role with `groups:write` / `groups:members` (a "team lead")
+could otherwise widen anyone's scope, their own included:
+
+| Change | A caller whose own scope is restricted |
+|---|---|
+| `POST /groups/{g}/assets`, `/assets/bulk` | only assets in their scope; another asset answers 404 (bulk: counted as failed) |
+| `POST /groups/{g}/members` | only when every asset the group holds is in their scope (403 otherwise); never themselves: joining a group needs full data access (admin or a `has_full_data_access` role), 403 otherwise |
+| `POST/PUT /groups/{g}/scope-rules` | refused (403): a rule adds every matching asset, now and later, so it cannot be capped when it is written |
+| `/assets/{id}/access-grants`, a group owner on `/assets/{id}/owners` | already limited to assets the caller sees (route guard on `/assets/{id}`) |
+
+"Restricted" is the enforcer's decision (`Enforcer.Delegable`): an admin, a
+full-data role, a member of a fail-open organization with no scope row and
+an internal call are unrestricted. `POST /groups/{g}/members` also refuses
+(404) a user who is not a member of the organization (L-14).
+
 **Group asset rows are same-tenant only.** `asset_owners` has no `tenant_id`,
 so every insert path (`CreateAssetOwner`, the bulk and scope-rule inserts) is an
 `INSERT … SELECT` joined to the asset's tenant, every read of a group's assets
@@ -837,6 +853,17 @@ joins the asset to the group's tenant, and the access-refresh functions only
 materialize assets of the group's tenant. Trigger `asset_owners_same_tenant`
 (migration `000455`) refuses a cross-tenant group row from any writer, and the
 same migration removed any such row written before (research doc 15, L-01).
+
+**Every route has a data-scope class** (research doc 15 P1-3,
+`tests/unit/route_scope_classification_test.go`). `dataSurfaceRegistry`
+classifies each route by its longest path prefix: `scoped` (asset-derived rows
+limited to the caller's scope), `partial` (rows scoped, some counts
+tenant-wide), `gap` (asset-derived and not yet scoped; the note cites the
+research finding that tracks it), `separate` (another access model, e.g.
+pentest membership), `config` or `system`. A new route without a class, a
+stale entry, or a gap without a tracking reference fails CI. When you add a
+route, classify it there in the same PR; when you close a gap, move its entry
+to `scoped`.
 
 **Who is restricted:**
 
