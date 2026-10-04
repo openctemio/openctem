@@ -32,6 +32,7 @@
 - [Audit Hash Chain](architecture/audit-hash-chain.md) - Tamper-evident per-tenant SHA-256 chain over audit_logs: append, verify, the hourly verifier, and rebaselining (when it is allowed, what is archived in the same transaction, how to review overwritten hashes)
 - [Shift-Left CI Scanning](architecture/shift-left-ci-scanning.md) - Agent-first SAST/SCA/secrets in CI: structure + dataflow diagrams, branch-aware findings, risk-aware gate, PR decoration (RFC-008)
 - [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
+- [Tenable.sc sensor connector](architecture/tenable-sc-connector.md) - RFC-047 pull path: connector_sync commands, sensor-held keys, cursor, source-asserted resolve
 - [Tenable — User & Data Flow](architecture/tenable-user-and-data-flow.md) - How operators interact with Tenable on the UI + end-to-end data flow (agent/direct/upload)
 - [Data Sources](architecture/data-sources.md) - Multi-source asset tracking, collectors, scanners
 - [Global Catalog Trust](architecture/global-catalog-trust.md) - Who may write the CVE, component and license catalogs every tenant shares: trusted feeds only, tenant input creates but never changes, tenant views read the tenant's own observation first

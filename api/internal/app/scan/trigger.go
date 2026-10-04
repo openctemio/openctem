@@ -1022,6 +1022,13 @@ func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string
 			shared.ErrValidation,
 		)
 	}
+	if tool.IsConnector() {
+		return shared.NewDomainError(
+			"TOOL_NOT_SCANNER",
+			fmt.Sprintf("'%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", scannerName),
+			shared.ErrValidation,
+		)
+	}
 
 	return nil
 }
@@ -1073,6 +1080,13 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 			return shared.NewDomainError(
 				"TOOL_NOT_SCANNER",
 				fmt.Sprintf("'%s' used by step '%s' is an asset collector, not a scanner: it runs on its collector sensor's own schedule. Use a scanner.", step.Tool, step.StepKey),
+				shared.ErrValidation,
+			)
+		}
+		if tool.IsConnector() {
+			return shared.NewDomainError(
+				"TOOL_NOT_SCANNER",
+				fmt.Sprintf("'%s' used by step '%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", step.Tool, step.StepKey),
 				shared.ErrValidation,
 			)
 		}

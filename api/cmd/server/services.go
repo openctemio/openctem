@@ -10,6 +10,7 @@ import (
 	"time"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -601,6 +602,8 @@ type Services struct {
 	Command  *command.Service
 	// SensorContent is the scanner content policy and refresh (RFC-031).
 	SensorContent *sensorapp.ContentService
+	// TenableSC queues and follows Tenable.sc connector syncs (RFC-047).
+	TenableSC *tenablesc.Service
 	// SensorPlatformHealth is the platform-health guard (RFC-035 D3): the
 	// heartbeat handlers feed it their latency, the sensor health controller
 	// holds offline convictions while it reports the platform degraded.
@@ -1445,6 +1448,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
+	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
+	// the integration's sensor, followed to keep the sync cursor.
+	s.TenableSC = tenablesc.NewService(repos.Integration, repos.Sensor, repos.Command, repos.Finding, s.Audit, log)
+	s.TenableSC.SetSyncClaimer(repos.Integration)
+	s.Integration.SetTenableConnector(s.TenableSC)
 	s.SensorPlatformHealth = sensorapp.NewPlatformHealth(sensorapp.PlatformHealthConfig{
 		SlowHeartbeat: cfg.SensorConfig.HealthSlowHeartbeat,
 		StartupGrace:  cfg.SensorConfig.HealthStartupGrace,
@@ -1474,6 +1482,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
 	})
+	// Source-asserted resolve (Tenable.sc mitigated rows, RFC-047; default dry_run).
+	s.Ingest.SetSourceResolveMode(ingest.ParseSourceResolveMode(cfg.Ingest.SourceResolve))
 	// Ingest audit events are tenant-scoped, so they must go through the SAME
 	// audit service instance as every other tenant-scoped event: LogEvent also
 	// extends the per-tenant tamper-evident hash chain, and its chainMu is what
