@@ -88,6 +88,19 @@ type SSOService struct {
 	// flow falls back to the P0 config-AllowedDomains gate so nothing breaks
 	// pre-wiring. Fail-closed: an unverified/unknown domain never JIT-provisions.
 	domainVerifier DomainVerifier
+
+	// revocations records back-channel-logged-out sessions so their access
+	// tokens (and live WebSocket connections) stop at once rather than at
+	// expiry. nil = they expire naturally.
+	revocations   SessionRevocationStore
+	revocationTTL time.Duration
+}
+
+// SetSessionRevocationStore wires immediate revocation for sessions ended by
+// an OIDC back-channel logout.
+func (s *SSOService) SetSessionRevocationStore(store SessionRevocationStore, ttl time.Duration) {
+	s.revocations = store
+	s.revocationTTL = ttl
 }
 
 // TenantMemberCreator creates tenant memberships for auto-provisioned users and

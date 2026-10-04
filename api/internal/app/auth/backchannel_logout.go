@@ -139,6 +139,9 @@ func (s *SSOService) BackChannelLogout(ctx context.Context, logoutToken string) 
 		if terr := s.refreshTokenRepo.RevokeBySessionID(ctx, sess.ID()); terr != nil {
 			s.logger.Error("back-channel logout: failed to revoke refresh tokens", "session_id", sess.ID().String(), "error", terr)
 		}
+		// Stop the session's access tokens and live sockets now, as a local
+		// logout does; without this they kept working until expiry.
+		markSessionRevoked(ctx, s.revocations, s.revocationTTL, sess.ID().String(), s.logger.Error)
 		revoked++
 	}
 

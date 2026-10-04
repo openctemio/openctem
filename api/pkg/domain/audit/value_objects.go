@@ -44,6 +44,10 @@ const (
 	// ActionAssetDeleted: a person deleted an asset without findings (soft
 	// delete; an asset with findings is refused and must be archived).
 	ActionAssetDeleted Action = "asset.deleted"
+	// ActionAssetCreateMerged: a create request matched an existing asset by
+	// name or address and updated it instead of creating a new one.
+	// Metadata lists the changed field names.
+	ActionAssetCreateMerged Action = "asset.create_merged"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -433,6 +437,7 @@ func (a Action) IsValid() bool {
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided, ActionAssetDeleted,
+		ActionAssetCreateMerged,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -780,6 +785,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided, ActionAssetDeleted,
+		ActionAssetCreateMerged,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,

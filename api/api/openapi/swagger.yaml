@@ -4661,6 +4661,7 @@ definitions:
       asset_ids:
         items:
           type: string
+        maxItems: 1000
         minItems: 1
         type: array
     required:
@@ -6760,6 +6761,7 @@ definitions:
       existing_asset_ids:
         items:
           type: string
+        maxItems: 1000
         type: array
       name:
         maxLength: 255
@@ -11145,6 +11147,7 @@ definitions:
       asset_ids:
         items:
           type: string
+        maxItems: 1000
         minItems: 1
         type: array
     required:
@@ -14588,14 +14591,6 @@ definitions:
       title:
         type: string
       updated_at:
-        type: string
-    type: object
-  internal_infra_http_handler.WSTokenResponse:
-    properties:
-      expires_in:
-        description: Seconds until expiration
-        type: integer
-      token:
         type: string
     type: object
   internal_infra_http_handler.remediationGroupsResponse:
@@ -19412,27 +19407,6 @@ paths:
               type: string
             type: object
       summary: Verify email
-      tags:
-      - Authentication
-  /auth/ws-token:
-    get:
-      description: Returns a short-lived token for WebSocket authentication
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.WSTokenResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Get WebSocket token
       tags:
       - Authentication
   /commands:

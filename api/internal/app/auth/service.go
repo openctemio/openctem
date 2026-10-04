@@ -2071,14 +2071,6 @@ func (s *AuthService) generateTenantScopedAccessToken(
 	)
 }
 
-// GenerateWSToken generates a short-lived token for WebSocket authentication.
-// This is needed because WebSocket connections cannot use httpOnly cookies
-// when the connection is cross-origin (different port in development).
-// The token is valid for 30 seconds - just enough time to establish the connection.
-func (s *AuthService) GenerateWSToken(ctx context.Context, userID, tenantID string) (string, error) {
-	return s.tokenGenerator.GenerateShortLivedToken(userID, tenantID, 30*time.Second)
-}
-
 // dummyPasswordHash returns a hash of a random secret, made with the same
 // hasher (and cost) as real passwords. Verifying a login password against it
 // costs what a real wrong-password check costs, so the user-not-found and

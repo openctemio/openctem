@@ -2217,6 +2217,7 @@ func (r *AccessControlRepository) FindAssetsByAssetGroupMatch(ctx context.Contex
 	query := fmt.Sprintf(`
 		SELECT DISTINCT agm.asset_id
 		FROM asset_group_members agm
+		JOIN asset_groups ag ON ag.id = agm.asset_group_id AND ag.tenant_id = $1
 		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = $1
 		WHERE agm.asset_group_id = ANY($2)
 		LIMIT %d
