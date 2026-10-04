@@ -59,7 +59,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
   (port, transport, service) was used only inside the network-VA dedup
   fingerprint and then dropped, so no stored finding knew its port. Ingest
   now stores it in `findings.network_port`, `network_transport` and
-  `network_service` (migration 000353), and the finding API returns
+  `network_service` (migration 000377), and the finding API returns
   `network_port`, `network_transport` and `network_service`. A re-sighting
   fills a missing value and never replaces a stored port, so the port does
   not flip between scans for a finding whose fingerprint does not include
