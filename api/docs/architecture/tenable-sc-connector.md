@@ -67,7 +67,68 @@ integration metadata.tenable_sync (cursor, counts, license), status connected
 - Absence never resolves: sync reports are `incremental` and their command type
   is not `scan`.
 
+## Scan launch (P1)
+
+A scan whose `scanner_name` is `tenable_sc` is an ordinary OpenCTEM scan
+(Scan → Run, schedules, retries, run history), with `scanner_config`
+`{integration_id, policy_id, repository_id, zone_id?, max_scan_seconds?}`.
+
+- **Create/update** (`scan.Service` + `tenablesc.Service.ValidateScanConfig`):
+  the integration must be the tenant's own enabled connector on one of the
+  tenant's own sensors; when the sensor reported a catalog (the
+  `connector_sync` result), the policy, scan repository and zone must be in
+  it. The sensor's allow-list is enforced again on the sensor.
+- **Run** (`scan.Service.triggerConnectorScan`): targets are resolved as for
+  any scan (group members, exclusions, attribution, the actor's act scope;
+  a scheduled run acts as the scan's creator), then pass the active-probe
+  gate once more (`ResolveDispatchTargets`, act scope on). One
+  `connector_scan` command, pinned to the connector's sensor, carries the
+  allowed targets and the run's pipeline keys, so the run completes or fails
+  with the command like any single scan. Expiry: `max_scan_seconds` + 2 h.
+- **Results**: bound to the command and its targets; `coverage_type: full`
+  only when the Tenable.sc scan completed and imported. Coverage-scoped
+  auto-resolve treats a completed full `connector_scan` like a scan command
+  (same tool, covered assets only); a `connector_sync` never resolves by
+  absence.
+- **Sensor**: openctemio/sensor#131 creates the scan definition, launches it,
+  polls `scanResult`, stops it on cancel or timeout, pulls the individual
+  result and deletes the definition it created.
+
+## Audit
+
+Source-asserted resolve writes one audit entry per report:
+`ingest.source_resolved` (enforce) or `ingest.source_resolve_dry_run`
+(dry run), with the command id, the count and up to 200 finding ids.
+
+## Rolling coverage (P2)
+
+The RFC-007 rotation (`scancoverage` planner and scheduler, the
+`scan_coverage_state` cursor, the claim-once across replicas, the target gate)
+now drives the connector; the old runner dispatcher is gone.
+
+- **Opt-in per connector**: `coverage_enabled: true` with
+  `coverage_policy_id` and `coverage_repository_id` (optional
+  `coverage_zone_id`, `coverage_max_scan_seconds`), plus `batch_size`,
+  `license_cap` (optional lower cap) and `safety_margin`. Validated on create
+  and update.
+- **License numbers are Tenable.sc's own**: `licensedIPs` / `activeIPs` from
+  `/rest/status`, reported by every sync and scan and kept in
+  `metadata.tenable_sync`. No sync yet → no coverage. Headroom =
+  `min(licensed, license_cap) - active - safety_margin`.
+- **One batch at a time per connector**
+  (`tenablesc.Service.CoverageStatus`): the next batch waits until the
+  previous `connector_scan` finished and its reports were ingested, then takes
+  that scan's reported active count. A full license stops the rotation;
+  OpenCTEM never deletes data from Tenable.sc to free licenses (owner decision
+  Q4), so space comes back through Tenable.sc's own aging.
+- **Each batch** is one `connector_scan` (`DispatchCoverageBatch`) of the
+  gated targets, pinned to the connector's sensor. One connector per tenant
+  drives coverage; another is logged and skipped. Nessus Pro integrations are
+  not driven (no runner since sensor v0.8.0).
+- **Results** auto-resolve by coverage only for the batch's covered assets,
+  only from a completed, `full` scan (RFC-007's batch invariant).
+
 ## Not built yet
 
-`connector_scan` (RFC-047 P1), coverage on the connector (P2), and the web
-integration page (still hidden until the connector ships end to end).
+The web integration page and the Coverage panel (hidden until the connector
+ships end to end).

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -137,4 +139,99 @@ func (s *FindingActionsService) ListFindingGroupsBySpec(
 	filter.TenantID = &tid
 	filter.Compiled = where
 	return s.findingRepo.ListFindingGroups(ctx, tid, groupBy, filter, page)
+}
+
+// MaxExportRows caps one findings export (RFC-048 §3.7). A larger set is
+// narrowed with the filter.
+const MaxExportRows = 100000
+
+// exportBatch is the number of rows read per export query.
+const exportBatch = 1000
+
+type findingExportRepo interface {
+	ExportBatchWhere(ctx context.Context, w *filterspec.Where, afterID string, limit int) ([]*vulnerability.Finding, error)
+}
+
+// ExportResult describes a finished export.
+type ExportResult struct {
+	Rows      int
+	Truncated bool
+}
+
+// ExportFindingsBySpec streams every finding a decoded filter selects, as
+// the caller, to emit in batches (id order), up to MaxExportRows. The export
+// is audit-logged with the filter's field and operator names (never its
+// values) and the row count, whether it completes or not.
+func (s *VulnerabilityService) ExportFindingsBySpec(
+	ctx context.Context, c FilterCaller, spec *filterspec.Spec, format string, actx audit.AuditContext,
+	emit func([]*vulnerability.Finding) error,
+) (ExportResult, error) {
+	var res ExportResult
+	repo, ok := s.findingRepo.(findingExportRepo)
+	if !ok {
+		return res, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return res, err
+	}
+	where, err := filterspec.Compile(spec, vulnerability.FindingFields, actor)
+	if err != nil {
+		return res, err
+	}
+	defer func() { s.auditExport(ctx, actx, spec, format, res, err) }()
+
+	after := ""
+	for res.Rows < MaxExportRows {
+		batch, berr := repo.ExportBatchWhere(ctx, where, after, min(exportBatch, MaxExportRows-res.Rows))
+		if berr != nil {
+			err = berr
+			return res, err
+		}
+		if len(batch) == 0 {
+			return res, nil
+		}
+		if eerr := emit(batch); eerr != nil {
+			err = eerr
+			return res, err
+		}
+		res.Rows += len(batch)
+		after = batch[len(batch)-1].ID().String()
+		if len(batch) < min(exportBatch, MaxExportRows) {
+			return res, nil
+		}
+	}
+	// At the cap: is there more?
+	more, berr := repo.ExportBatchWhere(ctx, where, after, 1)
+	if berr == nil && len(more) > 0 {
+		res.Truncated = true
+	}
+	return res, nil
+}
+
+// auditExport records a findings export: who, the filter shape (field and
+// operator names only, so no hostnames or free text land in the audit log),
+// the format and how many rows left the system.
+func (s *VulnerabilityService) auditExport(ctx context.Context, actx audit.AuditContext, spec *filterspec.Spec, format string, res ExportResult, err error) {
+	if s.auditService == nil {
+		return
+	}
+	shape := make([]string, 0, len(spec.Leaves()))
+	for _, l := range spec.Leaves() {
+		shape = append(shape, l.Field+":"+string(l.Op))
+	}
+	ev := audit.NewSuccessEvent(auditdom.ActionDataExported, auditdom.ResourceTypeFinding, "findings").
+		WithMessage(fmt.Sprintf("Exported %d findings (%s)", res.Rows, format)).
+		WithMetadata("rows", res.Rows).
+		WithMetadata("truncated", res.Truncated).
+		WithMetadata("format", format).
+		WithMetadata("filter", shape).
+		WithMetadata("search", spec.Q != "").
+		WithSeverity(auditdom.SeverityMedium)
+	if err != nil {
+		ev = ev.WithMetadata("incomplete", true)
+	}
+	if lerr := s.auditService.LogEvent(ctx, actx, ev); lerr != nil {
+		s.logger.Warn("audit findings export failed", "error", lerr)
+	}
 }

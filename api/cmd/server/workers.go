@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
@@ -282,20 +284,21 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
-	// Coverage scheduler: license-aware rolling Tenable scan coverage (RFC-007).
-	// Paused with the Tenable connector (integrationdom.TenableConnectorEnabled,
-	// owner decision D-14, rebuild RFC-047): with no sensor-side runner every
-	// batch would be a command nothing runs.
-	if integrationdom.TenableConnectorEnabled {
+	// Coverage scheduler: license-aware rolling coverage (RFC-007), rebuilt on
+	// the Tenable.sc sensor connector (RFC-047 §9): each batch is a
+	// connector_scan sized against Tenable.sc's own license numbers. Behind
+	// the connector switch (integrationdom.TenableConnectorEnabled, D-14).
+	if integrationdom.TenableConnectorEnabled && svc.TenableSC != nil {
 		w.ControllerManager.Register(controller.NewCoverageScheduler(
 			repos.Integration,
 			repos.ScanCoverage,
-			scancoverage.NewDispatcher(repos.Command),
+			connectorCoverageDispatcher{svc: svc.TenableSC},
 			&controller.CoverageSchedulerConfig{
 				Interval: 5 * time.Minute,
 				// Each batch passes a scan trigger's target checks (RFC-042 F16).
-				Gate:   svc.Scan,
-				Logger: log.With("controller", "coverage-scheduler"),
+				Gate:      svc.Scan,
+				Connector: svc.TenableSC,
+				Logger:    log.With("controller", "coverage-scheduler"),
 			},
 		))
 	}
@@ -911,4 +914,22 @@ func (w *Workers) Stop(log *logger.Logger) {
 		log.Error("controller manager stop error", "error", err)
 	}
 	log.Info("controller manager stopped")
+}
+
+// connectorCoverageDispatcher dispatches a coverage batch as a connector_scan
+// of the batch's Tenable.sc connector (RFC-047 §9).
+type connectorCoverageDispatcher struct {
+	svc *tenablesc.Service
+}
+
+func (d connectorCoverageDispatcher) DispatchTenableScan(ctx context.Context, in scancoverage.DispatchTenableInput) (shared.ID, string, error) {
+	if in.IntegrationID == nil {
+		return shared.ID{}, "", errors.New("coverage batch names no Tenable.sc connector")
+	}
+	session := in.SessionID
+	if session == "" {
+		session = shared.NewID().String()
+	}
+	id, err := d.svc.DispatchCoverageBatch(ctx, in.TenantID, *in.IntegrationID, in.Targets, session)
+	return id, session, err
 }

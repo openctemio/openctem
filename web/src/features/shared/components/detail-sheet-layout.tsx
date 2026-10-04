@@ -465,5 +465,17 @@ export function useDetailTab<T extends string>(
 ): [T, (next: T) => void] {
   const [raw, setRaw] = useUrlFilter(param, values[0])
   const value = (values as readonly string[]).includes(raw) ? (raw as T) : values[0]
-  return [value, setRaw as (next: T) => void]
+  // Never write the tab that is already active. Radix <Tabs> is controlled, so a
+  // stray onValueChange with the current value would rewrite the URL, which a
+  // subscriber reflects back onto `value` — a feedback loop if the serialisation
+  // round-trips imperfectly. Writing only real changes keeps the setter a no-op
+  // when nothing changed.
+  const setValue = React.useCallback(
+    (next: T) => {
+      if (next === value) return
+      setRaw(next)
+    },
+    [setRaw, value]
+  )
+  return [value, setValue]
 }

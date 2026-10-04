@@ -99,3 +99,54 @@ func (r *FindingRepository) GetStatsWhere(ctx context.Context, w *filterspec.Whe
 	}
 	return r.queryFindingStats(ctx, findingStatsSelect+" WHERE "+w.SQL, w.Args)
 }
+
+// findingExportTimeout bounds one export batch (RFC-048 §3.7).
+const findingExportTimeout = "60s"
+
+// MaxFindingExportBatch is the largest batch ExportBatchWhere returns.
+const MaxFindingExportBatch = 1000
+
+// ExportBatchWhere returns the next batch of findings matching a compiled
+// filter, in id order after afterID (keyset paging: no OFFSET cost, stable
+// under concurrent inserts). Each batch is one short read-only transaction,
+// so a slow client never holds a transaction open.
+func (r *FindingRepository) ExportBatchWhere(ctx context.Context, w *filterspec.Where, afterID string, limit int) ([]*vulnerability.Finding, error) {
+	if err := checkFindingWhere(w); err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > MaxFindingExportBatch {
+		limit = MaxFindingExportBatch
+	}
+	if afterID == "" {
+		afterID = "00000000-0000-0000-0000-000000000000"
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin finding export: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingExportTimeout+"'"); err != nil {
+		return nil, fmt.Errorf("set finding export timeout: %w", err)
+	}
+	args := append(append([]any(nil), w.Args...), afterID, limit)
+	// w.SQL comes only from filterspec.Compile (registry SQL, bound values).
+	query := r.selectQuery() + " WHERE " + w.SQL + //nolint:gosec // G202: see above
+		fmt.Sprintf(" AND findings.id > $%d::uuid ORDER BY findings.id LIMIT $%d", w.NextArg, w.NextArg+1)
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to export findings: %w", err)
+	}
+	defer rows.Close()
+	out := make([]*vulnerability.Finding, 0, MaxFindingExportBatch)
+	for rows.Next() {
+		f, err := r.scanFindingFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate exported findings: %w", err)
+	}
+	return out, tx.Commit()
+}
