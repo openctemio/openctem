@@ -47,7 +47,7 @@ var permRenameMigrations = []string{
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
 // order, after the renames.
 var permRemoveMigrations = []string{
-	"000492_remove_group_permission_sets.up.sql",   // team:permission_sets:* (permissions come only from roles)
+	"000560_remove_group_permission_sets.up.sql",   // team:permission_sets:* (permissions come only from roles)
 	"000562_remove_meaningless_permissions.up.sql", // export/billing/policies/compliance permissions that gate nothing
 }
 

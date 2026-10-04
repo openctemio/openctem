@@ -577,7 +577,7 @@ means a test against a migrated Postgres (skips without `DATABASE_URL`).
 | **P1.8** | **`controller_leases`** + non-idempotent sweeps converted; remove the two session advisory locks | DB: two holders, one wins, epoch increments, expiry hands over; each converted sweep runs once with two instances |
 | **P1.9** | Observability: `tenant_id` out of metric labels, inert metrics written or deleted, `traceparent` in payloads, `run_id` log key, `/runs/{id}/explain` | Metric label test; explain route tests incl. cross-tenant; trace propagation unit test |
 | **P1.10** | Cancel completeness: sdk-go cancel without doorbell; command cancel on scan commands needs `scans:write`; automation cancel stops steps; cancel audited | sdk-go conformance test; route permission test; DB test that automation cancel stops pending steps |
-| **P1.11** | Two-replica race suite in CI; lift B4 in helm-charts | CI job with two API processes against one DB: scheduler, claim, audit chain, leases |
+| **P1.11** | *(Started: `tests/integration/two_replica_race_test.go` races two connection pools on one database — scheduler claim + occurrence key, command claim, audit chain — in the API CI test job; controller leases have their own race test with P1.8. A CI job with two API processes and the helm-charts B4 lift remain.)* Two-replica race suite in CI; lift B4 in helm-charts | CI job with two API processes against one DB: scheduler, claim, audit chain, leases |
 
 ### P2 — engines and the event backbone
 
