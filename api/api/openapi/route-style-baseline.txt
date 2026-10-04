@@ -257,7 +257,6 @@ R6 GET /api/v1/tenants/{tenant}/settings
 R6 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R6 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R6 GET /api/v1/tenants/{tenant}/settings/asset-source
-R6 GET /api/v1/tenants/{tenant}/settings/data-scope
 R6 GET /api/v1/tenants/{tenant}/settings/modules
 R6 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R6 GET /api/v1/tenants/{tenant}/settings/modules/graph
@@ -271,7 +270,6 @@ R6 PATCH /api/v1/tenants/{tenant}/settings/api
 R6 PATCH /api/v1/tenants/{tenant}/settings/asset-identity
 R6 PATCH /api/v1/tenants/{tenant}/settings/branch
 R6 PATCH /api/v1/tenants/{tenant}/settings/branding
-R6 PATCH /api/v1/tenants/{tenant}/settings/data-scope
 R6 PATCH /api/v1/tenants/{tenant}/settings/general
 R6 PATCH /api/v1/tenants/{tenant}/settings/modules
 R6 PATCH /api/v1/tenants/{tenant}/settings/pentest
@@ -316,7 +314,6 @@ R9 GET /api/v1/tenants/{tenant}/settings
 R9 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R9 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R9 GET /api/v1/tenants/{tenant}/settings/asset-source
-R9 GET /api/v1/tenants/{tenant}/settings/data-scope
 R9 GET /api/v1/tenants/{tenant}/settings/modules
 R9 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R9 GET /api/v1/tenants/{tenant}/settings/modules/graph
@@ -335,7 +332,6 @@ R9 PATCH /api/v1/tenants/{tenant}/settings/api
 R9 PATCH /api/v1/tenants/{tenant}/settings/asset-identity
 R9 PATCH /api/v1/tenants/{tenant}/settings/branch
 R9 PATCH /api/v1/tenants/{tenant}/settings/branding
-R9 PATCH /api/v1/tenants/{tenant}/settings/data-scope
 R9 PATCH /api/v1/tenants/{tenant}/settings/general
 R9 PATCH /api/v1/tenants/{tenant}/settings/modules
 R9 PATCH /api/v1/tenants/{tenant}/settings/pentest
