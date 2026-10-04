@@ -26,8 +26,8 @@ func TestResolveTypeAlias(t *testing.T) {
 		{"iam_user", "identity", "iam_user"},
 		{"iam_role", "identity", "iam_role"},
 		{"service_account", "identity", "service_account"},
-		{"data_store", "database", "data_store"},
-		{"s3_bucket", "storage", "s3_bucket"},
+		{"data_store", "database", ""},     // RFC-042 §6.3.8: a sub-type is a kind
+		{"s3_bucket", "storage", "bucket"}, // vendor moves to the provider
 		{"container_registry", "storage", "container_registry"},
 		{"kubernetes_cluster", "kubernetes", "cluster"},
 		{"kubernetes_namespace", "kubernetes", "namespace"},

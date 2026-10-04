@@ -330,9 +330,9 @@ func (p *AssetProcessor) prepareIdentity(ctx context.Context, tenantID shared.ID
 		if name == "" {
 			continue
 		}
-		coreType, subType := asset.ResolveTypeAlias(mapCTISAssetType(ca.Type))
-		normalized := asset.NormalizeName(name, coreType, subType)
-		b.incoming[i] = identifiersFor(ca, coreType, normalized)
+		rt := resolveCTISAssetType(ca)
+		normalized := asset.NormalizeName(name, rt.normType, rt.normSubType)
+		b.incoming[i] = identifiersFor(ca, rt.stored.Type, normalized)
 		for _, id := range b.incoming[i] {
 			keySet[id.Key()] = true
 		}
