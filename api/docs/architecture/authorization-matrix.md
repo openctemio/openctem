@@ -838,14 +838,39 @@ materialize assets of the group's tenant. Trigger `asset_owners_same_tenant`
 (migration `000455`) refuses a cross-tenant group row from any writer, and the
 same migration removed any such row written before (research doc 15, L-01).
 
+**Every route has a data-scope class** (research doc 15 P1-3,
+`tests/unit/route_scope_classification_test.go`). `dataSurfaceRegistry`
+classifies each route by its longest path prefix: `scoped` (asset-derived rows
+limited to the caller's scope), `partial` (rows scoped, some counts
+tenant-wide), `gap` (asset-derived and not yet scoped; the note cites the
+research finding that tracks it), `separate` (another access model, e.g.
+pentest membership), `config` or `system`. A new route without a class, a
+stale entry, or a gap without a tracking reference fails CI. When you add a
+route, classify it there in the same PR; when you close a gap, move its entry
+to `scoped`.
+
 **Who is restricted:**
 
 | Caller | Sees |
 |---|---|
 | Owner / admin (`IsAdmin`) | everything in the tenant |
+| A user holding a role with `has_full_data_access` (the system Owner and Administrator roles, or a custom role such as a "Global Reader") | everything in the tenant, whatever their group rows and the organization's policy; **not** through an API key |
 | Internal calls with no user (jobs, sensors, ingest) | everything in the tenant |
 | Member with ≥ 1 scope row | only their in-scope assets |
 | Member with no scope row | the organization's policy: **everything** or **nothing** |
+
+**Full data access is the Layer 2 bypass** (owner decision D3, research doc
+15 L-11). `roles.has_full_data_access` used to be stored, shown in the role
+editor ("Access all data regardless of group membership") and guarded on
+grant, but nothing read it. Now `datascope.Enforcer.ResolveFor` checks it
+(`DataScopeRepository.HasFullDataRole`, one indexed query per resolve) before
+the scope rows, and the older list paths (asset list, stats and facets,
+finding list and stats, asset and finding by id) use the same decision
+through `Enforcer.FullData`. A lookup error restricts. A request made with an
+API key never gets full data from its holder's role; a dedicated full-data key
+is future work (research doc 15, §5.7). Granting the flag is capped by the
+grant guard (you cannot give what you do not hold). A view-only level is part
+of the view/act work (P2).
 
 **Policy for members without an access group** (owner decision 2026-10-02):
 `tenants.members_without_group_see` (migration `000247`), `everything`
@@ -856,11 +881,23 @@ same migration removed any such row written before (research doc 15, L-01).
   (`settings.security.restricted_data_scope = true`, no longer read) keeps
   `nothing`.
 - New organizations start with `nothing` (column default).
-- `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
-  (`{"members_without_group_see": "everything"|"nothing"}`), owner/admin
-  (`RequireTeamAdmin`). A change is audited (`tenant.settings_updated`,
-  severity high, before/after in `changes`) and drops the enforcer's 60-second
-  policy cache for that organization at once.
+- `GET /api/v1/tenants/{tenant}/settings/data-scope` (owner/admin) returns
+  `{"members_without_group_see": "everything"|"nothing", "deprecated": bool}`.
+- **`everything` is being retired** (owner decision D2, research doc 15 L-04).
+  It is never flipped by a migration; each organization's owner switches:
+  - `GET /api/v1/organization/settings/data-scope/impact` (owner/admin) is
+    the pre-flight report: the active members who are not owner or admin, hold
+    no `has_full_data_access` role and have no scope row, i.e. who see
+    everything today only because of the policy and would see nothing after
+    the switch (exact `total_count`, at most 500 listed).
+  - `PATCH .../settings/data-scope` is **owner only** (`RequireTeamOwner`) and
+    goes one way: to `nothing`. Switching back to `everything` is refused
+    (400). A change is audited (`tenant.settings_updated`, severity high,
+    before/after in `changes`) and drops the enforcer's 60-second policy cache
+    for that organization at once.
+  - The web console shows owners and admins of an `everything` organization a
+    banner (dismissable per session) linking to Settings → Teams, where the
+    card names the affected members and only the owner can switch.
 - A failure to read the policy is treated as `everything` (a database hiccup
   must not hide all data); every other scope-lookup error denies.
 
@@ -942,6 +979,9 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `GET /threat-models` (+ `/{id}`, `/{id}/coverage`), `POST /threat-models/generate` | **bypass** (crown-jewel model names, threat paths through any asset) | crown-jewel models of out-of-scope assets are hidden (404 by id, also on generate, which names the asset); a threat is listed and counted in coverage only when its entry point, target, hop and evidence finding are all in scope. Model rollup counters stay graph-wide (L-10) |
 | `GET/POST/DELETE /business-services/{id}/assets`, `POST/DELETE /business-units/{id}/assets` | **bypass** (names; links change an asset's effective criticality) | the list shows in-scope (and not deleted) assets; linking or unlinking an out-of-scope asset answers 404 (L-10) |
 | `GET /ctem-cycles/{id}/scope` | bypass (asset names of the snapshot) | in-scope assets of the snapshot only (L-10) |
+| `/credentials/**` (list, identities, identity exposures, related, stats, get, reveal, resolve, accept, false-positive, reactivate) | **bypass**: every leak of the tenant, incl. reveal and state changes, while `/exposures/{id}` hid the same row | leaks on in-scope assets only (`dataScopeCond`); an asset-less leak is in nobody's asset scope (unrestricted callers only); by id: 404. Stats count only those (and only credentials) (L-10) |
+| `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
+| `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 
@@ -957,7 +997,7 @@ query; none exposes a row, name, title or id of an out-of-scope object.
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
-| `GET /findings/analytics/sources`, `/vulnerabilities/active`, `/active/stats` | counts per tool / per CVE |
+| `GET /findings/analytics/sources` | counts per tool |
 | `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
 
 **Not covered by data scope** (separate access models): pentest findings and

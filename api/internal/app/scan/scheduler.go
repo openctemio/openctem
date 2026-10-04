@@ -215,7 +215,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 		// Another scheduler instance already started this occurrence (the
 		// next_run_at claim makes this rare; the unique index makes it
 		// impossible to double-fire). Nothing to record: that run is real.
-		metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "duplicate_occurrence").Inc()
+		metrics.ScanScheduleOutcomes.WithLabelValues("duplicate_occurrence").Inc()
 		s.logger.Info("scheduled run skipped: this occurrence already has a run",
 			"scan_id", sc.ID.String(), "scheduled_for", occurrence)
 		return
@@ -223,7 +223,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	if errors.Is(err, ErrScanRunInProgress) {
 		// Overlap policy (D4): skip this occurrence and say so. Not recorded in
 		// last_run_status, which belongs to the run that is still going.
-		metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "skipped_overlap").Inc()
+		metrics.ScanScheduleOutcomes.WithLabelValues("skipped_overlap").Inc()
 		s.logger.Info("scheduled run skipped: the previous run is still active",
 			"scan_id", sc.ID.String(), "scan_name", sc.Name, "next_run_at", nextRunAt)
 		s.scanService.recordScheduledOutcome(ctx, sc, "Scheduled run skipped: the previous run is still active", err)
@@ -235,7 +235,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			"scan_name", sc.Name,
 			"error", err,
 		)
-		metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "failed").Inc()
+		metrics.ScanScheduleOutcomes.WithLabelValues("failed").Inc()
 		// Record the failure in the scan's own state. next_run_at was already
 		// advanced above (to avoid re-trigger storms), so without this a scan
 		// that can never start — e.g. NO_SENSOR_AVAILABLE, which recurred silently
@@ -253,8 +253,8 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	}
 
 	// Record metric
-	metrics.ScansScheduled.WithLabelValues(sc.TenantID.String()).Inc()
-	metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "triggered").Inc()
+	metrics.ScansScheduled.WithLabelValues().Inc()
+	metrics.ScanScheduleOutcomes.WithLabelValues("triggered").Inc()
 
 	s.logger.Info("scan triggered by scheduler",
 		"scan_id", sc.ID.String(),
