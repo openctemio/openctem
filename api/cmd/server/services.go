@@ -639,7 +639,6 @@ type Services struct {
 
 	// Access Control
 	Group          *app.GroupService
-	Permission     *app.PermissionService
 	Role           *app.RoleService
 	AssignmentRule *assignment.RuleService
 	ScopeRule      *scope.RuleService
@@ -1752,7 +1751,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize access control services
 	s.Group = app.NewGroupService(repos.Group, log,
 		app.WithGroupAuditService(s.Audit),
-		app.WithPermissionSetRepository(repos.PermissionSet),
 		app.WithAccessControlRepository(repos.AccessControl),
 	)
 
@@ -1816,12 +1814,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire engine and finding repo to assignment rule service for TestRule
 	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)
 	s.AssignmentRule.SetFindingRepository(repos.Finding)
-
-	s.Permission = app.NewPermissionService(repos.PermissionSet, log,
-		app.WithPermissionAuditService(s.Audit),
-		app.WithPermissionAccessControlRepository(repos.AccessControl),
-		app.WithPermissionGroupRepository(repos.Group),
-	)
 
 	// Initialize permission sync services
 	s.PermVersion = app.NewPermissionVersionService(deps.RedisClient, log)

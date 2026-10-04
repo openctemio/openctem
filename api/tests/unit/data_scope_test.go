@@ -96,24 +96,6 @@ func (m *mockAccessControlRepo) ListAccessibleAssets(_ context.Context, _, _ sha
 func (m *mockAccessControlRepo) GetUserAssetAccess(_ context.Context, _, _ shared.ID) (*accesscontrol.UserAssetAccess, error) {
 	return nil, nil
 }
-func (m *mockAccessControlRepo) CreateGroupPermission(_ context.Context, _ *accesscontrol.GroupPermission) error {
-	return nil
-}
-func (m *mockAccessControlRepo) GetGroupPermission(_ context.Context, _ shared.ID, _ string) (*accesscontrol.GroupPermission, error) {
-	return nil, nil
-}
-func (m *mockAccessControlRepo) UpdateGroupPermission(_ context.Context, _ *accesscontrol.GroupPermission) error {
-	return nil
-}
-func (m *mockAccessControlRepo) DeleteGroupPermission(_ context.Context, _ shared.ID, _ string) error {
-	return nil
-}
-func (m *mockAccessControlRepo) ListGroupPermissions(_ context.Context, _ shared.ID) ([]*accesscontrol.GroupPermission, error) {
-	return nil, nil
-}
-func (m *mockAccessControlRepo) ListGroupPermissionsByEffect(_ context.Context, _ shared.ID, _ accesscontrol.PermissionEffect) ([]*accesscontrol.GroupPermission, error) {
-	return nil, nil
-}
 func (m *mockAccessControlRepo) CreateAssignmentRule(_ context.Context, _ *accesscontrol.AssignmentRule) error {
 	return nil
 }

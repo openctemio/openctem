@@ -134,22 +134,6 @@ func (m *MockGroupRepository) ListGroupIDsByUser(_ context.Context, _, _ shared.
 	return nil, nil
 }
 
-func (m *MockGroupRepository) AssignPermissionSet(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
-	return nil
-}
-
-func (m *MockGroupRepository) RemovePermissionSet(_ context.Context, _, _ shared.ID) error {
-	return nil
-}
-
-func (m *MockGroupRepository) ListPermissionSetIDs(_ context.Context, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-
-func (m *MockGroupRepository) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*groupdom.Group, error) {
-	return nil, nil
-}
-
 // =============================================================================
 // Tests for GroupSyncService
 // =============================================================================

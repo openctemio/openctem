@@ -83,14 +83,6 @@ type Repository interface {
 	// Used for backward compat: if false, user sees all data (no groups configured).
 	HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 
-	// Group Permissions (custom overrides)
-	CreateGroupPermission(ctx context.Context, gp *GroupPermission) error
-	GetGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) (*GroupPermission, error)
-	UpdateGroupPermission(ctx context.Context, gp *GroupPermission) error
-	DeleteGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) error
-	ListGroupPermissions(ctx context.Context, groupID shared.ID) ([]*GroupPermission, error)
-	ListGroupPermissionsByEffect(ctx context.Context, groupID shared.ID, effect PermissionEffect) ([]*GroupPermission, error)
-
 	// Assignment Rules
 	CreateAssignmentRule(ctx context.Context, rule *AssignmentRule) error
 	GetAssignmentRule(ctx context.Context, tenantID, id shared.ID) (*AssignmentRule, error)

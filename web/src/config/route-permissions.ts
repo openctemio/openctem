@@ -627,12 +627,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/teams/**': {
     permission: Permission.GroupsRead,
   },
-  '/settings/access-control/permission-sets': {
-    permission: Permission.PermissionSetsRead,
-  },
-  '/settings/access-control/permission-sets/**': {
-    permission: Permission.PermissionSetsRead,
-  },
 
   // ========================================
   // Settings - Audit Log (Admin/Owner only, no module required)
