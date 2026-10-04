@@ -559,7 +559,7 @@ func IsOwner(ctx context.Context) bool {
 // Use this for sensitive operations that only the owner should perform:
 // - TeamDelete: Deleting the tenant
 // - BillingManage: Managing billing settings
-// - GroupsDelete, PermissionSetsDelete, AssignmentRulesDelete: Deleting access control resources
+// - GroupsDelete, AssignmentRulesDelete: Deleting access control resources
 func RequireOwner() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

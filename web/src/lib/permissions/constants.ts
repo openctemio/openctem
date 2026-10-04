@@ -239,11 +239,6 @@ export const Permission = {
   RolesDelete: 'team:roles:delete',
   RolesAssign: 'team:roles:assign',
 
-  // Permission Sets (team:permission_sets:*)
-  PermissionSetsRead: 'team:permission_sets:read',
-  PermissionSetsWrite: 'team:permission_sets:write',
-  PermissionSetsDelete: 'team:permission_sets:delete',
-
   // Assignment Rules (team:assignment_rules:*)
   AssignmentRulesRead: 'team:assignment_rules:read',
   AssignmentRulesWrite: 'team:assignment_rules:write',
@@ -431,7 +426,6 @@ export const PermissionGroups = {
     Permission.MembersRead,
     Permission.GroupsRead,
     Permission.RolesRead,
-    Permission.PermissionSetsRead,
     Permission.AssignmentRulesRead,
     Permission.IntegrationsRead,
     Permission.ScmConnectionsRead,
@@ -485,7 +479,6 @@ export const PermissionGroups = {
     Permission.MembersWrite,
     Permission.GroupsWrite,
     Permission.RolesWrite,
-    Permission.PermissionSetsWrite,
     Permission.AssignmentRulesWrite,
     Permission.ScmConnectionsWrite,
     Permission.NotificationsWrite,
@@ -532,7 +525,6 @@ export const PermissionGroups = {
     Permission.TeamDelete,
     Permission.GroupsDelete,
     Permission.RolesDelete,
-    Permission.PermissionSetsDelete,
     Permission.AssignmentRulesDelete,
     Permission.ScmConnectionsDelete,
     Permission.NotificationsDelete,
@@ -559,8 +551,6 @@ export const PermissionGroups = {
     Permission.RolesRead,
     Permission.RolesWrite,
     Permission.RolesAssign,
-    Permission.PermissionSetsRead,
-    Permission.PermissionSetsWrite,
   ],
 
   // Security/vulnerability permissions
@@ -690,9 +680,6 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.RolesWrite]: 'Manage Roles',
   [Permission.RolesDelete]: 'Delete Roles',
   [Permission.RolesAssign]: 'Assign Roles',
-  [Permission.PermissionSetsRead]: 'View Permission Sets',
-  [Permission.PermissionSetsWrite]: 'Manage Permission Sets',
-  [Permission.PermissionSetsDelete]: 'Delete Permission Sets',
   [Permission.AssignmentRulesRead]: 'View Assignment Rules',
   [Permission.AssignmentRulesWrite]: 'Manage Assignment Rules',
   [Permission.AssignmentRulesDelete]: 'Delete Assignment Rules',
@@ -891,9 +878,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.RolesWrite,
     Permission.RolesDelete,
     Permission.RolesAssign,
-    Permission.PermissionSetsRead,
-    Permission.PermissionSetsWrite,
-    Permission.PermissionSetsDelete,
     Permission.AssignmentRulesRead,
     Permission.AssignmentRulesWrite,
     Permission.AssignmentRulesDelete,
@@ -1056,9 +1040,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.RolesWrite,
     Permission.RolesDelete,
     Permission.RolesAssign,
-    Permission.PermissionSetsRead,
-    Permission.PermissionSetsWrite,
-    Permission.PermissionSetsDelete,
     Permission.AssignmentRulesRead,
     Permission.AssignmentRulesWrite,
     Permission.AssignmentRulesDelete,
@@ -1175,7 +1156,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.MembersRead,
     Permission.GroupsRead,
     Permission.RolesRead,
-    Permission.PermissionSetsRead,
     // Integrations (read + limited write)
     Permission.IntegrationsRead,
     Permission.ScmConnectionsRead,
@@ -1254,7 +1234,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.MembersRead,
     Permission.GroupsRead,
     Permission.RolesRead,
-    Permission.PermissionSetsRead,
     // Integrations (read only)
     Permission.IntegrationsRead,
     Permission.ScmConnectionsRead,

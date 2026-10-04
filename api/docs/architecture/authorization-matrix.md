@@ -30,7 +30,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 22 | `scans:read/write/delete/execute`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
 | Sensors | 9 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete` |
-| Team | 23 | `team:*`, `members:*`, `groups:*`, `roles:*`, `permission_sets:*`, `assignment_rules:*` |
+| Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
 | Attack Surface | 4 | `scope:read/write/delete`, `scope:exclusions:approve` |
@@ -1236,12 +1236,22 @@ and standardized. The following are **decisions**, not accidents — each was ma
 deliberately and, where a design choice was involved, benchmarked against
 Tenable.sc's RBAC.
 
-1. **Allow-only, default-deny.** A user's effective permission set is the *union*
-   of what their roles grant. There is **no deny-override**: a permission-set can
-   only *add* capability, never subtract it at the enforcement layer. A "deny" that
-   appears in the UI/permission-set model is advisory (Layer-2), it does **not**
-   gate the API. This mirrors Tenable.sc, which is purely additive with no
-   deny-override. → we will **not** build a permission-set deny-gate.
+1. **Allow-only, default-deny, roles only.** A user's effective permissions are
+   the *union* of what their roles grant, and roles are the **only** source of
+   permissions. There is no deny-override. This mirrors Tenable.sc, which is
+   purely additive with no deny-override.
+
+   Groups (teams) carry **only data scope** (which assets their members see),
+   never permissions. Group permission sets and per-group permission overrides
+   were removed: they were never read by enforcement, yet the UI said members
+   inherit them. The `/api/v1/permission-sets` and
+   `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
+   writes their tables, and `team:permission_sets:*` left the catalog
+   (migration 000670 archives those catalog rows and role grants in
+   `access_control_removed_archive`). The tables themselves are dropped by a
+   later contract migration, after a release (expand-contract).
+   `GET /api/v1/me/permissions` now returns the caller's role-derived
+   permissions (it used to return the group-derived set).
 
 2. **Backend is the only authority.** The frontend hides controls the user lacks
    perms for as a UX nicety; it is never the boundary. Every mutation is
