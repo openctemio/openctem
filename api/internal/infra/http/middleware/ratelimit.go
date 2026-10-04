@@ -923,7 +923,7 @@ func (f *FindingActivityRateLimiter) ListMiddleware() func(http.Handler) http.Ha
 			if !limiter.Allow() {
 				f.log.Warn("finding activity rate limit exceeded",
 					"key", key,
-					"path", RedactPath(r.URL.Path),
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1061,7 +1061,7 @@ func (a *AnalyticsRateLimiter) wrapWithKey(rl *RateLimiter, category string) fun
 				a.log.Warn("analytics rate limit exceeded",
 					"category", category,
 					"key", key,
-					"path", RedactPath(r.URL.Path),
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1171,7 +1171,7 @@ func (a *AITriageRateLimiter) RequestMiddleware() func(http.Handler) http.Handle
 			if !limiter.Allow() {
 				a.log.Warn("AI triage rate limit exceeded",
 					"tenant_key", tenantID,
-					"path", RedactPath(r.URL.Path),
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1223,7 +1223,7 @@ func (t *TriggerRateLimiter) wrapWithTenantKey(rl *RateLimiter) func(http.Handle
 			if !limiter.Allow() {
 				t.log.Warn("trigger rate limit exceeded",
 					"tenant_key", tenantID,
-					"path", RedactPath(r.URL.Path),
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1334,7 +1334,7 @@ func (a *AdminMappingRateLimiter) WriteMiddleware() func(http.Handler) http.Hand
 			if !limiter.Allow() {
 				a.log.Warn("admin mapping rate limit exceeded",
 					"key", key,
-					"path", RedactPath(r.URL.Path),
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1461,7 +1461,7 @@ func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler
 				if rel.log != nil {
 					rel.log.Warn("read endpoint rate limit exceeded",
 						"key", key,
-						"path", RedactPath(r.URL.Path),
+						"path", logSafe(RedactPath(r.URL.Path)),
 						"request_id", GetRequestID(r.Context()),
 					)
 				}
