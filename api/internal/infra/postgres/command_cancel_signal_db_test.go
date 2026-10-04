@@ -99,7 +99,7 @@ func TestCancelCommand_OnlyOpenCommands(t *testing.T) {
 		}
 	}
 	status := func(id shared.ID) command.CommandStatus {
-		c, err := cmds.GetByID(ctx, id)
+		c, err := cmds.GetByTenantAndID(ctx, tenant, id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +136,7 @@ func TestCancelCommand_OnlyOpenCommands(t *testing.T) {
 	// The write itself is conditional: a command that finished after the
 	// read is left as it is.
 	raced := newLeaseTestCommand(ctx, t, cmds, tenant)
-	stale, err := cmds.GetByID(ctx, raced)
+	stale, err := cmds.GetByTenantAndID(ctx, tenant, raced)
 	if err != nil {
 		t.Fatal(err)
 	}

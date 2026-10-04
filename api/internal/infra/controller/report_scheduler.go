@@ -21,7 +21,7 @@ type ReportScheduleStore interface {
 	// ClaimDue moves next_run_at from seen to next and reports whether this
 	// caller won the slot. Every replica runs this controller; only the winner
 	// renders and delivers.
-	ClaimDue(ctx context.Context, id shared.ID, seen *time.Time, next time.Time) (bool, error)
+	ClaimDue(ctx context.Context, tenantID, id shared.ID, seen *time.Time, next time.Time) (bool, error)
 	Update(ctx context.Context, s *reportschedule.ReportSchedule) error
 }
 
@@ -134,7 +134,7 @@ func (c *ReportScheduler) Reconcile(ctx context.Context) (int, error) {
 		// advance next_run_at, otherwise the schedule busy-loops every tick.
 		next := c.nextRun(s, now)
 
-		won, err := c.store.ClaimDue(ctx, s.ID(), s.NextRunAt(), *next)
+		won, err := c.store.ClaimDue(ctx, s.TenantID(), s.ID(), s.NextRunAt(), *next)
 		if err != nil {
 			c.logger.Error("failed to claim report schedule", "schedule_id", s.ID().String(), "error", err)
 			continue
