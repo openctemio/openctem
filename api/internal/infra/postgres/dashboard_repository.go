@@ -1110,7 +1110,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1
 				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
-			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND ` + crownJewelPropSQL + `
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
 		mttr_critical AS (
 			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
