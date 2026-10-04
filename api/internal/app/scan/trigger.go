@@ -314,6 +314,12 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		return nil, err
 	}
 
+	// A connector scan (RFC-047) is one command for the connector's sensor;
+	// the sensor's zone routing and platform routing below do not apply.
+	if _, connector := s.isConnectorScanner(ctx, sc.ScannerName); connector {
+		return s.triggerConnectorScan(ctx, sc, resolved, triggerType, triggeredBy, runContext, retryAttempt, scheduledFor)
+	}
+
 	// Scan zones (RFC-023): once the tenant has zones, a network scanner's
 	// targets are routed to the narrowest zone, batched, and pinned to a
 	// healthy sensor of that zone. Without zones nothing below changes.
@@ -1037,6 +1043,9 @@ func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string
 			shared.ErrValidation,
 		)
 	}
+	if tool.IsConnector() && s.connectorScans == nil {
+		return ErrConnectorScansUnavailable
+	}
 
 	return nil
 }
@@ -1088,6 +1097,13 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 			return shared.NewDomainError(
 				"TOOL_NOT_SCANNER",
 				fmt.Sprintf("'%s' used by step '%s' is an asset collector, not a scanner: it runs on its collector sensor's own schedule. Use a scanner.", step.Tool, step.StepKey),
+				shared.ErrValidation,
+			)
+		}
+		if tool.IsConnector() {
+			return shared.NewDomainError(
+				"TOOL_NOT_SCANNER",
+				fmt.Sprintf("'%s' used by step '%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", step.Tool, step.StepKey),
 				shared.ErrValidation,
 			)
 		}

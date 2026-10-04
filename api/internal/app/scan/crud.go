@@ -398,6 +398,10 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 				return fmt.Errorf("%w: pipeline step '%s' uses '%s', an asset collector: collectors run on their collector sensor's own schedule and cannot be scanned with",
 					shared.ErrValidation, step.StepKey, step.Tool)
 			}
+			if stepTool.IsConnector() {
+				return fmt.Errorf("%w: pipeline step '%s' uses '%s', a connector: a connector runs as the scanner of a single scan, not as a workflow step",
+					shared.ErrValidation, step.StepKey, step.Tool)
+			}
 		}
 	}
 
@@ -419,6 +423,13 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 	}
 	if scannerTool.IsCollector() {
 		return fmt.Errorf("%w: '%s' is an asset collector, not a scanner: collectors run on their collector sensor's own schedule and cannot be scanned with", shared.ErrValidation, scannerName)
+	}
+	if scannerTool.IsConnector() {
+		// A connector scan (RFC-047): its config names the connector
+		// integration and the Tenable.sc policy and repository.
+		if err := s.validateConnectorScanner(ctx, sc.TenantID, scannerConfig); err != nil {
+			return err
+		}
 	}
 
 	tpj := max(targetsPerJob, 1)
@@ -692,6 +703,11 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		// A config saved back as it was shown masked keeps the stored
 		// secrets instead of storing the mask (scan.RedactConfigSecrets).
 		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
+		if _, connector := s.isConnectorScanner(ctx, input.ScannerName); connector {
+			if err := s.validateConnectorScanner(ctx, sc.TenantID, cfg); err != nil {
+				return nil, err
+			}
+		}
 		if err := sc.SetSingleScanner(input.ScannerName, cfg, targetsPerJob); err != nil {
 			return nil, err
 		}

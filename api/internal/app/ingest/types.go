@@ -179,22 +179,34 @@ type Output struct {
 	// AssetsSkippedOutOfScope counts report assets an upload's actor may not
 	// change (Options.Actor): existing assets outside their data scope and
 	// hosts that would have been new. Their findings are skipped.
-	AssetsSkippedOutOfScope int      `json:"assets_skipped_out_of_scope,omitempty"`
-	FindingsCreated         int      `json:"findings_created"`
-	FindingsUpdated         int      `json:"findings_updated"`
-	FindingsSkipped         int      `json:"findings_skipped"`
-	FindingsAutoResolved    int      `json:"findings_auto_resolved,omitempty"`
-	FindingsAutoReopened    int      `json:"findings_auto_reopened,omitempty"`
-	FindingsSuppressed      int      `json:"findings_suppressed,omitempty"`
-	ComponentsCreated       int      `json:"components_created,omitempty"`
-	ComponentsUpdated       int      `json:"components_updated,omitempty"`
-	DependenciesLinked      int      `json:"dependencies_linked,omitempty"`
-	LicensesDiscovered      int      `json:"licenses_discovered,omitempty"`
-	LicensesLinked          int      `json:"licenses_linked,omitempty"`
-	CVEsCreated             int      `json:"cves_created,omitempty"`
-	CVEsUpdated             int      `json:"cves_updated,omitempty"`
-	Errors                  []string `json:"errors,omitempty"`
-	Warnings                []string `json:"warnings,omitempty"`
+	AssetsSkippedOutOfScope int `json:"assets_skipped_out_of_scope,omitempty"`
+	FindingsCreated         int `json:"findings_created"`
+	FindingsUpdated         int `json:"findings_updated"`
+	FindingsSkipped         int `json:"findings_skipped"`
+	FindingsAutoResolved    int `json:"findings_auto_resolved,omitempty"`
+	FindingsAutoReopened    int `json:"findings_auto_reopened,omitempty"`
+	// FindingsSourceResolved counts open findings resolved because their
+	// source reported them mitigated (Tenable.sc, RFC-047); in dry_run mode
+	// FindingsSourceWouldResolve counts them instead.
+	FindingsSourceResolved     int `json:"findings_source_resolved,omitempty"`
+	FindingsSourceWouldResolve int `json:"findings_source_would_resolve,omitempty"`
+	// FindingsSourceMitigated counts the report's findings its source said
+	// are mitigated; they are never created or updated as sightings.
+	FindingsSourceMitigated int `json:"findings_source_mitigated,omitempty"`
+	// SourceResolveIDs are the findings source-asserted resolve closed (or,
+	// in dry_run, would close); SourceResolveMode is the mode it ran in.
+	SourceResolveIDs   []shared.ID       `json:"-"`
+	SourceResolveMode  SourceResolveMode `json:"-"`
+	FindingsSuppressed int               `json:"findings_suppressed,omitempty"`
+	ComponentsCreated  int               `json:"components_created,omitempty"`
+	ComponentsUpdated  int               `json:"components_updated,omitempty"`
+	DependenciesLinked int               `json:"dependencies_linked,omitempty"`
+	LicensesDiscovered int               `json:"licenses_discovered,omitempty"`
+	LicensesLinked     int               `json:"licenses_linked,omitempty"`
+	CVEsCreated        int               `json:"cves_created,omitempty"`
+	CVEsUpdated        int               `json:"cves_updated,omitempty"`
+	Errors             []string          `json:"errors,omitempty"`
+	Warnings           []string          `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).
