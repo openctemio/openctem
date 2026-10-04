@@ -84,25 +84,32 @@ func LoadTenantTables(path string) (map[string]bool, error) {
 	return out, nil
 }
 
-// Scan parses every non-test Go file in dir and returns the tenantless
+// Scan parses every non-test Go file in dir (one package) and returns the tenantless
 // statements on tables in tenantTables.
 func Scan(dir string, tenantTables map[string]bool) ([]Finding, error) {
-	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
+	paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
 		return nil, err
 	}
+	fset := token.NewFileSet()
+	files := map[string]*ast.File{}
+	for _, p := range paths {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, p, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		files[p] = f
+	}
+	globals, funcs := packageStrings(files)
 	var out []Finding
-	for _, pkg := range pkgs {
-		globals, funcs := packageStrings(pkg)
-		for path, f := range pkg.Files {
-			base := filepath.Base(path)
-			for _, d := range f.Decls {
-				if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
-					out = append(out, scanFunc(fset, base, fd, globals, funcs, tenantTables)...)
-				}
+	for path, f := range files {
+		base := filepath.Base(path)
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				out = append(out, scanFunc(fset, base, fd, globals, funcs, tenantTables)...)
 			}
 		}
 	}
@@ -112,9 +119,9 @@ func Scan(dir string, tenantTables map[string]bool) ([]Finding, error) {
 
 // packageStrings collects the package-level constants and variables, and the
 // no-argument helpers that return one expression, keyed by name.
-func packageStrings(pkg *ast.Package) (globals, funcs map[string]ast.Expr) { //nolint:staticcheck // ast.Package is what parser.ParseDir returns
+func packageStrings(files map[string]*ast.File) (globals, funcs map[string]ast.Expr) {
 	globals, funcs = map[string]ast.Expr{}, map[string]ast.Expr{}
-	for _, f := range pkg.Files {
+	for _, f := range files {
 		for _, d := range f.Decls {
 			if fd, ok := d.(*ast.FuncDecl); ok {
 				if r := singleReturn(fd); r != nil {
