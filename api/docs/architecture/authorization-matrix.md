@@ -780,6 +780,11 @@ owner-managed) are enforced, not just stored. See
 
 ## Data scope (Layer 2: access groups)
 
+Scans act on assets, so the data scope also limits scan targets: a restricted
+member scans only assets in their scope, and an unrestricted actor's free-text
+targets must match a scope target (decision D9). See
+[active-probe-gate.md](active-probe-gate.md#act-scope-who-may-scan-what).
+
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
 they may see and change. Scope rows live in `user_accessible_assets`, computed
@@ -916,6 +921,7 @@ results an out-of-scope id is reported exactly like an unknown id.
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
 | `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
+| `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 
