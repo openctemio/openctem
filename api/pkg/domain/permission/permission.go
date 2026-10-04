@@ -35,6 +35,11 @@ func (p Permission) String() string {
 const (
 	// Dashboard permissions
 	DashboardRead Permission = "dashboard:read"
+	// DashboardAggregate shows organization-wide dashboard totals to a viewer
+	// whose data scope is restricted (owner decision D6, research doc 15):
+	// without it, a restricted viewer's dashboard counts only their own
+	// assets and findings. Breakdowns under 5 are left out (k-floor).
+	DashboardAggregate Permission = "dashboard:aggregate"
 
 	// Audit log permissions
 	AuditRead Permission = "audit:read"
@@ -426,7 +431,7 @@ const (
 func AllPermissions() []Permission {
 	return []Permission{
 		// Core
-		DashboardRead,
+		DashboardRead, DashboardAggregate,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 

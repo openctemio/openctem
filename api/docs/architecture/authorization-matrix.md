@@ -960,6 +960,24 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
 | `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
 
+### Dashboards follow the viewer
+
+Owner decision D6 (research doc 15 P1-4): a dashboard number means "in what
+you can see". `GET /dashboard/stats` counts (assets and findings by type,
+status, severity, averages, repositories, the monthly finding trend) are
+computed with the same SQL condition as every scoped list:
+
+| Viewer | Counts |
+|---|---|
+| Owner / admin / full-data role / unrestricted member | the organization |
+| Restricted member | only their in-scope assets and those assets' findings (0 in a fail-closed organization without a group) |
+| Restricted member with **`dashboard:aggregate`** (new permission, migration `000600`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
+
+Recent activity and top risks are row data and stay limited to the viewer's
+scope whatever the permission. The other dashboard metrics (MTTR, velocity,
+data quality, risk trend, program, process and executive metrics) move the
+same way in a follow-up; until then they stay in the table below.
+
 ### Deliberately tenant-wide (counts only, no row data)
 
 These return aggregates over the whole tenant to every holder of the read
@@ -968,7 +986,6 @@ query; none exposes a row, name, title or id of an out-of-scope object.
 
 | Endpoint | Why tenant-wide |
 |---|---|
-| `GET /dashboard/stats` counts (assets/findings by type, status, severity, avg risk/CVSS, repositories, finding trend) | one batched aggregate query; counts only |
 | `GET /dashboard/{mttr,velocity,data-quality,risk-trend,mttr-analytics,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
 | `GET /attack-surface/stats` average risk score and per-type breakdown | aggregate; the counts and row lists on that endpoint are scoped |
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
