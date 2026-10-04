@@ -35,7 +35,6 @@ func TestDefaultMapping_PreservesLegacyBehaviour(t *testing.T) {
 		"verified":    vulnerability.FindingStatusFixApplied,
 		"Backlog":     vulnerability.FindingStatusConfirmed,
 		"reopened":    vulnerability.FindingStatusConfirmed,
-		"Duplicate":   vulnerability.FindingStatusDuplicate,
 	}
 	for js, want := range statusCases {
 		got, ok := m.FindingStatusForJira(js)
@@ -44,6 +43,10 @@ func TestDefaultMapping_PreservesLegacyBehaviour(t *testing.T) {
 		}
 	}
 
+	// A ticket never marks a duplicate (it closes the finding).
+	if _, ok := m.FindingStatusForJira("Duplicate"); ok {
+		t.Error("Jira Duplicate must not map to a finding status")
+	}
 	if _, ok := m.FindingStatusForJira("Some Custom State"); ok {
 		t.Error("unmapped Jira status should return ok=false")
 	}
