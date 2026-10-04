@@ -870,11 +870,23 @@ of the view/act work (P2).
   (`settings.security.restricted_data_scope = true`, no longer read) keeps
   `nothing`.
 - New organizations start with `nothing` (column default).
-- `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
-  (`{"members_without_group_see": "everything"|"nothing"}`), owner/admin
-  (`RequireTeamAdmin`). A change is audited (`tenant.settings_updated`,
-  severity high, before/after in `changes`) and drops the enforcer's 60-second
-  policy cache for that organization at once.
+- `GET /api/v1/tenants/{tenant}/settings/data-scope` (owner/admin) returns
+  `{"members_without_group_see": "everything"|"nothing", "deprecated": bool}`.
+- **`everything` is being retired** (owner decision D2, research doc 15 L-04).
+  It is never flipped by a migration; each organization's owner switches:
+  - `GET /api/v1/organization/settings/data-scope/impact` (owner/admin) is
+    the pre-flight report: the active members who are not owner or admin, hold
+    no `has_full_data_access` role and have no scope row, i.e. who see
+    everything today only because of the policy and would see nothing after
+    the switch (exact `total_count`, at most 500 listed).
+  - `PATCH .../settings/data-scope` is **owner only** (`RequireTeamOwner`) and
+    goes one way: to `nothing`. Switching back to `everything` is refused
+    (400). A change is audited (`tenant.settings_updated`, severity high,
+    before/after in `changes`) and drops the enforcer's 60-second policy cache
+    for that organization at once.
+  - The web console shows owners and admins of an `everything` organization a
+    banner (dismissable per session) linking to Settings → Teams, where the
+    card names the affected members and only the owner can switch.
 - A failure to read the policy is treated as `everything` (a database hiccup
   must not hide all data); every other scope-lookup error denies.
 
