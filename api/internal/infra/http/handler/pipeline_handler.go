@@ -929,6 +929,12 @@ func (h *PipelineHandler) TriggerRun(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.service.TriggerPipeline(pipelineAuditCtx(r), input)
 	if err != nil {
+		// A refused asset_id (unknown, deleted, another tenant's, or out of
+		// the caller's data scope) gets one generic answer.
+		if errors.Is(err, pipelinesvc.ErrRunAssetNotFound) {
+			apierror.NotFound("Asset").WriteJSON(w)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
