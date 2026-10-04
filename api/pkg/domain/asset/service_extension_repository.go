@@ -64,7 +64,7 @@ type AssetServiceRepository interface {
 
 	// UpdateFindingCounts updates finding counts for multiple services.
 	// Maps serviceID -> count
-	UpdateFindingCounts(ctx context.Context, counts map[shared.ID]int) error
+	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, counts map[shared.ID]int) error
 
 	// ==========================================================================
 	// Statistics & Aggregations

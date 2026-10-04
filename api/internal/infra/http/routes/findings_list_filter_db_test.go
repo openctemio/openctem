@@ -36,7 +36,12 @@ type flCaller struct {
 
 func (h *gsHarness) listFindings(t *testing.T, c flCaller, query string) (int, http.Header, string) {
 	t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, h.srv.URL+"/api/v1/findings?"+query, nil)
+	return h.listFindingsPath(t, c, "/api/v1/findings?"+query)
+}
+
+func (h *gsHarness) listFindingsPath(t *testing.T, c flCaller, path string) (int, http.Header, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, h.srv.URL+path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
