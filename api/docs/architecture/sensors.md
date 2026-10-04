@@ -642,16 +642,27 @@ Each segment runs through the v1 pipeline with the v2 options:
 - **No global catalog writes.** Findings link to CVE catalog rows that
   exist; the sensor's CVE text stays on the tenant's finding. The catalog is
   written by trusted feeds only.
-- **Auto-resolve only on commit.** Once every segment of a committed report
-  has an outcome, exactly one job claims the finalization: auto-resolve over
-  the union of assets the report touched (full coverage, default branch, a
-  tool the sensor declares), the branch-occurrence sweep and the finding
-  counts. The **blinding guard** holds an auto-resolve that would close more
-  than `SENSOR_V2_BLINDING_MIN_FINDINGS` (100) and more than
-  `SENSOR_V2_BLINDING_RATIO` (50 %) of the open findings of that tool on
-  those assets; the status then says `auto_resolve: held`.
-- **Coverage-scoped auto-resolve (non-repository findings).** The commit
-  auto-resolve above only covers repository default branches, so a host or
+- **Default-branch auto-resolve needs a proven run** (research 18 F3). Only a
+  protocol v2 run **bound to a command** closes repository findings; it is
+  evaluated per command (`evaluateRepoCoverage`) at the report's commit and
+  again when the command completes. It qualifies only if the command
+  completed with exit code 0, every report of the run completed with nothing
+  rejected, quarantined or in error, every report is an **explicitly** `full`
+  scan of a default branch (a missing `coverage_type` is not full), and all
+  reports name one tool the sensors declare. Candidates are open
+  default-branch findings of that tool on the assets the run touched **and**
+  the command covers, not reported by the run, and last seen by a report of
+  the same tool **under the same scan profile** (the stand-in for "same
+  ruleset" until runs carry a ruleset digest; a finding last seen under
+  another profile, by a v1 report or by an upload is never a candidate). The
+  blinding guard holds a close of more than `SENSOR_V2_BLINDING_MIN_FINDINGS`
+  (100) and more than `SENSOR_V2_BLINDING_RATIO` (50 %) of the open findings
+  of that tool on those assets (`auto_resolve: held`). A report without a
+  command (CI, collector, `warn` mode), a tenant upload and any protocol v1
+  report never close a finding (owner decision O11); the per-branch
+  occurrence sweep is unchanged.
+- **Coverage-scoped auto-resolve (non-repository findings).** The
+  default-branch auto-resolve above only covers repository findings, so a host or
   web finding was never closed by a later scan. A scan command is evaluated
   when it is `completed` AND every report filed under it is `completed`
   (checked from both ends: command completion and report finalize). It

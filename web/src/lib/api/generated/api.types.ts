@@ -13214,6 +13214,8 @@ export interface paths {
           updated_at_gt?: string
           /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           updated_at_lt?: string
+          /** @description Saved view ID: its filter, with the other params overriding it field by field */
+          view?: string
           /** @description Free text over title, description and file path */
           q?: string
           /** @description Sort keys, - for descending (default priority_class,severity,-created_at) */
@@ -14838,6 +14840,8 @@ export interface paths {
           updated_at_gt?: string
           /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           updated_at_lt?: string
+          /** @description Saved view ID: its filter, with the other params overriding it field by field */
+          view?: string
           /** @description Free text */
           q?: string
         }
@@ -15203,6 +15207,8 @@ export interface paths {
           updated_at_gt?: string
           /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           updated_at_lt?: string
+          /** @description Saved view ID: its filter, with the other params overriding it field by field */
+          view?: string
           /** @description Free text */
           q?: string
           /** @description Ignored by groups (accepted for URL parity with the list) */
@@ -15945,6 +15951,8 @@ export interface paths {
           updated_at_gt?: string
           /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           updated_at_lt?: string
+          /** @description Saved view ID: its filter, with the other params overriding it field by field */
+          view?: string
           /** @description Free text */
           q?: string
         }
@@ -32631,6 +32639,238 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/views': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List saved views
+     * @description The caller's saved views of a page and the ones shared with their groups.
+     */
+    get: {
+      parameters: {
+        query: {
+          /** @description Page */
+          page: 'findings'
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Save a view
+     * @description Saves a filter (a FilterDocument, or the page's flat query) and page state. Validated against
+     *     the page's filter fields (400 INVALID_FILTER). group_id shares it with one of the caller's groups.
+     *     from_view_id instead copies a view the caller can see into a new personal view (A1).
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.SavedViewRequest']
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SavedViewResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Limit reached */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/views/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a saved view */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description View ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SavedViewResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    /**
+     * Update a saved view
+     * @description Only the owner may change a view (403 for a shared view of someone else; duplicate it instead).
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description View ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.SavedViewRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SavedViewResponse']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    post?: never
+    /** Delete a saved view */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description View ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/vulnerabilities': {
     parameters: {
       query?: never
@@ -39386,6 +39626,41 @@ export interface components {
     'internal_infra_http_handler.SaveScanRequest': {
       name: string
     }
+    'internal_infra_http_handler.SavedViewRequest': {
+      columns?: string[]
+      density?: string
+      description?: string
+      filter?: Record<string, never>
+      /**
+       * @description FromViewID duplicates a view the caller can see into a new personal
+       *     view (how a team member changes a shared view, decision A1); the
+       *     other fields are ignored then, except name.
+       */
+      from_view_id?: string
+      group_by?: string
+      group_id?: string
+      name?: string
+      page?: string
+      query?: string
+    }
+    'internal_infra_http_handler.SavedViewResponse': {
+      columns?: string[]
+      created_at?: string
+      density?: string
+      description?: string
+      filter?: Record<string, never>
+      group_by?: string
+      group_id?: string
+      group_name?: string
+      id?: string
+      /** @description IsOwner says whether the caller may edit or delete it (decision A1). */
+      is_owner?: boolean
+      name?: string
+      owner_id?: string
+      owner_name?: string
+      page?: string
+      updated_at?: string
+    }
     'internal_infra_http_handler.ScanDetailResponse': {
       /** @description AdHoc: an unsaved quick scan (not listed as a configuration until saved). */
       ad_hoc?: boolean
@@ -41027,6 +41302,12 @@ export interface components {
   responses: never
   parameters: never
   requestBodies: {
+    /** @description View */
+    'internal_infra_http_handler.SavedViewRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.SavedViewRequest']
+      }
+    }
     /** @description Update data */
     'internal_infra_http_handler.UpdateToolRequest': {
       content: {

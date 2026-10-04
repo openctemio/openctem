@@ -22,7 +22,6 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -230,13 +229,6 @@ func (g BlindingGuard) Holds(stale, open int) bool {
 	return stale > g.MinFindings && float64(stale) > g.Ratio*float64(open)
 }
 
-// autoResolveCounter is the dry-run count the blinding guard needs. Optional
-// so finding repository fakes need not implement it; without it the guard
-// cannot measure, and a commit holds rather than resolves.
-type autoResolveCounter interface {
-	CountAutoResolveCandidates(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, toolName, currentScanID string) (stale, open int, err error)
-}
-
 // CommitResult is what the commit-time steps did.
 type CommitResult struct {
 	AutoResolved int
@@ -300,6 +292,8 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 				"sensor_id", prov.SensorID.String(), "report_id", prov.ReportID)
 			return res
 		}
+		// Warn mode: the per-branch occurrence sweep still runs, but a report
+		// without a command never closes a finding (owner decision O11).
 	} else {
 		scoped = s.coveredByCommand(ctx, tenantID, prov.CommandID, touched)
 		if len(scoped) == 0 {
@@ -323,37 +317,28 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 		return res
 	}
 
-	if input.ShouldAutoResolve() {
-		counter, ok := s.findingRepo.(autoResolveCounter)
-		if !ok {
-			res.AutoResolve = protov2.AutoResolveHeld
-			return res
-		}
-		stale, open, err := counter.CountAutoResolveCandidates(ctx, tenantID, scoped, toolName, prov.ReportID)
-		if err != nil {
-			s.logger.Warn("v2 commit: blinding guard could not count; auto-resolve held", "error", err)
-			res.AutoResolve = protov2.AutoResolveHeld
-			return res
-		}
-		if guard.Holds(stale, open) {
-			s.logger.Warn("v2 commit: auto-resolve held for review (blinding guard)",
-				"sensor_id", prov.SensorID.String(), "report_id", prov.ReportID,
-				"tool_name", sanitizeIngestLogField(toolName), "would_resolve", stale, "open", open)
-			res.AutoResolve = protov2.AutoResolveHeld
-			return res
-		}
-		resolved, err := s.findingRepo.AutoResolveStaleByAssets(ctx, tenantID, scoped, toolName, prov.ReportID, nil)
-		if err != nil {
-			s.logger.Warn("v2 commit: auto-resolve failed", "error", err)
-			return res
-		}
-		res.AutoResolve = protov2.AutoResolveApplied
-		res.AutoResolved = len(resolved)
-		if len(resolved) > 0 {
-			app.FindingsAutoResolved.WithLabelValues().Add(float64(len(resolved)))
-			if s.activityService != nil {
-				if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, toolName, prov.ReportID); err != nil {
-					s.logger.Warn("failed to record auto-resolve activities", "error", err)
+	// Default-branch findings close only through the per-command evaluation
+	// (evaluateRepoCoverage): it needs the command completed with exit 0 and
+	// every report of the run clean, so it runs here when the command already
+	// finished, and again when it does (command completion, finalize).
+	if input.ShouldAutoResolve() && prov.CommandID != nil {
+		if repo, ok := s.findingRepo.(coverageRepo); ok {
+			if cov, err := repo.CommandCoverage(ctx, tenantID, *prov.CommandID); err == nil {
+				// This report is being finalized: committed, with every
+				// segment's outcome recorded (ClaimFinalize). Its row says
+				// so only after Finish, so count it as completed here.
+				for i := range cov.Reports {
+					if cov.Reports[i].ReportID == prov.ReportID {
+						cov.Reports[i].State = protov2.StateCompleted
+					}
+				}
+				out := s.evaluateRepoCoverage(ctx, tenantID, *prov.CommandID, cov, guard)
+				switch {
+				case out.Held:
+					res.AutoResolve = protov2.AutoResolveHeld
+				case out.Reason == coverageEligible:
+					res.AutoResolve = protov2.AutoResolveApplied
+					res.AutoResolved = len(out.Resolved)
 				}
 			}
 		}

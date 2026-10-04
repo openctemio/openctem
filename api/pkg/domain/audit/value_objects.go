@@ -125,6 +125,11 @@ const (
 
 	// SLA Policy actions
 	ActionSLAPolicyCreated Action = "sla_policy.created"
+
+	// Saved list views (D15).
+	ActionSavedViewCreated Action = "saved_view.created"
+	ActionSavedViewUpdated Action = "saved_view.updated"
+	ActionSavedViewDeleted Action = "saved_view.deleted"
 	ActionSLAPolicyUpdated Action = "sla_policy.updated"
 	ActionSLAPolicyDeleted Action = "sla_policy.deleted"
 
@@ -493,6 +498,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
+		ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
@@ -597,6 +603,8 @@ func (a Action) Category() string {
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
+	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
+		return "saved_view"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
 	case ActionScanStarted, ActionScanCompleted, ActionScanFailed:
@@ -687,6 +695,7 @@ const (
 	ResourceTypeFinding          ResourceType = "finding"
 	ResourceTypeFindingComment   ResourceType = "finding_comment"
 	ResourceTypeSLAPolicy        ResourceType = "sla_policy"
+	ResourceTypeSavedView        ResourceType = "saved_view"
 	ResourceTypeScan             ResourceType = "scan"
 	ResourceTypeAsset            ResourceType = "asset"
 	ResourceTypeSettings         ResourceType = "settings"
@@ -745,7 +754,7 @@ func (r ResourceType) IsValid() bool {
 	case ResourceTypeUser, ResourceTypeTenant, ResourceTypeMembership,
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
-		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeScan,
+		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
 		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,

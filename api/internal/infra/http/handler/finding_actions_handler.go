@@ -9,9 +9,11 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -31,6 +33,7 @@ type FindingActionsHandler struct {
 	service          *app.FindingActionsService
 	validationRunner ValidationRunner
 	sourceAnalytics  *app.SourceAnalyticsService
+	savedViews       *savedviewapp.Service
 	logger           *logger.Logger
 }
 
@@ -43,6 +46,11 @@ func NewFindingActionsHandler(svc *app.FindingActionsService, log *logger.Logger
 // validate endpoint responds 503 (feature not configured).
 func (h *FindingActionsHandler) SetValidationRunner(r ValidationRunner) {
 	h.validationRunner = r
+}
+
+// SetSavedViews wires saved views, for ?view=<id> on the grouped view.
+func (h *FindingActionsHandler) SetSavedViews(svc *savedviewapp.Service) {
+	h.savedViews = svc
 }
 
 // SetSourceAnalytics wires the finding source-analytics service (Tool Insights +
@@ -179,6 +187,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // end filterspec-params
+// @Param        view   query  string  false  "Saved view ID: its filter, with the other params overriding it field by field"
 // @Param        q         query  string  false  "Free text"
 // @Param        sort      query  string  false  "Ignored by groups (accepted for URL parity with the list)"
 // @Param        page      query  int     false  "Page number"  default(1)
@@ -200,6 +209,9 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 	}
 	spec, ok := h.findingGroupsRoute().ParseValues(w, r, q)
 	if !ok {
+		return
+	}
+	if spec, ok = applySavedView(h.savedViews, savedview.PageFindings, w, r, spec); !ok {
 		return
 	}
 	perPage := spec.PerPage
