@@ -238,3 +238,62 @@ func TestEvaluateCommandCoverage_Refusals(t *testing.T) {
 		}
 	})
 }
+
+// A repository run closes default-branch findings only on proof that it ran
+// cleanly and covered the whole default branch (research 18 F3).
+func TestDecideRepoCoverage(t *testing.T) {
+	sensorID, assetID := shared.NewID(), shared.NewID()
+	mainFull := ctis.ReportMetadata{CoverageType: "full", Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true}}
+	repoRun := func() *ingestreport.CommandCoverage {
+		c := completedRun(t, sensorID, assetID)
+		c.Reports[0].ToolName = "semgrep"
+		c.Reports[0].Header = coverageHeader(t, "semgrep", mainFull)
+		return c
+	}
+	cases := []struct {
+		name   string
+		mutate func(*ingestreport.CommandCoverage)
+		want   string
+	}{
+		{"clean full default-branch run", func(*ingestreport.CommandCoverage) {}, coverageEligible},
+		{"scanner exited non-zero (semgrep found errors)", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":2}`)
+		}, coverageNonZeroExit},
+		{"command still running", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "running" }, coverageCommandNotCompleted},
+		{"scanner errors in the report", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].SegmentOutcomes["1"] = ingestreport.SegmentOutcome{Errors: []protov2.ItemError{{Code: "x"}}}
+		}, coverageRejectedItems},
+		{"coverage type missing is not full", func(c *ingestreport.CommandCoverage) {
+			md := mainFull
+			md.CoverageType = ""
+			c.Reports[0].Header = coverageHeader(t, "semgrep", md)
+		}, coverageUndeclared},
+		{"incremental", func(c *ingestreport.CommandCoverage) {
+			md := mainFull
+			md.CoverageType = "incremental"
+			c.Reports[0].Header = coverageHeader(t, "semgrep", md)
+		}, coveragePartial},
+		{"feature branch", func(c *ingestreport.CommandCoverage) {
+			md := mainFull
+			md.Branch = &ctis.BranchInfo{Name: "feat/x"}
+			c.Reports[0].Header = coverageHeader(t, "semgrep", md)
+		}, coverageNotDefaultBranch},
+		{"no branch: not a repository run", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "semgrep", ctis.ReportMetadata{CoverageType: "full"})
+		}, coverageNotRepositoryScan},
+		{"reserved tool", func(c *ingestreport.CommandCoverage) { c.Reports[0].ToolName = "manual" }, coverageReservedTool},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := repoRun()
+			tc.mutate(c)
+			if got := decideRepoCoverage(c).reason; got != tc.want {
+				t.Fatalf("reason = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	// The non-repository decision hands such a run over.
+	if got := decideCoverage(repoRun()).reason; got != coverageRepositoryScan {
+		t.Fatalf("decideCoverage on a repository run = %q, want %q", got, coverageRepositoryScan)
+	}
+}

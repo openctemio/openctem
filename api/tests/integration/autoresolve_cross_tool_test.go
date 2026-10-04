@@ -13,52 +13,38 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 type crossToolRig struct {
-	r   *v2Rig
-	tn  v2Tenant
-	svc *ingest.Service
-	agt *sensor.Sensor
+	r  *v2Rig
+	tn v2Tenant
 }
 
 func newCrossToolRig(t *testing.T) *crossToolRig {
 	t.Helper()
-	r := newV2Rig(t, ingest.DefaultBlindingGuard())
-	tn := r.newTenant("trivy", "grype")
-	db := &postgres.DB{DB: r.db}
-	svc := ingest.NewService(
-		postgres.NewAssetRepository(db), postgres.NewFindingRepository(db),
-		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
-		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
-		postgres.NewAuditRepository(db), logger.NewNop())
-	tid := tn.tenant
-	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
-	return &crossToolRig{r: r, tn: tn, svc: svc, agt: agt}
+	r, _ := newBindingV2Rig(t)
+	return &crossToolRig{r: r, tn: r.newTenant("trivy", "grype")}
 }
 
-// fullScan ingests a full default-branch scan of the tenant's repository by tool.
+// fullScan sends a full default-branch scan of the tenant's repository by
+// tool, as a protocol v2 report of its own cleanly completed command: the only
+// kind of run that may close default-branch findings (research 18 F3).
 func (c *crossToolRig) fullScan(t *testing.T, tool string, fs ...ctis.Finding) {
 	t.Helper()
 	for i := range fs {
 		fs[i].AssetRef = "repo"
 	}
 	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC(), CoverageType: "full",
+		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(), CoverageType: "full",
 			Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + c.tn.repo}},
 		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: c.tn.repo}},
 		Findings: fs}
-	out, err := c.svc.Ingest(context.Background(), c.agt, ingest.Input{Report: rep, CoverageType: ingest.CoverageTypeFull})
-	if err != nil {
-		t.Fatalf("ingest %s: %v", tool, err)
-	}
-	if len(out.Errors) > 0 {
-		t.Fatalf("ingest %s errors: %v", tool, out.Errors)
+	cmd := c.r.runCommand(c.tn, tool, "", "completed", 0)
+	st := c.r.sendWhole(c.tn, c.r.openAs(c.tn, shared.NewID().String(), "worker", &cmd, rep), rep)
+	if st.State != protov2.StateCompleted || st.Rejected.Findings != 0 {
+		t.Fatalf("scan %s: %+v", tool, st)
 	}
 }
 
