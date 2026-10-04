@@ -943,6 +943,24 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `GET/POST/DELETE /business-services/{id}/assets`, `POST/DELETE /business-units/{id}/assets` | **bypass** (names; links change an asset's effective criticality) | the list shows in-scope (and not deleted) assets; linking or unlinking an out-of-scope asset answers 404 (L-10) |
 | `GET /ctem-cycles/{id}/scope` | bypass (asset names of the snapshot) | in-scope assets of the snapshot only (L-10) |
 
+### Scheduled report recipients
+
+A scheduled report mails organization posture out, so its recipients are
+limited (owner decision D12, research doc 15 L-19): an **active member of the
+organization**, or an address in one of its **`Security.AllowedDomains`**
+(exact domain, case-insensitive; no allowed domains means members only).
+
+- `POST /reports/schedules` refuses (400) any other recipient; activating a
+  schedule (`PATCH /reports/schedules/{id}/toggle`) re-checks, so a schedule
+  written before the rule, or whose recipient has left, is not switched back
+  on with them.
+- The scheduler re-checks every recipient at send time and skips the ones no
+  longer allowed (logged); with nobody left it sends nothing (`no_recipients`).
+- Create, activate and delete are audited (`report_schedule.*`, with the
+  recipients on create).
+- The report body is still tenant-wide; rendering under the creator's scope is
+  part of P1-4 (D6).
+
 ### Deliberately tenant-wide (counts only, no row data)
 
 These return aggregates over the whole tenant to every holder of the read

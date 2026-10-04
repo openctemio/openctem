@@ -290,6 +290,12 @@ const (
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
 
+	// Report schedule actions: a schedule mails organization posture to its
+	// recipients (members or the allowed domains, D12).
+	ActionReportScheduleCreated   Action = "report_schedule.created"
+	ActionReportScheduleActivated Action = "report_schedule.activated"
+	ActionReportScheduleDeleted   Action = "report_schedule.deleted"
+
 	// Scanner template actions: custom templates are code a sensor runs.
 	ActionScannerTemplateCreated    Action = "scanner_template.created"
 	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
@@ -502,6 +508,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
@@ -607,6 +614,8 @@ func (a Action) Category() string {
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected:
 		return "scope"
+	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
+		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
 		return "scanner_template"
@@ -697,6 +706,7 @@ const (
 	ResourceTypeScopeTarget     ResourceType = "scope_target"
 	ResourceTypeScopeExclusion  ResourceType = "scope_exclusion"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
+	ResourceTypeReportSchedule  ResourceType = "report_schedule"
 )
 
 // String returns the string representation of the resource type.
@@ -721,7 +731,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate,
-		ResourceTypeRemediationCampaign:
+		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule:
 		return true
 	}
 	return false
@@ -835,6 +845,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeTargetUpdated, ActionScopeTargetDeleted, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
