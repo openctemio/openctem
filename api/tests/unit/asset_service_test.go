@@ -730,7 +730,7 @@ func TestAssetService_CreateAsset_GetByNameError(t *testing.T) {
 func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
 	stored := map[string][2]string{
 		"domain": {"domain", ""}, "subdomain": {"subdomain", ""}, "ip_address": {"ip_address", ""},
-		"website": {"application", "website"}, "web_application": {"application", "web_application"},
+		"website": {"application", "website"}, "web_application": {"application", "website"},
 		"api": {"application", "api"}, "repository": {"repository", ""}, "host": {"host", ""},
 		"container": {"container", ""}, "database": {"database", ""}, "network": {"network", ""},
 		"cloud_account": {"cloud_account", ""}, "compute": {"host", "compute"}, "storage": {"storage", ""},

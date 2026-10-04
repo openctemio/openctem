@@ -39,7 +39,7 @@ const IMPORT_PERMISSIONS = [Permission.AssetsWrite, Permission.FindingsWrite]
 // Paused Tenable integration (created before the pause)
 // ─────────────────────────────────────────────────────────
 
-function PausedScannerCard({
+export function PausedScannerCard({
   integration,
   onChanged,
 }: {

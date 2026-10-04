@@ -74,21 +74,21 @@ export default function MyWorkPage() {
       key: 'open',
       label: 'Open · assigned to me',
       value: openTotal,
-      onClick: () => router.push('/findings?mine=true'),
+      onClick: () => router.push('/findings?related_to=me'),
     },
     {
       key: 'critical',
       label: 'Critical / high',
       value: critical?.total ?? 0,
       tone: 'danger',
-      onClick: () => router.push('/findings?mine=true&priority=P0'),
+      onClick: () => router.push('/findings?related_to=me&priority_class=P0'),
     },
     {
       key: 'overdue',
       label: 'Overdue (SLA)',
       value: overdue?.total ?? 0,
       tone: 'danger',
-      onClick: () => router.push('/findings?mine=true&sla_status=overdue'),
+      onClick: () => router.push('/findings?related_to=me&sla_status=overdue'),
     },
   ]
 
@@ -187,7 +187,7 @@ export default function MyWorkPage() {
             }
             toolbarEnd={
               <Button variant="outline" size="sm" asChild>
-                <Link href="/findings?mine=true">
+                <Link href="/findings?related_to=me">
                   View all
                   <ArrowRight className="ms-2 h-4 w-4" />
                 </Link>
