@@ -102,4 +102,5 @@ var (
 	ErrBulkNegativeSize        = finding.ErrBulkNegativeSize
 	ErrBulkTooLarge            = finding.ErrBulkTooLarge
 	ErrPriorityFloodSuppressed = finding.ErrPriorityFloodSuppressed
+	ErrFindingAssetNotFound    = finding.ErrFindingAssetNotFound
 )

@@ -2853,19 +2853,10 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 
 	args := []any{tenantID.String()}
 
-	// Layer 2: Data Scope - filter stats by user's group membership. Fail-OPEN:
-	// no assignment ⇒ NOT EXISTS bypasses ⇒ all (backward compat). Fail-CLOSED is
-	// handled one level up in the service (it returns empty stats when the tenant
-	// enforces RestrictedDataScope and the user has no assignment), so this query
-	// stays unchanged and its interface signature stable.
-	if dataScopeUserID != nil && filter.ScopeStrict {
+	// Layer 2: Data Scope - count only the user's in-scope findings. Fail
+	// closed: a user with no scope row counts nothing.
+	if dataScopeUserID != nil {
 		query += ` AND asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)`
-		args = append(args, dataScopeUserID.String())
-	} else if dataScopeUserID != nil {
-		query += ` AND (
-			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
-			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
-		)`
 		args = append(args, dataScopeUserID.String())
 	}
 
@@ -3293,25 +3284,18 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		)`, uIdx, tIdx))
 	}
 
-	// Layer 2: Data Scope - filter findings by user's group membership on assets.
-	// Default (fail-OPEN): if the user has no rows in user_accessible_assets the
-	// NOT EXISTS bypasses and they see all — backward compatible. When the tenant
-	// enables RestrictedDataScope (filter.DataScopeStrict), the bypass is dropped:
-	// no assignment ⇒ no findings (fail-CLOSED, Tenable "No Access" default).
-	if filter.DataScopeUserID != nil && filter.TenantID != nil {
-		userIDIdx := argIndex
-		tenantIDIdx := argIndex + 1
-		args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
-		// argIndex not incremented — this is the last block that consumes it.
-		if filter.DataScopeStrict {
+	// Layer 2: Data Scope - only findings on the user's in-scope assets. Fail
+	// closed: a user with no scope row sees no finding, and a user scope
+	// without a tenant matches nothing.
+	if filter.DataScopeUserID != nil {
+		if filter.TenantID == nil {
+			conditions = append(conditions, "FALSE")
+		} else {
+			args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
+			// argIndex not incremented — this is the last block that consumes it.
 			conditions = append(conditions, fmt.Sprintf(
 				`asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-				userIDIdx, tenantIDIdx))
-		} else {
-			conditions = append(conditions, fmt.Sprintf(`(
-				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-				OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+				argIndex, argIndex+1))
 		}
 	}
 

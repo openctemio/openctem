@@ -2,15 +2,14 @@
 // and so which findings and other asset-bound rows, a member may see and
 // change.
 //
-// The scope rows live in user_accessible_assets. Who is restricted is
-// unchanged from the list endpoints that already honored it:
+// The scope rows live in user_accessible_assets. Who is restricted:
 //
-//   - administrators (owner/admin) and internal calls with no user are
-//     never restricted;
-//   - a member with at least one scope row sees only those assets;
-//   - a member with no scope row sees what the organization's policy says
-//     (tenants.members_without_group_see): everything (fail-open) or
-//     nothing (fail-closed).
+//   - administrators (owner/admin), holders of a has_full_data_access role
+//     and internal calls with no user are never restricted;
+//   - every other member sees only the assets of their scope rows, and a
+//     member with no scope row sees nothing (fail closed). There is no
+//     per-organization "see everything" mode any more (owner decision D2,
+//     research doc 15 L-04): tenants.members_without_group_see is not read.
 //
 // Every service that reads or writes an asset-bound row by id, or lists
 // such rows indirectly, goes through one Enforcer instead of repeating the
@@ -49,8 +48,6 @@ type AdminLookup func(ctx context.Context, tenantID, userID shared.ID) (bool, er
 
 // Repository is the storage the enforcer needs.
 type Repository interface {
-	// HasAnyScopeAssignment reports whether the user has any scope row in the tenant.
-	HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 	// AssetIDsInScope returns the subset of assetIDs the user has a scope row for.
 	AssetIDsInScope(ctx context.Context, tenantID, userID shared.ID, assetIDs []shared.ID) ([]shared.ID, error)
 	// FindingAssetID returns the asset of a finding in the tenant, or
@@ -68,27 +65,21 @@ type Repository interface {
 	AssetIDsInTenant(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error)
 }
 
-// Policy reports whether a tenant runs data scope fail-closed.
-type Policy interface {
-	RestrictedDataScope(ctx context.Context, tenantID string) bool
-}
-
 // Enforcer resolves and enforces the caller's data scope. A nil *Enforcer is
 // valid and never restricts, so services that were not wired keep working.
 type Enforcer struct {
 	repo        Repository
-	policy      Policy
 	caller      CallerFunc
 	adminLookup AdminLookup
 	logger      *logger.Logger
 }
 
-// New creates an Enforcer. policy may be nil (fail-open everywhere).
-func New(repo Repository, policy Policy, caller CallerFunc, log *logger.Logger) *Enforcer {
+// New creates an Enforcer.
+func New(repo Repository, caller CallerFunc, log *logger.Logger) *Enforcer {
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &Enforcer{repo: repo, policy: policy, caller: caller, logger: log.With("component", "datascope")}
+	return &Enforcer{repo: repo, caller: caller, logger: log.With("component", "datascope")}
 }
 
 // SetAdminLookup wires the admin decision used when there is no request
@@ -97,11 +88,6 @@ func (e *Enforcer) SetAdminLookup(fn AdminLookup) {
 	if e != nil {
 		e.adminLookup = fn
 	}
-}
-
-// Strict reports whether the tenant runs data scope fail-closed.
-func (e *Enforcer) Strict(ctx context.Context, tenantID shared.ID) bool {
-	return e != nil && e.policy != nil && e.policy.RestrictedDataScope(ctx, tenantID.String())
 }
 
 // CallerOf returns the caller of a request context (empty when unwired).
@@ -141,13 +127,8 @@ func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller)
 			return nil, nil
 		}
 	}
-	has, err := e.repo.HasAnyScopeAssignment(ctx, tenantID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve data scope: %w", err)
-	}
-	if !has && !e.Strict(ctx, tenantID) {
-		return nil, nil // fail-open default: no assignment, sees everything
-	}
+	// Every other member is restricted to their scope rows; no row means
+	// nothing (fail closed, in every organization).
 	return &shared.DataScope{TenantID: tenantID, UserID: userID}, nil
 }
 
@@ -170,7 +151,7 @@ func (e *Enforcer) FullData(ctx context.Context, tenantID shared.ID, actingUserI
 
 // ResolveActing is Resolve for the older services that are handed the acting
 // user and the admin flag instead of reading the request: the same decision
-// (admin, full-data role, scope rows, policy), so every path agrees. The
+// (admin, full-data role, scope rows), so every path agrees. The
 // API-key marker still comes from the request.
 func (e *Enforcer) ResolveActing(ctx context.Context, tenantID shared.ID, actingUserID string, isAdmin bool) (*shared.DataScope, error) {
 	return e.ResolveFor(ctx, tenantID, Caller{UserID: actingUserID, IsAdmin: isAdmin, APIKey: e.CallerOf(ctx).APIKey})
@@ -239,6 +220,35 @@ func (e *Enforcer) AssertAssetRef(ctx context.Context, tenantID, assetID shared.
 		return shared.ErrNotFound
 	}
 	return e.AssertAsset(ctx, tenantID, assetID)
+}
+
+// FilterAssetRefs is AssertAssetRef for a batch of asset ids, resolved with
+// at most three queries: the predicate admits an id only when it is a live
+// asset of the tenant AND the request's caller may see it. Use it where a
+// bulk write drops refused items instead of failing the whole request. An
+// unwired enforcer admits nothing (fail closed); a lookup error is returned
+// and the caller must refuse.
+func (e *Enforcer) FilterAssetRefs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, error) {
+	if e == nil || e.repo == nil {
+		return func(shared.ID) bool { return false }, nil
+	}
+	ids := dedupe(assetIDs) // also drops zero ids
+	if len(ids) == 0 {
+		return func(shared.ID) bool { return false }, nil
+	}
+	inTenant, err := e.repo.AssetIDsInTenant(ctx, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("asset tenant check: %w", err)
+	}
+	if len(inTenant) == 0 {
+		return func(shared.ID) bool { return false }, nil
+	}
+	inScope, err := e.FilterForCaller(ctx, tenantID, inTenant)
+	if err != nil {
+		return nil, err
+	}
+	tenantSet := setOf(inTenant)
+	return func(id shared.ID) bool { return tenantSet(id) && inScope(id) }, nil
 }
 
 // AssertFinding is AssertAsset for the asset a finding belongs to. A finding
@@ -335,8 +345,8 @@ func (e *Enforcer) FilterFindings(ctx context.Context, scope *shared.DataScope, 
 // these assets". The actor is the request's caller; without a user in the
 // context (a scheduled run) it is fallbackUser, resolved like ForUser; with
 // neither it is the system, which is unrestricted. unrestricted reports that
-// the actor may act on every asset of the tenant (today an administrator, or
-// a member of a fail-open organization with no scope row). Any lookup error
+// the actor may act on every asset of the tenant (an administrator, a
+// full-data role, or the system). Any lookup error
 // is returned, and the caller must refuse (fail closed).
 func (e *Enforcer) CanActOnAssets(ctx context.Context, tenantID shared.ID, fallbackUser *shared.ID, assetIDs []shared.ID) (canAct func(shared.ID) bool, unrestricted bool, err error) {
 	var scope *shared.DataScope
@@ -364,8 +374,7 @@ func (e *Enforcer) CanActOnAssets(ctx context.Context, tenantID shared.ID, fallb
 // may hand to others (assign to a group, grant, add a member to a group that
 // holds them). Owner decision D13 (research doc 15 L-09): a caller can only
 // delegate scope they hold themselves. An unrestricted caller (admin,
-// full-data role, member of a fail-open organization with no scope row,
-// internal call) may delegate any asset of the tenant; that is the second
+// full-data role, internal call) may delegate any asset of the tenant; that is the second
 // return value.
 func (e *Enforcer) Delegable(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, bool, error) {
 	scope, err := e.Resolve(ctx, tenantID)

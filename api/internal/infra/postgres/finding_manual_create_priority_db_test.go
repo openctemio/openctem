@@ -7,6 +7,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -109,6 +110,8 @@ func TestCreateFinding_ManualPersistsPriorityClass(t *testing.T) {
 
 	svc := finding.NewVulnerabilityService(nil, findingRepo, log)
 	svc.SetAssetRepository(assetRepo)
+	// No request user: unrestricted, but the asset is still tenant-checked.
+	svc.SetDataScope(datascope.New(NewDataScopeRepository(&DB{DB: db}), nil, log))
 	svc.SetPriorityClassifier(classifier)
 
 	f, err := svc.CreateFinding(ctx, finding.CreateFindingInput{
