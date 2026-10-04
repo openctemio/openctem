@@ -5,7 +5,7 @@
 > (§2.3); P1 in progress (§16): merged P1.1 (#940), P1.2 `partial` (#946)
 > and the P1.5 occurrence key `UNIQUE(scan_id, scheduled_for)` (#949; the
 > rrule part of P1.5 is open); P1.3 deadline → `partial` + rollover
-> (migration 000488; trigger type `rollover` waits for P1.4).
+> (migration 000674; trigger type `rollover` waits for P1.4).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
 > Builds on and does not duplicate:
 > [RFC-030](RFC-030-scan-work-distribution.md) (pull, chunks, leases, fair

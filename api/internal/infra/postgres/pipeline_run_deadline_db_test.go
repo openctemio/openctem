@@ -17,7 +17,7 @@ import (
 
 // RFC-046 P1.3 (D5): a run that reaches its deadline keeps what came back,
 // ends partial, records what it did not finish, and tells the sensors still
-// working on it to stop. Against the real SQL and migration 000488.
+// working on it to stop. Against the real SQL and migration 000674.
 
 type deadlineFixture struct {
 	db     *sql.DB
