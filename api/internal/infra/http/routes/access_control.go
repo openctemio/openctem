@@ -59,10 +59,10 @@ func registerGroupRoutes(
 
 		// Group asset ownership
 		r.GET("/{groupId}/assets", h.ListGroupAssets, middleware.Require(permission.GroupsRead))
-		r.POST("/{groupId}/assets", h.AssignAsset, middleware.Require(permission.GroupsWrite))
-		r.POST("/{groupId}/assets/bulk", h.BulkAssignAssets, middleware.Require(permission.GroupsWrite))
-		r.PUT("/{groupId}/assets/{assetId}", h.UpdateAssetOwnership, middleware.Require(permission.GroupsWrite))
-		r.DELETE("/{groupId}/assets/{assetId}", h.UnassignAsset, middleware.Require(permission.GroupsWrite))
+		r.POST("/{groupId}/assets", h.AssignAsset, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
+		r.POST("/{groupId}/assets/bulk", h.BulkAssignAssets, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
+		r.PUT("/{groupId}/assets/{assetId}", h.UpdateAssetOwnership, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
+		r.DELETE("/{groupId}/assets/{assetId}", h.UnassignAsset, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
 	}, tenantMiddlewares...)
 
 	// Current user's groups (my groups)
