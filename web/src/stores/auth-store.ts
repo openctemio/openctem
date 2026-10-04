@@ -16,6 +16,7 @@ import { devtools } from 'zustand/middleware'
 import { clearAllStoredPermissions } from '@/lib/permission-storage'
 import { clearAllLogoCaches } from '@/lib/logo-storage'
 import { devLog } from '@/lib/logger'
+import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 import { csrfHeaders } from '@/lib/csrf-client'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { removeCookie } from '@/lib/cookies'
@@ -378,11 +379,14 @@ async function attemptTokenRefresh(): Promise<void> {
   isRefreshingToken = true
 
   try {
-    const response = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-      headers: csrfHeaders(),
-    })
+    // Tabs take turns: the refresh token rotates and reuse revokes it.
+    const response = await withAuthRefreshLock(() =>
+      fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaders(),
+      })
+    )
 
     const data = await response.json()
 

@@ -41,6 +41,9 @@ type mockAssetGroupServiceRepo struct {
 	getGroupFindingsErr error
 	recalculateErr      error
 
+	// foreignAssets are ids that are not assets of the caller's tenant.
+	foreignAssets map[shared.ID]bool
+
 	// Configurable return values
 	statsResult         *assetgroup.Stats
 	groupAssetsResult   pagination.Result[*assetgroup.GroupAsset]
@@ -187,13 +190,29 @@ func (m *mockAssetGroupServiceRepo) GetStats(_ context.Context, _ shared.ID) (*a
 	}, nil
 }
 
-func (m *mockAssetGroupServiceRepo) AddAssets(_ context.Context, groupID shared.ID, assetIDs []shared.ID) error {
+func (m *mockAssetGroupServiceRepo) AddAssets(_ context.Context, groupID shared.ID, assetIDs []shared.ID) (int, error) {
 	m.addAssetsCalls++
 	if m.addAssetsErr != nil {
-		return m.addAssetsErr
+		return 0, m.addAssetsErr
 	}
-	m.groupAssets[groupID.String()] = append(m.groupAssets[groupID.String()], assetIDs...)
-	return nil
+	own := 0
+	for _, id := range assetIDs {
+		if !m.foreignAssets[id] {
+			m.groupAssets[groupID.String()] = append(m.groupAssets[groupID.String()], id)
+			own++
+		}
+	}
+	return own, nil
+}
+
+func (m *mockAssetGroupServiceRepo) FilterTenantAssetIDs(_ context.Context, _ shared.ID, assetIDs []shared.ID) ([]shared.ID, error) {
+	out := make([]shared.ID, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		if !m.foreignAssets[id] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 func (m *mockAssetGroupServiceRepo) RemoveAssets(_ context.Context, groupID shared.ID, assetIDs []shared.ID) error {
@@ -1128,6 +1147,23 @@ func TestAddAssetsToGroup(t *testing.T) {
 		}
 		if repo.addAssetsCalls != 0 {
 			t.Errorf("expected 0 AddAssets calls when all IDs invalid, got %d", repo.addAssetsCalls)
+		}
+	})
+
+	t.Run("foreign-tenant id refuses the whole request", func(t *testing.T) {
+		repo := newMockAssetGroupServiceRepo()
+		svc := newTestAssetGroupService(repo)
+		tenantID := shared.NewID()
+		groupID := seedAssetGroup(repo, tenantID, "Members", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh).ID()
+		own, foreign := shared.NewID(), shared.NewID()
+		repo.foreignAssets = map[shared.ID]bool{foreign: true}
+
+		err := svc.AddAssetsToGroup(context.Background(), tenantID.String(), groupID, []string{own.String(), foreign.String()})
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Fatalf("expected a validation error, got: %v", err)
+		}
+		if repo.addAssetsCalls != 0 || len(repo.groupAssets[groupID.String()]) != 0 {
+			t.Errorf("nothing may be added: calls=%d members=%v", repo.addAssetsCalls, repo.groupAssets[groupID.String()])
 		}
 	})
 

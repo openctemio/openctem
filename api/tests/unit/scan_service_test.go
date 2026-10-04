@@ -307,8 +307,11 @@ func (m *mockAssetGroupRepo) ExistsByName(_ context.Context, _ shared.ID, _ stri
 func (m *mockAssetGroupRepo) GetStats(_ context.Context, _ shared.ID) (*assetgroup.Stats, error) {
 	return nil, nil
 }
-func (m *mockAssetGroupRepo) AddAssets(_ context.Context, _ shared.ID, _ []shared.ID) error {
-	return nil
+func (m *mockAssetGroupRepo) AddAssets(_ context.Context, _ shared.ID, ids []shared.ID) (int, error) {
+	return len(ids), nil
+}
+func (m *mockAssetGroupRepo) FilterTenantAssetIDs(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
 }
 func (m *mockAssetGroupRepo) RemoveAssets(_ context.Context, _ shared.ID, _ []shared.ID) error {
 	return nil
