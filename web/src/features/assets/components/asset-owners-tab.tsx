@@ -170,8 +170,14 @@ function OwnerCard({
             <OwnershipBadge type={owner.ownershipType} />
           </div>
           {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-          {owner.assignedByName && (
-            <p className="text-xs text-muted-foreground">Assigned by {owner.assignedByName}</p>
+          {owner.assignmentSource === 'owner_ref' ? (
+            <p className="text-xs text-muted-foreground">Matched from the owner reference</p>
+          ) : owner.assignmentSource === 'scope_rule' ? (
+            <p className="text-xs text-muted-foreground">Assigned by a scope rule</p>
+          ) : (
+            owner.assignedByName && (
+              <p className="text-xs text-muted-foreground">Assigned by {owner.assignedByName}</p>
+            )
           )}
         </div>
       </div>
@@ -840,6 +846,13 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
             Are you sure you want to remove{' '}
             {removeOwnerTarget?.userName || removeOwnerTarget?.groupName || 'this owner'} from this
             asset? This action cannot be undone.
+            {removeOwnerTarget?.assignmentSource === 'owner_ref' && (
+              <>
+                {' '}
+                This owner was matched from the asset&rsquo;s owner reference, so the owner
+                reference is cleared too.
+              </>
+            )}
           </>
         }
         confirmText={isSubmitting ? 'Removing...' : 'Remove'}

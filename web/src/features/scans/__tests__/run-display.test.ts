@@ -27,7 +27,8 @@ describe('scanRunCounts', () => {
     const c = scanRunCounts(fresh, [{ status: 'running' }])
     expect(c.total).toBe(1)
     expect(c.inProgress).toBe(1)
-    expect(c.successRate).toBe(0)
+    // No run settled yet: no rate, not a red 0%.
+    expect(c.successRate).toBeNull()
   })
 
   it('adds in-progress runs to the finished ones; success rate is over finished runs', () => {
@@ -37,7 +38,24 @@ describe('scanRunCounts', () => {
       { status: 'completed' },
       { status: 'failed' },
     ])
-    expect(c).toEqual({ total: 6, inProgress: 2, successful: 3, failed: 1, successRate: 75 })
+    expect(c).toEqual({
+      total: 6,
+      inProgress: 2,
+      successful: 3,
+      partial: 0,
+      failed: 1,
+      successRate: 75,
+    })
+  })
+
+  it('uses the scan list formula: canceled runs are out, partial runs are settled', () => {
+    // 10 runs: 5 succeeded, 2 partial, 1 failed, 2 canceled.
+    const c = scanRunCounts(
+      { total_runs: 10, successful_runs: 5, failed_runs: 1, partial_runs: 2 },
+      []
+    )
+    expect(c.partial).toBe(2)
+    expect(c.successRate).toBe(63) // 5 / (5 + 2 + 1), not 5 / 10
   })
 
   it('knows which statuses are in progress', () => {
