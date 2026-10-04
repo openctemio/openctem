@@ -1375,12 +1375,13 @@ organization, its members and its settings, so 000540 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
 
+`findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
+
 **Removed** (000541; catalog rows and grants archived in
 `access_control_removed_archive`, restored by its down):
 
 | Permission | Why it is meaningless |
 |---|---|
-| `assets:export`, `findings:export` | Export is a client-side CSV of rows the caller can already read; no API exports assets or findings, so a permission could only hide a button. |
 | `compliance:frameworks:write` | Frameworks are a read-only seeded catalog; no API writes them. |
 | `compliance:reports:read` | No compliance report API; the page is a redirect. |
 | `findings:policies:*` | The policies module was retired (000215) without ever having routes. |

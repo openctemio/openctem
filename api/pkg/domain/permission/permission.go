@@ -56,6 +56,7 @@ const (
 
 	// Asset import/export
 	AssetsImport Permission = "assets:import"
+	AssetsExport Permission = "assets:export"
 
 	// Asset Groups permissions (assets:groups:*)
 	AssetGroupsRead   Permission = "assets:groups:read"
@@ -84,6 +85,7 @@ const (
 	FindingsAssign     Permission = "findings:assign"
 	FindingsTriage     Permission = "findings:triage"
 	FindingsStatus     Permission = "findings:status"
+	FindingsExport     Permission = "findings:export"
 	FindingsBulkUpdate Permission = "findings:bulk_update"
 	FindingsApprove    Permission = "findings:approve"
 	FindingsFixApply   Permission = "findings:fix_apply" // in_progress → fix_applied (dev/owner action)
@@ -408,13 +410,13 @@ func AllPermissions() []Permission {
 		SettingsRead, SettingsWrite,
 
 		// Assets module
-		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport,
+		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
 		ComponentsRead, ComponentsWrite, ComponentsDelete,
 
 		// Findings module
 		FindingsRead, FindingsWrite, FindingsDelete,
-		FindingsAssign, FindingsTriage, FindingsStatus, FindingsBulkUpdate, FindingsApprove,
+		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
 		FindingsFixApply, FindingsVerify,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
