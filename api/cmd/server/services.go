@@ -995,6 +995,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// for tenants that enabled the floor.
 	s.PriorityClassification.SetAssetOwnerLookup(postgres.NewAssetOwnershipLookupRepo(deps.DB))
 	s.PriorityClassification.SetOwnershipFloorPolicy(app.NewTenantOwnershipFloorPolicy(repos.Tenant))
+	// RFC-036 §6.8: findings on assets whose attribution is not confirmed
+	// (needs_review, candidate, rejected) are capped at P2.
+	if repos.Attribution != nil {
+		s.PriorityClassification.SetAttributionLookup(repos.Attribution)
+	}
 
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
