@@ -295,6 +295,11 @@ const (
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
 
+	// Report schedule actions: a schedule mails organization posture to its
+	// recipients (members or the allowed domains, D12).
+	ActionReportScheduleCreated   Action = "report_schedule.created"
+	ActionReportScheduleActivated Action = "report_schedule.activated"
+	ActionReportScheduleDeleted   Action = "report_schedule.deleted"
 	// EASM seeds (RFC-036 §6.3): what discovery expands from.
 	ActionEASMSeedCreated Action = "easm_seed.created"
 	ActionEASMSeedUpdated Action = "easm_seed.updated"
@@ -520,6 +525,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
@@ -630,6 +636,8 @@ func (a Action) Category() string {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
+	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
+		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
 		return "scanner_template"
@@ -722,6 +730,7 @@ const (
 	ResourceTypeScopeExclusion  ResourceType = "scope_exclusion"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
 	ResourceTypeIntegration     ResourceType = "integration"
+	ResourceTypeReportSchedule  ResourceType = "report_schedule"
 	ResourceTypeEASMSeed        ResourceType = "easm_seed"
 )
 
@@ -747,7 +756,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeEASMSeed:
+		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
 	return false
@@ -861,6 +870,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeTargetUpdated, ActionScopeTargetDeleted, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,

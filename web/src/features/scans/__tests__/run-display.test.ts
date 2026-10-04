@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { runTriggeredByLabel, scanRunCounts, isRunInProgress } from '../lib/run-display'
+import {
+  runTriggeredByLabel,
+  scanRunCounts,
+  isRunInProgress,
+  runTaskProgress,
+  elapsedMs,
+} from '../lib/run-display'
 
 const USER_ID = '76df42a3-72d0-45da-a1c8-5a8b2a01f658'
 
@@ -65,5 +71,45 @@ describe('scanRunCounts', () => {
     expect(
       ['completed', 'failed', 'cancelled', 'timeout'].some((status) => isRunInProgress({ status }))
     ).toBe(false)
+  })
+})
+
+describe('runTaskProgress', () => {
+  const base = { total: 5, queued: 1, running: 1, completed: 2, failed: 1, canceled: 0 }
+
+  it('reads done of total and lists only the non-zero counts', () => {
+    expect(runTaskProgress(base)).toEqual({
+      label: '2/5 tasks',
+      details: [
+        { key: 'running', count: 1 },
+        { key: 'queued', count: 1 },
+        { key: 'failed', count: 1 },
+      ],
+    })
+  })
+
+  it('is null without tasks, so the page falls back to steps', () => {
+    expect(runTaskProgress(undefined)).toBeNull()
+    expect(runTaskProgress({ ...base, total: 0 })).toBeNull()
+  })
+})
+
+describe('elapsedMs', () => {
+  it('measures start to completion', () => {
+    expect(
+      elapsedMs({ started_at: '2026-10-04T10:00:00Z', completed_at: '2026-10-04T10:03:00Z' })
+    ).toBe(180_000)
+  })
+
+  it('measures start to now while it runs', () => {
+    const now = Date.parse('2026-10-04T10:01:00Z')
+    expect(elapsedMs({ started_at: '2026-10-04T10:00:00Z' }, now)).toBe(60_000)
+  })
+
+  it('is undefined before the start and for impossible timestamps', () => {
+    expect(elapsedMs({})).toBeUndefined()
+    expect(
+      elapsedMs({ started_at: '2026-10-04T10:05:00Z', completed_at: '2026-10-04T10:00:00Z' })
+    ).toBeUndefined()
   })
 })

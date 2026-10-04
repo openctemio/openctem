@@ -1520,6 +1520,48 @@ func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation
 	), nil
 }
 
+// AllowedRecipients reports, for each (lower-cased) address, whether it may
+// receive the organization's scheduled reports: an active member of the
+// tenant, or an address in one of its Security.AllowedDomains (owner decision
+// D12). With no allowed domains, members only.
+func (r *TenantRepository) AllowedRecipients(ctx context.Context, tenantID shared.ID, emails []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(emails))
+	if len(emails) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT LOWER(u.email) FROM tenant_members m JOIN users u ON u.id = m.user_id
+		 WHERE m.tenant_id = $1 AND m.status = 'active' AND LOWER(u.email) = ANY($2)`,
+		tenantID.String(), pq.Array(emails))
+	if err != nil {
+		return nil, fmt.Errorf("list member recipients: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err != nil {
+			return nil, fmt.Errorf("scan member recipient: %w", err)
+		}
+		out[e] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	t, err := r.GetByID(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("load tenant settings: %w", err)
+	}
+	sec := t.TypedSettings().Security
+	if len(sec.AllowedDomains) > 0 {
+		for _, e := range emails {
+			if !out[e] && sec.EmailDomainAllowed(e) {
+				out[e] = true
+			}
+		}
+	}
+	return out, nil
+}
+
 // GetMembersWithoutGroupSee returns the organization's data-scope policy for
 // members without an access group ("everything" or "nothing").
 func (r *TenantRepository) GetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID) (string, error) {
