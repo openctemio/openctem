@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	assettyperef "github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -261,14 +263,14 @@ func (m *mockTemplateRepo) ListWithSystemTemplates(_ context.Context, _ shared.I
 
 type mockAssetGroupRepo struct {
 	groups          map[string]*assetgroup.AssetGroup
-	assetTypeCounts map[string]int64 // for CountAssetsByType
+	assetTypeCounts map[assettyperef.TypeRef]int64 // for CountAssetsByType
 	members         map[shared.ID][]*assetgroup.GroupAsset
 }
 
 func newMockAssetGroupRepo() *mockAssetGroupRepo {
 	return &mockAssetGroupRepo{
 		groups:          make(map[string]*assetgroup.AssetGroup),
-		assetTypeCounts: make(map[string]int64),
+		assetTypeCounts: make(map[assettyperef.TypeRef]int64),
 	}
 }
 
@@ -345,7 +347,7 @@ func (m *mockAssetGroupRepo) GetDistinctAssetTypes(_ context.Context, _ shared.I
 func (m *mockAssetGroupRepo) GetDistinctAssetTypesMultiple(_ context.Context, _ []shared.ID) ([]string, error) {
 	return nil, nil
 }
-func (m *mockAssetGroupRepo) CountAssetsByType(_ context.Context, _ shared.ID) (map[string]int64, error) {
+func (m *mockAssetGroupRepo) CountAssetsByType(_ context.Context, _ shared.ID) (map[assettyperef.TypeRef]int64, error) {
 	return m.assetTypeCounts, nil
 }
 

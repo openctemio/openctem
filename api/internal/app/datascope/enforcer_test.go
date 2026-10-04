@@ -11,7 +11,21 @@ import (
 type fakeRepo struct {
 	rows     map[shared.ID]map[shared.ID]bool // user -> asset -> in scope
 	findings map[shared.ID]shared.ID          // finding -> asset
+	tenant   map[shared.ID]shared.ID          // asset -> tenant (live assets)
 	err      error
+}
+
+func (f *fakeRepo) AssetIDsInTenant(_ context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []shared.ID
+	for _, id := range ids {
+		if t, ok := f.tenant[id]; ok && t == tenantID {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) HasAnyScopeAssignment(_ context.Context, _, userID shared.ID) (bool, error) {
@@ -181,5 +195,100 @@ func TestEnforcer_ForUserUsesAdminLookup(t *testing.T) {
 	e.SetAdminLookup(func(context.Context, shared.ID, shared.ID) (bool, error) { return false, errors.New("x") })
 	if err := e.AssertFindingForUser(context.Background(), tenant, user, finding); err == nil {
 		t.Error("admin lookup error must deny")
+	}
+}
+
+// CanActOnAssets: the request caller acts; with no user in the context the
+// fallback user (a scheduled scan owner) acts; with neither the system acts,
+// unrestricted. A lookup error is returned (the caller refuses).
+func TestEnforcer_CanActOnAssets(t *testing.T) {
+	tenant := shared.NewID()
+	scoped, admin := shared.NewID(), shared.NewID()
+	assetA, assetB := shared.NewID(), shared.NewID()
+	repo := &fakeRepo{rows: map[shared.ID]map[shared.ID]bool{scoped: {assetA: true}}}
+	e := New(repo, policy(false), ctxCaller, nil)
+	e.SetAdminLookup(func(_ context.Context, _, user shared.ID) (bool, error) { return user == admin, nil })
+	ids := []shared.ID{assetA, assetB}
+
+	type want struct{ a, b, unrestricted bool }
+	cases := []struct {
+		name     string
+		ctx      context.Context
+		fallback *shared.ID
+		want     want
+	}{
+		{"restricted caller", withCaller(Caller{UserID: scoped.String()}), nil, want{true, false, false}},
+		{"admin caller", withCaller(Caller{UserID: admin.String(), IsAdmin: true}), &scoped, want{true, true, true}},
+		{"no caller, restricted owner", context.Background(), &scoped, want{true, false, false}},
+		{"no caller, admin owner", context.Background(), &admin, want{true, true, true}},
+		{"system", context.Background(), nil, want{true, true, true}},
+		// The caller wins over the owner: a restricted member triggering an
+		// admin scan acts with their own scope.
+		{"restricted caller, admin owner", withCaller(Caller{UserID: scoped.String()}), &admin, want{true, false, false}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			can, unrestricted, err := e.CanActOnAssets(tc.ctx, tenant, tc.fallback, ids)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := (want{can(assetA), can(assetB), unrestricted}); got != tc.want {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+
+	failing := New(&fakeRepo{err: errors.New("db down")}, policy(false), ctxCaller, nil)
+	if _, _, err := failing.CanActOnAssets(withCaller(Caller{UserID: scoped.String()}), tenant, nil, ids); err == nil {
+		t.Fatal("a failed scope lookup must be returned")
+	}
+}
+
+func TestEnforcer_AssertAssetRef(t *testing.T) {
+	tenant, other := shared.NewID(), shared.NewID()
+	scoped := shared.NewID()
+	inScope, outScope, foreign := shared.NewID(), shared.NewID(), shared.NewID()
+	repo := &fakeRepo{
+		rows:   map[shared.ID]map[shared.ID]bool{scoped: {inScope: true, foreign: true}},
+		tenant: map[shared.ID]shared.ID{inScope: tenant, outScope: tenant, foreign: other},
+	}
+	admin := Caller{UserID: shared.NewID().String(), IsAdmin: true}
+	member := Caller{UserID: scoped.String()}
+	cases := []struct {
+		name    string
+		caller  Caller
+		asset   shared.ID
+		wantErr bool
+	}{
+		{"admin, own tenant", admin, outScope, false},
+		{"admin, foreign tenant", admin, foreign, true},
+		{"admin, unknown id", admin, shared.NewID(), true},
+		{"internal call, foreign tenant", Caller{}, foreign, true},
+		{"member, in scope", member, inScope, false},
+		{"member, out of scope", member, outScope, true},
+		// A scope row pointing at another tenant's asset does not help.
+		{"member, foreign asset with a stray scope row", member, foreign, true},
+		{"zero id", admin, shared.ID{}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := New(repo, policy(false), ctxCaller, nil)
+			err := e.AssertAssetRef(withCaller(tc.caller), tenant, tc.asset)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("AssertAssetRef err=%v, wantErr=%v", err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, shared.ErrNotFound) {
+				t.Errorf("AssertAssetRef must deny with ErrNotFound, got %v", err)
+			}
+		})
+	}
+
+	var nilEnforcer *Enforcer
+	if err := nilEnforcer.AssertAssetRef(withCaller(admin), tenant, inScope); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("nil enforcer must fail closed for an asset reference, got %v", err)
+	}
+	repo.err = errors.New("db down")
+	if err := New(repo, policy(false), ctxCaller, nil).AssertAssetRef(withCaller(admin), tenant, inScope); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("a lookup error must fail closed, got %v", err)
 	}
 }

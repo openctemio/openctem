@@ -42,8 +42,97 @@ before the existence check, so a former key lands on the finding that carries it
 now; the sensor fingerprint check reports a former key as known. The alias
 references `findings (id, tenant_id)`, so it cannot name another tenant's
 finding, and every lookup is tenant-scoped. `findings.fingerprint_version` and
-`findings.identity_key` exist; every row is version 1 until the v2 recipes of
-item 11 land.
+`findings.identity_key` exist.
+
+**Since RFC-043 item 11 (identity version 2):** scanner ingest keys a finding
+with a server-computed identity tuple (`pkg/domain/vulnerability/identity.go`,
+recipes in `identity_recipes.go`, CTIS mapping in
+`internal/app/ingest/identity_v2.go`). The tuple is stored in
+`findings.identity_key`, `fingerprint_version = 2`, and the fingerprint is
+`sha256("v2" 0x1f kind 0x1f (name 0x1e len 0x1e value 0x1f)*)`, so no field
+boundary can be moved to forge a collision. Recipes:
+
+| Kind | Tuple | Not in it |
+|---|---|---|
+| SAST | asset, tool, rule, repo-relative path, then one anchor: SARIF `primaryLocationLineHash` (with its `:N`), Semgrep `matchBasedId/v1`, else `hash(normalized snippet)` + logical location + occurrence index of that snippet in the file | line numbers, message |
+| SCA | asset, canonical PURL without version (`distro` qualifier only for deb/rpm/apk, D13), canonical vuln id | installed version, manifest path |
+| Secret | asset, per-tenant keyed HMAC of the reported (masked) value, repo-relative path | line, the value or its mask |
+| DAST | asset, rule (the CVE for a CVE template), method, URL template (lower-case IDNA host, default port dropped, numeric/UUID segments `{id}`, D4), sorted parameter names | query values |
+| Network VA | asset, canonical CVE (one finding per CVE, D3; else `rule:<id>`), `port/proto` or `host` | plugin title |
+| Misconfig | asset, policy id, resource type/name, path | message |
+
+A result no recipe covers (compliance, web3, a SAST result with only a line,
+a secret without a configured server key) keeps its version-1 key. The
+sensor's own fingerprint is kept as the sighting key
+`partial_fingerprints["sensor/fingerprint"]` and is never the identity (D1).
+
+Migration without losing triage: when a scan reports a result whose version-1
+key still names a stored finding and no finding holds the version-2 key yet,
+that finding is re-keyed in place on that sighting
+(`FindingRepository.AdoptFingerprint`); its version-1 key stays an alias. An
+asset merge re-keys a version-2 finding by rewriting the `asset` field of its
+stored tuple, only when the stored tuple still reproduces the stored key.
+
+Findings a scan does not report again are re-keyed by the re-fingerprint job
+(`cmd/refingerprint`, shipped in the API image as `/app/refingerprint`):
+
+```bash
+refingerprint                 # dry run, every tenant with older keys (read-only connection)
+refingerprint -tenant <id>    # one tenant
+refingerprint -apply          # commit; resumable from finding_rekey_runs, idempotent
+refingerprint -json           # machine-readable report
+```
+
+It recomputes a key only where the row holds every recipe input
+(`vulnerability.IdentityFromStored`: SCA with a linked PURL, secrets with a
+stored HMAC, misconfig, SAST with a tool anchor); network VA and DAST rows lack
+the port or method and are re-keyed on their next sighting. When the new key is
+held by another finding of the same asset, the earliest-created survives
+through the finding merge; a holder on another asset is reported
+(`held_by_other_asset`) and never merged automatically. While an applying run
+is open, scan auto-resolve is paused for the tenant (D11); a run with no
+progress for 2 hours stops pausing.
+
+**Mark duplicate of (manual merge):** `POST /api/v1/findings/{id}/duplicates`
+`{"finding_id": …}` folds a finding into the original `{id}` with the same
+`mergeFindingInto` the asset merge uses, in one transaction with both rows
+locked and the rules re-checked under the lock
+(`FindingRepository.MarkDuplicateOf`, rules in
+`vulnerability.CheckMarkDuplicate`): same tenant and data scope (404
+otherwise), same asset, neither already a duplicate, no pentest finding, and
+`findings:approve` when either finding is a false positive or risk acceptance
+(otherwise a merge would close an open finding under, or carry onto it, a
+decision that needs approval). The activity on both findings names the user;
+the audit log records `finding.duplicate_marked`.
+
+Known limits: the SAST occurrence index is counted within one report, so twin
+snippets split across report chunks can swap; the secret HMAC is over the
+masked value the sensor sends (CTIS carries no raw value), so two secrets that
+mask alike in one file are one finding.
+
+CTIS producer fields and identity (coordinated with the CTIS review,
+`research/16-ctis-review-2026-10-04.md` G5, Q1, Q2, Q8, P4, P5):
+
+- **Producer fingerprints (Q8, D1):** a finding with a version-2 recipe never
+  takes its identity from `Finding.Fingerprint`; the value is kept as the
+  sighting key `partial_fingerprints["sensor/fingerprint"]`. Only kinds
+  without a recipe (compliance, web3, a generic finding without a location)
+  still use the version-1 key, which can include it.
+- **Network transport:** the version-2 network recipe keys on `port/proto`
+  (`tcp` when absent) for CVE and non-CVE findings alike, so the version-1
+  split between `netva:` (no transport) and `netport:` (transport) is gone.
+- **SARIF paths (Q2):** `NormalizeRepoPath` drops any `file:` scheme form and
+  percent-decoding (once, only when no `%` is left, so it stays idempotent).
+  `uriBaseId` is not resolved: an absolute runner path stays absolute.
+- **SARIF secrets (Q1):** while `ctis.FromSARIF` leaves `secret.masked_value`
+  empty, such a secret has no keyed HMAC and keeps its version-1 key; once
+  CTIS sets it, the next sighting re-keys the finding to its version-2 key in
+  place (`AdoptFingerprint`), with its triage. No separate migration.
+- **Ready for CTIS 1.4 (P4, P5):** a producer `fingerprint_recipe` and
+  `fingerprint_aliases[]` would be sighting keys and alias candidates, never
+  the identity; a producer `secret.hash` would replace the masked value as
+  the input of the server-keyed HMAC (`identity_v2_apply.go`, where the
+  secret input is chosen), so the server key stays the only key.
 
 What `ctis/fingerprint.GenerateAuto` keys on, per detected type
 (`ctis/fingerprint/fingerprint.go:112-213`, `DetectType` `:435-472`), given the
@@ -195,8 +284,10 @@ merge into the survivor and tombstone the loser (RFC-043 §5).
 | Branch occurrences | `UNIQUE (finding_id, branch_id)` (`000173:37`), `ON CONFLICT DO UPDATE` | **BROKEN** | the caller does not dedupe fingerprints in a batch (`processor_findings.go:607-634`) | **P18:** a report with one duplicated finding → **0** occurrences recorded for the whole report (only a warning) |
 | Network VA without a CVE | F1(c) `generic`: rule + title — **port not in the key** | **BROKEN** | `ctis/fingerprint.go:201-209` | **P18:** Nessus plugin 51192 on ports 443 and 8443 → **1** finding |
 | Nessus / DefectDojo converter fingerprints | `nessus:host:plugin:port/proto`, `defectdojo:<hash>` (`nessus/converter.go:242`, `defectdojo/converter.go:130`) | **BROKEN** | not hex → discarded by `isValidFingerprint` | DefectDojo's "stable across re-imports" key is never used; two jars with one CVE on a product merge via `netva::<cve>` (**code**) |
-| SARIF via `/ingest/scanner?scanner_type=sarif` | `matchBasedId/v1`, else the **first map entry** (`internal/infra/adapters/sarif/adapter.go:171-195`) | **BROKEN** | Go map iteration order is random | a result with two `fingerprints` entries gets a different identity on each ingest → duplicates; disagrees with `/ingest/sarif` (lowest key) (**code**) |
-| In-tree adapters (`internal/infra/adapters/*`) vs sensor parsers | two implementations of trivy/semgrep/nuclei/betterleaks parsing with different fingerprints | **PARTIAL** | API nuclei adapter: `GenerateSAST(host, template, 0)` (`nuclei/adapter.go:164`); sensor: `template|host|matched-at|matcher` | the same nuclei result uploaded through `/ingest/scanner` and through the sensor → 2 findings (**code**) |
+| SARIF via `/ingest/scanner?scanner_type=sarif` | `matchBasedId/v1`, else the usable value under the **lowest key**, long values hashed (`resultFingerprint`, `internal/infra/adapters/sarif/adapter.go`) — the rule `ctis.FromSARIF` applies on `/ingest/sarif` | **OK** (RFC-043 item 12) | was the first map entry (random) | — |
+| SARIF parsers inside the API | `ctis.FromSARIF` (`/ingest/sarif`) and the in-tree adapter (`/ingest/scanner`, keeps code flows); the unused third copy `pkg/parsers/sarif` is deleted | **PARTIAL** | the adapter still has its own parse for code flows and help references, which `ctis.FromSARIF` does not read | titles and data flows differ by entry point; identity does not (both keep `partialFingerprints`, the server recipe decides) |
+| Nessus `.nessus` parsing | one parser, `pkg/parsers/nessus`, used by the findings converter (`internal/infra/scanner/nessus`) and the host-only asset import (`internal/app/asset/import.go`) | **OK** (RFC-043 item 12) | was two XML models | — |
+| In-tree adapters (`internal/infra/adapters/*`) vs sensor parsers | two implementations of trivy/semgrep/nuclei/betterleaks parsing with different fingerprints | **PARTIAL** — identity no longer depends on it | API nuclei adapter: `GenerateSAST(host, template, 0)` (`nuclei/adapter.go:164`); sensor: `template|host|matched-at|matcher` | with identity version 2 the sensor or adapter fingerprint is only a sighting key, so the same nuclei result through `/ingest/scanner` and through the sensor keys on the same server recipe; the parsers are still two copies in two repositories (follow-up: canonical converters in `ctis`, as `FromSARIF` and the recon converter already are) |
 | Threat models | `UNIQUE (tenant_id, scope_type, scope_ref_id)` with `scope_ref_id` NULL for tenant-wide (`000189:33`); unlocked select-then-insert (`threat_model_repository.go:125-170`) | **BROKEN** | NULLS DISTINCT | **P18:** two tenant-wide models inserted for one tenant |
 | Attack paths | `attack_paths` tables have no key and no writer; paths computed on read | n/a | — | — |
 | Remediation groups | `finding_remediation_keys` PK `finding_id`, `ON CONFLICT DO UPDATE` | **PARTIAL** | key `sca:<component_id>` inherits the PURL split; stale key never deleted (`key_applier.go:32-34`) | (**code**) |
