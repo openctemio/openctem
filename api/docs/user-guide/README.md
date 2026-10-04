@@ -34,7 +34,7 @@ the single most important workflow in the product; it's covered first, in
 1. **[Getting Started](01-getting-started.md)** — sign up / log in (password &
    SSO), pick or create a team, accept an invitation, manage your account.
 2. **[Team & Access](02-team-and-access.md)** — invite members, roles &
-   permissions, permission sets, data-scope teams, audit log.
+   permissions, data-scope teams, audit log.
 3. **[Scoping](03-scoping.md)** — CTEM cycles, scope config, business units,
    crown jewels, asset groups, threat modeling, compliance.
 4. **[Discovery](04-discovery.md)** — run scans, connect agents, asset inventory,

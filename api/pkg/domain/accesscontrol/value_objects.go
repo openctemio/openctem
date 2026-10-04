@@ -72,26 +72,6 @@ func (t OwnershipType) ReceivesAllNotifications() bool {
 	return t == OwnershipPrimary || t == OwnershipSecondary
 }
 
-// PermissionEffect represents the effect of a permission grant.
-type PermissionEffect string
-
-const (
-	// EffectAllow grants the permission.
-	EffectAllow PermissionEffect = "allow"
-	// EffectDeny denies the permission (overrides allow).
-	EffectDeny PermissionEffect = "deny"
-)
-
-// IsValid checks if the effect is valid.
-func (e PermissionEffect) IsValid() bool {
-	return e == EffectAllow || e == EffectDeny
-}
-
-// String returns the string representation.
-func (e PermissionEffect) String() string {
-	return string(e)
-}
-
 // ScopeType represents the type of permission scope.
 type ScopeType string
 

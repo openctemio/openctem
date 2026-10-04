@@ -11,7 +11,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/permissionset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -186,32 +185,6 @@ func TestMarkDispatched_RepeatedAsset(t *testing.T) {
 	}
 	if n := countBatchRows(t, db, `SELECT count(*) FROM scan_coverage_state WHERE asset_id = $1`, assetID.String()); n != 1 {
 		t.Fatalf("coverage rows = %d, want 1", n)
-	}
-}
-
-func TestPermissionSetBatchAddItems_RepeatedPermission(t *testing.T) {
-	db, pdb := openBatchDedupDB(t)
-	ctx := context.Background()
-	tenant := seedBatchTenant(t, db)
-	setID := shared.NewID()
-	if _, err := db.Exec(`INSERT INTO permission_sets (id, tenant_id, name, slug) VALUES ($1, $2, 'ps', $3)`, setID.String(), tenant.String(), "ps-"+setID.String()[:8]); err != nil {
-		t.Fatal(err)
-	}
-	add, _ := permissionset.NewItem(setID, "dashboard:read", permissionset.ModificationAdd)
-	remove, _ := permissionset.NewItem(setID, "dashboard:read", permissionset.ModificationRemove)
-	other, _ := permissionset.NewItem(setID, "audit:read", permissionset.ModificationAdd)
-	if err := NewPermissionSetRepository(pdb).BatchAddItems(ctx, []*permissionset.Item{add, other, remove}); err != nil {
-		t.Fatalf("BatchAddItems with a repeated permission failed: %v", err)
-	}
-	var mod string
-	if err := db.QueryRow(`SELECT modification_type FROM permission_set_items WHERE permission_set_id = $1 AND permission_id = 'dashboard:read'`, setID.String()).Scan(&mod); err != nil {
-		t.Fatal(err)
-	}
-	if mod != "remove" {
-		t.Errorf("modification = %s, want the last one's remove", mod)
-	}
-	if n := countBatchRows(t, db, `SELECT count(*) FROM permission_set_items WHERE permission_set_id = $1`, setID.String()); n != 2 {
-		t.Errorf("items = %d, want 2", n)
 	}
 }
 
