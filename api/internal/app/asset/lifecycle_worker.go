@@ -237,6 +237,7 @@ func (w *AssetLifecycleWorker) hasRecentIngest(ctx context.Context, tenantID sha
 	const q = `SELECT EXISTS (
 		SELECT 1 FROM assets
 		WHERE tenant_id = $1
+		  AND deleted_at IS NULL
 		  AND last_seen > NOW() - make_interval(hours => $2)
 	)`
 	hours := int(recentIngestWindow.Hours())
@@ -434,6 +435,7 @@ const maxTransitionsPerRun = 50_000
 //     provenance is safest to leave alone).
 const lifecycleCandidateClauses = `
 	WHERE tenant_id = $1
+	  AND deleted_at IS NULL
 	  AND status = 'active'
 	  AND manual_status_override = FALSE
 	  AND (lifecycle_paused_until IS NULL OR lifecycle_paused_until < NOW())

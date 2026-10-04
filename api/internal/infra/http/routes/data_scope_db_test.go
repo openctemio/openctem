@@ -910,23 +910,31 @@ func TestDataScope_SubresourceWrites_TargetMustBeInScope(t *testing.T) {
 	r := h.seedSubresources()
 	count := func() int {
 		var n int
-		_ = h.db.QueryRow(`SELECT COUNT(*) FROM asset_relationships WHERE source_asset_id = $1 AND target_asset_id = $2 AND relationship_type = 'runs_on'`,
+		_ = h.db.QueryRow(`SELECT COUNT(*) FROM asset_relationships WHERE source_asset_id = $1 AND target_asset_id = $2 AND relationship_type = 'cname_of'`,
 			h.assetA.String(), h.assetB.String()).Scan(&n)
 		return n
 	}
 	base := "/api/v1/assets/" + h.assetA.String() + "/relationships"
-	status, body := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": h.assetB.String(), "type": "runs_on"})
+	status, body := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": h.assetB.String(), "type": "cname_of"})
 	if status == http.StatusCreated || dsLeaksB(body) {
 		t.Errorf("memberA linked A1 to out-of-scope B1: %d %.200s", status, body)
 	}
 	_, _ = h.do(h.memberA, false, http.MethodPost, base+"/batch", map[string]any{
-		"items": []map[string]any{{"target_asset_id": h.assetB.String(), "type": "runs_on"}},
+		"items": []map[string]any{{"target_asset_id": h.assetB.String(), "type": "cname_of"}},
 	})
 	if count() != 0 {
 		t.Error("an out-of-scope relationship target was linked")
 	}
+	// The registry's relationship check runs only after the scope check, so a
+	// disallowed pair to an out-of-scope target answers like a missing
+	// target and never names that target's type.
+	stOut, bodyOut := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": h.assetB.String(), "type": "runs_on"})
+	stMissing, _ := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": shared.NewID().String(), "type": "runs_on"})
+	if stOut != stMissing || strings.Contains(bodyOut, "cannot") {
+		t.Errorf("out-of-scope target with a disallowed type = %d %.200s, missing target = %d", stOut, bodyOut, stMissing)
+	}
 	// The same link to an in-scope target works.
-	if status, body := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": r.assetA2.String(), "type": "runs_on"}); status != http.StatusCreated {
+	if status, body := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": r.assetA2.String(), "type": "cname_of"}); status != http.StatusCreated {
 		t.Errorf("memberA link A1->A2 = %d (body %.200s)", status, body)
 	}
 
