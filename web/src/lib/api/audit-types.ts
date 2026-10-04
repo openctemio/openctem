@@ -176,6 +176,11 @@ export type AuditAction =
   | 'scanner_template.updated'
   | 'scanner_template.deprecated'
   | 'scanner_template.deleted'
+  // Remediation campaigns (Mobilization "tasks")
+  | 'remediation_campaign.created'
+  | 'remediation_campaign.updated'
+  | 'remediation_campaign.status_changed'
+  | 'remediation_campaign.deleted'
 
 /**
  * Resource types - maps to backend audit.ResourceType
@@ -202,6 +207,7 @@ export type AuditResourceType =
   | 'scope_exclusion'
   | 'tool'
   | 'scanner_template'
+  | 'remediation_campaign'
   | typeof HISTORICAL_SENSOR_RESOURCE_TYPE
 
 /**
@@ -421,6 +427,11 @@ export function getActionLabel(action: AuditAction): string {
     'scanner_template.updated': 'Scanner Template Updated',
     'scanner_template.deprecated': 'Scanner Template Deprecated',
     'scanner_template.deleted': 'Scanner Template Deleted',
+    // Remediation campaign actions
+    'remediation_campaign.created': 'Remediation Campaign Created',
+    'remediation_campaign.updated': 'Remediation Campaign Updated',
+    'remediation_campaign.status_changed': 'Remediation Campaign Status Changed',
+    'remediation_campaign.deleted': 'Remediation Campaign Deleted',
   }
   const canonical = canonicalAuditAction(action)
   return labels[canonical] || action
