@@ -42,6 +42,10 @@ const (
 	// CodeForbidden so the UI can explain the approval workflow instead of
 	// showing a generic permission error.
 	CodeApprovalRequired Code = "APPROVAL_REQUIRED"
+	// CodeInvalidFilter is a 400 for a list, stats, search or export filter
+	// that does not parse against the resource's field registry (RFC-048).
+	// Details name each bad param or JSON path.
+	CodeInvalidFilter Code = "INVALID_FILTER"
 )
 
 // Error represents a standardized API error.

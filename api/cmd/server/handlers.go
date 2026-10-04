@@ -260,7 +260,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
-		EASM:          handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log),
+		EASM:          newEASMHandler(repos, svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -372,7 +372,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
 
 		// Business Services (Phase 3)
-		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log),
+		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log).WithDataScope(svc.DataScope),
 
 		// API Keys & Webhooks
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
@@ -433,7 +433,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
@@ -712,6 +712,17 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
 	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+}
+
+// newEASMHandler builds the EASM overview and review queue handler; every
+// review decision is audited (RFC-036).
+func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMHandler {
+	h := handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log)
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return h.SetReview(easmapp.NewReviewService(repos.Attribution, svc.DataScope), audit)
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit
