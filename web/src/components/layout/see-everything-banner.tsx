@@ -44,7 +44,7 @@ export function SeeEverythingBanner() {
   return (
     <div
       role="status"
-      className="flex items-center gap-3 border-b bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+      className="flex items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm text-foreground"
     >
       <p className="flex-1">
         Members who are in no team see every asset in this organization. This mode is being retired.{' '}

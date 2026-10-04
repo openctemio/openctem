@@ -1900,21 +1900,20 @@ type DataScopeImpactResponse struct {
 	Members    []DataScopeImpactMember `json:"members"`
 }
 
-// GetDataScopeImpact handles GET /api/v1/tenants/{tenant}/settings/data-scope/impact
+// GetDataScopeImpact handles GET /api/v1/organization/settings/data-scope/impact
 // @Summary      Members who would see nothing after switching to "nothing"
 // @Description  Lists the active members who are not owner or admin, hold no role with full data access, and are in no access group and have no grant: they see everything today only because the organization shows everything to members without a team, and would see nothing after the switch. Owners and admins only.
 // @Tags         Tenants
 // @Produce      json
 // @Security     BearerAuth
-// @Param        tenant  path      string  true  "Tenant ID or slug"
 // @Success      200     {object}  DataScopeImpactResponse
 // @Failure      401     {object}  apierror.Error
 // @Failure      403     {object}  apierror.Error
 // @Failure      404     {object}  apierror.Error
-// @Router       /tenants/{tenant}/settings/data-scope/impact [get]
+// @Router       /organization/settings/data-scope/impact [get]
 func (h *TenantHandler) GetDataScopeImpact(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
