@@ -235,3 +235,37 @@ func (s *VulnerabilityService) auditExport(ctx context.Context, actx audit.Audit
 		s.logger.Warn("audit findings export failed", "error", lerr)
 	}
 }
+
+// relatedCVEsArgOffset is the first placeholder FindRelatedCVEs leaves to the
+// filter ($1 tenant, $2 source CVE).
+const relatedCVEsArgOffset = 3
+
+// GetRelatedCVEsBySpec lists the CVEs sharing a component with cveID among
+// the findings a decoded filter selects, as the caller. The source CVE's
+// components come only from findings the caller may see (its visibility,
+// without the filter), so an out-of-scope CVE reveals nothing.
+func (s *FindingActionsService) GetRelatedCVEsBySpec(
+	ctx context.Context, c FilterCaller, cveID string, spec *filterspec.Spec,
+) ([]vulnerability.RelatedCVE, error) {
+	if err := validateCVEID(cveID); err != nil {
+		return nil, err
+	}
+	actor, err := filterActor(ctx, s.dataScope, c)
+	if err != nil {
+		return nil, err
+	}
+	filterW, err := filterspec.CompileFrom(spec, vulnerability.FindingFieldsF, actor, relatedCVEsArgOffset)
+	if err != nil {
+		return nil, err
+	}
+	visW, err := filterspec.CompileFrom(&filterspec.Spec{}, vulnerability.FindingFieldsF, actor, filterW.NextArg)
+	if err != nil {
+		return nil, err
+	}
+	tid := actor.TenantID()
+	filter := vulnerability.NewFindingFilter()
+	filter.TenantID = &tid
+	filter.Compiled = filterW
+	filter.CompiledVisibility = visW
+	return s.findingRepo.FindRelatedCVEs(ctx, tid, cveID, filter)
+}
