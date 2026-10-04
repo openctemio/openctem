@@ -44,7 +44,6 @@ var auditTables = map[string]bool{
 	"asset_state_history":      true,
 	"exposure_state_history":   true,
 	"finding_activities":       true,
-	"permission_set_versions":  true,
 	"suppression_rule_audit":   true,
 	"finding_status_approvals": true,
 }
@@ -797,15 +796,16 @@ func TestAssetStateHistory_AuditTriggers(t *testing.T) {
 		}
 		return tenantID, userID, historyID
 	}
-	inTx := func(t *testing.T, fn func(tx *sql.Tx)) {
+	inTxOn := func(t *testing.T, conn *sql.DB, fn func(tx *sql.Tx)) {
 		t.Helper()
-		tx, err := db.BeginTx(ctx, nil)
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			t.Fatalf("begin: %v", err)
 		}
 		defer func() { _ = tx.Rollback() }()
 		fn(tx)
 	}
+	inTx := func(t *testing.T, fn func(tx *sql.Tx)) { t.Helper(); inTxOn(t, db, fn) }
 	mustFail := func(t *testing.T, tx *sql.Tx, want, q string, args ...any) {
 		t.Helper()
 		mustExecTx(t, tx, "SAVEPOINT expect_fail")
@@ -854,7 +854,8 @@ func TestAssetStateHistory_AuditTriggers(t *testing.T) {
 	// is reached while its asset still exists. Recreate the assets FK to get
 	// that order and check the delete does not depend on it.
 	t.Run("deleting the tenant does not depend on cascade order", func(t *testing.T) {
-		inTx(t, func(tx *sql.Tx) {
+		// Recreating the FK is DDL: the schema owner, not the app role.
+		inTxOn(t, testdb.OpenMigrator(t), func(tx *sql.Tx) {
 			// The ALTER locks assets and tenants, which concurrently running
 			// packages use all the time: take both up front, never waiting
 			// while holding one, or the ALTER deadlocks with them.

@@ -37,7 +37,7 @@ func TestClaimScheduledRun_OneWinnerPerOccurrence(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ok, err := repo.ClaimScheduledRun(ctx, scanID, due, &next)
+			ok, err := repo.ClaimScheduledRun(ctx, tenantID, scanID, due, &next)
 			if err != nil {
 				t.Errorf("claim: %v", err)
 			}
@@ -53,7 +53,7 @@ func TestClaimScheduledRun_OneWinnerPerOccurrence(t *testing.T) {
 
 	// The next occurrence is claimable again: nothing stays "locked".
 	next2 := next.Add(24 * time.Hour)
-	if ok, err := repo.ClaimScheduledRun(ctx, scanID, next, &next2); err != nil || !ok {
+	if ok, err := repo.ClaimScheduledRun(ctx, tenantID, scanID, next, &next2); err != nil || !ok {
 		t.Fatalf("next occurrence: ok=%v err=%v, want claimable", ok, err)
 	}
 
@@ -61,7 +61,7 @@ func TestClaimScheduledRun_OneWinnerPerOccurrence(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE scans SET status = 'paused' WHERE id = $1`, scanID.String()); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := repo.ClaimScheduledRun(ctx, scanID, next2, &next2); ok {
+	if ok, _ := repo.ClaimScheduledRun(ctx, tenantID, scanID, next2, &next2); ok {
 		t.Fatal("claimed a paused scan")
 	}
 }

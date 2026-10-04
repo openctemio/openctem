@@ -416,7 +416,7 @@ func (r *AccessControlRepository) ListAssetsByGroup(ctx context.Context, groupID
 }
 
 // ListAssetOwnersByGroupWithDetails lists asset owners for a group with asset name/type/status, with pagination.
-func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, limit, offset int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
+func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, scope *shared.DataScope, limit, offset int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
 	// Apply pagination defaults and caps.
 	if limit <= 0 {
 		limit = 20
@@ -424,6 +424,11 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 	if limit > 100 {
 		limit = 100
 	}
+
+	// A restricted caller (groups:read is a member default) sees only the
+	// group's assets that are in their own data scope.
+	scopeCond, args := dataScopeCond("ao.asset_id", scope, []any{groupID.String()})
+	limitAt := len(args) + 1
 
 	// Count total asset owners for this group.
 	// Only assets of the group's own tenant are listed or counted: a row
@@ -434,9 +439,9 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 		FROM asset_owners ao
 		JOIN groups g ON g.id = ao.group_id
 		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
-		WHERE ao.group_id = $1`
+		WHERE ao.group_id = $1 AND ` + scopeCond
 	var totalCount int64
-	if err := r.db.QueryRowContext(ctx, countQuery, groupID.String()).Scan(&totalCount); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&totalCount); err != nil {
 		return nil, 0, fmt.Errorf("failed to count asset owners with details: %w", err)
 	}
 
@@ -446,12 +451,11 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 		FROM asset_owners ao
 		JOIN groups g ON g.id = ao.group_id
 		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
-		WHERE ao.group_id = $1
+		WHERE ao.group_id = $1 AND ` + scopeCond + `
 		ORDER BY ao.assigned_at DESC
-		LIMIT $2 OFFSET $3
-	`
+		` + fmt.Sprintf("LIMIT $%d OFFSET $%d", limitAt, limitAt+1)
 
-	rows, err := r.db.QueryContext(ctx, query, groupID.String(), limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list asset owners with details: %w", err)
 	}
@@ -903,286 +907,6 @@ func (r *AccessControlRepository) GetUserAssetAccess(ctx context.Context, userID
 		GroupID:       gid,
 		GroupName:     groupName,
 	}, nil
-}
-
-// =============================================================================
-// GROUP PERMISSIONS
-// =============================================================================
-
-// CreateGroupPermission creates a new group permission override.
-func (r *AccessControlRepository) CreateGroupPermission(ctx context.Context, gp *accesscontrol.GroupPermission) error {
-	scopeTypeStr := sql.NullString{}
-	if gp.ScopeType() != nil {
-		scopeTypeStr = sql.NullString{String: gp.ScopeType().String(), Valid: true}
-	}
-
-	var scopeValue any
-	if gp.ScopeValue() != nil {
-		jsonBytes, err := json.Marshal(gp.ScopeValue())
-		if err != nil {
-			return fmt.Errorf("failed to marshal scope value: %w", err)
-		}
-		scopeValue = jsonBytes
-	}
-
-	var createdBy any
-	if gp.CreatedBy() != nil {
-		createdBy = gp.CreatedBy().String()
-	}
-
-	query := `
-		INSERT INTO group_permissions (group_id, permission_id, effect, scope_type, scope_value, created_at, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (group_id, permission_id) DO NOTHING
-	`
-
-	result, err := r.db.ExecContext(ctx, query,
-		gp.GroupID().String(),
-		gp.PermissionID(),
-		gp.Effect().String(),
-		scopeTypeStr,
-		scopeValue,
-		gp.CreatedAt(),
-		createdBy,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create group permission: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return accesscontrol.ErrGroupPermissionExists
-	}
-
-	return nil
-}
-
-// GetGroupPermission retrieves a group permission by group ID and permission ID.
-func (r *AccessControlRepository) GetGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) (*accesscontrol.GroupPermission, error) {
-	query := `
-		SELECT group_id, permission_id, effect, scope_type, scope_value, created_at, created_by
-		FROM group_permissions
-		WHERE group_id = $1 AND permission_id = $2
-	`
-
-	var (
-		groupIDStr   string
-		permID       string
-		effect       string
-		scopeType    sql.NullString
-		scopeValue   []byte
-		createdAt    sql.NullTime
-		createdByStr sql.NullString
-	)
-
-	err := r.db.QueryRowContext(ctx, query, groupID.String(), permissionID).Scan(
-		&groupIDStr,
-		&permID,
-		&effect,
-		&scopeType,
-		&scopeValue,
-		&createdAt,
-		&createdByStr,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, accesscontrol.ErrGroupPermissionNotFound
-		}
-		return nil, fmt.Errorf("failed to get group permission: %w", err)
-	}
-
-	return r.scanGroupPermission(groupIDStr, permID, effect, scopeType, scopeValue, createdAt, createdByStr)
-}
-
-// UpdateGroupPermission updates an existing group permission.
-func (r *AccessControlRepository) UpdateGroupPermission(ctx context.Context, gp *accesscontrol.GroupPermission) error {
-	scopeTypeStr := sql.NullString{}
-	if gp.ScopeType() != nil {
-		scopeTypeStr = sql.NullString{String: gp.ScopeType().String(), Valid: true}
-	}
-
-	var scopeValue any
-	if gp.ScopeValue() != nil {
-		jsonBytes, err := json.Marshal(gp.ScopeValue())
-		if err != nil {
-			return fmt.Errorf("failed to marshal scope value: %w", err)
-		}
-		scopeValue = jsonBytes
-	}
-
-	query := `
-		UPDATE group_permissions
-		SET effect = $1, scope_type = $2, scope_value = $3
-		WHERE group_id = $4 AND permission_id = $5
-	`
-
-	result, err := r.db.ExecContext(ctx, query,
-		gp.Effect().String(),
-		scopeTypeStr,
-		scopeValue,
-		gp.GroupID().String(),
-		gp.PermissionID(),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update group permission: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return accesscontrol.ErrGroupPermissionNotFound
-	}
-
-	return nil
-}
-
-// DeleteGroupPermission removes a group permission.
-func (r *AccessControlRepository) DeleteGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) error {
-	query := `DELETE FROM group_permissions WHERE group_id = $1 AND permission_id = $2`
-
-	result, err := r.db.ExecContext(ctx, query, groupID.String(), permissionID)
-	if err != nil {
-		return fmt.Errorf("failed to delete group permission: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return accesscontrol.ErrGroupPermissionNotFound
-	}
-
-	return nil
-}
-
-// ListGroupPermissions lists all custom permissions for a group.
-func (r *AccessControlRepository) ListGroupPermissions(ctx context.Context, groupID shared.ID) ([]*accesscontrol.GroupPermission, error) {
-	query := `
-		SELECT group_id, permission_id, effect, scope_type, scope_value, created_at, created_by
-		FROM group_permissions
-		WHERE group_id = $1
-		ORDER BY permission_id
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, groupID.String())
-	if err != nil {
-		return nil, fmt.Errorf("failed to list group permissions: %w", err)
-	}
-	defer rows.Close()
-
-	return r.scanGroupPermissions(rows)
-}
-
-// ListGroupPermissionsByEffect lists group permissions filtered by effect.
-func (r *AccessControlRepository) ListGroupPermissionsByEffect(ctx context.Context, groupID shared.ID, effect accesscontrol.PermissionEffect) ([]*accesscontrol.GroupPermission, error) {
-	query := `
-		SELECT group_id, permission_id, effect, scope_type, scope_value, created_at, created_by
-		FROM group_permissions
-		WHERE group_id = $1 AND effect = $2
-		ORDER BY permission_id
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, groupID.String(), effect.String())
-	if err != nil {
-		return nil, fmt.Errorf("failed to list group permissions by effect: %w", err)
-	}
-	defer rows.Close()
-
-	return r.scanGroupPermissions(rows)
-}
-
-// scanGroupPermissions scans multiple rows into GroupPermission slice.
-func (r *AccessControlRepository) scanGroupPermissions(rows *sql.Rows) ([]*accesscontrol.GroupPermission, error) {
-	var permissions []*accesscontrol.GroupPermission
-	for rows.Next() {
-		var (
-			groupIDStr   string
-			permID       string
-			effect       string
-			scopeType    sql.NullString
-			scopeValue   []byte
-			createdAt    sql.NullTime
-			createdByStr sql.NullString
-		)
-
-		if err := rows.Scan(&groupIDStr, &permID, &effect, &scopeType, &scopeValue, &createdAt, &createdByStr); err != nil {
-			return nil, fmt.Errorf("failed to scan group permission: %w", err)
-		}
-
-		gp, err := r.scanGroupPermission(groupIDStr, permID, effect, scopeType, scopeValue, createdAt, createdByStr)
-		if err != nil {
-			return nil, err
-		}
-		permissions = append(permissions, gp)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating group permissions: %w", err)
-	}
-
-	return permissions, nil
-}
-
-// scanGroupPermission converts database values to a GroupPermission domain entity.
-func (r *AccessControlRepository) scanGroupPermission(
-	groupIDStr, permID, effect string,
-	scopeType sql.NullString,
-	scopeValue []byte,
-	createdAt sql.NullTime,
-	createdByStr sql.NullString,
-) (*accesscontrol.GroupPermission, error) {
-	groupID, err := shared.IDFromString(groupIDStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse group ID: %w", err)
-	}
-
-	var scopeTypePtr *accesscontrol.ScopeType
-	if scopeType.Valid {
-		st := accesscontrol.ScopeType(scopeType.String)
-		scopeTypePtr = &st
-	}
-
-	var scopeValuePtr *accesscontrol.ScopeValue
-	if len(scopeValue) > 0 {
-		var sv accesscontrol.ScopeValue
-		if err := json.Unmarshal(scopeValue, &sv); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal scope value: %w", err)
-		}
-		scopeValuePtr = &sv
-	}
-
-	var createdByID *shared.ID
-	if createdByStr.Valid {
-		id, err := shared.IDFromString(createdByStr.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse created_by ID: %w", err)
-		}
-		createdByID = &id
-	}
-
-	createdAtTime := createdAt.Time
-	if !createdAt.Valid {
-		createdAtTime = time.Now().UTC()
-	}
-
-	return accesscontrol.ReconstituteGroupPermission(
-		groupID,
-		permID,
-		accesscontrol.PermissionEffect(effect),
-		scopeTypePtr,
-		scopeValuePtr,
-		createdAtTime,
-		createdByID,
-	), nil
 }
 
 // =============================================================================
