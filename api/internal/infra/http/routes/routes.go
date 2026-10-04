@@ -53,6 +53,7 @@ type Handlers struct {
 	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
 	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
 	UserDashboard    *handler.UserDashboardHandler    // nil if not initialized - per-user customizable dashboards (RFC-021)
+	SavedView        *handler.SavedViewHandler        // nil if not initialized - saved list views (D15, RFC-048)
 	Audit            *handler.AuditHandler            // nil if not initialized (no database)
 	Branch           *handler.BranchHandler           // nil if not initialized (no database)
 	SLA              *handler.SLAHandler              // nil if not initialized (no database)
@@ -355,6 +356,9 @@ func Register(
 	// A stale token's admin flag and role are re-read from the database
 	// (tenantRepo, not the membership cache), so a demoted admin loses the
 	// admin bypass on the next request, reads included.
+	if permCache != nil {
+		tenantPermissionChecker = permCache
+	}
 	if permCache != nil && permVersion != nil {
 		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).
 			WithTeamRoleReader(tenantRepo).EnrichPermissions
@@ -810,6 +814,9 @@ func Register(
 	if h.UserDashboard != nil {
 		registerUserDashboardRoutes(router, h.UserDashboard, authMiddleware, userSync)
 	}
+	if h.SavedView != nil {
+		registerSavedViewRoutes(router, h.SavedView, authMiddleware, userSync)
+	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)
 	if h.Permission != nil {
@@ -944,6 +951,10 @@ var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // se
 // permissions from Redis and rejects confirmed-stale state-mutating requests.
 // Set once during Register; nil leaves the legacy embedded-JWT behavior.
 var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// tenantPermissionChecker resolves a caller's permissions in the tenant named
+// by a /api/v1/tenants/{tenant}/... path (see tenantPerm).
+var tenantPermissionChecker middleware.TenantPermissionChecker //nolint:gochecknoglobals // set once during init
 
 // dataScopeGuardMiddleware enforces the Layer 2 data scope on every by-id
 // asset and finding route (see middleware.DataScopeGuard). It runs last on

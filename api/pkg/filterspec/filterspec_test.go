@@ -2,6 +2,7 @@ package filterspec
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -754,5 +755,57 @@ func TestSwagParamsAndRewrite(t *testing.T) {
 	}
 	if _, _, err := RewriteParamBlocks("// filterspec-params: nope\n// end filterspec-params", nil); err == nil {
 		t.Fatal("an unknown registry must fail")
+	}
+}
+
+func TestDocumentRoundTrip(t *testing.T) {
+	reg := testRegistry(t)
+	for _, doc := range []string{
+		`{"v":1,"filter":{"all":[{"field":"severity","op":"in","value":["critical","high"]},{"any":[{"field":"is_in_kev","op":"eq","value":true},{"field":"epss_score","op":"gte","value":0.1}]},{"not":{"field":"asset_tag","op":"in","value":["sandbox"]}},{"field":"last_seen_at","op":"gte","value":"2026-09-01T00:00:00Z"}]},"q":"log4j","sort":["-severity","last_seen_at"]}`,
+		`{"filter":{"severity":["low"],"epss_score_gte":0.5}}`,
+		`{}`,
+	} {
+		s1, err := ParseDocument([]byte(doc), reg, testOpts())
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := s1.DocumentJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		s2, err := ParseDocument(b, reg, testOpts())
+		if err != nil {
+			t.Fatalf("re-parse %s: %v", b, err)
+		}
+		w1, _ := Compile(s1, reg, adminActor(t))
+		w2, _ := Compile(s2, reg, adminActor(t))
+		leafVals := func(s *Spec) string {
+			out := ""
+			for _, l := range s.Leaves() {
+				out += fmt.Sprint(l.Field, l.Op, l.Values)
+			}
+			return out
+		}
+		if w1.SQL != w2.SQL || leafVals(s1) != leafVals(s2) || w1.OrderBy != w2.OrderBy {
+			t.Fatalf("round trip changed the spec:\n%s %v\n%s %v", w1.SQL, w1.Args, w2.SQL, w2.Args)
+		}
+	}
+}
+
+func TestOverlay(t *testing.T) {
+	reg := testRegistry(t)
+	stored, _ := ParseDocument([]byte(`{"filter":{"all":[{"field":"severity","op":"in","value":["critical"]},{"field":"status","op":"in","value":["new"]},{"any":[{"field":"is_in_kev","op":"eq","value":true},{"field":"epss_score","op":"gte","value":0.1}]}]},"q":"x","sort":["-severity"]}`), reg, testOpts())
+	req := mustParse(t, "severity=low&rule_id=r1&page=2", testOpts())
+	out, err := Overlay(stored, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]any{}
+	for _, l := range out.Leaves() {
+		got[l.Field] = append(got[l.Field], l.Values...)
+	}
+	if fmt.Sprint(got["severity"]) != "[low]" || fmt.Sprint(got["status"]) != "[new]" || len(got["rule_id"]) != 1 ||
+		len(got["is_in_kev"]) != 1 || out.Q != "x" || len(out.Sort) != 1 || out.Page != 2 {
+		t.Fatalf("overlay: %v q=%q sort=%v page=%d", got, out.Q, out.Sort, out.Page)
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/controllerlease"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -66,21 +67,41 @@ type Metrics interface {
 	SetLastReconcileTime(controller string, t time.Time)
 }
 
+// Exclusive is an optional Controller extension for work that is not
+// idempotent (retention sweeps, refreshes that call external services): with
+// a lease store set on the manager, each reconcile first takes the controller
+// lease "controller:<name>" (RFC-046 §11, P1.8), so with several API
+// replicas exactly one runs it at a time. A replica that does not get the
+// lease skips the tick.
+type Exclusive interface {
+	Exclusive() bool
+}
+
 // Manager manages multiple controllers, running them in parallel goroutines.
 type Manager struct {
 	controllers []Controller
 	metrics     Metrics
-	logger      *logger.Logger
-	running     bool
-	stopCh      chan struct{}
-	wg          sync.WaitGroup
-	mu          sync.Mutex
+	leases      controllerlease.Store
+	holder      string
+	// leaseRenew overrides the renewal period (a third of the lease TTL);
+	// tests only.
+	leaseRenew time.Duration
+	logger     *logger.Logger
+	running    bool
+	stopCh     chan struct{}
+	wg         sync.WaitGroup
+	mu         sync.Mutex
 }
 
 // ManagerConfig configures the controller manager.
 type ManagerConfig struct {
 	// Metrics collector (optional)
 	Metrics Metrics
+
+	// Leases and LeaseHolder run Exclusive controllers on one replica at a
+	// time (optional; without them they run on every replica, as before).
+	Leases      controllerlease.Store
+	LeaseHolder string
 
 	// Logger (required)
 	Logger *logger.Logger
@@ -91,6 +112,8 @@ func NewManager(cfg *ManagerConfig) *Manager {
 	return &Manager{
 		controllers: make([]Controller, 0),
 		metrics:     cfg.Metrics,
+		leases:      cfg.Leases,
+		holder:      cfg.LeaseHolder,
 		logger:      cfg.Logger,
 		stopCh:      make(chan struct{}),
 	}
@@ -224,6 +247,13 @@ func (m *Manager) reconcileOnce(ctx context.Context, c Controller) {
 	reconcileCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// An exclusive controller runs only while it holds its lease.
+	if release, ok := m.holdLease(reconcileCtx, cancel, c, timeout); !ok {
+		return
+	} else if release != nil {
+		defer release()
+	}
+
 	count, err := c.Reconcile(reconcileCtx)
 	duration := time.Since(start)
 
@@ -254,6 +284,63 @@ func (m *Manager) reconcileOnce(ctx context.Context, c Controller) {
 	if m.metrics != nil {
 		m.metrics.SetLastReconcileTime(name, time.Now())
 	}
+}
+
+// holdLease takes c's lease when c is Exclusive and the manager has a lease
+// store, and renews it every third of its TTL while c reconciles; losing it
+// cancels the reconcile. ok is false when another replica holds it (the tick
+// is skipped). release is nil when no lease is involved.
+func (m *Manager) holdLease(ctx context.Context, cancel context.CancelFunc, c Controller, timeout time.Duration) (release func(), ok bool) {
+	ex, isEx := c.(Exclusive)
+	if !isEx || !ex.Exclusive() || m.leases == nil || m.holder == "" {
+		return nil, true
+	}
+	name := "controller:" + c.Name()
+	ttl := controllerlease.ClampTTL(timeout + 30*time.Second)
+	lease, got, err := m.leases.TryAcquire(ctx, name, m.holder, ttl)
+	if err != nil {
+		m.logger.Warn("controller lease unavailable; skipping this run", "name", c.Name(), "error", err)
+		return nil, false
+	}
+	if !got {
+		m.logger.Debug("controller lease held by another replica; skipping this run", "name", c.Name())
+		return nil, false
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		every := ttl / 3
+		if m.leaseRenew > 0 {
+			every = m.leaseRenew
+		}
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+				held, rerr := m.leases.Renew(rctx, lease, ttl)
+				rcancel()
+				if rerr == nil && !held {
+					m.logger.Warn("controller lease lost; stopping this run", "name", c.Name(), "epoch", lease.Epoch)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
+		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer rcancel()
+		if err := m.leases.Release(rctx, lease); err != nil {
+			m.logger.Warn("failed to release controller lease", "name", c.Name(), "error", err)
+		}
+	}, true
 }
 
 // IsRunning checks if the manager is running.

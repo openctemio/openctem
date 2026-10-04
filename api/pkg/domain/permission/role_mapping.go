@@ -14,7 +14,7 @@ import "github.com/openctemio/openctem/api/pkg/domain/tenant"
 var RolePermissions = map[tenant.Role][]Permission{
 	tenant.RoleOwner: {
 		// Core
-		DashboardRead,
+		DashboardRead, DashboardAggregate,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 		// Assets
@@ -31,7 +31,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		CredentialsRead, CredentialsWrite, CredentialsReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
-		PoliciesRead, PoliciesWrite, PoliciesDelete,
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
@@ -58,7 +57,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
 		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
 		// Settings
-		BillingRead, BillingWrite,
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove,
@@ -71,10 +69,9 @@ var RolePermissions = map[tenant.Role][]Permission{
 		PentestTemplatesRead, PentestTemplatesWrite,
 		PentestReportsWrite,
 		// Compliance (all)
-		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 		// Reports
 		ReportsRead, ReportsWrite,
 		// Threat Intel
@@ -92,7 +89,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 
 	tenant.RoleAdmin: {
 		// Core
-		DashboardRead,
+		DashboardRead, DashboardAggregate,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 		// Assets
@@ -109,7 +106,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		CredentialsRead, CredentialsWrite, CredentialsReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
-		PoliciesRead, PoliciesDelete, PoliciesWrite,
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
@@ -136,7 +132,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
 		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
 		// Settings (billing read only)
-		BillingRead,
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove,
@@ -149,10 +144,9 @@ var RolePermissions = map[tenant.Role][]Permission{
 		PentestTemplatesRead, PentestTemplatesWrite,
 		PentestReportsWrite,
 		// Compliance (all)
-		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 		// Reports
 		ReportsRead, ReportsWrite,
 		// Threat Intel
@@ -173,7 +167,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		DashboardRead,
 		SettingsRead,
 		// Assets (read + write, no delete)
-		AssetsRead, AssetsWrite,
+		AssetsRead, AssetsWrite, AssetsImport,
 		AssetGroupsRead, AssetGroupsWrite,
 		ComponentsRead, ComponentsWrite,
 		// Findings (read + write, no delete; fix_apply yes, verify no).
@@ -184,13 +178,12 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// member's assign/bulk grant is a separate product decision.
 		FindingsRead, FindingsWrite,
 		FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsFixApply,
-		ExposuresRead, ExposuresWrite,
+		ExposuresRead, ExposuresWrite, ExposuresTriage,
 		SuppressionsRead,
 		VulnerabilitiesRead,
 		CredentialsRead,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead,
-		PoliciesRead,
 		// Scans (read + write, no delete)
 		ScansRead, ScansWrite, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite,
@@ -218,7 +211,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		NotificationsRead,
 		WebhooksRead,
 		APIKeysRead,
-		PipelinesRead, PipelinesWrite,
+		PipelinesRead, PipelinesWrite, PipelinesExecute,
 		// Settings (read only; billing is owner/admin only)
 		SLARead,
 		// Attack Surface (read + write)
@@ -235,7 +228,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 		// Reports (read + write)
 		ReportsRead, ReportsWrite,
 		// Threat Intel (read only)
@@ -266,7 +258,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		CredentialsRead,
 		RemediationRead,
 		WorkflowsRead,
-		PoliciesRead,
 		// Scans (read only)
 		ScansRead,
 		ScanProfilesRead,
@@ -300,7 +291,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Pentest (read only)
 		PentestCampaignsRead, PentestFindingsRead, PentestRetestsRead, PentestTemplatesRead,
 		// Compliance (read only)
-		ComplianceFrameworksRead, ComplianceAssessmentsRead, ComplianceMappingsRead, ComplianceReportsRead,
+		ComplianceFrameworksRead, ComplianceAssessmentsRead, ComplianceMappingsRead,
 		// Reports (read only)
 		ReportsRead,
 		// Threat Intel (read only)

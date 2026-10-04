@@ -24,6 +24,7 @@ var aliasConstants = map[string]AssetType{
 	"AssetTypeOpenPort":            AssetTypeOpenPort,
 	"AssetTypeDiscoveredURL":       AssetTypeDiscoveredURL,
 	"AssetTypeWebsite":             AssetTypeWebsite,
+	"AssetTypeEndpoint":            AssetTypeEndpoint,
 	"AssetTypeWebApplication":      AssetTypeWebApplication,
 	"AssetTypeAPI":                 AssetTypeAPI,
 	"AssetTypeMobileApp":           AssetTypeMobileApp,

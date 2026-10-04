@@ -173,6 +173,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
 	vulnHandler.SetComponentService(svc.Component)
+	vulnHandler.SetSavedViews(svc.SavedView)
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
@@ -193,6 +194,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
 	findingActionsHandler.SetValidationRunner(svc.ValidationRun)
 	findingActionsHandler.SetSourceAnalytics(svc.SourceAnalytics)
+	findingActionsHandler.SetSavedViews(svc.SavedView)
 
 	// Validation handler + coverage KPI reader.
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
@@ -276,6 +278,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetImport:            newAssetImportHandler(svc, log),
 		ReportSchedule:         newReportScheduleHandler(svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
+		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:             vulnHandler,
