@@ -119,9 +119,14 @@ func (r *AttributionRepository) SaveDecisions(ctx context.Context, tenantID shar
 	if id, err := shared.IDFromString(decidedBy); err == nil {
 		by = id.String()
 	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("save attribution decisions: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	// prev reads the statement's snapshot, so it holds the state before the
 	// upsert.
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
 		WITH prev AS (
 			SELECT asset_id, state FROM asset_attributions
 			WHERE tenant_id = $2 AND asset_id = ANY($1::uuid[])
@@ -146,9 +151,24 @@ func (r *AttributionRepository) SaveDecisions(ctx context.Context, tenantID shar
 	for rows.Next() {
 		var id, prev string
 		if err := rows.Scan(&id, &prev); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		out[id] = attribution.State(prev)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	written := make([]string, 0, len(out))
+	for id := range out {
+		written = append(written, id)
+	}
+	if err := syncTombstones(ctx, tx, tenantID, written, state, by); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("save attribution decisions: %w", err)
+	}
+	return out, nil
 }

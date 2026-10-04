@@ -208,6 +208,9 @@ type SyncService struct {
 	// without a manual Verify button click.
 	postFixHook FixAppliedHook
 
+	// activity records inbound status changes with the integration as actor.
+	activity StatusActivityRecorder
+
 	// campaignSink receives inbound epic status changes so a linked remediation
 	// campaign can be completed (epic Done → campaign completed). nil → inbound
 	// campaign sync is inert.
@@ -817,7 +820,7 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		}
 	}
 
-	newFindingStatus, ok := mapJiraStatusToFinding(newJiraStatus)
+	newFindingStatus, ok := s.inboundMapping(ctx, tenantID).FindingStatusForJira(newJiraStatus)
 	if !ok {
 		s.logger.Debug("jira status has no finding mapping — ignored",
 			"jira_status", newJiraStatus,
@@ -843,6 +846,16 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		return fmt.Errorf("lookup finding by work item URI: %w", err)
 	}
 
+	// Apply-time guard: whatever the mapping says, a ticket never closes a
+	// finding (no verify gate, no approval, no person). FindingStatusForJira
+	// already refuses these; this keeps the rule if the mapping code changes.
+	if !newFindingStatus.IsTicketInboundTarget() {
+		s.logger.Warn("jira webhook: refused a closing status from a ticket",
+			"issue_key", logger.SanitizeValue(payload.Issue.Key), "target_status", logger.SanitizeValue(string(newFindingStatus)))
+		return nil
+	}
+
+	oldStatus := finding.Status()
 	// Apply the status transition if valid.
 	if err := finding.TransitionStatus(newFindingStatus, "", nil); err != nil {
 		s.logger.Warn("jira webhook: finding status transition not allowed",
@@ -866,6 +879,14 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		"jira_status", newJiraStatus,
 		"finding_status", newFindingStatus,
 	)
+	// The actor of this change is the Jira integration, not a person: record
+	// it so the finding's history says who moved it and from which ticket.
+	if s.activity != nil && oldStatus != newFindingStatus {
+		if aerr := s.activity.RecordIntegrationStatusChange(ctx, tenantID, finding.ID(),
+			oldStatus.String(), newFindingStatus.String(), "jira", payload.Issue.Key); aerr != nil {
+			s.logger.Warn("jira webhook: failed to record activity", "finding_id", finding.ID().String(), "error", aerr)
+		}
+	}
 
 	// B3: fire the verification-scan hook on transition to
 	// fix_applied. This closes the "Jira Done → auto rescan" feedback
@@ -880,13 +901,26 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 	return nil
 }
 
-// mapJiraStatusToFinding maps a Jira status name to a FindingStatus using the
-// default mapping. Per-integration overrides are applied via MappingConfig (see
-// mapping.go); this keeps callers without integration context working.
-// Returns (status, true) when a mapping exists, (_, false) otherwise.
-func mapJiraStatusToFinding(jiraStatus string) (vulnerability.FindingStatus, bool) {
-	return DefaultMappingConfig().FindingStatusForJira(jiraStatus)
+// inboundMapping is the tenant's inbound status map: its integration overlay
+// when one resolves, the defaults otherwise. Either way FindingStatusForJira
+// only ever yields IsTicketInboundTarget statuses.
+func (s *SyncService) inboundMapping(ctx context.Context, tenantID shared.ID) MappingConfig {
+	if s.mappingResolver != nil {
+		if m, err := s.mappingResolver.ResolveMapping(ctx, tenantID); err == nil && m.StatusInbound != nil {
+			return m
+		}
+	}
+	return DefaultMappingConfig()
 }
+
+// StatusActivityRecorder records a status change whose actor is an
+// integration (a ticket webhook), naming the integration and the ticket.
+type StatusActivityRecorder interface {
+	RecordIntegrationStatusChange(ctx context.Context, tenantID, findingID shared.ID, oldStatus, newStatus, integration, ref string) error
+}
+
+// SetActivityRecorder wires the finding-activity recorder for inbound changes.
+func (s *SyncService) SetActivityRecorder(r StatusActivityRecorder) { s.activity = r }
 
 // deriveJiraTicketURL builds the canonical browse URL for a Jira issue.
 // It prefers payload.Issue.Self (REST API URL) but converts it to the browse URL
