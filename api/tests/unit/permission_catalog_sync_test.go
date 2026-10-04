@@ -34,6 +34,7 @@ var permSeedMigrations = []string{
 	"000231_scan_zones.up.sql",                    // sensors:zones:* (RFC-023 D16)
 	"000232_credentials_reveal_permission.up.sql", // findings:credentials:reveal
 	"000267_scope_exclusion_approval.up.sql",      // attack_surface:scope:exclusions:approve
+	"000774_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
@@ -47,7 +48,8 @@ var permRenameMigrations = []string{
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
 // order, after the renames.
 var permRemoveMigrations = []string{
-	"000670_remove_group_permission_sets.up.sql", // team:permission_sets:* (permissions come only from roles)
+	"000670_remove_group_permission_sets.up.sql",   // team:permission_sets:* (permissions come only from roles)
+	"000772_remove_meaningless_permissions.up.sql", // billing/policies/compliance permissions that gate nothing
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)

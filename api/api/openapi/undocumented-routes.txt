@@ -137,7 +137,6 @@ GET /api/v1/dashboard/velocity
 GET /api/v1/findings/ai-triage/config
 GET /api/v1/findings/analytics/sources
 GET /api/v1/findings/groups
-GET /api/v1/findings/related-cves/{}
 GET /api/v1/findings/{}/activities
 GET /api/v1/findings/{}/ai-triage
 GET /api/v1/findings/{}/ai-triage/history

@@ -86,37 +86,18 @@ func (r *CTMonitorStateRepository) SaveState(ctx context.Context, tenantID share
 	return nil
 }
 
-// ctMonitorLockNamespace namespaces the per-tenant sweep lock ("CTMN").
-const ctMonitorLockNamespace int32 = 0x43544d4e
+// ctMonitorLeaseTTL bounds how long a crashed replica's per-tenant sweep
+// lease blocks the others; a live holder renews it every third of it.
+const ctMonitorLeaseTTL = 10 * time.Minute
 
-// TryLockTenant takes a session advisory lock for one tenant's CT sweep, so
-// two API replicas never sweep the same tenant at once (each would read the
-// rotation state before the other wrote it and query the same domains). The
-// lock lives on a dedicated connection, released with that connection; a
-// pooled session lock could be unlocked on a different connection and leak.
+// TryLockTenant makes one tenant's CT sweep run on one API replica at a time
+// (each would read the rotation state before the other wrote it and query the
+// same domains), with the controller lease "ct_monitor:<tenant>" (RFC-046
+// P1.8; it was a session advisory lock on a dedicated connection).
 func (r *CTMonitorStateRepository) TryLockTenant(ctx context.Context, tenantID shared.ID) (func(), bool, error) {
-	conn, err := r.db.Conn(ctx)
+	release, ok, err := tryLeaseLock(ctx, NewControllerLeaseRepository(r.db), "ct_monitor:"+tenantID.String(), ctMonitorLeaseTTL)
 	if err != nil {
 		return nil, false, fmt.Errorf("ct monitor lock: %w", err)
 	}
-	var ok bool
-	if err := conn.QueryRowContext(ctx,
-		`SELECT pg_try_advisory_lock($1, hashtext($2))`, ctMonitorLockNamespace, tenantID.String(),
-	).Scan(&ok); err != nil {
-		_ = conn.Close()
-		return nil, false, fmt.Errorf("ct monitor lock: %w", err)
-	}
-	if !ok {
-		_ = conn.Close()
-		return nil, false, nil
-	}
-	release := func() {
-		// A fresh context: the sweep's may already be canceled, and the lock
-		// must still be released before the connection returns to the pool.
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1, hashtext($2))`, ctMonitorLockNamespace, tenantID.String())
-		_ = conn.Close()
-	}
-	return release, true, nil
+	return release, ok, nil
 }

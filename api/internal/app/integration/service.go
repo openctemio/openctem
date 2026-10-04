@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/jira"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/infra/notifier"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
@@ -276,6 +277,11 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 		}
 		input.Config["execution_mode"] = string(tcfg.ExecutionMode)
 		input.Config["engine"] = string(tcfg.Engine)
+	}
+
+	// A ticket's inbound status map may never target a closing status.
+	if err := jira.ValidateTicketingConfig(input.Config); err != nil {
+		return nil, err
 	}
 
 	// Check for duplicate integration name within tenant
@@ -551,6 +557,10 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 		merged["engine"] = string(tcfg.Engine)
 		intg.SetConfig(merged)
 	} else if input.Config != nil {
+		// A ticket's inbound status map may never target a closing status.
+		if err := jira.ValidateTicketingConfig(input.Config); err != nil {
+			return nil, err
+		}
 		intg.SetConfig(input.Config)
 	}
 

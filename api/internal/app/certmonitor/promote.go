@@ -50,6 +50,17 @@ type AttributionStore interface {
 	SaveAutomatic(ctx context.Context, tenantID shared.ID, assetID string, d attribution.Decision) error
 }
 
+// TombstoneChecker reports the names a person rejected (RFC-036 §6.4): for
+// each name with an unexpired tombstone, the rules that supported it at
+// rejection. Satisfied by *postgres.AttributionRepository.
+type TombstoneChecker interface {
+	Tombstoned(ctx context.Context, tenantID shared.ID, names []string) (map[string][]attribution.Rule, error)
+	PurgeExpiredTombstones(ctx context.Context, tenantID shared.ID) (int64, error)
+}
+
+// SetTombstones makes promotion skip rejected names (nil: no check).
+func (s *Service) SetTombstones(t TombstoneChecker) { s.tombstones = t }
+
 // DefaultMaxPromotionsPerRun bounds how many CT names one tenant sweep turns
 // into new assets. A wildcard-heavy or CDN domain can carry thousands of
 // names; the rest are picked up on later runs (each run re-reads CT).
@@ -107,12 +118,28 @@ func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promo
 		return 0, fmt.Errorf("look up existing assets: %w", err)
 	}
 
-	// New names, verified roots first, bounded per run.
+	// New names, verified roots first, bounded per run. A name a person
+	// rejected is not proposed again unless a rule that was not there at
+	// rejection supports it now (tombstone, RFC-036 §6.4).
 	var fresh []string
 	for _, n := range names {
 		if _, ok := existing[n]; !ok {
 			fresh = append(fresh, n)
 		}
+	}
+	if s.tombstones != nil && len(fresh) > 0 {
+		dead, err := s.tombstones.Tombstoned(ctx, tenantID, fresh)
+		if err != nil {
+			return 0, fmt.Errorf("look up tombstones: %w", err)
+		}
+		kept := fresh[:0]
+		for _, n := range fresh {
+			if rules, ok := dead[n]; ok && containsRule(rules, ruleFor(byName[n].root)) {
+				continue
+			}
+			kept = append(kept, n)
+		}
+		fresh = kept
 	}
 	sort.SliceStable(fresh, func(i, j int) bool {
 		return originRank(byName[fresh[i]].root.origin) > originRank(byName[fresh[j]].root.origin)
@@ -242,4 +269,13 @@ func (s *Service) promotionReport(tenantID shared.ID, fresh []string, byName map
 		})
 	}
 	return report
+}
+
+func containsRule(rules []attribution.Rule, r attribution.Rule) bool {
+	for _, x := range rules {
+		if x == r {
+			return true
+		}
+	}
+	return false
 }
