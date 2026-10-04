@@ -96,14 +96,10 @@ func (s *GroupService) logAudit(ctx context.Context, actx auditapp.AuditContext,
 // tenant (anti-enumeration: ErrNotFound on mismatch/empty), preventing
 // cross-tenant group management via a guessed group ID.
 func (s *GroupService) groupForTenant(ctx context.Context, id shared.ID, callerTenantID string) (*groupdom.Group, error) {
-	g, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if callerTenantID == "" || g.TenantID().String() != callerTenantID {
-		return nil, shared.ErrNotFound
-	}
-	return g, nil
+	// An empty or malformed caller tenant becomes the zero ID, which owns no
+	// group, so the lookup answers not-found.
+	tid, _ := shared.IDFromString(callerTenantID)
+	return s.repo.GetByTenantAndID(ctx, tid, id)
 }
 
 // =============================================================================
@@ -181,7 +177,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 	}, actx)
 	if err != nil {
 		// Rollback group creation
-		_ = s.repo.Delete(ctx, g.ID())
+		_ = s.repo.Delete(ctx, g.TenantID(), g.ID())
 		return nil, fmt.Errorf("failed to add creator as group owner: %w", err)
 	}
 
@@ -195,16 +191,6 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 	s.logAudit(ctx, actx, event)
 
 	return g, nil
-}
-
-// GetGroup retrieves a group by ID.
-func (s *GroupService) GetGroup(ctx context.Context, groupID string) (*groupdom.Group, error) {
-	id, err := shared.IDFromString(groupID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
-	}
-
-	return s.repo.GetByID(ctx, id)
 }
 
 // GetGroupSecure retrieves a group by tenant and ID (tenant-scoped access control).
@@ -323,7 +309,7 @@ func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx aud
 	tenantID := g.TenantID().String()
 	groupName := g.Name()
 
-	if err := s.repo.Delete(ctx, id); err != nil {
+	if err := s.repo.Delete(ctx, g.TenantID(), id); err != nil {
 		return err
 	}
 
@@ -770,7 +756,7 @@ func (s *GroupService) AssignPermissionSet(ctx context.Context, input AssignPerm
 	// permission set owned by the group's tenant, or a global system template
 	// (tenant_id NULL). This prevents assigning another tenant's custom set.
 	if s.permissionSetRepo != nil {
-		ps, err := s.permissionSetRepo.GetByID(ctx, permissionSetID)
+		ps, err := s.permissionSetRepo.GetByID(ctx, g.TenantID(), permissionSetID)
 		if err != nil {
 			return err
 		}
@@ -852,7 +838,8 @@ func (s *GroupService) ListGroupPermissionSetsWithDetails(ctx context.Context, t
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
-	if _, err := s.groupForTenant(ctx, gid, tenantID); err != nil {
+	g, err := s.groupForTenant(ctx, gid, tenantID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -863,7 +850,7 @@ func (s *GroupService) ListGroupPermissionSetsWithDetails(ctx context.Context, t
 
 	result := make([]*permissionsetdom.PermissionSetWithItems, 0, len(ids))
 	for _, id := range ids {
-		ps, err := s.permissionSetRepo.GetWithItems(ctx, id)
+		ps, err := s.permissionSetRepo.GetWithItems(ctx, g.TenantID(), id)
 		if err != nil {
 			// If a permission set is not found or other error, we log but continue
 			// or we could fail. For now, let's skip/continue to avoid breaking the whole list
