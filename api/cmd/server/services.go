@@ -1462,6 +1462,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.Attribution != nil {
 		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution))
 	}
+	// A nuclei takeover-template match from a tenant scan confirms an open
+	// dangling_cname as subdomain_takeover (RFC-036 P1).
+	if repos.EASMDNS != nil && repos.Exposure != nil {
+		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, repos.Exposure, log))
+	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is
 	// built before ingest.
