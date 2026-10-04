@@ -14,7 +14,7 @@ nuclei template (`findings.rule_id`) against the finding's own target — plus a
 
 | Template re-run | Target reachable? | Outcome | Finding |
 |---|---|---|---|
-| matched | any | `still_present` | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress` · `validated_fixed` → `confirmed` |
+| matched | any | `still_present` | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress` · `validated_fixed` / `not_observed` → `confirmed` |
 | no match | yes | `fixed` | → `resolved`, `resolution_method = retest_verified` (`resolved` stays) |
 | no match | no / unknown | `unknown` | unchanged ("target unreachable") |
 | inconclusive / error / no result / deadline passed | any | `unknown` | unchanged |
@@ -25,8 +25,8 @@ firewall change or a sensor in the wrong zone would read as "fixed".
 
 Eligible findings: `tool_name = nuclei` with a template id that passes the
 template guard (no path, no `dos`/`fuzz`/`intrusive`/`brute-force` marker), in
-`new`, `confirmed`, `in_progress`, `fix_applied`, `validated_fixed` or
-`resolved`, on an `active`, network-addressable asset that passes the scope
+`new`, `confirmed`, `in_progress`, `fix_applied`, `validated_fixed`,
+`not_observed` or `resolved`, on an `active`, network-addressable asset that passes the scope
 gates. `false_positive`, `accepted`, `duplicate`, suppressed and pentest
 findings are never retested.
 

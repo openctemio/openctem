@@ -35,6 +35,23 @@ func (r *DataScopeRepository) HasAnyScopeAssignment(ctx context.Context, tenantI
 	return exists, nil
 }
 
+// HasFullDataRole reports whether the user holds a role with
+// has_full_data_access in the tenant.
+func (r *DataScopeRepository) HasFullDataRole(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	var full bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM user_roles ur
+			JOIN roles ro ON ro.id = ur.role_id
+			WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND ro.has_full_data_access = TRUE
+			  AND (ro.tenant_id IS NULL OR ro.tenant_id = ur.tenant_id))`,
+		tenantID.String(), userID.String()).Scan(&full)
+	if err != nil {
+		return false, fmt.Errorf("check full data role: %w", err)
+	}
+	return full, nil
+}
+
 // AssetIDsInScope returns the subset of assetIDs the user has a scope row for.
 func (r *DataScopeRepository) AssetIDsInScope(ctx context.Context, tenantID, userID shared.ID, assetIDs []shared.ID) ([]shared.ID, error) {
 	if len(assetIDs) == 0 {
