@@ -21,8 +21,12 @@ import { CERT_EXPIRING_DAYS, type CertStatus } from './certificate-facts'
  *    `cert_*`, `resolved_ips`, `cname_target` …).
  *
  * A fact the asset does not carry is `null` / `undefined` / an empty list.
- * Callers render that as "unknown" or "not collected", never as a default
- * value (no "200", no "TCP", no "valid"): see RFC-036 E8 and PR #829.
+ * It is never shown as a default value (no "200", no "TCP", no "valid"):
+ * see RFC-036 E8 and PR #829. Lists render nothing for it, and a drawer
+ * names it once in a "Not collected yet: …" line (ui-style-contract §7,
+ * "Unknown facts"). Where a reader tells "not collected" (`null`) from
+ * "collected, none found" (`[]`, `{ kind: 'none' }`), the second is data
+ * and is shown ("No technologies detected", "No open ports", "No TLS").
  *
  * All values here are scanner-supplied text. Render them as React text
  * children only, never as HTML.

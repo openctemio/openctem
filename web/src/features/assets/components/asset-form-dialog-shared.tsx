@@ -455,7 +455,8 @@ export function AssetFormDialogShared({
               />
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Optional — used for ownership tracking and reporting.
+              Optional. If it is the email of a member, that member becomes a primary owner (see the
+              Owners tab).
             </p>
           </div>
 

@@ -26,22 +26,30 @@ import {
   ChipMono,
   ChipRow,
   FactChip,
+  EmptyCell,
   OverflowChips,
-  UnknownChip,
 } from '@/features/assets/components/service-cells'
 
 // Validity comes from certificate-facts: it reads both the form keys and the
 // nested map ingest writes, and a certificate without a date is "unknown",
 // never "valid". The expiry chip is the shared one every TLS cell uses.
+// A fact nothing recorded is an empty cell (`—`) in the list and one "Not
+// collected yet" line in the drawer (ui-style-contract §7); the Validity
+// filter keeps its "Unknown" value so those certificates stay findable.
 const getCertStatus = (asset: Asset): CertStatus => certStatus(asset)
 const getDaysUntilExpiry = (asset: Asset): number | null => certDaysLeft(asset)
-const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
-const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString() : unknownText())
-const yesNo = (v: boolean | null) => (v === null ? unknownText() : v ? 'Yes' : 'No')
+const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString() : null)
+const yesNo = (v: boolean | null) => (v === null ? null : v ? 'Yes' : 'No')
+
+/** Whether the certificate's expiry was recorded (so its validity is known). */
+function hasExpiry(asset: Asset): boolean {
+  const cert = recordedCertificate(asset)
+  return cert !== null && cert.status !== 'unknown'
+}
 
 function ExpiryCell({ asset }: { asset: Asset }) {
   const cert = recordedCertificate(asset)
-  return cert ? <CertExpiryChip cert={cert} /> : <UnknownChip>Expiry unknown</UnknownChip>
+  return cert ? <CertExpiryChip cert={cert} fallback={<EmptyCell />} /> : <EmptyCell />
 }
 
 export const certificatesConfig: AssetPageConfig = {
@@ -60,7 +68,7 @@ export const certificatesConfig: AssetPageConfig = {
       header: 'Issuer',
       cell: ({ row }) => {
         const issuer = certIssuer(row.original)
-        if (!issuer) return <UnknownChip>Unknown</UnknownChip>
+        if (!issuer) return <EmptyCell />
         return (
           <span className="block max-w-[180px] truncate text-muted-foreground" title={issuer}>
             {issuer}
@@ -74,7 +82,7 @@ export const certificatesConfig: AssetPageConfig = {
       header: 'Valid Until',
       cell: ({ row }) => {
         const notAfter = certNotAfter(row.original)
-        if (!notAfter) return <UnknownChip>Unknown</UnknownChip>
+        if (!notAfter) return <EmptyCell />
         return <span className="text-sm tabular-nums">{notAfter.toLocaleDateString()}</span>
       },
     },
@@ -88,7 +96,7 @@ export const certificatesConfig: AssetPageConfig = {
       header: 'SANs',
       cell: ({ row }) => {
         const sans = certSans(row.original)
-        if (sans.length === 0) return <UnknownChip>Not collected</UnknownChip>
+        if (sans.length === 0) return <EmptyCell />
         return (
           <ChipRow className="max-w-[240px]">
             <OverflowChips label="SAN" values={sans} />
@@ -239,8 +247,9 @@ export const certificatesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Status',
-          getValue: (asset: Asset) => <ExpiryCell asset={asset} />,
+          getValue: (asset: Asset) => (hasExpiry(asset) ? <ExpiryCell asset={asset} /> : null),
           fullWidth: true,
+          notCollected: 'expiry',
         },
       ],
     },
@@ -249,58 +258,64 @@ export const certificatesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Issuer',
-          getValue: (asset: Asset) => certIssuer(asset) ?? unknownText(),
+          getValue: (asset: Asset) => certIssuer(asset),
+          notCollected: 'issuer',
         },
         {
           label: 'Subject',
-          getValue: (asset: Asset) => certSubject(asset) ?? unknownText(),
+          getValue: (asset: Asset) => certSubject(asset),
+          notCollected: 'subject',
         },
         {
           label: 'Valid From',
           getValue: (asset: Asset) => fmtDate(certNotBefore(asset)),
+          notCollected: 'valid from',
         },
         {
           label: 'Valid Until',
           getValue: (asset: Asset) => fmtDate(certNotAfter(asset)),
+          notCollected: 'valid until',
         },
         {
           label: 'Algorithm',
-          getValue: (asset: Asset) => certSignatureAlgorithm(asset) ?? unknownText(),
+          getValue: (asset: Asset) => certSignatureAlgorithm(asset),
+          notCollected: 'algorithm',
         },
         {
           label: 'Key',
           getValue: (asset: Asset) => {
             const size = certKeySize(asset)
             const algo = certKeyAlgorithm(asset)
-            if (!size && !algo) return unknownText()
+            if (!size && !algo) return null
             return [algo, size ? `${size} bits` : ''].filter(Boolean).join(' ')
           },
+          notCollected: 'key',
         },
         {
           label: 'Serial Number',
           getValue: (asset: Asset) => {
             const serial = certSerial(asset)
-            return serial ? (
-              <span className="break-all font-mono text-xs">{serial}</span>
-            ) : (
-              unknownText()
-            )
+            return serial ? <span className="break-all font-mono text-xs">{serial}</span> : null
           },
+          notCollected: 'serial number',
         },
         {
           label: 'Wildcard',
           getValue: (asset: Asset) => yesNo(certIsWildcard(asset)),
+          notCollected: 'wildcard',
         },
         {
           label: 'Self-signed',
           getValue: (asset: Asset) => yesNo(certSelfSigned(asset)),
+          notCollected: 'self-signed',
         },
         {
           label: 'Fingerprint',
           getValue: (asset: Asset) => {
             const fp = certFingerprint(asset)
-            return fp ? <span className="break-all font-mono text-xs">{fp}</span> : unknownText()
+            return fp ? <span className="break-all font-mono text-xs">{fp}</span> : null
           },
+          notCollected: 'fingerprint',
         },
       ],
     },
@@ -312,7 +327,7 @@ export const certificatesConfig: AssetPageConfig = {
           fullWidth: true,
           getValue: (asset: Asset) => {
             const sans = certSans(asset)
-            if (sans.length === 0) return unknownText('Not collected')
+            if (sans.length === 0) return null
             return (
               <ChipRow>
                 {sans.map((san) => (
@@ -323,6 +338,7 @@ export const certificatesConfig: AssetPageConfig = {
               </ChipRow>
             )
           },
+          notCollected: 'SANs',
         },
       ],
     },

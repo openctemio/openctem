@@ -113,6 +113,9 @@ func (r *DataScopeRepository) FindingAssetID(ctx context.Context, tenantID, find
 	return shared.IDFromString(assetID.String)
 }
 
+// sqlTrue is the predicate an unrestricted (nil) data scope adds.
+const sqlTrue = "TRUE"
+
 // dataScopeCond returns the SQL predicate "assetExpr is in the data scope"
 // with its two arguments appended to args, numbered after the existing ones.
 // A nil scope returns "TRUE" and leaves args unchanged.
@@ -121,10 +124,23 @@ func (r *DataScopeRepository) FindingAssetID(ctx context.Context, tenantID, find
 // (user_id, asset_id) index) is written once.
 func dataScopeCond(assetExpr string, scope *shared.DataScope, args []any) (string, []any) {
 	if scope == nil {
-		return "TRUE", args
+		return sqlTrue, args
 	}
 	cond, scopeArgs := dataScopeCondAt(assetExpr, scope, len(args)+1)
 	return cond, append(args, scopeArgs...)
+}
+
+// pairInScopeCond is dataScopeCond for a row that links two assets (a
+// relationship, a suggestion): both ends must be in the scope, because the
+// row names the other asset. A nil scope returns "TRUE" and leaves args
+// unchanged.
+func pairInScopeCond(sourceExpr, targetExpr string, scope *shared.DataScope, args []any) (string, []any) {
+	if scope == nil {
+		return sqlTrue, args
+	}
+	src, scopeArgs := dataScopeCondAt(sourceExpr, scope, len(args)+1)
+	dst, _ := dataScopeCondAt(targetExpr, scope, len(args)+1)
+	return "(" + src + " AND " + dst + ")", append(args, scopeArgs...)
 }
 
 // dataScopeCondAt is dataScopeCond for builders that number their own

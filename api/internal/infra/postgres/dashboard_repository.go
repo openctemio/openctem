@@ -979,7 +979,9 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 		WITH asset_stats AS (
 			SELECT
 				COUNT(*) AS total,
-				COUNT(*) FILTER(WHERE owner_id IS NOT NULL) AS with_owner,
+				-- Owned = at least one asset_owners row (user or group), the one
+				-- owner model. assets.owner_id only held email-matched owners.
+				COUNT(*) FILTER(WHERE EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = assets.id)) AS with_owner,
 				-- Internet-exposed = exposure 'public' or flagged internet-accessible,
 				-- the same definition the program metrics use. assets.exposure has no
 				-- 'internet' value; filtering on it made this median a constant 0.
@@ -1097,7 +1099,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1
 				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
-			WHERE a.tenant_id = $1 AND COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE) = TRUE
+			WHERE a.tenant_id = $1 AND ` + crownJewelPropSQL + `
 		),
 		mttr_critical AS (
 			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs

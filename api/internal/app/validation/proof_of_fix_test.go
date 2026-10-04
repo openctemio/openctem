@@ -147,7 +147,7 @@ func atConfirmed(t *testing.T) *vulnerability.Finding {
 // findings:verify and this automated path must not bypass it. A human still
 // closes validated_fixed. `stood` (proof-of-fix stood → resolved) stays false.
 func TestRetest_NotDetected_DowngradesConfirmed(t *testing.T) {
-	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "safe-check"}}
+	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "nuclei", RawMeta: map[string]any{"reachable": true}}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
 	svc, repo, _ := newProofSvc(disp, cap)
 	repo.current = atConfirmed(t)
@@ -168,7 +168,7 @@ func TestRetest_NotDetected_DowngradesConfirmed(t *testing.T) {
 }
 
 func TestRetest_NotDetected_Resolves(t *testing.T) {
-	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "safe-check"}}
+	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "nuclei", RawMeta: map[string]any{"reachable": true}}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
 	svc, repo, notif := newProofSvc(disp, cap)
 	repo.current = atFixApplied(t)
@@ -192,7 +192,7 @@ func TestRetest_NotDetected_Resolves(t *testing.T) {
 }
 
 func TestRetest_Detected_RevertsAndNotifies(t *testing.T) {
-	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeDetected, Summary: "still exploitable"}}
+	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeDetected, ExecutorKind: "nuclei", Summary: "still exploitable"}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
 	svc, repo, notif := newProofSvc(disp, cap)
 	repo.current = atFixApplied(t)

@@ -15,9 +15,9 @@ import (
 // Definitions (tenant-wide; no data scope, like the Program Health
 // scorecards):
 //   - assets: status <> 'archived'. Crown jewels are such assets with
-//     is_crown_jewel. A crown jewel has an owner when assets.owner_id is set or
-//     an asset_owners row names a user or group of the tenant (the same test
-//     as the inventory's has_owner facet).
+//     is_crown_jewel. A crown jewel has an owner when an asset_owners row
+//     names a user or group of the tenant (the same test as the inventory's
+//     has_owner facet; asset_owners is the only owner store).
 //   - assets.in_business_unit: assets with a business_unit_assets row for one
 //     of the tenant's units. Group-level business units are not counted.
 //   - business_services.with_assets: services with a business_service_assets
@@ -41,12 +41,12 @@ var _ scoping.SummaryReader = (*ScopingSummaryRepository)(nil)
 
 const scopingSummaryQuery = `
 WITH live_assets AS (
-	SELECT a.id, a.is_crown_jewel, a.owner_id
+	SELECT a.id, a.is_crown_jewel
 	  FROM assets a
 	 WHERE a.tenant_id = $1 AND a.status <> 'archived'
 ),
 crown AS (
-	SELECT la.id, la.owner_id FROM live_assets la WHERE la.is_crown_jewel
+	SELECT la.id FROM live_assets la WHERE la.is_crown_jewel
 ),
 focus AS (
 	SELECT c.id, c.name, c.status, c.start_date, c.end_date, c.charter
@@ -59,8 +59,7 @@ focus AS (
 SELECT
 	(SELECT COUNT(*) FROM crown),
 	(SELECT COUNT(*) FROM crown cj
-	  WHERE cj.owner_id IS NOT NULL
-	     OR EXISTS (
+	  WHERE EXISTS (
 	        SELECT 1 FROM asset_owners ao
 	         WHERE ao.asset_id = cj.id
 	           AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $1))

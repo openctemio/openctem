@@ -36,6 +36,9 @@ var findingMergeRefs = []mergeRef{
 	{table: "finding_status_approvals", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "validation_evidence", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "pentest_retests", column: "finding_id", tenantCol: "tenant_id"},
+	// At most one pending retest per finding (ux_finding_retests_one_pending):
+	// settleLoserPendingRetest runs first, so the move cannot collide.
+	{table: "finding_retests", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "ai_triage_results", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "deprecated.finding_regression_events", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "iocs", column: "source_finding_id", tenantCol: "tenant_id"},
@@ -262,6 +265,10 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 		return fmt.Errorf("inherit finding state: %w", err)
 	}
 
+	if err := settleLoserPendingRetest(ctx, tx, tenantID, survivorID, loserID); err != nil {
+		return err
+	}
+
 	for _, ref := range findingMergeRefs {
 		if err := repointRef(ctx, tx, ref, survivorID, []string{loserID}, tenantID); err != nil {
 			return fmt.Errorf("finding merge: %w", err)
@@ -290,6 +297,24 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 		tenantID, survivorID, survivorChanges, "Merged duplicate finding "+loserID+" into this finding",
 		loserID, loserChanges, "Marked duplicate of "+survivorID+" by an asset merge"); err != nil {
 		return fmt.Errorf("record finding merge activity: %w", err)
+	}
+	return nil
+}
+
+// settleLoserPendingRetest makes room for the loser's retests on the survivor.
+// A finding has at most one pending retest; when both have one, the survivor's
+// keeps running and the loser's is closed as "unknown" (its result would
+// describe the same issue twice). Its history moves with the other rows.
+func settleLoserPendingRetest(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE finding_retests SET
+			status = 'completed', outcome = 'unknown', completed_at = NOW(),
+			reason = 'finding merged into ' || $1::text
+		WHERE tenant_id = $3 AND finding_id = $2 AND status = 'pending'
+		  AND EXISTS (SELECT 1 FROM finding_retests
+		              WHERE tenant_id = $3 AND finding_id = $1 AND status = 'pending')`,
+		survivorID, loserID, tenantID); err != nil {
+		return fmt.Errorf("settle merged finding's pending retest: %w", err)
 	}
 	return nil
 }
