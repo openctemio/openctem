@@ -42,7 +42,7 @@ func (r *provTenantRepo) CreateMembership(_ context.Context, m *tenantdom.Member
 	return nil
 }
 
-func (r *provTenantRepo) DeleteMembership(_ context.Context, id shared.ID) error {
+func (r *provTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, id shared.ID) error {
 	r.deleted = append(r.deleted, id)
 	for k, m := range r.memberships {
 		if m.ID() == id {

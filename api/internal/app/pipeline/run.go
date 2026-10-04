@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -283,7 +284,12 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		// Queue the step - create a command that sensors can poll
 		if err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings); err != nil {
 			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
-			stepRun.Fail("Failed to queue: "+err.Error(), "QUEUE_ERROR")
+			code := "QUEUE_ERROR"
+			var de *shared.DomainError
+			if errors.As(err, &de) && de.Code != "" {
+				code = de.Code // e.g. INCOMPATIBLE_TARGETS
+			}
+			stepRun.Fail("Failed to queue: "+err.Error(), code)
 			// FIXED: Don't silently suppress errors - log them instead
 			if updateErr := s.stepRunRepo.Update(ctx, stepRun); updateErr != nil {
 				s.logger.Error("failed to update failed step run", "step_key", step.StepKey, "error", updateErr)
@@ -313,7 +319,23 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		}
 	}
 
-	payload, err := stepCommandPayload(run, step, stepRun, settings)
+	// The step's tool is handed only the run's targets it can scan; a step
+	// left with none fails here (INCOMPATIBLE_TARGETS), before any sensor
+	// sees it.
+	var stepTargets *scanapp.StepTargets
+	if f, ok := s.targetGate.(StepTargetFilter); ok {
+		st, ferr := f.FilterStepTargets(ctx, step.Tool, run.Context)
+		if ferr != nil {
+			return fmt.Errorf("step %s: %w", step.StepKey, ferr)
+		}
+		stepTargets = st
+		if st != nil && st.Refused > 0 {
+			s.logger.Info("step targets the tool cannot scan were left out",
+				"run_id", run.ID.String(), "step_key", step.StepKey, "refused", st.Refused, "reason", st.Reason)
+		}
+	}
+
+	payload, err := stepCommandPayload(run, step, stepRun, settings, stepTargets)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -1252,7 +1274,7 @@ func (s *Service) FailStepRun(ctx context.Context, stepRunID, errorMessage, erro
 // step's settings go under PayloadKeyConfig, the key the sensor reads (see
 // pipeline.NormalizeStepConfig); a setting the sensor would refuse fails the
 // step before a command is created.
-func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) (map[string]any, error) {
+func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings, st *scanapp.StepTargets) (map[string]any, error) {
 	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
 	if err != nil {
 		return nil, err
@@ -1266,7 +1288,7 @@ func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipelin
 		"required_capabilities":             step.Capabilities,
 		"preferred_tool":                    step.Tool,
 		"timeout_seconds":                   step.TimeoutSeconds,
-		"context":                           run.Context,
+		"context":                           scanapp.StepRunContext(run.Context, st),
 		legacyv1.PayloadKeySensorPreference: string(settings.SensorPreference),
 	}
 	// The sensor SDK runs the scanner named in `scanner` (ScanCommandPayload);
@@ -1278,6 +1300,9 @@ func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipelin
 	// reads them at the top level.
 	if targets, ok := run.Context["targets"]; ok {
 		payload["targets"] = targets
+		if st != nil && st.Targets != nil {
+			payload["targets"] = st.Targets
+		}
 	}
 
 	if run.AssetID != nil {

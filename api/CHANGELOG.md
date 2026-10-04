@@ -5,6 +5,17 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Security: validation evidence no longer resolves a finding
+
+- **A validation "not detected" keeps a `fix_applied` finding open**
+  (research 18 F6, RFC-040). The only proof that the target answered was
+  `raw_meta.reachable`, which the sensor asserts about its own run, so a
+  hostile or broken sensor could close any `fix_applied` finding. The verdict
+  is still recorded on the finding; a retest (whose reachability probe the
+  platform dispatches) or a `findings:verify` holder closes it. Downgrades of
+  still-open findings to `validated_fixed` (which a person still closes) and
+  reopen on "detected" are unchanged.
+
 ### Security: custom template trust (RFC-038 §6.12)
 
 - **Custom templates reach sensors only in a signed manifest.** Every
@@ -24,6 +35,18 @@ published at https://docs.openctem.io (operations/release-notes-*).
   protocol.
 
 ### Fixed
+
+- **Coverage-scoped auto-resolve no longer reads a missing `coverage_type`
+  as full** (safety; CTIS spec 4.5, research 16 G4, owner decision Q5).
+  A scan command's run closed findings it no longer reported when its
+  report declared `full` *or nothing at all*, while the report-level
+  (repository) path already treated an absent value as no auto-resolve.
+  Now only an explicit `full` qualifies; an undeclared report is refused
+  with reason `coverage_undeclared`. **Upgrade note:** sensors whose sdk-go
+  predates openctemio/sdk-go#150 send no `coverage_type`, so their scans no
+  longer close findings on this path (fail safe; the mode defaults to
+  `dry_run`). Sensors with that change send `full` only for completed runs
+  and `partial` for runs that stopped part-way.
 
 - **A finding's occurrence count grows with every sighting** (RFC-043 P0).
   Re-ingesting an existing finding wrote back the count it had loaded before
