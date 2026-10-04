@@ -3589,6 +3589,8 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 					(status IN ('resolved', 'verified')
 						AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed')))
 					OR status = 'validated_fixed'
+					-- Seen again: a not_observed finding is observed (O2).
+					OR status = 'not_observed'
 				)
 			FOR UPDATE
 		)
@@ -3649,9 +3651,10 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	return result, nil
 }
 
-// ExpireFeatureBranchFindings marks stale feature branch findings as resolved.
-// This is called by a background job to clean up findings on non-default branches
-// that have not been seen for a configurable period.
+// ExpireFeatureBranchFindings marks stale feature branch findings as
+// not_observed: not seen for a configurable period on a non-default branch is
+// stale, not fixed (research 18 F7, owner decision O2), so the finding is never
+// counted as fixed and its SLA keeps running. A sighting reopens it.
 // Uses JOIN with repository_branches to determine default branch status.
 func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, tenantID shared.ID, defaultExpiryDays int) (int64, error) {
 	// Expire findings that:
@@ -3659,12 +3662,14 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 	// 2. The branch allows expiry (keep_when_inactive = false)
 	// 3. Have active status (new, open)
 	// 4. Have not been seen for the configured expiry period (per-branch or default)
-	// Resolution is set to 'branch_expired' to distinguish from other auto-resolve types
+	// Resolution 'branch_expired' records why the finding is not observed.
 	query := `
 		UPDATE findings f
-		SET status = 'resolved',
+		SET status = 'not_observed',
 			resolution = 'branch_expired',
-			resolved_at = NOW(),
+			resolution_method = NULL,
+			resolved_at = NULL,
+			resolved_by = NULL,
 			updated_at = NOW()
 		FROM repository_branches rb
 		WHERE f.tenant_id = $1
