@@ -1577,6 +1577,45 @@ func (r *TenantRepository) GetMembersWithoutGroupSee(ctx context.Context, tenant
 	return v, nil
 }
 
+// ListMembersWithoutDataScope returns up to limit active members who would
+// see nothing in a fail-closed organization: their effective role is not
+// owner or admin, none of their roles has full data access, and they have no
+// data-scope row in the tenant. The second value is the total count.
+func (r *TenantRepository) ListMembersWithoutDataScope(ctx context.Context, tenantID shared.ID, limit int) ([]tenant.ScopeImpactMember, int, error) {
+	const from = `
+		FROM tenant_members m
+		JOIN users u ON u.id = m.user_id
+		JOIN v_user_effective_role v ON v.user_id = m.user_id AND v.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND m.status = 'active'
+		  AND v.role NOT IN ('owner', 'admin')
+		  AND NOT EXISTS (
+			SELECT 1 FROM user_roles ur JOIN roles ro ON ro.id = ur.role_id
+			WHERE ur.tenant_id = m.tenant_id AND ur.user_id = m.user_id AND ro.has_full_data_access)
+		  AND NOT EXISTS (
+			SELECT 1 FROM user_accessible_assets uaa
+			WHERE uaa.tenant_id = m.tenant_id AND uaa.user_id = m.user_id)`
+	var total int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) `+from, tenantID.String()).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count members without data scope: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT u.id::text, COALESCE(u.name, ''), u.email, v.role `+from+` ORDER BY u.email LIMIT $2`,
+		tenantID.String(), limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list members without data scope: %w", err)
+	}
+	defer rows.Close()
+	out := make([]tenant.ScopeImpactMember, 0)
+	for rows.Next() {
+		var m tenant.ScopeImpactMember
+		if err := rows.Scan(&m.UserID, &m.Name, &m.Email, &m.Role); err != nil {
+			return nil, 0, fmt.Errorf("scan member without data scope: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, total, rows.Err()
+}
+
 // SetMembersWithoutGroupSee stores the organization's data-scope policy.
 func (r *TenantRepository) SetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID, value string) error {
 	res, err := r.db.ExecContext(ctx,

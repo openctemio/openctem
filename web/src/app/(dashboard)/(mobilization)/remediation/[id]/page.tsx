@@ -202,7 +202,9 @@ export default function CampaignDetailPage() {
     isLoading: findingsLoading,
     mutate: mutateFindings,
   } = useFindingsApi(
-    { finding_ids: linkedFindingIds, per_page: 100 },
+    // GET takes at most 100 ids per list (RFC-048: more is a 400, never a
+    // silent cut), and the page shows one page of 100 anyway.
+    { finding_ids: linkedFindingIds.slice(0, 100), per_page: 100 },
     { enabled: linkedFindingIds.length > 0 }
   )
   const linkedFindings = linkedFindingIds.length > 0 ? (linkedFindingsData?.data ?? []) : []
