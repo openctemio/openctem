@@ -131,7 +131,7 @@ Details: [api-keys.md](./api-keys.md).
 |----------|---------------------|
 | `GET /api/v1/assets` | `assets:read` |
 | `GET /api/v1/assets/{id}` | `assets:read` |
-| `POST /api/v1/assets` | `assets:write` |
+| `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
 | `PUT /api/v1/assets/{id}` | `assets:write` |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` + data scope. Refused with 409 (`asset_has_findings`) while the asset has any finding (archive it instead); otherwise a soft delete, audited `asset.deleted` (see [asset-deletion.md](asset-deletion.md)) |
 
@@ -812,6 +812,15 @@ group's assignment, which is why adding or removing one needs
 | `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 409 when the grant exists; audited `asset.access_granted` |
 | `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
 | `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
+| `POST /api/v1/groups/{g}/assets` · `/assets/bulk` · scope rules | `team:groups:write`; the group must be in the caller's organization, and each asset must be a live asset of the **group's** organization. A single assign answers 404 for a foreign, deleted or unknown asset id alike; a bulk assign counts them as failed |
+
+**Group asset rows are same-tenant only.** `asset_owners` has no `tenant_id`,
+so every insert path (`CreateAssetOwner`, the bulk and scope-rule inserts) is an
+`INSERT … SELECT` joined to the asset's tenant, every read of a group's assets
+joins the asset to the group's tenant, and the access-refresh functions only
+materialize assets of the group's tenant. Trigger `asset_owners_same_tenant`
+(migration `000455`) refuses a cross-tenant group row from any writer, and the
+same migration removed any such row written before (research doc 15, L-01).
 
 **Who is restricted:**
 
@@ -934,6 +943,13 @@ scans, audit logs, report schedules, and access-control administration
 (`/groups/{id}/assets/{assetId}`, which defines scope and needs `groups:write`).
 The reachability oracle used by priority classification and threat models reads
 the full graph on purpose (`GetExposureChains` stays unscoped).
+
+**Asset references a caller writes** go through `datascope.Enforcer.AssertAssetRef`:
+the asset must be a live asset of the tenant (checked for unrestricted callers
+too) **and** in the caller's scope; a foreign, unknown, deleted or out-of-scope
+id all answer 404. It fails closed when not wired. Used by
+`POST /pentest/campaigns/{id}/findings` (`asset_id`), whose
+`findings.asset_id` references `assets(id)` without the tenant (research doc 15, L-02).
 
 Outside a request (WebSocket subscriptions, cross-organization dashboard) admin
 status is the team role from `v_user_effective_role` (owner/admin) — the same
