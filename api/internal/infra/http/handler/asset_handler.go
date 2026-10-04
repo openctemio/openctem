@@ -279,6 +279,8 @@ type AssetResponse struct {
 	Tags                  []string                 `json:"tags,omitempty"`
 	Properties            map[string]any           `json:"properties,omitempty"`
 	PrimaryOwner          *OwnerBriefResponse      `json:"primary_owner,omitempty"`
+	// IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel.
+	IsCrownJewel bool `json:"is_crown_jewel"`
 
 	// Discovery
 	DiscoverySource string     `json:"discovery_source,omitempty"`
@@ -396,6 +398,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		Description:  a.Description(),
 		Tags:         a.Tags(),
 		Properties:   a.Properties(),
+		IsCrownJewel: a.IsCrownJewel(),
 
 		// Discovery
 		DiscoverySource: a.DiscoverySource(),
@@ -2029,23 +2032,11 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	a, err := h.service.GetAsset(r.Context(), tenantID, assetID)
+	// The flag is the assets.is_crown_jewel column; business impact stays in
+	// properties. One statement writes both.
+	a, err := h.service.UpdateCrownJewel(r.Context(), tenantID, assetID,
+		req.IsCrownJewel, req.BusinessImpactScore, req.BusinessImpactNotes)
 	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Store crown jewel data in properties (DB columns added by migration 000126)
-	props := a.Properties()
-	if props == nil {
-		props = make(map[string]any)
-	}
-	props["is_crown_jewel"] = req.IsCrownJewel
-	props["business_impact_score"] = req.BusinessImpactScore
-	props["business_impact_notes"] = req.BusinessImpactNotes
-	a.SetProperties(props)
-
-	if err := h.service.SaveAsset(r.Context(), a); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}

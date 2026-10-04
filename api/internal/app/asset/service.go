@@ -1151,6 +1151,24 @@ func (s *AssetService) SaveAsset(ctx context.Context, a *assetdom.Asset) error {
 	return s.repo.Update(ctx, a)
 }
 
+// UpdateCrownJewel marks or unmarks an asset of the tenant as a crown jewel
+// and records its business impact, then returns the stored asset. The flag
+// is the assets.is_crown_jewel column; this is its only writer.
+func (s *AssetService) UpdateCrownJewel(ctx context.Context, tenantID, assetID string, isCrownJewel bool, impactScore float64, impactNotes string) (*assetdom.Asset, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	parsedID, err := shared.IDFromString(assetID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	if err := s.repo.SetCrownJewel(ctx, parsedTenantID, parsedID, isCrownJewel, impactScore, impactNotes); err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, parsedTenantID, parsedID)
+}
+
 // DeleteAsset deletes an asset by ID.
 // Security: Requires tenantID to prevent cross-tenant deletion.
 func (s *AssetService) DeleteAsset(ctx context.Context, assetID string, tenantID string) error {
