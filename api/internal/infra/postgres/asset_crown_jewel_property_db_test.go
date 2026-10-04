@@ -12,7 +12,7 @@ import (
 )
 
 // The crown-jewel flag is the assets.is_crown_jewel column (migration
-// 000487). Every reader takes it from there; a properties->'is_crown_jewel'
+// 000570). Every reader takes it from there; a properties->'is_crown_jewel'
 // left behind by an older writer, whatever its type, is ignored.
 func TestCrownJewelReads_UseTheColumn(t *testing.T) {
 	ctx := context.Background()
@@ -107,17 +107,17 @@ func TestCrownJewelReads_UseTheColumn(t *testing.T) {
 	}
 }
 
-// Migration 000487 backfills the column from properties and removes the
-// key. Run inside a rolled-back transaction, starting from the pre-000487
+// Migration 000570 backfills the column from properties and removes the
+// key. Run inside a rolled-back transaction, starting from the pre-000570
 // shape that its down migration restores.
 func TestCrownJewelMigration_Backfill(t *testing.T) {
 	ctx := context.Background()
 	db := openGroupsDB(t)
-	up, err := os.ReadFile("../../../migrations/000487_assets_crown_jewel_column.up.sql")
+	up, err := os.ReadFile("../../../migrations/000570_assets_crown_jewel_column.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../../migrations/000487_assets_crown_jewel_column.down.sql")
+	down, err := os.ReadFile("../../../migrations/000570_assets_crown_jewel_column.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
