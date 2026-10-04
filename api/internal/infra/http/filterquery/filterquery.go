@@ -17,6 +17,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -84,7 +85,13 @@ type Route struct {
 // ParseQuery decodes the GET params. On a bad filter it writes the 400 and
 // returns ok=false.
 func (rt Route) ParseQuery(w http.ResponseWriter, r *http.Request) (*filterspec.Spec, bool) {
-	spec, err := filterspec.ParseValues(r.URL.Query(), rt.Registry, rt.Options)
+	return rt.ParseValues(w, r, r.URL.Query())
+}
+
+// ParseValues is ParseQuery for params the handler has already rewritten
+// (a legacy param that maps onto two fields).
+func (rt Route) ParseValues(w http.ResponseWriter, r *http.Request, q url.Values) (*filterspec.Spec, bool) {
+	spec, err := filterspec.ParseValues(q, rt.Registry, rt.Options)
 	if err != nil {
 		WriteError(w, err)
 		return nil, false
