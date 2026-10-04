@@ -122,11 +122,6 @@ const (
 	// Workflow permissions (findings:workflows:*)
 	WorkflowsRead  Permission = "findings:workflows:read"
 	WorkflowsWrite Permission = "findings:workflows:write"
-
-	// Policies permissions (findings:policies:*)
-	PoliciesRead   Permission = "findings:policies:read"
-	PoliciesWrite  Permission = "findings:policies:write"
-	PoliciesDelete Permission = "findings:policies:delete"
 )
 
 // =============================================================================
@@ -268,9 +263,6 @@ const (
 // =============================================================================
 
 const (
-	// Billing permissions (settings:billing:*)
-	BillingRead  Permission = "settings:billing:read"
-	BillingWrite Permission = "settings:billing:write"
 
 	// SLA permissions (settings:sla:*)
 	SLARead   Permission = "settings:sla:read"
@@ -322,12 +314,10 @@ const (
 
 const (
 	ComplianceFrameworksRead   Permission = "compliance:frameworks:read"
-	ComplianceFrameworksWrite  Permission = "compliance:frameworks:write"
 	ComplianceAssessmentsRead  Permission = "compliance:assessments:read"
 	ComplianceAssessmentsWrite Permission = "compliance:assessments:write"
 	ComplianceMappingsRead     Permission = "compliance:mappings:read"
 	ComplianceMappingsWrite    Permission = "compliance:mappings:write"
-	ComplianceReportsRead      Permission = "compliance:reports:read"
 )
 
 // =============================================================================
@@ -400,9 +390,6 @@ const (
 	// MembersManage is an alias for MembersWrite (team:members:write)
 	MembersManage Permission = "team:members:write"
 
-	// BillingManage is an alias for BillingWrite (settings:billing:write)
-	BillingManage Permission = "settings:billing:write"
-
 	// PentestRead/Write are aliases for ValidationRead/Write
 	PentestRead  Permission = "validation:read"
 	PentestWrite Permission = "validation:write"
@@ -437,7 +424,6 @@ func AllPermissions() []Permission {
 		CredentialsRead, CredentialsWrite, CredentialsReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
-		PoliciesRead, PoliciesWrite, PoliciesDelete,
 
 		// Scans module
 		ScansRead, ScansWrite, ScansDelete, ScansExecute,
@@ -469,7 +455,6 @@ func AllPermissions() []Permission {
 		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
 
 		// Settings module
-		BillingRead, BillingWrite, BillingManage,
 		SLARead, SLAWrite, SLADelete,
 
 		// Attack Surface module
@@ -486,10 +471,9 @@ func AllPermissions() []Permission {
 		PentestReportsWrite,
 
 		// Compliance module
-		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 
 		// Reports module
 		ReportsRead, ReportsWrite,

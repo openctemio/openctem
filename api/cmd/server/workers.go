@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -222,6 +223,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager = controller.NewManager(&controller.ManagerConfig{
 		Logger:  log.With("component", "controller-manager"),
 		Metrics: controllerMetrics(),
+		// Exclusive controllers (retention sweeps, threat-intel refresh) run
+		// on one replica at a time under a controller lease (RFC-046 P1.8).
+		Leases:      postgres.NewControllerLeaseRepository(&postgres.DB{DB: deps.DB}),
+		LeaseHolder: postgres.LeaseHolderID(),
 	})
 
 	// Register controllers
@@ -317,6 +322,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			controller.ReportSchedulerConfig{Interval: time.Minute},
 			log,
 		)
+		// Recipients are re-checked at send time: members or allowed domains (D12).
+		reportScheduler.SetRecipientPolicy(repos.Tenant)
 		// Each report renders under its creator's data scope (D6).
 		reportScheduler.SetScopeResolver(svc.DataScope)
 		w.ControllerManager.Register(reportScheduler)
