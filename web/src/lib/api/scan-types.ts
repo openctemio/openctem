@@ -251,6 +251,8 @@ export interface ScanConfigListFilters {
   status?: ScanConfigStatus
   tags?: string
   search?: string
+  /** One sort key, `-` for descending (name, created_at, last_run_at, next_run_at, total_runs). */
+  sort?: string
   page?: number
   per_page?: number
 }
@@ -311,6 +313,8 @@ export interface PipelineRun {
   tasks?: RunTask[]
   /** True when the run has more tasks than `tasks` lists. */
   tasks_truncated?: boolean
+  /** Continues the task list after `tasks` (GET /pipeline-runs/{id}/tasks?cursor=). */
+  tasks_next_cursor?: string
 }
 
 /** A target a run did not scan, with the reason. */

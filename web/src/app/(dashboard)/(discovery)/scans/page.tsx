@@ -53,7 +53,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/use-debounce'
-import { useUrlFilter } from '@/hooks/use-url-param'
+import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import {
   useScanConfigs,
@@ -86,7 +86,17 @@ import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-d
 import { ScanRunsTab } from '@/features/scans/components/scan-runs-tab'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
-import { scanSuccessRate } from '@/features/scans/lib/format'
+import { formatScanDate, scanSuccessRate } from '@/features/scans/lib/format'
+import {
+  DEFAULT_SCAN_CONFIG_SORT,
+  DEFAULT_SCAN_PAGE_SIZE,
+  SCAN_CONFIG_SORT_FIELDS,
+  SCAN_PAGE_SIZES,
+  parsePageSize,
+  parseSortParam,
+  toSortParam,
+} from '@/features/scans/lib/scans-url'
+import type { SortingState } from '@tanstack/react-table'
 
 // ============================================
 // CONFIGURATIONS TAB TYPES
@@ -462,6 +472,17 @@ function ConfigurationsTab() {
   ]
   const [tagFilter, setTagFilter] = useUrlFilter('tag', '')
   const debouncedTag = useDebounce(tagFilter, 300)
+  // Paged and sorted on the server. The list used to fetch the API's default
+  // first page (20 scans) and page those on the client, so scan 21 and later
+  // could not be seen at all and the footer read "of 20".
+  const [pageParam, setPageParam] = useUrlFilterNumber('page', 1)
+  const [perPageParam, setPerPageParam] = useUrlFilterNumber('per_page', DEFAULT_SCAN_PAGE_SIZE)
+  const perPage = parsePageSize(perPageParam)
+  const [sortParam, setSortParam] = useUrlFilter('sort', DEFAULT_SCAN_CONFIG_SORT)
+  const sorting = useMemo<SortingState>(
+    () => parseSortParam(sortParam, SCAN_CONFIG_SORT_FIELDS, DEFAULT_SCAN_CONFIG_SORT),
+    [sortParam]
+  )
   // Selection is owned by the DataTable; we mirror the selected ids for the
   // bulk-action bar and bump the epoch to clear the table's own checkboxes.
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -496,8 +517,20 @@ function ConfigurationsTab() {
       schedule_type: scheduleFilter !== 'all' ? scheduleFilter : undefined,
       tags: debouncedTag || undefined,
       search: debouncedSearch || undefined,
+      sort: toSortParam(sorting, SCAN_CONFIG_SORT_FIELDS, DEFAULT_SCAN_CONFIG_SORT),
+      page: pageParam,
+      per_page: perPage,
     }),
-    [statusFilter, typeFilter, scheduleFilter, debouncedTag, debouncedSearch]
+    [
+      statusFilter,
+      typeFilter,
+      scheduleFilter,
+      debouncedTag,
+      debouncedSearch,
+      sorting,
+      pageParam,
+      perPage,
+    ]
   )
 
   // API hooks with stable configuration
@@ -507,6 +540,8 @@ function ConfigurationsTab() {
       revalidateOnReconnect: false,
       refreshInterval: 0,
       dedupingInterval: 5000,
+      // Keep the current page on screen while the next one loads.
+      keepPreviousData: true,
     }),
     []
   )
@@ -537,10 +572,32 @@ function ConfigurationsTab() {
     }
   }, [configs, selectedConfig])
 
-  // Total runs across the listed configurations
-  const totalRunsCount = useMemo(() => {
-    return configs.reduce((sum, c) => sum + c.total_runs, 0)
-  }, [configs])
+  // A page past the end (the last scan on it was deleted, or a stale link)
+  // goes to the last page that exists.
+  const totalPages = configsResponse?.total_pages ?? 0
+  useEffect(() => {
+    if (configsResponse && pageParam > 1 && configsResponse.items.length === 0) {
+      setPageParam(Math.max(1, totalPages))
+    }
+  }, [configsResponse, pageParam, totalPages, setPageParam])
+
+  // Narrowing the list starts again at page 1 (page 3 of the old result may
+  // not exist in the new one). Skipped on mount so a shared link keeps its page.
+  const filterKey = [statusFilter, typeFilter, scheduleFilter, debouncedTag, debouncedSearch].join(
+    '\u0000'
+  )
+  const lastFilterKey = React.useRef(filterKey)
+  useEffect(() => {
+    if (lastFilterKey.current === filterKey) return
+    lastFilterKey.current = filterKey
+    setPageParam(1)
+  }, [filterKey, setPageParam])
+
+  // A selection belongs to the rows on screen: another page, filter or sort
+  // clears it.
+  useEffect(() => {
+    clearSelection()
+  }, [filters, clearSelection])
 
   // Calculate progress for a config - memoized
   // Success rate over FINISHED runs (succeeded + failed). total_runs also
@@ -704,7 +761,8 @@ function ConfigurationsTab() {
       {
         id: 'success_rate',
         accessorFn: (c) => getProgress(c),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Success rate" />,
+        header: 'Success rate',
+        enableSorting: false,
         cell: ({ row }) => {
           const rate = scanSuccessRate(row.original)
           if (rate === null) return <span className="text-muted-foreground">-</span>
@@ -733,7 +791,8 @@ function ConfigurationsTab() {
       {
         id: 'results',
         accessorFn: (c) => c.successful_runs,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Results" />,
+        header: 'Results',
+        enableSorting: false,
         cell: ({ row }) => {
           const config = row.original
           if (config.total_runs === 0) return <span className="text-muted-foreground">-</span>
@@ -749,6 +808,19 @@ function ConfigurationsTab() {
             </span>
           )
         },
+      },
+      {
+        id: 'last_run_at',
+        accessorKey: 'last_run_at',
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Last run" />,
+        cell: ({ row }) =>
+          row.original.last_run_at ? (
+            <span className="text-sm text-muted-foreground">
+              {formatScanDate(row.original.last_run_at)}
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">Never</span>
+          ),
       },
       {
         accessorKey: 'schedule_type',
@@ -800,6 +872,7 @@ function ConfigurationsTab() {
     setTypeFilter('all')
     setScheduleFilter('all')
     setTagFilter('')
+    setPageParam(1)
   }
 
   // A status metric toggles its filter; "All" clears it.
@@ -835,7 +908,6 @@ function ConfigurationsTab() {
       onClick: () => toggleStatus('disabled'),
       active: statusFilter === 'disabled',
     },
-    { key: 'runs', label: 'Runs (listed)', value: totalRunsCount },
   ]
 
   // Filters are single-valued in the API, so each section behaves like a radio
@@ -935,6 +1007,25 @@ function ConfigurationsTab() {
               data={configs}
               showSearch={false}
               toolbarStart={toolbarStart}
+              manualPagination
+              rowCount={configsResponse?.total ?? 0}
+              pagination={{ pageIndex: pageParam - 1, pageSize: perPage }}
+              onPaginationChange={(next) => {
+                if (next.pageSize !== perPage) {
+                  setPerPageParam(next.pageSize)
+                  setPageParam(1)
+                } else {
+                  setPageParam(next.pageIndex + 1)
+                }
+              }}
+              pageSize={perPage}
+              pageSizeOptions={[...SCAN_PAGE_SIZES]}
+              paginationNoun="scans"
+              sorting={sorting}
+              onSortingChange={(next) => {
+                setSortParam(toSortParam(next, SCAN_CONFIG_SORT_FIELDS, DEFAULT_SCAN_CONFIG_SORT))
+                setPageParam(1)
+              }}
               getRowId={(c) => c.id}
               onRowClick={setSelectedConfig}
               onSelectionChange={(rows) => setSelectedIds(rows.map((c) => c.id))}

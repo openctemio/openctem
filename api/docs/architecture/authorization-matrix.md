@@ -815,8 +815,8 @@ from exactly two sources:
 Naming a user as an owner of an asset, in any RACI role or through the
 `owner_ref` email match, is an assignment (accountability, finding
 assignment, notifications) and never changes what that user can see. Before
-O1 it did: `assets:write` alone could narrow a fail-open member to that one
-asset, or widen a fail-closed one. Migration `000372` turned every such
+O1 it did: `assets:write` alone could narrow a member who saw everything
+to that one asset, or widen one who saw nothing. Migration `000372` turned every such
 owner-derived access row into an explicit grant (source `migration`), so
 nobody lost an asset at the upgrade; administrators review and revoke them
 on the asset's Owners tab (*Direct access*). A group owner remains the
@@ -843,8 +843,7 @@ could otherwise widen anyone's scope, their own included:
 | `/assets/{id}/access-grants`, a group owner on `/assets/{id}/owners` | already limited to assets the caller sees (route guard on `/assets/{id}`) |
 
 "Restricted" is the enforcer's decision (`Enforcer.Delegable`): an admin, a
-full-data role, a member of a fail-open organization with no scope row and
-an internal call are unrestricted. `POST /groups/{g}/members` also refuses
+full-data role and an internal call are unrestricted. `POST /groups/{g}/members` also refuses
 (404) a user who is not a member of the organization (L-14).
 
 **Group asset rows are same-tenant only.** `asset_owners` has no `tenant_id`,
@@ -871,10 +870,10 @@ to `scoped`.
 | Caller | Sees |
 |---|---|
 | Owner / admin (`IsAdmin`) | everything in the tenant |
-| A user holding a role with `has_full_data_access` (the system Owner and Administrator roles, or a custom role such as a "Global Reader") | everything in the tenant, whatever their group rows and the organization's policy; **not** through an API key |
+| A user holding a role with `has_full_data_access` (the system Owner and Administrator roles, or a custom role such as a "Global Reader") | everything in the tenant, whatever their group rows; **not** through an API key |
 | Internal calls with no user (jobs, sensors, ingest) | everything in the tenant |
 | Member with ≥ 1 scope row | only their in-scope assets |
-| Member with no scope row | the organization's policy: **everything** or **nothing** |
+| Member with no scope row | **nothing**, in every organization |
 
 **Full data access is the Layer 2 bypass** (owner decision D3, research doc
 15 L-11). `roles.has_full_data_access` used to be stored, shown in the role
@@ -889,34 +888,30 @@ is future work (research doc 15, §5.7). Granting the flag is capped by the
 grant guard (you cannot give what you do not hold). A view-only level is part
 of the view/act work (P2).
 
-**Policy for members without an access group** (owner decision 2026-10-02):
-`tenants.members_without_group_see` (migration `000247`), `everything`
-(fail-open) or `nothing` (fail-closed, Tenable's "No Access").
+**No "see everything" mode** (owner decision D2, research doc 15 L-04; owner
+signoff 2026-10-04 to finish the retirement). A member with no scope row and
+no `has_full_data_access` role sees nothing, everywhere: lists, searches,
+counts, exports, dashboards, reports, notifications and WebSocket channels,
+and every by-id read answers 404. There is no per-organization switch back.
 
-- Organizations that existed when the migration ran keep `everything`, so
-  nobody lost access; one that had switched on the earlier settings flag
-  (`settings.security.restricted_data_scope = true`, no longer read) keeps
-  `nothing`.
-- New organizations start with `nothing` (column default).
-- `GET /api/v1/tenants/{tenant}/settings/data-scope` (owner/admin) returns
-  `{"members_without_group_see": "everything"|"nothing", "deprecated": bool}`.
-- **`everything` is being retired** (owner decision D2, research doc 15 L-04).
-  It is never flipped by a migration; each organization's owner switches:
-  - `GET /api/v1/organization/settings/data-scope/impact` (owner/admin) is
-    the pre-flight report: the active members who are not owner or admin, hold
-    no `has_full_data_access` role and have no scope row, i.e. who see
-    everything today only because of the policy and would see nothing after
-    the switch (exact `total_count`, at most 500 listed).
-  - `PATCH .../settings/data-scope` is **owner only** (`RequireTeamOwner`) and
-    goes one way: to `nothing`. Switching back to `everything` is refused
-    (400). A change is audited (`tenant.settings_updated`, severity high,
-    before/after in `changes`) and drops the enforcer's 60-second policy cache
-    for that organization at once.
-  - The web console shows owners and admins of an `everything` organization a
-    banner (dismissable per session) linking to Settings → Teams, where the
-    card names the affected members and only the owner can switch.
-- A failure to read the policy is treated as `everything` (a database hiccup
-  must not hide all data); every other scope-lookup error denies.
+- Before, `tenants.members_without_group_see` (migration `000247`) let an
+  organization show such members **everything** (fail-open; every
+  organization created before `000247` started that way). In fail-open
+  organizations a member who lost their last scope row (a tag change, an
+  emptied group, a deleted asset) silently widened to the whole tenant.
+- The enforcer, the older list paths (asset list, stats and facets, finding
+  list, search and stats, finding groups) and the real-time push recipients no
+  longer read the column: the SQL predicate is always
+  `asset_id IN (SELECT asset_id FROM user_accessible_assets …)`, and a user
+  scope without a tenant matches nothing. The `NOT EXISTS … OR` bypass, the
+  per-tenant policy cache (which also treated a read failure as
+  `everything`) and `DataScopeStrict`/`ScopeStrict` are gone.
+- An unparseable acting user on the finding list or stats is refused instead
+  of falling through to tenant-wide results.
+- The column itself is retired in steps: no reader for visibility (this
+  change), then a migration that stores `nothing` everywhere and refuses
+  `everything` (expand), and, after a release, dropping the column
+  (contract).
 
 **One enforcement point.** `internal/app/datascope.Enforcer` resolves the
 caller's scope (caller and admin flag come from the HTTP auth context, wired in
@@ -941,13 +936,13 @@ results an out-of-scope id is reported exactly like an unknown id.
   groups resolve the scope in `remediation.GroupService` and pass it to the
   key repository (`ListGroups`, `OpenFindingIDs`). Do not set
   `FindingFilter.DataScopeUserID` by hand in new code: use the enforcer
-  (`Resolve` + `WithDataScope`), which knows who is an administrator and the
-  organization's policy. Inside the finding package every filter-driven path
+  (`Resolve` + `WithDataScope`), which knows who is an administrator or holds
+  full data access. Inside the finding package every filter-driven path
   goes through one helper (`visibleFilter`: `visibleTo`, `ListFindingIDs`).
   Three older paths still set the field themselves with the caller's admin
-  flag and `DataScopeStrict` from the same policy — the findings list/search,
-  the asset list and `/findings/stats`; their SQL gives the same answer as a
-  resolved scope (fail-open bypass only when the policy is `everything`).
+  and full-data decision — the findings list/search, the asset list and
+  `/findings/stats`; their SQL gives the same answer as a resolved scope (no
+  scope row, nothing).
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
@@ -1038,10 +1033,9 @@ organization**, or an address in one of its **`Security.AllowedDomains`**
 
 Owner decision D6 (research doc 15 P1-4): a scheduled report shows what its
 creator can see, decided at each run (`datascope.Enforcer.ForUser`, the same
-admin, full-data and policy rules as a request). A restricted creator's report
-counts only their in-scope assets and findings (`FindingStatsFilter.ScopeStrict`
-drops the fail-open "no scope row means everything", and the trend window takes
-the same scope). A schedule with no recorded creator, or whose creator can no
+admin and full-data rules as a request). A restricted creator's report
+counts only their in-scope assets and findings (none without a scope row; the
+trend window takes the same scope). A schedule with no recorded creator, or whose creator can no
 longer be resolved (left the organization), is not rendered or sent
 (`failed`).
 
@@ -1071,9 +1065,17 @@ the full graph on purpose (`GetExposureChains` stays unscoped).
 **Asset references a caller writes** go through `datascope.Enforcer.AssertAssetRef`:
 the asset must be a live asset of the tenant (checked for unrestricted callers
 too) **and** in the caller's scope; a foreign, unknown, deleted or out-of-scope
-id all answer 404. It fails closed when not wired. Used by
-`POST /pentest/campaigns/{id}/findings` (`asset_id`), whose
-`findings.asset_id` references `assets(id)` without the tenant (research doc 15, L-02).
+id all answer 404. It fails closed when not wired. The referencing columns
+point at `assets(id)` without the tenant, so this check is what keeps a
+foreign id out (research doc 15, L-02; research doc 21b, C1). Used by:
+
+- `POST /pentest/campaigns/{id}/findings` (`asset_id`);
+- `POST /findings` (`asset_id`; a `branch_id` must also be a branch of that
+  asset, which pins it to the tenant).
+
+Pre-delete counts are tenant-scoped: `DELETE /assets/{id}` counts only the
+tenant's own findings, so a row another tenant pointed at the asset neither
+blocks the delete nor has its count disclosed.
 
 Outside a request (WebSocket subscriptions, cross-organization dashboard) admin
 status is the team role from `v_user_effective_role` (owner/admin) — the same
@@ -1425,10 +1427,10 @@ Tenable.sc's RBAC.
   (which would also fix `IsOwner` under OIDC) is a phased refactor —
   **deferred** because a missing membership middleware on any chain would 403 a
   whole route group.
-- **Data scope for members without a group is a per-organization choice.**
-  Decided 2026-10-02: existing organizations stay `everything` (fail-open), new
-  ones start `nothing`, administrators choose (see *Data scope* above). Do not
-  change an organization's value in a migration without its owner.
+- **Members without a scope row see nothing, in every organization.** The
+  2026-10-02 per-organization choice (`everything` for existing
+  organizations) was retired with the owner's signoff on 2026-10-04 (decision
+  D2, see *Data scope* above). Do not add a fail-open mode back.
 - **RLS is shadow-mode.** ~99 policies exist, 0 tables have RLS enabled. This is
   intentional (staged rollout), not a dead control. Tenant isolation is enforced by
   convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
