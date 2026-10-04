@@ -249,7 +249,8 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
     try {
       await updateRole({
         name: form.name,
-        description: form.description || undefined,
+        // "" clears the description (absent would mean unchanged).
+        description: form.description.trim(),
         has_full_data_access: form.hasFullDataAccess,
         permissions: form.permissions,
       })

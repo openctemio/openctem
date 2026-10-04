@@ -1934,9 +1934,17 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 		return nil, err
 	}
 
+	// Absent (nil) = unchanged; an empty list = cleared on purpose.
+	current := t.TypedSettings().Pentest
 	ps := tenantdom.PentestSettings{
-		CampaignTypes: input.CampaignTypes,
-		Methodologies: input.Methodologies,
+		CampaignTypes: current.CampaignTypes,
+		Methodologies: current.Methodologies,
+	}
+	if input.CampaignTypes != nil {
+		ps.CampaignTypes = input.CampaignTypes
+	}
+	if input.Methodologies != nil {
+		ps.Methodologies = input.Methodologies
 	}
 
 	if err := t.UpdatePentestSettings(ps); err != nil {
