@@ -142,6 +142,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
 	vulnSvc.SetAccessControlRepository(accessRepo)
+	vulnSvc.SetAssigneeChecker(accessRepo)
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
 	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
