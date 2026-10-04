@@ -82,8 +82,6 @@ export const DEV_USER: AuthUser & {
     'team:roles:read',
     'team:roles:write',
     'team:roles:assign',
-    'team:permission_sets:read',
-    'team:permission_sets:write',
     'team:assignment_rules:read',
     'team:assignment_rules:write',
     // Integrations
