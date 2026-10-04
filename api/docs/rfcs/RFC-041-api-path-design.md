@@ -808,4 +808,4 @@ Two notes from the approval:
 | P0 | web check: every `endpoints.ts` builder targets a real route | — |
 | P0 | `Deprecated()` middleware + `deprecated_route_requests_total` | — |
 | P1 | live phantom web calls fixed or removed | — |
-| P1 | invitation token in the body (`POST /api/v1/invitations/{lookup,accept,accept-with-refresh,decline}`), `/{token}` aliases deprecated (sunset 2027-01-15), emailed link carries the token in the URL fragment, token paths redacted in logs, metrics, traces and the gateway log | this PR |
+| P1 | invitation token in the body (`POST /api/v1/invitations/{lookup,accept,accept-with-refresh,decline}`), `/{token}` aliases deprecated (sunset 2027-01-15), emailed link carries the token in the URL fragment, token paths redacted in logs, metrics, traces and the gateway log | #968 |
