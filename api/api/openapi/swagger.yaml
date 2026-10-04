@@ -22477,6 +22477,20 @@ paths:
         name: cve_id_not
         type: array
       - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
         description: 'finding type: any of (comma list)'
         in: query
         items:
@@ -23598,7 +23612,7 @@ paths:
         Streams every finding the list's filter selects as CSV (default) or NDJSON (`format=ndjson`),
         in id order, at most 100,000 rows; the X-Export-Truncated trailer says whether rows were left
         out. Same scope as GET /findings. Needs findings:export. One export per user at a time (429
-        otherwise). Audit-logged without filter values. CSV formula cells are neutralised.
+        otherwise). Audit-logged without filter values. CSV formula cells are neutralized.
       parameters:
       - description: csv (default) or ndjson
         enum:
@@ -23879,6 +23893,20 @@ paths:
         items:
           type: string
         name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
         type: array
       - collectionFormat: csv
         description: 'finding type: any of (comma list)'
@@ -24260,7 +24288,7 @@ paths:
         (RFC-048), so a grouped view counts exactly the rows the list shows.
       parameters:
       - description: cve_id (default), rule_id, asset_id, owner_id, component_id,
-          severity, source, finding_type
+          severity, source, finding_type, family
         in: query
         name: group_by
         type: string
@@ -24536,6 +24564,20 @@ paths:
         items:
           type: string
         name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
         type: array
       - collectionFormat: csv
         description: 'finding type: any of (comma list)'
@@ -25231,6 +25273,20 @@ paths:
         items:
           type: string
         name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
         type: array
       - collectionFormat: csv
         description: 'finding type: any of (comma list)'

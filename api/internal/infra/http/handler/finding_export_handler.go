@@ -164,6 +164,8 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  priority_class_not  query  []string  false  "priority class: none of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  cve_id  query  []string  false  "cve id: any of (comma list)"  collectionFormat(csv)
 // @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
+// @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
+// @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
