@@ -12,7 +12,7 @@
 -- Rows are (n, gate, granted): every role holding `gate` also gets `granted`.
 -- n is only an ordinal.
 
-CREATE TEMP TABLE granular_grant_pairs (n INT, gate VARCHAR(100), granted VARCHAR(100)) ON COMMIT DROP;
+CREATE TEMP TABLE granular_grant_pairs (n INT, gate VARCHAR(100), granted VARCHAR(100));
 INSERT INTO granular_grant_pairs (n, gate, granted) VALUES
     (1,  'assets:write',             'assets:import'),
     (2,  'findings:read',            'ai_triage:read'),
@@ -69,3 +69,5 @@ WITH ins AS (
 INSERT INTO granular_permission_backfill (role_id, permission_id)
 SELECT role_id, permission_id FROM ins
 ON CONFLICT DO NOTHING;
+
+DROP TABLE granular_grant_pairs;
