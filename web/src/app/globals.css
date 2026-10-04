@@ -180,6 +180,19 @@
   }
 }
 
+/* Sheets and drawers appear and go without sliding under reduced motion
+   (a drawer let go short of closing snaps back at once). With no
+   animation, Radix unmounts a closing sheet at once. */
+@media (prefers-reduced-motion: reduce) {
+  [data-vaul-drawer],
+  [data-vaul-overlay],
+  [data-slot='sheet-content'],
+  [data-slot='sheet-overlay'] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 @keyframes slideDown {
   from {
     height: 0;
