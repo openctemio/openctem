@@ -10,38 +10,19 @@ import (
 // Pipeline metrics
 var (
 	PipelineRunsTotal      = metrics.PipelineRunsTotal
-	PipelineRunDuration    = metrics.PipelineRunDuration
 	PipelineRunsInProgress = metrics.PipelineRunsInProgress
 	StepRunsTotal          = metrics.StepRunsTotal
-	StepRunDuration        = metrics.StepRunDuration
-	StepRetryTotal         = metrics.StepRetryTotal
 )
 
 // Command metrics
 var (
 	CommandsTotal    = metrics.CommandsTotal
-	CommandDuration  = metrics.CommandDuration
 	CommandsExpired  = metrics.CommandsExpired
-	CommandQueueSize = metrics.CommandQueueSize
-)
-
-// Sensor metrics
-var (
-	SensorsOnline          = metrics.SensorsOnline
-	SensorCommandsExecuted = metrics.SensorCommandsExecuted
-	SensorHeartbeatLatency = metrics.SensorHeartbeatLatency
 )
 
 // Scan metrics
 var (
-	ScansTotal              = metrics.ScansTotal
 	ScansScheduled          = metrics.ScansScheduled
-	ScanFindingsTotal       = metrics.ScanFindingsTotal
-	ScanTriggerDuration     = metrics.ScanTriggerDuration
-	ScanSchedulerErrors     = metrics.ScanSchedulerErrors
-	ScanSchedulerLag        = metrics.ScanSchedulerLag
-	ScansConcurrentRuns     = metrics.ScansConcurrentRuns
-	ScansQualityGateResults = metrics.ScansQualityGateResults
 )
 
 // Finding lifecycle metrics
@@ -55,5 +36,4 @@ var (
 	TemplateSyncsTotal        = metrics.TemplateSyncsTotal
 	TemplateSyncsSuccessTotal = metrics.TemplateSyncsSuccessTotal
 	TemplateSyncsFailedTotal  = metrics.TemplateSyncsFailedTotal
-	TemplateSyncDuration      = metrics.TemplateSyncDuration
 )

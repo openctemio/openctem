@@ -535,7 +535,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			)
 		} else if len(resolvedIDs) > 0 {
 			output.FindingsAutoResolved += len(resolvedIDs)
-			app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolvedIDs)))
+			app.FindingsAutoResolved.WithLabelValues().Add(float64(len(resolvedIDs)))
 			s.logger.Info("auto-resolved stale findings",
 				"tool_name", toolName,
 				"asset_count", len(assetIDs),
