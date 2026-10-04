@@ -292,6 +292,7 @@ const GROUP_BY_LABELS: Record<GroupByDimension, string> = {
   source: 'Source',
   component_id: 'Component',
   finding_type: 'Type',
+  family: 'Family',
 }
 const FILTERS_OPEN_KEY = 'openctem:findings-filters-open'
 const SEVERITY_LABELS: Record<FacetSeverity, string> = {

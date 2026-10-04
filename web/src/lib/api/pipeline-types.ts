@@ -9,6 +9,8 @@
 // TRIGGER TYPES
 // ============================================
 
+import type { RunTaskSummary } from './generated'
+
 export const PIPELINE_TRIGGERS = [
   'manual',
   'schedule',
@@ -265,6 +267,8 @@ export interface PipelineRun {
   step_runs?: StepRun[]
   error_message?: string
   created_at: string
+  /** Tasks (dispatched commands) by status, once the run has any. RFC-046. */
+  task_summary?: RunTaskSummary
 }
 
 // ============================================
@@ -399,6 +403,8 @@ export interface StatusCounts {
   running: number
   pending: number
   completed: number
+  /** Runs that kept results but lost some work (RFC-046 D5). */
+  partial?: number
   failed: number
   canceled: number
 }
