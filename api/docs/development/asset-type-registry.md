@@ -35,7 +35,34 @@ Each type entry declares:
 - `identity_keys` in match order: RFC-028 identifier kinds, `attr.<name>`,
   and always `name` last;
 - `legacy_category`, the value of the old `category` field of asset
-  responses.
+  responses;
+- `scannable_by`, the tool target types (a tool's `supported_targets`:
+  `url`, `domain`, `ip`, `host` …) that can scan the type. An alias without
+  a list uses its core type's; with one, it is the list of that
+  (core type, sub_type);
+- `exposure_default`, the exposure a type has by nature (`public` for
+  domains, certificates and web applications). Ingest applies it when the
+  scanner sent no exposure.
+
+## Reading the registry in feature code
+
+Feature code never compares an asset's type with a type name. It asks the
+registry about the stored (type, sub_type) pair
+(`pkg/domain/asset/type_behaviour.go`):
+
+| Question | Function |
+|---|---|
+| The pair a row stands for (a legacy alias row reads as its alias's pair) | `CanonicalPair` |
+| Default exposure | `DefaultExposure` |
+| Tool target types that can scan it | `ScannableBy` |
+| Is a relationship allowed (human writes are refused otherwise) | `RelationshipAllowed`, `AllowedRelationshipTargets` |
+| Does a name a person wrote in a rule cover it (`website`, `firewall`) | `TypeNameMatches` |
+| A type filter that must still find legacy alias rows | `WithLegacyNames` |
+
+The web does the same through `web/src/features/asset-types/type-match.ts`.
+`alias_constants_lint_test.go` fails the build when non-test Go code outside
+the resolver names an alias constant (`AssetTypeWebsite` …): such a
+comparison silently never matches a stored row.
 
 Allowed relationships are not written per type. The generator resolves the
 constraints of `configs/relationship-types.yaml` to real types, using the

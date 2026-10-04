@@ -42,7 +42,7 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !super {
-		t.Skip("DATABASE_URL is not a superuser (the least-privilege CI job runs the suite as the app role)")
+		t.Skip("needs a superuser connection; the least-privilege CI job runs the suite as the app role")
 	}
 
 	sfx := randHex(t)

@@ -19,6 +19,7 @@
  */
 
 import type { AssetType } from './asset.types'
+import { assetMatchesTypeName, type AssetTypeRef } from '@/features/asset-types/type-match'
 import {
   type GeneratedRelationshipType,
   GENERATED_RELATIONSHIP_LABELS,
@@ -252,29 +253,40 @@ export const ALL_RELATIONSHIP_TYPES: RelationshipType[] = ALL_GENERATED_RELATION
 // Validation Helpers
 // ============================================
 
+export type { AssetTypeRef }
+
 /**
- * Check if a relationship type is valid between two asset types
+ * Whether a constraint name (`website`, `k8s_cluster`, `host` ...) covers an
+ * asset, by the stored (type, sub-type) pair the name resolves to: the same
+ * resolution the API enforces.
+ */
+export const constraintNameMatches = assetMatchesTypeName
+
+/**
+ * Check if a relationship type is valid between two assets
  */
 export function isValidRelationship(
   relationshipType: RelationshipType,
-  sourceType: ExtendedAssetType,
-  targetType: ExtendedAssetType
+  source: AssetTypeRef | string,
+  target: AssetTypeRef | string
 ): boolean {
   const constraints = VALID_RELATIONSHIP_CONSTRAINTS[relationshipType]
   if (!constraints) return false
 
   return constraints.some(
     (constraint) =>
-      constraint.sourceTypes.includes(sourceType) && constraint.targetTypes.includes(targetType)
+      constraint.sourceTypes.some((n) => constraintNameMatches(n, source)) &&
+      constraint.targetTypes.some((n) => constraintNameMatches(n, target))
   )
 }
 
 /**
- * Get valid target types for a given relationship and source type
+ * Get the constraint names of the valid targets for a relationship and a
+ * source asset (for labels; filter candidates with isValidRelationship)
  */
 export function getValidTargetTypes(
   relationshipType: RelationshipType,
-  sourceType: ExtendedAssetType
+  source: AssetTypeRef | string
 ): ExtendedAssetType[] {
   const constraints = VALID_RELATIONSHIP_CONSTRAINTS[relationshipType]
   if (!constraints) return []
@@ -282,7 +294,7 @@ export function getValidTargetTypes(
   const validTargets = new Set<ExtendedAssetType>()
 
   constraints.forEach((constraint) => {
-    if (constraint.sourceTypes.includes(sourceType)) {
+    if (constraint.sourceTypes.some((n) => constraintNameMatches(n, source))) {
       constraint.targetTypes.forEach((t) => validTargets.add(t))
     }
   })
@@ -291,14 +303,14 @@ export function getValidTargetTypes(
 }
 
 /**
- * Get valid relationship types for a given source type
+ * Get valid relationship types for a source asset
  */
-export function getValidRelationshipTypes(sourceType: ExtendedAssetType): RelationshipType[] {
+export function getValidRelationshipTypes(source: AssetTypeRef | string): RelationshipType[] {
   const validTypes: RelationshipType[] = []
 
   ;(Object.keys(VALID_RELATIONSHIP_CONSTRAINTS) as RelationshipType[]).forEach((relType) => {
     const constraints = VALID_RELATIONSHIP_CONSTRAINTS[relType]
-    if (constraints.some((c) => c.sourceTypes.includes(sourceType))) {
+    if (constraints.some((c) => c.sourceTypes.some((n) => constraintNameMatches(n, source)))) {
       validTypes.push(relType)
     }
   })

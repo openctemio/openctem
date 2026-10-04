@@ -60,6 +60,7 @@ import {
 } from '@/features/assets'
 import { fetchAllAssets } from '@/features/assets/hooks/use-assets'
 import { ipAddresses } from '@/features/assets/lib/service-facts'
+import { toastIfDuplicateAsset } from '@/features/assets/lib/duplicate-asset'
 import { IssuesChip, LabelChips, SurfaceFacts } from '@/features/assets/components/service-cells'
 import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
@@ -299,7 +300,10 @@ export default function ExternalSurfacePage() {
       setFormData(EMPTY_FORM)
       await refetchAssets()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to add external asset'))
+      // A name that already exists is a 409 that may link to the asset.
+      if (!toastIfDuplicateAsset(e, router.push)) {
+        toast.error(getErrorMessage(e, 'Failed to add external asset'))
+      }
     }
   }
 

@@ -29,6 +29,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -291,7 +292,7 @@ func TestAssetGroup_ExistingForeignMemberRow_NotReadable(t *testing.T) {
 	repo := postgres.NewAssetGroupRepository(&postgres.DB{DB: h.db})
 	ctx := context.Background()
 	counts, err := repo.CountAssetsByType(ctx, h.groupB)
-	if err != nil || counts["domain"] != 1 {
+	if err != nil || counts[assetdom.TypeRef{Type: assetdom.AssetTypeDomain}] != 1 {
 		t.Errorf("CountAssetsByType = %v (err %v), want domain:1", counts, err)
 	}
 	ids, err := repo.GetGroupIDsByAssetID(ctx, h.assetA)
