@@ -11,7 +11,21 @@ import (
 type fakeRepo struct {
 	rows     map[shared.ID]map[shared.ID]bool // user -> asset -> in scope
 	findings map[shared.ID]shared.ID          // finding -> asset
+	tenant   map[shared.ID]shared.ID          // asset -> tenant (live assets)
 	err      error
+}
+
+func (f *fakeRepo) AssetIDsInTenant(_ context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []shared.ID
+	for _, id := range ids {
+		if t, ok := f.tenant[id]; ok && t == tenantID {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) HasAnyScopeAssignment(_ context.Context, _, userID shared.ID) (bool, error) {
@@ -227,5 +241,54 @@ func TestEnforcer_CanActOnAssets(t *testing.T) {
 	failing := New(&fakeRepo{err: errors.New("db down")}, policy(false), ctxCaller, nil)
 	if _, _, err := failing.CanActOnAssets(withCaller(Caller{UserID: scoped.String()}), tenant, nil, ids); err == nil {
 		t.Fatal("a failed scope lookup must be returned")
+	}
+}
+
+func TestEnforcer_AssertAssetRef(t *testing.T) {
+	tenant, other := shared.NewID(), shared.NewID()
+	scoped := shared.NewID()
+	inScope, outScope, foreign := shared.NewID(), shared.NewID(), shared.NewID()
+	repo := &fakeRepo{
+		rows:   map[shared.ID]map[shared.ID]bool{scoped: {inScope: true, foreign: true}},
+		tenant: map[shared.ID]shared.ID{inScope: tenant, outScope: tenant, foreign: other},
+	}
+	admin := Caller{UserID: shared.NewID().String(), IsAdmin: true}
+	member := Caller{UserID: scoped.String()}
+	cases := []struct {
+		name    string
+		caller  Caller
+		asset   shared.ID
+		wantErr bool
+	}{
+		{"admin, own tenant", admin, outScope, false},
+		{"admin, foreign tenant", admin, foreign, true},
+		{"admin, unknown id", admin, shared.NewID(), true},
+		{"internal call, foreign tenant", Caller{}, foreign, true},
+		{"member, in scope", member, inScope, false},
+		{"member, out of scope", member, outScope, true},
+		// A scope row pointing at another tenant's asset does not help.
+		{"member, foreign asset with a stray scope row", member, foreign, true},
+		{"zero id", admin, shared.ID{}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := New(repo, policy(false), ctxCaller, nil)
+			err := e.AssertAssetRef(withCaller(tc.caller), tenant, tc.asset)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("AssertAssetRef err=%v, wantErr=%v", err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, shared.ErrNotFound) {
+				t.Errorf("AssertAssetRef must deny with ErrNotFound, got %v", err)
+			}
+		})
+	}
+
+	var nilEnforcer *Enforcer
+	if err := nilEnforcer.AssertAssetRef(withCaller(admin), tenant, inScope); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("nil enforcer must fail closed for an asset reference, got %v", err)
+	}
+	repo.err = errors.New("db down")
+	if err := New(repo, policy(false), ctxCaller, nil).AssertAssetRef(withCaller(admin), tenant, inScope); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("a lookup error must fail closed, got %v", err)
 	}
 }
