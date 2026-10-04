@@ -220,10 +220,12 @@ type ScanDetailResponse struct {
 	TotalRuns      int     `json:"total_runs"`
 	SuccessfulRuns int     `json:"successful_runs"`
 	FailedRuns     int     `json:"failed_runs"`
-	CreatedBy      *string `json:"created_by,omitempty"`
-	CreatedByName  *string `json:"created_by_name,omitempty"`
-	CreatedAt      string  `json:"created_at"`
-	UpdatedAt      string  `json:"updated_at"`
+	// PartialRuns: runs that kept results but lost some work (RFC-046 D5).
+	PartialRuns   int     `json:"partial_runs"`
+	CreatedBy     *string `json:"created_by,omitempty"`
+	CreatedByName *string `json:"created_by_name,omitempty"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 // ScanStatsResponse represents the response for scan statistics.
@@ -1266,6 +1268,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		TotalRuns:             s.TotalRuns,
 		SuccessfulRuns:        s.SuccessfulRuns,
 		FailedRuns:            s.FailedRuns,
+		PartialRuns:           s.PartialRuns,
 		CreatedAt:             s.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:             s.UpdatedAt.Format(time.RFC3339),
 	}
@@ -1474,8 +1477,10 @@ type StatusCountsResponse struct {
 	Running   int64 `json:"running"`
 	Pending   int64 `json:"pending"`
 	Completed int64 `json:"completed"`
-	Failed    int64 `json:"failed"`
-	Canceled  int64 `json:"canceled"`
+	// Partial: runs or steps that kept results but lost some work (RFC-046 D5).
+	Partial  int64 `json:"partial"`
+	Failed   int64 `json:"failed"`
+	Canceled int64 `json:"canceled"`
 }
 
 // GetOverviewStats handles GET /api/v1/scan-management/stats
@@ -1498,6 +1503,7 @@ func (h *ScanHandler) GetOverviewStats(w http.ResponseWriter, r *http.Request) {
 			Running:   stats.Pipelines.Running,
 			Pending:   stats.Pipelines.Pending,
 			Completed: stats.Pipelines.Completed,
+			Partial:   stats.Pipelines.Partial,
 			Failed:    stats.Pipelines.Failed,
 			Canceled:  stats.Pipelines.Canceled,
 		},
@@ -1506,6 +1512,7 @@ func (h *ScanHandler) GetOverviewStats(w http.ResponseWriter, r *http.Request) {
 			Running:   stats.Scans.Running,
 			Pending:   stats.Scans.Pending,
 			Completed: stats.Scans.Completed,
+			Partial:   stats.Scans.Partial,
 			Failed:    stats.Scans.Failed,
 			Canceled:  stats.Scans.Canceled,
 		},
@@ -1514,6 +1521,7 @@ func (h *ScanHandler) GetOverviewStats(w http.ResponseWriter, r *http.Request) {
 			Running:   stats.Jobs.Running,
 			Pending:   stats.Jobs.Pending,
 			Completed: stats.Jobs.Completed,
+			Partial:   stats.Jobs.Partial,
 			Failed:    stats.Jobs.Failed,
 			Canceled:  stats.Jobs.Canceled,
 		},

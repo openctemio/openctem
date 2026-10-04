@@ -317,6 +317,7 @@ const (
 	ActionPipelineStepDeleted         Action = "pipeline_step.deleted"
 	ActionPipelineRunTriggered        Action = "pipeline_run.triggered"
 	ActionPipelineRunCompleted        Action = "pipeline_run.completed"
+	ActionPipelineRunPartial          Action = "pipeline_run.partial"
 	ActionPipelineRunFailed           Action = "pipeline_run.failed"
 	ActionPipelineRunCanceled         Action = "pipeline_run.canceled"
 
@@ -485,7 +486,7 @@ func (a Action) IsValid() bool {
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineTemplateDeleted,
 		ActionPipelineTemplateActivated, ActionPipelineTemplateDeactivated,
 		ActionPipelineStepCreated, ActionPipelineStepUpdated, ActionPipelineStepDeleted,
-		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
+		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunPartial, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
 		ActionScanConfigExported, ActionScanConfigImported,
@@ -783,7 +784,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSensorCreated, ActionSensorActivated, ActionSensorKeyRenewed,
 		ActionAPIKeyCreated,
 		ActionRoleCreated, ActionRoleUpdated,
-		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
+		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunPartial,
 		ActionScanConfigCreated, ActionScanConfigTriggered,
 		ActionScanProfileDeleted, ActionScanProfileDefaultSet, ActionScanProfileQualityGateUpdated,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,

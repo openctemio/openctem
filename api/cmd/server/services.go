@@ -902,7 +902,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ThreatModel, s.AttackSurface, repos.Asset, repos.AssetRelationship,
 		repos.AttackerProfileReader, repos.Finding, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
+	s.AssetRelationship.SetDataScope(s.DataScope)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
+	s.RelationshipSuggestion.SetDataScope(s.DataScope)
 	s.AssetImport = app.NewAssetImportService(repos.Asset, log)
 
 	// Initialize finding source service (read-only system configuration)

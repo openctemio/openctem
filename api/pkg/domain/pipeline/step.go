@@ -288,11 +288,12 @@ func (s *Step) ConditionMet(run *Run) bool {
 }
 
 // BlockedByDependency returns the first dependency of the step that finished
-// without succeeding (failed, skipped, timed out, canceled), or "". Such a
-// step can never run: its dependency will not succeed any more.
+// without producing results (failed, skipped, timed out, canceled), or "".
+// Such a step can never run: its dependency will not succeed any more. A
+// partial dependency does not block: its results are kept.
 func (s *Step) BlockedByDependency(run *Run) string {
 	for _, dep := range s.DependsOn {
-		if sr := run.GetStepRun(dep); sr != nil && sr.IsComplete() && !sr.IsSuccess() {
+		if sr := run.GetStepRun(dep); sr != nil && sr.IsComplete() && !sr.Status.ProducedResults() {
 			return dep
 		}
 	}

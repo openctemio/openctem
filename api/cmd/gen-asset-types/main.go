@@ -376,6 +376,15 @@ func dup(kind string, items []string) error {
 	return nil
 }
 
+// reservedSlugs are the fixed page segments under the web inventory URL
+// /assets/<segment> (static routes that sit next to /assets/[id]). Lens,
+// class and type ids travel in inventory URLs (?lens=, ?types=, q=type:),
+// and RFC-042 folds the typed pages into lenses, so an id that equals one of
+// these segments would read as, or later collide with, a page such as
+// /assets/groups. Keep in sync with the folders in
+// web/src/app/(dashboard)/(discovery)/assets/ and RFC-042 §6.3.6 URLs.
+var reservedSlugs = set([]string{"all", "changes", "duplicates", "groups", "services", "suggestions"})
+
 var attrKinds = set([]string{"string", "int", "number", "bool", "time", "enum", "list", "object"})
 var facetKinds = set([]string{"string", "int", "enum", "bool"})
 
@@ -414,6 +423,13 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 		}
 		if err := dup(kind, items); err != nil {
 			return nil, err
+		}
+		if kind == "lens" || kind == "class" || kind == "type" {
+			for _, id := range items {
+				if reservedSlugs[id] {
+					return nil, fmt.Errorf("%s %q: reserved, it is a page under /assets/ in the web", kind, id)
+				}
+			}
 		}
 	}
 
