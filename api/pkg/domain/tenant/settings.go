@@ -304,10 +304,9 @@ type SecuritySettings struct {
 	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
 	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
 
-	// The data-scope policy ("members without an access group see: everything |
-	// nothing") is the tenants.members_without_group_see column (migration
-	// 000247), not a settings key. A restricted_data_scope key left in stored
-	// JSON was folded into that column by the migration and is ignored.
+	// A restricted_data_scope key left in stored JSON is ignored: members
+	// without a scope row see nothing in every organization (owner decision
+	// D2), there is no data-scope setting.
 
 	// EmailVerificationMode controls whether new users must verify their email.
 	//   "auto"   = (default) require verification IFF SMTP is configured (smart)

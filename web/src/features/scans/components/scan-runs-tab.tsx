@@ -45,6 +45,15 @@ import {
   toSortParam,
 } from '@/features/scans/lib/scans-url'
 import { RunDetailSheet } from './run-detail-sheet'
+import { Download, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { exportToCsv } from '@/hooks/use-csv-export'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import {
+  RUN_EXPORT_CAP,
+  RUN_EXPORT_FIELDS,
+  fetchRunsForExport,
+} from '@/features/scans/lib/export-runs'
 
 /** Run statuses as the API stores them (pipeline.RunStatus). */
 export const RUN_STATUS_FILTERS = [
@@ -94,20 +103,21 @@ function ScanRunsTable() {
   )
   const pagination = { pageIndex: pageParam - 1, pageSize: perPage }
   const [openRunId, setOpenRunId] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const swrConfig = useMemo(
     () => ({ revalidateOnFocus: false, refreshInterval: 30000, dedupingInterval: 5000 }),
     []
   )
 
-  // The web's PipelineRunStatus spells canceled "cancelled"; the API filter
-  // takes the stored value, so the status goes through as a string.
-  const filters = {
+  // Statuses are typed as the API stores them, so the filter value goes
+  // through unchanged.
+  const filters: PipelineRunListFilters = {
     status: statusFilter === 'all' ? undefined : statusFilter,
     sort: toSortParam(sorting, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
     page: pageParam,
     per_page: perPage,
-  } as PipelineRunListFilters
+  }
 
   const { data, isLoading, error } = usePipelineRuns(filters, swrConfig)
   const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
@@ -325,6 +335,49 @@ function ScanRunsTable() {
 
   const filtered = statusFilter !== 'all'
 
+  // Exports the list as filtered and sorted, through the same endpoint.
+  const exportRuns = async () => {
+    setExporting(true)
+    try {
+      const {
+        runs: all,
+        total,
+        capped,
+      } = await fetchRunsForExport({
+        status: filters.status,
+        sort: filters.sort,
+      })
+      if (exportToCsv(all, RUN_EXPORT_FIELDS, 'scan-runs') && capped) {
+        toast.info(
+          `Exported the first ${RUN_EXPORT_CAP} of ${total} runs. Narrow the filter to export the rest.`
+        )
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not export the runs'))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const toolbarEnd = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-9"
+      onClick={() => void exportRuns()}
+      disabled={exporting || !data?.total}
+      aria-busy={exporting}
+    >
+      {exporting ? (
+        <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none sm:me-2" />
+      ) : (
+        <Download className="h-4 w-4 sm:me-2" />
+      )}
+      <span className="hidden sm:inline">Export CSV</span>
+      <span className="sr-only sm:hidden">Export CSV</span>
+    </Button>
+  )
+
   return (
     <>
       <MetricStrip loading={isLoadingStats} items={metrics} />
@@ -344,6 +397,7 @@ function ScanRunsTable() {
             isLoading={isLoading && !data}
             showSearch={false}
             toolbarStart={toolbarStart}
+            toolbarEnd={toolbarEnd}
             getRowId={(r) => r.id}
             onRowClick={(r) => setOpenRunId(r.id)}
             manualPagination

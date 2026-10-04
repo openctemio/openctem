@@ -908,6 +908,10 @@ and every by-id read answers 404. There is no per-organization switch back.
   `everything`) and `DataScopeStrict`/`ScopeStrict` are gone.
 - An unparseable acting user on the finding list or stats is refused instead
   of falling through to tenant-wide results.
+- The switch surface is gone: `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`,
+  the `GET /api/v1/organization/settings/data-scope/impact` pre-flight report,
+  the web console's "see everything" banner and the Settings → Teams card.
+  Settings → Teams states the rule instead.
 - The column itself is retired in steps: no reader for visibility (this
   change), then a migration that stores `nothing` everywhere and refuses
   `everything` (expand), and, after a release, dropping the column
