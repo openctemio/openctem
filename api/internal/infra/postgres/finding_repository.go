@@ -1218,9 +1218,10 @@ func (r *FindingRepository) ListByComponentID(ctx context.Context, tenantID, com
 //   - KEV is the finding's feed-derived is_in_kev or the catalog's KEV
 //     columns, which only the KEV feed writes;
 //   - exploit availability is the catalog flag (KEV feed) or this tenant's
-//     own scanner verdict kept on its findings.
-const (
-	tenantCVEAggColumns = `
+//     own scanner verdict (findings.exploit_available), through the same
+//     predicate as the list filter (vulnerability.FindingExploitAvailableSQL),
+//     which is why tenantCVEAggColumns is a var.
+var tenantCVEAggColumns = `
 				MIN(CASE f.severity
 					WHEN 'critical' THEN 1
 					WHEN 'high'     THEN 2
@@ -1231,7 +1232,9 @@ const (
 				MAX(f.cvss_score)                      AS t_cvss,
 				MAX(f.epss_score)                      AS t_epss,
 				BOOL_OR(COALESCE(f.is_in_kev, false))  AS t_kev,
-				BOOL_OR(f.metadata->>'` + vulnerability.FindingMetaScannerExploitAvailable + `' = 'true') AS t_exploit`
+				BOOL_OR(` + vulnerability.FindingExploitAvailableSQL("f") + `) AS t_exploit`
+
+const (
 	tenantCVESeverity = `(ARRAY['critical','high','medium','low','info','unknown']::text[])[agg.sev_rank]`
 	tenantCVECVSS     = `COALESCE(agg.t_cvss, v.cvss_score)`
 	tenantCVEEPSS     = `COALESCE(agg.t_epss, v.epss_score)`
