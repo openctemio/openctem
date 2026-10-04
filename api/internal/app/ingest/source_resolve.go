@@ -26,6 +26,9 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -141,6 +144,8 @@ func (p *FindingProcessor) applySourceMitigations(ctx context.Context, tenantID 
 		addError(output, "source-asserted resolve failed")
 		return
 	}
+	output.SourceResolveIDs = append(output.SourceResolveIDs, ids...)
+	output.SourceResolveMode = mode
 	if mode == SourceResolveEnforce {
 		output.FindingsSourceResolved += len(ids)
 	} else {
@@ -149,5 +154,40 @@ func (p *FindingProcessor) applySourceMitigations(ctx context.Context, tenantID 
 	if len(ids) > 0 {
 		p.logger.Info("source-asserted resolve", "tenant_id", tenantID.String(), "tool", logValue(tool),
 			"mode", string(mode), "findings", len(ids), "mitigated_rows", len(items))
+	}
+}
+
+// auditSourceResolve records, once per report, the findings source-asserted
+// resolve closed (enforce) or would have closed (dry_run).
+func (s *Service) auditSourceResolve(ctx context.Context, tenantID shared.ID, binding Binding, tool string, out *Output) {
+	if len(out.SourceResolveIDs) == 0 || (s.auditSvc == nil && s.auditRepo == nil) {
+		return
+	}
+	action := audit.ActionIngestSourceResolved
+	if out.SourceResolveMode != SourceResolveEnforce {
+		action = audit.ActionIngestSourceResolveDryRun
+	}
+	ids := out.SourceResolveIDs
+	listed := make([]string, 0, min(len(ids), maxAuditedFindingIDs))
+	for i, id := range ids {
+		if i == maxAuditedFindingIDs {
+			break
+		}
+		listed = append(listed, id.String())
+	}
+	resource := out.ReportID
+	if binding.CommandID != nil {
+		resource = binding.CommandID.String()
+	}
+	event := auditapp.NewSuccessEvent(action, audit.ResourceTypeIngest, resource)
+	event.ResourceName = logValue(tool)
+	event.Message = "source-asserted resolve: the source reported these findings mitigated"
+	event.Metadata = map[string]any{
+		"mode": string(out.SourceResolveMode), "tool_name": logValue(tool), "count": len(ids),
+		"mitigated_rows": out.FindingsSourceMitigated,
+		"finding_ids":    listed, "finding_ids_truncated": len(ids) > maxAuditedFindingIDs,
+	}
+	if err := s.writeIngestAuditLog(ctx, auditapp.AuditContext{TenantID: tenantID.String()}, event); err != nil {
+		s.logger.Warn("failed to write source-asserted resolve audit log", "error", err)
 	}
 }
