@@ -15,9 +15,18 @@ their classes and the lenses those classes belong to. It implements RFC-042
 Each type entry declares:
 
 - `class` (the lens follows from the class);
-- `alias_of`, for a legacy type that ingest stores as (core type, sub_type).
-  An alias keeps its own class: a `host` with sub_type `serverless` is a
-  `function`;
+- `alias_of`, for an input name that is stored as (core type, sub_type),
+  optionally with a `provider` and `attributes` (`s3_bucket` is stored as
+  `(storage, bucket)` + provider `aws`). Aliases are never stored. An alias
+  keeps its own class: a `host` with sub_type `serverless` is a `function`.
+  Its sub_type must be in the core type's `sub_types`; it may be left out
+  only when the alias has the core type's class (`data_store`);
+- `sub_types`, the closed list of kinds of a core type. A sub-type is a
+  kind, never a vendor or an engine;
+- `sub_type_inputs`, legacy sub-type values still accepted on input and what
+  they are stored as: `{ type, sub_type, provider, attributes }`
+  (`postgresql: { sub_type: relational, attributes: { engine: postgresql } }`).
+  Provider and attributes are set only where the asset has no value;
 - typed `attributes` (string, int, number, bool, time, enum, list, object).
   `facet: true` / `group: true` make an attribute a facet or group-by field,
   named `<type>.<attribute>`;
@@ -31,15 +40,37 @@ Each type entry declares:
 Allowed relationships are not written per type. The generator resolves the
 constraints of `configs/relationship-types.yaml` to real types, using the
 `virtual_types` table for the frontend names (`k8s_workload`,
-`container_image` …), and fails on any name it cannot resolve.
+`container_image` …), and fails on any name it cannot resolve. A virtual
+name for a concept without a type yet is marked `unmodelled: true`
+(`credential`, a secret) and its constraints are skipped.
+
+## Input types and stored types
+
+Every write path resolves its input with `asset.ResolveInputType` (people
+and API clients: REST, CSV and bulk import) or `asset.ResolveInputTypeLenient`
+(ingest, sensors, connectors):
+
+| Input | Stored | REST / import | Ingest |
+|---|---|---|---|
+| core type, declared sub-type | as given | accepted | accepted |
+| alias (`website`) | `(application, website)` | accepted | accepted |
+| legacy sub-type (`database` + `postgresql`) | `(database, relational)` + `engine` | accepted | accepted |
+| alias + a different sub-type (`website` + `api`) | — | 400 | alias kept, sub-type in `x_native_sub_type` |
+| undeclared sub-type (`network` + `lan`) | — | 400 | no sub-type, value in `x_native_sub_type` |
+| unknown type | — | 400 | `unclassified` |
+
+`asset.NewAssetWithSubType` refuses anything else, so a writer that skips
+the resolver fails loudly. `PATCH /assets/{id}` accepts `sub_type` (the type
+of an existing asset cannot change) and records a `reclassified` state
+history entry.
 
 ## What is generated
 
 | Output | Contents |
 |---|---|
-| `pkg/domain/asset/registry_generated.go` | the registry data, `Class`/`Lens`/`Category` constants, `TypeAliases` |
-| `web/src/features/asset-types/registry.generated.ts` | the closed sets and labels |
-| `make asset-types-sql` (printed) | the `asset_types` seed and the `assets` re-backfill, for a migration |
+| `pkg/domain/asset/registry_generated.go` | the registry data, `Class`/`Lens`/`Category` constants, `TypeAliases`, the stored types and the input map |
+| `web/src/features/asset-types/registry.generated.ts` | the closed sets and labels, `STORED_ASSET_TYPES`, `ASSET_SUB_TYPES`, `ASSET_TYPE_ALIASES` |
+| `make asset-types-sql` (printed) | the `asset_types` seed (with `sub_types` and `is_storable`), the `asset_type_input_map` rows and the `assets` re-backfill, for a migration |
 
 `GET /api/v1/asset-types` serves `asset.RegistryDocument()` with a strong
 ETag. Its `data`/`total`/`page` fields are the legacy `asset_types` rows and

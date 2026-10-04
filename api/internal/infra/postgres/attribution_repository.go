@@ -67,7 +67,7 @@ func (r *AttributionRepository) UpsertEvidence(ctx context.Context, tenantID sha
 		_, err = r.db.ExecContext(ctx, `
 			INSERT INTO easm_evidence (id, tenant_id, asset_id, rule, technique, source, weight, observed)
 			SELECT $1, a.tenant_id, a.id, $4, $5, $6, $7, $8
-			FROM assets a WHERE a.id = $3 AND a.tenant_id = $2
+			FROM assets a WHERE a.id = $3 AND a.tenant_id = $2 AND a.deleted_at IS NULL
 			ON CONFLICT (asset_id, rule, source) DO UPDATE SET
 				technique        = EXCLUDED.technique,
 				weight           = EXCLUDED.weight,
@@ -143,7 +143,7 @@ func (r *AttributionRepository) SaveAutomatic(ctx context.Context, tenantID shar
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, reason)
 		SELECT a.id, a.tenant_id, $3, $4, $5
-		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2
+		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
 		ON CONFLICT (asset_id) DO UPDATE SET
 			state      = EXCLUDED.state,
 			confidence = EXCLUDED.confidence,
@@ -246,7 +246,7 @@ func (r *AttributionRepository) SaveDecision(ctx context.Context, tenantID share
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, reason, decided_by, decided_at)
 		SELECT a.id, a.tenant_id, $3, 0, '', (SELECT u.id FROM users u WHERE u.id = $4::uuid), now()
-		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2
+		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
 		ON CONFLICT (asset_id) DO UPDATE SET
 			state      = EXCLUDED.state,
 			decided_by = EXCLUDED.decided_by,

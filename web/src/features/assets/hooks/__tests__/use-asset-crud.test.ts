@@ -9,6 +9,7 @@ vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
     success: vi.fn(),
+    warning: vi.fn(),
   },
 }))
 
@@ -16,19 +17,28 @@ vi.mock('sonner', () => ({
 const mockCreateAsset = vi.fn()
 const mockUpdateAsset = vi.fn()
 const mockDeleteAsset = vi.fn()
-const mockBulkDeleteAssets = vi.fn()
+const mockArchiveAsset = vi.fn()
 
 vi.mock('../use-assets', () => ({
   createAsset: (...args: unknown[]) => mockCreateAsset(...args),
   updateAsset: (...args: unknown[]) => mockUpdateAsset(...args),
   deleteAsset: (...args: unknown[]) => mockDeleteAsset(...args),
-  bulkDeleteAssets: (...args: unknown[]) => mockBulkDeleteAssets(...args),
+  archiveAsset: (...args: unknown[]) => mockArchiveAsset(...args),
 }))
 
-// Mock error handler
-vi.mock('@/lib/api/error-handler', () => ({
-  getErrorMessage: (_err: unknown, fallback: string) => fallback,
-}))
+// Mock error handler (keeps the real ApiClientError for the 409 refusal)
+vi.mock('@/lib/api/error-handler', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/lib/api/error-handler')>('@/lib/api/error-handler')
+  return { ...actual, getErrorMessage: (_err: unknown, fallback: string) => fallback }
+})
+
+const { ApiClientError } = await import('@/lib/api/error-handler')
+const refused = () =>
+  new ApiClientError('has findings', 'CONFLICT', 409, {
+    reason: 'asset_has_findings',
+    finding_count: 3,
+  })
 
 describe('useAssetCRUD', () => {
   const mockMutate = vi.fn()
@@ -39,7 +49,7 @@ describe('useAssetCRUD', () => {
     mockCreateAsset.mockResolvedValue({ id: 'new-1', name: 'Test' })
     mockUpdateAsset.mockResolvedValue({ id: '1', name: 'Updated' })
     mockDeleteAsset.mockResolvedValue(undefined)
-    mockBulkDeleteAssets.mockResolvedValue(undefined)
+    mockArchiveAsset.mockResolvedValue({ id: '1' })
   })
 
   // ============================================
@@ -131,7 +141,30 @@ describe('useAssetCRUD', () => {
 
       expect(mockDeleteAsset).toHaveBeenCalledWith('asset-1')
       expect(mockMutate).toHaveBeenCalled()
-      expect(toast.success).toHaveBeenCalledWith('Domain deleted successfully')
+      expect(toast.success).toHaveBeenCalledWith('Domain deleted')
+    })
+
+    it('reports a refusal (asset has findings) and offers Archive', async () => {
+      mockDeleteAsset.mockRejectedValue(refused())
+      const { result } = renderHook(() => useAssetCRUD('domain', 'Domain', mockMutate))
+
+      const returnValue = await act(async () => {
+        return await result.current.handleDelete('asset-1', 'example.com')
+      })
+
+      expect(returnValue).toBe('refused')
+      expect(toast.error).not.toHaveBeenCalled()
+      const [message, opts] = vi.mocked(toast.warning).mock.calls[0] as [
+        string,
+        { action: { label: string; onClick: () => void } },
+      ]
+      expect(message).toContain('example.com was not deleted: it has 3 findings')
+      expect(opts.action.label).toBe('Archive')
+      await act(async () => {
+        opts.action.onClick()
+        await Promise.resolve()
+      })
+      expect(mockArchiveAsset).toHaveBeenCalledWith('asset-1')
     })
 
     it('shows error toast on delete failure', async () => {
@@ -142,8 +175,8 @@ describe('useAssetCRUD', () => {
         return await result.current.handleDelete('asset-1')
       })
 
-      expect(toast.error).toHaveBeenCalledWith('Failed to delete domain')
-      expect(returnValue).toBe(false)
+      expect(toast.error).toHaveBeenCalledWith('Failed to delete Domain')
+      expect(returnValue).toBe('failed')
     })
   })
 
@@ -151,26 +184,26 @@ describe('useAssetCRUD', () => {
   // handleBulkDelete
   // ============================================
   describe('handleBulkDelete', () => {
-    it('calls bulkDeleteAssets and shows success toast', async () => {
+    it('deletes each asset and reports deleted, refused and failed', async () => {
+      mockDeleteAsset.mockImplementation(async (id: string) => {
+        if (id === 'id-2') throw refused()
+        if (id === 'id-3') throw new Error('boom')
+      })
       const { result } = renderHook(() => useAssetCRUD('domain', 'Domain', mockMutate))
 
+      let returnValue: boolean | undefined
       await act(async () => {
-        await result.current.handleBulkDelete(['id-1', 'id-2', 'id-3'])
+        returnValue = await result.current.handleBulkDelete(['id-1', 'id-2', 'id-3'])
       })
 
-      expect(mockBulkDeleteAssets).toHaveBeenCalledWith(['id-1', 'id-2', 'id-3'])
+      expect(mockDeleteAsset).toHaveBeenCalledTimes(3)
       expect(mockMutate).toHaveBeenCalled()
-      expect(toast.success).toHaveBeenCalledWith('Deleted 3 domains')
-    })
-
-    it('uses singular label for single item', async () => {
-      const { result } = renderHook(() => useAssetCRUD('domain', 'Domain', mockMutate))
-
-      await act(async () => {
-        await result.current.handleBulkDelete(['id-1'])
-      })
-
-      expect(toast.success).toHaveBeenCalledWith('Deleted 1 domain')
+      expect(returnValue).toBe(true)
+      expect(toast.success).toHaveBeenCalledWith('Deleted 1 asset')
+      expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain(
+        '1 asset not deleted because it has findings'
+      )
+      expect(toast.error).toHaveBeenCalledWith('Failed to delete 1 asset')
     })
 
     it('enforces MAX_BULK_DELETE=100 limit', async () => {
@@ -183,7 +216,7 @@ describe('useAssetCRUD', () => {
       })
 
       expect(toast.error).toHaveBeenCalledWith('Cannot delete more than 100 items at once')
-      expect(mockBulkDeleteAssets).not.toHaveBeenCalled()
+      expect(mockDeleteAsset).not.toHaveBeenCalled()
       expect(returnValue).toBe(false)
     })
 
@@ -195,19 +228,7 @@ describe('useAssetCRUD', () => {
       })
 
       expect(returnValue).toBe(false)
-      expect(mockBulkDeleteAssets).not.toHaveBeenCalled()
-    })
-
-    it('shows error toast on bulk delete failure', async () => {
-      mockBulkDeleteAssets.mockRejectedValue(new Error('Server error'))
-      const { result } = renderHook(() => useAssetCRUD('domain', 'Domain', mockMutate))
-
-      const returnValue = await act(async () => {
-        return await result.current.handleBulkDelete(['id-1'])
-      })
-
-      expect(toast.error).toHaveBeenCalledWith('Failed to delete items')
-      expect(returnValue).toBe(false)
+      expect(mockDeleteAsset).not.toHaveBeenCalled()
     })
   })
 

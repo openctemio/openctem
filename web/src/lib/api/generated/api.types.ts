@@ -4968,7 +4968,7 @@ export interface paths {
     post?: never
     /**
      * Delete asset
-     * @description Deletes an asset by ID
+     * @description Deletes an asset that has no findings (soft delete: it disappears from every list and its name can be used again; it is purged after the retention period). An asset that has findings, whatever their status, is refused with 409 (details.reason "asset_has_findings"): archive it instead (POST /assets/{id}/archive), so its finding history is kept.
      */
     delete: {
       parameters: {
@@ -5019,6 +5019,17 @@ export interface paths {
           content: {
             '*/*': {
               [key: string]: string
+            }
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error'] & {
+              details?: components['schemas']['internal_infra_http_handler.AssetDeleteRefusedDetails']
             }
           }
         }
@@ -34361,6 +34372,16 @@ export interface components {
       /** @example added */
       type?: string
     }
+    'internal_infra_http_handler.AssetDeleteRefusedDetails': {
+      /**
+       * @description ArchivePath is the request that archives the asset instead.
+       * @example /api/v1/assets/{id}/archive
+       */
+      archive_path?: string
+      finding_count?: number
+      /** @example asset_has_findings */
+      reason?: string
+    }
     'internal_infra_http_handler.AssetGroupResponse': {
       asset_count?: number
       business_unit?: string
@@ -35168,6 +35189,12 @@ export interface components {
         [key: string]: unknown
       }
       scope?: string
+      /**
+       * @description SubType is the kind within the type, from the registry's closed list
+       *     (GET /asset-types). A legacy value of the type is mapped; anything
+       *     else is a 400.
+       */
+      sub_type?: string
       tags?: string[]
       type: string
     }
@@ -38802,6 +38829,11 @@ export interface components {
         [key: string]: unknown
       }
       scope?: string
+      /**
+       * @description SubType changes the kind within the asset's type (closed list from
+       *     GET /asset-types); "" clears it. The type itself cannot change.
+       */
+      sub_type?: string
       tags?: string[]
     }
     'internal_infra_http_handler.UpdateAssetServiceRequest': {

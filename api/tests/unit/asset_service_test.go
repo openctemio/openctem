@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -100,7 +101,7 @@ func (m *MockAssetRepository) Update(_ context.Context, a *asset.Asset) error {
 	return nil
 }
 
-func (m *MockAssetRepository) Delete(_ context.Context, tenantID, id shared.ID) error {
+func (m *MockAssetRepository) Delete(_ context.Context, tenantID, id shared.ID, _ *shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -743,18 +744,24 @@ func TestAssetService_CreateAsset_GetByNameError(t *testing.T) {
 	}
 }
 
+// Every input name is accepted, and only the core type is stored: an alias
+// becomes (core type, sub_type) (RFC-042 §6.3.8 R1).
 func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
-	assetTypes := []string{
-		"domain", "subdomain", "ip_address", "website", "web_application",
-		"api", "repository", "host", "container", "database", "network",
-		"cloud_account", "compute", "storage", "unclassified",
+	stored := map[string][2]string{
+		"domain": {"domain", ""}, "subdomain": {"subdomain", ""}, "ip_address": {"ip_address", ""},
+		"website": {"application", "website"}, "web_application": {"application", "web_application"},
+		"api": {"application", "api"}, "repository": {"repository", ""}, "host": {"host", ""},
+		"container": {"container", ""}, "database": {"database", ""}, "network": {"network", ""},
+		"cloud_account": {"cloud_account", ""}, "compute": {"host", "compute"}, "storage": {"storage", ""},
+		"unclassified": {"unclassified", ""}, "s3_bucket": {"storage", "bucket"},
+		"firewall": {"network", "firewall"}, "kubernetes_cluster": {"kubernetes", "cluster"},
 	}
 
-	for _, at := range assetTypes {
+	for at, want := range stored {
 		t.Run(at, func(t *testing.T) {
 			svc, _ := newTestService()
 			input := app.CreateAssetInput{
-				Name:        "Test " + at,
+				Name:        "test-" + at,
 				Type:        at,
 				Criticality: "medium",
 			}
@@ -762,8 +769,11 @@ func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create asset with type %s: %v", at, err)
 			}
-			if a.Type().String() != at {
-				t.Errorf("expected type %s, got %s", at, a.Type().String())
+			if a.Type().String() != want[0] || a.SubType() != want[1] {
+				t.Errorf("input %s stored as (%s, %q), want (%s, %q)", at, a.Type(), a.SubType(), want[0], want[1])
+			}
+			if !a.Type().IsStored() {
+				t.Errorf("stored type %s is not a core type", a.Type())
 			}
 		})
 	}
@@ -1140,7 +1150,7 @@ func TestAssetService_DeleteAsset_Success(t *testing.T) {
 
 	created := createAssetForTest(t, svc, tenantID, "To Delete")
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1154,7 +1164,7 @@ func TestAssetService_DeleteAsset_NotFound(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), tenantID, "")
 	if err == nil {
 		t.Fatal("expected error for non-existent asset")
 	}
@@ -1167,7 +1177,7 @@ func TestAssetService_DeleteAsset_InvalidID(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	err := svc.DeleteAsset(context.Background(), "not-a-uuid", tenantID)
+	err := svc.DeleteAsset(context.Background(), "not-a-uuid", tenantID, "")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -1179,7 +1189,7 @@ func TestAssetService_DeleteAsset_InvalidID(t *testing.T) {
 func TestAssetService_DeleteAsset_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestService()
 
-	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), "not-a-uuid")
+	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), "not-a-uuid", "")
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -1196,7 +1206,7 @@ func TestAssetService_DeleteAsset_CrossTenantIsolation(t *testing.T) {
 	created := createAssetForTest(t, svc, tenantA, "Tenant A Delete Test")
 
 	// Try to delete from tenant B
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantB)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantB, "")
 	if err == nil {
 		t.Fatal("expected error when deleting asset from different tenant")
 	}
@@ -1222,7 +1232,7 @@ func TestAssetService_DeleteAsset_RepoError(t *testing.T) {
 
 	repo.deleteErr = errors.New("foreign key constraint violation")
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err == nil {
 		t.Fatal("expected error when repo.Delete fails")
 	}
@@ -2065,7 +2075,7 @@ func TestAssetService_DeleteAsset_CallsRepoCorrectly(t *testing.T) {
 
 	repo.deleteCalls = 0
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2294,4 +2304,8 @@ func TestAssetService_GetAssetDisplayInfo_InvalidTenant(t *testing.T) {
 	if _, err := svc.GetAssetDisplayInfo(context.Background(), "bad", []string{shared.NewID().String()}); err == nil {
 		t.Fatal("expected validation error for bad tenant id")
 	}
+}
+
+func (m *MockAssetRepository) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
+	return 0, nil
 }

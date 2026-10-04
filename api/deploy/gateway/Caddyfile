@@ -56,6 +56,11 @@
 		# load balancer in front: space-separated CIDRs.
 		trusted_proxies static {$OPENCTEM_TRUSTED_PROXIES:127.0.0.1/32}
 		client_ip_headers X-Forwarded-For
+		# Read X-Forwarded-For right to left: the client is the right-most
+		# entry that is not one of the proxies above. The default (left-most)
+		# is whatever the client typed when the front proxy appends, and
+		# {client_ip} is what this gateway writes into X-Real-IP for the API.
+		trusted_proxies_strict
 	}
 
 	import modes/{$OPENCTEM_TLS_MODE}.global
@@ -152,7 +157,8 @@
 # The client address for the API's audit log, rate limits and IP allowlists.
 # Caddy already sets X-Forwarded-For/-Proto/-Host and drops any a client sent;
 # X-Real-IP is not touched by Caddy, so it is overwritten here (the API reads
-# it first). Responses are flushed immediately (long polls, SSE, streaming).
+# it first, and only from SERVER_TRUSTED_PROXIES peers; see
+# pkg/httpsec/clientip.go). Responses are flushed immediately (long polls, SSE, streaming).
 (forwarded) {
 	header_up X-Real-IP {client_ip}
 	flush_interval -1

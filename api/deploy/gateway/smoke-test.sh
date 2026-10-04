@@ -14,7 +14,7 @@ net="$run-net"
 fail=0
 
 cleanup() {
-	docker rm -f "$run-gw" "$run-api" "$run-web" >/dev/null 2>&1 || true
+	docker rm -f "$run-gw" "$run-gwh" "$run-api" "$run-web" >/dev/null 2>&1 || true
 	docker network rm "$net" >/dev/null 2>&1 || true
 	rm -rf "${certs:-}"
 }
@@ -163,6 +163,28 @@ case "$body" in
 *"xrealip=6.6.6.6"*) bad "client-supplied X-Real-IP reached the API: $body" ;;
 *"xrealip="[0-9]*) ok "X-Real-IP overwritten ($body)" ;;
 *) bad "unexpected: $body" ;;
+esac
+
+echo "== Behind a trusted front proxy, the client is the right-most untrusted X-Forwarded-For entry"
+# TLS mode http, with the whole test network as the "front proxy". A front
+# proxy that appends keeps whatever the client typed on the left; only the
+# entry the proxy appended (right-most) may become X-Real-IP.
+subnet="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$net")"
+docker run -d --name "$run-gwh" --network "$net" \
+	-e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_TRUSTED_PROXIES="$subnet" \
+	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
+	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+gwhip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gwh")"
+body=""
+for _ in $(seq 1 30); do
+	body="$(docker run --rm --network "$net" curlimages/curl:latest -s -m 2 \
+		-H 'X-Real-IP: 6.6.6.6' -H 'X-Forwarded-For: 6.6.6.6, 198.51.100.9' "http://$gwhip/health" 2>/dev/null || true)"
+	[ -n "$body" ] && break
+	sleep 1
+done
+case "$body" in
+*"xrealip=198.51.100.9"*) ok "X-Real-IP is the proxy-appended client ($body)" ;;
+*) bad "X-Real-IP should be 198.51.100.9 (right-most untrusted), got: $body" ;;
 esac
 
 echo "== Response headers"
