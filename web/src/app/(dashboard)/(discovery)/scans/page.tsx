@@ -5,7 +5,6 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
-import { triggerErrorHint } from '@/features/scan-zones'
 import {
   PageHeader,
   MetricStrip,
@@ -85,6 +84,8 @@ import {
 } from '@/features/scans/components'
 import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-detail-sheet'
 import { ScanRunsTab } from '@/features/scans/components/scan-runs-tab'
+import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
+import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
 import { scanSuccessRate } from '@/features/scans/lib/format'
 
 // ============================================
@@ -368,9 +369,11 @@ type ConfigAction = 'trigger' | 'pause' | 'activate' | 'delete' | 'clone' | 'edi
 interface ConfigActionsCellProps {
   config: ScanConfig
   onAction: (action: ConfigAction, config: ScanConfig) => void
+  /** This scan's trigger is in flight: a second click must not start another run. */
+  triggering?: boolean
 }
 
-function ConfigActionsCell({ config, onAction }: ConfigActionsCellProps) {
+function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActionsCellProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -393,9 +396,13 @@ function ConfigActionsCell({ config, onAction }: ConfigActionsCellProps) {
         </Can>
         {/* Trigger, clone, pause and resume all need scans:write. */}
         <Can permission={Permission.ScansWrite}>
-          <DropdownMenuItem onClick={() => onAction('trigger', config)}>
-            <Play className="me-2 h-4 w-4" />
-            Trigger scan
+          <DropdownMenuItem disabled={triggering} onClick={() => onAction('trigger', config)}>
+            {triggering ? (
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="me-2 h-4 w-4" />
+            )}
+            {triggering ? 'Starting…' : 'Trigger scan'}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onAction('clone', config)}>
             <Copy className="me-2 h-4 w-4" />
@@ -473,6 +480,13 @@ function ConfigurationsTab() {
   const [configToClone, setConfigToClone] = useState<ScanConfig | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [configToEdit, setConfigToEdit] = useState<ScanConfig | null>(null)
+  // Opened from the "a run is already in progress" question.
+  const [openRunId, setOpenRunId] = useState<string | null>(null)
+  const {
+    trigger: triggerScan,
+    isTriggering,
+    dialog: triggerDialog,
+  } = useScanTrigger({ onViewRun: setOpenRunId })
 
   // Memoize filter object to prevent unnecessary re-renders
   const filters = useMemo(
@@ -543,52 +557,56 @@ function ConfigurationsTab() {
     await invalidateScanConfigsCache()
   }, [])
 
-  const handleAction = useCallback(async (action: ConfigAction, config: ScanConfig) => {
-    // For delete, show confirmation dialog first
-    if (action === 'delete') {
-      setConfigToDelete(config)
-      setDeleteConfirmOpen(true)
-      return
-    }
-
-    // For clone, show clone dialog
-    if (action === 'clone') {
-      setConfigToClone(config)
-      setCloneDialogOpen(true)
-      return
-    }
-
-    // For edit, show edit dialog
-    if (action === 'edit') {
-      setConfigToEdit(config)
-      setEditDialogOpen(true)
-      return
-    }
-
-    try {
-      switch (action) {
-        case 'trigger':
-          await post(scanEndpoints.trigger(config.id), {})
-          toast.success(`Scan "${config.name}" triggered successfully`)
-          break
-        case 'pause':
-          await post(scanEndpoints.pause(config.id), {})
-          toast.success(`Scan "${config.name}" paused`)
-          break
-        case 'activate':
-          await post(scanEndpoints.activate(config.id), {})
-          toast.success(`Scan "${config.name}" activated`)
-          break
+  const handleAction = useCallback(
+    async (action: ConfigAction, config: ScanConfig) => {
+      // For delete, show confirmation dialog first
+      if (action === 'delete') {
+        setConfigToDelete(config)
+        setDeleteConfirmOpen(true)
+        return
       }
-      // Invalidate caches to refresh the list
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      console.error(`Failed to ${action} scan:`, error)
-      toast.error(getErrorMessage(error, `Failed to ${action} scan "${config.name}"`), {
-        description: action === 'trigger' ? triggerErrorHint(error) : undefined,
-      })
-    }
-  }, [])
+
+      // For clone, show clone dialog
+      if (action === 'clone') {
+        setConfigToClone(config)
+        setCloneDialogOpen(true)
+        return
+      }
+
+      // For edit, show edit dialog
+      if (action === 'edit') {
+        setConfigToEdit(config)
+        setEditDialogOpen(true)
+        return
+      }
+
+      // Trigger asks first when a run is already in progress, and ignores a
+      // second click while the first is in flight (useScanTrigger).
+      if (action === 'trigger') {
+        await triggerScan(config)
+        return
+      }
+
+      try {
+        switch (action) {
+          case 'pause':
+            await post(scanEndpoints.pause(config.id), {})
+            toast.success(`Scan "${config.name}" paused`)
+            break
+          case 'activate':
+            await post(scanEndpoints.activate(config.id), {})
+            toast.success(`Scan "${config.name}" activated`)
+            break
+        }
+        // Invalidate caches to refresh the list
+        await invalidateScanConfigsCache()
+      } catch (error) {
+        console.error(`Failed to ${action} scan:`, error)
+        toast.error(getErrorMessage(error, `Failed to ${action} scan "${config.name}"`), {})
+      }
+    },
+    [triggerScan]
+  )
 
   const handleConfirmDelete = useCallback(async () => {
     if (!configToDelete) return
@@ -758,10 +776,16 @@ function ConfigurationsTab() {
       {
         id: 'actions',
         enableHiding: false,
-        cell: ({ row }) => <ConfigActionsCell config={row.original} onAction={handleAction} />,
+        cell: ({ row }) => (
+          <ConfigActionsCell
+            config={row.original}
+            onAction={handleAction}
+            triggering={isTriggering(row.original.id)}
+          />
+        ),
       },
     ],
-    [getProgress, handleAction, handleToggle]
+    [getProgress, handleAction, handleToggle, isTriggering]
   )
 
   const activeFiltersCount = [
@@ -1033,6 +1057,9 @@ function ConfigurationsTab() {
         isLoading={isDeleting}
         handleConfirm={handleConfirmDelete}
       />
+
+      {triggerDialog}
+      <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
 
       {/* Clone Scan Dialog */}
       <CloneScanDialog
