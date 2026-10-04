@@ -147,7 +147,10 @@ In scope:
   set of actions over inventory rows. Workflows (`internal/app/workflow`)
   stay the imperative tool for findings.
 - **Hard delete from automation.** No policy, exclusion or lifecycle path
-  deletes an asset. Deletion stays a human action under `assets:delete`.
+  deletes an asset. Deletion stays a human action under `assets:delete`,
+  and since owner decision O3 (2026-10) a human delete never destroys
+  findings: an asset with findings is refused (archive it), one without is
+  soft-deleted and purged after 30 days (`architecture/asset-deletion.md`).
 
 ## 3. Current state (verified 2026-10-03: `develop` d547a60; ctis `main` 272ae51; sensor `main` ca3d576)
 

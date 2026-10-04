@@ -133,7 +133,7 @@ Details: [api-keys.md](./api-keys.md).
 | `GET /api/v1/assets/{id}` | `assets:read` |
 | `POST /api/v1/assets` | `assets:write` |
 | `PUT /api/v1/assets/{id}` | `assets:write` |
-| `DELETE /api/v1/assets/{id}` | `assets:delete` |
+| `DELETE /api/v1/assets/{id}` | `assets:delete` + data scope. Refused with 409 (`asset_has_findings`) while the asset has any finding (archive it instead); otherwise a soft delete, audited `asset.deleted` (see [asset-deletion.md](asset-deletion.md)) |
 
 #### Business units (`/api/v1/business-units`)
 

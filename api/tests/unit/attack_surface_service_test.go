@@ -132,7 +132,7 @@ func (m *mockAttackSurfaceRepo) Update(_ context.Context, _ *asset.Asset) error 
 	return nil
 }
 
-func (m *mockAttackSurfaceRepo) Delete(_ context.Context, _, _ shared.ID) error {
+func (m *mockAttackSurfaceRepo) Delete(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
 	return nil
 }
 
@@ -973,4 +973,8 @@ func TestComputeAttackPathScores_DirectlyExposedCrownJewelAtRisk(t *testing.T) {
 	if res.Summary.CrownJewelsAtRisk != 2 {
 		t.Fatalf("CrownJewelsAtRisk = %d, want 2 (directly-exposed + reached)", res.Summary.CrownJewelsAtRisk)
 	}
+}
+
+func (m *mockAttackSurfaceRepo) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
+	return 0, nil
 }

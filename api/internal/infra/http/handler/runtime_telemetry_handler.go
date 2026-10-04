@@ -169,7 +169,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			if !cached {
 				var exists bool
 				qaErr := h.db.QueryRowContext(r.Context(),
-					`SELECT EXISTS (SELECT 1 FROM assets WHERE id = $1 AND tenant_id = $2)`,
+					`SELECT EXISTS (SELECT 1 FROM assets WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL)`,
 					ev.EndpointAssetID, agt.TenantID.String(),
 				).Scan(&exists)
 				if qaErr != nil {

@@ -85,6 +85,11 @@ func TestCrownJewelReads_UseTheColumn(t *testing.T) {
 	if err := repo.SetCrownJewel(ctx, other, bid, true, 1, ""); err == nil {
 		t.Error("SetCrownJewel across tenants succeeded")
 	}
+	// A soft-deleted asset is not found and keeps its flag.
+	mustExec(t, db, `UPDATE assets SET deleted_at = NOW() WHERE id = $1`, bad)
+	if err := repo.SetCrownJewel(ctx, tenantID, bid, true, 1, ""); err == nil {
+		t.Error("SetCrownJewel on a deleted asset succeeded")
+	}
 	// A generic Update never touches the flag.
 	j, _ := shared.IDFromString(jewel)
 	ja, err := repo.GetByID(ctx, tenantID, j)
