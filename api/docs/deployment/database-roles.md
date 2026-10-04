@@ -136,9 +136,10 @@ The live order is:
   4. runs the DB-backed test suite with `DATABASE_URL` set to **`openctem_app`**.
      The handful of tests that replay migrations or alter constraints connect
      through `testdb.MigratorURL()` (`DATABASE_MIGRATE_URL`), exactly as
-     production splits the two.
-- `deploy/postgres/least_privilege_test.go` (runs when `DATABASE_URL` is
-  set):
+     production splits the two. Tests that create a scratch database
+     (`testdb.PrivateDatabase`, the sensor-rename upgrade test, the bootstrap
+     test) need CREATEDB, so they use `DATABASE_ADMIN_URL` (the superuser).
+- `deploy/postgres/least_privilege_test.go` (runs when `DATABASE_ADMIN_URL` or `DATABASE_URL` is a superuser):
   - creates a scratch database and bootstraps it;
   - asserts the app role's attributes and memberships;
   - asserts that the app is refused `CREATE TABLE`, `COPY ... TO` a file,
