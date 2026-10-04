@@ -963,6 +963,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set classification (CVE/CWE/OWASP/CVSS)
 	p.setFindingClassification(f, ctisFinding)
+	setFindingScannerDetails(f, ctisFinding)
 
 	// Set tags
 	if len(ctisFinding.Tags) > 0 {
