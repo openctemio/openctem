@@ -40,6 +40,11 @@
 #      api/openapi/undocumented-routes.txt  (the debt is frozen, not growing)
 #   D. a documented operation names its path parameters as the router does,
 #      or is listed in api/openapi/param-name-drift.txt  (RFC-041; shrink-only)
+#   E. the committed definitions have the shape a fresh `make swagger` gives:
+#      the same definitions, required lists, and per property the same name,
+#      type, $ref, items and enum (tools/lint/openapischema). Descriptions,
+#      examples and `format` are ignored, so swag's environment quirks cannot
+#      fail it. Skip it locally with OPENAPI_SKIP_SCHEMA=1.
 #
 # Set comparison is stable across swag's formatting quirks and is the thing a
 # generated client actually depends on.
@@ -72,7 +77,30 @@ fi
 
 cd "$REPO_ROOT"
 
-if GOWORK=off go test ./tools/lint/openapicontract/... -count=1; then
+schema_ok=1
+if [ "${OPENAPI_SKIP_SCHEMA:-0}" != "1" ]; then
+  SWAG_VERSION="${SWAG_VERSION:-v1.16.4}" # keep in step with the Makefile
+  SWAG="$(command -v swag 2>/dev/null || echo "$(go env GOPATH)/bin/swag")"
+  if ! "$SWAG" --version 2>/dev/null | grep -qF "$SWAG_VERSION"; then
+    GOWORK=off GOFLAGS=-mod=mod go install "github.com/swaggo/swag/cmd/swag@$SWAG_VERSION" >&2 || {
+      echo "check-openapi: cannot install swag $SWAG_VERSION" >&2; exit 2; }
+    SWAG="$(go env GOPATH)/bin/swag"
+  fi
+  fresh="$(mktemp -d)"
+  trap 'rm -rf "$fresh"' EXIT
+  GOWORK=off go mod download
+  if ! GOWORK=off "$SWAG" init --generalInfo cmd/server/main.go --output "$fresh" \
+        --outputTypes yaml --parseDependency >"$fresh/swag.log" 2>&1; then
+    echo "check-openapi: swag failed:" >&2
+    tail -20 "$fresh/swag.log" >&2
+    exit 2
+  fi
+  if ! OPENAPI_FRESH_SPEC="$fresh/swagger.yaml" GOWORK=off go test ./tools/lint/openapischema/... -count=1; then
+    schema_ok=0
+  fi
+fi
+
+if GOWORK=off go test ./tools/lint/openapicontract/... -count=1 && [ "$schema_ok" = 1 ]; then
   echo "check-openapi: annotations, spec and routes agree."
   exit 0
 fi
@@ -94,6 +122,10 @@ OpenAPI contract check failed. The message above names the operations.
         The spec advertises an endpoint that 404s. Either register the route,
         or correct the handler's @Router to the path it is really served on
         and rerun `make swagger`.
+
+  • "does not describe the Go types"
+        A request or response struct changed without regenerating.
+        Run `make swagger`, then `make api-types` at the root, and commit both.
 
   • "neither documented nor baselined"
         A new route no client can discover. Add a // @Router annotation and

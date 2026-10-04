@@ -175,6 +175,11 @@ func (r *FindingRepository) ResolveCoverageStale(ctx context.Context, tenantID s
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
+		return nil, nil
+	}
 	idStrs := make([]string, len(ids))
 	for i, id := range ids {
 		idStrs[i] = id.String()
