@@ -93,3 +93,30 @@ func rememberFindingKey(ctx context.Context, tx *sql.Tx, tenantID, findingID str
 	}
 	return nil
 }
+
+// AdoptFingerprint re-keys the live finding stored under from to the
+// versioned key to, with its identity tuple, when the finding has an older
+// recipe version and no finding holds to yet. The old key stays an alias
+// (trigger). Race-safe: the NOT EXISTS guard and the unique index decide, and
+// losing a race is not an error.
+func (r *FindingRepository) AdoptFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int) (bool, error) {
+	if from == "" || to == "" || from == to || len(identityKey) == 0 || tenantID.IsZero() {
+		return false, nil
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE findings
+		SET fingerprint = $3, fingerprint_version = $5, identity_key = $4::jsonb, updated_at = NOW()
+		WHERE tenant_id = $1 AND fingerprint = $2
+		  AND fingerprint_version < $5
+		  AND status <> 'duplicate'
+		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`,
+		tenantID.String(), from, to, string(identityKey), version)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("adopt versioned fingerprint: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}

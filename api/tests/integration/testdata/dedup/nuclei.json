@@ -1,0 +1,36 @@
+{
+  "tool": "nuclei",
+  "asset": {"type": "domain", "value": "shop.example.com"},
+  "cases": [
+    {
+      "name": "query values and id segments churn",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "SQL error disclosure", "severity": "high", "rule_id": "sqli-error-based",
+        "fingerprint": "9d3a3f0b6a1c4e8f9d3a3f0b6a1c4e8f",
+        "location": {"path": "https://shop.example.com/api/items/42?id=42&sort=asc"},
+        "properties": {"request": "GET /api/items/42?id=42&sort=asc HTTP/1.1"}},
+      "after": {"type": "vulnerability", "title": "SQL error disclosure", "severity": "high", "rule_id": "sqli-error-based",
+        "fingerprint": "0e2b4f6a8c1d3e5f0e2b4f6a8c1d3e5f",
+        "location": {"path": "https://SHOP.example.com:443/api/items/977?sort=desc&id=977"},
+        "properties": {"request": "GET /api/items/977?sort=desc&id=977 HTTP/1.1"}}
+    },
+    {
+      "name": "the same template on two endpoints (B11)",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "SQL error disclosure", "severity": "high", "rule_id": "sqli-error-based",
+        "location": {"path": "https://shop.example.com/api/items?id=1"}},
+      "after": {"type": "vulnerability", "title": "SQL error disclosure", "severity": "high", "rule_id": "sqli-error-based",
+        "location": {"path": "https://shop.example.com/api/orders?id=1"}}
+    },
+    {
+      "name": "a CVE template keys on the CVE",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "Confluence OGNL", "severity": "critical", "rule_id": "CVE-2022-26134",
+        "location": {"path": "https://shop.example.com/"},
+        "vulnerability": {"cve_id": "CVE-2022-26134"}},
+      "after": {"type": "vulnerability", "title": "Confluence OGNL injection", "severity": "critical", "rule_id": "cve-2022-26134-confluence",
+        "location": {"path": "https://shop.example.com"},
+        "vulnerability": {"cve_id": "cve-2022-26134"}}
+    }
+  ]
+}
