@@ -399,3 +399,117 @@ func TestValidationHandler_IngestEvidence_MalformedCommandID(t *testing.T) {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
 }
+
+// --- evidence ownership: the run and the asset come from the command -------
+
+func postEvidenceWith(t *testing.T, h *ValidationHandler, tenantID, sensorID shared.ID, req evidenceRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	req.ExecutorKind, req.Outcome = "safe-check", "not_detected"
+	body, _ := json.Marshal(req)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/validation/evidence", bytes.NewReader(body))
+	tid := tenantID
+	agt := &sensor.Sensor{ID: sensorID, TenantID: &tid, Status: sensor.SensorStatusActive}
+	r = r.WithContext(context.WithValue(r.Context(), sensorContextKey, agt))
+	w := httptest.NewRecorder()
+	h.IngestEvidence(w, r)
+	return w
+}
+
+func boundValidateCmd(t *testing.T, tenantID, sensorID, findingID, assetID shared.ID, simRun *shared.ID) *commanddom.Command {
+	t.Helper()
+	p := validation.ValidateCommandPayload{FindingID: findingID.String(), ExecutorKind: "safe-check",
+		Target: validation.ValidateTargetPayload{AssetID: assetID.String(), Type: "domain", Address: "app.example.com"}}
+	if simRun != nil {
+		p.SimulationRunID = simRun.String()
+	}
+	payload, _ := json.Marshal(p)
+	cmd, err := commanddom.NewCommand(tenantID, commanddom.CommandTypeValidate, commanddom.CommandPriorityNormal, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.SetSensorID(sensorID)
+	cmd.Status = commanddom.CommandStatusRunning
+	return cmd
+}
+
+// ATTACK: a sensor holding a validate command cannot attach its evidence to
+// another simulation run or another asset by naming them in the body. With
+// the body silent, the evidence carries the run and asset of the command.
+func TestValidationHandler_IngestEvidence_RunAndAssetBoundToCommand(t *testing.T) {
+	tenantID, me := shared.NewID(), shared.NewID()
+	finding := fixAppliedFinding(t)
+	run := shared.NewID()
+	cmd := boundValidateCmd(t, tenantID, me, finding.ID(), finding.AssetID(), &run)
+
+	refused := map[string]evidenceRequest{
+		"other simulation run": {SimulationRunID: shared.NewID().String()},
+		"other asset":          {Target: evidenceTargetIn{AssetID: shared.NewID().String()}},
+	}
+	for name, req := range refused {
+		t.Run(name, func(t *testing.T) {
+			repo := &fakeEvidenceRepo{}
+			h := newValidationHandler(repo, &fakeFindingMutator{current: fixAppliedFinding(t)})
+			h.SetCommandLookup(&fakeCommandLookup{cmds: []*commanddom.Command{cmd}})
+			req.FindingID, req.CommandID = finding.ID().String(), cmd.ID.String()
+			if w := postEvidenceWith(t, h, tenantID, me, req); w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403; body=%s", w.Code, w.Body.String())
+			}
+			if len(repo.rows) != 0 {
+				t.Fatal("evidence for another run or asset was stored")
+			}
+		})
+	}
+
+	repo := &fakeEvidenceRepo{}
+	h := newValidationHandler(repo, &fakeFindingMutator{current: finding})
+	h.SetCommandLookup(&fakeCommandLookup{cmds: []*commanddom.Command{cmd}})
+	w := postEvidenceWith(t, h, tenantID, me, evidenceRequest{FindingID: finding.ID().String(), CommandID: cmd.ID.String()})
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body=%s", w.Code, w.Body.String())
+	}
+	if len(repo.rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(repo.rows))
+	}
+	got := repo.rows[0]
+	if got.SimulationRunID == nil || !got.SimulationRunID.Equals(run) || !got.Evidence.Target.AssetID.Equals(finding.AssetID()) {
+		t.Fatalf("stored run %v asset %v, want the command run %v and asset %v",
+			got.SimulationRunID, got.Evidence.Target.AssetID, run, finding.AssetID())
+	}
+}
+
+// Advisory evidence (no command) cannot cite a simulation run, and cannot
+// name an asset other than the asset of its finding.
+func TestValidationHandler_IngestEvidence_AdvisoryCannotBindRunOrForeignAsset(t *testing.T) {
+	tenantID, me := shared.NewID(), shared.NewID()
+	finding := fixAppliedFinding(t)
+	cases := map[string]struct {
+		req  evidenceRequest
+		code int
+	}{
+		"simulation run": {evidenceRequest{SimulationRunID: shared.NewID().String()}, http.StatusForbidden},
+		"foreign asset":  {evidenceRequest{Target: evidenceTargetIn{AssetID: shared.NewID().String()}}, http.StatusBadRequest},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := &fakeEvidenceRepo{}
+			h := newValidationHandler(repo, &fakeFindingMutator{current: finding})
+			h.SetCommandLookup(&fakeCommandLookup{})
+			tc.req.FindingID = finding.ID().String()
+			if w := postEvidenceWith(t, h, tenantID, me, tc.req); w.Code != tc.code {
+				t.Fatalf("status = %d, want %d; body=%s", w.Code, tc.code, w.Body.String())
+			}
+			if len(repo.rows) != 0 {
+				t.Fatal("refused advisory evidence was stored")
+			}
+		})
+	}
+	// The asset of the finding itself is accepted.
+	repo := &fakeEvidenceRepo{}
+	h := newValidationHandler(repo, &fakeFindingMutator{current: finding})
+	h.SetCommandLookup(&fakeCommandLookup{})
+	w := postEvidenceWith(t, h, tenantID, me, evidenceRequest{FindingID: finding.ID().String(),
+		Target: evidenceTargetIn{AssetID: finding.AssetID().String()}})
+	if w.Code != http.StatusAccepted || len(repo.rows) != 1 {
+		t.Fatalf("own asset: status = %d rows = %d", w.Code, len(repo.rows))
+	}
+}

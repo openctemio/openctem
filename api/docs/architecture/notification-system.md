@@ -281,10 +281,23 @@ POST /api/v1/notification-outbox/{id}/retry # Retry failed entry
 DELETE /api/v1/notification-outbox/{id}   # Delete entry
 ```
 
-**Permissions Required:**
+**Permissions Required** (every route also needs `integrations:manage`):
 - `integrations:notifications:read` for GET endpoints
 - `integrations:notifications:write` for POST (retry)
 - `integrations:notifications:delete` for DELETE
+
+`GET /api/v1/integrations/{id}/notification-events` (a channel's delivery
+history) needs `integrations:manage`.
+
+**Why channel managers only:** the outbox gets a row for every event, whether
+or not a channel is configured: new findings (message, asset id, owner name
+and email), new assets, exposures, SLA and approval events, for the whole
+organization and without data scope. Members and viewers hold
+`integrations:notifications:read` for their own in-app notices; before
+research doc 15 (L-03) that also opened this stream to them. Whoever holds
+`integrations:manage` already decides which of these events leave for Slack,
+Teams or a webhook, so the history shows them nothing new. The web console
+hides *View events* and *Queue* without that permission.
 
 ### Event History API (TODO)
 

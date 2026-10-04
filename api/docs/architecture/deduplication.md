@@ -42,8 +42,53 @@ before the existence check, so a former key lands on the finding that carries it
 now; the sensor fingerprint check reports a former key as known. The alias
 references `findings (id, tenant_id)`, so it cannot name another tenant's
 finding, and every lookup is tenant-scoped. `findings.fingerprint_version` and
-`findings.identity_key` exist; every row is version 1 until the v2 recipes of
-item 11 land.
+`findings.identity_key` exist.
+
+**Since RFC-043 item 11 (identity version 2):** scanner ingest keys a finding
+with a server-computed identity tuple (`pkg/domain/vulnerability/identity.go`,
+recipes in `identity_recipes.go`, CTIS mapping in
+`internal/app/ingest/identity_v2.go`). The tuple is stored in
+`findings.identity_key`, `fingerprint_version = 2`, and the fingerprint is
+`sha256("v2" 0x1f kind 0x1f (name 0x1e len 0x1e value 0x1f)*)`, so no field
+boundary can be moved to forge a collision. Recipes:
+
+| Kind | Tuple | Not in it |
+|---|---|---|
+| SAST | asset, tool, rule, repo-relative path, then one anchor: SARIF `primaryLocationLineHash` (with its `:N`), Semgrep `matchBasedId/v1`, else `hash(normalized snippet)` + logical location + occurrence index of that snippet in the file | line numbers, message |
+| SCA | asset, canonical PURL without version (`distro` qualifier only for deb/rpm/apk, D13), canonical vuln id | installed version, manifest path |
+| Secret | asset, per-tenant keyed HMAC of the reported (masked) value, repo-relative path | line, the value or its mask |
+| DAST | asset, rule (the CVE for a CVE template), method, URL template (lower-case IDNA host, default port dropped, numeric/UUID segments `{id}`, D4), sorted parameter names | query values |
+| Network VA | asset, canonical CVE (one finding per CVE, D3; else `rule:<id>`), `port/proto` or `host` | plugin title |
+| Misconfig | asset, policy id, resource type/name, path | message |
+
+A result no recipe covers (compliance, web3, a SAST result with only a line,
+a secret without a configured server key) keeps its version-1 key. The
+sensor's own fingerprint is kept as the sighting key
+`partial_fingerprints["sensor/fingerprint"]` and is never the identity (D1).
+
+Migration without losing triage: when a scan reports a result whose version-1
+key still names a stored finding and no finding holds the version-2 key yet,
+that finding is re-keyed in place on that sighting
+(`FindingRepository.AdoptFingerprint`); its version-1 key stays an alias. An
+asset merge re-keys a version-2 finding by rewriting the `asset` field of its
+stored tuple, only when the stored tuple still reproduces the stored key.
+
+**Mark duplicate of (manual merge):** `POST /api/v1/findings/{id}/duplicates`
+`{"finding_id": …}` folds a finding into the original `{id}` with the same
+`mergeFindingInto` the asset merge uses, in one transaction with both rows
+locked and the rules re-checked under the lock
+(`FindingRepository.MarkDuplicateOf`, rules in
+`vulnerability.CheckMarkDuplicate`): same tenant and data scope (404
+otherwise), same asset, neither already a duplicate, no pentest finding, and
+`findings:approve` when either finding is a false positive or risk acceptance
+(otherwise a merge would close an open finding under, or carry onto it, a
+decision that needs approval). The activity on both findings names the user;
+the audit log records `finding.duplicate_marked`.
+
+Known limits: the SAST occurrence index is counted within one report, so twin
+snippets split across report chunks can swap; the secret HMAC is over the
+masked value the sensor sends (CTIS carries no raw value), so two secrets that
+mask alike in one file are one finding.
 
 What `ctis/fingerprint.GenerateAuto` keys on, per detected type
 (`ctis/fingerprint/fingerprint.go:112-213`, `DetectType` `:435-472`), given the
