@@ -139,3 +139,11 @@ func applyIdentityToFinding(f *vulnerability.Finding, identity *vulnerability.Id
 		f.AddPartialFingerprint(partialSensorFingerprint, reported.Fingerprint)
 	}
 }
+
+// VersionOneFingerprint is the version-1 key ingest gave f on assetID before
+// the version-2 recipes (RFC-043 §6). The golden corpus uses it to build
+// version-1 rows and prove they are re-keyed without losing state.
+func VersionOneFingerprint(assetID shared.ID, f *ctis.Finding, tool *ctis.Tool) string {
+	fp, _ := generateFindingFingerprint(assetID, f, tool)
+	return fp
+}

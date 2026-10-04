@@ -164,10 +164,10 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 		return fmt.Errorf("look up re-keyed fingerprint: %w", err)
 	case !f.createdAt.Before(holderCreated):
 		// The finding already holding the key is as old or older: it survives.
-		return mergeFindingInto(ctx, tx, tenantID, holderID, f.id)
+		return mergeFindingInto(ctx, tx, tenantID, holderID, f.id, causeAssetMerge)
 	default:
 		// The moved finding is older: it survives and takes the key.
-		if err := mergeFindingInto(ctx, tx, tenantID, f.id, holderID); err != nil {
+		if err := mergeFindingInto(ctx, tx, tenantID, f.id, holderID, causeAssetMerge); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
@@ -241,7 +241,20 @@ func findingStatusRank(status string) int {
 // mergeFindingInto folds loser into survivor: the survivor inherits the
 // loser's state where the loser's is stronger, every row that references the
 // loser moves to the survivor, and the loser becomes a tombstone.
-func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string) error {
+// findingMergeCause says why two findings became one, for the activity
+// trail of both.
+type findingMergeCause struct {
+	// Reason is the activity source and the "reason" in its changes.
+	Reason string
+	// Phrase ends "Marked duplicate of <id> …".
+	Phrase string
+	// ActorType is "system" or "user"; ActorID is the user for "user".
+	ActorType, ActorID string
+}
+
+var causeAssetMerge = findingMergeCause{Reason: "asset_merge", Phrase: "by an asset merge", ActorType: "system"}
+
+func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string, cause findingMergeCause) error {
 	var survivorStatus, loserStatus string
 	if err := tx.QueryRowContext(ctx,
 		`SELECT (SELECT status FROM findings WHERE id = $1 AND tenant_id = $3),
@@ -318,15 +331,24 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 	}
 
 	survivorChanges, _ := json.Marshal(map[string]string{
-		"merged_from": loserID, "reason": "asset_merge", "loser_status": loserStatus,
+		"merged_from": loserID, "reason": cause.Reason, "loser_status": loserStatus,
 	})
-	loserChanges, _ := json.Marshal(map[string]string{"duplicate_of": survivorID, "reason": "asset_merge"})
+	loserChanges, _ := json.Marshal(map[string]string{"duplicate_of": survivorID, "reason": cause.Reason})
+	actorType := cause.ActorType
+	if actorType == "" {
+		actorType = "system"
+	}
+	var actorID any
+	if cause.ActorID != "" {
+		actorID = cause.ActorID
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, changes, source, message)
-		VALUES ($1, $2, 'duplicate_marked', 'system', $3, 'asset_merge', $4),
-		       ($1, $5, 'duplicate_marked', 'system', $6, 'asset_merge', $7)`,
+		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_id, changes, source, message)
+		VALUES ($1, $2, 'duplicate_marked', $8, $9, $3, $10, $4),
+		       ($1, $5, 'duplicate_marked', $8, $9, $6, $10, $7)`,
 		tenantID, survivorID, survivorChanges, "Merged duplicate finding "+loserID+" into this finding",
-		loserID, loserChanges, "Marked duplicate of "+survivorID+" by an asset merge"); err != nil {
+		loserID, loserChanges, "Marked duplicate of "+survivorID+" "+cause.Phrase,
+		actorType, actorID, cause.Reason); err != nil {
 		return fmt.Errorf("record finding merge activity: %w", err)
 	}
 	return nil
