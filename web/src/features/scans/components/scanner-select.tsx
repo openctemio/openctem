@@ -20,19 +20,32 @@ import {
 import { useTools } from '@/lib/api/tool-hooks'
 import type { Tool } from '@/lib/api/tool-types'
 
-/** Tools a scan may name: active and not an asset collector. Sorted by label. */
-export function scannerOptions(tools: Tool[] | undefined): Tool[] {
+/**
+ * Tools a scan may name: active and not an asset collector. A connector (the
+ * Tenable.sc sensor connector) only when the caller can collect its
+ * scanner_config (the New/Edit scan wizard, while the connector is enabled).
+ * Sorted by label.
+ */
+export function scannerOptions(tools: Tool[] | undefined, allowConnectors = false): Tool[] {
   return (tools ?? [])
-    .filter((t) => t.is_active && t.metadata?.kind !== 'collector')
+    .filter(
+      (t) =>
+        t.is_active &&
+        t.metadata?.kind !== 'collector' &&
+        (allowConnectors || t.metadata?.kind !== 'connector')
+    )
     .sort((a, b) => (a.display_name || a.name).localeCompare(b.display_name || b.name))
 }
 
-export function useScannerOptions() {
+export function useScannerOptions(allowConnectors = false) {
   const { data, isLoading, error } = useTools(
     { is_active: true, per_page: 100 },
     { revalidateOnFocus: false }
   )
-  const options = useMemo(() => scannerOptions(data?.items), [data?.items])
+  const options = useMemo(
+    () => scannerOptions(data?.items, allowConnectors),
+    [data?.items, allowConnectors]
+  )
   return { options, isLoading, error }
 }
 
@@ -41,10 +54,18 @@ interface ScannerSelectProps {
   value: string
   onChange: (name: string) => void
   disabled?: boolean
+  /** Offer connector scanners (see scannerOptions). */
+  allowConnectors?: boolean
 }
 
-export function ScannerSelect({ id, value, onChange, disabled }: ScannerSelectProps) {
-  const { options, isLoading, error } = useScannerOptions()
+export function ScannerSelect({
+  id,
+  value,
+  onChange,
+  disabled,
+  allowConnectors = false,
+}: ScannerSelectProps) {
+  const { options, isLoading, error } = useScannerOptions(allowConnectors)
   // Keep a configuration's scanner selectable even if the registry no longer
   // lists it (disabled since), so opening Edit does not silently blank it.
   const known = options.some((t) => t.name === value)
