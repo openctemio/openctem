@@ -48,7 +48,7 @@ func TestPipelineRun_AssetMustBeTheCallersInTheTenant(t *testing.T) {
 	member := seedActUser(t, db)
 	grantScope(t, db, tenant, member, inScope)
 
-	enf := datascope.New(postgres.NewDataScopeRepository(pg), nil, func(ctx context.Context) datascope.Caller {
+	enf := datascope.New(postgres.NewDataScopeRepository(pg), func(ctx context.Context) datascope.Caller {
 		c, _ := ctx.Value(actCallerKey{}).(datascope.Caller)
 		return c
 	}, logger.NewNop())
