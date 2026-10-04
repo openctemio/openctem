@@ -232,6 +232,8 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	},
 	// fingerprint has a NOT LIKE CHECK; its literal is the excluded pattern.
 	"finding_fingerprints": func(s *schemaSeeder) map[string]any { return map[string]any{"fingerprint": s.uniq()} },
+	// target_version has a range CHECK.
+	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
 	// emoji has a length CHECK.
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
 	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },

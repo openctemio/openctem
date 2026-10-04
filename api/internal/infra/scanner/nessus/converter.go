@@ -3,14 +3,13 @@
 // ingest pipeline (dedup, correlation, idempotency, scoped auto-resolve).
 //
 // Both Nessus Professional and Tenable.sc emit the same NessusClientData_v2
-// format, so this one converter serves both engines. The existing asset-import
-// path (internal/app/asset/import.go) parses the same file but only creates
-// host assets and discards the vulnerabilities; this converter is the findings
+// format, so this one converter serves both engines. The file is read by the
+// one Nessus parser (pkg/parsers/nessus), which the host-only asset import
+// (internal/app/asset/import.go) shares; this converter is the findings
 // counterpart and is also reused by the Tenable connector.
 package nessus
 
 import (
-	"encoding/xml"
 	"fmt"
 	"io"
 	"net"
@@ -19,6 +18,8 @@ import (
 	"time"
 
 	"github.com/openctemio/ctis"
+
+	nessusparser "github.com/openctemio/openctem/api/pkg/parsers/nessus"
 )
 
 // maxNessusFileSize bounds how much XML we read (defense against huge uploads).
@@ -63,14 +64,9 @@ type ConvertOptions struct {
 //   - only the hosts in this export are included, so stale-resolution can never
 //     reach assets that were not part of this scan.
 func Convert(r io.Reader, opts ConvertOptions) (*ctis.Report, error) {
-	data, err := io.ReadAll(io.LimitReader(r, maxNessusFileSize))
+	doc, err := nessusparser.Parse(r, maxNessusFileSize)
 	if err != nil {
-		return nil, fmt.Errorf("read nessus data: %w", err)
-	}
-
-	var doc nessusDocument
-	if err := xml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("invalid Nessus XML: %w", err)
+		return nil, fmt.Errorf("parse nessus export: %w", err)
 	}
 
 	toolName := opts.ToolName
@@ -127,61 +123,10 @@ func Convert(r io.Reader, opts ConvertOptions) (*ctis.Report, error) {
 	return report, nil
 }
 
-// ---- Nessus XML model (richer than the asset-import scaffold) ----
-
-type nessusDocument struct {
-	XMLName xml.Name     `xml:"NessusClientData_v2"`
-	Hosts   []nessusHost `xml:"Report>ReportHost"`
-}
-
-type nessusHost struct {
-	Name       string          `xml:"name,attr"`
-	Properties []nessusHostTag `xml:"HostProperties>tag"`
-	Items      []nessusItem    `xml:"ReportItem"`
-}
-
-type nessusHostTag struct {
-	Name  string `xml:"name,attr"`
-	Value string `xml:",chardata"`
-}
-
-type nessusItem struct {
-	Port         int      `xml:"port,attr"`
-	Protocol     string   `xml:"protocol,attr"`
-	ServiceName  string   `xml:"svc_name,attr"`
-	PluginID     string   `xml:"pluginID,attr"`
-	PluginName   string   `xml:"pluginName,attr"`
-	PluginFamily string   `xml:"pluginFamily,attr"`
-	Severity     int      `xml:"severity,attr"`
-	Synopsis     string   `xml:"synopsis"`
-	Description  string   `xml:"description"`
-	Solution     string   `xml:"solution"`
-	RiskFactor   string   `xml:"risk_factor"`
-	CVSSScore    string   `xml:"cvss_base_score"`
-	CVSSVector   string   `xml:"cvss_vector"`
-	CVSS3Score   string   `xml:"cvss3_base_score"`
-	CVSS3Vector  string   `xml:"cvss3_vector"`
-	CVEs         []string `xml:"cve"`
-	SeeAlso      string   `xml:"see_also"`
-	PluginOutput string   `xml:"plugin_output"`
-	VPRScore     string   `xml:"vpr_score"`
-	ExploitAvail string   `xml:"exploit_available"`
-	CPE          string   `xml:"cpe"`
-}
-
-// hostProps flattens the HostProperties tags into a map.
-func (h *nessusHost) props() map[string]string {
-	m := make(map[string]string, len(h.Properties))
-	for _, p := range h.Properties {
-		m[p.Name] = p.Value
-	}
-	return m
-}
-
 // buildAsset turns a Nessus host into a CTIS asset and returns the in-report
 // asset id used to link findings.
-func buildAsset(host *nessusHost, defaultCrit ctis.Criticality) (ctis.Asset, string) {
-	p := host.props()
+func buildAsset(host *nessusparser.Host, defaultCrit ctis.Criticality) (ctis.Asset, string) {
+	p := host.Props()
 	ip := p["host-ip"]
 	fqdn := p["host-fqdn"]
 
@@ -227,7 +172,7 @@ func buildAsset(host *nessusHost, defaultCrit ctis.Criticality) (ctis.Asset, str
 }
 
 // buildFinding turns a Nessus ReportItem into a CTIS vulnerability finding.
-func buildFinding(item *nessusItem, assetID, assetValue string) ctis.Finding {
+func buildFinding(item *nessusparser.Item, assetID, assetValue string) ctis.Finding {
 	f := ctis.Finding{
 		Type:       ctis.FindingTypeVulnerability,
 		Title:      item.PluginName,

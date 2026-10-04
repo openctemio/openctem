@@ -164,7 +164,11 @@ the queue (no required check; the PR and the push scan the change).
 
 `api/api/openapi/swagger.yaml` is generated from the Go handler annotations.
 API CI's **OpenAPI Contract** job (`api/scripts/check-openapi.sh`) fails if the
-spec does not match the handlers. Web CI's first quality step,
+spec does not match the handlers: the same set of operations
+(`tools/lint/openapicontract`), and the same definition shapes as a fresh
+`make swagger` run (`tools/lint/openapischema`: definitions, required lists,
+property names, types, refs and enums; descriptions and `format` are ignored
+because swag is not byte-reproducible across machines). Web CI's first quality step,
 `npm run check:api-types`, fails if `web/src/lib/api/generated/api.types.ts` is
 not what the spec generates; that is why a spec change also triggers Web CI.
 Locally:
