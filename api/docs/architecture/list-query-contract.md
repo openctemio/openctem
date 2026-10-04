@@ -96,7 +96,7 @@ instances.
 
 ## Saved views
 
-Saved views (UI contract D15) live in `saved_views` (migration 000690) and
+Saved views (UI contract D15) live in `saved_views` (migration 000701) and
 `/api/v1/views`:
 
 - A view stores a FilterDocument (from a document or from the page's flat
