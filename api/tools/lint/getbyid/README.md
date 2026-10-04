@@ -42,7 +42,7 @@ Add to `.github/workflows/ci.yml` (Go tests job):
 
 ## Baseline
 
-**Current ceiling:** 33 diagnostics (Q1/WS-F progress — down from 56 at
+**Current ceiling:** 30 diagnostics (Q1/WS-F progress — down from 56 at
 baseline). Enforced as a regression test in
 `baseline_test.go:TestGetByIDLinter_BaselineNotRegressed` — adding a new
 unscoped `GetByID` will fail CI.

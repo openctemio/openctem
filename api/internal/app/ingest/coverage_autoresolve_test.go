@@ -32,7 +32,7 @@ func completedRun(t *testing.T, sensorID, assetID shared.ID) *ingestreport.Comma
 		ProfileID: "p-1",
 		Reports: []ingestreport.CoverageReport{{
 			ReportID: "r-1", SensorID: sensorID, State: protov2.StateCompleted, ToolName: "nuclei",
-			Header:          coverageHeader(t, "nuclei", ctis.ReportMetadata{}),
+			Header:          coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "full"}),
 			SegmentOutcomes: map[string]ingestreport.SegmentOutcome{"0": {AcceptedFindings: 3}},
 			TouchedAssetIDs: []shared.ID{assetID},
 		}},
@@ -48,9 +48,23 @@ func TestDecideCoverage(t *testing.T) {
 		want   string
 	}{
 		{"completed full run", func(*ingestreport.CommandCoverage) {}, coverageEligible},
-		{"explicit full coverage", func(c *ingestreport.CommandCoverage) {
-			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "full"})
+		{"explicit full coverage, any case", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: " Full "})
 		}, coverageEligible},
+		// An older sensor sends no coverage_type. Absent is not full (CTIS
+		// spec 4.5): such a run closes nothing.
+		{"coverage not declared", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{})
+		}, coverageUndeclared},
+		{"no header at all", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = nil
+		}, coverageUndeclared},
+		{"one of two reports undeclared", func(c *ingestreport.CommandCoverage) {
+			second := c.Reports[0]
+			second.ReportID = "r-2"
+			second.Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{})
+			c.Reports = append(c.Reports, second)
+		}, coverageUndeclared},
 		{"not a scan command", func(c *ingestreport.CommandCoverage) { c.CommandType = "validate" }, coverageNotScanCommand},
 		{"command failed", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "failed" }, coverageCommandNotCompleted},
 		{"command canceled", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "canceled" }, coverageCommandNotCompleted},

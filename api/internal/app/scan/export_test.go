@@ -5,6 +5,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -32,10 +33,16 @@ func (s *Service) ResolveScanTargetsForTest(ctx context.Context, sc *scan.Scan) 
 		return nil, err
 	}
 	out := &ResolvedForTest{Targets: r.Targets, ExcludedNames: r.ExcludedNames, Archived: r.Archived, RunContext: map[string]any{}}
-	if len(r.Targets) > 0 {
+	if len(r.Targets) > 0 || r.Incompatible > 0 {
 		if err := recordResolvedTargets(sc, r, out.RunContext); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
+}
+
+// WithToolRepoForTest sets the tool repository the scanner type gate reads.
+func (s *Service) WithToolRepoForTest(repo tool.Repository) *Service {
+	s.toolRepo = repo
+	return s
 }
