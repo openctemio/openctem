@@ -152,16 +152,18 @@ func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller)
 }
 
 // FullData reports whether actingUserID holds a has_full_data_access role in
-// the tenant (false for an API-key request, an empty or unparseable user, or
-// no repository). The older list paths use it to apply the same bypass as
-// ResolveFor.
+// the tenant (false for an API-key request, an empty user, or no
+// repository; an unparseable user is an error). The older list paths use it
+// to apply the same bypass as ResolveFor.
 func (e *Enforcer) FullData(ctx context.Context, tenantID shared.ID, actingUserID string) (bool, error) {
 	if e == nil || e.repo == nil || actingUserID == "" || e.CallerOf(ctx).APIKey {
 		return false, nil
 	}
 	userID, err := shared.IDFromString(actingUserID)
 	if err != nil {
-		return false, nil
+		// Refuse rather than fall through: a caller that cannot be matched
+		// to a user must not reach any path that skips the scope.
+		return false, fmt.Errorf("%w: invalid acting user", shared.ErrNotFound)
 	}
 	return e.repo.HasFullDataRole(ctx, tenantID, userID)
 }
