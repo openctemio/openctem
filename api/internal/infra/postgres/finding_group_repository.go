@@ -777,9 +777,13 @@ func (r *FindingRepository) groupByField(
 func (r *FindingRepository) BulkUpdateStatusByFilter(
 	ctx context.Context, tenantID shared.ID,
 	filter vulnerability.FindingFilter, status vulnerability.FindingStatus,
-	resolution string, resolvedBy *shared.ID,
+	resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod,
 ) (int64, error) {
-	filterWhere, filterArgs := buildFilterWhere(filter, 5)
+	methodArg, err := resolutionMethodArg(status, method)
+	if err != nil {
+		return 0, err
+	}
+	filterWhere, filterArgs := buildFilterWhere(filter, 6)
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
@@ -795,11 +799,11 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 
 	query := fmt.Sprintf(`
 		UPDATE findings f
-		SET status = $2, resolution = $3, resolved_by = $4, resolved_at = %s, updated_at = NOW()
+		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5, resolved_at = %s, updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
 	`, resolvedAt, extraWhere)
 
-	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}, filterArgs...)
+	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg}, filterArgs...)
 
 	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
