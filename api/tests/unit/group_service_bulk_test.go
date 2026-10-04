@@ -180,8 +180,8 @@ func (m *mockGroupRepoForBulk) Create(_ context.Context, _ *group.Group) error {
 func (m *mockGroupRepoForBulk) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForBulk) Update(_ context.Context, _ *group.Group) error { return nil }
-func (m *mockGroupRepoForBulk) Delete(_ context.Context, _ shared.ID, _ shared.ID) error    { return nil }
+func (m *mockGroupRepoForBulk) Update(_ context.Context, _ *group.Group) error           { return nil }
+func (m *mockGroupRepoForBulk) Delete(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
 func (m *mockGroupRepoForBulk) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }

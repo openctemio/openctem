@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/group"
 	"github.com/openctemio/openctem/api/pkg/domain/permissionset"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/scimgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
@@ -96,7 +97,9 @@ func TestIAMRepositories_CrossTenantIsolation(t *testing.T) {
 			psID.String(), tenantB.String(), "b-"+psID.String()); err != nil {
 			t.Fatalf("seed permission set: %v", err)
 		}
-		t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM permission_sets WHERE id = $1`, psID.String()) })
+		t.Cleanup(func() {
+			_, _ = db.ExecContext(context.Background(), `DELETE FROM permission_sets WHERE id = $1`, psID.String())
+		})
 		if _, err := repo.GetByID(ctx, tenantA, psID); !errors.Is(err, permissionset.ErrPermissionSetNotFound) {
 			t.Fatalf("read as A: want not found, got %v", err)
 		}
@@ -177,6 +180,46 @@ func TestIAMRepositories_CrossTenantIsolation(t *testing.T) {
 		}
 		if err := repo.DeleteInvitation(ctx, tenantB, invID); err != nil {
 			t.Fatalf("delete as owner: %v", err)
+		}
+	})
+
+	t.Run("scim group membership", func(t *testing.T) {
+		repo := NewScimGroupRepository(db)
+		member := seedUser(ctx, t, db)
+		intruder := seedUser(ctx, t, db)
+		gid := shared.NewID()
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO scim_groups (id, tenant_id, display_name) VALUES ($1, $2, 'B admins')`,
+			gid.String(), tenantB.String()); err != nil {
+			t.Fatalf("seed scim group: %v", err)
+		}
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO scim_group_members (group_id, user_id) VALUES ($1, $2)`,
+			gid.String(), member.String()); err != nil {
+			t.Fatalf("seed scim member: %v", err)
+		}
+		members := func() string {
+			return scalarString(ctx, t, db,
+				`SELECT COALESCE(string_agg(user_id::text, ',' ORDER BY user_id), '') FROM scim_group_members WHERE group_id = $1`,
+				gid.String())
+		}
+		if err := repo.SetMembers(ctx, tenantA, gid, []shared.ID{intruder}); !errors.Is(err, scimgroup.ErrNotFound) {
+			t.Fatalf("set members as A: want not found, got %v", err)
+		}
+		if err := repo.AddMembers(ctx, tenantA, gid, []shared.ID{intruder}); err != nil {
+			t.Fatalf("add members as A: %v", err)
+		}
+		if err := repo.RemoveMembers(ctx, tenantA, gid, []shared.ID{member}); err != nil {
+			t.Fatalf("remove members as A: %v", err)
+		}
+		if got := members(); got != member.String() {
+			t.Fatalf("B's scim group membership changed from another tenant: %q", got)
+		}
+		if err := repo.SetMembers(ctx, tenantB, gid, []shared.ID{intruder}); err != nil {
+			t.Fatalf("set members as owner: %v", err)
+		}
+		if got := members(); got != intruder.String() {
+			t.Fatalf("owner set members: got %q", got)
 		}
 	})
 }

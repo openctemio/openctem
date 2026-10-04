@@ -201,7 +201,9 @@ func (m *mockAITriageTenantRepo) GetMembershipByID(_ context.Context, _ shared.I
 func (m *mockAITriageTenantRepo) UpdateMembership(_ context.Context, _ *tenant.Membership) error {
 	return nil
 }
-func (m *mockAITriageTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
+func (m *mockAITriageTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error {
+	return nil
+}
 func (m *mockAITriageTenantRepo) ListMembersByTenant(_ context.Context, _ shared.ID) ([]*tenant.Membership, error) {
 	return nil, nil
 }
@@ -244,7 +246,9 @@ func (m *mockAITriageTenantRepo) GetInvitationByID(_ context.Context, _ shared.I
 func (m *mockAITriageTenantRepo) UpdateInvitation(_ context.Context, _ *tenant.Invitation) error {
 	return nil
 }
-func (m *mockAITriageTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
+func (m *mockAITriageTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error {
+	return nil
+}
 func (m *mockAITriageTenantRepo) ListPendingInvitationsByTenant(_ context.Context, _ shared.ID) ([]*tenant.Invitation, error) {
 	return nil, nil
 }

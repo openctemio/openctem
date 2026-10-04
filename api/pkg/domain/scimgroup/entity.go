@@ -70,7 +70,7 @@ type Repository interface {
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	// SetMembers replaces the group's full membership.
 	// All three act only on a group of tenantID; another tenant's group is
-	// shared.ErrNotFound (SetMembers) or a no-op (Add/Remove).
+	// ErrNotFound (SetMembers) or a no-op (Add/Remove).
 	SetMembers(ctx context.Context, tenantID, groupID shared.ID, userIDs []shared.ID) error
 	// AddMembers / RemoveMembers apply incremental PATCH changes.
 	AddMembers(ctx context.Context, tenantID, groupID shared.ID, userIDs []shared.ID) error
