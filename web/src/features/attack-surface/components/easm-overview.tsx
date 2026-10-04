@@ -34,6 +34,9 @@ const EXPOSURE_TYPE_LABEL: Record<string, string> = {
 
 const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info', 'none']
 
+/** The attribution review queue page. */
+export const EASM_REVIEW_HREF = '/attack-surface/review'
+
 /** The API's severity string as a known severity (unknown → info). */
 export function toSeverity(s: string | undefined): Severity {
   return SEVERITIES.includes(s as Severity) ? (s as Severity) : 'info'
@@ -105,9 +108,20 @@ export function EASMOverview() {
                   label="Needs review"
                   value={a?.needs_review ?? 0}
                   hint={
-                    a?.review_oldest_since ? (
+                    (a?.needs_review ?? 0) + (a?.candidate ?? 0) > 0 ? (
                       <>
-                        oldest <RelativeTime date={a.review_oldest_since} className="text-xs" />
+                        {a?.review_oldest_since && (
+                          <>
+                            oldest <RelativeTime date={a.review_oldest_since} className="text-xs" />
+                            {' · '}
+                          </>
+                        )}
+                        <Link
+                          href={EASM_REVIEW_HREF}
+                          className="font-medium text-foreground underline underline-offset-2"
+                        >
+                          Review
+                        </Link>
                       </>
                     ) : undefined
                   }

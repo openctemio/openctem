@@ -33537,6 +33537,7 @@ export interface components {
       | 'UPSTREAM_ERROR'
       | 'MFA_ENROLLMENT_REQUIRED'
       | 'APPROVAL_REQUIRED'
+      | 'INVALID_FILTER'
     'github_com_openctemio_openctem_api_pkg_apierror.Error': {
       /** @description Machine-readable error code */
       code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
