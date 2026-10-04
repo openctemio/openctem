@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -20,7 +21,7 @@ type ReportScheduleStore interface {
 	// ClaimDue moves next_run_at from seen to next and reports whether this
 	// caller won the slot. Every replica runs this controller; only the winner
 	// renders and delivers.
-	ClaimDue(ctx context.Context, id shared.ID, seen *time.Time, next time.Time) (bool, error)
+	ClaimDue(ctx context.Context, tenantID, id shared.ID, seen *time.Time, next time.Time) (bool, error)
 	Update(ctx context.Context, s *reportschedule.ReportSchedule) error
 }
 
@@ -29,8 +30,19 @@ type ReportStatsSource interface {
 	GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error)
 	// CountWindow returns new (created) vs resolved finding counts over the
 	// trailing `days` window — the digest's trend line.
-	CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error)
+	// A non-nil scope counts only findings on in-scope assets.
+	CountWindow(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (newCount, resolvedCount int64, err error)
 }
+
+// ReportScopeResolver resolves the data scope of a user outside a request
+// (datascope.Enforcer.ForUser): nil when the user is unrestricted.
+type ReportScopeResolver interface {
+	ForUser(ctx context.Context, tenantID, userID shared.ID) (*shared.DataScope, error)
+}
+
+// errNoReportCreator: a schedule with no recorded creator has no scope to
+// render under, so it is not rendered (fail closed).
+var errNoReportCreator = errors.New("schedule has no creator to render under")
 
 // reportWindowDays is the trailing window the digest's new-vs-resolved trend covers.
 const reportWindowDays = 7
@@ -68,10 +80,17 @@ type ReportScheduler struct {
 	// left, a domain may have been removed): owner decision D12. Nil: no
 	// check (tests).
 	recipients reportschedule.RecipientPolicy
+	// scope renders each report under its creator's data scope (owner
+	// decision D6): a restricted member's schedule reports only their
+	// assets. Nil: tenant-wide (tests).
+	scope ReportScopeResolver
 }
 
 // SetRecipientPolicy wires the send-time recipient check.
 func (c *ReportScheduler) SetRecipientPolicy(p reportschedule.RecipientPolicy) { c.recipients = p }
+
+// SetScopeResolver wires rendering under the schedule creator's data scope.
+func (c *ReportScheduler) SetScopeResolver(r ReportScopeResolver) { c.scope = r }
 
 // NewReportScheduler builds the controller. moduleGuard is optional (nil = never
 // skip); when set, schedules for tenants without the reports module are skipped.
@@ -122,7 +141,7 @@ func (c *ReportScheduler) Reconcile(ctx context.Context) (int, error) {
 		// advance next_run_at, otherwise the schedule busy-loops every tick.
 		next := c.nextRun(s, now)
 
-		won, err := c.store.ClaimDue(ctx, s.ID(), s.NextRunAt(), *next)
+		won, err := c.store.ClaimDue(ctx, s.TenantID(), s.ID(), s.NextRunAt(), *next)
 		if err != nil {
 			c.logger.Error("failed to claim report schedule", "schedule_id", s.ID().String(), "error", err)
 			continue
@@ -216,7 +235,25 @@ func (c *ReportScheduler) runOne(ctx context.Context, s *reportschedule.ReportSc
 
 // render builds the executive-summary HTML from the tenant's finding stats.
 func (c *ReportScheduler) render(ctx context.Context, s *reportschedule.ReportSchedule) (string, error) {
-	stats, err := c.stats.GetStats(ctx, s.TenantID(), nil, vulnerability.FindingStatsFilter{})
+	// The report shows what its creator can see, decided now (they may have
+	// lost access, or left the organization: then nothing is rendered).
+	var scope *shared.DataScope
+	var statsUser *shared.ID
+	filter := vulnerability.FindingStatsFilter{}
+	if c.scope != nil {
+		creator := s.CreatedBy()
+		if creator == nil {
+			return "", errNoReportCreator
+		}
+		sc, err := c.scope.ForUser(ctx, s.TenantID(), *creator)
+		if err != nil {
+			return "", fmt.Errorf("resolve creator scope: %w", err)
+		}
+		if sc != nil {
+			scope, statsUser, filter.ScopeStrict = sc, creator, true
+		}
+	}
+	stats, err := c.stats.GetStats(ctx, s.TenantID(), statsUser, filter)
 	if err != nil {
 		return "", fmt.Errorf("get finding stats: %w", err)
 	}
@@ -237,7 +274,7 @@ func (c *ReportScheduler) render(ctx context.Context, s *reportschedule.ReportSc
 	// window card (WindowDays stays 0) rather than failing the whole report.
 	var windowDays int
 	var newInWindow, resolvedInWindow int64
-	if n, res, werr := c.stats.CountWindow(ctx, s.TenantID(), reportWindowDays); werr == nil {
+	if n, res, werr := c.stats.CountWindow(ctx, s.TenantID(), scope, reportWindowDays); werr == nil {
 		windowDays, newInWindow, resolvedInWindow = reportWindowDays, n, res
 	} else {
 		c.logger.Warn("report window counts failed; omitting trend", "tenant_id", s.TenantID().String(), "error", werr)

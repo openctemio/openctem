@@ -132,7 +132,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	// ran (a pause, a config change), and never stored the run status anyway
 	// (the generic Update does not carry the run columns). The run is counted
 	// when it finishes (RecordRun / the timeout reaper).
-	if err := s.scanRepo.RecordRunStarted(ctx, sc.ID, run.ID); err != nil {
+	if err := s.scanRepo.RecordRunStarted(ctx, sc.TenantID, sc.ID, run.ID); err != nil {
 		s.logger.Warn("failed to record run in scan", "error", err)
 	}
 

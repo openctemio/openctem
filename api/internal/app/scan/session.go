@@ -236,5 +236,5 @@ func (s *ScanSessionService) DeleteScan(ctx context.Context, tenantID shared.ID,
 		return err
 	}
 
-	return s.sessionRepo.Delete(ctx, id)
+	return s.sessionRepo.Delete(ctx, tenantID, id)
 }
