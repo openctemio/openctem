@@ -15767,155 +15767,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/groups/{groupId}/permission-sets': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List permission sets assigned to a group
-     * @description Get all permission sets assigned to the group with full details
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Group ID */
-          groupId: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse'][]
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    /**
-     * Assign a permission set to a group
-     * @description Assign a permission set to the group
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Group ID */
-          groupId: string
-        }
-        cookie?: never
-      }
-      /** @description Permission set details */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.AssignPermissionSetRequest']
-        }
-      }
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/groups/{groupId}/permission-sets/{permissionSetId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /**
-     * Remove a permission set from a group
-     * @description Remove a permission set assignment from the group
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Group ID */
-          groupId: string
-          /** @description Permission Set ID */
-          permissionSetId: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/groups/sync': {
     parameters: {
       query?: never
@@ -18085,13 +17936,17 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Get effective permissions for current user
-     * @description Get all effective permissions for the current user based on their group memberships
+     * Get current user permissions
+     * @description Returns the permissions for the authenticated user in the current tenant.
+     *     Supports ETag-based caching: send If-None-Match header to check for changes.
      */
     get: {
       parameters: {
         query?: never
-        header?: never
+        header?: {
+          /** @description ETag from previous response */
+          'If-None-Match'?: string
+        }
         path?: never
         cookie?: never
       }
@@ -18103,7 +17958,32 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.EffectivePermissionsResponse']
+            'application/json': components['schemas']['internal_infra_http_handler.PermissionsResponse']
+          }
+        }
+        /** @description Not Modified - permissions unchanged */
+        304: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -18810,6 +18690,77 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/organization/members/{member_id}/mfa': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Reset a member's two-factor authentication
+     * @description An owner or administrator turns off the second factor of a member of their organization who lost their authenticator and recovery codes. The member is signed out everywhere and e-mailed. An owner or administrator target needs the owner; a member who also belongs to another organization needs the same authority there; nobody resets their own factor here.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/organization/settings/data-scope/impact': {
     parameters: {
       query?: never
@@ -18972,415 +18923,6 @@ export interface paths {
         }
       }
     }
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List permission sets
-     * @description List all permission sets for the tenant
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Include system permission sets */
-          include_system?: boolean
-          /** @description Filter by type */
-          type?: string
-          /** @description Search by name */
-          search?: string
-          /** @description Limit results */
-          limit?: number
-          /** @description Offset for pagination */
-          offset?: number
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetListResponse']
-          }
-        }
-      }
-    }
-    put?: never
-    /**
-     * Create a new permission set
-     * @description Create a new permission set for access control
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Permission set details */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.CreatePermissionSetRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get a permission set by ID
-     * @description Get detailed information about a permission set
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetWithItemsResponse']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    /**
-     * Update a permission set
-     * @description Update an existing permission set
-     */
-    put: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-        }
-        cookie?: never
-      }
-      /** @description Update details */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.UpdatePermissionSetRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    post?: never
-    /**
-     * Delete a permission set
-     * @description Delete a permission set
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets/{id}/permissions': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Add a permission to a set
-     * @description Add a permission to a permission set
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-        }
-        cookie?: never
-      }
-      /** @description Permission details */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.AddPermissionRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets/{id}/permissions/{permissionId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /**
-     * Remove a permission from a set
-     * @description Remove a permission from a permission set
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-          /** @description Permission ID */
-          permissionId: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets/system': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List system permission sets
-     * @description List all system-defined permission sets
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse'][]
-          }
-        }
-      }
-    }
-    put?: never
     post?: never
     delete?: never
     options?: never
@@ -35340,11 +34882,6 @@ export interface components {
       role: 'owner' | 'lead' | 'member'
       user_id: string
     }
-    'internal_infra_http_handler.AddPermissionRequest': {
-      /** @enum {string} */
-      modification_type?: 'add' | 'remove'
-      permission_id: string
-    }
     'internal_infra_http_handler.AdminAuditChainRebaselineRequest': {
       /** @description Fingerprint of the classification the administrator reviewed. */
       fingerprint?: string
@@ -35917,9 +35454,6 @@ export interface components {
     }
     'internal_infra_http_handler.AssignFindingRequest': {
       user_id: string
-    }
-    'internal_infra_http_handler.AssignPermissionSetRequest': {
-      permission_set_id: string
     }
     'internal_infra_http_handler.AttackPathScoreResponse': {
       asset_id?: string
@@ -36596,15 +36130,6 @@ export interface components {
       /** @enum {string} */
       provider: 'slack' | 'teams' | 'telegram' | 'webhook' | 'email' | 'splunk'
     }
-    'internal_infra_http_handler.CreatePermissionSetRequest': {
-      description?: string
-      name: string
-      parent_set_id?: string
-      permissions?: string[]
-      /** @enum {string} */
-      set_type: 'custom' | 'extended' | 'cloned'
-      slug: string
-    }
     'internal_infra_http_handler.CreateRepositoryAssetRequest': {
       /** @description URLs */
       clone_url?: string
@@ -36697,9 +36222,14 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      /**
+       * @description ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+       *     evaluated in timezone; at most every 15 minutes.
+       */
+      schedule_rrule?: string
       schedule_time?: string
       /** @enum {string} */
-      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab'
+      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab' | 'rrule'
       /** @enum {string} */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
       tags?: string[]
@@ -37015,12 +36545,6 @@ export interface components {
       note?: string
       /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
       state?: string
-    }
-    'internal_infra_http_handler.EffectivePermissionsResponse': {
-      group_count?: number
-      permissions?: string[]
-      tenant_id?: string
-      user_id?: string
     }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string
@@ -38390,45 +37914,6 @@ export interface components {
       prev?: string
       self?: string
     }
-    'internal_infra_http_handler.PermissionItemResponse': {
-      modification_type?: string
-      permission_id?: string
-    }
-    'internal_infra_http_handler.PermissionSetListResponse': {
-      limit?: number
-      offset?: number
-      permission_sets?: components['schemas']['internal_infra_http_handler.PermissionSetResponse'][]
-      total_count?: number
-    }
-    'internal_infra_http_handler.PermissionSetResponse': {
-      created_at?: string
-      description?: string
-      id?: string
-      is_active?: boolean
-      is_system?: boolean
-      name?: string
-      parent_set_id?: string
-      set_type?: string
-      slug?: string
-      tenant_id?: string
-      updated_at?: string
-    }
-    'internal_infra_http_handler.PermissionSetWithItemsResponse': {
-      created_at?: string
-      description?: string
-      id?: string
-      is_active?: boolean
-      is_system?: boolean
-      items?: components['schemas']['internal_infra_http_handler.PermissionItemResponse'][]
-      name?: string
-      parent_set_id?: string
-      /** @description Resolved permissions */
-      permissions?: string[]
-      set_type?: string
-      slug?: string
-      tenant_id?: string
-      updated_at?: string
-    }
     'internal_infra_http_handler.PermissionsResponse': {
       permissions?: string[]
       version?: number
@@ -38946,6 +38431,7 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      schedule_rrule?: string
       schedule_time?: string
       schedule_timezone?: string
       schedule_type?: string
@@ -40231,11 +39717,6 @@ export interface components {
       min_interval_minutes?: number
       name?: string
     }
-    'internal_infra_http_handler.UpdatePermissionSetRequest': {
-      description?: string
-      is_active?: boolean
-      name?: string
-    }
     'internal_infra_http_handler.UpdatePreferencesRequest': {
       /** @enum {string} */
       language?: 'en' | 'vi'
@@ -40328,9 +39809,14 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      /**
+       * @description ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+       *     evaluated in timezone; at most every 15 minutes.
+       */
+      schedule_rrule?: string
       schedule_time?: string
       /** @enum {string} */
-      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab'
+      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab' | 'rrule'
       /** @enum {string} */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
       tags?: string[]
