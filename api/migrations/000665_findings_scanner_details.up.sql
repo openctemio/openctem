@@ -8,6 +8,11 @@
 -- metadata-only changes (no rewrite). The CHECK constraints are NOT VALID, so
 -- adding them does not scan the table; new and updated rows are checked.
 -- Existing rows have NULLs only. Not fingerprint inputs.
+--
+-- The indexes for the family, any-CVE and exploit filters are partial on the
+-- new columns, so at this point they cover no row: building them is one scan
+-- of findings with nothing to insert (milliseconds on the live table), which
+-- is why they are built here and not CONCURRENTLY in files of their own.
 ALTER TABLE findings
     ADD COLUMN IF NOT EXISTS family VARCHAR(255),
     ADD COLUMN IF NOT EXISTS exploit_available BOOLEAN NOT NULL DEFAULT FALSE,
@@ -25,3 +30,7 @@ COMMENT ON COLUMN findings.vpr_score IS 'Tenable Vulnerability Priority Rating 0
 COMMENT ON COLUMN findings.cvss_version IS 'Version of cvss_score: 2.0, 3.0, 3.1, 3.x or 4.0.';
 COMMENT ON COLUMN findings.cve_ids IS 'Every CVE the scanner named on this finding, primary first (cve_id is the primary). Multi-CVE network plugins are split into one finding per CVE (RFC-043 D3).';
 COMMENT ON COLUMN findings.patch_published_at IS 'When the vendor published the fix (Nessus patch_publication_date, Tenable.sc patchPubDate).';
+
+CREATE INDEX IF NOT EXISTS idx_findings_tenant_family ON findings (tenant_id, family) WHERE family IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_findings_cve_ids ON findings USING GIN (cve_ids) WHERE cve_ids IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_findings_tenant_exploit ON findings (tenant_id) WHERE exploit_available;
