@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "8527e50b8a6ab17a"
+const RegistryVersion = "86e61f2533871e72"
 
 // Lenses.
 const (
@@ -114,14 +114,16 @@ var registryTypes = []TypeDefinition{
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
 				{Relationship: "contains", Peers: []TypeRef{{Type: "subdomain"}}},
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "website"}, {Type: "api"}, {Type: "service"}}},
-				{Relationship: "resolves_to", Peers: []TypeRef{{Type: "ip_address"}, {Type: "load_balancer"}}},
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "application", SubType: "website"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
+				{Relationship: "resolves_to", Peers: []TypeRef{{Type: "ip_address"}, {Type: "network", SubType: "load_balancer"}}},
 				{Relationship: "cname_of", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
 			},
 			In: []RelationshipRule{
 				{Relationship: "cname_of", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
 			},
 		},
+		ScannableBy:     []string{"domain"},
+		ExposureDefault: "public",
 	},
 	{
 		Type:           "subdomain",
@@ -148,7 +150,7 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "dns", "services", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "resolves_to", Peers: []TypeRef{{Type: "ip_address"}, {Type: "load_balancer"}}},
+				{Relationship: "resolves_to", Peers: []TypeRef{{Type: "ip_address"}, {Type: "network", SubType: "load_balancer"}}},
 				{Relationship: "cname_of", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
 			},
 			In: []RelationshipRule{
@@ -156,6 +158,8 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "cname_of", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
 			},
 		},
+		ScannableBy:     []string{"domain"},
+		ExposureDefault: "public",
 	},
 	{
 		Type:           "ip_address",
@@ -187,11 +191,14 @@ var registryTypes = []TypeDefinition{
 		Card:     "ip_address",
 		Sections: []string{"overview", "attributes", "services", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{},
+			Out: []RelationshipRule{
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+			},
 			In: []RelationshipRule{
 				{Relationship: "resolves_to", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
 			},
 		},
+		ScannableBy: []string{"ip", "host"},
 	},
 	{
 		Type:           "certificate",
@@ -229,6 +236,8 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy:     []string{"certificate"},
+		ExposureDefault: "public",
 	},
 	{
 		Type:           "service",
@@ -262,30 +271,33 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "technologies", "certificate", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "database"}, {Type: "api"}, {Type: "service"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "api"}}},
-				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "database"}, {Type: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
+				{Relationship: "depends_on", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
 				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}, {Type: "cloud_account"}}},
-				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}, {Type: "api"}}},
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "database"}, {Type: "api"}, {Type: "service"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "storage"}}},
+				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "storage"}}},
 				{Relationship: "load_balances", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "service"}, {Type: "container"}}},
-				{Relationship: "protected_by", Peers: []TypeRef{{Type: "load_balancer"}, {Type: "service"}}},
-				{Relationship: "monitors", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "cloud_account"}, {Type: "api"}, {Type: "service"}, {Type: "database"}, {Type: "network"}}},
+				{Relationship: "protected_by", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}}},
+				{Relationship: "monitors", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "cloud_account"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "database"}, {Type: "network"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}}},
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}, {Type: "domain"}, {Type: "load_balancer"}}},
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "kubernetes", SubType: "workload"}, {Type: "mobile_app"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "api"}}},
-				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "mobile_app"}}},
-				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "api"}, {Type: "service"}, {Type: "website"}, {Type: "mobile_app"}, {Type: "kubernetes", SubType: "workload"}}},
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "iam_user"}, {Type: "iam_role"}, {Type: "service_account"}, {Type: "service"}}},
-				{Relationship: "load_balances", Peers: []TypeRef{{Type: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
-				{Relationship: "protected_by", Peers: []TypeRef{{Type: "website"}, {Type: "api"}, {Type: "service"}, {Type: "host"}, {Type: "compute"}, {Type: "cloud_account"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}}},
+				{Relationship: "contains", SubType: "discovered_url", Peers: []TypeRef{{Type: "application", SubType: "api"}}},
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "ip_address"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}, {Type: "domain"}, {Type: "network", SubType: "load_balancer"}}},
+				{Relationship: "exposes", SubType: "discovered_url", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "ip_address"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}}},
+				{Relationship: "depends_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "kubernetes", SubType: "workload"}, {Type: "application", SubType: "mobile_app"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "application", SubType: "mobile_app"}}},
+				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "application", SubType: "api"}, {Type: "service"}, {Type: "application", SubType: "website"}, {Type: "application", SubType: "mobile_app"}, {Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "identity", SubType: "iam_user"}, {Type: "identity", SubType: "iam_role"}, {Type: "identity", SubType: "service_account"}, {Type: "service"}}},
+				{Relationship: "load_balances", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
+				{Relationship: "protected_by", Peers: []TypeRef{{Type: "application", SubType: "website"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "host"}, {Type: "host", SubType: "compute"}, {Type: "cloud_account"}}},
 				{Relationship: "monitors", Peers: []TypeRef{{Type: "service"}}},
 			},
 		},
+		ScannableBy: []string{"service", "port"},
 	},
 	{
 		Type:           "http_service",
@@ -325,6 +337,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{"url", "service", "port"},
 	},
 	{
 		Type:           "open_port",
@@ -358,6 +371,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{"port", "service"},
 	},
 	{
 		Type:           "discovered_url",
@@ -389,11 +403,9 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{},
-			In: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "application", SubType: "api"}, {Type: "api"}}},
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}}},
-			},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{"url"},
 	},
 	{
 		Type:           "application",
@@ -422,10 +434,36 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "technologies", "findings", "services", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "discovered_url"}}},
+				{Relationship: "runs_on", SubType: "api", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
+				{Relationship: "runs_on", SubType: "website", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
+				{Relationship: "contains", SubType: "api", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}}},
+				{Relationship: "depends_on", SubType: "api", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
+				{Relationship: "depends_on", SubType: "mobile_app", Peers: []TypeRef{{Type: "application", SubType: "api"}, {Type: "service"}}},
+				{Relationship: "depends_on", SubType: "website", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
+				{Relationship: "peer_of", SubType: "api", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "sends_data_to", SubType: "api", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
+				{Relationship: "sends_data_to", SubType: "mobile_app", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
+				{Relationship: "sends_data_to", SubType: "website", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
+				{Relationship: "stores_data_in", SubType: "api", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}, {Type: "cloud_account"}}},
+				{Relationship: "stores_data_in", SubType: "website", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}, {Type: "cloud_account"}}},
+				{Relationship: "authenticates_to", SubType: "api", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "authenticates_to", SubType: "mobile_app", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "authenticates_to", SubType: "website", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "protected_by", SubType: "api", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}}},
+				{Relationship: "protected_by", SubType: "website", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}}},
 			},
-			In: []RelationshipRule{},
+			In: []RelationshipRule{
+				{Relationship: "exposes", SubType: "api", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "ip_address"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}, {Type: "domain"}, {Type: "network", SubType: "load_balancer"}}},
+				{Relationship: "exposes", SubType: "website", Peers: []TypeRef{{Type: "domain"}, {Type: "network", SubType: "load_balancer"}}},
+				{Relationship: "depends_on", SubType: "api", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "kubernetes", SubType: "workload"}, {Type: "application", SubType: "mobile_app"}}},
+				{Relationship: "peer_of", SubType: "api", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "sends_data_to", SubType: "api", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "application", SubType: "mobile_app"}}},
+				{Relationship: "authenticates_to", SubType: "api", Peers: []TypeRef{{Type: "application", SubType: "api"}, {Type: "service"}, {Type: "application", SubType: "website"}, {Type: "application", SubType: "mobile_app"}}},
+				{Relationship: "has_access_to", SubType: "api", Peers: []TypeRef{{Type: "identity", SubType: "iam_user"}, {Type: "identity", SubType: "iam_role"}, {Type: "identity", SubType: "service_account"}, {Type: "service"}}},
+				{Relationship: "monitors", SubType: "api", Peers: []TypeRef{{Type: "service"}}},
+			},
 		},
+		ScannableBy: []string{"url"},
 	},
 	{
 		Type:           "website",
@@ -456,18 +494,11 @@ var registryTypes = []TypeDefinition{
 		Card:     "application",
 		Sections: []string{"overview", "attributes", "technologies", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "database"}, {Type: "api"}, {Type: "service"}}},
-				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "database"}, {Type: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
-				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}, {Type: "cloud_account"}}},
-				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}, {Type: "api"}}},
-				{Relationship: "protected_by", Peers: []TypeRef{{Type: "load_balancer"}, {Type: "service"}}},
-			},
-			In: []RelationshipRule{
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "domain"}, {Type: "load_balancer"}}},
-			},
+			Out: []RelationshipRule{},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy:     []string{"url"},
+		ExposureDefault: "public",
 	},
 	{
 		Type:           "web_application",
@@ -499,6 +530,8 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy:     []string{"url"},
+		ExposureDefault: "public",
 	},
 	{
 		Type:           "api",
@@ -528,26 +561,11 @@ var registryTypes = []TypeDefinition{
 		Card:     "application",
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
-				{Relationship: "contains", Peers: []TypeRef{{Type: "discovered_url"}}},
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "database"}, {Type: "api"}, {Type: "service"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "api"}}},
-				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "database"}, {Type: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
-				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}, {Type: "cloud_account"}}},
-				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}, {Type: "api"}}},
-				{Relationship: "protected_by", Peers: []TypeRef{{Type: "load_balancer"}, {Type: "service"}}},
-			},
-			In: []RelationshipRule{
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}, {Type: "domain"}, {Type: "load_balancer"}}},
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "kubernetes", SubType: "workload"}, {Type: "mobile_app"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "api"}}},
-				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "mobile_app"}}},
-				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "api"}, {Type: "service"}, {Type: "website"}, {Type: "mobile_app"}}},
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "iam_user"}, {Type: "iam_role"}, {Type: "service_account"}, {Type: "service"}}},
-				{Relationship: "monitors", Peers: []TypeRef{{Type: "service"}}},
-			},
+			Out: []RelationshipRule{},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy:     []string{"url", "api"},
+		ExposureDefault: "public",
 	},
 	{
 		Type:           "mobile_app",
@@ -577,13 +595,10 @@ var registryTypes = []TypeDefinition{
 		Card:     "application",
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "api"}, {Type: "service"}}},
-				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "database"}, {Type: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
-				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}, {Type: "api"}}},
-			},
-			In: []RelationshipRule{},
+			Out: []RelationshipRule{},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{"mobile"},
 	},
 	{
 		Type:           "host",
@@ -619,20 +634,23 @@ var registryTypes = []TypeDefinition{
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
 				{Relationship: "contains", Peers: []TypeRef{{Type: "container"}, {Type: "service"}, {Type: "database"}}},
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "discovered_url"}, {Type: "service"}, {Type: "api"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "container"}}},
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
 				{Relationship: "protected_by", Peers: []TypeRef{{Type: "service"}}},
+				{Relationship: "protected_by", SubType: "compute", Peers: []TypeRef{{Type: "service"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "database"}, {Type: "container"}}},
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "database"}, {Type: "container"}}},
 				{Relationship: "deployed_to", Peers: []TypeRef{{Type: "repository"}, {Type: "container", SubType: "image"}}},
 				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "network"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "container"}}},
-				{Relationship: "load_balances", Peers: []TypeRef{{Type: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
+				{Relationship: "contains", SubType: "serverless", Peers: []TypeRef{{Type: "cloud_account"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
+				{Relationship: "load_balances", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
 				{Relationship: "monitors", Peers: []TypeRef{{Type: "service"}}},
 				{Relationship: "manages", Peers: []TypeRef{{Type: "cloud_account"}}},
 			},
 		},
+		ScannableBy: []string{"host", "ip"},
 	},
 	{
 		Type:           "compute",
@@ -665,11 +683,10 @@ var registryTypes = []TypeDefinition{
 		Card:     "host",
 		Sections: []string{"overview", "attributes", "services", "findings", "relationships", "owners", "exposure", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{
-				{Relationship: "protected_by", Peers: []TypeRef{{Type: "service"}}},
-			},
-			In: []RelationshipRule{},
+			Out: []RelationshipRule{},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{"host", "ip", "compute"},
 	},
 	{
 		Type:           "endpoint",
@@ -696,9 +713,17 @@ var registryTypes = []TypeDefinition{
 		Card:     "host",
 		Sections: []string{"overview", "attributes", "findings", "components", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{},
-			In:  []RelationshipRule{},
+			Out: []RelationshipRule{
+				{Relationship: "contains", Peers: []TypeRef{{Type: "container"}, {Type: "service"}, {Type: "database"}}},
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
+			},
+			In: []RelationshipRule{
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
+			},
 		},
+		ScannableBy: []string{"host", "ip"},
 	},
 	{
 		Type:           "serverless",
@@ -731,10 +756,9 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{},
-			In: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}}},
-			},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{"serverless"},
 	},
 	{
 		Type:           "cloud_account",
@@ -762,21 +786,22 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "database"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "network"}, {Type: "storage"}, {Type: "serverless"}, {Type: "load_balancer"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "database"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "network"}, {Type: "storage"}, {Type: "host", SubType: "serverless"}, {Type: "network", SubType: "load_balancer"}}},
 				{Relationship: "load_balances", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "service"}, {Type: "container"}}},
 				{Relationship: "protected_by", Peers: []TypeRef{{Type: "service"}}},
-				{Relationship: "manages", Peers: []TypeRef{{Type: "host"}, {Type: "database"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "network"}, {Type: "load_balancer"}}},
+				{Relationship: "manages", Peers: []TypeRef{{Type: "host"}, {Type: "database"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "network"}, {Type: "network", SubType: "load_balancer"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "database"}}},
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "database"}}},
 				{Relationship: "deployed_to", Peers: []TypeRef{{Type: "repository"}, {Type: "container", SubType: "image"}}},
 				{Relationship: "contains", Peers: []TypeRef{{Type: "network"}}},
-				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "mobile_app"}}},
-				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}}},
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "iam_user"}, {Type: "iam_role"}, {Type: "service_account"}, {Type: "service"}}},
+				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "application", SubType: "mobile_app"}}},
+				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}}},
+				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "identity", SubType: "iam_user"}, {Type: "identity", SubType: "iam_role"}, {Type: "identity", SubType: "service_account"}, {Type: "service"}}},
 				{Relationship: "monitors", Peers: []TypeRef{{Type: "service"}}},
 			},
 		},
+		ScannableBy: []string{"cloud_account"},
 	},
 	{
 		Type:           "container",
@@ -807,19 +832,21 @@ var registryTypes = []TypeDefinition{
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
 				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}}},
-				{Relationship: "deployed_to", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}, {Type: "host"}}},
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "discovered_url"}, {Type: "service"}, {Type: "api"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "container"}}},
+				{Relationship: "deployed_to", SubType: "image", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}, {Type: "host"}}},
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "database"}}},
-				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "repository"}}},
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "kubernetes", SubType: "workload"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "container"}}},
-				{Relationship: "load_balances", Peers: []TypeRef{{Type: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "database"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "contains", SubType: "image", Peers: []TypeRef{{Type: "repository"}}},
+				{Relationship: "depends_on", SubType: "image", Peers: []TypeRef{{Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
+				{Relationship: "load_balances", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
 				{Relationship: "manages", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}}},
 			},
 		},
+		ScannableBy: []string{"container"},
 	},
 	{
 		Type:           "kubernetes",
@@ -849,24 +876,31 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}}},
-				{Relationship: "contains", Peers: []TypeRef{{Type: "kubernetes", SubType: "workload"}, {Type: "kubernetes_namespace"}, {Type: "container"}}},
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "discovered_url"}, {Type: "service"}, {Type: "api"}}},
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "container", SubType: "image"}, {Type: "database"}, {Type: "api"}, {Type: "service"}}},
-				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}}},
-				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}}},
-				{Relationship: "manages", Peers: []TypeRef{{Type: "kubernetes", SubType: "workload"}, {Type: "container"}}},
+				{Relationship: "runs_on", SubType: "workload", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}}},
+				{Relationship: "contains", SubType: "cluster", Peers: []TypeRef{{Type: "kubernetes", SubType: "workload"}, {Type: "kubernetes", SubType: "namespace"}}},
+				{Relationship: "contains", SubType: "workload", Peers: []TypeRef{{Type: "container"}}},
+				{Relationship: "exposes", SubType: "workload", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "depends_on", SubType: "workload", Peers: []TypeRef{{Type: "container", SubType: "image"}, {Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
+				{Relationship: "stores_data_in", SubType: "workload", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}}},
+				{Relationship: "authenticates_to", SubType: "workload", Peers: []TypeRef{{Type: "identity", SubType: "identity_provider"}, {Type: "service"}}},
+				{Relationship: "manages", SubType: "cluster", Peers: []TypeRef{{Type: "kubernetes", SubType: "workload"}, {Type: "container"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}}},
-				{Relationship: "deployed_to", Peers: []TypeRef{{Type: "repository"}, {Type: "container", SubType: "image"}}},
-				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "kubernetes", SubType: "cluster"}}},
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "iam_user"}, {Type: "iam_role"}, {Type: "service_account"}, {Type: "service"}}},
-				{Relationship: "load_balances", Peers: []TypeRef{{Type: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
-				{Relationship: "monitors", Peers: []TypeRef{{Type: "service"}}},
-				{Relationship: "manages", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "kubernetes", SubType: "cluster"}}},
+				{Relationship: "runs_on", SubType: "cluster", Peers: []TypeRef{{Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "runs_on", SubType: "workload", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "container"}}},
+				{Relationship: "deployed_to", SubType: "cluster", Peers: []TypeRef{{Type: "repository"}, {Type: "container", SubType: "image"}}},
+				{Relationship: "deployed_to", SubType: "workload", Peers: []TypeRef{{Type: "repository"}, {Type: "container", SubType: "image"}}},
+				{Relationship: "contains", SubType: "cluster", Peers: []TypeRef{{Type: "cloud_account"}}},
+				{Relationship: "contains", SubType: "namespace", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}}},
+				{Relationship: "contains", SubType: "workload", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}}},
+				{Relationship: "has_access_to", SubType: "cluster", Peers: []TypeRef{{Type: "identity", SubType: "iam_user"}, {Type: "identity", SubType: "iam_role"}, {Type: "identity", SubType: "service_account"}, {Type: "service"}}},
+				{Relationship: "load_balances", SubType: "workload", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
+				{Relationship: "monitors", SubType: "cluster", Peers: []TypeRef{{Type: "service"}}},
+				{Relationship: "manages", SubType: "cluster", Peers: []TypeRef{{Type: "cloud_account"}}},
+				{Relationship: "manages", SubType: "workload", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}}},
 			},
 		},
+		ScannableBy: []string{"kubernetes"},
 	},
 	{
 		Type:           "kubernetes_cluster",
@@ -902,6 +936,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "kubernetes_namespace",
@@ -929,10 +964,9 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{},
-			In: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}}},
-			},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "container_registry",
@@ -964,6 +998,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{"container"},
 	},
 	{
 		Type:           "repository",
@@ -997,6 +1032,7 @@ var registryTypes = []TypeDefinition{
 			},
 			In: []RelationshipRule{},
 		},
+		ScannableBy: []string{"repository", "file"},
 	},
 	{
 		Type:           "identity",
@@ -1024,11 +1060,16 @@ var registryTypes = []TypeDefinition{
 		Card:     "identity",
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{},
+			Out: []RelationshipRule{
+				{Relationship: "has_access_to", SubType: "iam_role", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "storage"}}},
+				{Relationship: "has_access_to", SubType: "iam_user", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "storage"}}},
+				{Relationship: "has_access_to", SubType: "service_account", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "storage"}}},
+			},
 			In: []RelationshipRule{
-				{Relationship: "authenticates_to", Peers: []TypeRef{{Type: "api"}, {Type: "service"}, {Type: "website"}, {Type: "mobile_app"}, {Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "authenticates_to", SubType: "identity_provider", Peers: []TypeRef{{Type: "application", SubType: "api"}, {Type: "service"}, {Type: "application", SubType: "website"}, {Type: "application", SubType: "mobile_app"}, {Type: "kubernetes", SubType: "workload"}}},
 			},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "iam_user",
@@ -1059,11 +1100,10 @@ var registryTypes = []TypeDefinition{
 		Card:     "identity",
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "database"}, {Type: "api"}, {Type: "service"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "storage"}}},
-			},
-			In: []RelationshipRule{},
+			Out: []RelationshipRule{},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "iam_role",
@@ -1093,11 +1133,10 @@ var registryTypes = []TypeDefinition{
 		Card:     "identity",
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "database"}, {Type: "api"}, {Type: "service"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "storage"}}},
-			},
-			In: []RelationshipRule{},
+			Out: []RelationshipRule{},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "service_account",
@@ -1125,11 +1164,10 @@ var registryTypes = []TypeDefinition{
 		Card:     "identity",
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "database"}, {Type: "api"}, {Type: "service"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "storage"}}},
-			},
-			In: []RelationshipRule{},
+			Out: []RelationshipRule{},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "database",
@@ -1165,17 +1203,18 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "replicates_to", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "host"}}},
-				{Relationship: "depends_on", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "host"}, {Type: "endpoint"}}},
+				{Relationship: "depends_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "kubernetes", SubType: "workload"}}},
 				{Relationship: "peer_of", Peers: []TypeRef{{Type: "database"}}},
 				{Relationship: "replicates_to", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}}},
-				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "mobile_app"}}},
-				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "kubernetes", SubType: "workload"}}},
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "iam_user"}, {Type: "iam_role"}, {Type: "service_account"}, {Type: "service"}}},
+				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "application", SubType: "mobile_app"}}},
+				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "identity", SubType: "iam_user"}, {Type: "identity", SubType: "iam_role"}, {Type: "identity", SubType: "service_account"}, {Type: "service"}}},
 				{Relationship: "monitors", Peers: []TypeRef{{Type: "service"}}},
 				{Relationship: "manages", Peers: []TypeRef{{Type: "cloud_account"}}},
 			},
 		},
+		ScannableBy: []string{"database"},
 	},
 	{
 		Type:           "data_store",
@@ -1204,6 +1243,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "storage",
@@ -1239,10 +1279,11 @@ var registryTypes = []TypeDefinition{
 			In: []RelationshipRule{
 				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}}},
 				{Relationship: "replicates_to", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}}},
-				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "service"}, {Type: "api"}, {Type: "website"}, {Type: "kubernetes", SubType: "workload"}}},
-				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "iam_user"}, {Type: "iam_role"}, {Type: "service_account"}, {Type: "service"}}},
+				{Relationship: "stores_data_in", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "has_access_to", Peers: []TypeRef{{Type: "identity", SubType: "iam_user"}, {Type: "identity", SubType: "iam_role"}, {Type: "identity", SubType: "service_account"}, {Type: "service"}}},
 			},
 		},
+		ScannableBy: []string{"storage"},
 	},
 	{
 		Type:           "s3_bucket",
@@ -1273,6 +1314,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "network",
@@ -1300,14 +1342,21 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "cloud_account"}, {Type: "load_balancer"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "cloud_account"}, {Type: "network", SubType: "load_balancer"}}},
+				{Relationship: "exposes", SubType: "load_balancer", Peers: []TypeRef{{Type: "application", SubType: "api"}, {Type: "service"}, {Type: "application", SubType: "website"}}},
+				{Relationship: "load_balances", SubType: "load_balancer", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "service"}, {Type: "container"}}},
 			},
 			In: []RelationshipRule{
 				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}}},
+				{Relationship: "contains", SubType: "load_balancer", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "network"}}},
+				{Relationship: "resolves_to", SubType: "load_balancer", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
+				{Relationship: "protected_by", SubType: "load_balancer", Peers: []TypeRef{{Type: "application", SubType: "website"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
 				{Relationship: "monitors", Peers: []TypeRef{{Type: "service"}}},
 				{Relationship: "manages", Peers: []TypeRef{{Type: "cloud_account"}}},
+				{Relationship: "manages", SubType: "load_balancer", Peers: []TypeRef{{Type: "cloud_account"}}},
 			},
 		},
+		ScannableBy: []string{"network"},
 	},
 	{
 		Type:           "vpc",
@@ -1339,6 +1388,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "subnet",
@@ -1369,6 +1419,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "firewall",
@@ -1398,6 +1449,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "load_balancer",
@@ -1426,17 +1478,10 @@ var registryTypes = []TypeDefinition{
 		Card:     "network",
 		Sections: []string{"overview", "attributes", "findings", "relationships", "owners", "exposure", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "api"}, {Type: "service"}, {Type: "website"}}},
-				{Relationship: "load_balances", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "service"}, {Type: "container"}}},
-			},
-			In: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "network"}}},
-				{Relationship: "resolves_to", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
-				{Relationship: "protected_by", Peers: []TypeRef{{Type: "website"}, {Type: "api"}, {Type: "service"}}},
-				{Relationship: "manages", Peers: []TypeRef{{Type: "cloud_account"}}},
-			},
+			Out: []RelationshipRule{},
+			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 	{
 		Type:           "unclassified",
@@ -1458,6 +1503,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{},
 			In:  []RelationshipRule{},
 		},
+		ScannableBy: []string{},
 	},
 }
 

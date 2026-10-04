@@ -204,12 +204,12 @@ virtual_types:
   - { name: k8s_workload, type: kubernetes, sub_type: workload }
   - { name: container_image, type: container, sub_type: image }
   - { name: api_collection, type: application, sub_type: api }
-  - { name: api_endpoint, type: discovered_url }
+  - { name: api_endpoint, type: service, sub_type: discovered_url }
   - { name: identity_provider, type: identity, sub_type: identity_provider }
   # A credential is a secret, not an identity; secrets become a type of
   # their own (RFC-042 §6.3.8 O4). Until then its constraints are skipped.
   - { name: credential, unmodelled: true }
-  - { name: mobile, type: mobile_app }
+  - { name: mobile, type: application, sub_type: mobile_app }
 
 # Attribute types: string, int, number, bool, time, enum (needs values),
 # list (of strings) and object (opaque). Only string, int, enum and bool
@@ -231,6 +231,13 @@ virtual_types:
 #   - `sub_type_inputs` maps a legacy sub-type value that is still accepted
 #     on input to { type, sub_type, provider, attributes }. Provider and
 #     attributes are set only when the asset has none.
+#   - `scannable_by` lists the tool target types (a tool's supported_targets:
+#     url, domain, ip, host, ...) that can scan the type. An alias without
+#     one inherits its core type's list; with one, it is the list of that
+#     (core type, sub_type).
+#   - `exposure_default` is the exposure a type has by nature (public for
+#     domains, certificates and web applications); ingest applies it when the
+#     scanner sent no exposure.
 types:
   # ---------------------------------------------------------------------------
   # External surface
@@ -251,6 +258,8 @@ types:
       - { name: whois, type: object }
     columns: [name, registrar, expires_at, findings.open, last_seen, owner]
     card: domain
+    scannable_by: [domain]
+    exposure_default: public
     sections: [overview, attributes, dns, findings, relationships, owners, sources, history]
 
   - type: subdomain
@@ -268,6 +277,8 @@ types:
       - { name: is_wildcard, type: bool, facet: true }
     columns: [name, parent_domain, findings.open, last_seen, owner]
     card: domain
+    scannable_by: [domain]
+    exposure_default: public
     sections: [overview, attributes, dns, services, findings, relationships, owners, sources, history]
 
   - type: ip_address
@@ -293,6 +304,7 @@ types:
       - { name: is_reserved, type: bool }
     columns: [name, asn_org, country, findings.open, last_seen, owner]
     card: ip_address
+    scannable_by: [ip, host]
     sections: [overview, attributes, services, findings, relationships, owners, sources, history]
 
   - type: certificate
@@ -322,6 +334,8 @@ types:
       - { name: is_wildcard, type: bool, facet: true }
     columns: [name, issuer_org, not_after, is_self_signed, last_seen, owner]
     card: certificate
+    scannable_by: [certificate]
+    exposure_default: public
     sections: [overview, certificate, attributes, findings, relationships, owners, sources, history]
 
   - type: service
@@ -349,6 +363,7 @@ types:
       - { name: response_time_ms, type: int }
     columns: [name, port, protocol, product, findings.open, last_seen]
     card: service
+    scannable_by: [service, port]
     sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
 
   - type: http_service
@@ -377,6 +392,7 @@ types:
       - { name: redirect_url, type: string }
     columns: [name, status_code, title, server, findings.open, last_seen]
     card: service
+    scannable_by: [url, service, port]
     sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
 
   - type: open_port
@@ -399,6 +415,7 @@ types:
       - { name: discovery_tool, type: string, facet: true }
     columns: [name, port, protocol, service, findings.open, last_seen]
     card: service
+    scannable_by: [port, service]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: discovered_url
@@ -421,6 +438,7 @@ types:
       - { name: forms, type: object }
     columns: [name, method, status_code, content_type, findings.open, last_seen]
     card: web_endpoint
+    scannable_by: [url]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -444,6 +462,7 @@ types:
       - { name: has_waf, type: bool, facet: true }
     columns: [name, sub_type, server, findings.open, last_seen, owner]
     card: application
+    scannable_by: [url]
     sections: [overview, attributes, technologies, findings, services, relationships, owners, sources, history]
 
   - type: website
@@ -466,6 +485,8 @@ types:
       - { name: waf_vendor, type: string, facet: true }
     columns: [name, title, server, findings.open, last_seen, owner]
     card: application
+    scannable_by: [url]
+    exposure_default: public
     sections: [overview, attributes, technologies, findings, relationships, owners, sources, history]
 
   - type: web_application
@@ -486,6 +507,8 @@ types:
       - { name: has_waf, type: bool, facet: true }
     columns: [name, title, framework, findings.open, last_seen, owner]
     card: application
+    scannable_by: [url]
+    exposure_default: public
     sections: [overview, attributes, technologies, findings, relationships, owners, sources, history]
 
   - type: api
@@ -507,6 +530,8 @@ types:
       - { name: endpoints_count, type: int }
     columns: [name, api_type, authentication, findings.open, last_seen, owner]
     card: application
+    scannable_by: [url, api]
+    exposure_default: public
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: mobile_app
@@ -528,6 +553,7 @@ types:
       - { name: uses_ssl_pinning, type: bool, facet: true }
     columns: [name, platform, version, findings.open, last_seen, owner]
     card: application
+    scannable_by: [mobile]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -564,6 +590,7 @@ types:
       - { name: hypervisor, type: string, facet: true }
     columns: [name, os_name, ip_addresses, findings.open, last_seen, owner]
     card: host
+    scannable_by: [host, ip]
     sections: [overview, attributes, services, findings, components, relationships, owners, exposure, sources, history]
 
   - type: compute
@@ -588,6 +615,7 @@ types:
       - { name: platform, type: string, facet: true }
     columns: [name, provider, region, instance_type, findings.open, last_seen]
     card: host
+    scannable_by: [host, ip, compute]
     sections: [overview, attributes, services, findings, relationships, owners, exposure, sources, history]
 
   - type: endpoint
@@ -606,6 +634,7 @@ types:
       - { name: edr_installed, type: bool, facet: true }
     columns: [name, device_type, os_family, findings.open, last_seen, owner]
     card: host
+    scannable_by: [host, ip]
     sections: [overview, attributes, findings, components, relationships, owners, sources, history]
 
   - type: serverless
@@ -629,6 +658,7 @@ types:
       - { name: last_modified, type: time }
     columns: [name, provider, runtime, region, findings.open, last_seen]
     card: function
+    scannable_by: [serverless]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: cloud_account
@@ -654,6 +684,7 @@ types:
       - { name: mfa_enabled, type: bool, facet: true }
     columns: [name, provider, account_id, findings.open, last_seen, owner]
     card: cloud_account
+    scannable_by: [cloud_account]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -687,6 +718,7 @@ types:
       - { name: networks, type: list }
     columns: [name, image, runtime, findings.open, last_seen, owner]
     card: container
+    scannable_by: [container]
     sections: [overview, attributes, findings, components, relationships, owners, sources, history]
 
   - type: kubernetes
@@ -708,6 +740,7 @@ types:
       - { name: rbac_enabled, type: bool, facet: true }
     columns: [name, sub_type, provider, version, findings.open, last_seen]
     card: cluster
+    scannable_by: [kubernetes]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: kubernetes_cluster
@@ -770,6 +803,7 @@ types:
       - { name: immutable_tags, type: bool, facet: true }
     columns: [name, provider, image_count, findings.open, last_seen, owner]
     card: artifact_registry
+    scannable_by: [container]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -799,6 +833,7 @@ types:
       - { name: archived, type: bool, facet: true }
     columns: [name, provider, visibility, language, findings.open, last_seen, owner]
     card: repository
+    scannable_by: [repository, file]
     sections: [overview, findings, components, secrets, branches, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -822,6 +857,7 @@ types:
       - { name: last_used, type: time }
     columns: [name, sub_type, provider, mfa_enabled, findings.open, last_seen]
     card: identity
+    scannable_by: []
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: iam_user
@@ -935,6 +971,7 @@ types:
       - { name: backup_retention_days, type: int }
     columns: [name, engine, provider, publicly_accessible, findings.open, last_seen, owner]
     card: data_store
+    scannable_by: [database]
     sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
 
   - type: data_store
@@ -977,6 +1014,7 @@ types:
       - { name: logging_enabled, type: bool, facet: true }
     columns: [name, provider, region, public_access, findings.open, last_seen, owner]
     card: data_store
+    scannable_by: [storage]
     sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
 
   - type: s3_bucket
@@ -1025,6 +1063,7 @@ types:
       - { name: zone, type: string, facet: true, group: true }
     columns: [name, sub_type, cidr, findings.open, last_seen, owner]
     card: network
+    scannable_by: [network]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: vpc
@@ -1117,4 +1156,5 @@ types:
     attributes: []
     columns: [name, type, findings.open, last_seen, owner]
     card: generic
+    scannable_by: []
     sections: [overview, attributes, findings, relationships, owners, sources, history]

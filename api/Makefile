@@ -1,4 +1,4 @@
-.PHONY: all build run test lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev
+.PHONY: all build run test test-db lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev
 
 # Variables
 APP_NAME := openctem
@@ -57,15 +57,26 @@ run:
 	@echo "Running $(APP_NAME)..."
 	$(GORUN) $(MAIN_PATH)
 
-## test: Run tests
+# DB-backed tests write and delete rows, so they never take DATABASE_URL from
+# .env (that is the dev or live database). `make test` runs them only when
+# TEST_DATABASE_URL names a *_test database; `make test-db` requires it.
+TEST_DATABASE_URL ?=
+
+## test: Run tests (DB-backed tests skip unless TEST_DATABASE_URL is set)
 test:
 	@echo "Running tests..."
-	$(GOTEST) -v -race -cover ./...
+	@if [ -z "$(TEST_DATABASE_URL)" ]; then echo "NOTE: TEST_DATABASE_URL is unset: DB-backed tests are SKIPPED (use make test-db)."; fi
+	DATABASE_URL="$(TEST_DATABASE_URL)" $(GOTEST) -v -race -cover ./...
+
+## test-db: Run all tests against TEST_DATABASE_URL (a migrated *_test database); nothing skips
+test-db:
+	@if [ -z "$(TEST_DATABASE_URL)" ]; then echo "TEST_DATABASE_URL is required, e.g. postgres://postgres@localhost:55432/app_test?sslmode=disable"; exit 1; fi
+	DATABASE_URL="$(TEST_DATABASE_URL)" OPENCTEM_TEST_DB_REQUIRED=1 $(GOTEST) -race -timeout 20m ./...
 
 ## test-coverage: Run tests with coverage report
 test-coverage:
 	@echo "Running tests with coverage..."
-	$(GOTEST) -v -race -coverprofile=coverage.out ./...
+	DATABASE_URL="$(TEST_DATABASE_URL)" $(GOTEST) -v -race -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
 
