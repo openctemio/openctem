@@ -587,6 +587,12 @@ export default function ScanDetailPage() {
                     {SCHEDULE_TYPE_LABELS[config.schedule_type]}
                   </span>
                 </div>
+                {config.schedule_rrule && (
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="text-sm">Rule</span>
+                    <code className="text-xs break-all text-end">{config.schedule_rrule}</code>
+                  </div>
+                )}
                 {config.schedule_time && (
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">

@@ -54,11 +54,11 @@ describe('BreadcrumbNav', () => {
   })
 
   it('does not link a parent that has no page', () => {
-    pathname.current = '/settings/access-control/permission-sets'
+    pathname.current = '/settings/scanning/profiles'
     render(<BreadcrumbNav />)
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
-    expect(screen.queryByRole('link', { name: 'Access control' })).toBeNull()
-    expect(screen.getByText('Access control')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Scanning' })).toBeNull()
+    expect(screen.getByText('Scanning')).toBeInTheDocument()
   })
 
   it('does not link the id segment of a nested detail route without a page', () => {
