@@ -167,7 +167,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		DashboardRead,
 		SettingsRead,
 		// Assets (read + write, no delete)
-		AssetsRead, AssetsWrite,
+		AssetsRead, AssetsWrite, AssetsImport,
 		AssetGroupsRead, AssetGroupsWrite,
 		ComponentsRead, ComponentsWrite,
 		// Findings (read + write, no delete; fix_apply yes, verify no).
@@ -178,7 +178,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// member's assign/bulk grant is a separate product decision.
 		FindingsRead, FindingsWrite,
 		FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsFixApply,
-		ExposuresRead, ExposuresWrite,
+		ExposuresRead, ExposuresWrite, ExposuresTriage,
 		SuppressionsRead,
 		VulnerabilitiesRead,
 		CredentialsRead,
@@ -211,7 +211,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		NotificationsRead,
 		WebhooksRead,
 		APIKeysRead,
-		PipelinesRead, PipelinesWrite,
+		PipelinesRead, PipelinesWrite, PipelinesExecute,
 		// Settings (read only; billing is owner/admin only)
 		SLARead,
 		// Attack Surface (read + write)

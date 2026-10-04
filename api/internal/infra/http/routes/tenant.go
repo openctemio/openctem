@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -242,6 +243,13 @@ func invitationDeprecated(name, successor string) Middleware {
 // tenantPerm gates a /api/v1/tenants/{tenant}/... route on a permission held
 // in the path tenant (RequireTenantPermission). It runs after the group's
 // TenantContext and RequireMembership.
+//
+// The checker is read per request, not at registration, because Register sets
+// it after the route table may already be built.
 func tenantPerm(p permission.Permission) Middleware {
-	return middleware.RequireTenantPermission(tenantPermissionChecker, p.String())
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			middleware.RequireTenantPermission(tenantPermissionChecker, p.String())(next).ServeHTTP(w, r)
+		})
+	}
 }
