@@ -262,9 +262,10 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 		ExecutorKind: kind,
 		Technique:    technique,
 		Target: Target{
-			AssetID: assetID,
-			Type:    a.Type().String(),
-			Address: address,
+			AssetID:   assetID,
+			Type:      a.Type().String(),
+			Address:   address,
+			AssetName: a.Name(),
 		},
 		TimeoutSeconds: defaultTimeoutSeconds,
 		TemplateID:     templateID,
@@ -333,9 +334,10 @@ func (s *RunService) DispatchSimulationCheck(ctx context.Context, tenantID, simR
 		ExecutorKind:    kind,
 		Technique:       tech,
 		Target: Target{
-			AssetID: assetID,
-			Type:    a.Type().String(),
-			Address: address,
+			AssetID:   assetID,
+			Type:      a.Type().String(),
+			Address:   address,
+			AssetName: a.Name(),
 		},
 		TimeoutSeconds: defaultTimeoutSeconds,
 	}

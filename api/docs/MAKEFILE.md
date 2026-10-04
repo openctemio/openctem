@@ -33,7 +33,8 @@ make dev
 | `make lint` | Run linter (golangci-lint) |
 | `make fmt` | Format code with gofmt |
 | `make tidy` | Tidy Go dependencies |
-| `make test` | Run all tests |
+| `make test` | Run all tests (DB-backed tests skip unless `TEST_DATABASE_URL` names a `*_test` database) |
+| `make test-db` | Run all tests against `TEST_DATABASE_URL`; a missing or unreachable database fails instead of skipping |
 | `make test-coverage` | Run tests with coverage report |
 
 ### Documentation

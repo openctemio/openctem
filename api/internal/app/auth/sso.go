@@ -366,7 +366,7 @@ func (s *SSOService) resolveProvider(ctx context.Context, tenantID, orgSlug stri
 			clientID:         ip.ClientID(),
 			clientSecret:     secret,
 			tenantIdentifier: ip.TenantIdentifier(),
-			scopes:           ip.Scopes(),
+			scopes:           withOpenIDScope(ip.Scopes()),
 			allowedDomains:   ip.AllowedDomains(),
 			autoProvision:    ip.AutoProvision(),
 			defaultRole:      ip.DefaultRole(),
@@ -595,11 +595,11 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		return nil, ErrSSOExchangeFailed
 	}
 
-	// Verify the id_token (signature + nonce + issuer/audience) when the
-	// provider returns one. The token endpoint response is server-to-server
-	// over TLS, so a missing id_token (provider configured without the
-	// "openid" scope) is not attacker-controllable — verify when present,
-	// skip otherwise to stay backward compatible with such configs.
+	// Every provider must return an id_token, and it is verified (signature,
+	// nonce, audience, issuer) before any identity is taken from the flow. A
+	// login without one is refused: the federated identity (issuer, subject)
+	// that binds the account to this IdP, and the session binding used by
+	// back-channel logout, come only from the verified id_token.
 	claims, err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce)
 	if err != nil {
 		s.logger.Warn("SSO id_token validation failed",
@@ -808,21 +808,19 @@ func (s *SSOService) jitProvisioningAllowed(ctx context.Context, t *tenantdom.Te
 // verifyIDToken validates the provider's id_token against its JWKS, the flow
 // nonce, our client_id (audience), and a provider-specific issuer check.
 //
-// It is a no-op (returns nil, nil) when the provider publishes no JWKS or the
-// token response carried no id_token — see the call site for why a missing
-// id_token is safe to skip for non-Entra providers. When an id_token IS present,
-// every check is enforced. Returns the verified claims so the caller can bind
-// the account to the IdP identity (issuer/subject) and, for Entra, read the
-// domain-verified email. Returns nil claims when there is nothing to verify.
+// The id_token is required for every provider: a provider without signing
+// keys, or a token response without an id_token (a provider configured
+// without the "openid" scope), is an error. Returns the verified claims so the
+// caller can bind the account to the IdP identity (issuer/subject) and, for
+// Entra, read the domain-verified email. The returned claims are never nil
+// when the error is nil.
 func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) (*oidcClaims, error) {
 	jwksURL := rp.provider.JWKSURL(rp.tenantIdentifier)
 	if jwksURL == "" {
-		return nil, nil // provider has no id_token to verify
+		return nil, fmt.Errorf("%s provider has no id_token signing keys (is the organization URL configured?)", rp.provider)
 	}
 	if strings.TrimSpace(idToken) == "" {
-		s.logger.Debug("SSO provider returned no id_token; skipping id_token validation",
-			"provider", rp.provider, "source", rp.source)
-		return nil, nil
+		return nil, errors.New(`token response carried no id_token: the provider must grant the "openid" scope`)
 	}
 
 	exp := idTokenExpectations{
@@ -830,8 +828,13 @@ func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, id
 		audience: rp.clientID,
 		nonce:    nonce,
 	}
-	if rp.provider == identityproviderdom.ProviderEntraID {
+	switch rp.provider {
+	case identityproviderdom.ProviderEntraID:
 		exp.validateIssuer = entraIssuerValidator(rp.tenantIdentifier)
+	case identityproviderdom.ProviderOkta:
+		exp.validateIssuer = oktaIssuerValidator(rp.tenantIdentifier)
+	case identityproviderdom.ProviderGoogleWorkspace:
+		exp.validateIssuer = googleIssuerValidator
 	}
 
 	claims, err := s.oidcVerifier.verify(ctx, idToken, exp)
@@ -1711,7 +1714,10 @@ func validateTenantIdentifier(provider identityproviderdom.Provider, tid string)
 	return nil
 }
 
-// validateScopes validates that requested scopes are reasonable.
+// validateScopes validates that requested scopes are reasonable. A non-empty
+// scope list must include "openid": sign-in verifies the provider's id_token,
+// which the provider issues only for that scope. An empty list means the
+// defaults, which include it.
 func validateScopes(scopes []string) error {
 	if len(scopes) > 20 {
 		return fmt.Errorf("%w: too many scopes (max 20)", identityproviderdom.ErrInvalidConfig)
@@ -1721,7 +1727,29 @@ func validateScopes(scopes []string) error {
 			return fmt.Errorf("%w: scope too long (max 128 chars)", identityproviderdom.ErrInvalidConfig)
 		}
 	}
+	if len(scopes) > 0 && !hasOpenIDScope(scopes) {
+		return fmt.Errorf(`%w: scopes must include "openid" (sign-in verifies the provider's id_token)`, identityproviderdom.ErrInvalidConfig)
+	}
 	return nil
+}
+
+func hasOpenIDScope(scopes []string) bool {
+	for _, sc := range scopes {
+		if strings.TrimSpace(sc) == "openid" {
+			return true
+		}
+	}
+	return false
+}
+
+// withOpenIDScope returns scopes with "openid" first if it is missing. A
+// provider saved before "openid" was required keeps working: its authorize
+// request asks for the id_token that the callback now requires.
+func withOpenIDScope(scopes []string) []string {
+	if hasOpenIDScope(scopes) {
+		return scopes
+	}
+	return append([]string{"openid"}, scopes...)
 }
 
 // validateAllowedDomains validates allowed email domains.

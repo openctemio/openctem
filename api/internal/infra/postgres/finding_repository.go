@@ -181,6 +181,7 @@ var findingCreateSQL = `
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
 			sla_deadline, sla_status, tags, rule_name,
+			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `
 		)
@@ -189,8 +190,8 @@ var findingCreateSQL = `
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90, $91, $92` + findingTypePlaceholders(93) +
-	findingNetworkPlaceholders(93+findingTypeColumnCount) + `)
+			$89, $90, $91, $92, $93, $94` + findingTypePlaceholders(95) +
+	findingNetworkPlaceholders(95+findingTypeColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -311,9 +312,11 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 		pq.Array(finding.Tags()), // $91
 		// Rule name. Also left out of the INSERT, so the scanner's rule name
 		// (a nuclei template's, a semgrep rule's) arrived only on a re-sighting.
-		nullString(finding.RuleName()), // $92
+		nullString(finding.RuleName()),  // $92
+		finding.FingerprintVersion(),    // $93
+		nullJSON(finding.IdentityKey()), // $94
 	}
-	args = append(args, findingTypeArgs(finding)...) // $93…
+	args = append(args, findingTypeArgs(finding)...) // $95…
 	args = append(args, findingNetworkArgs(finding)...)
 	return args, nil
 }
@@ -578,6 +581,7 @@ func findingInsertColumnsSQL() string {
 			ingest_channel,
 			sla_deadline, sla_status, tags, rule_name,
 			last_seen_tool,
+			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `
 		)`
@@ -728,7 +732,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 92 + findingTypeColumnCount + findingNetworkColumnCount
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -860,6 +864,9 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		nullString(finding.RuleName()),
 		// Tool of this sighting (RFC-043 interim auto-resolve guard).
 		nullString(finding.LastSeenTool()),
+		// Identity recipe version and tuple (RFC-043 §6).
+		finding.FingerprintVersion(),
+		nullJSON(finding.IdentityKey()),
 	}, append(findingTypeArgs(finding), findingNetworkArgs(finding)...)...), nil
 }
 
