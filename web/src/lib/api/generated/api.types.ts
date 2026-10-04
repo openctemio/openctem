@@ -39517,6 +39517,11 @@ export interface components {
       pipeline_id?: string
       quality_gate_result?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult']
       scan_id?: string
+      /**
+       * @description ScanName names the run's scan (list rows only; empty when the scan was
+       *     deleted).
+       */
+      scan_name?: string
       scan_profile_id?: string
       /** @description ScheduledFor is the schedule occurrence this run serves (scheduled runs only). */
       scheduled_for?: string

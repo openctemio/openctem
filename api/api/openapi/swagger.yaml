@@ -11525,6 +11525,11 @@ definitions:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult'
       scan_id:
         type: string
+      scan_name:
+        description: |-
+          ScanName names the run's scan (list rows only; empty when the scan was
+          deleted).
+        type: string
       scan_profile_id:
         type: string
       scheduled_for:
