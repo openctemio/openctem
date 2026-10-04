@@ -553,7 +553,7 @@ func TestCompileOperators(t *testing.T) {
 		"severity=high":                       "(f.severity = $2)",
 		"severity=high,low":                   "(f.severity = ANY($2::text[]))",
 		"status_not=resolved":                 "(f.status <> ALL($2::text[]))",
-		"epss_score_lt=0.2":                   "(f.epss_score < $2::float8)",
+		"epss_score_lt=0.2":                   "(f.epss_score < $2)",
 		"network_port=22,23":                  "(f.port = ANY($2::bigint[]))",
 		"asset_id=" + userA.String():          "(f.asset_id = $2::uuid)",
 		"assigned_to_null=true":               "(f.assigned_to IS NULL)",
@@ -563,7 +563,7 @@ func TestCompileOperators(t *testing.T) {
 		"is_in_kev=false":                     "(f.is_in_kev = $2::boolean)",
 		"asset_tag_not=prod":                  "(NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = f.asset_id AND a.tenant_id = f.tenant_id AND a.tags && $2::text[]))",
 		"related_to=me":                       "(f.assigned_to = $2::uuid)",
-		"epss_score_gte=0.1&epss_score_lte=1": "(f.epss_score <= $3::float8)",
+		"epss_score_gte=0.1&epss_score_lte=1": "(f.epss_score <= $3)",
 	}
 	for raw, want := range cases {
 		t.Run(raw, func(t *testing.T) {
@@ -604,7 +604,7 @@ func TestOrderBy(t *testing.T) {
 		t.Fatalf("default sort: %q", w.OrderBy)
 	}
 	w, _ = Compile(mustParse(t, "sort=last_seen_at,-epss_score", testOpts()), reg, adminActor(t))
-	if w.OrderBy != "f.last_seen_at ASC, f.epss_score DESC, f.id" {
+	if w.OrderBy != "f.last_seen_at ASC, f.epss_score DESC NULLS LAST, f.id" {
 		t.Fatalf("sort: %q", w.OrderBy)
 	}
 }
@@ -644,5 +644,56 @@ func assertPlaceholders(t testing.TB, w *Where, first int) {
 		if !seen[strconv.Itoa(first+i)] {
 			t.Fatalf("placeholder $%d missing: %s", first+i, w.SQL)
 		}
+	}
+}
+
+func TestRebase(t *testing.T) {
+	reg := MustRegistry(Registry{Name: "x", TenantSQL: "findings.tenant_id", ScopeAssetSQL: "findings.asset_id", IDSQL: "findings.id",
+		MemberVisibility: "findings.source <> 'pentest' OR x_findings.y = {user}",
+		Search:           &Search{Template: "findings.title ILIKE {arg}"}},
+		Field{Name: "tag", Type: TypeString, Ops: []Op{OpIn}, SQL: "findings.tag",
+			Templates: map[Op]string{OpIn: "findings.asset_id IN (SELECT a.id FROM assets a WHERE a.tenant_id = findings.tenant_id AND a.tags && {arg})"}})
+	rb := reg.Rebase("findings", "f")
+	w, err := Compile(&Spec{Root: &Node{All: []*Node{{Leaf: &Leaf{Field: "tag", Op: OpIn, Values: []any{"a"}}}}}, Q: "q"}, rb, memberActor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(w.SQL, "findings.") && !strings.Contains(w.SQL, "x_findings.") {
+		t.Fatalf("rebase left a qualifier: %s", w.SQL)
+	}
+	if !strings.HasPrefix(w.SQL, "f.tenant_id = $1 AND f.asset_id IN") || !strings.Contains(w.SQL, "x_findings.y") {
+		t.Fatalf("rebase: %s", w.SQL)
+	}
+	if reg.TenantSQL != "findings.tenant_id" {
+		t.Fatal("rebase must not change the original")
+	}
+	if w.First != 1 {
+		t.Fatalf("First = %d", w.First)
+	}
+}
+
+func TestBoolTemplate(t *testing.T) {
+	reg := MustRegistry(Registry{Name: "x", TenantSQL: "t.tenant_id", ScopeAssetSQL: "t.asset_id", IDSQL: "t.id"},
+		Field{Name: "has_exploit", Type: TypeBool, Ops: []Op{OpEq}, SQL: "t.meta", BoolTemplate: "(t.meta->>'x') = 'true'"})
+	for v, want := range map[string]string{
+		"true":  "f",
+		"false": "(NOT COALESCE((",
+	} {
+		s, err := ParseValues(url.Values{"has_exploit": {v}}, reg, testOpts())
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, err := Compile(s, reg, SystemActor(tenantA, "t"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v == "true" && !strings.Contains(w.SQL, "(((t.meta->>'x') = 'true'))") || v == "false" && !strings.Contains(w.SQL, want) {
+			t.Fatalf("%s: %s", v, w.SQL)
+		}
+		assertPlaceholders(t, w, 1)
+	}
+	if _, err := NewRegistry(Registry{Name: "x", TenantSQL: "t.tenant_id", ScopeAssetSQL: "t.asset_id", IDSQL: "t.id"},
+		Field{Name: "n", Type: TypeString, Ops: []Op{OpEq}, SQL: "t.n", BoolTemplate: "x"}); err == nil {
+		t.Fatal("BoolTemplate on a string field must be rejected")
 	}
 }

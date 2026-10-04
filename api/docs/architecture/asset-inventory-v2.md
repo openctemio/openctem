@@ -79,13 +79,13 @@ code keys on the class or on (type, sub_type), never on an alias.
   (`internal/app/scan/type_gate.go`). A run or step with nothing left is
   refused (`NO_COMPATIBLE_TARGETS` / `INCOMPATIBLE_TARGETS`); assets whose
   compatibility cannot be decided are dispatched.
-- An endpoint is a host (migration 000565): `endpoint` is an input alias
+- An endpoint is a host (migration 000686): `endpoint` is an input alias
   of `(host, workstation)`, so a laptop seen by a network scan and by EDR
   is one host family for identity matching; 16 core types.
-- One web sub-type (O3, migration 000491): a web application is stored as
+- One web sub-type (O3, migration 000685): a web application is stored as
   `(application, website)` and labelled "Web application";
   `web_application` is an input name only (`type_inputs`).
-- Stored data is normalised (T3, migration 000490): every row holds a core
+- Stored data is normalised (T3, migration 000684): every row holds a core
   type and a declared sub-type, enforced by `chk_assets_core_type`. Each
   move is ledgered and reversible, recorded as a `reclassified` history
   entry, and look-alike applications are queued for dedup review, never

@@ -451,14 +451,6 @@ func (m *toolSvcMockExecutionRepo) Create(_ context.Context, exec *tooldom.ToolE
 	return nil
 }
 
-func (m *toolSvcMockExecutionRepo) GetByID(_ context.Context, id shared.ID) (*tooldom.ToolExecution, error) {
-	e, ok := m.executions[id.String()]
-	if !ok {
-		return nil, shared.ErrNotFound
-	}
-	return e, nil
-}
-
 func (m *toolSvcMockExecutionRepo) GetByIDInTenant(_ context.Context, tenantID, id shared.ID) (*tooldom.ToolExecution, error) {
 	e, ok := m.executions[id.String()]
 	if !ok {
@@ -2387,6 +2379,7 @@ func TestToolService_CompleteToolExecution_Success(t *testing.T) {
 	execRepo.executions[exec.ID.String()] = exec
 
 	input := tool.CompleteToolExecutionInput{
+		TenantID:      tenantID.String(),
 		ExecutionID:   exec.ID.String(),
 		FindingsCount: 5,
 		OutputSummary: map[string]any{"critical": 2, "high": 3},
@@ -2408,12 +2401,35 @@ func TestToolService_CompleteToolExecution_NotFound(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 
 	input := tool.CompleteToolExecutionInput{
+		TenantID:    shared.NewID().String(),
 		ExecutionID: shared.NewID().String(),
 	}
 
 	_, err := svc.CompleteToolExecution(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error for non-existent execution")
+	}
+}
+
+// D-11: an execution of another tenant is not found and is left untouched.
+func TestToolService_CompleteToolExecution_OtherTenantNotFound(t *testing.T) {
+	svc, _, _, execRepo := newToolSvcTestService()
+	owner := shared.NewID()
+	exec := tooldom.NewToolExecution(owner, shared.NewID(), nil, nil, 10)
+	execRepo.executions[exec.ID.String()] = exec
+
+	_, err := svc.CompleteToolExecution(context.Background(), tool.CompleteToolExecutionInput{
+		TenantID:    shared.NewID().String(),
+		ExecutionID: exec.ID.String(),
+	})
+	if err == nil {
+		t.Fatal("completing another tenant's execution must fail")
+	}
+	if exec.Status == tooldom.ExecutionStatusCompleted {
+		t.Fatal("another tenant's execution was completed")
+	}
+	if _, err := svc.TimeoutToolExecution(context.Background(), shared.NewID().String(), exec.ID.String()); err == nil {
+		t.Fatal("timing out another tenant's execution must fail")
 	}
 }
 
@@ -2426,6 +2442,7 @@ func TestToolService_FailToolExecution_Success(t *testing.T) {
 	execRepo.executions[exec.ID.String()] = exec
 
 	input := tool.FailToolExecutionInput{
+		TenantID:     tenantID.String(),
 		ExecutionID:  exec.ID.String(),
 		ErrorMessage: "connection refused",
 	}
@@ -2450,7 +2467,7 @@ func TestToolService_TimeoutToolExecution_Success(t *testing.T) {
 	exec := tooldom.NewToolExecution(tenantID, toolID, nil, nil, 10)
 	execRepo.executions[exec.ID.String()] = exec
 
-	result, err := svc.TimeoutToolExecution(context.Background(), exec.ID.String())
+	result, err := svc.TimeoutToolExecution(context.Background(), tenantID.String(), exec.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -2462,7 +2479,7 @@ func TestToolService_TimeoutToolExecution_Success(t *testing.T) {
 func TestToolService_TimeoutToolExecution_InvalidID(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 
-	_, err := svc.TimeoutToolExecution(context.Background(), "bad-id")
+	_, err := svc.TimeoutToolExecution(context.Background(), shared.NewID().String(), "bad-id")
 	if err == nil {
 		t.Fatal("expected error for invalid execution ID")
 	}
