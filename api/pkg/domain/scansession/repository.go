@@ -13,7 +13,6 @@ type Repository interface {
 	// Create creates a new scan session.
 	Create(ctx context.Context, session *ScanSession) error
 
-
 	// GetByTenantAndID retrieves a scan session by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*ScanSession, error)
 
