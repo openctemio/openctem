@@ -13,6 +13,8 @@ migration-ordering outage. Read this before any production upgrade.
   (`ghcr.io/openctemio/migrations:<VERSION>`, released with the API on the same tag).
 - Keep `SKIP_SCHEMA_CHECK` **unset** (false) in production — it is the last-line
   safety net.
+- Migrations run as the schema owner (`DB_MIGRATE_USER`, `openctem_migrator`);
+  the API runs as a DML-only role. See [database-roles.md](database-roles.md).
 - Write migrations to be **expand-contract** (backward compatible) so a rolling
   deploy — and a rollback — is always safe. CI blocks destructive migrations.
 
