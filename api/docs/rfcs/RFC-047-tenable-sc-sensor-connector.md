@@ -393,8 +393,8 @@ solved, by mapping a repository to a scan zone (owner question Q5).
 | `pluginName` | `title` |
 | `severity.id` 0–4 | `info`, `low`, `medium`, `high`, `critical` |
 | `cve` (comma-separated) | `vulnerability.cve_ids` (all), `vulnerability.cve_id` (first) |
-| `cvssV3BaseScore`/`Vector`, `cvssV4BaseScore`, `baseScore`/`cvssVector` | `vulnerability.cvss_*` (v3 preferred, as the Nessus parser) |
-| `vprScore` | `vulnerability.vpr_score` |
+| `cvssV3BaseScore`/`Vector`, `cvssV4BaseScore`, `baseScore`/`cvssVector` | `vulnerability.cvss_score`, `cvss_vector` and `cvss_version` (`3.x`, else `2.0`, as the Nessus parser); v4 in `properties.tenable_cvss_v4_*` |
+| `vprScore` | `vulnerability.vpr_score` (an input shown to people; it never feeds OpenCTEM priority, research/17 decision A3) |
 | `exploitAvailable`, `exploitFrameworks`, `exploitEase` | `vulnerability.exploit_available`, `properties.tenable_exploit_frameworks`, `tenable_exploit_ease` |
 | `epssScore` (plugin) | `vulnerability.epss_score` |
 | `cpe` | `vulnerability.cpe` |
@@ -404,13 +404,25 @@ solved, by mapping a repository to a scan zone (owner question Q5).
 | `pluginText` | `evidence`, capped at 64 KiB |
 | `port`, `protocol` | `network {host, port, protocol}`; port 0 = host-level |
 | `firstSeen`, `lastSeen` | `first_seen_at`, `last_seen_at` |
-| `family`, `checkType`, plugin `type` | `properties.tenable_plugin_family`, `tenable_check_type`, `tenable_plugin_type` |
+| `family`, `checkType`, plugin `type` | `category` = family (as the Nessus parser), and `properties.tenable_plugin_family`, `tenable_check_type`, `tenable_plugin_type` |
 | `pluginPubDate`, `patchPubDate`, `vulnPubDate`, `pluginModDate` | `properties.tenable_*_date` (RFC 3339) |
 | `acceptRisk`, `recastRisk` (+ rule comments, capped) | `properties.tenable_accept_risk`, `tenable_recast_risk`, `tenable_recast_severity` |
 | `hasBeenMitigated`, `lastMitigated` | `properties.tenable_previously_mitigated`, `tenable_last_mitigated` |
 | `sourceType` | `properties.tenable_state` = `open` or `mitigated`; mitigated rows also set `status: resolved` |
 | `repository`, `vulnUUID` | `properties.tenable_repository_id`, `tenable_vuln_uuid` |
 | — | `fingerprint` = `tenable_sc:<repository>:<ip>:<plugin>:<port>/<proto>`. Never the identity: today ingest ignores a non-hex sensor fingerprint (`isValidFingerprint`), and RFC-043 item 12 keeps converter fingerprints as sighting keys |
+
+**What ingest keeps today.** Research 17
+(`research/17-finding-analysis-vs-tenable-sc.md`, §3 and R2) found that ingest
+drops the plugin family (capped, never stored), the VPR, every CVE after the
+first, the CVSS version and the patch publication date, and keeps
+exploit-available only in metadata. The connector sends all of them in the
+first-class CTIS fields above, so nothing is lost on the wire; persisting them
+as finding columns (family, exploit available, VPR as a display-only input,
+CVSS version, all CVEs, patch date) and as filters and group-by dimensions is
+research 17 R2, shared with the `.nessus` path and not specific to this RFC.
+The mitigated state and its dates (`tenable_state`, `tenable_last_mitigated`)
+are what §7.6 acts on.
 
 ### 7.3 Identity and dedup (RFC-043)
 
