@@ -123,9 +123,14 @@ func newKeyRESTHarness(t *testing.T) *keyRESTHarness {
 	userSvc := app.NewUserService(userRepo, log)
 
 	router := infrahttp.NewChiRouter()
+	keyAuth := middleware.NewAPIKeyAuth(keys, log)
 	Register(router, Handlers{
 		APIKey:     handler.NewAPIKeyHandler(keys, validator.New(), log),
-		APIKeyAuth: middleware.NewAPIKeyAuth(keys, log),
+		APIKeyAuth: keyAuth,
+		// The real MCP mount, as cmd/server wires it (one authenticator for
+		// REST and MCP). No data services: the tests only call initialize.
+		MCP:     handler.NewMCPHandler(nil, nil, nil, nil, nil, nil, nil, log),
+		MCPAuth: keyAuth.Handler,
 	}, cfg, log, authCfg, tenantRepo, userSvc, nil, nil, nil)
 
 	// A tenant data route on the real token-tenant chain.
@@ -428,6 +433,57 @@ func TestAPIKeyREST_DB(t *testing.T) {
 		k, _ := h.mint(fenced, h.member(fenced, "admin"), 0, "assets:read")
 		if code, _ := h.probeWithKey(k); code != http.StatusForbidden {
 			t.Errorf("key from outside the allowlist: %d, want 403", code)
+		}
+	})
+
+	// 23b S-H2: MCP used to run only [rate limit, key auth], so a key REST
+	// refused for its network kept reading through MCP. Same key, same
+	// refusal on both surfaces; an allowed network works on both.
+	t.Run("organization IP allowlist binds keys on MCP exactly as on REST", func(t *testing.T) {
+		mcp := func(key string) (int, string) {
+			return h.do(keyReq{method: http.MethodPost, path: "/api/v1/mcp",
+				headers: map[string]string{"Authorization": "Bearer " + key}})
+		}
+		initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
+		mcpInit := func(key string) (int, string) {
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, h.srv.URL+"/api/v1/mcp", strings.NewReader(initialize))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+key)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			return resp.StatusCode, string(body)
+		}
+
+		fenced := h.tenant(`{"security":{"ip_whitelist":["203.0.113.0/24"]}}`)
+		blocked, _ := h.mint(fenced, h.member(fenced, "member"), 0, "assets:read", "findings:read")
+		restCode, restBody := h.do(keyReq{method: http.MethodGet, path: "/api/v1/key-probe", headers: map[string]string{"Authorization": "Bearer " + blocked}})
+		mcpCode, mcpBody := mcp(blocked)
+		if restCode != http.StatusForbidden || !strings.Contains(restBody, string(middleware.CodeIPNotAllowed)) {
+			t.Fatalf("REST from outside the allowlist: %d %s, want 403 %s", restCode, restBody, middleware.CodeIPNotAllowed)
+		}
+		if mcpCode != restCode || mcpBody != restBody {
+			t.Errorf("MCP from outside the allowlist = %d %s, want the REST refusal %d %s", mcpCode, mcpBody, restCode, restBody)
+		}
+
+		// The test client connects from loopback: an allowlist that includes
+		// it, and no allowlist at all, both let the key through on MCP.
+		for name, settings := range map[string]string{
+			"allowed network": `{"security":{"ip_whitelist":["127.0.0.1/32","::1/128"]}}`,
+			"no allowlist":    `{}`,
+		} {
+			tid := h.tenant(settings)
+			k, _ := h.mint(tid, h.member(tid, "member"), 0, "assets:read", "findings:read")
+			code, body := mcpInit(k)
+			if code != http.StatusOK || !strings.Contains(body, `"result"`) {
+				t.Errorf("%s: MCP initialize = %d %s, want 200 with a result", name, code, body)
+			}
 		}
 	})
 
