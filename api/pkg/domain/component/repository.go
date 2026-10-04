@@ -24,9 +24,11 @@ type Repository interface {
 
 	// Asset Dependency Operations (Links)
 	LinkAsset(ctx context.Context, dep *AssetDependency) error
-	GetDependency(ctx context.Context, id shared.ID) (*AssetDependency, error)
+	// GetDependency, UpdateDependency (by dep.TenantID()) and DeleteDependency
+	// only see the tenant's own rows; another tenant's id is not found.
+	GetDependency(ctx context.Context, tenantID, id shared.ID) (*AssetDependency, error)
 	UpdateDependency(ctx context.Context, dep *AssetDependency) error
-	DeleteDependency(ctx context.Context, id shared.ID) error
+	DeleteDependency(ctx context.Context, tenantID, id shared.ID) error
 	DeleteByAssetID(ctx context.Context, assetID shared.ID) error
 
 	// GetExistingDependencyByPURL retrieves an existing asset_component by asset and component PURL.
@@ -48,7 +50,7 @@ type Repository interface {
 
 	// UpdateAssetDependencyParent updates the parent_component_id and depth of an asset_component.
 	// Used in three-pass ingestion to set parent references after all components are inserted.
-	UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error
+	UpdateAssetDependencyParent(ctx context.Context, tenantID, id shared.ID, parentID shared.ID, depth int) error
 
 	// ListComponents retrieves global components (optionally filtered by usage).
 	ListComponents(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*Component], error)
