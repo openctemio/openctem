@@ -934,7 +934,7 @@ func (h *PipelineHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	resp := toRunResponse(run)
 	tasks, err := h.service.GetRunTasks(r.Context(), run)
 	if err != nil {
-		h.logger.Error("failed to read run tasks", "run_id", runID, "error", err)
+		h.logger.Error("failed to read run tasks", "run_id", run.ID.String(), "error", err)
 		apierror.InternalServerError("failed to read the run's tasks").WriteJSON(w)
 		return
 	}
