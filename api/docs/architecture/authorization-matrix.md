@@ -336,11 +336,14 @@ create's target validator, exclusions, zone routing) in one call.
 
 | Endpoint | Gate |
 |----------|------|
-| `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`) |
+| `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`); a `PUT` that adds, changes or removes a mapping **to admin** is owner only (service check, 403) |
 | `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`) |
 
 > A SCIM token can create, suspend and re-role every member, so minting and
-> revoking one is the owner's decision (owner decision 2026-10-02).
+> revoking one is the owner's decision (owner decision 2026-10-02). Which IdP
+> group makes someone an administrator is the owner's decision too: only an
+> owner-configured mapping grants or removes admin through SCIM (23b S-H1; see
+> `scim-provisioning.md`).
 
 #### Billing
 
@@ -482,7 +485,9 @@ These routes require the tenant ID in the URL path and use database-based member
 > paths (`/api/v1/users/{id}/roles`, assign/remove/bulk): only an owner may
 > change another administrator's role set (`grant_guard.go`). Administrators
 > still manage members and viewers, and may change their own membership. SCIM
-> (no human actor) is not a peer and keeps its own rules.
+> (no human actor) is not a peer and keeps its own rules: it grants or removes
+> admin only through a mapping the owner configured, and the role changes a
+> mapping save causes run as the person who saved it.
 >
 > **Granting roles** (invitations and created users) is anti-escalation checked:
 > a caller who is not an organization admin may grant only roles whose

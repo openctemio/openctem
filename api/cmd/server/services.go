@@ -740,8 +740,17 @@ func (a scimMembershipAdapter) ReactivateMember(ctx context.Context, tenantID, m
 }
 
 // UpdateMemberRole satisfies scim.RoleManager for SCIM group → role mapping.
-func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string) error {
-	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, scimAuditContext(tenantID))
+// With an actor (a mapping saved in the console) the change runs as that
+// person, so the owner-only rule for changing an administrator applies and
+// the audit entry names them. Without one (an identity-provider push) it runs
+// as SCIM provisioning and the audit entry carries the SCIM token from the
+// request context.
+func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string, actorID *shared.ID) error {
+	actx := scimAuditContext(tenantID)
+	if actorID != nil {
+		actx = app.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
+	}
+	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, actx)
 	return err
 }
 
@@ -1286,6 +1295,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.SCIMGroups = scim.NewGroupService(
 		repos.ScimGroup, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
+	s.SCIMGroups.SetAuditService(s.Audit)
 	// Outbound Jira ticketing resolves a client per tenant from that tenant's
 	// connected ticketing integration (base URL + decrypted credentials). The
 	// static client stays nil; the resolver is the production path (mirrors the
