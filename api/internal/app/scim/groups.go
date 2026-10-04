@@ -82,7 +82,7 @@ func (s *GroupService) Replace(ctx context.Context, tenantID, id shared.ID, in G
 			return nil, uerr
 		}
 	}
-	if err := s.groups.SetMembers(ctx, id, in.MemberIDs); err != nil {
+	if err := s.groups.SetMembers(ctx, tenantID, id, in.MemberIDs); err != nil {
 		return nil, err
 	}
 	s.reconcileUsers(ctx, tenantID, union(existing.Members(), in.MemberIDs))
@@ -96,12 +96,12 @@ func (s *GroupService) PatchMembers(ctx context.Context, tenantID, id shared.ID,
 		return nil, err
 	}
 	if len(add) > 0 {
-		if err := s.groups.AddMembers(ctx, id, add); err != nil {
+		if err := s.groups.AddMembers(ctx, tenantID, id, add); err != nil {
 			return nil, err
 		}
 	}
 	if len(remove) > 0 {
-		if err := s.groups.RemoveMembers(ctx, id, remove); err != nil {
+		if err := s.groups.RemoveMembers(ctx, tenantID, id, remove); err != nil {
 			return nil, err
 		}
 	}
@@ -116,7 +116,7 @@ func (s *GroupService) ReplaceMembers(ctx context.Context, tenantID, id shared.I
 	if err != nil {
 		return nil, err
 	}
-	if err := s.groups.SetMembers(ctx, id, memberIDs); err != nil {
+	if err := s.groups.SetMembers(ctx, tenantID, id, memberIDs); err != nil {
 		return nil, err
 	}
 	s.reconcileUsers(ctx, tenantID, union(existing.Members(), memberIDs))
