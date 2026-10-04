@@ -194,6 +194,7 @@ func (h *keyRESTHarness) mint(tenantID, userID string, rateLimit int, scopes ...
 	h.t.Helper()
 	res, err := h.keys.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID, UserID: userID, Name: "rest-it-" + uuid.NewString()[:8], Scopes: scopes, RateLimit: rateLimit,
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		h.t.Fatalf("mint key: %v", err)

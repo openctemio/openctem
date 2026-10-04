@@ -10537,6 +10537,18 @@ definitions:
     - code
     - password
     type: object
+  internal_infra_http_handler.MFAEnableRequest:
+    properties:
+      code:
+        maxLength: 16
+        type: string
+      password:
+        maxLength: 128
+        type: string
+    required:
+    - code
+    - password
+    type: object
   internal_infra_http_handler.MFAEnrollmentConfirmRequest:
     properties:
       code:
@@ -35785,15 +35797,16 @@ paths:
     post:
       consumes:
       - application/json
-      description: Confirms the authenticator with a code and turns 2FA on. Signs
-        out every other session. Returns recovery codes, shown once.
+      description: Confirms the authenticator with a code and turns 2FA on. Needs
+        the current password. Signs out every other session. Returns recovery codes,
+        shown once.
       parameters:
-      - description: Authenticator code
+      - description: Current password and authenticator code
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_infra_http_handler.MFACodeRequest'
+          $ref: '#/definitions/internal_infra_http_handler.MFAEnableRequest'
       produces:
       - application/json
       responses:

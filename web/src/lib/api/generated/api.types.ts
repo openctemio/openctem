@@ -31912,7 +31912,7 @@ export interface paths {
     put?: never
     /**
      * Enable 2FA
-     * @description Confirms the authenticator with a code and turns 2FA on. Signs out every other session. Returns recovery codes, shown once.
+     * @description Confirms the authenticator with a code and turns 2FA on. Needs the current password. Signs out every other session. Returns recovery codes, shown once.
      */
     post: {
       parameters: {
@@ -31921,7 +31921,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Current password and authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFAEnableRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -31982,7 +31987,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -38786,6 +38796,10 @@ export interface components {
       code: string
       password: string
     }
+    'internal_infra_http_handler.MFAEnableRequest': {
+      code: string
+      password: string
+    }
     'internal_infra_http_handler.MFAEnrollmentConfirmRequest': {
       code: string
       mfa_token: string
@@ -41193,12 +41207,6 @@ export interface components {
     'internal_infra_http_handler.BulkToolIDsRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.BulkToolIDsRequest']
-      }
-    }
-    /** @description Authenticator code */
-    'internal_infra_http_handler.MFACodeRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
       }
     }
   }

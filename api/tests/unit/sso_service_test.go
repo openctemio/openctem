@@ -2515,3 +2515,16 @@ func TestSSOService_CompleteFederatedLogin_NewUser_NotAdmitted(t *testing.T) {
 		})
 	}
 }
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *ssoMockUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	return nil, nil
+}
+
+func (m *ssoMockUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error { return nil }
+
+func (m *ssoMockUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}
