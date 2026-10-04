@@ -17,7 +17,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
-	permissionsetdom "github.com/openctemio/openctem/api/pkg/domain/permissionset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -31,7 +30,6 @@ const teamsSettingsURL = "/settings/teams"
 // GroupService handles group-related business operations.
 type GroupService struct {
 	repo                groupdom.Repository
-	permissionSetRepo   permissionsetdom.Repository
 	accessControlRepo   accesscontroldom.Repository
 	auditService        *auditapp.AuditService
 	notificationService *integration.NotificationService
@@ -65,13 +63,6 @@ type GroupServiceOption func(*GroupService)
 func WithGroupAuditService(auditService *auditapp.AuditService) GroupServiceOption {
 	return func(s *GroupService) {
 		s.auditService = auditService
-	}
-}
-
-// WithPermissionSetRepository sets the permission set repository.
-func WithPermissionSetRepository(repo permissionsetdom.Repository) GroupServiceOption {
-	return func(s *GroupService) {
-		s.permissionSetRepo = repo
 	}
 }
 
@@ -802,145 +793,6 @@ func (s *GroupService) ListUserGroups(ctx context.Context, tenantID string, user
 	}
 
 	return s.repo.ListGroupsByUser(ctx, tid, userID)
-}
-
-// =============================================================================
-// PERMISSION SET ASSIGNMENT OPERATIONS
-// =============================================================================
-
-// AssignPermissionSetInput represents the input for assigning a permission set to a group.
-type AssignPermissionSetInput struct {
-	GroupID         string `json:"-"`
-	PermissionSetID string `json:"permission_set_id" validate:"required"`
-}
-
-// AssignPermissionSet assigns a permission set to a group.
-func (s *GroupService) AssignPermissionSet(ctx context.Context, input AssignPermissionSetInput, assignedBy shared.ID, actx auditapp.AuditContext) error {
-	groupID, err := shared.IDFromString(input.GroupID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
-	}
-
-	permissionSetID, err := shared.IDFromString(input.PermissionSetID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
-	}
-
-	// Verify group exists and belongs to caller's tenant
-	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
-	if err != nil {
-		return err
-	}
-
-	// Verify permission set exists and is assignable by this tenant: either a
-	// permission set owned by the group's tenant, or a global system template
-	// (tenant_id NULL). This prevents assigning another tenant's custom set.
-	if s.permissionSetRepo != nil {
-		ps, err := s.permissionSetRepo.GetByID(ctx, g.TenantID(), permissionSetID)
-		if err != nil {
-			return err
-		}
-		if !ps.IsSystem() && (ps.TenantID() == nil || ps.TenantID().String() != g.TenantID().String()) {
-			return shared.ErrNotFound
-		}
-	}
-
-	if err := s.repo.AssignPermissionSet(ctx, groupID, permissionSetID, &assignedBy); err != nil {
-		return fmt.Errorf("failed to assign permission set: %w", err)
-	}
-
-	s.logger.Info("permission set assigned", "group_id", input.GroupID, "permission_set_id", input.PermissionSetID)
-
-	// Note: Permission set changes don't affect data scope (user_accessible_assets),
-	// so no materialized view refresh is needed here.
-
-	// Log audit event
-	actx.TenantID = g.TenantID().String()
-	event := auditapp.NewSuccessEvent(audit.ActionPermissionSetAssigned, audit.ResourceTypeGroup, input.GroupID).
-		WithMessage("Permission set assigned to group").
-		WithMetadata("permission_set_id", input.PermissionSetID)
-	s.logAudit(ctx, actx, event)
-
-	return nil
-}
-
-// UnassignPermissionSet removes a permission set from a group.
-func (s *GroupService) UnassignPermissionSet(ctx context.Context, groupID, permissionSetID string, actx auditapp.AuditContext) error {
-	gid, err := shared.IDFromString(groupID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
-	}
-
-	psid, err := shared.IDFromString(permissionSetID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
-	}
-
-	// Get group (tenant-scoped) for audit context
-	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
-	if err != nil {
-		return err
-	}
-
-	if err := s.repo.RemovePermissionSet(ctx, gid, psid); err != nil {
-		return fmt.Errorf("failed to unassign permission set: %w", err)
-	}
-
-	s.logger.Info("permission set unassigned", "group_id", groupID, "permission_set_id", permissionSetID)
-
-	// Note: Permission set changes don't affect data scope (user_accessible_assets),
-	// so no materialized view refresh is needed here.
-
-	// Log audit event
-	actx.TenantID = g.TenantID().String()
-	event := auditapp.NewSuccessEvent(audit.ActionPermissionSetUnassigned, audit.ResourceTypeGroup, groupID).
-		WithMessage("Permission set removed from group").
-		WithMetadata("permission_set_id", permissionSetID)
-	s.logAudit(ctx, actx, event)
-
-	return nil
-}
-
-// ListGroupPermissionSets lists permission sets assigned to a group.
-func (s *GroupService) ListGroupPermissionSets(ctx context.Context, groupID string) ([]shared.ID, error) {
-	id, err := shared.IDFromString(groupID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
-	}
-
-	return s.repo.ListPermissionSetIDs(ctx, id)
-}
-
-// ListGroupPermissionSetsWithDetails lists permission sets assigned to a group with full details.
-// The group is verified to belong to the caller's tenant to prevent cross-tenant reads.
-func (s *GroupService) ListGroupPermissionSetsWithDetails(ctx context.Context, tenantID, groupID string) ([]*permissionsetdom.PermissionSetWithItems, error) {
-	gid, err := shared.IDFromString(groupID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
-	}
-	g, err := s.groupForTenant(ctx, gid, tenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	ids, err := s.ListGroupPermissionSets(ctx, groupID)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]*permissionsetdom.PermissionSetWithItems, 0, len(ids))
-	for _, id := range ids {
-		ps, err := s.permissionSetRepo.GetWithItems(ctx, g.TenantID(), id)
-		if err != nil {
-			// If a permission set is not found or other error, we log but continue
-			// or we could fail. For now, let's skip/continue to avoid breaking the whole list
-			// if one reference is bad.
-			continue
-		}
-		result = append(result, ps)
-	}
-
-	return result, nil
 }
 
 // =============================================================================

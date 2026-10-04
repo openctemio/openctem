@@ -39,7 +39,7 @@ func (r *auditProfileRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) 
 	return nil, shared.ErrNotFound
 }
 
-func (r *auditProfileRepo) Delete(_ context.Context, id shared.ID) error {
+func (r *auditProfileRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	delete(r.byID, id)
 	return nil
 }
@@ -53,7 +53,7 @@ func (r *auditCommandRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (
 	return r.cmd, nil
 }
 
-func (r *auditCommandRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
+func (r *auditCommandRepo) Delete(_ context.Context, _, _ shared.ID) error { return nil }
 
 func auditedRequest(method, target string, body []byte, tenantID, userID, id string) *http.Request {
 	req := httptest.NewRequest(method, target, bytes.NewReader(body))

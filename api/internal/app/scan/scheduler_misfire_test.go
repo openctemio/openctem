@@ -52,7 +52,7 @@ type claimingScanRepo struct {
 	claims int
 }
 
-func (r *claimingScanRepo) ClaimScheduledRun(context.Context, shared.ID, time.Time, *time.Time) (bool, error) {
+func (r *claimingScanRepo) ClaimScheduledRun(context.Context, shared.ID, shared.ID, time.Time, *time.Time) (bool, error) {
 	r.claims++
 	return true, nil
 }
