@@ -27802,6 +27802,11 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
           description: Not Found
           schema:
@@ -27874,6 +27879,11 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
@@ -27994,6 +28004,11 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
