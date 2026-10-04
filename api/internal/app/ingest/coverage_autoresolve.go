@@ -380,7 +380,7 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		}
 		out.Resolved = resolved
 		metrics.FindingsCoverageAutoResolve.WithLabelValues("repository", "resolved").Add(float64(len(resolved)))
-		app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolved)))
+		app.FindingsAutoResolved.WithLabelValues().Add(float64(len(resolved)))
 		s.logger.Info("repository auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
 		if s.activityService != nil && len(resolved) > 0 {
 			if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, d.query.ToolName, commandID.String()); err != nil {
