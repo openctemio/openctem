@@ -939,6 +939,9 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
 | `GET /components/{id}/assets` (reverse lookup), `GET /components` (incl. `?asset_id=`, export), `POST/PUT/DELETE /components[/{id}]`, `POST /components/import?asset_id=`, `GET /vulnerabilities/...` dependency detail | **bypass**: names, criticality and risk of every asset using a package; writes on any asset of the tenant | the reverse lookup and list only show in-scope assets (`dataScopeCond` in SQL); an out-of-scope asset id or dependency id answers 404 (`ComponentService`, `SBOMImportService`; L-10) |
 | `/repositories/{id}/branches/**` (list, get, default, compare, create, update, delete) | **bypass** (tenant only) | the repository must be in scope (`AssetService.GetAssetInCallerScope`): 404 otherwise (L-10) |
+| `GET /threat-models` (+ `/{id}`, `/{id}/coverage`), `POST /threat-models/generate` | **bypass** (crown-jewel model names, threat paths through any asset) | crown-jewel models of out-of-scope assets are hidden (404 by id, also on generate, which names the asset); a threat is listed and counted in coverage only when its entry point, target, hop and evidence finding are all in scope. Model rollup counters stay graph-wide (L-10) |
+| `GET/POST/DELETE /business-services/{id}/assets`, `POST/DELETE /business-units/{id}/assets` | **bypass** (names; links change an asset's effective criticality) | the list shows in-scope (and not deleted) assets; linking or unlinking an out-of-scope asset answers 404 (L-10) |
+| `GET /ctem-cycles/{id}/scope` | bypass (asset names of the snapshot) | in-scope assets of the snapshot only (L-10) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 
@@ -958,7 +961,7 @@ query; none exposes a row, name, title or id of an out-of-scope object.
 | `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
 
 **Not covered by data scope** (separate access models): pentest findings and
-attachments (campaign membership), threat models and remediation campaigns,
+attachments (campaign membership), remediation campaigns,
 scans, audit logs, report schedules, and access-control administration
 (`/groups/{id}/assets/{assetId}`, which defines scope and needs `groups:write`).
 The reachability oracle used by priority classification and threat models reads
@@ -1176,7 +1179,7 @@ Tenable.sc's RBAC.
    inherit them. The `/api/v1/permission-sets` and
    `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
    writes their tables, and `team:permission_sets:*` left the catalog
-   (migration 000465 archives those catalog rows and role grants in
+   (migration 000492 archives those catalog rows and role grants in
    `access_control_removed_archive`). The tables themselves are dropped by a
    later contract migration, after a release (expand-contract).
    `GET /api/v1/me/permissions` now returns the caller's role-derived
@@ -1329,13 +1332,13 @@ Tenable.sc's RBAC.
   intentional (staged rollout), not a dead control. Tenant isolation is enforced by
   convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
 
-## Granular permissions enforced (D-4, migrations 000467/000468)
+## Granular permissions enforced (D-4, migrations 000540/000541)
 
 Thirty permissions were defined, seeded and shown in the role editor, yet no
 route checked them. Each is now either enforced or removed.
 
 **Enforced on top of the route's existing gate** (`RequireAll(old, new)`, so no
-role gains anything). Migration 000467 grants the new permission to every role,
+role gains anything). Migration 000540 grants the new permission to every role,
 system or custom, that held the old gate, recording each grant in
 `granular_permission_backfill` (its down removes exactly those), so every
 role keeps its abilities. An administrator can now remove the new permission
@@ -1368,11 +1371,11 @@ from a custom role to deny that one action.
 from the credential's tenant, so they use `RequireTenantPermission`: the
 caller's permissions are resolved **in the path tenant** (owner passes); a
 permission held in another tenant never counts. Every member could read the
-organization, its members and its settings, so 000467 also grants
+organization, its members and its settings, so 000540 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
 
-**Removed** (000468; catalog rows and grants archived in
+**Removed** (000541; catalog rows and grants archived in
 `access_control_removed_archive`, restored by its down):
 
 | Permission | Why it is meaningless |

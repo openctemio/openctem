@@ -141,6 +141,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.AttackSurface,
   },
+  // The attribution review queue (RFC-036). Reading needs assets:read;
+  // deciding needs assets:write, enforced by the API and the page.
+  '/attack-surface/review': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
   '/business-units': {
     permission: Permission.AssetsRead,
     module: Module.BusinessUnits,

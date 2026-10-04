@@ -87,7 +87,7 @@ func (m *mockGroupRepo) Update(_ context.Context, g *group.Group) error {
 	return nil
 }
 
-func (m *mockGroupRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockGroupRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
@@ -408,7 +408,7 @@ func TestGetGroup_Success(t *testing.T) {
 
 	g := createTestGroup(t, svc, tenantID, "Test Group", "test-group")
 
-	result, err := svc.GetGroup(context.Background(), g.ID().String())
+	result, err := svc.GetGroupSecure(context.Background(), tenantID.String(), g.ID().String())
 	if err != nil {
 		t.Fatalf("GetGroup failed: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestGetGroup_NotFound(t *testing.T) {
 	repo := newMockGroupRepo()
 	svc := newTestGroupService(repo)
 
-	_, err := svc.GetGroup(context.Background(), shared.NewID().String())
+	_, err := svc.GetGroupSecure(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("Expected error for non-existent group")
 	}
@@ -435,7 +435,7 @@ func TestGetGroup_InvalidID(t *testing.T) {
 	repo := newMockGroupRepo()
 	svc := newTestGroupService(repo)
 
-	_, err := svc.GetGroup(context.Background(), "not-a-uuid")
+	_, err := svc.GetGroupSecure(context.Background(), shared.NewID().String(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("Expected error for invalid ID")
 	}
@@ -540,7 +540,7 @@ func TestDeleteGroup_Success(t *testing.T) {
 	}
 
 	// Verify group was deleted
-	_, err = svc.GetGroup(context.Background(), g.ID().String())
+	_, err = svc.GetGroupSecure(context.Background(), tenantID.String(), g.ID().String())
 	if err == nil {
 		t.Fatal("Expected group to be deleted")
 	}
