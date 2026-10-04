@@ -21,7 +21,14 @@ func TestRegistry_CoversEveryAssetTypeExactlyOnce(t *testing.T) {
 			t.Errorf("type %q is declared %d times", typ, n)
 		}
 	}
+	inputs := map[AssetType]bool{}
+	for _, n := range registryTypeInputs {
+		inputs[n] = true
+	}
 	for _, typ := range AllAssetTypes() {
+		if inputs[typ] {
+			continue // a legacy type input, no type of its own
+		}
 		if seen[typ] == 0 {
 			t.Errorf("AllAssetTypes has %q but the registry does not", typ)
 		}
@@ -74,8 +81,8 @@ func TestRegistry_ClassAndLensShape(t *testing.T) {
 			t.Errorf("%s: lens %q disagrees with its class %q (lens %q)", d.Type, d.Lens, d.Class, LensForClass(d.Class))
 		}
 	}
-	if classified != 37 {
-		t.Errorf("classified types = %d, want 37", classified)
+	if classified != 36 {
+		t.Errorf("classified types = %d, want 36", classified)
 	}
 	for _, c := range reg.Classes {
 		if len(c.Types) == 0 {
@@ -259,7 +266,7 @@ func TestTypeAliases_UnchangedByTheRegistry(t *testing.T) {
 		"compute":              {AssetTypeHost, "compute"},
 		"serverless":           {AssetTypeHost, "serverless"},
 		"website":              {AssetTypeApplication, "website"},
-		"web_application":      {AssetTypeApplication, "web_application"},
+		"web_application":      {AssetTypeApplication, "website"}, // O3
 		"api":                  {AssetTypeApplication, "api"},
 		"mobile_app":           {AssetTypeApplication, "mobile_app"},
 		"iam_user":             {AssetTypeIdentity, "iam_user"},
