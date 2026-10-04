@@ -58,7 +58,7 @@ func TestCalculateNextRun_LegacyEveryMinuteIsSpaced(t *testing.T) {
 	// Not due (a save): the next minute, as the expression says.
 	future := time.Now().Add(time.Hour)
 	sc.NextRunAt = &future
-	if n := sc.CalculateNextRunAt(); n == nil || n.Sub(time.Now()) > 2*time.Minute {
+	if n := sc.CalculateNextRunAt(); n == nil || time.Until(*n) > 2*time.Minute {
 		t.Fatalf("next on save = %v, want within the next minute or two", n)
 	}
 }
