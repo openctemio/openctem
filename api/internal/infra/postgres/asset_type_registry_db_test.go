@@ -117,7 +117,7 @@ func TestAssetTypeRegistry_SchemaMatchesRegistry(t *testing.T) {
 func storedPairs() []asset.TypeRef {
 	var pairs []asset.TypeRef
 	for _, d := range asset.RegistryDocument().Types {
-		// Only core types are stored (chk_assets_core_type, 000490): an
+		// Only core types are stored (chk_assets_core_type, 000684): an
 		// alias appears as the pair it stands for.
 		if d.AliasOf != nil {
 			pairs = append(pairs, *d.AliasOf)
@@ -449,7 +449,7 @@ func TestAssetTypeNormalise_Batch(t *testing.T) {
 	moved := 0
 	for {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 3, 490)`, cursor).Scan(&cursor, &n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 3, 684)`, cursor).Scan(&cursor, &n); err != nil {
 			t.Fatalf("normalise: %v", err)
 		}
 		if !cursor.Valid {
@@ -490,7 +490,7 @@ func TestAssetTypeNormalise_Batch(t *testing.T) {
 	total := 0
 	for {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 490)`, again).Scan(&again, &n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 684)`, again).Scan(&again, &n); err != nil {
 			t.Fatal(err)
 		}
 		if !again.Valid {
