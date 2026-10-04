@@ -199,8 +199,10 @@ type RunResponse struct {
 	StepRuns          []StepRunResponse              `json:"step_runs,omitempty"`
 	ErrorMessage      string                         `json:"error_message,omitempty"`
 	CreatedAt         string                         `json:"created_at"`
-	FilteringResult   *FilteringResultResponse       `json:"filtering_result,omitempty"`
-	Dispatch          *RunDispatchResponse           `json:"dispatch,omitempty"`
+	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
+	ScheduledFor    *string                  `json:"scheduled_for,omitempty"`
+	FilteringResult *FilteringResultResponse `json:"filtering_result,omitempty"`
+	Dispatch        *RunDispatchResponse     `json:"dispatch,omitempty"`
 }
 
 // RunDispatchResponse is what a scan run dispatched: targets resolved and
@@ -1075,6 +1077,11 @@ func toRunResponse(r *pipeline.Run) *RunResponse {
 	if r.ScanProfileID != nil {
 		spid := r.ScanProfileID.String()
 		resp.ScanProfileID = &spid
+	}
+
+	if r.ScheduledFor != nil {
+		sf := r.ScheduledFor.Format("2006-01-02T15:04:05Z07:00")
+		resp.ScheduledFor = &sf
 	}
 
 	if r.QualityGateResult != nil {

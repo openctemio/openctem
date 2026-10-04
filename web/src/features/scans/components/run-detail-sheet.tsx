@@ -118,6 +118,9 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             </DetailSection>
             <DetailSection title="Timing">
               <DetailFieldGrid>
+                {run.scheduled_for && (
+                  <DetailField label="Scheduled for">{formatTime(run.scheduled_for)}</DetailField>
+                )}
                 <DetailField label="Started">{formatTime(run.started_at)}</DetailField>
                 <DetailField label="Completed">{formatTime(run.completed_at)}</DetailField>
                 {runId && (
