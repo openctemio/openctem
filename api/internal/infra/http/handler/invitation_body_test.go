@@ -54,16 +54,16 @@ func (r *invBodyRepo) GetByID(_ context.Context, id shared.ID) (*tenantdom.Tenan
 	return nil, shared.ErrNotFound
 }
 
-func (r *invBodyRepo) GetInvitationByID(_ context.Context, id shared.ID) (*tenantdom.Invitation, error) {
+func (r *invBodyRepo) GetInvitationByID(_ context.Context, tenantID, id shared.ID) (*tenantdom.Invitation, error) {
 	for _, inv := range r.byHash {
-		if inv.ID() == id {
+		if inv.ID() == id && inv.TenantID() == tenantID {
 			return inv, nil
 		}
 	}
 	return nil, shared.ErrNotFound
 }
 
-func (r *invBodyRepo) DeleteInvitation(_ context.Context, id shared.ID) error {
+func (r *invBodyRepo) DeleteInvitation(_ context.Context, _ shared.ID, id shared.ID) error {
 	r.deleted = append(r.deleted, id)
 	return nil
 }
