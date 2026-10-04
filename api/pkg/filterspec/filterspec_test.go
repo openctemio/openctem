@@ -22,12 +22,13 @@ func testOpts() Options { return Options{Now: func() time.Time { return fixedNow
 func testRegistry(t testing.TB) *Registry {
 	t.Helper()
 	reg, err := NewRegistry(Registry{
-		Name:          "findings",
-		TenantSQL:     "f.tenant_id",
-		ScopeAssetSQL: "f.asset_id",
-		IDSQL:         "f.id",
-		DefaultSort:   []SortKey{{Field: "severity", Desc: true}},
-		Search:        &Search{Template: `(f.title ILIKE {arg} ESCAPE '\' OR f.rule_id ILIKE {arg} ESCAPE '\')`, Pattern: true},
+		Name:             "findings",
+		TenantSQL:        "f.tenant_id",
+		ScopeAssetSQL:    "f.asset_id",
+		IDSQL:            "f.id",
+		DefaultSort:      []SortKey{{Field: "severity", Desc: true}},
+		MemberVisibility: "(f.source <> 'pentest' OR f.campaign_id IN (SELECT campaign_id FROM members WHERE user_id = {user} AND tenant_id = {tenant}))",
+		Search:           &Search{Template: `(f.title ILIKE {arg} ESCAPE '\' OR f.rule_id ILIKE {arg} ESCAPE '\')`, Pattern: true},
 		Aliases: map[string]Alias{
 			"severities":       {To: "severity"},
 			"exclude_statuses": {To: "status_not"},
@@ -57,7 +58,7 @@ func testRegistry(t testing.TB) *Registry {
 				OpNotIn: "NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = f.asset_id AND a.tenant_id = f.tenant_id AND a.tags && {arg})",
 			}},
 		Field{Name: "related_to", Type: TypeEnum, Enum: []string{"me"}, Ops: []Op{OpEq}, SQL: "f.assigned_to",
-			Templates: map[Op]string{OpEq: "f.assigned_to::text = {arg}"}},
+			Templates: map[Op]string{OpEq: "f.assigned_to = {user}"}},
 		Field{Name: "pentest_note", Type: TypeString, Ops: []Op{OpIn}, SQL: "f.pentest_note", Permission: "pentest:read", Sortable: true},
 	)
 	if err != nil {
@@ -67,14 +68,15 @@ func testRegistry(t testing.TB) *Registry {
 }
 
 var (
-	tenantA = shared.MustIDFromString("11111111-1111-1111-1111-111111111111")
-	tenantB = shared.MustIDFromString("22222222-2222-2222-2222-222222222222")
-	userA   = shared.MustIDFromString("33333333-3333-3333-3333-333333333333")
+	tenantA   = shared.MustIDFromString("11111111-1111-1111-1111-111111111111")
+	tenantB   = shared.MustIDFromString("22222222-2222-2222-2222-222222222222")
+	userA     = shared.MustIDFromString("33333333-3333-3333-3333-333333333333")
+	adminUser = shared.MustIDFromString("55555555-5555-5555-5555-555555555555")
 )
 
 func adminActor(t testing.TB) Actor {
 	t.Helper()
-	a, err := UserActor(tenantA, nil, func(string) bool { return true })
+	a, err := UserActor(UserActorInput{TenantID: tenantA, UserID: adminUser, IsAdmin: true, Has: func(string) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +85,7 @@ func adminActor(t testing.TB) Actor {
 
 func memberActor(t testing.TB) Actor {
 	t.Helper()
-	a, err := UserActor(tenantA, &shared.DataScope{TenantID: tenantA, UserID: userA}, nil)
+	a, err := UserActor(UserActorInput{TenantID: tenantA, UserID: userA, Scope: &shared.DataScope{TenantID: tenantA, UserID: userA}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,8 +450,67 @@ func TestCompileAlwaysTenantFirst(t *testing.T) {
 	if _, err := Compile(s, reg, SystemActor(shared.ID{}, "x")); err == nil {
 		t.Fatal("an actor without a tenant must be rejected")
 	}
-	if _, err := UserActor(tenantA, &shared.DataScope{TenantID: tenantB, UserID: userA}, nil); err == nil {
+	if _, err := UserActor(UserActorInput{TenantID: tenantA, UserID: userA, Scope: &shared.DataScope{TenantID: tenantB, UserID: userA}}); err == nil {
 		t.Fatal("a scope from another tenant must be rejected")
+	}
+	if _, err := UserActor(UserActorInput{TenantID: tenantA, UserID: adminUser, Scope: &shared.DataScope{TenantID: tenantA, UserID: userA}}); err == nil {
+		t.Fatal("a scope of another user must be rejected")
+	}
+}
+
+func TestMemberVisibilityAndUserTokens(t *testing.T) {
+	reg := testRegistry(t)
+	s := mustParse(t, "related_to=me", testOpts())
+
+	w, err := Compile(s, reg, memberActor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Tenant $1, scope $2/$3, user bound once ($4) and reused by related_to.
+	if !strings.Contains(w.SQL, "user_id = $4::uuid AND tenant_id = $1") || !strings.Contains(w.SQL, "(f.assigned_to = $4::uuid)") {
+		t.Fatalf("member visibility / user token: %s", w.SQL)
+	}
+	if w.Args[3] != userA.String() {
+		t.Fatalf("user arg: %v", w.Args)
+	}
+	assertPlaceholders(t, w, 1)
+
+	// An administrator gets no member rule; the user token still binds.
+	w, _ = Compile(s, reg, adminActor(t))
+	if strings.Contains(w.SQL, "pentest") || !strings.Contains(w.SQL, "(f.assigned_to = $2::uuid)") {
+		t.Fatalf("admin: %s", w.SQL)
+	}
+
+	// A user-less key is a member: the rule applies with the zero UUID, so
+	// user-relative visibility fails closed; related_to=me is unknown.
+	keyActor, _ := UserActor(UserActorInput{TenantID: tenantA})
+	w, err = Compile(mustParse(t, "", testOpts()), reg, keyActor)
+	if err != nil || !strings.Contains(w.SQL, "pentest") || w.Args[1] != (shared.ID{}).String() {
+		t.Fatalf("user-less key: %v %s %v", err, w.SQL, w.Args)
+	}
+	if _, err := Compile(s, reg, keyActor); err == nil {
+		t.Fatal("related_to=me without a user must be rejected")
+	}
+
+	// SystemActor skips the member rule and cannot use user tokens.
+	w, _ = Compile(mustParse(t, "", testOpts()), reg, SystemActor(tenantA, "t"))
+	if strings.Contains(w.SQL, "pentest") {
+		t.Fatalf("system actor got the member rule: %s", w.SQL)
+	}
+	if _, err := Compile(s, reg, SystemActor(tenantA, "t")); err == nil {
+		t.Fatal("related_to=me as SystemActor must be rejected")
+	}
+}
+
+func TestEnumIsCaseInsensitiveAndCanonical(t *testing.T) {
+	reg := MustRegistry(Registry{Name: "x", TenantSQL: "t.tenant_id", ScopeAssetSQL: "t.asset_id", IDSQL: "t.id"},
+		Field{Name: "priority_class", Type: TypeEnum, Enum: []string{"P0", "P1"}, Ops: []Op{OpIn}, SQL: "t.p"})
+	s, err := ParseValues(url.Values{"priority_class": {"p0,P1"}}, reg, testOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := s.Leaves()[0].Values; v[0] != "P0" || v[1] != "P1" {
+		t.Fatalf("enum values must use the registry spelling: %v", v)
 	}
 }
 
@@ -477,7 +538,7 @@ func TestFieldPermissionIsUnknownField(t *testing.T) {
 	if _, err := Compile(s, reg, memberActor(t)); err == nil {
 		t.Fatal("sorting by a forbidden field is an oracle and must fail")
 	}
-	allowed, _ := UserActor(tenantA, nil, func(p string) bool { return p == "pentest:read" })
+	allowed, _ := UserActor(UserActorInput{TenantID: tenantA, UserID: userA, Has: func(p string) bool { return p == "pentest:read" }})
 	if _, err := Compile(mustParse(t, "pentest_note=x&sort=pentest_note", testOpts()), reg, allowed); err != nil {
 		t.Fatalf("with the permission: %v", err)
 	}
@@ -501,7 +562,7 @@ func TestCompileOperators(t *testing.T) {
 		"last_seen_at_gte=2026-01-01":         "(f.last_seen_at >= $2::timestamptz)",
 		"is_in_kev=false":                     "(f.is_in_kev = $2::boolean)",
 		"asset_tag_not=prod":                  "(NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = f.asset_id AND a.tenant_id = f.tenant_id AND a.tags && $2::text[]))",
-		"related_to=me":                       "(f.assigned_to::text = $2)",
+		"related_to=me":                       "(f.assigned_to = $2::uuid)",
 		"epss_score_gte=0.1&epss_score_lte=1": "(f.epss_score <= $3::float8)",
 	}
 	for raw, want := range cases {
@@ -539,11 +600,11 @@ func TestCompileNullableNotIn(t *testing.T) {
 func TestOrderBy(t *testing.T) {
 	reg := testRegistry(t)
 	w, _ := Compile(mustParse(t, "", testOpts()), reg, adminActor(t))
-	if w.OrderBy != "f.severity_rank DESC NULLS LAST, f.id" {
+	if w.OrderBy != "f.severity_rank DESC, f.id" {
 		t.Fatalf("default sort: %q", w.OrderBy)
 	}
 	w, _ = Compile(mustParse(t, "sort=last_seen_at,-epss_score", testOpts()), reg, adminActor(t))
-	if w.OrderBy != "f.last_seen_at ASC NULLS LAST, f.epss_score DESC NULLS LAST, f.id" {
+	if w.OrderBy != "f.last_seen_at ASC, f.epss_score DESC, f.id" {
 		t.Fatalf("sort: %q", w.OrderBy)
 	}
 }

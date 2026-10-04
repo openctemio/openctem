@@ -137,7 +137,7 @@ func TestEveryFieldOperatorBindsValues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s %s: %v", f.Name, op, err)
 			}
-			w, err := Compile(spec, reg, SystemActor(tenantA, "test"))
+			w, err := Compile(spec, reg, adminActor(t))
 			if err != nil {
 				t.Fatalf("%s %s: %v", f.Name, op, err)
 			}
