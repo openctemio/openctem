@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000359: drop assets.owner_id (contract step of 000340)
+-- Migration 000376: drop assets.owner_id (contract step of 000340)
 -- =============================================================================
 -- expand-contract-ok: contract step of 000340 (#944); no code reads or writes assets.owner_id since then. Merge only after a release that contains #944.
 -- 000340 copied every assets.owner_id into asset_owners (primary, source
