@@ -317,6 +317,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			controller.ReportSchedulerConfig{Interval: time.Minute},
 			log,
 		)
+		// Recipients are re-checked at send time: members or allowed domains (D12).
+		reportScheduler.SetRecipientPolicy(repos.Tenant)
 		// Each report renders under its creator's data scope (D6).
 		reportScheduler.SetScopeResolver(svc.DataScope)
 		w.ControllerManager.Register(reportScheduler)
