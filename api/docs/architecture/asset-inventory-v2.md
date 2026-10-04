@@ -73,6 +73,11 @@ code keys on the class or on (type, sub_type), never on an alias.
   and the web scope, relationship and create-finding matchers. A row still
   stored under an alias name reads as its alias's pair until the data
   normalisation (T3).
+- Stored data is normalised (T3, migration 000402): every row holds a core
+  type and a declared sub-type, enforced by `chk_assets_core_type`. Each
+  move is ledgered and reversible, recorded as a `reclassified` history
+  entry, and look-alike applications are queued for dedup review, never
+  merged. Deploy it with an explicit migrate step (`air` does not migrate).
 - Status: rules accepted 2026-10-03; implementation in the T1–T3 PRs of
   §6.3.8. This page moves the bullets to "shipped" as they land.
 

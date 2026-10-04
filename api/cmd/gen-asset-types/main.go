@@ -1307,9 +1307,11 @@ func sqlArray(items []string) string {
 }
 
 // renderSQL is the migration block: the class and lens CHECKs, one upsert
-// row per registry type, `other` for every legacy code, and the backfill of
+// row per registry type, `other` for every legacy code, the backfill of
 // assets.asset_class / asset_lens (asset_registry_backfill, created by the
-// migration that introduced the columns).
+// migration that introduced the columns) and the CHECK that assets store only
+// core types (added by the data normalisation, migration 000402: a block may
+// only be emitted after every stored row is a core type).
 func renderSQL(m *model) string {
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format, args...) }
@@ -1376,7 +1378,18 @@ func renderSQL(m *model) string {
 	w("DO $$\nDECLARE\n    cursor_id uuid := NULL;\nBEGIN\n    LOOP\n")
 	w("        SELECT b.last_id INTO cursor_id FROM asset_registry_backfill(cursor_id, 5000) b;\n")
 	w("        EXIT WHEN cursor_id IS NULL;\n    END LOOP;\nEND $$;\n")
-	w("ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;\n")
+	w("ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;\n\n")
+	stored := make([]string, 0, len(m.Types))
+	for _, t := range m.Types {
+		if t.AliasOf == nil {
+			stored = append(stored, t.Type)
+		}
+	}
+	w("-- Only core types are stored (RFC-042 §6.3.8). VALIDATE takes a SHARE\n")
+	w("-- UPDATE EXCLUSIVE lock: writers keep running.\n")
+	w("ALTER TABLE assets DROP CONSTRAINT IF EXISTS chk_assets_core_type;\n")
+	w("ALTER TABLE assets ADD CONSTRAINT chk_assets_core_type CHECK (asset_type IN (%s)) NOT VALID;\n", sqlList(stored))
+	w("ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;\n")
 	w("%s\n", sqlEndMarker)
 	return b.String()
 }
