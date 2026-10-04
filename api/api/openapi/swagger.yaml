@@ -11326,6 +11326,21 @@ definitions:
         items:
           $ref: '#/definitions/internal_infra_http_handler.StepRunResponse'
         type: array
+      task_summary:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.RunTaskSummaryResponse'
+        description: |-
+          TaskSummary counts the run's tasks (the commands it dispatched) by
+          status. Present on list rows and on the run, once it has tasks.
+      tasks:
+        description: Tasks lists the run's tasks (GET /pipeline-runs/{id} only).
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskResponse'
+        type: array
+      tasks_truncated:
+        description: TasksTruncated is true when the run has more tasks than Tasks
+          lists.
+        type: boolean
       tenant_id:
         type: string
       total_findings:
@@ -11339,6 +11354,59 @@ definitions:
       triggered_by_name:
         description: display name, when triggered_by is a user id
         type: string
+    type: object
+  internal_infra_http_handler.RunTaskResponse:
+    properties:
+      attempts:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error_message:
+        type: string
+      id:
+        type: string
+      platform:
+        description: |-
+          Platform is true when a shared platform sensor runs the task; it is
+          never named.
+        type: boolean
+      sensor_id:
+        type: string
+      sensor_name:
+        type: string
+      started_at:
+        type: string
+      status:
+        description: Status is queued, running, completed, failed or canceled.
+        type: string
+      step_key:
+        type: string
+      step_run_id:
+        type: string
+      targets:
+        type: integer
+      tool:
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskSummaryResponse:
+    properties:
+      canceled:
+        type: integer
+      completed:
+        type: integer
+      failed:
+        type: integer
+      queued:
+        type: integer
+      running:
+        type: integer
+      sensors:
+        description: Sensors is how many distinct sensors claimed one of the tasks.
+        type: integer
+      total:
+        type: integer
     type: object
   internal_infra_http_handler.RunUncoveredTarget:
     properties:

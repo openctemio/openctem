@@ -292,13 +292,10 @@ export default function ScanDetailPage() {
         const run = row.original
         if (!isRunInProgress(run)) return null
         return (
-          // PipelinesWrite, not ScansWrite. Cancel posts to
-          // POST /pipeline-runs/{id}/cancel, and that route
-          // requires pipelines:write. Gating on scans:write
-          // showed an enabled button to users the API would
-          // reject with a 403 — the button changed endpoint
-          // in #335 and the permission gate did not follow.
-          <Can permission={Permission.PipelinesWrite}>
+          // Cancel posts to POST /pipeline-runs/{id}/cancel, which
+          // needs pipelines:write AND scans:write (D12). Gating on
+          // either one alone showed a button the API rejects.
+          <Can permission={[Permission.PipelinesWrite, Permission.ScansWrite]} requireAll>
             <Button
               size="sm"
               variant="ghost"

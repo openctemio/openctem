@@ -24,6 +24,9 @@ import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { PipelineRun } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
+import { formatScanDuration } from '@/features/scans/lib/format'
+import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
+import { RunTasksTable } from './run-tasks-table'
 
 interface RunDetailSheetProps {
   runId: string | null
@@ -35,11 +38,33 @@ function formatTime(ts?: string) {
 }
 
 function durationOf(run: PipelineRun): string | null {
-  if (!run.started_at || !run.completed_at) return null
-  const s = Math.max(0, (Date.parse(run.completed_at) - Date.parse(run.started_at)) / 1000)
-  if (!Number.isFinite(s)) return null
-  const m = Math.floor(s / 60)
-  return m > 0 ? `${m}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`
+  const ms = elapsedMs(run)
+  if (ms === undefined) return null
+  const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
+  return run.completed_at ? label : `${label} so far`
+}
+
+/** The callout over a run's message: what its status means, in its tone. */
+export function runOutcomeCallout(status: string): {
+  tone: 'warning' | 'destructive' | 'info'
+  title: string
+} {
+  switch (status) {
+    case 'partial':
+      return {
+        tone: 'warning',
+        title: 'Some work did not finish; the results that came back are kept',
+      }
+    case 'timeout':
+      return { tone: 'destructive', title: 'Run timed out' }
+    case 'canceled':
+    case 'cancelled':
+      return { tone: 'info', title: 'Run canceled' }
+    case 'failed':
+      return { tone: 'destructive', title: 'Run failed' }
+    default:
+      return { tone: 'info', title: 'Run message' }
+  }
 }
 
 /**
@@ -58,6 +83,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
     { revalidateOnFocus: false }
   )
   const duration = run ? durationOf(run) : null
+  const progress = run ? runTaskProgress(run.task_summary) : null
 
   return (
     <DetailSheet
@@ -96,17 +122,35 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
       ) : (
         <div className="space-y-5">
           {run.error_message && (
-            <DetailCallout tone="destructive" icon={CircleAlert} title="Run failed">
+            <DetailCallout
+              tone={runOutcomeCallout(run.status).tone}
+              icon={CircleAlert}
+              title={runOutcomeCallout(run.status).title}
+            >
               {run.error_message}
             </DetailCallout>
           )}
 
           <DetailStatGrid aria-label="Key numbers">
             <DetailStat label="Findings" value={run.total_findings} />
+            {progress && <DetailStat label="Tasks" value={progress.label} />}
             {duration && <DetailStat label="Duration" value={duration} />}
           </DetailStatGrid>
 
           <DetailSections>
+            <DetailSection title="Tasks" count={run.task_summary?.total}>
+              {run.tasks && run.tasks.length > 0 ? (
+                <RunTasksTable
+                  tasks={run.tasks}
+                  truncated={!!run.tasks_truncated}
+                  total={run.task_summary?.total ?? run.tasks.length}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  This run has not dispatched any task.
+                </p>
+              )}
+            </DetailSection>
             <DetailSection title="Dispatch">
               {run.dispatch ? (
                 <RunDispatchPanel dispatch={run.dispatch} />
