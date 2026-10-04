@@ -416,7 +416,7 @@ func (r *AccessControlRepository) ListAssetsByGroup(ctx context.Context, groupID
 }
 
 // ListAssetOwnersByGroupWithDetails lists asset owners for a group with asset name/type/status, with pagination.
-func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, limit, offset int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
+func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, scope *shared.DataScope, limit, offset int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
 	// Apply pagination defaults and caps.
 	if limit <= 0 {
 		limit = 20
@@ -424,6 +424,11 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 	if limit > 100 {
 		limit = 100
 	}
+
+	// A restricted caller (groups:read is a member default) sees only the
+	// group's assets that are in their own data scope.
+	scopeCond, args := dataScopeCond("ao.asset_id", scope, []any{groupID.String()})
+	limitAt := len(args) + 1
 
 	// Count total asset owners for this group.
 	// Only assets of the group's own tenant are listed or counted: a row
@@ -434,9 +439,9 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 		FROM asset_owners ao
 		JOIN groups g ON g.id = ao.group_id
 		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
-		WHERE ao.group_id = $1`
+		WHERE ao.group_id = $1 AND ` + scopeCond
 	var totalCount int64
-	if err := r.db.QueryRowContext(ctx, countQuery, groupID.String()).Scan(&totalCount); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&totalCount); err != nil {
 		return nil, 0, fmt.Errorf("failed to count asset owners with details: %w", err)
 	}
 
@@ -446,12 +451,11 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 		FROM asset_owners ao
 		JOIN groups g ON g.id = ao.group_id
 		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
-		WHERE ao.group_id = $1
+		WHERE ao.group_id = $1 AND ` + scopeCond + `
 		ORDER BY ao.assigned_at DESC
-		LIMIT $2 OFFSET $3
-	`
+		` + fmt.Sprintf("LIMIT $%d OFFSET $%d", limitAt, limitAt+1)
 
-	rows, err := r.db.QueryContext(ctx, query, groupID.String(), limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list asset owners with details: %w", err)
 	}

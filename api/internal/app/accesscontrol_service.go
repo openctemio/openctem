@@ -59,6 +59,7 @@ var (
 	NewRuleService                     = accesscontrol.NewRuleService
 	WithAccessControlRepository        = accesscontrol.WithAccessControlRepository
 	WithGroupAuditService              = accesscontrol.WithGroupAuditService
+	WithGroupDataScope                 = accesscontrol.WithGroupDataScope
 	WithRoleAuditService               = accesscontrol.WithRoleAuditService
 	WithRoleMembershipReader           = accesscontrol.WithRoleMembershipReader
 	WithRolePermissionCacheService     = accesscontrol.WithRolePermissionCacheService

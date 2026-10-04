@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 
 	accesscontroldom "github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
@@ -31,6 +32,7 @@ type GroupService struct {
 	accessControlRepo   accesscontroldom.Repository
 	auditService        *auditapp.AuditService
 	notificationService *integration.NotificationService
+	dataScope           *datascope.Enforcer
 	logger              *logger.Logger
 }
 
@@ -65,6 +67,12 @@ func WithAccessControlRepository(repo accesscontroldom.Repository) GroupServiceO
 	return func(s *GroupService) {
 		s.accessControlRepo = repo
 	}
+}
+
+// WithGroupDataScope wires the Layer 2 data-scope enforcer used to limit a
+// group's asset list to the caller's own scope.
+func WithGroupDataScope(e *datascope.Enforcer) GroupServiceOption {
+	return func(s *GroupService) { s.dataScope = e }
 }
 
 // SetNotificationService sets the notification service for GroupService.
@@ -904,11 +912,19 @@ func (s *GroupService) ListGroupAssets(ctx context.Context, tenantID, groupID st
 		return nil, 0, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	if _, err := s.groupForTenant(ctx, gid, tenantID); err != nil {
+	g, err := s.groupForTenant(ctx, gid, tenantID)
+	if err != nil {
 		return nil, 0, err
 	}
 
-	return s.accessControlRepo.ListAssetOwnersByGroupWithDetails(ctx, gid, limit, offset)
+	// Members hold groups:read, so the list is limited to the assets the
+	// caller may see: a team's asset list is not a way around their own
+	// data scope (out-of-scope rows are simply not listed or counted).
+	scope, err := s.dataScope.Resolve(ctx, g.TenantID())
+	if err != nil {
+		return nil, 0, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.accessControlRepo.ListAssetOwnersByGroupWithDetails(ctx, gid, scope, limit, offset)
 }
 
 // ListAssetOwners lists all groups that own an asset.
