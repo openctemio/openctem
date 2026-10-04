@@ -126,7 +126,7 @@ Exclusions always win, as today. An asset is actively scanned only when it is
 attributed `confirmed` and either inside a scope target or derived from a seed.
 Candidates and dependencies get passive (T0) checks only.
 
-**Built (P2 slice 1, migration 000572).** `easm_seeds` holds one row per
+**Built (P2 slice 1, migration 000700).** `easm_seeds` holds one row per
 (tenant, kind, value) with a label, `discovery_enabled`, and who attested the
 organisation's authority over it and when. The schema lists every RFC kind;
 the API accepts only kinds something consumes, today **`root_domain`**: the
