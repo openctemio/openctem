@@ -232,6 +232,11 @@ func buildFinding(item *nessusparser.Item, assetID, assetValue string) ctis.Find
 		f.Vulnerability = vuln
 	}
 
+	// Stored by ingest as the finding's patch publication date (research 17 R2).
+	if d := strings.TrimSpace(item.PatchPubDate); d != "" {
+		f.Properties = ctis.Properties{"patch_publication_date": d}
+	}
+
 	if item.Solution != "" && !strings.EqualFold(item.Solution, "n/a") {
 		f.Remediation = &ctis.Remediation{Recommendation: item.Solution}
 	}

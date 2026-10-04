@@ -43,7 +43,7 @@ const IMPORT_PERMISSIONS = [
 // Paused Tenable integration (created before the pause)
 // ─────────────────────────────────────────────────────────
 
-function PausedScannerCard({
+export function PausedScannerCard({
   integration,
   onChanged,
 }: {
