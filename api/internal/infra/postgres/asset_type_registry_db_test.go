@@ -383,6 +383,9 @@ func TestAssetTypeRegistry_OnlyCoreTypesAreStored(t *testing.T) {
 			t.Errorf("legacy code %s -> %s/%s is not a stored pair", code, to, sub)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if n != 14 {
 		t.Errorf("%d legacy codes mapped, want 14", n)
 	}
