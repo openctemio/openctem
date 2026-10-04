@@ -17,7 +17,7 @@ import (
 // CTIS Finding.Network carries the port a finding was observed on. Ingest used
 // it only inside the network-VA fingerprint and dropped it, so a stored finding
 // did not know its port (RFC-042 F6). Checked on a migrated database through
-// the real ingest: create, re-sighting (first port wins, a NULL is filled), a
+// the real ingest: create, re-sighting (a NULL is filled), another port is another finding, a
 // finding without a port, and the fingerprint is the one develop computed.
 func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 	ctx := context.Background()
@@ -56,7 +56,8 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 		var x row
 		if err := r.db.QueryRowContext(ctx,
 			`SELECT network_port, network_transport, network_service, fingerprint FROM findings
-			 WHERE tenant_id = $1 AND rule_id = $2`, tn.tenant.String(), rule).
+			 WHERE tenant_id = $1 AND rule_id = $2
+			 ORDER BY created_at LIMIT 1`, tn.tenant.String(), rule).
 			Scan(&x.port, &x.transport, &x.service, &x.fingerprint); err != nil {
 			t.Fatalf("read finding %s: %v", rule, err)
 		}
@@ -78,12 +79,9 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 		t.Fatalf("finding without a network location stored %v/%v/%v, want NULLs", h.port, h.transport, h.service)
 	}
 
-	// The same finding seen on another port: this fingerprint does not include
-	// the port (dedup doc, "Network VA without a CVE"), so it is the same row.
-	// First writer wins, so the stored port does not flip between scans.
-	other := tls
-	other.Network = &ctis.NetworkLocation{Port: 443, Protocol: "tcp", Service: "https"}
-	send(other)
+	// The same finding seen again on the same port is the same row and keeps
+	// its stored network location.
+	send(tls)
 	if again := read("nessus-51192"); again.port.Int64 != 8443 || again.fingerprint != got.fingerprint {
 		t.Fatalf("re-sighting: port %v fingerprint %s, want 8443 and %s", again.port, again.fingerprint, got.fingerprint)
 	}
@@ -91,12 +89,38 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 	// A row stored before this change (NULL) is filled on its next sighting.
 	if _, err := r.db.ExecContext(ctx,
 		`UPDATE findings SET network_port = NULL, network_transport = NULL, network_service = NULL
-		 WHERE tenant_id = $1 AND rule_id = 'nessus-51192'`, tn.tenant.String()); err != nil {
+		 WHERE tenant_id = $1 AND fingerprint = $2`, tn.tenant.String(), got.fingerprint); err != nil {
 		t.Fatal(err)
 	}
+	send(tls)
+	if filled := read("nessus-51192"); filled.port.Int64 != 8443 || filled.transport.String != "tcp" || filled.service.String != "https" {
+		t.Fatalf("NULL port not filled on re-sighting: %v/%v/%v", filled.port, filled.transport, filled.service)
+	}
+
+	// The same plugin on another port is another finding (RFC-043 #920: a
+	// network finding without a CVE is keyed on port and transport).
+	other := tls
+	other.Network = &ctis.NetworkLocation{Port: 443, Protocol: "tcp", Service: "https"}
 	send(other)
-	if filled := read("nessus-51192"); filled.port.Int64 != 443 || filled.transport.String != "tcp" {
-		t.Fatalf("NULL port not filled on re-sighting: %v/%v", filled.port, filled.transport)
+	var ports []int64
+	rows, err := r.db.QueryContext(ctx, `SELECT network_port FROM findings
+		WHERE tenant_id = $1 AND rule_id = 'nessus-51192' ORDER BY network_port`, tn.tenant.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var p int64
+		if err := rows.Scan(&p); err != nil {
+			t.Fatal(err)
+		}
+		ports = append(ports, p)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	if len(ports) != 2 || ports[0] != 443 || ports[1] != 8443 {
+		t.Fatalf("another port should be another finding, got ports %v", ports)
 	}
 
 	// The API read path returns it.
@@ -104,7 +128,7 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := f.Network(); n.Port != 443 || n.Transport != "tcp" || n.Service != "https" {
+	if n := f.Network(); n.Port != 8443 || n.Transport != "tcp" || n.Service != "https" {
 		t.Fatalf("repository read network = %+v", n)
 	}
 }
