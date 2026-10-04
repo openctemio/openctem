@@ -23,6 +23,8 @@ import {
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { usePermissions } from '@/context/permission-provider'
+import { Permission } from '@/lib/permissions'
 import { useResolveRemediationGroup } from '../api/use-remediation-groups'
 import type { RemediationGroup, ResolveGroupStatus } from '../types'
 
@@ -48,6 +50,10 @@ export function ResolveGroupDialog({
   const [approved, setApproved] = useState(false)
 
   const { trigger, isMutating } = useResolveRemediationGroup(group?.key ?? '')
+  // Closing the group as resolved needs findings:verify (the API refuses it
+  // otherwise); everyone else applies the fix and lets the rescan verify it.
+  const { hasPermission } = usePermissions()
+  const canResolve = hasPermission(Permission.FindingsVerify)
 
   const needsApproval = (group?.finding_count ?? 0) > APPROVAL_THRESHOLD
 
@@ -105,12 +111,12 @@ export function ResolveGroupDialog({
                 <SelectItem value="fix_applied">
                   Fix applied — pending rescan verification (recommended)
                 </SelectItem>
-                <SelectItem value="resolved">Resolved — close now</SelectItem>
+                {canResolve ? <SelectItem value="resolved">Resolved — close now</SelectItem> : null}
               </SelectContent>
             </Select>
             <p className="text-muted-foreground text-xs">
               {status === 'fix_applied'
-                ? 'The next scan confirms the fix and closes each finding automatically.'
+                ? 'A retest, a later verified scan or a security reviewer confirms the fix and closes each finding.'
                 : 'Closes every finding immediately without waiting for a rescan.'}
             </p>
           </div>

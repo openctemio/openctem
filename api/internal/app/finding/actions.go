@@ -679,7 +679,7 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	}
 
 	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
-		vulnerability.FindingStatusResolved, resolution, &uid)
+		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.ResolutionMethodSecurityReviewed)
 	if err != nil {
 		return 0, fmt.Errorf("failed to verify findings: %w", err)
 	}
@@ -717,7 +717,7 @@ func (s *FindingActionsService) BulkRejectByFilter(
 	}
 
 	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
-		vulnerability.FindingStatusInProgress, input.Reason, &uid)
+		vulnerability.FindingStatusInProgress, input.Reason, &uid, "")
 	if err != nil {
 		return 0, fmt.Errorf("failed to reject findings: %w", err)
 	}
