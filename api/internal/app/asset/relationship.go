@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -169,7 +170,8 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 
 	// Validate the source asset ONCE for the whole batch — every item
 	// shares it. This is the primary efficiency win vs N singleton calls.
-	if _, err := s.assetRepo.GetByID(ctx, parsedTenantID, parsedSourceID); err != nil {
+	source, err := s.assetRepo.GetByID(ctx, parsedTenantID, parsedSourceID)
+	if err != nil {
 		return nil, fmt.Errorf("source asset: %w", err)
 	}
 	if err := s.dataScope.AssertAsset(ctx, parsedTenantID, parsedSourceID); err != nil {
@@ -218,9 +220,13 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 
 		// Verify the target asset belongs to the tenant
 		// An out-of-scope target answers exactly like a missing one.
-		if _, gerr := s.assetRepo.GetByID(ctx, parsedTenantID, parsedTargetID); gerr != nil ||
-			s.dataScope.AssertAsset(ctx, parsedTenantID, parsedTargetID) != nil {
+		target, gerr := s.assetRepo.GetByID(ctx, parsedTenantID, parsedTargetID)
+		if gerr != nil || s.dataScope.AssertAsset(ctx, parsedTenantID, parsedTargetID) != nil {
 			fail(BatchCreateStatusError, "target asset not found")
+			continue
+		}
+		if verr := checkRelationshipAllowed(relType, source, target); verr != nil {
+			fail(BatchCreateStatusError, verr.Error())
 			continue
 		}
 
@@ -298,6 +304,37 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 	return result, nil
 }
 
+// checkRelationshipAllowed enforces the relationship constraints of the
+// asset type registry (configs/relationship-types.yaml resolved to stored
+// (type, sub_type) pairs, RFC-042 §6.3.8). It runs after the tenant and
+// data-scope checks, so its message only names types of assets the caller
+// may see.
+func checkRelationshipAllowed(rel assetdom.RelationshipType, source, target *assetdom.Asset) error {
+	src := assetdom.TypeRef{Type: source.Type(), SubType: source.SubType()}
+	tgt := assetdom.TypeRef{Type: target.Type(), SubType: target.SubType()}
+	if assetdom.RelationshipAllowed(rel, src, tgt) {
+		return nil
+	}
+	allowed := assetdom.AllowedRelationshipTargets(rel, src)
+	names := make([]string, 0, len(allowed))
+	for _, p := range allowed {
+		names = append(names, typeRefLabel(p))
+	}
+	hint := "none"
+	if len(names) > 0 {
+		hint = strings.Join(names, ", ")
+	}
+	return fmt.Errorf("%w: a %s cannot %s a %s (allowed targets: %s)", shared.ErrValidation,
+		typeRefLabel(src), rel, typeRefLabel(tgt), hint)
+}
+
+func typeRefLabel(r assetdom.TypeRef) string {
+	if r.SubType == "" {
+		return string(r.Type)
+	}
+	return string(r.Type) + "/" + r.SubType
+}
+
 // CreateRelationship creates a new relationship between two assets.
 func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input CreateRelationshipInput) (*assetdom.RelationshipWithAssets, error) {
 	s.logger.Info("creating relationship", "source", input.SourceAssetID, "target", input.TargetAssetID, "type", input.Type)
@@ -323,10 +360,12 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 	}
 
 	// Validate both assets exist and belong to same tenant
-	if _, err := s.assetRepo.GetByID(ctx, tenantID, sourceID); err != nil {
+	source, err := s.assetRepo.GetByID(ctx, tenantID, sourceID)
+	if err != nil {
 		return nil, fmt.Errorf("source asset: %w", err)
 	}
-	if _, err := s.assetRepo.GetByID(ctx, tenantID, targetID); err != nil {
+	target, err := s.assetRepo.GetByID(ctx, tenantID, targetID)
+	if err != nil {
 		return nil, fmt.Errorf("target asset: %w", err)
 	}
 	// The caller must see both assets; an out-of-scope one is "not found".
@@ -335,6 +374,11 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 	}
 	if err := s.dataScope.AssertAsset(ctx, tenantID, targetID); err != nil {
 		return nil, fmt.Errorf("target asset: %w", err)
+	}
+	// The registry's relationship constraints, now resolved to stored
+	// (type, sub_type) pairs, are enforced for every write a person makes.
+	if err := checkRelationshipAllowed(relType, source, target); err != nil {
+		return nil, err
 	}
 
 	// Placement mutex: `runs_on` and `deployed_to` describe overlapping

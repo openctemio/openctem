@@ -77,7 +77,10 @@ type TypeRef struct {
 // type, in one direction.
 type RelationshipRule struct {
 	Relationship RelationshipType `json:"relationship"`
-	Peers        []TypeRef        `json:"peers"`
+	// SubType restricts the rule to the type's assets of one sub-type
+	// ("" = any sub-type).
+	SubType string    `json:"sub_type,omitempty"`
+	Peers   []TypeRef `json:"peers"`
 }
 
 // TypeRelationships are the relationships a type may take part in, resolved
@@ -107,6 +110,11 @@ type TypeDefinition struct {
 	Card           string                `json:"card"`
 	Sections       []string              `json:"sections"`
 	Relationships  TypeRelationships     `json:"relationships"`
+	// ScannableBy lists the tool target types (supported_targets) that can
+	// scan the type (RFC-042 §6.3.8 R5).
+	ScannableBy []string `json:"scannable_by"`
+	// ExposureDefault is the exposure the type has by nature ("" = none).
+	ExposureDefault string `json:"exposure_default,omitempty"`
 }
 
 // SectionDefinition is one detail section from the closed set the web

@@ -27,9 +27,11 @@ func NewScanCoverageRepository(db *DB) *ScanCoverageRepository {
 	return &ScanCoverageRepository{db: db}
 }
 
-// coverageAssetTypes are the asset types a network vulnerability scanner
-// (Nessus/Tenable) can target by IP/CIDR/hostname.
-var coverageAssetTypes = []string{"host", "ip_address", "subnet", "network"}
+// coverageAssetTypes are the stored asset types a network vulnerability
+// scanner (Nessus/Tenable) can target by IP/CIDR/hostname. A subnet is
+// (network, subnet), so `network` covers it; the alias name `subnet` is
+// never stored (RFC-042 §6.3.8).
+var coverageAssetTypes = []string{"host", "ip_address", "network"}
 
 // ListCandidates returns active, scannable assets for a tenant ordered
 // oldest-dispatched first (never-dispatched first), with their criticality and
