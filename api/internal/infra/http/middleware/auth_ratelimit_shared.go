@@ -131,7 +131,7 @@ func (b *authBucket) middleware(key func(*http.Request) string) func(http.Handle
 					b.log.Warn("auth rate limit exceeded",
 						"bucket", b.name,
 						"ip", logSafe(getClientIP(r)),
-						"path", logSafe(r.URL.Path),
+						"path", logSafe(RedactPath(r.URL.Path)),
 						"request_id", logSafe(GetRequestID(r.Context())))
 				}
 				apierror.RateLimitExceeded().WriteJSON(w)

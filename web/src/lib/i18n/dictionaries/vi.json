@@ -186,8 +186,6 @@
   "settings.desc.notification-channels": "Cảnh báo Slack, Teams, Telegram và webhook cho tổ chức.",
   "settings.item.siem": "SIEM",
   "settings.desc.siem": "Chuyển tiếp sự kiện bảo mật sang Splunk.",
-  "settings.item.cicd": "CI/CD",
-  "settings.desc.cicd": "Chạy quét trong pipeline và chặn triển khai.",
   "settings.backToApp": "Quay lại ứng dụng",
   "settings.filter": "Lọc cài đặt",
   "settings.noMatch": "Không có cài đặt nào khớp bộ lọc.",

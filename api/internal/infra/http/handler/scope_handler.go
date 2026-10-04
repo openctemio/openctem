@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -381,6 +382,10 @@ func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string
 		apierror.Conflict(resource + " already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, scopedom.ErrExclusionReduceNeedsApprover):
+		apierror.Forbidden("Removing or shortening an approved scope exclusion needs the exclusion approval permission").WriteJSON(w)
+	case errors.Is(err, scopedom.ErrExclusionSelfReduce):
+		apierror.Forbidden("You cannot remove or shorten a scope exclusion you requested; another approver must").WriteJSON(w)
 	case errors.Is(err, scopedom.ErrExclusionSelfApproval):
 		apierror.Forbidden("You cannot approve a scope exclusion you requested").WriteJSON(w)
 	case errors.Is(err, scopedom.ErrExclusionNotPending):
@@ -841,6 +846,7 @@ func (h *ScopeHandler) GetExclusion(w http.ResponseWriter, r *http.Request) {
 // @Failure      404   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
+// @Failure      403  {object}  apierror.Error "Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
 // @Router       /scope/exclusions/{id} [put]
 func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
@@ -860,6 +866,7 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 	input := scope.UpdateExclusionInput{
 		Reason:    req.Reason,
 		ExpiresAt: req.ExpiresAt,
+		Reviewer:  exclusionReviewer(r),
 	}
 
 	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)
@@ -877,6 +884,16 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
 }
 
+// exclusionReviewer is the caller as the exclusion rules see them: their id
+// and whether they hold the exclusion approval permission (owner and admin
+// hold every permission).
+func exclusionReviewer(r *http.Request) scopedom.Reviewer {
+	return scopedom.Reviewer{
+		UserID:     middleware.GetUserID(r.Context()),
+		CanApprove: middleware.HasPermission(r.Context(), permission.ScopeExclusionsApprove.String()),
+	}
+}
+
 // DeleteExclusion handles DELETE /api/v1/scope/exclusions/{id}
 // @Summary      Delete scope exclusion
 // @Description  Delete a scope exclusion
@@ -889,6 +906,7 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
+// @Failure      403  {object}  apierror.Error "Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
 // @Router       /scope/exclusions/{id} [delete]
 func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
@@ -898,7 +916,7 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.service.DeleteExclusion(r.Context(), exclusionID, tenantID); err != nil {
+	if err := h.service.DeleteExclusion(r.Context(), exclusionID, tenantID, exclusionReviewer(r)); err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
 	}
@@ -1021,6 +1039,7 @@ func (h *ScopeHandler) ActivateExclusion(w http.ResponseWriter, r *http.Request)
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
+// @Failure      403  {object}  apierror.Error "Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
 // @Router       /scope/exclusions/{id}/deactivate [post]
 func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
@@ -1030,7 +1049,7 @@ func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	exclusion, err := h.service.DeactivateExclusion(r.Context(), exclusionID, tenantID)
+	exclusion, err := h.service.DeactivateExclusion(r.Context(), exclusionID, tenantID, exclusionReviewer(r))
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
@@ -1511,7 +1530,7 @@ func (h *ScopeHandler) BulkDeleteExclusions(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			return err
 		}
-		if err := h.service.DeleteExclusion(ctx, id, tid); err != nil {
+		if err := h.service.DeleteExclusion(ctx, id, tid, exclusionReviewer(r)); err != nil {
 			return err
 		}
 		h.auditExclusion(r, audit.ActionScopeExclusionDeleted, id, before, nil)
