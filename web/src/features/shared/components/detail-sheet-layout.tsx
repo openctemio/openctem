@@ -109,7 +109,7 @@ export interface DetailSheetProps {
    * (no field grabs it); return an element to focus it instead.
    */
   initialFocus?: () => HTMLElement | null | undefined
-  /** Where focus returns on close; Radix's default (the opener) otherwise. */
+  /** Where focus returns on close; the element focused before opening otherwise. */
   returnFocus?: () => HTMLElement | null | undefined
 }
 
@@ -182,31 +182,43 @@ export function DetailSheet({
   // Focus: the caller's element, or the sheet itself, so no field grabs focus
   // (and, on a phone, no keyboard slides up over the opening sheet) while the
   // focus trap still holds and screen readers start at the dialog.
+  // The element focused before opening is where focus returns on close:
+  // Radix returns it to a `Dialog.Trigger`, and these sheets are opened by the
+  // caller's own controls.
+  const opener = React.useRef<HTMLElement | null>(null)
   const onOpenAutoFocus = React.useCallback(
     (e: Event) => {
       e.preventDefault()
-      const el = initialFocus?.() ?? (e.currentTarget as HTMLElement | null)
-      el?.focus({ preventScroll: true })
+      const sheet = e.currentTarget as HTMLElement | null
+      const active = document.activeElement
+      opener.current =
+        active instanceof HTMLElement && active !== document.body && !sheet?.contains(active)
+          ? active
+          : null
+      const el = initialFocus?.()
+      if (el) el.focus({ preventScroll: true })
+      // Something inside already took focus (a composer focusing itself).
+      else if (sheet && !sheet.contains(document.activeElement)) {
+        sheet.focus({ preventScroll: true })
+      }
     },
     [initialFocus]
   )
-  const onCloseAutoFocus = React.useMemo(
-    () =>
-      returnFocus
-        ? (e: Event) => {
-            const el = returnFocus()
-            if (el && el.isConnected) {
-              e.preventDefault()
-              el.focus({ preventScroll: true })
-            }
-          }
-        : undefined,
+  const onCloseAutoFocus = React.useCallback(
+    (e: Event) => {
+      const el = returnFocus?.() ?? opener.current
+      opener.current = null
+      if (el && el.isConnected) {
+        e.preventDefault()
+        el.focus({ preventScroll: true })
+      }
+    },
     [returnFocus]
   )
 
   const frame = (
     <>
-      <div className={cn('shrink-0 border-b', isPhone ? 'pt-3' : 'pt-4', pad, !tabs && 'pb-4')}>
+      <div className={cn('shrink-0 border-b', isPhone ? 'pt-2' : 'pt-4', pad, !tabs && 'pb-4')}>
         {header}
         {tabs}
       </div>

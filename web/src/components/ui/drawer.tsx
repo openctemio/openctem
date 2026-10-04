@@ -73,8 +73,8 @@ function DrawerContent({
 }
 
 /**
- * The grabber: a short bar in a full-width, 44px-tall strip, so a thumb finds
- * it. Decorative for assistive technology (the sheet has a Close button);
+ * The grabber: a short bar with a 44x44 hit area (Vaul's), in a full-width
+ * strip that, like the header under it, starts a drag. Decorative for assistive technology (the sheet has a Close button);
  * swiping is never the only way to close.
  */
 function DrawerHandle({
@@ -84,12 +84,12 @@ function DrawerHandle({
   return (
     <div
       data-slot="drawer-handle-area"
-      className="flex h-6 w-full shrink-0 touch-none items-center justify-center"
+      className="flex h-5 w-full shrink-0 items-center justify-center"
     >
       <DrawerPrimitive.Handle
         data-slot="drawer-handle"
-        // Vaul gives the handle a 44px hit area (`data-vaul-handle-hitarea`);
-        // the strip above makes the whole row draggable as well.
+        // Vaul's own handle styles are attribute selectors injected at
+        // runtime; `!` keeps the theme's colour and size.
         className={cn('h-1! w-9! bg-border! opacity-100!', className)}
         {...props}
       />

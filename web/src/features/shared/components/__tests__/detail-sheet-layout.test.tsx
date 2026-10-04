@@ -224,6 +224,28 @@ describe('DetailSheet on phones', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('returns focus to the control that opened it', async () => {
+    function Opener() {
+      const [open, setOpen] = React.useState(false)
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Open details</button>
+          <DetailSheet
+            open={open}
+            onOpenChange={setOpen}
+            header={<DetailHeader title="x" onClose={() => setOpen(false)} />}
+          />
+        </>
+      )
+    }
+    render(<Opener />)
+    const button = screen.getByRole('button', { name: 'Open details' })
+    await userEvent.click(button)
+    expect(document.activeElement).toBe(sheet())
+    await userEvent.keyboard('{Escape}')
+    await vi.waitFor(() => expect(document.activeElement).toBe(button))
+  })
+
   it('never drags from a field or the footer', () => {
     render(
       <DetailSheet
