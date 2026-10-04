@@ -1011,7 +1011,7 @@ computed with the same SQL condition as every scoped list:
 |---|---|
 | Owner / admin / full-data role / unrestricted member | the organization |
 | Restricted member | only their in-scope assets and those assets' findings (0 in a fail-closed organization without a group) |
-| Restricted member with **`dashboard:aggregate`** (new permission, migration `000687`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
+| Restricted member with **`dashboard:aggregate`** (new permission, migration `000774`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
 
 Recent activity and top risks are row data and stay limited to the viewer's
 scope whatever the permission. The other dashboard metrics (MTTR, velocity,
