@@ -22902,6 +22902,44 @@ paths:
       summary: Bulk update finding status
       tags:
       - Findings
+  /findings/groups:
+    get:
+      description: |-
+        Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+        (RFC-048), so a grouped view counts exactly the rows the list shows.
+      parameters:
+      - description: cve_id (default), rule_id, asset_id, owner_id, component_id,
+          severity, source, finding_type
+        in: query
+        name: group_by
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Groups per page
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
+      security:
+      - BearerAuth: []
+      summary: Group findings
+      tags:
+      - Findings
   /findings/remediation-groups:
     get:
       description: Groups the tenant's open findings by the fix that resolves them
@@ -22941,23 +22979,41 @@ paths:
   /findings/stats:
     get:
       description: |-
-        Returns aggregated statistics for findings. Optional asset_id query
-        parameter scopes the stats to a single asset (used by the Findings
-        page when filtered by `?assetId=…` so the severity cards match the
-        filtered table instead of showing global tenant counts).
-        Optional sources query parameter (comma-separated, same values and
-        validation as the list endpoint's sources filter) scopes every
-        number to those sources; the Exposures type pages use it to get
-        their counts in one request instead of walking the list.
+        Aggregated statistics over the findings a filter selects. Takes every filter param of
+        GET /findings (RFC-048) and compiles the same WHERE, so the numbers always match the table
+        (the old asset_id and sources params are part of that filter).
       parameters:
-      - description: Restrict stats to a single asset
+      - collectionFormat: csv
+        description: Asset IDs
         in: query
+        items:
+          type: string
         name: asset_id
-        type: string
-      - description: Restrict stats to these finding sources (comma-separated, max
-          25)
+        type: array
+      - collectionFormat: csv
+        description: Sources
         in: query
-        name: sources
+        items:
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: Severities
+        in: query
+        items:
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: Statuses
+        in: query
+        items:
+          type: string
+        name: status
+        type: array
+      - description: Free text
+        in: query
+        name: q
         type: string
       produces:
       - application/json
@@ -22969,9 +23025,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
         "401":
           description: Unauthorized
           schema:

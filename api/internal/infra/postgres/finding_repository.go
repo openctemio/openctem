@@ -2795,45 +2795,9 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 // dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
 // filter: optional asset / source narrowing, applied to every number returned.
 func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
-	stats := vulnerability.NewFindingStats()
-
 	// Query for total and counts by severity, status, source in one go
 	// Statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate
-	query := `
-		SELECT
-			COUNT(*) as total,
-			COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) as critical,
-			COALESCE(SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END), 0) as high,
-			COALESCE(SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END), 0) as medium,
-			COALESCE(SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END), 0) as low,
-			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) as info,
-			COALESCE(SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END), 0) as status_new,
-			COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) as status_confirmed,
-			COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as status_in_progress,
-			COALESCE(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END), 0) as status_resolved,
-			COALESCE(SUM(CASE WHEN status = 'false_positive' THEN 1 ELSE 0 END), 0) as status_false_positive,
-			COALESCE(SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END), 0) as status_accepted,
-			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
-			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
-			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
-			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
-			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
-			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
-			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
-			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
-			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
-			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
-			COALESCE(SUM(CASE WHEN source = 'secret' THEN 1 ELSE 0 END), 0) as source_secret,
-			COALESCE(SUM(CASE WHEN source = 'iac' THEN 1 ELSE 0 END), 0) as source_iac,
-			COALESCE(SUM(CASE WHEN source = 'container' THEN 1 ELSE 0 END), 0) as source_container,
-			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
-			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
-			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
-			-- Risk posture, open findings only (status not in a closed category).
-			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
-			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
-			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
-		FROM findings
+	query := findingStatsSelect + `
 		WHERE tenant_id = $1
 	`
 
@@ -2872,6 +2836,53 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		}
 		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
 	}
+
+	return r.queryFindingStats(ctx, query, args)
+}
+
+// findingStatsSelect is the one aggregate behind every findings stats read:
+// totals by severity, status and source, and the open risk posture. Callers
+// append the WHERE clause.
+const findingStatsSelect = `
+		SELECT
+			COUNT(*) as total,
+			COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) as critical,
+			COALESCE(SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END), 0) as high,
+			COALESCE(SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END), 0) as medium,
+			COALESCE(SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END), 0) as low,
+			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) as info,
+			COALESCE(SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END), 0) as status_new,
+			COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) as status_confirmed,
+			COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as status_in_progress,
+			COALESCE(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END), 0) as status_resolved,
+			COALESCE(SUM(CASE WHEN status = 'false_positive' THEN 1 ELSE 0 END), 0) as status_false_positive,
+			COALESCE(SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END), 0) as status_accepted,
+			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
+			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
+			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
+			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
+			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
+			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
+			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
+			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
+			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
+			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
+			COALESCE(SUM(CASE WHEN source = 'secret' THEN 1 ELSE 0 END), 0) as source_secret,
+			COALESCE(SUM(CASE WHEN source = 'iac' THEN 1 ELSE 0 END), 0) as source_iac,
+			COALESCE(SUM(CASE WHEN source = 'container' THEN 1 ELSE 0 END), 0) as source_container,
+			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
+			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
+			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
+			-- Risk posture, open findings only (status not in a closed category).
+			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
+			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
+			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
+		FROM findings
+`
+
+// queryFindingStats runs a findingStatsSelect query and maps its row.
+func (r *FindingRepository) queryFindingStats(ctx context.Context, query string, args []any) (*vulnerability.FindingStats, error) {
+	stats := vulnerability.NewFindingStats()
 
 	var (
 		total, critical, high, medium, low, info                     int64
