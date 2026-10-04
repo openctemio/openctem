@@ -1005,7 +1005,7 @@ type UpdateAssetInput struct {
 	// legacy input of the same type). "" clears it. Nil = leave unchanged.
 	SubType *string `validate:"omitempty,max=50"`
 	// Properties patches per-type metadata. Merged (not replaced) into the
-	// asset's existing properties so keys like is_crown_jewel are preserved.
+	// asset's existing properties so keys like business_impact_score are preserved.
 	Properties map[string]any
 	// CIA impact rating (CTEM Scoping critical-asset register). Each is
 	// low | moderate | high; an empty string clears the rating. Nil = leave
@@ -1141,7 +1141,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	}
 
 	// Patch per-type metadata. Merge into existing properties (don't replace)
-	// so keys written elsewhere — e.g. is_crown_jewel — are not wiped.
+	// so keys written elsewhere — e.g. business_impact_score — are not wiped.
 	if input.Properties != nil {
 		merged := a.Properties()
 		if merged == nil {
@@ -1243,6 +1243,24 @@ func applySubTypeChange(a *assetdom.Asset, requested string) error {
 // Used by handlers that modify the entity and need to persist without going through UpdateAssetInput.
 func (s *AssetService) SaveAsset(ctx context.Context, a *assetdom.Asset) error {
 	return s.repo.Update(ctx, a)
+}
+
+// UpdateCrownJewel marks or unmarks an asset of the tenant as a crown jewel
+// and records its business impact, then returns the stored asset. The flag
+// is the assets.is_crown_jewel column; this is its only writer.
+func (s *AssetService) UpdateCrownJewel(ctx context.Context, tenantID, assetID string, isCrownJewel bool, impactScore float64, impactNotes string) (*assetdom.Asset, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	parsedID, err := shared.IDFromString(assetID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	if err := s.repo.SetCrownJewel(ctx, parsedTenantID, parsedID, isCrownJewel, impactScore, impactNotes); err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, parsedTenantID, parsedID)
 }
 
 // DeleteAsset deletes an asset by ID on behalf of a person (actorID, may be

@@ -462,7 +462,8 @@ func (r *AssetRepository) selectQuery() string {
 			   a.is_internet_accessible, a.exposure_changed_at, a.last_exposure_level,
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
 			   a.lifecycle_paused_until, a.manual_status_override,
-			   a.impact_confidentiality, a.impact_integrity, a.impact_availability
+			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
+			   a.is_crown_jewel
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -779,6 +780,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		impactConfidentiality sql.NullString
 		impactIntegrity       sql.NullString
 		impactAvailability    sql.NullString
+		isCrownJewel          bool
 	)
 
 	err := scan(
@@ -793,6 +795,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&firstSeen, &lastSeen, &createdAt, &updatedAt,
 		&lifecyclePausedUntil, &manualStatusOverride,
 		&impactConfidentiality, &impactIntegrity, &impactAvailability,
+		&isCrownJewel,
 	)
 	if err != nil {
 		return nil, err
@@ -814,6 +817,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		return nil, err
 	}
 
+	a.SetCrownJewel(isCrownJewel)
 	a.SetFindingSeverityCounts(&asset.FindingSeverityCounts{
 		Critical: findingCritical,
 		High:     findingHigh,
@@ -1104,12 +1108,9 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
-	// Crown jewel filter.
-	// Source of truth is properties->>'is_crown_jewel' (written by the
-	// crown-jewel PATCH endpoint); read from there so filtering reflects what
-	// was set. The dedicated is_crown_jewel column is not written by Update.
+	// Crown jewel filter: the is_crown_jewel column is the only source.
 	if filter.IsCrownJewel != nil {
-		conditions = append(conditions, fmt.Sprintf(crownJewelPropSQL+" = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("a.is_crown_jewel = $%d", argIndex))
 		args = append(args, *filter.IsCrownJewel)
 		argIndex++
 	}
@@ -2408,12 +2409,31 @@ func formatPropertyLabel(key string) string {
 	return strings.Join(words, " ")
 }
 
-// crownJewelPropSQL reads the crown-jewel flag from asset a's properties
-// without a cast: only JSON true or the string "true" (any case) count, and
-// any other value (a non-boolean string, a number, an object) reads as
-// false. A ::boolean cast would make one bad value fail every query that
-// reads the flag for the whole tenant.
-const crownJewelPropSQL = `COALESCE(lower(a.properties->>'is_crown_jewel') = 'true', FALSE)`
+// SetCrownJewel sets an asset's crown-jewel flag and its business impact
+// in one statement, scoped to the tenant. It is the only writer of
+// assets.is_crown_jewel: Create, Update and the ingest upsert never touch it,
+// so a save of a stale entity cannot undo the decision.
+func (r *AssetRepository) SetCrownJewel(ctx context.Context, tenantID, assetID shared.ID, isCrownJewel bool, impactScore float64, impactNotes string) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE assets
+		   SET is_crown_jewel = $3,
+		       properties = COALESCE(properties, '{}'::jsonb)
+		           || jsonb_build_object('business_impact_score', $4::numeric, 'business_impact_notes', $5::text),
+		       updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+		tenantID.String(), assetID.String(), isCrownJewel, impactScore, impactNotes)
+	if err != nil {
+		return fmt.Errorf("set crown jewel: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set crown jewel: %w", err)
+	}
+	if n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
 
 // ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
 // Used by attack path scoring to build the full in-memory directed graph.
@@ -2428,7 +2448,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			a.exposure,
 			a.criticality,
 			a.risk_score,
-			` + crownJewelPropSQL + `,
+			a.is_crown_jewel,
 			COALESCE(fc.finding_count, 0)
 		FROM assets a
 		-- Per-asset indexed count (see selectQuery) instead of a full-findings
