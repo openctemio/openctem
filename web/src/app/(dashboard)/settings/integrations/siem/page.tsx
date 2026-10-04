@@ -27,6 +27,7 @@ import {
   useCreateNotificationIntegrationApi,
   invalidateNotificationIntegrationsCache,
 } from '@/features/integrations'
+import { siemIntegrationsOnly } from '@/features/integrations/lib/integration-routing'
 import type { Integration } from '@/features/integrations'
 import {
   DataTable,
@@ -57,7 +58,7 @@ export default function SIEMIntegrationPage() {
   const { trigger: createIntegration, isMutating: creating } = useCreateNotificationIntegrationApi()
 
   const splunkIntegrations = useMemo(
-    () => (data?.data ?? []).filter((i) => i.provider === 'splunk'),
+    () => siemIntegrationsOnly(data?.data ?? []),
     [data]
   )
 
