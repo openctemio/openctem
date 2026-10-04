@@ -70,8 +70,8 @@ ON CONFLICT (code) DO NOTHING;
 CREATE TABLE IF NOT EXISTS asset_type_reclassifications (
     id            UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     migration     INT NOT NULL,
-    tenant_id     UUID NOT NULL,
-    asset_id      UUID NOT NULL,
+    tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    asset_id      UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     rule          VARCHAR(20) NOT NULL,
     old_type      VARCHAR(50) NOT NULL,
     old_sub_type  VARCHAR(50),
