@@ -20,6 +20,9 @@ import (
 // findingListTimeout bounds one list or count statement (RFC-048 §3.7).
 const findingListTimeout = "5s"
 
+// maxFindingPageRows is the largest findings page (pagination.New clamps to it).
+const maxFindingPageRows = 100
+
 var errUncompiledFindingFilter = errors.New("finding filter was not compiled for the findings registry")
 
 // checkFindingWhere is defense in depth: a WHERE that does not start with the
@@ -57,7 +60,9 @@ func (r *FindingRepository) ListWhere(ctx context.Context, w *filterspec.Where, 
 		return empty, fmt.Errorf("failed to query findings: %w", err)
 	}
 	defer rows.Close()
-	findings := make([]*vulnerability.Finding, 0, page.Limit())
+	// pagination.New caps the page at 100 rows; the cap is restated so the
+	// allocation never depends on a request value.
+	findings := make([]*vulnerability.Finding, 0, min(page.Limit(), maxFindingPageRows))
 	for rows.Next() {
 		f, err := r.scanFindingFromRows(rows)
 		if err != nil {
