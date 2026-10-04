@@ -63,13 +63,13 @@ describe('RegisterGate', () => {
   })
 
   it('shows the form to an invited visitor even when registration is disabled', () => {
-    search = new URLSearchParams({ returnTo: '/invitations/tok', email: 'a@co.com' })
+    search = new URLSearchParams({ returnTo: '/invitations', email: 'a@co.com' })
     providers({ social, registration_enabled: false })
     render(<RegisterGate />)
     expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /sign in/i })).toHaveAttribute(
       'href',
-      '/login?returnTo=%2Finvitations%2Ftok'
+      '/login?returnTo=%2Finvitations'
     )
   })
 })
@@ -94,10 +94,10 @@ describe('SignUpPrompt (login page)', () => {
 
   it('offers sign-up to an invited visitor, carrying the invitation', () => {
     providers({ social, registration_enabled: false })
-    render(<SignUpPrompt returnTo="/invitations/tok" email="a@co.com" />)
+    render(<SignUpPrompt returnTo="/invitations" email="a@co.com" />)
     const href = screen.getByRole('link', { name: 'Sign up' }).getAttribute('href') ?? ''
     const url = new URL(href, 'http://x')
-    expect(url.searchParams.get('returnTo')).toBe('/invitations/tok')
+    expect(url.searchParams.get('returnTo')).toBe('/invitations')
     expect(url.searchParams.get('email')).toBe('a@co.com')
   })
 })

@@ -201,8 +201,8 @@ POST /api/v1/tenants/{tenant}/invitations
 #   00000000-...-000000000003  member      (read/write, no delete)
 #   00000000-...-000000000004  viewer      (read-only)
 
-# User accepts invitation via token link
-POST /api/v1/invitations/{token}/accept
+# User accepts invitation (the token travels in the body, never in the URL)
+POST /api/v1/invitations/accept   {"token": "..."}
 ```
 
 ### Per-Tenant SMTP
