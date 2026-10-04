@@ -32,20 +32,20 @@ export function getConfigString(integration: Integration, key: string): string {
 export function StatusBadge({ status }: { status: IntegrationStatus }) {
   const config: Record<string, { className: string; label: string }> = {
     connected: {
-      className: 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20',
+      className: 'bg-success/10 text-success border-success/20',
       label: 'Connected',
     },
     disconnected: { className: 'bg-muted text-muted-foreground', label: 'Not Connected' },
     error: {
-      className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20',
+      className: 'bg-destructive/10 text-destructive border-destructive/20',
       label: 'Error',
     },
     pending: {
-      className: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20',
+      className: 'bg-warning/10 text-warning border-warning/20',
       label: 'Pending',
     },
     expired: {
-      className: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+      className: 'bg-warning/15 text-warning border-warning/30',
       label: 'Expired',
     },
     disabled: { className: 'bg-muted text-muted-foreground', label: 'Disabled' },

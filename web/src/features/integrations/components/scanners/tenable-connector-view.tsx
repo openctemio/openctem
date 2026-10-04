@@ -127,9 +127,9 @@ function SensorModeNote() {
 
 function DirectModeWarning() {
   return (
-    <div className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-      <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-      <p className="text-xs text-amber-700 dark:text-amber-300">
+    <div className="flex gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3">
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+      <p className="text-xs text-warning">
         Direct mode stores Tenable API credentials in OpenCTEM and requires the backend to reach
         Tenable. Prefer sensor mode for segmented networks.
       </p>
@@ -514,7 +514,7 @@ function ScannerCard({
               size="icon"
               onClick={() => setDeleteOpen(true)}
               title="Remove"
-              className="text-red-500 hover:text-red-600"
+              className="text-destructive hover:text-destructive/80"
             >
               <Trash2 className="h-4 w-4" />
             </Button>

@@ -103,7 +103,7 @@ function PausedScannerCard({
               onClick={() => setDeleteOpen(true)}
               title="Remove"
               aria-label={`Remove ${integration.name}`}
-              className="shrink-0 text-red-500 hover:text-red-600"
+              className="shrink-0 text-destructive hover:text-destructive/80"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
