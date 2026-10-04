@@ -131,6 +131,10 @@ var assetMergeLeftAlone = map[string]string{
 	"asset_merge_log.merged_asset_id":     "the merge record itself",
 	"ctem_cycle_scope_snapshots.asset_id": "historical snapshot of a closed scope",
 	"ingest_reports.touched_asset_ids":    "historical record of one report",
+	// The type normalisation ledger (migration 000490) describes the row as
+	// that migration moved it; its down migration restores only rows still
+	// holding that pair, so a merged asset's entry goes with it.
+	"asset_type_reclassifications.asset_id": "ledger of one migration; removed with the merged asset",
 }
 
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.
