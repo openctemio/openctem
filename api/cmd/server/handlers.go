@@ -463,6 +463,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
 	handlers.Scope.SetAuditService(svc.Audit)
 	handlers.Tool.SetAuditService(svc.Audit)
+	// Configuration changes audited with a before/after diff.
+	handlers.Integration.SetAuditService(svc.Audit)
+	handlers.TemplateSource.SetAuditService(svc.Audit)
+	handlers.SLA.SetAuditService(svc.Audit)
+	handlers.AssignmentRule.SetAuditService(svc.Audit)
+	handlers.ScopeRule.SetAuditService(svc.Audit)
+	handlers.Outbox.SetAuditService(svc.Audit)
+	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
