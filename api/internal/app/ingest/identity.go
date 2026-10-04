@@ -58,7 +58,7 @@ func (p *AssetProcessor) SetIdentityStore(store IdentityStore, reviewer Identity
 // hardwareTypes can carry host, BIOS, serial and MAC identifiers.
 func hardwareType(t asset.AssetType) bool {
 	switch t {
-	case asset.AssetTypeHost, asset.AssetTypeIPAddress, asset.AssetTypeNetwork, asset.AssetTypeEndpoint:
+	case asset.AssetTypeHost, asset.AssetTypeIPAddress, asset.AssetTypeNetwork:
 		return true
 	}
 	return false

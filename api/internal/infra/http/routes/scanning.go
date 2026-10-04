@@ -412,9 +412,9 @@ func registerPipelineRoutes(
 		r.GET("/{id}/runs", h.ListRuns, middleware.Require(permission.PipelinesRead))
 		// Apply rate limiting to pipeline triggers
 		if triggerRateLimiter != nil {
-			r.POST("/{id}/runs", h.TriggerRun, middleware.Require(permission.PipelinesWrite), triggerRateLimiter.PipelineMiddleware())
+			r.POST("/{id}/runs", h.TriggerRun, middleware.RequireAll(permission.PipelinesWrite, permission.PipelinesExecute), triggerRateLimiter.PipelineMiddleware())
 		} else {
-			r.POST("/{id}/runs", h.TriggerRun, middleware.Require(permission.PipelinesWrite))
+			r.POST("/{id}/runs", h.TriggerRun, middleware.RequireAll(permission.PipelinesWrite, permission.PipelinesExecute))
 		}
 	}, tenantMiddlewares...)
 
@@ -637,9 +637,9 @@ func registerScanRoutes(
 		r.GET("/coverage", h.CoverageStatus, middleware.Require(permission.ScansRead))
 		// Quick scan (consolidated from /quick-scan)
 		if triggerRateLimiter != nil {
-			r.POST("/quick", h.QuickScan, middleware.Require(permission.ScansWrite), triggerRateLimiter.QuickScanMiddleware())
+			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanMiddleware())
 		} else {
-			r.POST("/quick", h.QuickScan, middleware.Require(permission.ScansWrite))
+			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
 		}
 
 		// Bulk operations (must be before /{id} to avoid matching)
@@ -666,9 +666,9 @@ func registerScanRoutes(
 
 		// Trigger scan execution - apply rate limiting
 		if triggerRateLimiter != nil {
-			r.POST("/{id}/trigger", h.TriggerScan, middleware.Require(permission.ScansWrite), triggerRateLimiter.ScanMiddleware())
+			r.POST("/{id}/trigger", h.TriggerScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.ScanMiddleware())
 		} else {
-			r.POST("/{id}/trigger", h.TriggerScan, middleware.Require(permission.ScansWrite))
+			r.POST("/{id}/trigger", h.TriggerScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
 		}
 
 		// Clone scan

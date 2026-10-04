@@ -115,12 +115,34 @@ func checkDrift(goSrc []byte, tsSrc, sqlSrc, migDir string) error {
 		problems = append(problems, fmt.Sprintf(
 			"%s: the asset-type-registry block does not match configs/asset-types.yaml. "+
 				"Do not edit an applied migration: add a new one whose body is `make asset-types-sql`", file))
+	case strings.Contains(block, "chk_assets_core_type CHECK") && strings.Contains(block, "NOT VALID") && !validatesAfterBlock(file):
+		problems = append(problems, fmt.Sprintf(
+			"%s: the block adds chk_assets_core_type NOT VALID; validate it after the block "+
+				"(%q), once the rows the registry change moves are moved", file, validateCoreType))
 	}
 	if len(problems) > 0 {
 		return errors.New("asset type registry drift:\n  - " + strings.Join(problems, "\n  - "))
 	}
 	fmt.Println("asset type registry: YAML, generated code and migration block agree")
 	return nil
+}
+
+// validateCoreType is the statement a registry migration runs after its block.
+const validateCoreType = "ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;"
+
+// validatesAfterBlock reports whether the migration validates the core-type
+// CHECK after its registry block.
+func validatesAfterBlock(file string) bool {
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return false
+	}
+	s := string(raw)
+	end := strings.Index(s, sqlEndMarker)
+	if end < 0 {
+		return false
+	}
+	return strings.Contains(s[end:], validateCoreType)
 }
 
 // newestMigrationBlock returns the registry block of the highest-numbered
@@ -1445,11 +1467,11 @@ func renderSQL(m *model) string {
 			stored = append(stored, t.Type)
 		}
 	}
-	w("-- Only core types are stored (RFC-042 §6.3.8). VALIDATE takes a SHARE\n")
-	w("-- UPDATE EXCLUSIVE lock: writers keep running.\n")
+	w("-- Only core types are stored (RFC-042 §6.3.8). Added NOT VALID: the\n")
+	w("-- migration moves the rows a registry change leaves outside the list,\n")
+	w("-- then validates it after this block (SHARE UPDATE EXCLUSIVE lock).\n")
 	w("ALTER TABLE assets DROP CONSTRAINT IF EXISTS chk_assets_core_type;\n")
 	w("ALTER TABLE assets ADD CONSTRAINT chk_assets_core_type CHECK (asset_type IN (%s)) NOT VALID;\n", sqlList(stored))
-	w("ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;\n")
 	w("%s\n", sqlEndMarker)
 	return b.String()
 }

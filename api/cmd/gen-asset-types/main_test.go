@@ -220,3 +220,24 @@ func TestKnownProviders_MatchTheDomain(t *testing.T) {
 		t.Errorf("knownProviders = %v, asset.AllProviders = %v", knownProviders, want)
 	}
 }
+
+func TestValidatesAfterBlock(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	block := sqlBeginMarker + "\nCHECK NOT VALID;\n" + sqlEndMarker + "\n"
+	if validatesAfterBlock(write("a.up.sql", block)) {
+		t.Error("a migration without VALIDATE passed")
+	}
+	if !validatesAfterBlock(write("b.up.sql", block+"move rows;\n"+validateCoreType+"\n")) {
+		t.Error("VALIDATE after the block was not seen")
+	}
+	if validatesAfterBlock(write("c.up.sql", validateCoreType+"\n"+block)) {
+		t.Error("VALIDATE before the block must not count: rows are moved after the block")
+	}
+}
