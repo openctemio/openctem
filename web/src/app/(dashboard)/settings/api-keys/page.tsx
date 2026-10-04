@@ -40,14 +40,7 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 import { useUrlPagination } from '@/hooks/use-url-pagination'
 import { useDebounce } from '@/hooks/use-debounce'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import {
-  KeyRound,
-  Plus,
-  Ban,
-  Trash2,
-  Copy,
-  Check,
-} from 'lucide-react'
+import { KeyRound, Plus, Ban, Trash2, Copy, Check } from 'lucide-react'
 import {
   useApiKeys,
   useCreateApiKey,
@@ -453,7 +446,6 @@ export default function APIKeysPage() {
           </Button>
         )}
       </PageHeader>
-
 
       <Card className="mt-6">
         <CardHeader>

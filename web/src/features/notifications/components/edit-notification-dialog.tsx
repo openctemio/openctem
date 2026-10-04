@@ -5,10 +5,7 @@ import { csrfFetch } from '@/lib/api/client'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import {
-  enabledEventTypesSchema,
-  enabledSeveritiesSchema,
-} from '../lib/notification-filters'
+import { enabledEventTypesSchema, enabledSeveritiesSchema } from '../lib/notification-filters'
 import {
   Dialog,
   DialogContent,
@@ -623,9 +620,7 @@ export function EditNotificationDialog({
             />
 
             {errors.enabled_event_types && (
-
               <p className="text-sm text-destructive">{errors.enabled_event_types.message}</p>
-
             )}
 
             {/* Advanced Settings */}

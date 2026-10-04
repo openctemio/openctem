@@ -8,7 +8,11 @@ const base: GeneralSavePlanInput = {
   current: { name: 'Acme', slug: 'acme' },
   generalForm: { timezone: 'UTC', language: 'en', industry: '', website: '' },
   savedGeneral: { timezone: 'UTC', language: 'en', industry: '', website: '' },
-  branding: { primary_color: '#112233', logo_dark_url: 'https://x/dark.png', logo_data: 'data:old' },
+  branding: {
+    primary_color: '#112233',
+    logo_dark_url: 'https://x/dark.png',
+    logo_data: 'data:old',
+  },
   logoDraft: undefined,
 }
 

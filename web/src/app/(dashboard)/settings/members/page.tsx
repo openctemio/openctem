@@ -588,7 +588,6 @@ export default function UsersPage() {
     }
   }, [tenantSlug, mutateMembers, mutateMemberStats, mutateInvitations])
 
-
   // Status counts from members (for the metric strip). Pending invitations are
   // listed in their own section below the table.
   const statusCounts: Record<StatusFilter, number> = useMemo(() => {

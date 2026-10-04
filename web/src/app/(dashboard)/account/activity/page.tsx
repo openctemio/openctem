@@ -59,11 +59,7 @@ export default function ActivityPage() {
 
   // Paged on the server (the user-activity endpoint has no category filter,
   // so the old browser-side "type" filter is gone with the browser paging).
-  const { activities, total, totalPages, isLoading } = useAccountActivity(
-    user?.id,
-    page,
-    PER_PAGE
-  )
+  const { activities, total, totalPages, isLoading } = useAccountActivity(user?.id, page, PER_PAGE)
 
   return (
     <div className="grid gap-6">
@@ -139,8 +135,8 @@ export default function ActivityPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-6">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * PER_PAGE + 1} to {Math.min(page * PER_PAGE, total)} of{' '}
-                {total} activities
+                Showing {(page - 1) * PER_PAGE + 1} to {Math.min(page * PER_PAGE, total)} of {total}{' '}
+                activities
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -179,8 +175,8 @@ export default function ActivityPage() {
               <p className="font-medium">Security Tip</p>
               <p className="text-sm text-muted-foreground mt-1">
                 Review your activity regularly. Sign-ins are not listed here yet; your active
-                sessions are under Security. If you see anything you do not recognise, change
-                your password and sign out your other sessions.
+                sessions are under Security. If you see anything you do not recognise, change your
+                password and sign out your other sessions.
               </p>
             </div>
           </div>
