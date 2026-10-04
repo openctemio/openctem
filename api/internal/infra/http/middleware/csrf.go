@@ -126,7 +126,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 			// Get CSRF token from cookie
 			cookieToken, err := r.Cookie(CSRFTokenCookieName)
 			if err != nil || cookieToken.Value == "" {
-				cfg.Logger.Debug("CSRF token missing from cookie", "path", RedactPath(r.URL.Path))
+				cfg.Logger.Debug("CSRF token missing from cookie", "path", logSafe(RedactPath(r.URL.Path)))
 				metrics.CSRFRejectionsTotal.WithLabelValues("missing_cookie", r.Method).Inc()
 				apierror.Forbidden("CSRF token missing").WriteJSON(w)
 				return
@@ -135,7 +135,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 			// Get CSRF token from header
 			headerToken := r.Header.Get(CSRFHeaderName)
 			if headerToken == "" {
-				cfg.Logger.Debug("CSRF token missing from header", "path", RedactPath(r.URL.Path))
+				cfg.Logger.Debug("CSRF token missing from header", "path", logSafe(RedactPath(r.URL.Path)))
 				metrics.CSRFRejectionsTotal.WithLabelValues("missing_header", r.Method).Inc()
 				apierror.Forbidden("CSRF token missing from header").WriteJSON(w)
 				return
@@ -144,7 +144,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 			// Compare tokens using constant-time comparison to prevent timing attacks
 			if subtle.ConstantTimeCompare([]byte(cookieToken.Value), []byte(headerToken)) != 1 {
 				cfg.Logger.Warn("CSRF token mismatch",
-					"path", RedactPath(r.URL.Path),
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"ip", r.RemoteAddr,
 				)
 				metrics.CSRFRejectionsTotal.WithLabelValues("token_mismatch", r.Method).Inc()
