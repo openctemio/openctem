@@ -50,9 +50,26 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   const [approvalTarget, setApprovalTarget] = useState<FindingStatus | null>(null)
 
   // Follow the server after a revalidation or when another finding is shown.
-  useEffect(() => setStatus(finding.status), [finding.id, finding.status])
-  useEffect(() => setSeverity(finding.severity), [finding.id, finding.severity])
-  useEffect(() => setAssignee(finding.assignee), [finding.id, finding.assignee])
+  //
+  // The parent rebuilds `finding` (and a fresh `assignee` object) on every
+  // render, so these effects must key off STABLE PRIMITIVES and bail when the
+  // value has not actually changed. Depending on the `assignee` object — or
+  // calling setState unconditionally with a new object reference — re-fires the
+  // effect every render, which schedules another render, and the page loops
+  // ("Maximum update depth exceeded").
+  const assigneeId = finding.assignee?.id ?? null
+  useEffect(() => {
+    setStatus((prev) => (prev === finding.status ? prev : finding.status))
+  }, [finding.id, finding.status])
+  useEffect(() => {
+    setSeverity((prev) => (prev === finding.severity ? prev : finding.severity))
+  }, [finding.id, finding.severity])
+  useEffect(() => {
+    // Keyed on `assigneeId` (a primitive); the current object is read through
+    // the updater so a new reference with the same id does not re-fire the loop.
+    setAssignee((prev) => ((prev?.id ?? null) === assigneeId ? prev : finding.assignee))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key off assigneeId, not the object
+  }, [finding.id, assigneeId])
 
   const { trigger: updateStatus, isMutating: statusBusy } = useUpdateFindingStatusApi(finding.id)
   const { trigger: updateSeverity, isMutating: severityBusy } = useUpdateFindingSeverityApi(

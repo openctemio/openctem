@@ -91,7 +91,17 @@ export function PlatformIdPForm({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmRequire, setConfirmRequire] = useState(false)
 
-  useEffect(() => setForm(toForm(idp)), [idp])
+  // Reset the editable copy to the server record only when that record actually
+  // changes. Keying on the `idp` object re-fires this effect whenever the parent
+  // hands down a fresh reference (SWR revalidation returns a new object on focus
+  // with identical contents), which both discards in-progress edits and — paired
+  // with `toForm` building a new object each time — risks a render loop. A stable
+  // primitive signature of the server fields avoids both.
+  const idpKey = JSON.stringify(idp)
+  useEffect(() => {
+    setForm(toForm(idp))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key off idpKey, not the object
+  }, [idpKey])
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
