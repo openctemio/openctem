@@ -1,4 +1,4 @@
--- Reverts 000343: direct user ownership grants access again (000340
+-- Reverts 000355: direct user ownership grants access again (000340
 -- definitions) and the explicit grants table is removed. Access rows that
 -- came only from a grant made after the upgrade (not from ownership) are
 -- removed with it.

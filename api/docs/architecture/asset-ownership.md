@@ -13,7 +13,7 @@ owns this asset" uses it.
 | `internal/infra/http/handler/asset_owner_handler.go` | `GET/POST/PUT/DELETE /api/v1/assets/{id}/owners` |
 | `internal/infra/controller/owner_resolution.go` | Matches `owner_ref` to a member every 30 minutes |
 | `web/src/features/assets/components/asset-owners-tab.tsx` | The Owners tab |
-| `migrations/000343_asset_access_grants.up.sql` | Explicit grants; ownership stops granting access |
+| `migrations/000355_asset_access_grants.up.sql` | Explicit grants; ownership stops granting access |
 | `internal/infra/postgres/asset_access_grant_repository.go` · `handler/asset_access_grant_handler.go` | Grant storage and `/assets/{id}/access-grants` |
 | `web/src/features/assets/components/asset-access-grants-section.tsx` | *Direct access* on the Owners tab |
 
@@ -75,7 +75,7 @@ A **group** owner row is the group's asset assignment (the same row the Groups
 page and scope rules write), so its members do see the asset. Adding or
 removing a group owner therefore needs `team:groups:write`.
 
-Migration `000343` preserved the access users had through ownership: each
+Migration `000355` preserved the access users had through ownership: each
 direct owner who had the asset in `user_accessible_assets` got a grant with
 source `migration`, shown as "From ownership" in the asset's *Direct access*
 section, where an administrator can revoke it. It writes the counts to the
