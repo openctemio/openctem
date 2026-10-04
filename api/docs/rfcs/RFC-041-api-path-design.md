@@ -802,10 +802,10 @@ Two notes from the approval:
 | Phase | Item | PR |
 |---|---|---|
 | P1 (security first) | URL-tenant chain runs the SSO-enforcement gate for the organization in the URL, and the read rate limit | #874 |
+| P1 | gateway routes by the plane table: `planes.caddy` generated from `routes/plane` (`PlaneEdges`, `EdgeOverrides`), drift test in CI, stale `/api/v1/platform/*` rule removed, smoke test covers every plane | #969 |
 | P0 | `routes/plane` plane table | #876 |
 | P0 | `tools/lint/routestyle`, blocking, shrink-only baseline (362 violations frozen) | #876 |
 | P0 | `openapicontract` check D (spec and router parameter names equal) | — |
 | P0 | web check: every `endpoints.ts` builder targets a real route | — |
 | P0 | `Deprecated()` middleware + `deprecated_route_requests_total` | — |
 | P1 | live phantom web calls fixed or removed | — |
-| P1 | gateway routes by the plane table: `planes.caddy` generated from `routes/plane` (`PlaneEdges`, `EdgeOverrides`), drift test in CI, stale `/api/v1/platform/*` rule removed, smoke test covers every plane | #969 |
