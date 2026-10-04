@@ -201,7 +201,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	// is also already due (the API was down) is skipped and recorded, not
 	// run late; the claim above already moved next_run_at to the future.
 	if isMisfire(sc, occurrence, time.Now()) {
-		metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "skipped_misfire").Inc()
+		metrics.ScanScheduleOutcomes.WithLabelValues("skipped_misfire").Inc()
 		s.logger.Info("scheduled run skipped: the occurrence was missed by more than one interval",
 			"scan_id", sc.ID.String(), "scheduled_for", occurrence, "next_run_at", nextRunAt)
 		s.scanService.recordScheduledOutcome(ctx, sc,
