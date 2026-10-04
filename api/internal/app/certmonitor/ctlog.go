@@ -60,6 +60,10 @@ type statusError struct {
 	retryAfter time.Duration
 }
 
+// ErrResponseTooLarge: a CT source sent more than the body cap. Nothing from
+// that response is used.
+var ErrResponseTooLarge = errors.New("CT response too large")
+
 func (e *statusError) Error() string {
 	return fmt.Sprintf("%s returned status %d", e.source, e.status)
 }
@@ -284,9 +288,18 @@ func (s *Service) get(ctx context.Context, rawURL, source string) ([]byte, error
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		return nil, &statusError{source: source, status: resp.StatusCode, retryAfter: parseRetryAfter(resp.Header.Get("Retry-After"))}
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	limit := s.maxBody
+	if limit <= 0 {
+		limit = maxBodyBytes
+	}
+	// Read one byte past the cap: a body that reaches it is refused as a
+	// whole instead of being cut into truncated JSON (RFC-036 appendix T-4).
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s response: %w", source, err)
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("%w: %s response exceeds %d bytes", ErrResponseTooLarge, source, limit)
 	}
 	return body, nil
 }
