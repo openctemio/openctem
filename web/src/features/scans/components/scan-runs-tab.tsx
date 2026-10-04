@@ -110,14 +110,14 @@ function ScanRunsTable() {
     []
   )
 
-  // The web's PipelineRunStatus spells canceled "cancelled"; the API filter
-  // takes the stored value, so the status goes through as a string.
-  const filters = {
+  // Statuses are typed as the API stores them, so the filter value goes
+  // through unchanged.
+  const filters: PipelineRunListFilters = {
     status: statusFilter === 'all' ? undefined : statusFilter,
     sort: toSortParam(sorting, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
     page: pageParam,
     per_page: perPage,
-  } as PipelineRunListFilters
+  }
 
   const { data, isLoading, error } = usePipelineRuns(filters, swrConfig)
   const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
