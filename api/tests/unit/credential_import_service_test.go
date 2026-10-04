@@ -126,7 +126,7 @@ func (m *credImportMockExposureRepo) Update(_ context.Context, event *exposure.E
 	return nil
 }
 
-func (m *credImportMockExposureRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *credImportMockExposureRepo) Delete(_ context.Context, _, id shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -181,10 +181,23 @@ func (m *credImportMockExposureRepo) List(_ context.Context, filter exposure.Fil
 	}, nil
 }
 
-func (m *credImportMockExposureRepo) Count(_ context.Context, _ exposure.Filter) (int64, error) {
+func (m *credImportMockExposureRepo) Count(_ context.Context, f exposure.Filter) (int64, error) {
 	m.countCalls++
 	if m.countErr != nil {
 		return 0, m.countErr
+	}
+	// Stats count per state and per severity over the credential filter.
+	if len(f.States) == 1 {
+		if m.countStateErr != nil {
+			return 0, m.countStateErr
+		}
+		return m.countByStateResult[f.States[0]], nil
+	}
+	if len(f.Severities) == 1 {
+		if m.countSevErr != nil {
+			return 0, m.countSevErr
+		}
+		return m.countBySeverityResult[f.Severities[0]], nil
 	}
 	return int64(len(m.events)), nil
 }

@@ -26,9 +26,14 @@ import (
 // The name ends in _test, so URL's guard accepts it. Skipped unless
 // DATABASE_URL names a test database and the role may create databases
 // (with OPENCTEM_TEST_DB_REQUIRED on, those preconditions fail instead).
+//
+// Creating a database and applying migrations needs more than the API's
+// least-privilege role, so when DATABASE_ADMIN_URL is set (the least-privilege
+// CI job sets it to the superuser) the private database is created, migrated
+// and used through it; otherwise through DATABASE_URL as before.
 func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
 	t.Helper()
-	base := URL()
+	base := AdminURL()
 	if base == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}

@@ -4821,18 +4821,6 @@ definitions:
     - role
     - user_id
     type: object
-  internal_infra_http_handler.AddPermissionRequest:
-    properties:
-      modification_type:
-        enum:
-        - add
-        - remove
-        type: string
-      permission_id:
-        type: string
-    required:
-    - permission_id
-    type: object
   internal_infra_http_handler.AdminAuditChainRebaselineRequest:
     properties:
       fingerprint:
@@ -5896,13 +5884,6 @@ definitions:
         type: string
     required:
     - user_id
-    type: object
-  internal_infra_http_handler.AssignPermissionSetRequest:
-    properties:
-      permission_set_id:
-        type: string
-    required:
-    - permission_set_id
     type: object
   internal_infra_http_handler.AttackPathScoreResponse:
     properties:
@@ -7355,36 +7336,6 @@ definitions:
     - name
     - provider
     type: object
-  internal_infra_http_handler.CreatePermissionSetRequest:
-    properties:
-      description:
-        maxLength: 500
-        type: string
-      name:
-        maxLength: 100
-        minLength: 2
-        type: string
-      parent_set_id:
-        type: string
-      permissions:
-        items:
-          type: string
-        type: array
-      set_type:
-        enum:
-        - custom
-        - extended
-        - cloned
-        type: string
-      slug:
-        maxLength: 100
-        minLength: 2
-        type: string
-    required:
-    - name
-    - set_type
-    - slug
-    type: object
   internal_infra_http_handler.CreateRepositoryAssetRequest:
     properties:
       clone_url:
@@ -7622,6 +7573,12 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        description: |-
+          ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+          evaluated in timezone; at most every 15 minutes.
+        maxLength: 500
+        type: string
       schedule_time:
         type: string
       schedule_type:
@@ -7631,6 +7588,7 @@ definitions:
         - weekly
         - monthly
         - crontab
+        - rrule
         type: string
       sensor_preference:
         enum:
@@ -8268,8 +8226,41 @@ definitions:
           $ref: '#/definitions/internal_infra_http_handler.DataFlowStepResponse'
         type: array
     type: object
+  internal_infra_http_handler.DataScopeImpactMember:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: string
+    type: object
+  internal_infra_http_handler.DataScopeImpactResponse:
+    properties:
+      members:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.DataScopeImpactMember'
+        type: array
+      members_without_group_see:
+        enum:
+        - everything
+        - nothing
+        type: string
+      total_count:
+        description: |-
+          TotalCount is the number of members who would see nothing (exact);
+          Members lists at most 500 of them.
+        type: integer
+    type: object
   internal_infra_http_handler.DataScopePolicyResponse:
     properties:
+      deprecated:
+        description: |-
+          Deprecated is true while the organization still shows everything: that
+          mode is being retired and only the owner can switch it off.
+        type: boolean
       members_without_group_see:
         description: |-
           MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
@@ -8336,19 +8327,6 @@ definitions:
         type: string
       state:
         description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
-        type: string
-    type: object
-  internal_infra_http_handler.EffectivePermissionsResponse:
-    properties:
-      group_count:
-        type: integer
-      permissions:
-        items:
-          type: string
-        type: array
-      tenant_id:
-        type: string
-      user_id:
         type: string
     type: object
   internal_infra_http_handler.EmbeddedCategoryResponse:
@@ -10747,85 +10725,6 @@ definitions:
       self:
         type: string
     type: object
-  internal_infra_http_handler.PermissionItemResponse:
-    properties:
-      modification_type:
-        type: string
-      permission_id:
-        type: string
-    type: object
-  internal_infra_http_handler.PermissionSetListResponse:
-    properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      permission_sets:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-        type: array
-      total_count:
-        type: integer
-    type: object
-  internal_infra_http_handler.PermissionSetResponse:
-    properties:
-      created_at:
-        type: string
-      description:
-        type: string
-      id:
-        type: string
-      is_active:
-        type: boolean
-      is_system:
-        type: boolean
-      name:
-        type: string
-      parent_set_id:
-        type: string
-      set_type:
-        type: string
-      slug:
-        type: string
-      tenant_id:
-        type: string
-      updated_at:
-        type: string
-    type: object
-  internal_infra_http_handler.PermissionSetWithItemsResponse:
-    properties:
-      created_at:
-        type: string
-      description:
-        type: string
-      id:
-        type: string
-      is_active:
-        type: boolean
-      is_system:
-        type: boolean
-      items:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.PermissionItemResponse'
-        type: array
-      name:
-        type: string
-      parent_set_id:
-        type: string
-      permissions:
-        description: Resolved permissions
-        items:
-          type: string
-        type: array
-      set_type:
-        type: string
-      slug:
-        type: string
-      tenant_id:
-        type: string
-      updated_at:
-        type: string
-    type: object
   internal_infra_http_handler.PermissionsResponse:
     properties:
       permissions:
@@ -11837,6 +11736,8 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        type: string
       schedule_time:
         type: string
       schedule_timezone:
@@ -14086,18 +13987,6 @@ definitions:
         minLength: 1
         type: string
     type: object
-  internal_infra_http_handler.UpdatePermissionSetRequest:
-    properties:
-      description:
-        maxLength: 500
-        type: string
-      is_active:
-        type: boolean
-      name:
-        maxLength: 100
-        minLength: 2
-        type: string
-    type: object
   internal_infra_http_handler.UpdatePreferencesRequest:
     properties:
       language:
@@ -14327,6 +14216,12 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        description: |-
+          ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+          evaluated in timezone; at most every 15 minutes.
+        maxLength: 500
+        type: string
       schedule_time:
         type: string
       schedule_type:
@@ -14336,6 +14231,7 @@ definitions:
         - weekly
         - monthly
         - crontab
+        - rrule
         type: string
       sensor_preference:
         enum:
@@ -22142,47 +22038,227 @@ paths:
       - Configuration
   /findings:
     get:
-      description: Retrieves a paginated list of findings for the current tenant
+      description: |-
+        Retrieves a paginated list of findings for the current tenant.
+        Filters follow the list query contract (RFC-048): every param is ANDed, a comma list is OR
+        within one field, and operators are suffixes (`_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_contains`).
+        A bad value or an unsortable field is 400 INVALID_FILTER. Old names (severities, statuses,
+        exclude_statuses, sources, priority_classes, finding_ids, cve_ids, finding_types, asset_tags,
+        epss_min, search, assigned_to_me) still work and answer with Deprecation and Sunset headers.
       parameters:
-      - description: Filter by asset ID
+      - collectionFormat: csv
+        description: Finding IDs
         in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: Asset IDs
+        in: query
+        items:
+          type: string
         name: asset_id
-        type: string
-      - description: Filter by branch ID
+        type: array
+      - collectionFormat: csv
+        description: Branch IDs the finding occurs on
         in: query
+        items:
+          type: string
         name: branch_id
-        type: string
-      - description: Filter by component ID
+        type: array
+      - collectionFormat: csv
+        description: Component IDs
         in: query
+        items:
+          type: string
         name: component_id
-        type: string
-      - description: Filter by vulnerability ID
+        type: array
+      - collectionFormat: csv
+        description: Vulnerability IDs
         in: query
+        items:
+          type: string
         name: vulnerability_id
-        type: string
-      - description: Filter by severities (comma-separated)
+        type: array
+      - collectionFormat: csv
+        description: Severities
         in: query
-        name: severities
-        type: string
-      - description: Filter by statuses (comma-separated)
+        items:
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: Statuses
         in: query
-        name: statuses
-        type: string
-      - description: Exclude statuses (comma-separated)
+        items:
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: Statuses to exclude
         in: query
-        name: exclude_statuses
-        type: string
-      - description: Filter by sources
+        items:
+          type: string
+        name: status_not
+        type: array
+      - collectionFormat: csv
+        description: Sources
         in: query
-        name: sources
-        type: string
-      - description: 'Filter by SLA status (comma-separated: on_track,warning,overdue,exceeded,not_applicable)'
+        items:
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: SLA statuses
         in: query
+        items:
+          type: string
         name: sla_status
-        type: string
-      - description: Filter by tool name
+        type: array
+      - collectionFormat: csv
+        description: CTEM priority classes (P0..P3)
         in: query
+        items:
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: CVE IDs
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: Finding types
+        in: query
+        items:
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: Tags of the finding's asset (any of)
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - description: In CISA KEV
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: Reachable
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: Minimum EPSS score
+        in: query
+        name: epss_score_gte
+        type: number
+      - collectionFormat: csv
+        description: Tool names
+        in: query
+        items:
+          type: string
         name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: Rule IDs
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: Scan IDs
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - description: File path contains
+        in: query
+        name: file_path
+        type: string
+      - description: 'me: assigned to, owned by or group-assigned to the caller'
+        in: query
+        name: related_to
+        type: string
+      - description: Minimum CVSS score
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: Maximum CVSS score
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: First seen at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: Last seen at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: Last seen before
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - collectionFormat: csv
+        description: Ports the finding was observed on
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: tcp, udp, sctp
+        in: query
+        items:
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: Services on the port (https, ssh, ...)
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: Assignee user IDs
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: 'true: unassigned; false: assigned'
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: The asset's own criticality (critical, high, medium, low)
+        in: query
+        items:
+          type: string
+        name: asset_criticality
+        type: array
+      - description: A public exploit is known (scanner or CVE catalog)
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: Created at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: Free text over title, description and file path
+        in: query
+        name: q
+        type: string
+      - description: Sort keys, - for descending (default priority_class,severity,-created_at)
+        in: query
+        name: sort
         type: string
       - default: 1
         description: Page number
@@ -22205,9 +22281,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
         "401":
           description: Unauthorized
           schema:
@@ -22990,6 +23064,44 @@ paths:
       summary: Bulk update finding status
       tags:
       - Findings
+  /findings/groups:
+    get:
+      description: |-
+        Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+        (RFC-048), so a grouped view counts exactly the rows the list shows.
+      parameters:
+      - description: cve_id (default), rule_id, asset_id, owner_id, component_id,
+          severity, source, finding_type
+        in: query
+        name: group_by
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Groups per page
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
+      security:
+      - BearerAuth: []
+      summary: Group findings
+      tags:
+      - Findings
   /findings/remediation-groups:
     get:
       description: Groups the tenant's open findings by the fix that resolves them
@@ -23029,23 +23141,41 @@ paths:
   /findings/stats:
     get:
       description: |-
-        Returns aggregated statistics for findings. Optional asset_id query
-        parameter scopes the stats to a single asset (used by the Findings
-        page when filtered by `?assetId=…` so the severity cards match the
-        filtered table instead of showing global tenant counts).
-        Optional sources query parameter (comma-separated, same values and
-        validation as the list endpoint's sources filter) scopes every
-        number to those sources; the Exposures type pages use it to get
-        their counts in one request instead of walking the list.
+        Aggregated statistics over the findings a filter selects. Takes every filter param of
+        GET /findings (RFC-048) and compiles the same WHERE, so the numbers always match the table
+        (the old asset_id and sources params are part of that filter).
       parameters:
-      - description: Restrict stats to a single asset
+      - collectionFormat: csv
+        description: Asset IDs
         in: query
+        items:
+          type: string
         name: asset_id
-        type: string
-      - description: Restrict stats to these finding sources (comma-separated, max
-          25)
+        type: array
+      - collectionFormat: csv
+        description: Sources
         in: query
-        name: sources
+        items:
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: Severities
+        in: query
+        items:
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: Statuses
+        in: query
+        items:
+          type: string
+        name: status
+        type: array
+      - description: Free text
+        in: query
+        name: q
         type: string
       produces:
       - application/json
@@ -23057,9 +23187,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
         "401":
           description: Unauthorized
           schema:
@@ -23493,87 +23621,6 @@ paths:
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       summary: Update a member's role
-      tags:
-      - groups
-  /groups/{groupId}/permission-sets:
-    get:
-      description: Get all permission sets assigned to the group with full details
-      parameters:
-      - description: Group ID
-        in: path
-        name: groupId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-            type: array
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: List permission sets assigned to a group
-      tags:
-      - groups
-    post:
-      consumes:
-      - application/json
-      description: Assign a permission set to the group
-      parameters:
-      - description: Group ID
-        in: path
-        name: groupId
-        required: true
-        type: string
-      - description: Permission set details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.AssignPermissionSetRequest'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Assign a permission set to a group
-      tags:
-      - groups
-  /groups/{groupId}/permission-sets/{permissionSetId}:
-    delete:
-      description: Remove a permission set assignment from the group
-      parameters:
-      - description: Group ID
-        in: path
-        name: groupId
-        required: true
-        type: string
-      - description: Permission Set ID
-        in: path
-        name: permissionSetId
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Remove a permission set from a group
       tags:
       - groups
   /groups/sync:
@@ -24825,18 +24872,36 @@ paths:
       - Modules
   /me/permissions:
     get:
-      description: Get all effective permissions for the current user based on their
-        group memberships
+      description: |-
+        Returns the permissions for the authenticated user in the current tenant.
+        Supports ETag-based caching: send If-None-Match header to check for changes.
+      parameters:
+      - description: ETag from previous response
+        in: header
+        name: If-None-Match
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.EffectivePermissionsResponse'
-      summary: Get effective permissions for current user
+            $ref: '#/definitions/internal_infra_http_handler.PermissionsResponse'
+        "304":
+          description: Not Modified - permissions unchanged
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get current user permissions
       tags:
-      - permissions
+      - Permissions
   /notification-outbox:
     get:
       consumes:
@@ -25188,6 +25253,76 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/members/{member_id}/mfa:
+    delete:
+      description: An owner or administrator turns off the second factor of a member
+        of their organization who lost their authenticator and recovery codes. The
+        member is signed out everywhere and e-mailed. An owner or administrator target
+        needs the owner; a member who also belongs to another organization needs the
+        same authority there; nobody resets their own factor here.
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reset a member's two-factor authentication
+      tags:
+      - Tenants
+  /organization/settings/data-scope/impact:
+    get:
+      description: 'Lists the active members who are not owner or admin, hold no role
+        with full data access, and are in no access group and have no grant: they
+        see everything today only because the organization shows everything to members
+        without a team, and would see nothing after the switch. Owners and admins
+        only.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.DataScopeImpactResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Members who would see nothing after switching to "nothing"
+      tags:
+      - Tenants
   /organization/settings/retest:
     get:
       description: The tenant's auto-retest settings (RFC-039). auto_enabled is false
@@ -25245,230 +25380,6 @@ paths:
       summary: Update auto-retest settings
       tags:
       - Tenants
-  /permission-sets:
-    get:
-      description: List all permission sets for the tenant
-      parameters:
-      - description: Include system permission sets
-        in: query
-        name: include_system
-        type: boolean
-      - description: Filter by type
-        in: query
-        name: type
-        type: string
-      - description: Search by name
-        in: query
-        name: search
-        type: string
-      - default: 20
-        description: Limit results
-        in: query
-        name: limit
-        type: integer
-      - default: 0
-        description: Offset for pagination
-        in: query
-        name: offset
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.PermissionSetListResponse'
-      summary: List permission sets
-      tags:
-      - permission-sets
-    post:
-      consumes:
-      - application/json
-      description: Create a new permission set for access control
-      parameters:
-      - description: Permission set details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.CreatePermissionSetRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Create a new permission set
-      tags:
-      - permission-sets
-  /permission-sets/{id}:
-    delete:
-      description: Delete a permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Delete a permission set
-      tags:
-      - permission-sets
-    get:
-      description: Get detailed information about a permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.PermissionSetWithItemsResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Get a permission set by ID
-      tags:
-      - permission-sets
-    put:
-      consumes:
-      - application/json
-      description: Update an existing permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Update details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.UpdatePermissionSetRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Update a permission set
-      tags:
-      - permission-sets
-  /permission-sets/{id}/permissions:
-    post:
-      consumes:
-      - application/json
-      description: Add a permission to a permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Permission details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.AddPermissionRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Add a permission to a set
-      tags:
-      - permission-sets
-  /permission-sets/{id}/permissions/{permissionId}:
-    delete:
-      description: Remove a permission from a permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Permission ID
-        in: path
-        name: permissionId
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Remove a permission from a set
-      tags:
-      - permission-sets
-  /permission-sets/system:
-    get:
-      description: List all system-defined permission sets
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-            type: array
-      summary: List system permission sets
-      tags:
-      - permission-sets
   /repositories/{repository_id}/branches:
     get:
       description: Retrieves all branches for a repository
@@ -31873,9 +31784,10 @@ paths:
     patch:
       consumes:
       - application/json
-      description: 'Sets what members who are in no access group see: everything (all
-        assets and findings) or nothing. Owners and admins always see everything.
-        The change is audited.'
+      description: 'Switches what members who are in no access group see to nothing.
+        "everything" is being retired: an organization that sees nothing cannot switch
+        back (400). Owners only; owners and admins always see everything. The change
+        is audited.'
       parameters:
       - description: Tenant ID or slug
         in: path
