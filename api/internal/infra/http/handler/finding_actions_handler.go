@@ -10,10 +10,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -77,9 +79,33 @@ var findingGroupByDimensions = map[string]bool{
 	"severity": true, "source": true, "finding_type": true,
 }
 
+// findingGroupsRoute is GET /findings/groups on the list query contract:
+// the same filter params (and old aliases) as GET /findings, plus group_by.
+func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
+	return filterquery.Route{
+		Name:         "GET /findings/groups",
+		Registry:     vulnerability.FindingFields,
+		Options:      filterspec.Options{Unknown: filterspec.UnknownWarn, Extra: []string{"group_by"}},
+		DeprecatedAt: findingsListDeprecatedAt,
+		SunsetAt:     findingsListSunsetAt,
+		Logger:       h.logger,
+	}
+}
+
 // ListFindingGroups handles GET /api/v1/findings/groups
+// @Summary      Group findings
+// @Description  Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+// @Description  (RFC-048), so a grouped view counts exactly the rows the list shows.
+// @Tags         Findings
+// @Produce      json
+// @Security     BearerAuth
+// @Param        group_by  query  string  false  "cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type"
+// @Param        page      query  int     false  "Page number"  default(1)
+// @Param        per_page  query  int     false  "Groups per page"  default(50)
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  apierror.Response
+// @Router       /findings/groups [get]
 func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
 	groupBy := r.URL.Query().Get("group_by")
 	if groupBy == "" {
 		groupBy = "cve_id"
@@ -87,12 +113,25 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 		apierror.BadRequest("Invalid group_by value").WriteJSON(w)
 		return
 	}
+	q := r.URL.Query()
+	if !rewriteBranchStatus(w, q) {
+		return
+	}
+	spec, ok := h.findingGroupsRoute().ParseValues(w, r, q)
+	if !ok {
+		return
+	}
+	perPage := spec.PerPage
+	if perPage == 0 {
+		perPage = 50
+	}
 
-	filter := h.buildFilter(r)
-	page := h.buildPagination(r, 50) // default 50 per page
-
-	result, err := h.service.ListFindingGroups(r.Context(), tenantID, groupBy, filter, page)
+	result, err := h.service.ListFindingGroupsBySpec(r.Context(), filterCaller(r), groupBy, spec, pagination.New(spec.Page, perPage))
 	if err != nil {
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			filterquery.WriteError(w, err)
+			return
+		}
 		h.handleError(w, err)
 		return
 	}

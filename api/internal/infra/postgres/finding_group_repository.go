@@ -73,6 +73,15 @@ func statusCountCols() string {
 // buildFilterWhere builds WHERE clauses from FindingFilter.
 // Returns clause string and args starting from argOffset.
 func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string, []any) {
+	if filter.Compiled != nil {
+		// A compiled RFC-048 filter is the whole filter (tenant, scope and
+		// pentest rule included). One compiled for other placeholder numbers
+		// cannot be bound safely, so it matches nothing.
+		if filter.Compiled.First != argOffset || !strings.HasPrefix(filter.Compiled.SQL, vulnerability.FindingFieldsF.TenantSQL+" = $") {
+			return "FALSE", nil
+		}
+		return filter.Compiled.SQL, filter.Compiled.Args
+	}
 	var clauses []string
 	var args []any
 

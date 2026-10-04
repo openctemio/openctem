@@ -360,6 +360,36 @@ func opFitsType(op Op, f *Field) error {
 	return nil
 }
 
+// Rebase returns a copy of the registry whose SQL qualifies columns with
+// alias instead of table ("findings." becomes "f."), for queries that read
+// the same table under an alias. Only whole-word qualifiers are replaced.
+func (r *Registry) Rebase(table, alias string) *Registry {
+	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(table) + `\.`)
+	sub := func(s string) string { return re.ReplaceAllString(s, alias+".") }
+	cp := *r
+	cp.TenantSQL, cp.ScopeAssetSQL, cp.IDSQL = sub(r.TenantSQL), sub(r.ScopeAssetSQL), sub(r.IDSQL)
+	cp.MemberVisibility = sub(r.MemberVisibility)
+	if r.Search != nil {
+		srch := *r.Search
+		srch.Template = sub(srch.Template)
+		cp.Search = &srch
+	}
+	cp.fields = make(map[string]*Field, len(r.fields))
+	for name, f := range r.fields {
+		nf := *f
+		nf.SQL, nf.SortSQL = sub(f.SQL), sub(f.SortSQL)
+		if f.Templates != nil {
+			nf.Templates = make(map[Op]string, len(f.Templates))
+			for op, tpl := range f.Templates {
+				nf.Templates[op] = sub(tpl)
+			}
+		}
+		cp.fields[name] = &nf
+	}
+	cp.order = append([]string(nil), r.order...)
+	return &cp
+}
+
 // Field returns a field by name.
 func (r *Registry) Field(name string) (*Field, bool) {
 	f, ok := r.fields[name]
