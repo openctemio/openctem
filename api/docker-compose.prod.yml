@@ -65,7 +65,8 @@ services:
         if [ -z "$${DB_MIGRATE_PASSWORD:-}" ]; then
           echo "db-roles: DB_MIGRATE_USER is set but DB_MIGRATE_PASSWORD is empty" >&2; exit 1
         fi
-        if [ "$$PGPASSWORD" = "$$DB_PASSWORD" ] || [ "$$DB_MIGRATE_PASSWORD" = "$$DB_PASSWORD" ]; then
+        same() { [ "$$1" = "$$2" ]; }
+        if same "$$PGPASSWORD" "$$DB_PASSWORD" || same "$$DB_MIGRATE_PASSWORD" "$$DB_PASSWORD"; then
           echo "db-roles: the superuser, migrator and app (DB_PASSWORD) need different passwords; set DB_SUPERUSER_PASSWORD and DB_MIGRATE_PASSWORD" >&2; exit 1
         fi
         exec psql -X -v ON_ERROR_STOP=1 \
