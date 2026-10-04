@@ -14165,6 +14165,64 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/groups': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Group findings
+     * @description Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+     *     (RFC-048), so a grouped view counts exactly the rows the list shows.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type */
+          group_by?: string
+          /** @description Page number */
+          page?: number
+          /** @description Groups per page */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/remediation-groups': {
     parameters: {
       query?: never
@@ -14257,22 +14315,23 @@ export interface paths {
     }
     /**
      * Get finding statistics
-     * @description Returns aggregated statistics for findings. Optional asset_id query
-     *     parameter scopes the stats to a single asset (used by the Findings
-     *     page when filtered by `?assetId=…` so the severity cards match the
-     *     filtered table instead of showing global tenant counts).
-     *     Optional sources query parameter (comma-separated, same values and
-     *     validation as the list endpoint's sources filter) scopes every
-     *     number to those sources; the Exposures type pages use it to get
-     *     their counts in one request instead of walking the list.
+     * @description Aggregated statistics over the findings a filter selects. Takes every filter param of
+     *     GET /findings (RFC-048) and compiles the same WHERE, so the numbers always match the table
+     *     (the old asset_id and sources params are part of that filter).
      */
     get: {
       parameters: {
         query?: {
-          /** @description Restrict stats to a single asset */
-          asset_id?: string
-          /** @description Restrict stats to these finding sources (comma-separated, max 25) */
-          sources?: string
+          /** @description Asset IDs */
+          asset_id?: string[]
+          /** @description Sources */
+          source?: string[]
+          /** @description Severities */
+          severity?: string[]
+          /** @description Statuses */
+          status?: string[]
+          /** @description Free text */
+          q?: string
         }
         header?: never
         path?: never
@@ -14295,9 +14354,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              [key: string]: string
-            }
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
@@ -17981,6 +18038,72 @@ export interface paths {
           }
           content: {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/settings/data-scope/impact': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Members who would see nothing after switching to "nothing"
+     * @description Lists the active members who are not owner or admin, hold no role with full data access, and are in no access group and have no grant: they see everything today only because the organization shows everything to members without a team, and would see nothing after the switch. Owners and admins only.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.DataScopeImpactResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -29397,7 +29520,7 @@ export interface paths {
     head?: never
     /**
      * Set the data scope of members without an access group
-     * @description Sets what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything. The change is audited.
+     * @description Switches what members who are in no access group see to nothing. "everything" is being retired: an organization that sees nothing cannot switch back (400). Owners only; owners and admins always see everything. The change is audited.
      */
     patch: {
       parameters: {
@@ -36082,7 +36205,28 @@ export interface components {
       /** @description Ordered steps from source to sink */
       steps?: components['schemas']['internal_infra_http_handler.DataFlowStepResponse'][]
     }
+    'internal_infra_http_handler.DataScopeImpactMember': {
+      email?: string
+      name?: string
+      role?: string
+      user_id?: string
+    }
+    'internal_infra_http_handler.DataScopeImpactResponse': {
+      members?: components['schemas']['internal_infra_http_handler.DataScopeImpactMember'][]
+      /** @enum {string} */
+      members_without_group_see?: 'everything' | 'nothing'
+      /**
+       * @description TotalCount is the number of members who would see nothing (exact);
+       *     Members lists at most 500 of them.
+       */
+      total_count?: number
+    }
     'internal_infra_http_handler.DataScopePolicyResponse': {
+      /**
+       * @description Deprecated is true while the organization still shows everything: that
+       *     mode is being retired and only the owner can switch it off.
+       */
+      deprecated?: boolean
       /**
        * @description MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
        *     (fail-closed). Owners and admins always see everything.
