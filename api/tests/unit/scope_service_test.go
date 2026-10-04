@@ -285,8 +285,8 @@ func (m *mockAssetRepo) GetDisplayInfoByIDs(ctx context.Context, tenantID shared
 func (m *mockAssetRepo) GetByID(_ context.Context, _, _ shared.ID) (*asset.Asset, error) {
 	return nil, shared.ErrNotFound
 }
-func (m *mockAssetRepo) Update(_ context.Context, _ *asset.Asset) error { return nil }
-func (m *mockAssetRepo) Delete(_ context.Context, _, _ shared.ID) error { return nil }
+func (m *mockAssetRepo) Update(_ context.Context, _ *asset.Asset) error               { return nil }
+func (m *mockAssetRepo) Delete(_ context.Context, _, _ shared.ID, _ *shared.ID) error { return nil }
 func (m *mockAssetRepo) List(_ context.Context, _ asset.Filter, _ asset.ListOptions, page pagination.Pagination) (pagination.Result[*asset.Asset], error) {
 	total := int64(len(m.assets))
 	return pagination.NewResult(m.assets, total, page), nil
@@ -2157,4 +2157,8 @@ func TestScopeServiceDisableScheduleTenantIsolation(t *testing.T) {
 			t.Errorf("expected ErrNotFound, got: %v", err)
 		}
 	})
+}
+
+func (m *mockAssetRepo) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
+	return 0, nil
 }

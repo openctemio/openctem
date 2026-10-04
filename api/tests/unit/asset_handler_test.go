@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -75,7 +76,7 @@ func (m *HandlerMockRepository) Update(ctx context.Context, a *asset.Asset) erro
 	return nil
 }
 
-func (m *HandlerMockRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+func (m *HandlerMockRepository) Delete(ctx context.Context, tenantID, id shared.ID, _ *shared.ID) error {
 	a, ok := m.assets[id.String()]
 	if !ok {
 		return shared.ErrNotFound
@@ -614,4 +615,8 @@ func TestAssetHandler_Sync_NonRepositoryIs400(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("sync of a host asset: got %d, want 400 (%s)", rec.Code, rec.Body.String())
 	}
+}
+
+func (m *HandlerMockRepository) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
+	return 0, nil
 }

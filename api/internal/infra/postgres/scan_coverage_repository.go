@@ -44,7 +44,7 @@ func (r *ScanCoverageRepository) ListCandidates(ctx context.Context, tenantID sh
 		FROM assets a
 		LEFT JOIN scan_coverage_state c
 		       ON c.asset_id = a.id AND c.tenant_id = a.tenant_id
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.status = 'active'
 		  AND a.asset_type = ANY($2)
 		ORDER BY c.last_dispatched_at ASC NULLS FIRST, a.criticality DESC
@@ -108,7 +108,7 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 			FROM assets a
 			LEFT JOIN scan_coverage_state c
 			       ON c.asset_id = a.id AND c.tenant_id = a.tenant_id
-			WHERE a.tenant_id = $1
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 			  AND a.status = 'active'
 			  AND a.asset_type = ANY($2)
 		)

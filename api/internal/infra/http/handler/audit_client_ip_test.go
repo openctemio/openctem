@@ -30,6 +30,7 @@ func TestAuditContexts_IgnoreForwardingHeadersFromUntrustedPeer(t *testing.T) {
 		"finding_evidence":  (&VulnerabilityHandler{}).buildAuditContext(req).ActorIP,
 		"remediation":       (&RemediationCampaignHandler{}).buildAuditContext(req).ActorIP,
 		"mcp":               auditClientIP(req),
+		"scan_zone":         buildScanZoneAuditContext(req).ActorIP,
 	}
 	for name, ip := range got {
 		if ip != want {
@@ -49,6 +50,37 @@ func TestAuditContexts_HonorForwardingHeadersFromTrustedProxy(t *testing.T) {
 	if ip := (&SensorHandler{}).buildAuditContext(req).ActorIP; ip != "198.51.100.7" {
 		t.Errorf("audit IP behind a trusted proxy = %q, want the forwarded client 198.51.100.7", ip)
 	}
+	if ip := buildScanZoneAuditContext(req).ActorIP; ip != "198.51.100.7" {
+		t.Errorf("scan zone audit IP behind a trusted proxy = %q, want the forwarded client 198.51.100.7", ip)
+	}
+}
+
+// The scan zone handler used to copy the raw X-Forwarded-For header into the
+// audit log, so any caller chose the recorded IP (and a multi-hop chain was
+// stored whole). It must behave exactly like every other audit path.
+func TestScanZoneAuditContext_ForgedForwardedFor(t *testing.T) {
+	t.Cleanup(func() { SetAuthTrustedProxies(nil) })
+
+	t.Run("untrusted peer records the socket peer", func(t *testing.T) {
+		SetAuthTrustedProxies(httpsec.NewTrustedProxySet([]string{"10.0.0.10"}))
+		req := httptest.NewRequest("POST", "/api/v1/scan-zones", nil)
+		req.RemoteAddr = "203.0.113.9:4444"
+		req.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.10")
+		req.Header.Set("X-Real-IP", "5.6.7.8")
+		if ip := buildScanZoneAuditContext(req).ActorIP; ip != "203.0.113.9" {
+			t.Errorf("ActorIP = %q, want the TCP peer 203.0.113.9", ip)
+		}
+	})
+
+	t.Run("trusted appending proxy records the client it saw, not the forged entry", func(t *testing.T) {
+		SetAuthTrustedProxies(httpsec.NewTrustedProxySet([]string{"10.0.0.10"}))
+		req := httptest.NewRequest("POST", "/api/v1/scan-zones", nil)
+		req.RemoteAddr = "10.0.0.10:4444"
+		req.Header.Set("X-Forwarded-For", "1.2.3.4, 198.51.100.9")
+		if ip := buildScanZoneAuditContext(req).ActorIP; ip != "198.51.100.9" {
+			t.Errorf("ActorIP = %q, want the proxy-appended client 198.51.100.9", ip)
+		}
+	})
 }
 
 // Password logins carry an email but no preferred username; the audit actor

@@ -95,7 +95,7 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 
 	// Get total count of repositories (assets with type 'repository')
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM assets WHERE tenant_id = $1 AND asset_type = 'repository'`,
+		`SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND asset_type = 'repository'`,
 		tenantID.String(),
 	).Scan(&stats.Total)
 	if err != nil {
@@ -106,7 +106,7 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
 		 INNER JOIN findings f ON a.id = f.asset_id
-		 WHERE a.tenant_id = $1 AND a.asset_type = 'repository'`,
+		 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository'`,
 		tenantID.String(),
 	).Scan(&stats.WithFindings)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -197,7 +197,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 				COALESCE(AVG(risk_score), 0) AS avg_risk,
 				COUNT(*) FILTER (WHERE asset_type = 'repository') AS repo_cnt
 			FROM assets
-			WHERE tenant_id = $1
+			WHERE deleted_at IS NULL AND tenant_id = $1
 			GROUP BY GROUPING SETS ((asset_type), (status), (NULLIF(sub_type, '')), ())
 		),
 		avg_cvss AS (
@@ -208,7 +208,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		repo_with_findings AS (
 			SELECT COUNT(*) AS cnt
 			FROM assets a
-			WHERE a.tenant_id = $1 AND a.asset_type = 'repository'
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository'
 				AND EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id)
 		)
 		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
@@ -462,13 +462,13 @@ func (r *DashboardRepository) GetGlobalAssetStats(ctx context.Context) (app.Asse
 	}
 
 	// Get total count
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assets`).Scan(&stats.Total)
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL`).Scan(&stats.Total)
 	if err != nil {
 		return stats, err
 	}
 
 	// Get by type
-	rows, err := r.db.QueryContext(ctx, `SELECT asset_type, COUNT(*) FROM assets GROUP BY asset_type`)
+	rows, err := r.db.QueryContext(ctx, `SELECT asset_type, COUNT(*) FROM assets WHERE deleted_at IS NULL GROUP BY asset_type`)
 	if err != nil {
 		return stats, err
 	}
@@ -487,7 +487,7 @@ func (r *DashboardRepository) GetGlobalAssetStats(ctx context.Context) (app.Asse
 	}
 
 	// Get by status
-	rows, err = r.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM assets GROUP BY status`)
+	rows, err = r.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM assets WHERE deleted_at IS NULL GROUP BY status`)
 	if err != nil {
 		return stats, err
 	}
@@ -575,7 +575,7 @@ func (r *DashboardRepository) GetGlobalRepositoryStats(ctx context.Context) (app
 	stats := app.RepositoryStatsData{}
 
 	// Get total count of repositories
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assets WHERE asset_type = 'repository'`).Scan(&stats.Total)
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND asset_type = 'repository'`).Scan(&stats.Total)
 	if err != nil {
 		return stats, err
 	}
@@ -584,7 +584,7 @@ func (r *DashboardRepository) GetGlobalRepositoryStats(ctx context.Context) (app
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
 		 INNER JOIN findings f ON a.id = f.asset_id
-		 WHERE a.asset_type = 'repository'`,
+		 WHERE a.deleted_at IS NULL AND a.asset_type = 'repository'`,
 	).Scan(&stats.WithFindings)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		stats.WithFindings = 0
@@ -647,7 +647,7 @@ func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantI
 
 	// Get total count filtered by tenants
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM assets WHERE tenant_id IN (`+placeholders+`)`,
+		`SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND tenant_id IN (`+placeholders+`)`,
 		args...,
 	).Scan(&stats.Total)
 	if err != nil {
@@ -657,7 +657,7 @@ func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantI
 	// Get by type filtered by tenants
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT asset_type, COUNT(*) FROM assets WHERE tenant_id IN (`+placeholders+`) GROUP BY asset_type`,
+		`SELECT asset_type, COUNT(*) FROM assets WHERE deleted_at IS NULL AND tenant_id IN (`+placeholders+`) GROUP BY asset_type`,
 		args...,
 	)
 	if err != nil {
@@ -680,7 +680,7 @@ func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantI
 	// Get by status filtered by tenants
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	rows, err = r.db.QueryContext(ctx,
-		`SELECT status, COUNT(*) FROM assets WHERE tenant_id IN (`+placeholders+`) GROUP BY status`,
+		`SELECT status, COUNT(*) FROM assets WHERE deleted_at IS NULL AND tenant_id IN (`+placeholders+`) GROUP BY status`,
 		args...,
 	)
 	if err != nil {
@@ -706,7 +706,7 @@ func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantI
 	// showed the correct number. Mirror that query for consistency.
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	if err := r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE tenant_id IN (`+placeholders+`)`,
+		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE deleted_at IS NULL AND tenant_id IN (`+placeholders+`)`,
 		args...,
 	).Scan(&stats.AverageRiskScore); err != nil {
 		return stats, err
@@ -817,7 +817,7 @@ func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, te
 	// Get total count of repositories
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM assets WHERE tenant_id IN (`+placeholders+`) AND asset_type = 'repository'`,
+		`SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND tenant_id IN (`+placeholders+`) AND asset_type = 'repository'`,
 		args...,
 	).Scan(&stats.Total)
 	if err != nil {
@@ -829,7 +829,7 @@ func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, te
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
 		 INNER JOIN findings f ON a.id = f.asset_id
-		 WHERE a.tenant_id IN (`+placeholders+`) AND a.asset_type = 'repository'`,
+		 WHERE a.deleted_at IS NULL AND a.tenant_id IN (`+placeholders+`) AND a.asset_type = 'repository'`,
 		args...,
 	).Scan(&stats.WithFindings)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -992,7 +992,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 					ORDER BY EXTRACT(epoch FROM NOW() - last_seen) / 3600.0
 				) FILTER(WHERE last_seen IS NOT NULL), 0) AS median_last_seen_age_hours,
 				COUNT(*) FILTER(WHERE last_seen IS NOT NULL AND last_seen < NOW() - INTERVAL '30 days') AS stale_count
-			FROM assets WHERE tenant_id = $1
+			FROM assets WHERE deleted_at IS NULL AND tenant_id = $1
 		),
 		finding_stats AS (
 			SELECT
@@ -1082,7 +1082,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			-- risk-trend risk_score_avg (risk_snapshots) so the executive hero
 			-- number equals the trend's latest point. prev_risk below reads that
 			-- same filtered snapshot average, keeping risk_score_change consistent.
-			SELECT COALESCE(AVG(risk_score) FILTER (WHERE risk_score > 0), 0) AS current_score FROM assets WHERE tenant_id = $1
+			SELECT COALESCE(AVG(risk_score) FILTER (WHERE risk_score > 0), 0) AS current_score FROM assets WHERE deleted_at IS NULL AND tenant_id = $1
 		),
 		prev_risk AS (
 			-- Oldest risk_snapshots row within the window; used to compute
@@ -1099,7 +1099,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1
 				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
-			WHERE a.tenant_id = $1 AND a.is_crown_jewel
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
 		mttr_critical AS (
 			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
@@ -1292,7 +1292,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 			SELECT
 				COUNT(*) FILTER(WHERE last_seen < NOW() - INTERVAL '7 days') AS stale,
 				COUNT(*) AS total
-			FROM assets WHERE tenant_id = $1 AND status != 'archived'
+			FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND status != 'archived'
 		),
 		assign_stats AS (
 			SELECT

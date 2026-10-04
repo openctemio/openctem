@@ -58,9 +58,19 @@ type Repository interface {
 	// Security: Asset's TenantID is validated internally.
 	Update(ctx context.Context, asset *Asset) error
 
-	// Delete removes an asset by its ID within a tenant.
+	// Delete soft-deletes an asset of the tenant (owner decision O3): it sets
+	// deleted_at / deleted_by, frees its name, and detaches it from groups,
+	// owners, access, relationships and identity, in one transaction. It
+	// refuses an asset that has any finding with *HasFindingsError (archive it
+	// instead). An already deleted or unknown asset is not found. A deleted
+	// asset is excluded from every read and purged by PurgeDeleted.
 	// Security: Requires tenantID to prevent cross-tenant deletion.
-	Delete(ctx context.Context, tenantID, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id shared.ID, deletedBy *shared.ID) error
+
+	// PurgeDeleted hard-deletes up to limit assets soft-deleted before the
+	// cutoff that still have no findings (all tenants; platform retention).
+	// Returns how many were purged.
+	PurgeDeleted(ctx context.Context, before time.Time, limit int) (int, error)
 
 	// List retrieves assets with filtering, sorting, and pagination.
 	List(ctx context.Context, filter Filter, opts ListOptions, page pagination.Pagination) (pagination.Result[*Asset], error)

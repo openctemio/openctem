@@ -1,5 +1,7 @@
 'use client'
 
+import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
+import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
 import { useState, useMemo, useCallback } from 'react'
 import { csrfFetch } from '@/lib/api/client'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
@@ -33,7 +35,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Select,
   SelectContent,
@@ -2289,20 +2290,14 @@ export default function RepositoryDetailPage() {
     if (!repository) return
     setShowDeleteDialog(false)
     setIsDeleting(true)
-    try {
-      const response = await csrfFetch(`/api/v1/assets/${repository.id}`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) {
-        throw new Error('Failed to delete repository')
-      }
-      toast.success('Repository deleted successfully')
+    // Refused when the repository has findings: the toast offers Archive.
+    const result = await deleteAssetSafely(repository.id, repository.name, () => mutateRepo())
+    if (result === 'deleted') {
       router.push('/assets/repositories')
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete repository'))
-      setIsDeleting(false)
+      return
     }
-  }, [repository, router])
+    setIsDeleting(false)
+  }, [repository, router, mutateRepo])
 
   // Loading state
   if (repoLoading) {
@@ -2476,19 +2471,12 @@ export default function RepositoryDetailPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <ConfirmDialog
+              <AssetDeleteDialogShared
                 open={showDeleteDialog}
                 onOpenChange={setShowDeleteDialog}
-                title="Delete repository?"
-                desc={
-                  <>
-                    This will permanently delete &quot;{repository.name}&quot;. This action cannot
-                    be undone.
-                  </>
-                }
-                confirmText="Delete"
-                destructive
-                handleConfirm={handleDelete}
+                assetName={repository.name}
+                typeName="Repository"
+                onConfirm={handleDelete}
               />
             </div>
           </div>
