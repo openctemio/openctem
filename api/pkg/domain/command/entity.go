@@ -66,6 +66,15 @@ const (
 	// content (trivy DB, nuclei templates, semgrep rules) under the tenant's
 	// content policy (RFC-031). Always pinned to the sensor.
 	CommandTypeRefreshContent CommandType = "refresh_content"
+	// CommandTypeConnectorSync asks the sensor named by a connector
+	// integration to pull data from the product it connects to (Tenable.sc:
+	// hosts, vulnerabilities, plugins) and push it as CTIS reports bound to
+	// the command (docs/rfcs/RFC-047-tenable-sc-sensor-connector.md). Always
+	// pinned to the sensor; the payload names the tool in "scanner".
+	CommandTypeConnectorSync CommandType = "connector_sync"
+	// CommandTypeConnectorScan asks a connector sensor to launch one scan in
+	// the product it connects to on probe-gated targets (RFC-047).
+	CommandTypeConnectorScan CommandType = "connector_scan"
 )
 
 // CommandStatus represents the status of a command.

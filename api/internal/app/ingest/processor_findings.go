@@ -28,6 +28,10 @@ type FindingCreatedCallback func(ctx context.Context, tenantID shared.ID, findin
 
 // FindingProcessor handles batch finding processing.
 type FindingProcessor struct {
+	// sourceResolveMode is the source-asserted resolve mode
+	// (source_resolve.go); "" is dry_run.
+	sourceResolveMode SourceResolveMode
+
 	repo         vulnerability.FindingRepository
 	dataFlowRepo vulnerability.DataFlowRepository
 	branchRepo   branch.Repository
@@ -396,9 +400,20 @@ func (p *FindingProcessor) processBatch(
 	// on that finding instead of creating a new one.
 	aliases := resolveFingerprintAliasesOf(ctx, p, tenantID, candidates, func(fm findingMeta) string { return fm.fingerprint })
 
+	var mitigations []vulnerability.SourceMitigation
+	mitigatedNow := time.Now()
 	for _, fm := range candidates {
 		if current, ok := aliases[fm.fingerprint]; ok {
 			fm.fingerprint = current
+		}
+		// The source says it is mitigated (RFC-047 §7.6): not a sighting.
+		if isSourceMitigated(report, &fm.finding) {
+			mitigations = append(mitigations, vulnerability.SourceMitigation{
+				Fingerprint: fm.fingerprint,
+				AssetID:     fm.assetID,
+				MitigatedAt: mitigatedAt(&fm.finding, mitigatedNow),
+			})
+			continue
 		}
 		// One report naming the same finding twice (the same package in two
 		// lockfiles, a template matching twice, two keys of one finding) is
@@ -416,6 +431,11 @@ func (p *FindingProcessor) processBatch(
 
 	if duplicatesInReport > 0 {
 		p.logger.Debug("folded repeated findings within one report", "count", duplicatesInReport)
+	}
+
+	p.applySourceMitigations(ctx, tenantID, report, mitigations, scope, output)
+	if len(validFindings) == 0 {
+		return nil
 	}
 
 	// Step 2: Batch check existing fingerprints
