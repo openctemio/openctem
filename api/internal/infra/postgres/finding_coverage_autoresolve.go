@@ -248,7 +248,7 @@ func (r *FindingRepository) ResolveSourceMitigated(ctx context.Context, tenantID
 			AND f.source NOT IN ` + coverageProtectedSources + `
 			AND COALESCE(f.last_seen_tool, f.tool_name) = $2
 			AND COALESCE(f.last_seen_at, f.created_at) <= m.mitigated_at`
-	query := match
+	query := `SELECT id::text FROM (` + match + `) x`
 	if !dryRun {
 		query = `
 		UPDATE findings f
@@ -260,8 +260,6 @@ func (r *FindingRepository) ResolveSourceMitigated(ctx context.Context, tenantID
 		WHERE f.tenant_id = $1 AND f.id IN (` + match + `)
 			AND f.status IN ` + coverageOpenStatuses + `
 		RETURNING f.id::text`
-	} else {
-		query = `SELECT id::text FROM (` + match + `) x`
 	}
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), tool, pq.Array(fps), pq.Array(assets), pq.Array(ats))
 	if err != nil {

@@ -607,7 +607,7 @@ func readState(intg *integration.Integration) SyncState {
 // writeState stores the sync state in the integration metadata, keeping the
 // other keys.
 func writeState(intg *integration.Integration, st SyncState) {
-	md := make(map[string]any, len(intg.Metadata())+1)
+	md := map[string]any{}
 	for k, v := range intg.Metadata() {
 		md[k] = v
 	}
