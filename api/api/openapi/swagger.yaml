@@ -11282,6 +11282,10 @@ definitions:
         type: integer
       created_at:
         type: string
+      deadline_at:
+        description: DeadlineAt is when the run is settled if it is still open (RFC-046
+          §6.3).
+        type: string
       dispatch:
         $ref: '#/definitions/internal_infra_http_handler.RunDispatchResponse'
       error_message:
@@ -11327,6 +11331,11 @@ definitions:
       triggered_by_name:
         description: display name, when triggered_by is a user id
         type: string
+      unfinished_target_count:
+        description: |-
+          UnfinishedTargetCount is how many targets were still open when the run
+          was settled at its deadline; the next scheduled run plans them first.
+        type: integer
     type: object
   internal_infra_http_handler.RunUncoveredTarget:
     properties:

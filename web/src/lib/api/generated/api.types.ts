@@ -37125,6 +37125,8 @@ export interface components {
       completed_at?: string
       completed_steps?: number
       created_at?: string
+      /** @description DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3). */
+      deadline_at?: string
       dispatch?: components['schemas']['internal_infra_http_handler.RunDispatchResponse']
       error_message?: string
       failed_steps?: number
@@ -37147,6 +37149,11 @@ export interface components {
       triggered_by?: string
       /** @description display name, when triggered_by is a user id */
       triggered_by_name?: string
+      /**
+       * @description UnfinishedTargetCount is how many targets were still open when the run
+       *     was settled at its deadline; the next scheduled run plans them first.
+       */
+      unfinished_target_count?: number
     }
     'internal_infra_http_handler.RunUncoveredTarget': {
       reason?: string

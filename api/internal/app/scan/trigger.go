@@ -203,6 +203,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
+	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 	targets := resolved.Targets
 	zones, err := s.loadZones(ctx, sc.TenantID)
 	if err != nil {
@@ -310,6 +311,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
+	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 
 	// Scan zones (RFC-023): once the tenant has zones, a network scanner's
 	// targets are routed to the narrowest zone, batched, and pinned to a

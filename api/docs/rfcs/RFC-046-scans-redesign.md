@@ -2,7 +2,9 @@
 
 > Status: **Accepted.** Product decisions D1–D13 approved by the owner on
 > 2026-10-02; backend decisions B1–B12 approved on 2026-10-03. P0 shipped
-> (§2.3); P1 in progress (§9).
+> (§2.3); P1 in progress (§16): shipped P1.2 `partial` (#946), the P1.5
+> occurrence key (#949) and P1.3 deadline → `partial` + rollover (migration
+> 000430; trigger type `rollover` waits for P1.4).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
 > Builds on and does not duplicate:
 > [RFC-030](RFC-030-scan-work-distribution.md) (pull, chunks, leases, fair
