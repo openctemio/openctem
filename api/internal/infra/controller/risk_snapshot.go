@@ -44,7 +44,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				CASE WHEN COUNT(*) = 0 THEN 0
 					ELSE COUNT(*) FILTER(WHERE EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = assets.id)) * 100.0 / COUNT(*)
 				END AS ownership_pct
-			FROM assets GROUP BY tenant_id
+			FROM assets WHERE deleted_at IS NULL GROUP BY tenant_id
 		),
 		finding_metrics AS (
 			SELECT tenant_id,
@@ -72,7 +72,9 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 		),
 		exposure_metrics AS (
 			SELECT tenant_id, COUNT(*) AS active_count
-			FROM exposure_events WHERE state = 'active'
+			FROM exposure_events e WHERE e.state = 'active'
+			  -- exposures of a soft-deleted asset are history, not active work
+			  AND NOT EXISTS (SELECT 1 FROM assets d WHERE d.id = e.asset_id AND d.deleted_at IS NOT NULL)
 			GROUP BY tenant_id
 		)
 		INSERT INTO risk_snapshots (

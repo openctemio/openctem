@@ -175,7 +175,7 @@ func checkMergeTenant(ctx context.Context, tx *sql.Tx, tenantID, keepID string, 
 	all := append([]string{keepID}, mergeIDs...)
 	var n int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT count(*) FROM assets WHERE tenant_id = $1 AND id = ANY($2)`,
+		`SELECT count(*) FROM assets WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL`,
 		tenantID, pq.Array(all)).Scan(&n); err != nil {
 		return fmt.Errorf("check merge assets: %w", err)
 	}

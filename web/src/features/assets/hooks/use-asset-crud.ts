@@ -1,9 +1,12 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { createAsset, updateAsset, deleteAsset, bulkDeleteAssets } from './use-assets'
+import { createAsset, updateAsset } from './use-assets'
+import { bulkDeleteAssetsSafely, deleteAssetSafely, reportBulkDelete } from '../lib/safe-delete'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { toastIfDuplicateAsset } from '../lib/duplicate-asset'
 import type { Asset, AssetType, CreateAssetInput, UpdateAssetInput } from '../types'
 
 const MAX_BULK_DELETE = 100
@@ -19,6 +22,7 @@ export function useAssetCRUD(
   mutate: () => Promise<unknown> | void
 ) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const router = useRouter()
 
   const handleCreate = useCallback(
     async (data: CreateAssetInput, afterCreate?: (asset: Asset) => Promise<void>) => {
@@ -33,13 +37,16 @@ export function useAssetCRUD(
         toast.success(`${label} created successfully`)
         return true
       } catch (err) {
-        toast.error(getErrorMessage(err, `Failed to create ${label.toLowerCase()}`))
+        // A name that already exists is a 409 that may link to the asset.
+        if (!toastIfDuplicateAsset(err, router.push)) {
+          toast.error(getErrorMessage(err, `Failed to create ${label.toLowerCase()}`))
+        }
         return false
       } finally {
         setIsSubmitting(false)
       }
     },
-    [assetType, label, mutate]
+    [assetType, label, mutate, router.push]
   )
 
   const handleUpdate = useCallback(
@@ -60,17 +67,15 @@ export function useAssetCRUD(
     [label, mutate]
   )
 
+  // Deletes go through the safe-delete helpers: an asset with findings is
+  // refused by the API and the user is offered Archive instead.
+  // Returns 'deleted', 'refused' (the asset has findings; Archive was
+  // offered) or 'failed'.
   const handleDelete = useCallback(
-    async (id: string) => {
+    async (id: string, name?: string) => {
       setIsSubmitting(true)
       try {
-        await deleteAsset(id)
-        await mutate()
-        toast.success(`${label} deleted successfully`)
-        return true
-      } catch (err) {
-        toast.error(getErrorMessage(err, `Failed to delete ${label.toLowerCase()}`))
-        return false
+        return await deleteAssetSafely(id, name || label, mutate)
       } finally {
         setIsSubmitting(false)
       }
@@ -87,12 +92,10 @@ export function useAssetCRUD(
       }
       setIsSubmitting(true)
       try {
-        await bulkDeleteAssets(ids)
+        const outcome = await bulkDeleteAssetsSafely(ids)
         await mutate()
-        toast.success(
-          `Deleted ${ids.length} ${ids.length === 1 ? label.toLowerCase() : label.toLowerCase() + 's'}`
-        )
-        return true
+        reportBulkDelete(outcome, mutate)
+        return outcome.deleted.length > 0
       } catch (err) {
         toast.error(getErrorMessage(err, 'Failed to delete items'))
         return false
@@ -100,7 +103,7 @@ export function useAssetCRUD(
         setIsSubmitting(false)
       }
     },
-    [label, mutate]
+    [mutate]
   )
 
   return { handleCreate, handleUpdate, handleDelete, handleBulkDelete, isSubmitting }

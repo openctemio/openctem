@@ -41,9 +41,10 @@ const (
 	// ActionAssetAttributionDecided: a person set whether an asset is the
 	// organization's (RFC-036 attribution review).
 	ActionAssetAttributionDecided Action = "asset.attribution_decided"
-	// ActionAssetCreateMerged: a create request matched an existing asset by
-	// name or address and updated it instead of creating a new one.
-	// Metadata lists the changed field names.
+	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
+	// existing repository asset and attached its SCM data to it. POST
+	// /assets no longer merges (a duplicate is a 409); older rows from it
+	// keep this action. Metadata lists the changed field names.
 	ActionAssetCreateMerged Action = "asset.create_merged"
 
 	// Human changes to assets (API/UI). Metadata carries the names of the
