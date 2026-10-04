@@ -55,6 +55,9 @@ type Repository interface {
 	// FindingIDsInScope returns the subset of findingIDs (in the tenant) whose
 	// asset the user has a scope row for.
 	FindingIDsInScope(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) ([]shared.ID, error)
+	// AssetIDsInTenant returns the subset of assetIDs that are live (not
+	// soft-deleted) assets of the tenant.
+	AssetIDsInTenant(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error)
 }
 
 // Policy reports whether a tenant runs data scope fail-closed.
@@ -168,6 +171,28 @@ func (e *Enforcer) AssertAsset(ctx context.Context, tenantID, assetID shared.ID)
 		return shared.ErrNotFound
 	}
 	return e.assertIn(ctx, scope, assetID)
+}
+
+// AssertAssetRef is the check for an asset id a caller supplies to be
+// written onto a row (a finding, a component link, ...). It returns
+// shared.ErrNotFound unless the asset is a live asset of the tenant AND the
+// request's caller may see it. Unlike AssertAsset it checks the tenant for
+// unrestricted callers too, because a foreign or unknown id must never be
+// stored, whoever sends it; both cases get the same error, so the answer is
+// no existence oracle. Any error while checking also denies (fail closed).
+func (e *Enforcer) AssertAssetRef(ctx context.Context, tenantID, assetID shared.ID) error {
+	if e == nil || e.repo == nil || assetID.IsZero() {
+		return shared.ErrNotFound
+	}
+	ids, err := e.repo.AssetIDsInTenant(ctx, tenantID, []shared.ID{assetID})
+	if err != nil {
+		e.logger.Warn("asset tenant check failed", "error", err)
+		return shared.ErrNotFound
+	}
+	if len(ids) != 1 {
+		return shared.ErrNotFound
+	}
+	return e.AssertAsset(ctx, tenantID, assetID)
 }
 
 // AssertFinding is AssertAsset for the asset a finding belongs to. A finding
